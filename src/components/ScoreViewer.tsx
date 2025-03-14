@@ -8,15 +8,17 @@ export const ScoreViewer: React.FC<{ notes?: string }> = ({ notes = "C#5/q, B4, 
     if (!containerRef.current) return;
     containerRef.current.innerHTML = ""; // Clear previous rendering
 
+    console.log('Container height and width: ', containerRef.current.clientHeight, containerRef.current.clientWidth);
+
     const vf = new Vex.Factory({
-      renderer: { elementId: 'score', width: 500, height: 200 },
+      renderer: { elementId: 'scoreviewer', width: 500, height: 200 },
     });
 
     const score = vf.EasyScore();
     const system = vf.System();
 
     // Define a voice with hi-hats (X noteheads) and snare
-    const hihatNotes = [
+    const hihatNotes: StaveNote[] = [
       new StaveNote({ keys: ["g/5"], duration: "8" }),
       new StaveNote({ keys: ["g/5"], duration: "8" }),
       new StaveNote({ keys: ["g/5"], duration: "8" }),
@@ -25,6 +27,7 @@ export const ScoreViewer: React.FC<{ notes?: string }> = ({ notes = "C#5/q, B4, 
       new StaveNote({ keys: ["g/5"], duration: "8" }),
       new StaveNote({ keys: ["g/5"], duration: "8" }),
       new StaveNote({ keys: ["g/5"], duration: "8" }),
+      // score.beam(score.notes('A4/8, E4, C4, D4')),
     ];
 
     // Create a voice and format the notes
@@ -47,5 +50,5 @@ export const ScoreViewer: React.FC<{ notes?: string }> = ({ notes = "C#5/q, B4, 
     vf.draw();
   }, [notes]);
 
-  return <div ref={containerRef}></div>;
+  return <div ref={containerRef} style={{ width: '100%', height: '100%', backgroundColor: 'red' }}> ScoreViewer</div>;
 };
