@@ -26,7 +26,7 @@ export const PercussionScore: React.FC<{ notes?: string }> = ({ notes = "C#5/q, 
     .setBegBarType(Barline.type.REPEAT_BEGIN)
     .setEndBarType(Barline.type.REPEAT_END); 
 
-    const voice0 = f.Voice().addTickables([
+    const hihatVoice = f.Voice().addTickables([
       f.StaveNote({ keys: ['g/5/x2'], duration: '8' }),
       f.StaveNote({ keys: ['g/5/x2'], duration: '8' }),
       f.StaveNote({ keys: ['g/5/x2'], duration: '8' }),
@@ -37,20 +37,22 @@ export const PercussionScore: React.FC<{ notes?: string }> = ({ notes = "C#5/q, 
       f.StaveNote({ keys: ['g/5/x2'], duration: '8' }),
     ]);
     
-    const voice1 = f.Voice().addTickables([
+    const kickSnareVoice = f.Voice().addTickables([
       f.StaveNote({ keys: ['f/4'], duration: '8', stemDirection: -1 }),
       f.StaveNote({ keys: ['f/4'], duration: '8', stemDirection: -1 }),
-      f.StaveNote({ keys: ['d/4/x2', 'c/5'], duration: '4', stemDirection: -1 }),
+      // f.StaveNote({ keys: ['d/4/x2', 'c/5'], duration: '4', stemDirection: -1 }),
+      f.StaveNote({ keys: ['c/5'], duration: '4', stemDirection: -1 }),
       f.StaveNote({ keys: ['f/4'], duration: '8', stemDirection: -1 }),
       f.StaveNote({ keys: ['f/4'], duration: '8', stemDirection: -1 }),
-      f.StaveNote({ keys: ['d/4/x2', 'c/5'], duration: '4', stemDirection: -1 }),
+      f.StaveNote({ keys: ['c/5'], duration: '4', stemDirection: -1 }),
+      // f.StaveNote({ keys: ['d/4/x2', 'c/5'], duration: '4', stemDirection: -1 }),
     ]);
 
     f.Formatter().joinVoices(f.getVoices()).formatToStave(f.getVoices(), stave);
 
-    f.Beam({ notes: voice0.getTickables() as StemmableNote[] });
-    f.Beam({ notes: voice1.getTickables().slice(0, 2) as StemmableNote[] });
-    f.Beam({ notes: voice1.getTickables().slice(3, 5) as StemmableNote[] });
+    f.Beam({ notes: hihatVoice.getTickables() as StemmableNote[] });
+    f.Beam({ notes: kickSnareVoice.getTickables().slice(0, 2) as StemmableNote[] });
+    f.Beam({ notes: kickSnareVoice.getTickables().slice(3, 5) as StemmableNote[] });
 
     f.Formatter().joinVoices(f.getVoices()).formatToStave(f.getVoices(), stave);
     f.draw();
