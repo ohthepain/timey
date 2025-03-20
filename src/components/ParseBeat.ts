@@ -1,93 +1,70 @@
-import { StaveNote, Stem, Tuplet } from "vexflow";
-
-const hihat = "g/5/x";
-const snare = "e/5";
-const kick = "g/4";
-
 /**
- * Transforms beat strings into arrays of StaveNote objects.
+ * Converts the source strings into a readable string format that represents each StaveNote.
  * @param hihatStr - String representing hi-hat beats.
  * @param kickStr - String representing kick beats.
  * @param snareStr - String representing snare beats.
- * @returns Array of StaveNote objects.
+ * @returns A readable string format of the notes.
  */
-export function ParseBeat(hihatStr: string, kickStr: string, snareStr: string): (StaveNote | Tuplet)[] {
-  const beats = hihatStr.split(",").map((_, index) => ({
-    hihat: hihatStr.split(",")[index] || "",
-    kick: kickStr.split(",")[index] || "",
-    snare: snareStr.split(",")[index] || "",
-  }));
+export function debugSourceStrings(hihatStr: string, kickStr: string, snareStr: string): string {
+  const hihatBeats = hihatStr.split(",");
+  const kickBeats = kickStr.split(",");
+  const snareBeats = snareStr.split(",");
 
-  const staveNotes: (StaveNote | Tuplet)[] = [];
+  const result: string[] = [];
+  const tuples: string[] = [];
+  let staveNoteIndex = 1; // Index for StaveNotes
+  let notesThisQuarterNote = 0; // Number of notes in the current quarter note
 
-  beats.forEach((beat) => {
-    const keys: string[] = [];
-    let duration = "16"; // Default to 16th note
+  for (let i = 0; i < hihatBeats.length; i++) {
+    const hihat = hihatBeats[i] || "";
+    const kick = kickBeats[i] || "";
+    const snare = snareBeats[i] || "";
 
-    // Determine the duration based on the beat string
-    if (beat.hihat.length === 3 || beat.kick.length === 3 || beat.snare.length === 3) {
-      // Handle triplets
-      const tripletNotes: StaveNote[] = [];
-      for (let i = 0; i < 3; i++) {
-        const tripletKeys: string[] = [];
-        if (beat.hihat[i] === "h") tripletKeys.push(hihat);
-        if (beat.kick[i] === "k") tripletKeys.push(kick);
-        if (beat.snare[i] === "s") tripletKeys.push(snare);
-        if (tripletKeys.length === 0) tripletKeys.push("g/4/x"); // Add rest if no keys
+    // Determine the quarter note label
+    const quarterNoteIndex = Math.floor(i / 2);
+    if (i % 2 === 0) {
+      notesThisQuarterNote = 0;
+      result.push(`notes${quarterNoteIndex}:`);
+    }
 
-        tripletNotes.push(
-          new StaveNote({
-            keys: tripletKeys,
-            duration: "8", // Each note in the triplet is an 8th note
-            stemDirection: Stem.UP,
-          })
-        );
+    // Process each 8th note
+    if (hihat.length === 3 || kick.length === 3 || snare.length === 3) {
+      // Triplet case
+      tuples.push(`tuple notes${quarterNoteIndex},${notesThisQuarterNote},3:`);
+      for (let j = 0; j < 3; j++) {
+        const keys: string[] = [];
+        if (hihat[j] === "h") keys.push("Hi-Hat");
+        if (kick[j] === "k") keys.push("Kick");
+        if (snare[j] === "s") keys.push("Snare");
+        if (keys.length === 0) keys.push("Rest");
+
+        result.push(`StaveNote ${staveNoteIndex++}: Duration = 8t, Keys = [${keys.join(", ")}]`);
+        ++notesThisQuarterNote;
       }
-      staveNotes.push(new Tuplet(tripletNotes)); // Add the triplet as a Tuplet object
-      return;
-    } else if (beat.hihat.length === 2 || beat.kick.length === 2 || beat.snare.length === 2) {
-      duration = "16"; // Two 16th notes
-    } else if (beat.hihat.length === 1 || beat.kick.length === 1 || beat.snare.length === 1) {
-      duration = "8"; // Single 8th note
+    } else if (hihat.length === 2 || kick.length === 2 || snare.length === 2) {
+      // Two 16th notes
+      for (let j = 0; j < 2; j++) {
+        const keys: string[] = [];
+        if (hihat[j] === "h") keys.push("Hi-Hat");
+        if (kick[j] === "k") keys.push("Kick");
+        if (snare[j] === "s") keys.push("Snare");
+        if (keys.length === 0) keys.push("Rest");
+
+        result.push(`StaveNote ${staveNoteIndex++}: Duration = 16, Keys = [${keys.join(", ")}]`);
+        ++notesThisQuarterNote;
+      }
+    } else {
+      // Single 8th note
+      const keys: string[] = [];
+      if (hihat.includes("h")) keys.push("Hi-Hat");
+      if (kick.includes("k")) keys.push("Kick");
+      if (snare.includes("s")) keys.push("Snare");
+      if (keys.length === 0) keys.push("Rest");
+
+      result.push(`StaveNote ${staveNoteIndex++}: Duration = 8, Keys = [${keys.join(", ")}]`);
+      ++notesThisQuarterNote;
     }
+  }
 
-    // Add hi-hat to keys if present
-    if (beat.hihat.includes("h")) {
-      keys.push(hihat);
-    }
-
-    // Add kick to keys if present
-    if (beat.kick.includes("k")) {
-      keys.push(kick);
-    }
-
-    // Add snare to keys if present
-    if (beat.snare.includes("s")) {
-      keys.push(snare);
-    }
-
-    // Add a rest if no keys are present
-    if (keys.length === 0) {
-      keys.push("g/4/x"); // Rest
-    }
-
-    // Create a StaveNote and add it to the array
-    staveNotes.push(
-      new StaveNote({
-        keys,
-        duration,
-        stemDirection: Stem.UP,
-      })
-    );
-  });
-
-  return staveNotes;
+  return [...result, ...tuples].join("\n");
 }
-
-// Example usage
-// const hihatStr = "h,h,h,h,h,h,h,h";
-// const kickStr = "kk,,,,,xk,xkk,xkk,k";
-// const snareStr = ",,s,xs,,ss,s,s";
-
-// const allNotes = ParseBeat(hihatStr, kickStr, snareStr);
-// console.log(allNotes);
