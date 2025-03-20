@@ -11,7 +11,7 @@ const kick = "g/4";
  * @param snareStr - String representing snare beats.
  * @returns A readable string format of the notes.
  */
-export function debugSourceStrings(hihatStr: string, kickStr: string, snareStr: string): string {
+export function ParseBeatString(hihatStr: string, kickStr: string, snareStr: string): string {
   const hihatBeats = hihatStr.split(",");
   const kickBeats = kickStr.split(",");
   const snareBeats = snareStr.split(",");
@@ -146,8 +146,6 @@ export function parseOutputToNotes(output: string) : { staveNotes: StaveNote[][]
     }
   });
 
-  // const beams = staveNotes.map((notesArray) => new Beam(notesArray));
-
-  console.log(staveNotes, tuplets);
+  // console.log(staveNotes, tuplets);
   return { staveNotes, tuplets };
 }
