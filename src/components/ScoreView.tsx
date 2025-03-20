@@ -44,12 +44,12 @@ export const ScoreView: React.FC<{ notes?: string }> = ({ notes = "C#5/q, B4, A4
           keys: [hihat, kick],
           duration: "16",
           stemDirection: Stem.UP,
-      }),
+      }).setStyle({ fillStyle: "green", strokeStyle: "green" }),
       new StaveNote({
         keys: [kick],
         duration: "16",
         stemDirection: Stem.UP,
-      })
+      }).setStyle({ fillStyle: "red", strokeStyle: "red" }),
     ];
 
     const notes2 = [
@@ -117,17 +117,25 @@ export const ScoreView: React.FC<{ notes?: string }> = ({ notes = "C#5/q, B4, A4
     ];
   
     const allNotes = notes1.concat(notes2).concat(notes3).concat(notes4);
+    let currentX = 20;
+    allNotes.forEach((note) => {
+      note.setX(currentX); // Set the x position of the note
+      // currentX += spacingPerQuarterNote * (note.getTicks().value() / Vex.Flow.RESOLUTION); // Adjust for note duration
+      //  currentX += 40;
+    });
+    
 
     const beams = [new Beam(notes1), new Beam(notes2), new Beam(notes3), new Beam(notes4)];
 
-    const tuplet = new Tuplet(notes1, { numNotes: 3, notesOccupied: 2 });
-
+    const tuplet = new Tuplet(notes3.slice(0, 3), { numNotes: 3, notesOccupied: 2, bracketed: true });
     Formatter.FormatAndDraw(context, stave, allNotes);
 
     // Draw the beams and stems.
     beams.forEach((b) => {
       b.setContext(context).draw();
     });
+
+    tuplet.setContext(context).draw();
   }, [notes]);
 
   return <div className="h-full w-full" ref={containerRef}>ScoreView</div>;
