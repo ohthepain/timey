@@ -16,10 +16,12 @@ export function ParseBeatString(hihatStr: string, kickStr: string, snareStr: str
   const kickBeats = kickStr.split(",");
   const snareBeats = snareStr.split(",");
 
-  const result: string[] = [];
+  const result: string[] = ["// note,index,duration,keys,beatNum,divisionNum"];
   const tuples: string[] = [];
-  let staveNoteIndex = 1; // Index for StaveNotes
-  let notesThisQuarterNote = 0; // Number of notes in the current quarter note
+  let noteIndex = 1;
+  let notesThisQuarterNote = 0;
+  let beatNumber = 0;
+  let divisionNumber = 0;
 
   for (let i = 0; i < hihatBeats.length; i++) {
     const hihat = hihatBeats[i] || "";
@@ -29,14 +31,18 @@ export function ParseBeatString(hihatStr: string, kickStr: string, snareStr: str
     // Determine the quarter note label
     const quarterNoteIndex = Math.floor(i / 2);
     if (i % 2 === 0) {
+      beatNumber++;
+      divisionNumber = 0;
       notesThisQuarterNote = 0;
-      result.push(`notes${quarterNoteIndex}:`);
+      result.push(`beat,${quarterNoteIndex}`);
     }
+
+    divisionNumber++;
 
     // Process each 8th note
     if (hihat.length === 3 || kick.length === 3 || snare.length === 3) {
       // Triplet case
-      tuples.push(`tuple notes${quarterNoteIndex},${notesThisQuarterNote},3:`);
+      tuples.push(`tuple,${quarterNoteIndex + 1},${notesThisQuarterNote},3`);
       for (let j = 0; j < 3; j++) {
         const keys: string[] = [];
         if (hihat[j] === "h") keys.push("hihat");
@@ -44,7 +50,7 @@ export function ParseBeatString(hihatStr: string, kickStr: string, snareStr: str
         if (snare[j] === "s") keys.push("snare");
         if (keys.length === 0) keys.push("rest");
 
-        result.push(`StaveNote ${staveNoteIndex++}: Duration = 16, Keys = [${keys.join(", ")}]`);
+        result.push(`note,${noteIndex++},16,[${keys.join(", ")}],${beatNumber},${divisionNumber},${j+1},3`);
         ++notesThisQuarterNote;
       }
     } else if (hihat.length === 2 || kick.length === 2 || snare.length === 2) {
@@ -56,7 +62,7 @@ export function ParseBeatString(hihatStr: string, kickStr: string, snareStr: str
         if (snare[j] === "s") keys.push("snare");
         if (keys.length === 0) keys.push("rest");
 
-        result.push(`StaveNote ${staveNoteIndex++}: Duration = 16, Keys = [${keys.join(", ")}]`);
+        result.push(`note,${noteIndex++},16,[${keys.join(", ")}],${beatNumber},${divisionNumber},${j+1},2`);
         ++notesThisQuarterNote;
       }
     } else {
@@ -67,7 +73,7 @@ export function ParseBeatString(hihatStr: string, kickStr: string, snareStr: str
       if (snare.includes("s")) keys.push("snare");
       if (keys.length === 0) keys.push("rest");
 
-      result.push(`StaveNote ${staveNoteIndex++}: Duration = 8, Keys = [${keys.join(", ")}]`);
+      result.push(`note,${noteIndex++},8,[${keys.join(", ")}],${beatNumber},${divisionNumber},1,1`);
       ++notesThisQuarterNote;
     }
   }
@@ -87,31 +93,46 @@ export class TupletRecord {
   }
 }
 
+export class NoteEntry {
+  keys: string[];
+  durationCode: string;
+  beatNum: number;
+  divisionNum: number;
+  staveNote: StaveNote;
+
+  constructor(keys: string[], durationCode: string, beatNum: number, divisionNum: number, staveNote: StaveNote) {
+    this.keys = keys;
+    this.durationCode = durationCode;
+    this.beatNum = beatNum;
+    this.divisionNum = divisionNum;
+    this.staveNote = staveNote;
+  }
+}
+
 /**
  * Converts the output string into arrays of StaveNote objects and Tuplet objects.
- * @param output - The string output to parse.
+ * @param input - The string output to parse.
  * @returns An object containing the notes arrays and tuplets.
  */
-export function parseOutputToNotes(output: string) : { staveNotes: StaveNote[][]; tuplets: TupletRecord[] } {
-  const lines = output.split("\n");
-  const staveNotes: StaveNote[][] = [];
+export function MakeStaveNotes(input: string) : { noteEntries: NoteEntry[], tuplets: TupletRecord[] } {
+  const lines = input.split("\n");
   const tuplets: TupletRecord[] = [];
+  const noteEntries: NoteEntry[] = [];
 
   let currentNotesArray: StaveNote[] | null = null;
 
   lines.forEach((line) => {
     line = line.trim();
 
-    // Detect notes array (e.g., "notes1:")
-    const notesMatch = line.match(/^notes(\d+):$/);
+    // Detect beat
+    const notesMatch = line.match(/^beat,(\d+)$/);
     if (notesMatch) {
       currentNotesArray = [];
-      staveNotes.push(currentNotesArray);
       return;
     }
 
-    // Detect StaveNote (e.g., "StaveNote 1: Duration = 8, Keys = [Hi-Hat, Kick]")
-    const staveNoteMatch = line.match(/^StaveNote \d+: Duration = (\d+[t]?), Keys = \[(.+)\]$/);
+    // Detect note
+    const staveNoteMatch = line.match(/^note,\d+,(\d+[t]?),\[(.+)\],(\d+),(\d+),(\d+),(\d+)$/);
     if (staveNoteMatch && currentNotesArray) {
       const duration = staveNoteMatch[1];
       const keys = staveNoteMatch[2].split(", ").map((key) => {
@@ -121,6 +142,8 @@ export function parseOutputToNotes(output: string) : { staveNotes: StaveNote[][]
         console.warn(`Unknown key: ${key}`);
         return "g/4/x"; // Default to rest
       });
+      const beatNum = parseInt(staveNoteMatch[3], 10);
+      const divisionNum = parseInt(staveNoteMatch[4], 10);
 
       const staveNote = new StaveNote({
         keys,
@@ -128,24 +151,29 @@ export function parseOutputToNotes(output: string) : { staveNotes: StaveNote[][]
         stemDirection: Stem.UP,
       });
 
+      const noteEntry = new NoteEntry(keys, duration, beatNum, divisionNum, staveNote);
+      noteEntries.push(noteEntry);
+
       currentNotesArray.push(staveNote);
       return;
     }
 
     // Detect Tuplet (e.g., "tuple notes2,0,3:")
-    const tupletMatch = line.match(/^tuple notes(\d+),(\d+),(\d+):$/);
+    const tupletMatch = line.match(/^tuple,(\d+),(\d+),(\d+)$/);
     if (tupletMatch) {
-      const notesIndex = parseInt(tupletMatch[1], 10);
+      const beatNum = parseInt(tupletMatch[1], 10);
       const startIndex = parseInt(tupletMatch[2], 10);
       const numNotes = parseInt(tupletMatch[3], 10);
 
-      if (staveNotes[notesIndex]) {
-        const tupletNotes = staveNotes[notesIndex].slice(startIndex, startIndex + numNotes);
-        tuplets.push(new TupletRecord(tupletNotes, { numNotes, notesOccupied: 2, bracketed: true }));
-      }
+      // Find first note in beat
+      const beatStartIndex = noteEntries.findIndex((noteEntry) => noteEntry.beatNum === beatNum);
+      console.log(`beatStartIndex: ${beatStartIndex}`);
+
+      const noteRecords = noteEntries.slice(beatStartIndex + startIndex, beatStartIndex + startIndex + numNotes);
+      const tupletNotes2 = noteRecords.map((noteRecord) => noteRecord.staveNote);
+      tuplets.push(new TupletRecord(tupletNotes2, { numNotes, notesOccupied: 2, bracketed: true }));
     }
   });
 
-  // console.log(staveNotes, tuplets);
-  return { staveNotes, tuplets };
+  return { noteEntries, tuplets };
 }

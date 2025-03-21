@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { Beam, Stem, Renderer, Stave, StaveNote, Formatter, Barline } from "vexflow";
-import { ParseBeatString, parseOutputToNotes, TupletRecord } from "./ParseBeat";
+import { Beam, Renderer, Stave, StaveNote, TickContext, Barline } from "vexflow";
+import { ParseBeatString, MakeStaveNotes, TupletRecord } from "./ParseBeat";
 
 export const ScoreView = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -21,43 +21,56 @@ export const ScoreView = () => {
 
     stave.setContext(context).draw();
 
-    // Create a voice and format the notes
-    stave.addClef('percussion').addTimeSignature('4/4')
-    .setBegBarType(Barline.type.REPEAT_BEGIN)
-    .setEndBarType(Barline.type.REPEAT_END); 
-
     const hihatStr2 = "h,h,h,h,h,h,h,h";
     const kickStr2 = "k,kk,,,k,xkk,xk,";
     const snareStr2 = ",,s,xs,xss,s,,xs";
+    const beatString = ParseBeatString(hihatStr2, kickStr2, snareStr2);
+    console.log(beatString);
 
-    // Example usage
-    const debugOutput2 = ParseBeatString(hihatStr2, kickStr2, snareStr2);
-    console.log(debugOutput2);
+    const { tuplets, noteEntries } = MakeStaveNotes(beatString);
+    const allNotes = noteEntries.map((noteEntry) => noteEntry.staveNote);
 
-    const { staveNotes, tuplets } = parseOutputToNotes(debugOutput2);
-    if (staveNotes === undefined || tuplets === undefined) {
-      console.error("staveNotes or tuplets is undefined");
-      return;
+    // Make a beam for each beat
+    const staveNotes : StaveNote[][] = [];
+    for (const noteEntry of noteEntries) {
+      if (!staveNotes[noteEntry.beatNum]) {
+        staveNotes[noteEntry.beatNum] = [];
+      }
+      staveNotes[noteEntry.beatNum].push(noteEntry.staveNote);
     }
-    console.log(staveNotes, tuplets);
-
-    const allNotes : StaveNote[] = Object.values(staveNotes).flat() as StaveNote[];
-    console.log(allNotes)
-
-    let currentX = 20;
-    allNotes.forEach((note) => {
-      note.setX(currentX); // Set the x position of the note
-      // currentX += spacingPerQuarterNote * (note.getTicks().value() / Vex.Flow.RESOLUTION); // Adjust for note duration
-      //  currentX += 40;
-    });
-    
-    // const beams = [new Beam(notes1), new Beam(notes2), new Beam(notes3), new Beam(notes4)];
-    console.log(`beams: `, staveNotes[2])
     const beams = staveNotes.map((notesArray) => new Beam(notesArray));
 
-    Formatter.FormatAndDraw(context, stave, allNotes);
+    let n = 0;
+    let currentX = 20;
+    noteEntries.forEach((noteEntry) => {
+      const note = noteEntry.staveNote;
+      const tickContext = new TickContext();
+      tickContext.addTickable(note);
+      tickContext.preFormat().setX(currentX);
+      note.setTickContext(tickContext);
+      note.setStave(stave);
+      const lenCode = parseInt(noteEntry.durationCode);
+      switch (lenCode) {
+        case 8:
+          currentX += 40;
+          break;
+        case 16:
+          currentX += 30;
+          break;
+        case 24:
+          currentX += 20;
+          break;
+      }
+      ++n;
+    });
 
-    // Draw the beams and stems.
+    // Formatter.FormatAndDraw(context, stave, allNotes);
+    allNotes.forEach((note) => {
+      note.setStave(stave);
+      note.setContext(context).draw();
+    });
+
+    // Draw beams and stems
     beams.forEach((b) => {
       b.setContext(context).draw();
     });
