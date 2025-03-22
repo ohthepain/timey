@@ -16,8 +16,8 @@ export function ParseBeatString(hihatStr: string, kickStr: string, snareStr: str
   const kickBeats = kickStr.split(",");
   const snareBeats = snareStr.split(",");
 
-  const result: string[] = ["// note,index,duration,keys,beatNum,divisionNum"];
-  const tuples: string[] = [];
+  const result: string[] = ["// note,index,duration,keys,beatNum,divisionNum,subDivisionNum,numSubDivisions"];
+  const tuples: string[] = ["// tuple,beatNum,startIndex,numNotes"];
   let noteIndex = 1;
   let notesThisQuarterNote = 0;
   let beatNumber = 0;
@@ -96,16 +96,20 @@ export class TupletRecord {
 export class NoteEntry {
   keys: string[];
   durationCode: string;
+  staveNote: StaveNote;
   beatNum: number;
   divisionNum: number;
-  staveNote: StaveNote;
+  subDivisionNum: number;
+  numSubDivisions: number;
 
-  constructor(keys: string[], durationCode: string, beatNum: number, divisionNum: number, staveNote: StaveNote) {
+  constructor(keys: string[], durationCode: string, staveNote: StaveNote, beatNum: number, divisionNum: number, subDivisionNum: number, numSubDivisions: number) {
     this.keys = keys;
     this.durationCode = durationCode;
+    this.staveNote = staveNote;
     this.beatNum = beatNum;
     this.divisionNum = divisionNum;
-    this.staveNote = staveNote;
+    this.subDivisionNum = subDivisionNum;
+    this.numSubDivisions = numSubDivisions;
   }
 }
 
@@ -144,6 +148,8 @@ export function MakeStaveNotes(input: string) : { noteEntries: NoteEntry[], tupl
       });
       const beatNum = parseInt(staveNoteMatch[3], 10);
       const divisionNum = parseInt(staveNoteMatch[4], 10);
+      const subDivisionNum = parseInt(staveNoteMatch[5], 10);
+      const numSubDivisions = parseInt(staveNoteMatch[6], 10);
 
       const staveNote = new StaveNote({
         keys,
@@ -151,7 +157,7 @@ export function MakeStaveNotes(input: string) : { noteEntries: NoteEntry[], tupl
         stemDirection: Stem.UP,
       });
 
-      const noteEntry = new NoteEntry(keys, duration, beatNum, divisionNum, staveNote);
+      const noteEntry = new NoteEntry(keys, duration, staveNote, beatNum, divisionNum, subDivisionNum, numSubDivisions);
       noteEntries.push(noteEntry);
 
       currentNotesArray.push(staveNote);

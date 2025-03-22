@@ -9,11 +9,17 @@ export const ScoreView = () => {
     if (!containerRef.current) return;
     containerRef.current.innerHTML = ""; // Clear previous rendering
 
+    const marginX = 20;
+    const width = 700;
+    const beatSpace = 10;
+    const beatWidth = 104;
+    const divisionWidth = 50;
+
     const renderer = new Renderer(containerRef.current, Renderer.Backends.SVG);
-    renderer.resize(900, 200);
+    renderer.resize(width + marginX * 2 + 20, 200);
     const context = renderer.getContext();
 
-    const stave = new Stave(20, 40, 800)
+    const stave = new Stave(marginX, 40, marginX + width)
       .addClef('percussion')
       .setTimeSignature('4/4')
       .setBegBarType(Barline.type.REPEAT_BEGIN)
@@ -40,28 +46,19 @@ export const ScoreView = () => {
     }
     const beams = staveNotes.map((notesArray) => new Beam(notesArray));
 
-    let n = 0;
-    let currentX = 20;
     noteEntries.forEach((noteEntry) => {
+      const x = beatSpace 
+        // + noteEntry.barNum * barWidth
+        + (noteEntry.beatNum - 1) * beatWidth 
+        + (noteEntry.divisionNum - 1) * divisionWidth 
+        + (noteEntry.subDivisionNum - 1) / (noteEntry.numSubDivisions + 1) * divisionWidth
+
       const note = noteEntry.staveNote;
       const tickContext = new TickContext();
       tickContext.addTickable(note);
-      tickContext.preFormat().setX(currentX);
+      tickContext.preFormat().setX(x);
       note.setTickContext(tickContext);
       note.setStave(stave);
-      const lenCode = parseInt(noteEntry.durationCode);
-      switch (lenCode) {
-        case 8:
-          currentX += 40;
-          break;
-        case 16:
-          currentX += 30;
-          break;
-        case 24:
-          currentX += 20;
-          break;
-      }
-      ++n;
     });
 
     // Formatter.FormatAndDraw(context, stave, allNotes);
