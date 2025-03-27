@@ -3,12 +3,14 @@ import { ScoreViewer } from '~/components/ScoreViewer'
 import { ScoreView } from '~/components/ScoreView'
 // import { PercussionScore } from '~/components/PercussionScore'
 import { BeatView } from '~/components/BeatView'
+import { useTempoService } from '~/lib/MidiSync/UseTempoService'
 
 export const Route = createFileRoute('/sequence/')({
   component: SequenceIndexComponent,
 })
 
 function SequenceIndexComponent() {
+  useTempoService();
   return <div>
       {/* <div id="percussionscore" className="h-full w-full border-2 border-gray-100 bg-pink-50">
         <PercussionScore />
