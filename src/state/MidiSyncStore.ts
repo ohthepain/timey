@@ -1,7 +1,7 @@
-import create from 'zustand'
+import create from 'zustand';
 
 // Store for synchronization, timing, and song position tracking
-// Also adds isPlaying 
+// Also adds isPlaying
 
 // TODO: Add MIDI pulses and customizable ppq
 // start, stop, continu
@@ -15,18 +15,23 @@ import create from 'zustand'
 // pulseDuration: the duration of the pulse
 
 interface MidiSyncStoreState {
-  isPlaying: boolean
-  currentStepNum: number
-  pulseNum: number
-  pulseTime: number
-  pulseDuration: number
+  isPlaying: boolean;
+  currentStepNum: number;
+  pulseNum: number;
+  pulseTime: number;
+  pulseDuration: number;
   ppq: number;
   setIsPlaying: (isPlaying: boolean) => void;
   setCurrentStepNum: (stepNum: number) => void;
-  setCurrentPulse: (stepNum: number, pulseNum: number, pulseTime: number, pulseDuration: number) => void;
+  setCurrentPulse: (
+    stepNum: number,
+    pulseNum: number,
+    pulseTime: number,
+    pulseDuration: number
+  ) => void;
   setPPQ: (ppq: number) => void;
-}  
-  
+}
+
 export const useMidiSyncStore = create<MidiSyncStoreState>((set) => ({
   currentStepNum: 0,
   isPlaying: false,
@@ -35,8 +40,23 @@ export const useMidiSyncStore = create<MidiSyncStoreState>((set) => ({
   pulseDuration: 0,
   ppq: 24,
 
-  setIsPlaying: (isPlaying: boolean) => set((state: MidiSyncStoreState) => ({ ...state, isPlaying: isPlaying })),
-  setCurrentStepNum: (stepNum: number) => set((state: MidiSyncStoreState) => ({ ...state, currentStepNum: stepNum })),
-  setCurrentPulse: (stepNum: number, pulseNum: number, pulseTime: number, pulseDuration: number) => set((state: MidiSyncStoreState) => ({ ...state, currentStepNum: stepNum, pulseNum: pulseNum, pulseTime: pulseTime, pulseDuration: pulseDuration })),
-  setPPQ: (ppq: number) => set((state: MidiSyncStoreState) => ({ ...state, ppq: ppq })),
-}))
+  setIsPlaying: (isPlaying: boolean) =>
+    set((state: MidiSyncStoreState) => ({ ...state, isPlaying: isPlaying })),
+  setCurrentStepNum: (stepNum: number) =>
+    set((state: MidiSyncStoreState) => ({ ...state, currentStepNum: stepNum })),
+  setCurrentPulse: (
+    stepNum: number,
+    pulseNum: number,
+    pulseTime: number,
+    pulseDuration: number
+  ) =>
+    set((state: MidiSyncStoreState) => ({
+      ...state,
+      currentStepNum: stepNum,
+      pulseNum: pulseNum,
+      pulseTime: pulseTime,
+      pulseDuration: pulseDuration,
+    })),
+  setPPQ: (ppq: number) =>
+    set((state: MidiSyncStoreState) => ({ ...state, ppq: ppq })),
+}));

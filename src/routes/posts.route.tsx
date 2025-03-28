@@ -1,13 +1,13 @@
-import { Link, Outlet, createFileRoute } from '@tanstack/react-router'
-import { fetchPosts } from '../utils/posts'
+import { Link, Outlet, createFileRoute } from '@tanstack/react-router';
+import { fetchPosts } from '../utils/posts';
 
 export const Route = createFileRoute('/posts')({
   loader: async () => fetchPosts(),
   component: PostsLayoutComponent,
-})
+});
 
 function PostsLayoutComponent() {
-  const posts = Route.useLoaderData()
+  const posts = Route.useLoaderData();
 
   return (
     <div className="p-2 flex gap-2">
@@ -27,12 +27,12 @@ function PostsLayoutComponent() {
                   <div>{post.title.substring(0, 20)}</div>
                 </Link>
               </li>
-            )
-          },
+            );
+          }
         )}
       </ul>
       <hr />
       <Outlet />
     </div>
-  )
+  );
 }
