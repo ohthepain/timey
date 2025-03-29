@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ParseBeatStrings } from '../components/ParseBeat';
+import { ParseBeatStrings } from '../lib/ParseBeat';
 
 interface ScoreStoreState {
   beats: Record<string, string>; // Stores beat strings indexed by a key

@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Beam, Renderer, Stave, StaveNote, TickContext, Tickable, Barline, RenderContext, drawDot } from 'vexflow';
-import { ParseBeatStrings, MakeStaveNotes, TupletRecord } from './ParseBeat';
+import { MakeStaveNotes, TupletRecord } from '../lib/ParseBeat';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { useScoreStore } from '~/state/ScoreStore';
+import { useBeatPlayer } from '~/lib/UseBeatPlayer';
+import { beatPlayer } from '~/lib/BeatPlayer';
+import { NoteEntry } from '~/lib/ParseBeat';
 
 const plotMetricsForNote = (ctx: RenderContext, note: Tickable, yPos: number): void => {
   const xStart = note.getAbsoluteX();
@@ -70,6 +73,9 @@ export const ScoreView = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   let context: any;
 
+  const { currentNote, loadBeat } = useBeatPlayer();
+  const [currentNoteIndex, setCurrentNoteIndex] = useState<number>(0);
+
   const beatString = useScoreStore((state) => state.getBeat('basic'));
   if (!beatString) {
     return <>Beat not found</>;
@@ -77,7 +83,7 @@ export const ScoreView = () => {
   // console.log('beatString', beatString);
 
   const { tuplets, noteEntries } = MakeStaveNotes(beatString);
-  const allNotes: StaveNote[] = noteEntries.map((noteEntry) => noteEntry.staveNote);
+  const allNotes: NoteEntry[] = noteEntries.map((noteEntry) => noteEntry);
 
   const numBars = Math.max(...noteEntries.map((noteEntry) => noteEntry.barNum)) + 1;
 
@@ -148,10 +154,9 @@ export const ScoreView = () => {
       note.setStave(stave);
     });
 
-    // Formatter.FormatAndDraw(context, stave, allNotes);
     allNotes.forEach((note) => {
-      note.setStave(stave);
-      note.setContext(context).draw();
+      note.staveNote.setStave(stave);
+      note.staveNote.setContext(context).draw();
     });
 
     // Draw beams and stems
@@ -168,36 +173,35 @@ export const ScoreView = () => {
     });
 
     allNotes.forEach((note) => {
-      plotMetricsForNote(context, note, 10);
+      plotMetricsForNote(context, note.staveNote, 10);
     });
 
     plotLegendForNoteWidth(context, barWidth * 2, 150);
   };
 
-  let pulseNum = 0;
-  let x = 0;
-  const handleMidiPulse = (e: any) => {
-    if (x++ < 10) return;
-    x = 0;
-    // const notesToUpdate = allNotes.filter((note, index) => index === pulseNum++ % allNotes.length); // Example logic
-    const notesToUpdate = [allNotes[pulseNum++ % allNotes.length]];
+  useEffect(() => {
+    // TODO: Put this somewhere when we can show multiple beats
+    loadBeat('basic');
+    draw();
+  }, []);
 
-    notesToUpdate.forEach((note) => {
-      const noteElement = document.querySelector(`[data-id="${note.getAttribute('id')}"]`);
+  useEffect(() => {
+    const handleNote = (noteIndex: number) => {
+      setCurrentNoteIndex(noteIndex);
+      const note = allNotes[noteIndex];
+      const noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
       if (noteElement) {
         noteElement.remove();
       }
 
-      note.setStyle({ fillStyle: 'blue', strokeStyle: 'blue' }); // Example: Change color
-      note.setContext(context).draw();
-    });
-  };
+      note.staveNote.setStyle({ fillStyle: 'blue', strokeStyle: 'blue' }); // Example: Change color
+      note.staveNote.setContext(context).draw();
+    };
 
-  useEffect(() => {
-    draw();
-    TempoService.eventsEmitter.addListener('MIDI pulse', handleMidiPulse);
+    beatPlayer.on('note', handleNote);
+
     return () => {
-      TempoService.eventsEmitter.removeListener('MIDI pulse', handleMidiPulse);
+      beatPlayer.off('note', handleNote);
     };
   }, []);
 

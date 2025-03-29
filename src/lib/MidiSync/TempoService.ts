@@ -1,10 +1,6 @@
 import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
-import {
-  MidiDevicePreferences,
-  MidiDeviceSettings,
-  usePreferencesStore,
-} from '~/state/PreferencesStore';
+import { MidiDevicePreferences, MidiDeviceSettings, usePreferencesStore } from '~/state/PreferencesStore';
 
 // TempoService is a singleton that drives the MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
@@ -21,12 +17,13 @@ class TempoService {
   lastTickTime: any;
   ppqn: any;
   pulseIntervalMsec: any;
-  startTime: any;
   nextPulseNum: number = 0;
   intervalId: any;
 
   isRunning: boolean = false;
   time: number = 0;
+  startTime: number = 0;
+  elapsedMsec: number = 0;
   startSpp: number = 0;
   loopSpp: number = 0;
   currentSpp: number = 0;
@@ -55,6 +52,7 @@ class TempoService {
       `TempoService.startIntervalTimer bpm ${this.bpm} interval ${this.pulseIntervalMsec} msec @ ${this.ppqn} = ${this.pulseIntervalMsec * this.ppqn} msec/qn`
     );
 
+    this.time = WebMidi.time;
     this.startTime = this.time;
     this.nextPulseNum = 0;
 
@@ -67,25 +65,20 @@ class TempoService {
 
   handleInterval = () => {
     this.time = WebMidi.time;
-    const elapsedMsec = this.time - this.startTime;
+    this.elapsedMsec = this.time - this.startTime;
     // const pulseCount = elapsedMsec / this.pulseIntervalMsec;
 
-    this.currentSpp = Math.floor(
-      ((this.getElapsedMsec() / this.pulseIntervalMsec) * 16) / this.ppqn
-    );
+    this.currentSpp = Math.floor(((this.getElapsedMsec() / this.pulseIntervalMsec) * 16) / this.ppqn);
     if (this.loopSpp !== 0 && this.currentSpp > this.loopSpp) {
       this.currentSpp = this.loopSpp;
       this.sendSpp(this.currentSpp);
     }
 
-    if (
-      this.time >
-      this.startTime + this.nextPulseNum * this.pulseIntervalMsec
-    ) {
+    if (this.time > this.startTime + this.nextPulseNum * this.pulseIntervalMsec) {
       // console.log(`send clock pulse ${this.nextPulseNum} at ${Math.floor(this.time - this.startTime)}`)
       this.sendClock(this.nextPulseNum);
       this.eventsEmitter.emit('MIDI pulse', {
-        time: elapsedMsec,
+        time: this.elapsedMsec,
         ticks: this.nextPulseNum,
       });
 
@@ -96,8 +89,9 @@ class TempoService {
   };
 
   sendStart = () => {
-    const midiDevicePreferences: MidiDevicePreferences =
-      usePreferencesStore.getState().midiDevicePreferences;
+    this.eventsEmitter.emit('start', { time: this.time });
+
+    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
       // console.log(`Preferences.getMidiOutputs: ${JSON.stringify(output)}`)
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
@@ -108,8 +102,9 @@ class TempoService {
   };
 
   sendStop = () => {
-    const midiDevicePreferences: MidiDevicePreferences =
-      usePreferencesStore.getState().midiDevicePreferences;
+    this.eventsEmitter.emit('stop', { time: this.time });
+
+    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
         output.sendStop();
@@ -118,8 +113,9 @@ class TempoService {
   };
 
   sendContinue = () => {
-    const midiDevicePreferences: MidiDevicePreferences =
-      usePreferencesStore.getState().midiDevicePreferences;
+    this.eventsEmitter.emit('stop', { time: this.time });
+
+    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
         output.sendContinue();
@@ -129,8 +125,7 @@ class TempoService {
 
   // Panic button?
   sendReset = () => {
-    const midiDevicePreferences: MidiDevicePreferences =
-      usePreferencesStore.getState().midiDevicePreferences;
+    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
       if (
         midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id) ||
@@ -142,8 +137,7 @@ class TempoService {
   };
 
   sendClock = (timePulses: number) => {
-    const midiDevicePreferences: MidiDevicePreferences =
-      usePreferencesStore.getState().midiDevicePreferences;
+    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
       // console.log(`Preferences.getMidiOutputs: ${JSON.stringify(output)}`)
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
@@ -156,8 +150,7 @@ class TempoService {
   sendSpp = (spp: number) => {
     this.eventsEmitter.emit('SPP', { spp: this.currentSpp });
 
-    const midiDevicePreferences: MidiDevicePreferences =
-      usePreferencesStore.getState().midiDevicePreferences;
+    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
       // console.log(`Preferences.getMidiOutputs: ${JSON.stringify(output)}`)
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
@@ -189,15 +182,14 @@ class TempoService {
 
   // TODO: Consider MIDI timecode
   getElapsed64ths(): number {
-    const elapsed64ths = Math.floor(
-      ((this.getElapsedMsec() / 60000) * this.bpm * 64) / 4
-    );
+    const elapsed64ths = Math.floor(((this.getElapsedMsec() / 60000) * this.bpm * 64) / 4);
     // const elapsed64ths = this.getElapsedMsec() / this.pulseIntervalMsec / this.ppqn * 16
     // console.log(`getElapsed64ths: msec ${Math.floor(this.getElapsedMsec())} -> getElapsed64ths ${elapsed64ths} at bpm ${this.bpm}`)
     return elapsed64ths;
   }
 
   start() {
+    this.time = WebMidi.time;
     this.startTime = this.time;
     this.currentSpp = this.startSpp;
     this.eventsEmitter.emit('SPP', { spp: this.currentSpp });
