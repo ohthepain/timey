@@ -1,11 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import { Beam, Renderer, Stave, StaveNote, TickContext, Tickable, Barline, RenderContext, drawDot } from 'vexflow';
 import { MakeStaveNotes, TupletRecord } from '../lib/ParseBeat';
-import TempoService from '~/lib/MidiSync/TempoService';
 import { useScoreStore } from '~/state/ScoreStore';
 import { useBeatPlayer } from '~/lib/UseBeatPlayer';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { NoteEntry } from '~/lib/ParseBeat';
+
+const marginX = 20;
+const beatSpace = 10;
+const barWidth = 440;
+const beatWidth = 104;
+const divisionWidth = 50;
+
+const getNoteEntryX = (noteEntry: NoteEntry) => {
+  const x =
+    beatSpace +
+    noteEntry.barNum * barWidth +
+    noteEntry.beatNum * beatWidth +
+    noteEntry.divisionNum * divisionWidth +
+    (noteEntry.subDivisionNum / (noteEntry.numSubDivisions + 1)) * divisionWidth;
+  return x;
+};
+
+function stroke(ctx: RenderContext, x1: number, x2: number, y: number, color: string) {
+  ctx.beginPath();
+  ctx.setStrokeStyle(color);
+  ctx.setFillStyle(color);
+  ctx.moveTo(x1, y);
+  ctx.lineTo(x2, y);
+  ctx.stroke();
+}
 
 const plotMetricsForNote = (ctx: RenderContext, note: Tickable, yPos: number): void => {
   const xStart = note.getAbsoluteX();
@@ -32,6 +56,34 @@ const plotMetricsForNote = (ctx: RenderContext, note: Tickable, yPos: number): v
   drawDot(ctx, xStart + note.getXShift(), y, 'blue');
 
   // Not sure if this is required
+  ctx.restore();
+};
+
+const showNoteBar = (ctx: RenderContext, allNotes: NoteEntry[], noteNum: number, y: number): void => {
+  console.log(`showNoteBar ${noteNum}/${allNotes.length}`);
+  const noteEntry = allNotes[noteNum];
+  const staveNote = noteEntry.staveNote;
+
+  // Draw line full width of beat
+  ctx.save();
+  const numBars = Math.max(...allNotes.map((noteEntry) => noteEntry.barNum)) + 1;
+  const width = marginX + barWidth * numBars + marginX;
+  ctx.setLineWidth(7);
+  stroke(ctx, marginX, marginX + width, y, 'red');
+
+  // Draw line width of note
+  let noteEndX;
+  if (noteNum >= allNotes.length - 1) {
+    noteEndX = marginX + barWidth * numBars;
+  } else {
+    const nextNoteEntry = allNotes[noteNum + 1];
+    const nextStaveNote = nextNoteEntry.staveNote;
+    noteEndX = nextStaveNote.getAbsoluteX();
+  }
+
+  const noteX = staveNote.getAbsoluteX();
+  ctx.setLineWidth(7);
+  stroke(ctx, noteX, noteEndX, y, 'green');
   ctx.restore();
 };
 
@@ -87,12 +139,7 @@ export const ScoreView = () => {
 
   const numBars = Math.max(...noteEntries.map((noteEntry) => noteEntry.barNum)) + 1;
 
-  const marginX = 20;
-  const beatSpace = 10;
-  const barWidth = 440;
   const width = marginX + barWidth * numBars + marginX;
-  const beatWidth = 104;
-  const divisionWidth = 50;
 
   const draw = () => {
     if (!containerRef.current) return;
@@ -136,12 +183,13 @@ export const ScoreView = () => {
         barLines.push(barLine);
       }
 
-      const x =
-        beatSpace +
-        noteEntry.barNum * barWidth +
-        noteEntry.beatNum * beatWidth +
-        noteEntry.divisionNum * divisionWidth +
-        (noteEntry.subDivisionNum / (noteEntry.numSubDivisions + 1)) * divisionWidth;
+      // const x =
+      //   beatSpace +
+      //   noteEntry.barNum * barWidth +
+      //   noteEntry.beatNum * beatWidth +
+      //   noteEntry.divisionNum * divisionWidth +
+      //   (noteEntry.subDivisionNum / (noteEntry.numSubDivisions + 1)) * divisionWidth;
+      const x = getNoteEntryX(noteEntry);
 
       const note = noteEntry.staveNote;
       const tickContext = new TickContext();
@@ -188,14 +236,26 @@ export const ScoreView = () => {
   useEffect(() => {
     const handleNote = (noteIndex: number) => {
       setCurrentNoteIndex(noteIndex);
-      const note = allNotes[noteIndex];
-      const noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
+      let note = allNotes[noteIndex];
+      let noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
       if (noteElement) {
         noteElement.remove();
       }
 
-      note.staveNote.setStyle({ fillStyle: 'blue', strokeStyle: 'blue' }); // Example: Change color
+      note.staveNote.setStyle({ fillStyle: 'red', strokeStyle: 'blue' });
       note.staveNote.setContext(context).draw();
+
+      const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : allNotes.length - 1;
+      note = allNotes[previousNoteIndex];
+      noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
+      if (noteElement) {
+        noteElement.remove();
+      }
+
+      note.staveNote.setStyle({ fillStyle: 'black', strokeStyle: 'black' });
+      note.staveNote.setContext(context).draw();
+
+      showNoteBar(context, allNotes, noteIndex, 150);
     };
 
     beatPlayer.on('note', handleNote);

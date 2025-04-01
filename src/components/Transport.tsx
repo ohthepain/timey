@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
+import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
 
   const handlePlay = () => {
+    console.log('Play clicked');
+    TempoService.start();
+  };
+
+  const handleRecord = () => {
     console.log('Play clicked');
     TempoService.start();
   };
@@ -13,20 +20,19 @@ export const Transport = () => {
     console.log('Stop clicked');
     TempoService.stop();
     setIsRunning(false);
+    setIsRecording(false);
   };
 
   const handlePrev = () => {
     console.log('Prev clicked');
-    // Logic for moving to the previous section or bar
-    const currentSpp = Math.max(TempoService.currentSpp - 16, 0); // Move back 1 bar (assuming 4/4 time)
+    const currentSpp = Math.max(TempoService.currentSpp - 16, 0);
     TempoService.currentSpp = currentSpp;
     TempoService.eventsEmitter.emit('SPP', { spp: currentSpp });
   };
 
   const handleNext = () => {
     console.log('Next clicked');
-    // Logic for moving to the next section or bar
-    const currentSpp = TempoService.currentSpp + 16; // Move forward 1 bar (assuming 4/4 time)
+    const currentSpp = TempoService.currentSpp + 16;
     TempoService.currentSpp = currentSpp;
     TempoService.eventsEmitter.emit('SPP', { spp: currentSpp });
   };
@@ -45,18 +51,12 @@ export const Transport = () => {
   }, []);
 
   return (
-    <div className="transport-controls flex gap-4 p-4 bg-gray-100 rounded">
-      <button
-        className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded"
-        onClick={handlePrev}
-      >
+    <div className="transport-controls flex gap-4 p-4 bg-green-100 rounded">
+      <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handlePrev}>
         Prev
       </button>
       {isRunning ? (
-        <button
-          className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
-          onClick={handleStop}
-        >
+        <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
           Stop
         </button>
       ) : (
@@ -67,12 +67,22 @@ export const Transport = () => {
           Play
         </button>
       )}
-      <button
-        className="btn btn-next bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded"
-        onClick={handleNext}
-      >
+      {isRunning ? (
+        <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
+          Stop
+        </button>
+      ) : (
+        <button
+          className="btn btn-play bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
+          onClick={handleRecord}
+        >
+          Record
+        </button>
+      )}
+      <button className="btn btn-next bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handleNext}>
         Next
       </button>
+      <MidiSelector />
     </div>
   );
 };
