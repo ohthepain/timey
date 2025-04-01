@@ -1,7 +1,10 @@
 import { EventEmitter } from 'events';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { useScoreStore } from '~/state/ScoreStore';
-import { NoteEntry, MakeStaveNotes } from '~/lib/ParseBeat';
+import { NoteEntry, MakeStaveNotes, ConvertNoteToMidiNote } from '~/lib/ParseBeat';
+import { useMidiService } from './MidiService';
+import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
+import { midiService } from '~/lib/MidiService';
 
 class BeatPlayer extends EventEmitter {
   private allNotes: NoteEntry[] = [];
@@ -14,7 +17,7 @@ class BeatPlayer extends EventEmitter {
 
     // Subscribe to TempoService events
     console.log(`BeatPlayer:ctor - add listeners`);
-    TempoService.eventsEmitter.addListener('start', this.handleStart.bind(this));
+    TempoService.eventsEmitter.addListener('start', this.handlePlay.bind(this));
     TempoService.eventsEmitter.addListener('stop', this.handleStop.bind(this));
     TempoService.eventsEmitter.addListener('MIDI pulse', this.handleMidiPulse.bind(this));
   }
@@ -32,7 +35,7 @@ class BeatPlayer extends EventEmitter {
     this.nextNoteStartTime = this.allNotes[0].getStartTimeMsec(TempoService.bpm);
   }
 
-  private handleStart() {
+  private handlePlay() {
     console.log('BeatPlayer: handlePlay');
     this.noteIndex = 0;
     this.numLoops = 0;
@@ -49,7 +52,6 @@ class BeatPlayer extends EventEmitter {
     }
 
     const elapsedTime = TempoService.time - TempoService.startTime;
-
     const lastNote = this.allNotes[this.allNotes.length - 1];
     const loopLengthMsec = ((lastNote.barNum + 1) * 4 * 60 * 1000) / TempoService.bpm;
     // this.nextNoteStartTime += loopLengthMsec * this.numLoops;
@@ -58,7 +60,19 @@ class BeatPlayer extends EventEmitter {
       console.log(
         `BeatPlayer: nextNoteStartTime at ${this.nextNoteStartTime} elapsedTime ${elapsedTime} this.numLoops ${this.numLoops}`
       );
-      this.emit('note', this.noteIndex);
+
+      const { midiOutputDeviceId, midiOutputChannelNum } = useMidiSettingsStore.getState();
+      let notes: number[] = [];
+      for (const note of this.allNotes[this.noteIndex].keys) {
+        const midiNote = ConvertNoteToMidiNote(note);
+        console.log(`BeatPlayer: note ${note} -> midiNote ${midiNote}`);
+        if (midiNote) {
+          notes.push(midiNote);
+        }
+      }
+      midiService.playNote(midiOutputDeviceId, midiOutputChannelNum, notes, 127, 0, 0);
+      // this.emit('note', this.noteIndex);
+
       this.noteIndex++;
       if (this.noteIndex >= this.allNotes.length) {
         this.noteIndex = 0;
@@ -83,7 +97,7 @@ class BeatPlayer extends EventEmitter {
   public destroy() {
     console.log('BeatPlayer: destroy');
     TempoService.eventsEmitter.removeListener('MIDI pulse', this.handleMidiPulse.bind(this));
-    TempoService.eventsEmitter.removeListener('play', this.handleStart.bind(this));
+    TempoService.eventsEmitter.removeListener('play', this.handlePlay.bind(this));
     TempoService.eventsEmitter.removeListener('stop', this.handleStop.bind(this));
   }
 }

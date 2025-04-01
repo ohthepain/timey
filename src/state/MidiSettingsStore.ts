@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 interface MidiSettingsState {
   midiInputDeviceId: string;
@@ -15,37 +16,44 @@ interface MidiSettingsState {
   resetSettings: () => void;
 }
 
-export const useMidiSettingsStore = create<MidiSettingsState>((set) => ({
-  // Initial state
-  midiInputDeviceId: '',
-  midiInputDeviceName: '',
-  midiInputChannelNum: -1,
-  midiOutputDeviceId: '',
-  midiOutputDeviceName: '',
-  midiOutputChannelNum: 0,
-
-  // Actions
-  setMidiInputDevice: (id, name, channelNum) =>
-    set(() => ({
-      midiInputDeviceId: id,
-      midiInputDeviceName: name,
-      midiInputChannelNum: channelNum,
-    })),
-
-  setMidiOutputDevice: (id, name, channelNum) =>
-    set(() => ({
-      midiOutputDeviceId: id,
-      midiOutputDeviceName: name,
-      midiOutputChannelNum: channelNum,
-    })),
-
-  resetSettings: () =>
-    set(() => ({
+export const useMidiSettingsStore = create(
+  persist<MidiSettingsState>(
+    (set) => ({
+      // Initial state
       midiInputDeviceId: '',
       midiInputDeviceName: '',
-      midiInputChannelNum: -1,
+      midiInputChannelNum: 10,
       midiOutputDeviceId: '',
       midiOutputDeviceName: '',
-      midiOutputChannelNum: 0,
-    })),
-}));
+      midiOutputChannelNum: 10,
+
+      // Actions
+      setMidiInputDevice: (id, name, channelNum) =>
+        set(() => ({
+          midiInputDeviceId: id,
+          midiInputDeviceName: name,
+          midiInputChannelNum: channelNum,
+        })),
+
+      setMidiOutputDevice: (id, name, channelNum) =>
+        set(() => ({
+          midiOutputDeviceId: id,
+          midiOutputDeviceName: name,
+          midiOutputChannelNum: channelNum,
+        })),
+
+      resetSettings: () =>
+        set(() => ({
+          midiInputDeviceId: '',
+          midiInputDeviceName: '',
+          midiInputChannelNum: -1,
+          midiOutputDeviceId: '',
+          midiOutputDeviceName: '',
+          midiOutputChannelNum: 0,
+        })),
+    }),
+    {
+      name: 'midi-settings', // Key for local storage
+    }
+  )
+);

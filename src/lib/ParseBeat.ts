@@ -4,6 +4,19 @@ const hihat = 'g/5/x';
 const snare = 'e/5';
 const kick = 'g/4';
 
+export function ConvertNoteToMidiNote(note: string): number {
+  switch (note.slice(0, 3)) {
+    case 'g/5':
+      return 22; // Closed hi-hat, edge
+    case 'g/4':
+      return 36; // MIDI note number for kick
+    case 'e/5':
+      return 38; // MIDI note number for snare
+    default:
+      return -1; // Invalid note
+  }
+}
+
 export function ParseBeatStrings(beatStrings: string[][]): string {
   let result = '';
   const numBars = Math.max(...beatStrings.map((arr) => arr.length)); // Determine the number of bars
