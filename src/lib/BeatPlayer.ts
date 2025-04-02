@@ -57,15 +57,10 @@ class BeatPlayer extends EventEmitter {
     // this.nextNoteStartTime += loopLengthMsec * this.numLoops;
 
     if (elapsedTime >= this.nextNoteStartTime) {
-      console.log(
-        `BeatPlayer: nextNoteStartTime at ${this.nextNoteStartTime} elapsedTime ${elapsedTime} this.numLoops ${this.numLoops}`
-      );
-
       const { midiOutputDeviceId, midiOutputChannelNum } = useMidiSettingsStore.getState();
       let notes: number[] = [];
       for (const note of this.allNotes[this.noteIndex].keys) {
         const midiNote = ConvertNoteToMidiNote(note);
-        console.log(`BeatPlayer: note ${note} -> midiNote ${midiNote}`);
         if (midiNote) {
           notes.push(midiNote);
         }
@@ -81,9 +76,6 @@ class BeatPlayer extends EventEmitter {
       const nextNote = this.allNotes[this.noteIndex];
 
       this.nextNoteStartTime = nextNote.getStartTimeMsec(TempoService.bpm) + loopLengthMsec * this.numLoops;
-      console.log(
-        `nextNoteStartTime: ${this.nextNoteStartTime} = ${nextNote.getStartTimeMsec(TempoService.bpm)} + ${loopLengthMsec} * ${this.numLoops}`
-      );
       if (!nextNote) {
         throw new Error('No more notes to play.');
       }

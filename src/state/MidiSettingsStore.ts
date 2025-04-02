@@ -8,10 +8,19 @@ interface MidiSettingsState {
   midiOutputDeviceId: string;
   midiOutputDeviceName: string;
   midiOutputChannelNum: number;
+  metronomeNoteNumber: number;
+  metronomeVelocity: number;
+  metronomeDownbeatNoteNumber: number;
+  metronomeUpbeatNoteNumber: number;
 
   // Actions
   setMidiInputDevice: (id: string, name: string, channelNum: number) => void;
   setMidiOutputDevice: (id: string, name: string, channelNum: number) => void;
+
+  setMetronomeNoteNumber: (noteNumber: number) => void;
+  setMetronomeVelocity: (velocity: number) => void;
+  setMetronomeDownbeatNoteNumber: (noteNumber: number) => void;
+  setMetronomeUpbeatNoteNumber: (noteNumber: number) => void;
 
   resetSettings: () => void;
 }
@@ -26,6 +35,10 @@ export const useMidiSettingsStore = create(
       midiOutputDeviceId: '',
       midiOutputDeviceName: '',
       midiOutputChannelNum: 10,
+      metronomeNoteNumber: 75,
+      metronomeVelocity: 100,
+      metronomeDownbeatNoteNumber: 76,
+      metronomeUpbeatNoteNumber: 75,
 
       // Actions
       setMidiInputDevice: (id, name, channelNum) =>
@@ -40,6 +53,23 @@ export const useMidiSettingsStore = create(
           midiOutputDeviceId: id,
           midiOutputDeviceName: name,
           midiOutputChannelNum: channelNum,
+        })),
+
+      setMetronomeNoteNumber: (noteNumber: number) =>
+        set(() => ({
+          metronomeNoteNumber: noteNumber,
+        })),
+      setMetronomeVelocity: (velocity: number) =>
+        set(() => ({
+          metronomeVelocity: velocity,
+        })),
+      setMetronomeDownbeatNoteNumber: (noteNumber: number) =>
+        set(() => ({
+          metronomeDownbeatNoteNumber: noteNumber,
+        })),
+      setMetronomeUpbeatNoteNumber: (noteNumber: number) =>
+        set(() => ({
+          metronomeUpbeatNoteNumber: noteNumber,
         })),
 
       resetSettings: () =>

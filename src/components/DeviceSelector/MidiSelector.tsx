@@ -13,6 +13,15 @@ export default function MidiSelector() {
     midiOutputChannelNum,
     setMidiInputDevice,
     setMidiOutputDevice,
+
+    metronomeNoteNumber,
+    setMetronomeNoteNumber,
+    metronomeVelocity,
+    setMetronomeVelocity,
+    metronomeDownbeatNoteNumber,
+    setMetronomeDownbeatNoteNumber,
+    metronomeUpbeatNoteNumber,
+    setMetronomeUpbeatNoteNumber,
   } = useMidiSettingsStore();
 
   const onChangeMidiOutputDeviceId = (e: any) => {
@@ -47,7 +56,7 @@ export default function MidiSelector() {
   };
 
   return (
-    <div className="flex flex-col pb-2 bg-purple-300 gap-y-2">
+    <div className="flex flex-col pb-2 gap-y-2">
       <div className="flex flex-row input-group col-lg-4 gap-x-4">
         MIDI In:
         <div className="flex">
@@ -105,6 +114,33 @@ export default function MidiSelector() {
             })}
           </select>
         </div>
+      </div>
+      Metronome:
+      <div className="flex flex-row input-group col-lg-4 gap-x-4 max-w-full overflow-auto">
+        Note:
+        <input
+          type="number"
+          value={metronomeNoteNumber}
+          onChange={(e) => setMetronomeNoteNumber(parseInt(e.target.value))}
+        />
+        Downbeat:
+        <input
+          type="number"
+          value={metronomeDownbeatNoteNumber}
+          onChange={(e) => setMetronomeDownbeatNoteNumber(parseInt(e.target.value))}
+        />
+        Upbeat:
+        <input
+          type="number"
+          value={metronomeUpbeatNoteNumber}
+          onChange={(e) => setMetronomeUpbeatNoteNumber(parseInt(e.target.value))}
+        />
+        Velocity:
+        <input
+          type="number"
+          value={metronomeVelocity}
+          onChange={(e) => setMetronomeVelocity(parseInt(e.target.value))}
+        />
       </div>
     </div>
   );

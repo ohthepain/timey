@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  name       String
+  email      String   @unique
+  createdAt  DateTime @default(now())
+  modifiedAt DateTime @updatedAt
+  scores     Score[]
+  beats      Beat[]
+}
+
+model Score {
+  id        String   @id @default(uuid())
+  name      String
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Beat {
+  id         String     @id @default(uuid())
+  authorId   String
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt  DateTime   @default(now())
+  modifiedAt DateTime   @updatedAt
+  beatNotes  BeatNote[]
+}
+
+model BeatNote {
+  id               String   @id @default(uuid())
+  index            Int
+  duration         Int
+  staveNote        Int // Assuming MIDI note number
+  barNum           Int
+  beatNum          Int
+  divisionNum      Int
+  subDivisionNum   Int
+  numSubDivisions  Int
+  velocity         Int
+  beatId           String
+  beat             Beat     @relation(fields: [beatId], references: [id], onDelete: Cascade)
+}

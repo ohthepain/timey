@@ -207,6 +207,16 @@ export const ScoreView = () => {
       note.staveNote.setContext(context).draw();
     });
 
+    beams.forEach((beam, index) => {
+      console.log(`Beam ${index + 1}:`);
+      const notes = beam.getNotes();
+      notes.forEach((note, noteIndex) => {
+        console.log(`  Note ${noteIndex + 1}:`, note);
+        console.log(`    Keys: ${note.getKeys()}`);
+        console.log(`    Duration: ${note.getDuration()}`);
+      });
+    });
+
     // Draw beams and stems
     beams.forEach((b) => {
       b.setContext(context).draw();
@@ -220,11 +230,11 @@ export const ScoreView = () => {
       tupletRecord.tuplet.setContext(context).draw();
     });
 
-    allNotes.forEach((note) => {
-      plotMetricsForNote(context, note.staveNote, 10);
-    });
+    // allNotes.forEach((note) => {
+    //   plotMetricsForNote(context, note.staveNote, 10);
+    // });
 
-    plotLegendForNoteWidth(context, barWidth * 2, 150);
+    // plotLegendForNoteWidth(context, barWidth * 2, 150);
   };
 
   useEffect(() => {

@@ -40,7 +40,7 @@ function SequenceIndexComponent() {
   return (
     <div>
       <Transport />
-      <div id="scoreview" className="h-full w-full border-2 border-purple-700 bg-pink-50">
+      <div id="scoreview" className="h-full w-full border-2 border-purple-700">
         <ScoreView />
       </div>
       <div className="bg-green-200 w-full h-2"></div>

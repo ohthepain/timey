@@ -1,6 +1,6 @@
-# Welcome to TanStack.com!
+> npm run dev
 
-This site is built with TanStack Router!
+This site is built with TanStack Router
 
 - [TanStack Router Docs](https://tanstack.com/router)
 
