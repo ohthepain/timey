@@ -1,10 +1,57 @@
 import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
+// Temp
+import { MakeStaveNotes, NoteEntry } from '~/lib/ParseBeat';
+import { useScoreStore } from '~/state/ScoreStore';
+import { saveBeatToDb } from '~/repositories/beatRepository';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+
+  const handleSave = async () => {
+    const beatString = useScoreStore.getState().getBeat('basic');
+    if (!beatString) {
+      console.error('Beat not found');
+      return;
+    }
+
+    const { noteEntries } = MakeStaveNotes(beatString);
+
+    // Sanitize noteEntries to remove circular references
+    const sanitizedNoteEntries = noteEntries.map((note) => ({
+      index: note.index,
+      keys: note.keys,
+      durationCode: note.durationCode,
+      barNum: note.barNum,
+      beatNum: note.beatNum,
+      divisionNum: note.divisionNum,
+      subDivisionNum: note.subDivisionNum,
+      numSubDivisions: note.numSubDivisions,
+    }));
+
+    try {
+      const response = await fetch('/api/saveBeat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          noteEntries: sanitizedNoteEntries,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save beat');
+      }
+
+      const savedBeat = await response.json();
+      console.log('Beat saved successfully:', savedBeat);
+    } catch (error) {
+      console.error('Error saving beat:', error);
+    }
+  };
 
   const handlePlay = () => {
     console.log('Play clicked');
@@ -52,6 +99,9 @@ export const Transport = () => {
 
   return (
     <div className="transport-controls flex gap-4 p-4 bg-green-100 rounded">
+      <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handleSave}>
+        Save
+      </button>
       <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handlePrev}>
         Prev
       </button>

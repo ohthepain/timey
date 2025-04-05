@@ -28,6 +28,7 @@ export function ParseBeatStrings(beatStrings: string[][]): string {
     result += '\n';
   }
 
+  console.log(`ParseBeatStrings: ${result}`);
   return result;
 }
 
@@ -132,6 +133,7 @@ export class TupletRecord {
 }
 
 export class NoteEntry {
+  index: number;
   keys: string[];
   durationCode: string;
   staveNote: StaveNote;
@@ -142,6 +144,7 @@ export class NoteEntry {
   numSubDivisions: number;
 
   constructor(
+    index: number,
     keys: string[],
     durationCode: string,
     staveNote: StaveNote,
@@ -151,6 +154,7 @@ export class NoteEntry {
     subDivisionNum: number,
     numSubDivisions: number
   ) {
+    this.index = index;
     this.keys = keys;
     this.durationCode = durationCode;
     this.staveNote = staveNote;
@@ -206,21 +210,22 @@ export function MakeStaveNotes(input: string): {
     }
 
     // Detect note
-    const staveNoteMatch = line.match(/^note,\d+,(\d+[t]?),\[(.+)\],(\d+),(\d+),(\d+),(\d+),(\d+)$/);
+    const staveNoteMatch = line.match(/^note,(\d+),(\d+[t]?),\[(.+)\],(\d+),(\d+),(\d+),(\d+),(\d+)$/);
     if (staveNoteMatch && currentNotesArray) {
-      const duration = staveNoteMatch[1];
-      const keys = staveNoteMatch[2].split(', ').map((key) => {
+      const index = parseInt(staveNoteMatch[1], 10);
+      const duration = staveNoteMatch[2];
+      const keys = staveNoteMatch[3].split(', ').map((key) => {
         if (key === 'hihat') return hihat;
         if (key === 'snare') return snare;
         if (key === 'kick') return kick;
         console.warn(`Unknown key: ${key}`);
         return 'g/4/x'; // Default to rest
       });
-      const barNum = parseInt(staveNoteMatch[3], 10);
-      const beatNum = parseInt(staveNoteMatch[4], 10);
-      const divisionNum = parseInt(staveNoteMatch[5], 10);
-      const subDivisionNum = parseInt(staveNoteMatch[6], 10);
-      const numSubDivisions = parseInt(staveNoteMatch[7], 10);
+      const barNum = parseInt(staveNoteMatch[4], 10);
+      const beatNum = parseInt(staveNoteMatch[5], 10);
+      const divisionNum = parseInt(staveNoteMatch[6], 10);
+      const subDivisionNum = parseInt(staveNoteMatch[7], 10);
+      const numSubDivisions = parseInt(staveNoteMatch[8], 10);
 
       const staveNote = new StaveNote({
         keys,
@@ -229,6 +234,7 @@ export function MakeStaveNotes(input: string): {
       });
 
       const noteEntry = new NoteEntry(
+        index,
         keys,
         duration,
         staveNote,
