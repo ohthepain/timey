@@ -1,11 +1,10 @@
+import { useEffect, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { ScoreViewer } from '~/components/ScoreViewer';
-import { ScoreView } from '~/components/ScoreView';
-// import { PercussionScore } from '~/components/PercussionScore'
-import { BeatView } from '~/components/BeatView';
-import { useTempoService } from '~/lib/MidiSync/UseTempoService';
+import { ScoreView } from '~/components/ScoreView2';
 import { Transport } from '~/components/Transport';
 import { useScoreStore } from '~/state/ScoreStore';
+import { Beat } from '~/types/Beat';
+import { getBeatByName } from '~/services/beatService';
 
 export const loader = async () => {
   if (!useScoreStore.getState().beats['basic']) {
@@ -37,11 +36,24 @@ export const Route = createFileRoute('/sequence/')({
 console.log('zequence index Route loaded');
 
 function SequenceIndexComponent() {
+  const [beat, setBeat] = useState<Beat | undefined>(undefined);
+
+  useEffect(() => {
+    (async () => {
+      const beat = await getBeatByName('basic');
+      setBeat(beat);
+    })();
+  }, []);
+
+  if (!beat) {
+    return <div>Loading...</div>;
+  }
+
   return (
     <div>
       <Transport />
       <div id="scoreview" className="h-full w-full border-2 border-purple-700">
-        <ScoreView />
+        <ScoreView beat={beat} />
       </div>
       <div className="bg-green-200 w-full h-2"></div>
     </div>

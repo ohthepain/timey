@@ -1,46 +1,35 @@
 import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
-// Temp
-import { MakeStaveNotes, NoteEntry } from '~/lib/ParseBeat';
 import { useScoreStore } from '~/state/ScoreStore';
-import { saveBeatToDb } from '~/repositories/beatRepository';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [beatName, setBeatName] = useState('basic');
 
   const handleSave = async () => {
-    const beatString = useScoreStore.getState().getBeat('basic');
+    console.log('handleSave');
+    const beatName = 'basic';
+    const beatString = useScoreStore.getState().getBeat(beatName);
     if (!beatString) {
       console.error('Beat not found');
       return;
     }
 
-    const { noteEntries } = MakeStaveNotes(beatString);
-
-    // Sanitize noteEntries to remove circular references
-    const sanitizedNoteEntries = noteEntries.map((note) => ({
-      index: note.index,
-      keys: note.keys,
-      durationCode: note.durationCode,
-      barNum: note.barNum,
-      beatNum: note.beatNum,
-      divisionNum: note.divisionNum,
-      subDivisionNum: note.subDivisionNum,
-      numSubDivisions: note.numSubDivisions,
-    }));
-
     try {
+      console.log('handleSave: got beatString - sending request');
       const response = await fetch('/api/saveBeat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          noteEntries: sanitizedNoteEntries,
+          name: beatName,
+          beatString,
         }),
       });
+      console.log(`handleSave: got beatString - got response status ${response.status}`);
 
       if (!response.ok) {
         throw new Error('Failed to save beat');
@@ -99,6 +88,13 @@ export const Transport = () => {
 
   return (
     <div className="transport-controls flex gap-4 p-4 bg-green-100 rounded">
+      <input
+        type="text"
+        placeholder="Enter beat name"
+        value={beatName}
+        onChange={(e) => setBeatName(e.target.value)}
+        className="input-field px-4 py-2 border rounded"
+      />
       <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handleSave}>
         Save
       </button>
