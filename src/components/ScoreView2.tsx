@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Beam, Renderer, Stave, StaveNote, TickContext, Tickable, Barline, RenderContext, drawDot } from 'vexflow';
-import { MakeStaveNotes, TupletRecord } from '../lib/ParseBeat';
+import { MakeStaveNotesFromBeat, TupletRecord } from '../lib/ParseBeat';
 import { useScoreStore } from '~/state/ScoreStore';
 import { useBeatPlayer } from '~/lib/UseBeatPlayer';
 import { beatPlayer } from '~/lib/BeatPlayer';
@@ -138,9 +138,37 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
   if (!beatString) {
     return <>Beat not found</>;
   }
-  // console.log('beatString', beatString);
+  console.log('beatString', beatString);
 
-  const { tuplets, noteEntries } = MakeStaveNotes(beatString);
+  // const { tuplets: tuplets2, noteEntries: noteEntries2 } = MakeStaveNotes(beatString);
+  const { tuplets, noteEntries } = MakeStaveNotesFromBeat(beat);
+  // console.log(`Lets compare ${noteEntries.length} ${noteEntries2.length}`);
+  // console.log('noteEntries', noteEntries);
+  // console.log('noteEntries2', noteEntries2);
+
+  // if (noteEntries.length !== noteEntries2.length) {
+  //   console.log('The arrays have different lengths.');
+  // } else {
+  //   for (let i = 0; i < noteEntries.length; i++) {
+  //     const entry1 = noteEntries[i];
+  //     const entry2 = noteEntries2[i];
+
+  //     if (
+  //       entry1.index !== entry2.index ||
+  //       entry1.keys.join(',') !== entry2.keys.join(',') ||
+  //       entry1.durationCode !== entry2.durationCode ||
+  //       entry1.barNum !== entry2.barNum ||
+  //       entry1.beatNum !== entry2.beatNum ||
+  //       entry1.divisionNum !== entry2.divisionNum ||
+  //       entry1.subDivisionNum !== entry2.subDivisionNum ||
+  //       entry1.numSubDivisions !== entry2.numSubDivisions
+  //     ) {
+  //       console.log(`Difference found at index ${i}:`, { entry1, entry2 });
+  //     }
+  //   }
+  //   console.log('Comparison complete.');
+  // }
+
   const allNotes: NoteEntry[] = noteEntries.map((noteEntry) => noteEntry);
 
   const numBars = Math.max(...noteEntries.map((noteEntry) => noteEntry.barNum)) + 1;

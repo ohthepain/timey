@@ -36,7 +36,7 @@ CREATE TABLE "BeatNote" (
     "id" TEXT NOT NULL,
     "index" INTEGER NOT NULL,
     "duration" INTEGER NOT NULL,
-    "staveNote" INTEGER NOT NULL,
+    "noteString" TEXT NOT NULL,
     "barNum" INTEGER NOT NULL,
     "beatNum" INTEGER NOT NULL,
     "divisionNum" INTEGER NOT NULL,

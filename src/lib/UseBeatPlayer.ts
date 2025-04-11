@@ -26,5 +26,5 @@ export const useBeatPlayer = () => {
     };
   }, []);
 
-  return { isPlaying, currentNote, tempo, loadBeat: beatPlayer.loadBeat.bind(beatPlayer) };
+  return { isPlaying, currentNote, tempo };
 };

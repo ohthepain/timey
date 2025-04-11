@@ -22,18 +22,18 @@ class BeatPlayer extends EventEmitter {
     TempoService.eventsEmitter.addListener('MIDI pulse', this.handleMidiPulse.bind(this));
   }
 
-  public loadBeat(beatName: string) {
-    const beatString = useScoreStore.getState().getBeat(beatName);
-    if (!beatString) {
-      throw new Error(`Beat "${beatName}" not found in the store.`);
-    }
+  // public loadBeat(beatName: string) {
+  //   const beatString = useScoreStore.getState().getBeat(beatName);
+  //   if (!beatString) {
+  //     throw new Error(`Beat "${beatName}" not found in the store.`);
+  //   }
 
-    const { noteEntries } = MakeStaveNotes(beatString);
-    this.allNotes = noteEntries;
-    this.noteIndex = 0;
-    this.numLoops = 0;
-    this.nextNoteStartTime = this.allNotes[0].getStartTimeMsec(TempoService.bpm);
-  }
+  //   const { noteEntries } = MakeStaveNotes(beatString);
+  //   this.allNotes = noteEntries;
+  //   this.noteIndex = 0;
+  //   this.numLoops = 0;
+  //   this.nextNoteStartTime = this.allNotes[0].getStartTimeMsec(TempoService.bpm);
+  // }
 
   private handlePlay() {
     console.log('BeatPlayer: handlePlay');

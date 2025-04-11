@@ -40,7 +40,7 @@ model BeatNote {
   id               String   @id @default(uuid())
   index            Int
   duration         Int
-  staveNote        Int
+  noteString       String // A comma-separated string of notes like "kick", "snare", "hihat" and midi note numbers
   barNum           Int
   beatNum          Int
   divisionNum      Int

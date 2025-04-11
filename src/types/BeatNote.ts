@@ -2,7 +2,7 @@ export interface BeatNote {
   id: string;
   index: number;
   duration: number;
-  staveNote: number;
+  noteString: string;
   barNum: number;
   beatNum: number;
   divisionNum: number;

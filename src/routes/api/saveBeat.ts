@@ -52,24 +52,24 @@ const parseBeatString = (input: string) => {
           `note: ${index} ${durationCode} ${keysString} bar ${bar} beat ${beat} div ${divisionNum} sub ${subDivisionNum} of ${numSubDivisions}`
         );
 
-        // Split the keysString into individual keys
-        const keys = keysString.split(', ').map((key) => key.trim());
-        console.log(`keys: ${keys}`);
+        // // Split the keysString into individual keys
+        // const keys = keysString.split(', ').map((key) => key.trim());
+        // console.log(`keys: ${keys}`);
 
         // Create a BeatNote for each key
-        keys.forEach((key) => {
-          beatNotes.push({
-            index: parseInt(index, 10),
-            duration: parseDuration(durationCode),
-            staveNote: parseStaveNote(key),
-            barNum: parseInt(bar, 10),
-            beatNum: parseInt(beat, 10),
-            divisionNum: parseInt(divisionNum, 10),
-            subDivisionNum: parseInt(subDivisionNum, 10),
-            numSubDivisions: parseInt(numSubDivisions, 10),
-            velocity: 127, // Default velocity
-          });
+        // keys.forEach((key) => {
+        beatNotes.push({
+          index: parseInt(index, 10),
+          duration: parseInt(durationCode, 10),
+          noteString: keysString,
+          barNum: parseInt(bar, 10),
+          beatNum: parseInt(beat, 10),
+          divisionNum: parseInt(divisionNum, 10),
+          subDivisionNum: parseInt(subDivisionNum, 10),
+          numSubDivisions: parseInt(numSubDivisions, 10),
+          velocity: 127, // Default velocity
         });
+        // });
       } else {
         console.warn(`Failed to parse line: ${line}`);
       }
@@ -100,7 +100,7 @@ export const APIRoute = createAPIFileRoute('/api/saveBeat')({
         return json({ error: 'Invalid beat string' }, { status: 400 });
       }
 
-      checkUser(request);
+      await checkUser(request);
       console.log(`/api/saveBeat POST request: checked user`);
 
       // Parse the beat string into structured data

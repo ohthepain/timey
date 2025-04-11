@@ -4,8 +4,10 @@ import { redirect } from '@tanstack/react-router';
 import { users } from '@clerk/clerk-sdk-node';
 
 export const checkUser = async (req: any) => {
+  console.log('checkUser');
   const { userId } = await getAuth(req);
   if (!userId) {
+    console.log('checkUser: User is not authenticated');
     throw new Error('User is not authenticated');
   }
   if (!userId) {
@@ -19,11 +21,11 @@ export const checkUser = async (req: any) => {
     where: { id: userId },
   });
   if (existingUser) {
-    console.log('User already exists in the database');
+    console.log('checkUser: User already exists in the database');
     return userId;
   }
 
-  console.log('User does not exist in the database, creating a new user');
+  console.log('checkUser: User does not exist in the database, creating a new user');
 
   // Use the Backend SDK's `getUser()` method to get the Backend User object
   const user = await users.getUser(userId);
