@@ -14,26 +14,53 @@ model User {
   email      String   @unique
   createdAt  DateTime @default(now())
   modifiedAt DateTime @updatedAt
-  scores     Score[]
+  // scores     Score[]
   beats      Beat[]
+  systems    Method[]
+  chapters   Module[]
 }
 
-model Score {
-  id        String   @id @default(uuid())
-  name      String
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+model Method {
+  id         String   @id @default(uuid())
+  title      String   @unique
+  description String?
+  index      Int
+  authorId   String
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  modifiedAt DateTime @updatedAt
+  modules   Module[]
+}
+
+model Module {
+  id         String   @id @default(uuid())
+  title      String
+  description String?
+  index      Int
+  authorId   String
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  methodId   String
+  method     Method   @relation(fields: [methodId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  modifiedAt DateTime @updatedAt
+  beats      Beat[]
 }
 
 model Beat {
   id         String     @id @default(uuid())
   name       String
+  description String?
+  index      Int
   authorId   String
   author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
   createdAt  DateTime   @default(now())
   modifiedAt DateTime   @updatedAt
   beatNotes  BeatNote[]
+  moduleId   String
+  module     Module    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@index([authorId])
+  @@index([moduleId])
 }
 
 model BeatNote {
@@ -49,4 +76,6 @@ model BeatNote {
   velocity         Int
   beatId           String
   beat             Beat     @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  
+  @@index([beatId])
 }

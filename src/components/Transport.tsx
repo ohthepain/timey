@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import { useScoreStore } from '~/state/ScoreStore';
+import { BeatAdminOperations } from '~/components/BeatAdminOperations';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
@@ -88,6 +89,7 @@ export const Transport = () => {
 
   return (
     <div className="transport-controls flex gap-4 p-4 bg-green-100 rounded">
+      <BeatAdminOperations />
       <input
         type="text"
         placeholder="Enter beat name"

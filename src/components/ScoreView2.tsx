@@ -133,12 +133,6 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
   const { currentNote } = useBeatPlayer();
   const [currentNoteIndex, setCurrentNoteIndex] = useState<number>(0);
 
-  const beatString = useScoreStore((state) => state.getBeat('basic'));
-  if (!beatString) {
-    return <>Beat not found</>;
-  }
-  console.log('beatString', beatString);
-
   const { tuplets, noteEntries } = MakeStaveNotesFromBeat(beat);
 
   const allNotes: NoteEntry[] = noteEntries.map((noteEntry) => noteEntry);

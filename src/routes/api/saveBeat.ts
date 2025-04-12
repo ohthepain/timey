@@ -130,3 +130,44 @@ export const APIRoute = createAPIFileRoute('/api/saveBeat')({
     }
   },
 });
+
+export const deleteBeatAPIRoute = createAPIFileRoute('/api/saveBeat')({
+  DELETE: async ({ request }) => {
+    console.log(`/api/deleteBeat DELETE request`);
+    try {
+      // Parse the JSON body
+      const { userId } = await getAuth(request);
+      const { beatId } = await request.json();
+      console.log(`/api/deleteBeat DELETE request: parsed input`);
+
+      if (!userId) {
+        throw redirect({
+          to: '/sign-in/$',
+        });
+      }
+
+      console.log(`/api/deleteBeat DELETE request: got user`);
+
+      if (!beatId || typeof beatId !== 'string') {
+        return json({ error: 'Invalid beat ID' }, { status: 400 });
+      }
+
+      await checkUser(request);
+      console.log(`/api/deleteBeat DELETE request: checked user`);
+
+      // Delete the beat and its associated notes from the database
+      const deletedBeat = await prisma.beat.delete({
+        where: {
+          id: beatId,
+        },
+      });
+
+      console.log(`/api/deleteBeat DELETE request: deleted from db - send response`);
+
+      return json({ deletedBeat }, { status: 200 });
+    } catch (error) {
+      console.error('Error deleting beat:', error);
+      return json({ error: 'Failed to delete beat' }, { status: 500 });
+    }
+  },
+});

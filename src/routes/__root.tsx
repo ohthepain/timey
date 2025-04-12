@@ -11,9 +11,9 @@ import {
   SignedOut,
   SignInButton,
   SignOutButton,
-  UserButton,
+  // UserButton,
 } from '@clerk/tanstack-react-start';
-// import { UserButton } from '@clerk/clerk-react';
+import { UserButton } from '@clerk/clerk-react';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -99,6 +99,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 }}
               >
                 Posts
+              </Link>
+              <Link
+                to="/methods"
+                activeProps={{
+                  className: 'font-bold',
+                }}
+              >
+                Methods
               </Link>
               <Link
                 to="/sequence"

@@ -21,10 +21,7 @@ function UsersLayoutComponent() {
   return (
     <div className="p-2 flex gap-2">
       <ul className="list-disc pl-4">
-        {[
-          ...users,
-          { id: 'i-do-not-exist', name: 'Non-existent User', email: '' },
-        ].map((user) => {
+        {[...users, { id: 'i-do-not-exist', name: 'Non-existent User', email: '' }].map((user) => {
           return (
             <li key={user.id} className="whitespace-nowrap">
               <Link
