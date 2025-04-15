@@ -10,7 +10,6 @@ export const APIRoute = createAPIFileRoute('/api/methods')({
     console.log(`/api/methods GET request`);
     try {
       const methods = await methodRepository.getAllMethods();
-      console.log('Methods:', methods);
       return json({ methods });
     } catch (error) {
       console.error('Error fetching methods:', error);

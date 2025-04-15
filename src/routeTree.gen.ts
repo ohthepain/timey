@@ -23,6 +23,7 @@ import { Route as SequenceIndexImport } from './routes/sequence.index'
 import { Route as PostsIndexImport } from './routes/posts.index'
 import { Route as UsersUserIdImport } from './routes/users.$userId'
 import { Route as PostsPostIdImport } from './routes/posts.$postId'
+import { Route as ModuleIdImport } from './routes/module.$id'
 import { Route as MethodIdImport } from './routes/method.$id'
 import { Route as PathlessLayoutNestedLayoutImport } from './routes/_pathlessLayout/_nested-layout'
 import { Route as PostsPostIdDeepImport } from './routes/posts_.$postId.deep'
@@ -100,6 +101,12 @@ const PostsPostIdRoute = PostsPostIdImport.update({
   id: '/$postId',
   path: '/$postId',
   getParentRoute: () => PostsRouteRoute,
+} as any)
+
+const ModuleIdRoute = ModuleIdImport.update({
+  id: '/module/$id',
+  path: '/module/$id',
+  getParentRoute: () => rootRoute,
 } as any)
 
 const MethodIdRoute = MethodIdImport.update({
@@ -200,6 +207,13 @@ declare module '@tanstack/react-router' {
       path: '/method/$id'
       fullPath: '/method/$id'
       preLoaderRoute: typeof MethodIdImport
+      parentRoute: typeof rootRoute
+    }
+    '/module/$id': {
+      id: '/module/$id'
+      path: '/module/$id'
+      fullPath: '/module/$id'
+      preLoaderRoute: typeof ModuleIdImport
       parentRoute: typeof rootRoute
     }
     '/posts/$postId': {
@@ -330,6 +344,7 @@ export interface FileRoutesByFullPath {
   '/methods': typeof MethodsRoute
   '/redirect': typeof RedirectRoute
   '/method/$id': typeof MethodIdRoute
+  '/module/$id': typeof ModuleIdRoute
   '/posts/$postId': typeof PostsPostIdRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/posts/': typeof PostsIndexRoute
@@ -347,6 +362,7 @@ export interface FileRoutesByTo {
   '/methods': typeof MethodsRoute
   '/redirect': typeof RedirectRoute
   '/method/$id': typeof MethodIdRoute
+  '/module/$id': typeof ModuleIdRoute
   '/posts/$postId': typeof PostsPostIdRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/posts': typeof PostsIndexRoute
@@ -368,6 +384,7 @@ export interface FileRoutesById {
   '/redirect': typeof RedirectRoute
   '/_pathlessLayout/_nested-layout': typeof PathlessLayoutNestedLayoutRouteWithChildren
   '/method/$id': typeof MethodIdRoute
+  '/module/$id': typeof ModuleIdRoute
   '/posts/$postId': typeof PostsPostIdRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/posts/': typeof PostsIndexRoute
@@ -389,6 +406,7 @@ export interface FileRouteTypes {
     | '/methods'
     | '/redirect'
     | '/method/$id'
+    | '/module/$id'
     | '/posts/$postId'
     | '/users/$userId'
     | '/posts/'
@@ -405,6 +423,7 @@ export interface FileRouteTypes {
     | '/methods'
     | '/redirect'
     | '/method/$id'
+    | '/module/$id'
     | '/posts/$postId'
     | '/users/$userId'
     | '/posts'
@@ -424,6 +443,7 @@ export interface FileRouteTypes {
     | '/redirect'
     | '/_pathlessLayout/_nested-layout'
     | '/method/$id'
+    | '/module/$id'
     | '/posts/$postId'
     | '/users/$userId'
     | '/posts/'
@@ -444,6 +464,7 @@ export interface RootRouteChildren {
   MethodsRoute: typeof MethodsRoute
   RedirectRoute: typeof RedirectRoute
   MethodIdRoute: typeof MethodIdRoute
+  ModuleIdRoute: typeof ModuleIdRoute
   SequenceIndexRoute: typeof SequenceIndexRoute
   PostsPostIdDeepRoute: typeof PostsPostIdDeepRoute
 }
@@ -457,6 +478,7 @@ const rootRouteChildren: RootRouteChildren = {
   MethodsRoute: MethodsRoute,
   RedirectRoute: RedirectRoute,
   MethodIdRoute: MethodIdRoute,
+  ModuleIdRoute: ModuleIdRoute,
   SequenceIndexRoute: SequenceIndexRoute,
   PostsPostIdDeepRoute: PostsPostIdDeepRoute,
 }
@@ -479,6 +501,7 @@ export const routeTree = rootRoute
         "/methods",
         "/redirect",
         "/method/$id",
+        "/module/$id",
         "/sequence/",
         "/posts_/$postId/deep"
       ]
@@ -525,6 +548,9 @@ export const routeTree = rootRoute
     },
     "/method/$id": {
       "filePath": "method.$id.tsx"
+    },
+    "/module/$id": {
+      "filePath": "module.$id.tsx"
     },
     "/posts/$postId": {
       "filePath": "posts.$postId.tsx",

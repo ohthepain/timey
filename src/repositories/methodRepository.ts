@@ -9,6 +9,7 @@ export const methodRepository = {
   async getMethodById(id: string): Promise<Method | null> {
     return await prisma.method.findUnique({
       where: { id },
+      include: { modules: true },
     });
   },
 

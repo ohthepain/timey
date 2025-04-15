@@ -85,10 +85,27 @@ export const APIRoute = createAPIFileRoute('/api/saveBeat')({
     try {
       // Parse the JSON body
       const { userId } = await getAuth(request);
-      const { name, beatString } = await request.json();
+      console.log(`/api/saveBeat POST request: lets parse input`);
+      const { name, beatString, index, description, moduleId } = await request.json();
       console.log(`/api/saveBeat POST request: parsed input`);
 
+      if (index === undefined || typeof index !== 'number') {
+        console.log(`index: ${index}`);
+        return json({ error: 'Index is required and must be a number' }, { status: 400 });
+      }
+
+      if (!description || typeof description !== 'string') {
+        console.log(`description: ${description}`);
+        return json({ error: 'Description is required and must be a string' }, { status: 400 });
+      }
+
+      if (!moduleId || typeof moduleId !== 'string') {
+        console.log(`moduleId: ${moduleId}`);
+        return json({ error: 'Module ID is required and must be a string' }, { status: 400 });
+      }
+
       if (!userId) {
+        console.log(`userId: ${userId}`);
         throw redirect({
           to: '/sign-in/$',
         });
@@ -111,7 +128,10 @@ export const APIRoute = createAPIFileRoute('/api/saveBeat')({
       const beat = await prisma.beat.create({
         data: {
           name: name,
+          description: description,
+          index: index,
           authorId: userId,
+          moduleId: moduleId,
           beatNotes: {
             create: beatNotes,
           },

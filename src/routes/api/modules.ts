@@ -1,9 +1,9 @@
 import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { moduleRepository } from '~/repositories/moduleRepository';
+import { checkUser } from '~/lib/checkUser';
 import { getAuth } from '@clerk/tanstack-react-start/server';
 import { redirect } from '@tanstack/react-router';
-import { checkUser } from '~/lib/checkUser';
 
 export const APIRoute = createAPIFileRoute('/api/modules')({
   GET: async () => {

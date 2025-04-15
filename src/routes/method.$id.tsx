@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useLoaderData } from '@tanstack/react-router';
 import { methodService } from '~/services/methodService';
-import { Method } from '@prisma/client';
 import { NotFound } from '~/components/NotFound';
 import { PostErrorComponent } from '~/components/PostErrorComponent';
+import { ModuleList } from '~/components/ModuleList';
+import { AddModule } from '~/components/AddModule';
 
 export const loader = async ({ params }: { params: { id: string } }) => {
   const method = await methodService.getMethodById(params.id);
@@ -28,13 +28,18 @@ function MethodPage() {
 
   return (
     <div className="method-page p-4">
-      halo
-      <h1 className="text-2xl font-bold mb-4">{method.title}</h1>
+      <h1 className="text-2xl font-bold mb-4">Method: {method.title}</h1>
       <p className="mb-2">Description: {method.description || 'No description provided.'}</p>
       <p className="mb-2">Index: {method.index}</p>
       <p className="mb-2">Author ID: {method.authorId}</p>
       <p className="text-sm text-gray-500">Created At: {new Date(method.createdAt).toLocaleString()}</p>
       <p className="text-sm text-gray-500">Modified At: {new Date(method.modifiedAt).toLocaleString()}</p>
+      <div className="mb-4">
+        <ModuleList method={method} />
+      </div>
+      <div className="mb-4">
+        <AddModule method={method} />
+      </div>
     </div>
   );
 }

@@ -11,7 +11,7 @@ export const moduleRepository = {
   },
 
   async getModuleById(id: string): Promise<Module | null> {
-    return prisma.module.findUnique({ where: { id } });
+    return prisma.module.findUnique({ where: { id }, include: { beats: true } });
   },
 
   async createModule(data: Omit<Module, 'id' | 'createdAt' | 'modifiedAt'>): Promise<Module> {

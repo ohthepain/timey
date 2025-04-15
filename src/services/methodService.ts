@@ -1,4 +1,4 @@
-import { Method } from '@prisma/client';
+import { Method } from '~/types/Method';
 
 export const methodService = {
   async getAllMethods(): Promise<Method[]> {
