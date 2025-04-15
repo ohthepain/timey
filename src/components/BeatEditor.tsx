@@ -4,7 +4,7 @@ import type { Beat } from '~/types/Beat';
 import { Module } from '~/types/Module';
 import { BarDefEditor } from '~/components/BarDefEditor';
 import { BarDef } from '~/types/BarDef';
-import { ParseBeatStrings } from '~/lib/ParseBeat';
+import { ParseBeatStrings, ParseBeatString } from '~/lib/ParseBeat';
 import { ScoreView } from '~/components/ScoreView2';
 
 interface BeatEditorProps {
@@ -25,7 +25,7 @@ const makeTempBeat = () => {
 
 export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
   const [name, setName] = useState('Basic Beat');
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [barDefs, setBarDefs] = useState<BarDef[]>([]);
   const [tempBeat, setTempBeat] = useState<Beat>(makeTempBeat());
@@ -53,19 +53,21 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
     const beatString = ParseBeatStrings(beatStrings);
     console.log('Beat string:', beatString);
 
-    // try {
-    //   console.log('Saving beat...: module', module);
-    //   console.log('Saving beat...: module.id', module.id);
-    //   await saveBeat(name, beatString, index, 'Default description', module.id);
-    //   setName('');
-    //   setIndex(0);
-    //   setError(null);
-    //   setBarDefs([]);
-    //   alert('Beat added successfully');
-    // } catch (err) {
-    //   console.error('Error adding beat:', err);
-    //   setError('Failed to add beat');
-    // }
+    try {
+      console.log('Saving beat...: beat.id, module.id', beat?.id, module.id);
+
+      const savedBeat = await saveBeat(name, beatString, index, 'Default description', module.id, beat?.id);
+
+      console.log('Beat saved successfully:', savedBeat);
+      setName('');
+      setIndex(0);
+      setError(null);
+      setBarDefs([]);
+      alert('Beat added successfully');
+    } catch (err) {
+      console.error('Error adding beat:', err);
+      setError('Failed to add beat');
+    }
   };
 
   const addBarDef = () => {

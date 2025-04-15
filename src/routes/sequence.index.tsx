@@ -40,7 +40,7 @@ function SequenceIndexComponent() {
 
   useEffect(() => {
     (async () => {
-      const beat = await getBeatByName('basic');
+      const beat = await getBeatByName('Basic Beat2');
       setBeat(beat);
     })();
   }, []);

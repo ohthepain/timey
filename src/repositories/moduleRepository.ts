@@ -11,7 +11,16 @@ export const moduleRepository = {
   },
 
   async getModuleById(id: string): Promise<Module | null> {
-    return prisma.module.findUnique({ where: { id }, include: { beats: true } });
+    return prisma.module.findUnique({
+      where: { id },
+      include: {
+        beats: {
+          include: {
+            beatNotes: true,
+          },
+        },
+      },
+    });
   },
 
   async createModule(data: Omit<Module, 'id' | 'createdAt' | 'modifiedAt'>): Promise<Module> {

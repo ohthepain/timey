@@ -11,7 +11,6 @@ export const Transport = () => {
 
   const handleSave = async () => {
     console.log('handleSave');
-    const beatName = 'basic';
     const beatString = useScoreStore.getState().getBeat(beatName);
     if (!beatString) {
       console.error('Beat not found');
@@ -20,8 +19,8 @@ export const Transport = () => {
 
     try {
       console.log('handleSave: got beatString - sending request');
-      const response = await fetch('/api/saveBeat', {
-        method: 'POST',
+      const response = await fetch(`/api/beats`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },

@@ -1,5 +1,6 @@
 import { Module } from '~/types/Module';
 import { deleteBeat } from '~/services/beatService';
+import { ScoreView } from '~/components/ScoreView2';
 
 export interface ModuleProps {
   module: Module;
@@ -33,6 +34,7 @@ export const ModuleViewer = ({ module }: ModuleProps) => {
               <li key={beat.id} className="mb-2">
                 <div className="flex justify-between items-center">
                   <p className="font-semibold">{beat.name}</p>
+                  <ScoreView beat={beat} />
                   <button onClick={() => handleDeleteBeat(beat.id)} className="text-red-500 hover:text-red-700 text-sm">
                     Delete
                   </button>

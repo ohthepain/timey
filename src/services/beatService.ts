@@ -1,4 +1,6 @@
 import { Beat } from '~/types/Beat';
+import { createBeat } from '~/repositories/beatRepository';
+import { ParseBeatString } from '~/lib/ParseBeat';
 
 export const getBeatByName = async (name: string) => {
   const response = await fetch(`/api/getBeatByName?name=${encodeURIComponent(name)}`);
@@ -35,15 +37,15 @@ export async function deleteBeat(beatId: string): Promise<any> {
   }
 }
 
-export async function saveBeat(
+export const saveBeat = async (
   name: string,
   beatString: string,
   index: number,
   description: string,
-  moduleId: string
-): Promise<any> {
+  moduleId: string,
+  beatId?: string
+): Promise<any> => {
   try {
-    console.log('saveBeat: sending request');
     if (!beatString) {
       throw new Error(`saveBeat: beatString required`);
     }
@@ -59,27 +61,30 @@ export async function saveBeat(
     if (!moduleId) {
       throw new Error(`saveBeat: moduleId required`);
     }
-    console.log('saveBeat: sending request with index ', index);
 
-    const response = await fetch('/api/saveBeat', {
-      method: 'POST',
+    const response = await fetch('/api/beats', {
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ name, beatString, index, description, moduleId }),
+      body: JSON.stringify({
+        id: beatId,
+        name,
+        beatString,
+        index,
+        description,
+        moduleId,
+      }),
     });
-
-    console.log(`saveBeat: got response status ${response.status}`);
 
     if (!response.ok) {
       throw new Error('Failed to save beat');
     }
 
     const savedBeat = await response.json();
-    console.log('Beat saved successfully:', savedBeat);
     return savedBeat;
   } catch (error) {
     console.error('Error saving beat:', error);
     throw error;
   }
-}
+};

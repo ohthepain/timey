@@ -20,6 +20,56 @@ export function ConvertNoteToMidiNote(note: string): number {
   }
 }
 
+// Function to parse the input string into structured data
+export const ParseBeatString = (input: string) => {
+  const lines = input.split('\n');
+  const beatNotes: any[] = [];
+  const tuples: any[] = [];
+
+  lines.forEach((line) => {
+    line = line.trim();
+    if (line.startsWith('note,')) {
+      console.log(`note: ${line}`);
+
+      // Regular expression to match the note line
+      const noteRegex = /^note,(\d+),(\d+[t]?),\[(.+?)\],(\d+),(\d+),(\d+),(\d+),(\d+)$/;
+      const match = line.match(noteRegex);
+
+      if (match) {
+        const [, index, durationCode, keysString, bar, beat, divisionNum, subDivisionNum, numSubDivisions] = match;
+        console.log(`numSubDivisions: ${numSubDivisions} keysString ${keysString}`);
+        console.log(
+          `note: ${index} ${durationCode} ${keysString} bar ${bar} beat ${beat} div ${divisionNum} sub ${subDivisionNum} of ${numSubDivisions}`
+        );
+
+        // // Split the keysString into individual keys
+        // const keys = keysString.split(', ').map((key) => key.trim());
+        // console.log(`keys: ${keys}`);
+
+        // Create a BeatNote for each key
+        // keys.forEach((key) => {
+        beatNotes.push({
+          index: parseInt(index, 10),
+          duration: parseInt(durationCode, 10),
+          noteString: keysString,
+          barNum: parseInt(bar, 10),
+          beatNum: parseInt(beat, 10),
+          divisionNum: parseInt(divisionNum, 10),
+          subDivisionNum: parseInt(subDivisionNum, 10),
+          numSubDivisions: parseInt(numSubDivisions, 10),
+          velocity: 127, // Default velocity
+        });
+        // });
+      } else {
+        console.warn(`Failed to parse line: ${line}`);
+      }
+    }
+  });
+
+  return { beatNotes, tuples };
+};
+
+// Parse the editable strings into a machine-readable format
 export function ParseBeatStrings(beatStrings: string[][]): string {
   console.log(`ParseBeatStrings: input: ${beatStrings.length}`);
   let result = '';
