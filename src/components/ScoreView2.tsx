@@ -128,6 +128,7 @@ interface ScoreViewProps {
 
 export const ScoreView = ({ beat }: ScoreViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  console.log('ScoreView', beat);
   let context: any;
 
   const { currentNote } = useBeatPlayer();
@@ -140,6 +141,11 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
   const numBars = Math.max(...noteEntries.map((noteEntry) => noteEntry.barNum)) + 1;
 
   const width = marginX + barWidth * numBars + marginX;
+
+  useEffect(() => {
+    console.log(`ScoreView: beat changed`, beat);
+    draw();
+  }, [beat]);
 
   const draw = () => {
     if (!containerRef.current) return;

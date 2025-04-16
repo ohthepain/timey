@@ -4,9 +4,10 @@ import { BarDef } from '~/types/BarDef';
 interface BarDefEditorProps {
   barDef: BarDef;
   onDelete: () => void;
+  onChange?: (barDef: BarDef) => void;
 }
 
-export const BarDefEditor = ({ barDef, onDelete }: BarDefEditorProps) => {
+export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) => {
   const [kick, setKick] = useState(barDef.kick);
   const [hihat, setHihat] = useState(barDef.hihat);
   const [snare, setSnare] = useState(barDef.snare);
@@ -16,6 +17,10 @@ export const BarDefEditor = ({ barDef, onDelete }: BarDefEditorProps) => {
     onDelete();
   };
 
+  const handleChange = (updatedBarDef: BarDef) => {
+    if (onChange) onChange(updatedBarDef);
+  };
+
   return (
     <div className="beat-string-editor w-52 p-4 border rounded shadow-md bg-orange-50">
       <div className="mb-4">
@@ -23,7 +28,16 @@ export const BarDefEditor = ({ barDef, onDelete }: BarDefEditorProps) => {
         <input
           type="text"
           value={kick}
-          onChange={(e) => setKick(e.target.value)}
+          onChange={(e) => {
+            setKick(e.target.value);
+            handleChange({
+              ...barDef,
+              kick: e.target.value,
+              hihat,
+              snare,
+              accent,
+            });
+          }}
           className="input-field px-4 py-2 border rounded w-full"
         />
       </div>
@@ -32,7 +46,16 @@ export const BarDefEditor = ({ barDef, onDelete }: BarDefEditorProps) => {
         <input
           type="text"
           value={hihat}
-          onChange={(e) => setHihat(e.target.value)}
+          onChange={(e) => {
+            setHihat(e.target.value);
+            handleChange({
+              ...barDef,
+              kick,
+              hihat: e.target.value,
+              snare,
+              accent,
+            });
+          }}
           className="input-field px-4 py-2 border rounded w-full"
         />
       </div>
@@ -41,7 +64,16 @@ export const BarDefEditor = ({ barDef, onDelete }: BarDefEditorProps) => {
         <input
           type="text"
           value={snare}
-          onChange={(e) => setSnare(e.target.value)}
+          onChange={(e) => {
+            setSnare(e.target.value);
+            handleChange({
+              ...barDef,
+              kick,
+              hihat,
+              snare: e.target.value,
+              accent,
+            });
+          }}
           className="input-field px-4 py-2 border rounded w-full"
         />
       </div>
@@ -50,7 +82,16 @@ export const BarDefEditor = ({ barDef, onDelete }: BarDefEditorProps) => {
         <input
           type="text"
           value={accent}
-          onChange={(e) => setAccent(e.target.value)}
+          onChange={(e) => {
+            setAccent(e.target.value);
+            handleChange({
+              ...barDef,
+              kick,
+              hihat,
+              snare,
+              accent: e.target.value,
+            });
+          }}
           className="input-field px-4 py-2 border rounded w-full"
         />
       </div>

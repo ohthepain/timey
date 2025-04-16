@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { saveBeat } from '~/services/beatService';
 import type { Beat } from '~/types/Beat';
 import { Module } from '~/types/Module';
@@ -87,6 +87,35 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
     setBarDefs(updatedBarDefs);
   };
 
+  const handleBarDefChange = (index: number, updatedBarDef: BarDef) => {
+    console.log('Updated bar def:', index, updatedBarDef);
+    const newBarDefs = barDefs.map((barDef, i) => (i === index ? updatedBarDef : barDef));
+    setBarDefs(newBarDefs);
+
+    const beatStrings = [
+      newBarDefs.map((barDef) => barDef.hihat),
+      newBarDefs.map((barDef) => barDef.kick),
+      newBarDefs.map((barDef) => barDef.snare),
+    ];
+    console.log('Beat strings:', beatStrings);
+
+    const beatString = ParseBeatStrings(beatStrings);
+    console.log('Beat string:', beatString);
+
+    const { beatNotes } = ParseBeatString(beatString);
+
+    const newTempBeat = {
+      ...tempBeat,
+      beatNotes: beatNotes,
+    };
+    console.log('New temp beat:', newTempBeat);
+    setTempBeat(newTempBeat);
+  };
+
+  useEffect(() => {
+    console.log('Beat changed: ', tempBeat);
+  }, [tempBeat]);
+
   return (
     <div>
       <h2 className="text-xl font-bold mb-4">Save</h2>
@@ -118,7 +147,11 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
       <div className="bar-def-editors flex items-center">
         {barDefs.map((barDef, index) => (
           <div className="inline-flex bg-pink-100 m-2" key={index}>
-            <BarDefEditor barDef={barDef} onDelete={() => deleteBarDef(index)} />
+            <BarDefEditor
+              barDef={barDef}
+              onDelete={() => deleteBarDef(index)}
+              onChange={(updatedBarDef) => handleBarDefChange(index, updatedBarDef)}
+            />
           </div>
         ))}
         <button
