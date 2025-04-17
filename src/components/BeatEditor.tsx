@@ -71,14 +71,8 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
   };
 
   const addBarDef = () => {
-    setBarDefs([...barDefs, { kick: kickStr, hihat: hihatStr, snare: snareStr, accent: accentStr }]);
-
-    const beatNotes = barDefs.map((barDef) => ({
-      kick: barDef.kick,
-      hihat: barDef.hihat,
-      snare: barDef.snare,
-      accent: barDef.accent,
-    }));
+    const newBarDefs = [...barDefs, { kick: kickStr, hihat: hihatStr, snare: snareStr, accent: accentStr }];
+    setBarDefs(newBarDefs);
   };
 
   const deleteBarDef = (index: number) => {
@@ -91,11 +85,13 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
     console.log('Updated bar def:', index, updatedBarDef);
     const newBarDefs = barDefs.map((barDef, i) => (i === index ? updatedBarDef : barDef));
     setBarDefs(newBarDefs);
+  };
 
+  useEffect(() => {
     const beatStrings = [
-      newBarDefs.map((barDef) => barDef.hihat),
-      newBarDefs.map((barDef) => barDef.kick),
-      newBarDefs.map((barDef) => barDef.snare),
+      barDefs.map((barDef) => barDef.hihat),
+      barDefs.map((barDef) => barDef.kick),
+      barDefs.map((barDef) => barDef.snare),
     ];
     console.log('Beat strings:', beatStrings);
 
@@ -110,11 +106,7 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
     };
     console.log('New temp beat:', newTempBeat);
     setTempBeat(newTempBeat);
-  };
-
-  useEffect(() => {
-    console.log('Beat changed: ', tempBeat);
-  }, [tempBeat]);
+  }, [barDefs]);
 
   return (
     <div>
