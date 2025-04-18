@@ -2,7 +2,13 @@ import { Method } from '~/types/Method';
 
 export const methodService = {
   async getAllMethods(): Promise<Method[]> {
-    const response = await fetch('/api/methods');
+    let url = `/api/methods`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      url = `${base}/api/methods`;
+    }
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error('Failed to fetch methods');
     }
@@ -12,7 +18,13 @@ export const methodService = {
   },
 
   async createMethod(title: string): Promise<Method> {
-    const response = await fetch('/api/methods', {
+    let url = `/api/methods`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      url = `${base}/api/methods`;
+    }
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title }),
@@ -24,7 +36,13 @@ export const methodService = {
   },
 
   async getMethodById(id: string): Promise<Method | null> {
-    const response = await fetch(`/api/methods/${id}`);
+    let url = `/api/methods/${id}`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      url = `${base}/api/methods/${id}`;
+    }
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error('Failed to fetch method');
     }
@@ -32,7 +50,13 @@ export const methodService = {
   },
 
   async updateMethod(id: string, data: Partial<Omit<Method, 'id' | 'createdAt' | 'modifiedAt'>>): Promise<Method> {
-    const response = await fetch(`/api/methods/${id}`, {
+    let url = `/api/methods/${id}`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      url = `${base}/api/methods/${id}`;
+    }
+    const response = await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -44,7 +68,13 @@ export const methodService = {
   },
 
   async deleteMethod(id: string): Promise<Method> {
-    const response = await fetch(`/api/methods/${id}`, {
+    let url = `/api/methods/${id}`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      url = `${base}/api/methods/${id}`;
+    }
+    const response = await fetch(url, {
       method: 'DELETE',
     });
     if (!response.ok) {

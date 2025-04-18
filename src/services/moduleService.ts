@@ -2,7 +2,14 @@ import { Module } from '~/types/Module';
 
 export const moduleService = {
   async getAllModules(): Promise<Module[]> {
-    const response = await fetch('/api/modules');
+    let url = `/api/modules`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      console.log('Server-side API base URL:', base);
+      url = `${base}/api/modules`;
+    }
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error('Failed to fetch modules');
     }
@@ -10,24 +17,29 @@ export const moduleService = {
   },
 
   async getModuleById(id: string): Promise<Module | null> {
-    if (!id) {
-      throw new Error('Module ID is required');
+    let url = `/api/modules/${id}`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      console.log('Server-side API base URL:', base);
+      url = `${base}/api/modules/${id}`;
     }
-
-    const url = `/api/modules/${id}`;
-    console.log('Fetching module with URL:', url);
-
     const response = await fetch(url);
     if (!response.ok) {
-      console.error(`Failed to fetch module. Status: ${response.status}`);
       throw new Error('Failed to fetch module');
     }
-
     return response.json();
   },
 
   async createModule(data: Omit<Module, 'id' | 'createdAt' | 'modifiedAt'>): Promise<Module> {
-    const response = await fetch('/api/modules', {
+    let url = `/api/modules`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      console.log('Server-side API base URL:', base);
+      url = `${base}/api/modules`;
+    }
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -39,7 +51,14 @@ export const moduleService = {
   },
 
   async updateModule(id: string, data: Partial<Omit<Module, 'id' | 'createdAt' | 'modifiedAt'>>): Promise<Module> {
-    const response = await fetch(`/api/modules/${id}`, {
+    let url = `/api/modules/${id}`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      console.log('Server-side API base URL:', base);
+      url = `${base}/api/modules/${id}`;
+    }
+    const response = await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -51,7 +70,14 @@ export const moduleService = {
   },
 
   async deleteModule(id: string): Promise<Module> {
-    const response = await fetch(`/api/modules/${id}`, {
+    let url = `/api/modules/${id}`;
+    if (typeof window === 'undefined') {
+      // Server-side: use absolute URL - on ChatGPT's recommendation
+      const base = process.env.API_BASE_URL;
+      console.log('Server-side API base URL:', base);
+      url = `${base}/api/modules/${id}`;
+    }
+    const response = await fetch(url, {
       method: 'DELETE',
     });
     if (!response.ok) {
