@@ -37,4 +37,10 @@ export const methodRepository = {
       where: { id },
     });
   },
+
+  async getModuleProgress(userId: string, moduleId: string) {
+    return await prisma.moduleProgress.findUnique({
+      where: { userId_moduleId: { userId, moduleId } },
+    });
+  },
 };

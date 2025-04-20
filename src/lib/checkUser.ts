@@ -21,7 +21,7 @@ export const checkUser = async (req: any) => {
     where: { id: userId },
   });
   if (existingUser) {
-    console.log('checkUser: User already exists in the database');
+    console.log('checkUser: User already exists in the database. Good good good.');
     return userId;
   }
 

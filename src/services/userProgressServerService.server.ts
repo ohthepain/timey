@@ -1,0 +1,128 @@
+import { setBeatBestTempo } from '~/repositories/beatProgressRepository';
+import { getBeatWithModuleAndMethod } from '~/repositories/beatRepository';
+import { moduleProgressRepository } from '~/repositories/moduleProgressRepository';
+import { userRepository } from '~/repositories/userRepository';
+import { checkUser } from '~/lib/checkUser';
+import { createServerFn } from '@tanstack/react-start';
+import { z } from 'zod';
+import { getWebRequest } from '@tanstack/react-start/server';
+import { getAuth } from '@clerk/tanstack-react-start/server';
+
+const startBeatServerFnArgs = z.object({
+  beatId: z.string(),
+});
+
+export const yourServerFn = createServerFn()
+  .validator((data: unknown) => {
+    return startBeatServerFnArgs.parse(data);
+  })
+  .handler(async (ctx) => {
+    const request = getWebRequest();
+    if (!request) {
+      throw new Error('Request is not available');
+    }
+    const { userId } = await getAuth(request);
+    if (!userId) {
+      // Don't send these requests for users that aren't logged in
+      return { error: 'User not authenticated' };
+    }
+    checkUser(request);
+    const { beatId } = ctx.data;
+    console.log('User ID:', userId, ' beat id', beatId);
+
+    const beat = await getBeatWithModuleAndMethod(beatId);
+    if (!beat) {
+      throw new Error(`Beat not found with id ${beatId}`);
+    }
+    if (!beat.module) {
+      throw new Error(`Module not found for beat with id ${beatId}`);
+    }
+    if (!beat.module.method) {
+      throw new Error(`Method not found for module with id ${beat.module.id}`);
+    }
+    const moduleId = beat.module.id;
+    const methodId = beat.module.method.id;
+
+    return 'Hello, world!';
+  });
+
+export const startBeatServerFn = createServerFn({
+  method: 'POST',
+  response: 'data',
+})
+  .validator((data: unknown) => {
+    return startBeatServerFnArgs.parse(data);
+  })
+  .handler(async (ctx) => {
+    try {
+      const { beatId } = ctx.data;
+      console.log('Received request to start beat', beatId);
+      const request = getWebRequest();
+      if (!request) {
+        throw new Error('Request is not available');
+      }
+      checkUser(request);
+      const { userId } = await getAuth(request);
+      console.log('User ID:', userId);
+      if (!userId) {
+        // Don't send these requests for users that aren't logged in
+        return { error: 'User not authenticated' };
+      }
+
+      const beat = await getBeatWithModuleAndMethod(beatId);
+      if (!beat) {
+        throw new Error(`Beat not found with id ${beatId}`);
+      }
+      if (!beat.module) {
+        throw new Error(`Module not found for beat with id ${beatId}`);
+      }
+      if (!beat.module.method) {
+        throw new Error(`Method not found for module with id ${beat.module.id}`);
+      }
+      const moduleId = beat.module.id;
+      const methodId = beat.module.method.id;
+
+      // Set the user's current module
+      await moduleProgressRepository.setCurrentMethodForModule(userId, moduleId, methodId);
+
+      // Set the user's current method for the module
+      await userRepository.setCurrentModule(userId, moduleId);
+      return { success: true };
+    } catch (error) {
+      console.error('Error starting beat:', error);
+      return { error: 'Failed to start beat' };
+    }
+  });
+
+const passBeatTempoServerFnArgs = z.object({
+  beatId: z.string(),
+  tempo: z.number(),
+});
+
+export const passBeatTempoServerFn = createServerFn({
+  method: 'POST',
+  response: 'data',
+})
+  .validator((data: unknown) => {
+    return passBeatTempoServerFnArgs.parse(data);
+  })
+  .handler(async (ctx) => {
+    try {
+      const { beatId, tempo } = ctx.data;
+      console.log('Received request to pass beat tempo', beatId, tempo);
+      const request = getWebRequest();
+      if (!request) {
+        throw new Error('Request is not available');
+      }
+      const { userId } = await getAuth(request);
+      if (!userId) {
+        // Don't send these requests for users that aren't logged in
+        return { error: 'User not authenticated' };
+      }
+      // await checkUser(userId);
+      return setBeatBestTempo(userId, beatId, tempo);
+    } catch (error) {
+      console.error('Error passing beat tempo:', error);
+      return { error: 'Failed to pass beat tempo' };
+    }
+  });

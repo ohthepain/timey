@@ -1,8 +1,20 @@
 import prisma from '../config/db';
-import { Prisma } from '@prisma/client';
 
 export const getBeatById = async (id: string) => {
   return prisma.beat.findUnique({ where: { id }, include: { beatNotes: true } });
+};
+
+export const getBeatWithModuleAndMethod = async (beatId: string) => {
+  return prisma.beat.findUnique({
+    where: { id: beatId },
+    include: {
+      module: {
+        include: {
+          method: true,
+        },
+      },
+    },
+  });
 };
 
 export const getBeatsByUser = async (userId: string) => {

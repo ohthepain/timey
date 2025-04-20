@@ -1,6 +1,7 @@
 import { Module } from '~/types/Module';
 import { deleteBeat } from '~/services/beatService';
 import { ScoreView } from '~/components/ScoreView2';
+import { passBeatTempoServerFn, startBeatServerFn } from '~/services/userProgressServerService.server';
 
 export interface ModuleProps {
   module: Module;
@@ -34,7 +35,38 @@ export const ModuleViewer = ({ module }: ModuleProps) => {
               <li key={beat.id} className="mb-2">
                 <div className="flex justify-between items-center">
                   <p className="font-semibold">{beat.name}</p>
+                  <button
+                    onClick={async () => {
+                      // You may need to provide userId, moduleId, methodId, and beatId here
+                      // For demonstration, assuming you have access to userId, moduleId, and methodId
+                      // Replace 'userId', 'moduleId', and 'methodId' with actual values from your context or props
+
+                      // console.log('Fetching yourServerFn for beat:', beat.id);
+                      // const result = await yourServerFn({ data: { beatId: beat.id } });
+                      // console.log('Result from yourServerFn:', result);
+                      console.log('Fetching startBeatServerFn for beat:', beat.id);
+                      await startBeatServerFn({ data: { beatId: beat.id } });
+                      /* TODO: implement play functionality */
+                    }}
+                    className="text-green-500 hover:text-green-700 text-3xl p-2 mr-2"
+                    title="Play"
+                  >
+                    ▶️
+                  </button>
                   <ScoreView beat={beat} />
+                  {[90, 100, 120, 140].map((tempo) => (
+                    <button
+                      key={tempo}
+                      onClick={async () => {
+                        // Replace 'userId' with the actual user ID from your context or props
+                        await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
+                      }}
+                      className="bg-blue-100 hover:bg-blue-300 text-blue-800 font-bold py-1 px-2 mx-1 rounded text-xs"
+                      title={`Pass at tempo ${tempo}`}
+                    >
+                      {tempo}
+                    </button>
+                  ))}
                   <button onClick={() => handleDeleteBeat(beat.id)} className="text-red-500 hover:text-red-700 text-sm">
                     Delete
                   </button>
