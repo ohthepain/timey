@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Beam, Renderer, Stave, StaveNote, TickContext, Tickable, Barline, RenderContext, drawDot } from 'vexflow';
 import { MakeStaveNotesFromBeat, TupletRecord } from '../lib/ParseBeat';
-import { useScoreStore } from '~/state/ScoreStore';
 import { useBeatPlayer } from '~/lib/UseBeatPlayer';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { NoteEntry } from '~/lib/ParseBeat';

@@ -28,11 +28,11 @@ const makeTempBeat = (moduleId: string) => {
 };
 
 export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
-  const [name, setName] = useState('Basic Beat');
-  const [index, setIndex] = useState(1);
-  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(beat?.name || 'Basic Beat');
+  const [index, setIndex] = useState(beat?.index || 1);
   const [barDefs, setBarDefs] = useState<BarDef[]>([]);
-  const [tempBeat, setTempBeat] = useState<Beat>(makeTempBeat(module.id));
+  const [tempBeat, setTempBeat] = useState<Beat>(beat || makeTempBeat(module.id));
+  const [error, setError] = useState<string | null>(null);
 
   const router = useRouter();
 
@@ -113,6 +113,7 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
       barDefs.map((barDef) => barDef.hihat),
       barDefs.map((barDef) => barDef.kick),
       barDefs.map((barDef) => barDef.snare),
+      barDefs.map((barDef) => barDef.accent),
     ];
     console.log('Beat strings:', beatStrings);
 
@@ -128,10 +129,6 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
     console.log('New temp beat:', newTempBeat);
     setTempBeat(newTempBeat);
   }, [barDefs]);
-
-  useEffect(() => {
-    console.log(`Index changed: ${index}`);
-  }, [index]);
 
   return (
     <div>

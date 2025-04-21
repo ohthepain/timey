@@ -1,7 +1,5 @@
 import { Stem, StaveNote, Tuplet } from 'vexflow';
-// import { Beat, BeatNote } from '@prisma/client';
 import { Beat } from '~/types/Beat';
-import { BeatNote } from '~/types/BeatNote';
 
 const hihat = 'g/5/x';
 const snare = 'e/5';
@@ -297,82 +295,4 @@ export function MakeStaveNotesFromBeat(beat: Beat): {
   }
 
   return { noteEntries, tuplets };
-}
-
-const durationMap: Record<string, number> = {
-  whole: 1,
-  half: 2,
-  quarter: 4,
-  eighth: 8,
-  sixteenth: 16,
-  thirtysecond: 32,
-};
-
-const midiNoteMap: Record<string, number> = {
-  'g/5/x': 79, // Example mapping for hihat
-  'e/5': 76, // Example mapping for snare
-  'g/4': 67, // Example mapping for kick
-};
-
-/**
- * Converts the input string into a Beat object with associated BeatNote objects.
- * @param input - The string output to parse.
- * @param authorId - The ID of the user creating the beat.
- * @returns A Beat object with its associated BeatNotes.
- */
-export function MakeBeatRecords(input: string, authorId: string): Beat {
-  const lines = input.split('\n');
-  const beatNotes: BeatNote[] = [];
-
-  lines.forEach((line) => {
-    line = line.trim();
-
-    // Detect note
-    const staveNoteMatch = line.match(/^note,(\d+),(\d+[t]?),\[(.+)\],(\d+),(\d+),(\d+),(\d+),(\d+)$/);
-    if (staveNoteMatch) {
-      const index = parseInt(staveNoteMatch[1], 10);
-      const duration = durationMap[staveNoteMatch[2]] || 0;
-      const keys = staveNoteMatch[3].split(', ').map((key) => {
-        if (key === 'hihat') return 'g/5/x';
-        if (key === 'snare') return 'e/5';
-        if (key === 'kick') return 'g/4';
-        console.warn(`Unknown key: ${key}`);
-        return 'g/4/x'; // Default to rest
-      });
-      const barNum = parseInt(staveNoteMatch[4], 10);
-      const beatNum = parseInt(staveNoteMatch[5], 10);
-      const divisionNum = parseInt(staveNoteMatch[6], 10);
-      const subDivisionNum = parseInt(staveNoteMatch[7], 10);
-      const numSubDivisions = parseInt(staveNoteMatch[8], 10);
-
-      // Create a BeatNote object for each key
-      keys.forEach((key) => {
-        const beatNote: BeatNote = {
-          id: `${index}-${key}`, // Generate a unique ID (adjust this logic if needed)
-          index,
-          duration,
-          staveNote: midiNoteMap[key] || 0,
-          barNum,
-          beatNum,
-          divisionNum,
-          subDivisionNum,
-          numSubDivisions,
-          velocity: 127, // Default velocity (can be adjusted as needed)
-          beatId: '', // This will be set later when the Beat is created
-        };
-        beatNotes.push(beatNote);
-      });
-    }
-  });
-
-  // Create the Beat object
-  const beat: Beat = {
-    id: 'beat-1', // Generate a unique ID (adjust this logic if needed)
-    authorId, // Use the provided authorId
-    createdAt: new Date(),
-    modifiedAt: new Date(),
-    beatNotes, // Include the associated BeatNotes
-  };
-
-  return beat;
 }

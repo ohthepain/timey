@@ -35,6 +35,9 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
     }
   };
 
+  const handleCopyBeat = async () => {};
+  const handleEditBeat = async () => {};
+
   return (
     <div className="module-page p-4">
       <h1 className="text-2xl font-bold mb-4">Module: {module.title}</h1>
@@ -62,15 +65,22 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
                         ▶️
                       </button>
                       <button
-                        onClick={async () => {}}
+                        onClick={handleEditBeat}
                         className="text-green-500 hover:text-green-700 text-xs px-1 mx-1 border border-green-500 rounded my-1.5"
+                        title="Edit"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={handleCopyBeat}
+                        className="text-blue-500 hover:text-blue-700 text-xs px-1 mx-1 border border-blue-500 rounded my-1.5"
                         title="Copy"
                       >
                         Copy
                       </button>
                       <button
                         onClick={async () => {
-                          handleDeleteBeat(beat.id);
+                          handleDeleteBeat(beat.id!);
                           router.invalidate();
                         }}
                         className="text-red-500 hover:text-red-700 text-xs px-1 mx-1 border border-red-500 rounded my-1.5"
@@ -82,7 +92,7 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
                   </div>
                   <ScoreView beat={beat} />
                   {[90, 100, 120, 140].map((tempo) => {
-                    const bestTempo = beatProgressMap.get(beat.id)?.bestTempo;
+                    const bestTempo = beatProgressMap.get(beat.id!)?.bestTempo;
                     const isBlue = bestTempo !== undefined && bestTempo >= tempo;
                     return (
                       <button
@@ -102,7 +112,10 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
                       </button>
                     );
                   })}
-                  <button onClick={() => handleDeleteBeat(beat.id)} className="text-red-500 hover:text-red-700 text-sm">
+                  <button
+                    onClick={() => handleDeleteBeat(beat.id!)}
+                    className="text-red-500 hover:text-red-700 text-sm"
+                  >
                     Delete
                   </button>
                 </div>
