@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Module } from '~/types/Module';
-import { deleteBeat } from '~/services/beatService';
 import { ScoreView } from '~/components/ScoreView2';
 import {
   passBeatTempoServerFn,
   startBeatServerFn,
   BeatProgressView,
 } from '~/services/userProgressServerService.server';
+import { deleteBeatServerFn } from '~/services/beatService.server';
+import { useRouter } from '@tanstack/react-router';
 
 export interface ModuleProps {
   module: Module;
@@ -22,10 +23,11 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
     return map;
   });
 
+  const router = useRouter();
+
   const handleDeleteBeat = async (beatId: string) => {
     try {
-      await deleteBeat(beatId);
-      alert('Beat deleted successfully');
+      await deleteBeatServerFn({ data: { id: beatId } });
       // Optionally, refresh the module or remove the beat from the UI
     } catch (error) {
       console.error('Error deleting beat:', error);
@@ -46,18 +48,38 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
             {module.beats.map((beat) => (
               <li key={beat.id} className="mb-2">
                 <div className="flex justify-between items-center">
-                  <p className="font-semibold">{beat.name}</p>
-                  <button
-                    onClick={async () => {
-                      console.log('Fetching startBeatServerFn for beat:', beat.id);
-                      await startBeatServerFn({ data: { beatId: beat.id } });
-                      /* TODO: implement play functionality */
-                    }}
-                    className="text-green-500 hover:text-green-700 text-3xl p-2 mr-2"
-                    title="Play"
-                  >
-                    ▶️
-                  </button>
+                  <div className="flex-col items-center">
+                    <p className="font-semibold">{beat.name}</p>
+                    <div className="flex flex-row">
+                      <button
+                        onClick={async () => {
+                          await startBeatServerFn({ data: { beatId: beat.id } });
+                          /* TODO: implement play functionality */
+                        }}
+                        className="text-green-500 hover:text-green-700 text-3xl p-1"
+                        title="Play"
+                      >
+                        ▶️
+                      </button>
+                      <button
+                        onClick={async () => {}}
+                        className="text-green-500 hover:text-green-700 text-xs px-1 mx-1 border border-green-500 rounded my-1.5"
+                        title="Copy"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        onClick={async () => {
+                          handleDeleteBeat(beat.id);
+                          router.invalidate();
+                        }}
+                        className="text-red-500 hover:text-red-700 text-xs px-1 mx-1 border border-red-500 rounded my-1.5"
+                        title="Delete"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                   <ScoreView beat={beat} />
                   {[90, 100, 120, 140].map((tempo) => {
                     const bestTempo = beatProgressMap.get(beat.id)?.bestTempo;

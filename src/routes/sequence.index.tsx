@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { ScoreView } from '~/components/ScoreView2';
 import { Transport } from '~/components/Transport';
 import { Beat } from '~/types/Beat';
-import { getBeatByName } from '~/services/beatService';
+import { getBeatByNameServerFn } from '~/services/beatService.server';
 
 export const Route = createFileRoute('/sequence/')({
   component: SequenceIndexComponent,
@@ -16,8 +16,8 @@ function SequenceIndexComponent() {
 
   useEffect(() => {
     (async () => {
-      const beat = await getBeatByName('Basic Beat2');
-      setBeat(beat);
+      const beat: Beat | null = await getBeatByNameServerFn({ data: { name: 'Basic Beat2' } });
+      if (beat) setBeat(beat);
     })();
   }, []);
 

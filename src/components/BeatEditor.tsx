@@ -1,25 +1,29 @@
 import { useEffect, useState } from 'react';
-import { saveBeat } from '~/services/beatService';
+import { saveBeatServerFn } from '~/services/beatService.server';
 import type { Beat } from '~/types/Beat';
 import { Module } from '~/types/Module';
 import { BarDefEditor } from '~/components/BarDefEditor';
 import { BarDef } from '~/types/BarDef';
 import { ParseBeatStrings, ParseBeatString } from '~/lib/ParseBeat';
 import { ScoreView } from '~/components/ScoreView2';
+import { useRouter } from '@tanstack/react-router';
 
 interface BeatEditorProps {
   beat: Beat | null;
   module: Module;
 }
 
-const makeTempBeat = () => {
+const makeTempBeat = (moduleId: string) => {
   return {
-    id: '0',
+    id: undefined,
     name: 'temp',
+    index: 0,
     authorId: '',
     createdAt: new Date(),
     modifiedAt: new Date(),
     beatNotes: [],
+    description: 'Default description',
+    moduleId,
   } as Beat;
 };
 
@@ -28,7 +32,9 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
   const [index, setIndex] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [barDefs, setBarDefs] = useState<BarDef[]>([]);
-  const [tempBeat, setTempBeat] = useState<Beat>(makeTempBeat());
+  const [tempBeat, setTempBeat] = useState<Beat>(makeTempBeat(module.id));
+
+  const router = useRouter();
 
   const hihatStr = 'h,h,h,h,h,h,h,h';
   const kickStr = 'k,,,,k,,,';
@@ -38,6 +44,7 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
   const snareStr1 = ',,s,xs,xss,s,,xs';
 
   const handleSave = async () => {
+    console.log(`Saving beat: index ${index}`);
     if (!name.trim()) {
       setError('Name is required');
       return;
@@ -55,15 +62,18 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
 
     try {
       console.log('Saving beat...: beat.id, module.id', beat?.id, module.id);
+      console.log(`Saving beat: index ${index}`);
 
-      const savedBeat = await saveBeat(name, beatString, index, 'Default description', module.id, beat?.id);
+      const savedBeat = await saveBeatServerFn({
+        data: { ...tempBeat, name, index },
+      });
 
       console.log('Beat saved successfully:', savedBeat);
       setName('');
       setIndex(0);
       setError(null);
       setBarDefs([]);
-      alert('Beat added successfully');
+      router.invalidate();
     } catch (err) {
       console.error('Error adding beat:', err);
       setError('Failed to add beat');
@@ -71,8 +81,19 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
   };
 
   const addBarDef = () => {
-    const newBarDefs = [...barDefs, { kick: kickStr, hihat: hihatStr, snare: snareStr, accent: accentStr }];
-    setBarDefs(newBarDefs);
+    const newBarDef = { kick: kickStr, hihat: hihatStr, snare: snareStr, accent: accentStr };
+    setBarDefs([...barDefs, newBarDef]);
+  };
+
+  const copyBarDef = () => {
+    let newBarDef: BarDef;
+    if (barDefs.length > 0) {
+      // Copy the last barDef
+      newBarDef = { ...barDefs[barDefs.length - 1] };
+    } else {
+      newBarDef = { kick: kickStr, hihat: hihatStr, snare: snareStr, accent: accentStr };
+    }
+    setBarDefs([...barDefs, newBarDef]);
   };
 
   const deleteBarDef = (index: number) => {
@@ -107,6 +128,10 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
     console.log('New temp beat:', newTempBeat);
     setTempBeat(newTempBeat);
   }, [barDefs]);
+
+  useEffect(() => {
+    console.log(`Index changed: ${index}`);
+  }, [index]);
 
   return (
     <div>
@@ -146,12 +171,20 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
             />
           </div>
         ))}
-        <button
-          onClick={addBarDef}
-          className="btn btn-add bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mb-4 m-2"
-        >
-          Add Bar
-        </button>
+        <div className="flex flex-col">
+          <button
+            onClick={addBarDef}
+            className="btn btn-add bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mb-4 m-2"
+          >
+            Add Bar
+          </button>
+          <button
+            onClick={copyBarDef}
+            className="btn btn-add bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mb-4 m-2"
+          >
+            Copy Bar
+          </button>
+        </div>
       </div>
       <ScoreView beat={tempBeat} />
     </div>

@@ -24,25 +24,56 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
   return (
     <div className="beat-string-editor w-52 p-4 border rounded shadow-md bg-orange-50">
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Kick</label>
-        <input
-          type="text"
-          value={kick}
-          onChange={(e) => {
-            setKick(e.target.value);
-            handleChange({
-              ...barDef,
-              kick: e.target.value,
-              hihat,
-              snare,
-              accent,
-            });
-          }}
-          className="input-field px-4 py-2 border rounded w-full"
-        />
+        <div className="flex justify-between items-center mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Kick</label>
+          <button
+            type="button"
+            className="text-xs bg-gray-200 hover:bg-gray-300 rounded px-2 py-1"
+            onClick={() => {
+              setKick('');
+              handleChange({
+                ...barDef,
+                kick: '',
+              });
+            }}
+            title="Clear kick"
+          >
+            Clear
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={kick}
+            onChange={(e) => {
+              setKick(e.target.value);
+              handleChange({
+                ...barDef,
+                kick: e.target.value,
+              });
+            }}
+            className="input-field px-4 py-2 border rounded w-full"
+          />
+        </div>
       </div>
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Hihat</label>
+        <div className="flex justify-between items-center mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Hihat</label>
+          <button
+            type="button"
+            className="text-xs bg-gray-200 hover:bg-gray-300 rounded px-2 py-1"
+            onClick={() => {
+              setHihat('');
+              handleChange({
+                ...barDef,
+                hihat: '',
+              });
+            }}
+            title="Clear kick"
+          >
+            Clear
+          </button>
+        </div>
         <input
           type="text"
           value={hihat}
@@ -60,7 +91,23 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
         />
       </div>
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Snare</label>
+        <div className="flex justify-between items-center mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Snare</label>
+          <button
+            type="button"
+            className="text-xs bg-gray-200 hover:bg-gray-300 rounded px-2 py-1"
+            onClick={() => {
+              setSnare('');
+              handleChange({
+                ...barDef,
+                snare: '',
+              });
+            }}
+            title="Clear kick"
+          >
+            Clear
+          </button>
+        </div>
         <input
           type="text"
           value={snare}
@@ -78,7 +125,23 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
         />
       </div>
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Accent</label>
+        <div className="flex justify-between items-center mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Accent</label>
+          <button
+            type="button"
+            className="text-xs bg-gray-200 hover:bg-gray-300 rounded px-2 py-1"
+            onClick={() => {
+              setAccent('');
+              handleChange({
+                ...barDef,
+                accent: '',
+              });
+            }}
+            title="Clear accent"
+          >
+            Clear
+          </button>
+        </div>
         <input
           type="text"
           value={accent}

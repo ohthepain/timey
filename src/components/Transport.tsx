@@ -1,46 +1,12 @@
 import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
-import { useScoreStore } from '~/state/ScoreStore';
 import { BeatAdminOperations } from '~/components/BeatAdminOperations';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [beatName, setBeatName] = useState('basic');
-
-  const handleSave = async () => {
-    console.log('handleSave');
-    const beatString = useScoreStore.getState().getBeat(beatName);
-    if (!beatString) {
-      console.error('Beat not found');
-      return;
-    }
-
-    try {
-      console.log('handleSave: got beatString - sending request');
-      const response = await fetch(`/api/beats`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: beatName,
-          beatString,
-        }),
-      });
-      console.log(`handleSave: got beatString - got response status ${response.status}`);
-
-      if (!response.ok) {
-        throw new Error('Failed to save beat');
-      }
-
-      const savedBeat = await response.json();
-      console.log('Beat saved successfully:', savedBeat);
-    } catch (error) {
-      console.error('Error saving beat:', error);
-    }
-  };
 
   const handlePlay = () => {
     console.log('Play clicked');
@@ -96,9 +62,6 @@ export const Transport = () => {
         onChange={(e) => setBeatName(e.target.value)}
         className="input-field px-4 py-2 border rounded"
       />
-      <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handleSave}>
-        Save
-      </button>
       <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handlePrev}>
         Prev
       </button>
