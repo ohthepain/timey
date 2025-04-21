@@ -128,7 +128,6 @@ interface ScoreViewProps {
 
 export const ScoreView = ({ beat }: ScoreViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  console.log('ScoreView', beat);
   let context: any;
 
   const { currentNote } = useBeatPlayer();
@@ -213,15 +212,15 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
       note.staveNote.setContext(context).draw();
     });
 
-    beams.forEach((beam, index) => {
-      console.log(`Beam ${index + 1}:`);
-      const notes = beam.getNotes();
-      notes.forEach((note, noteIndex) => {
-        console.log(`  Note ${noteIndex + 1}:`, note);
-        console.log(`    Keys: ${note.getKeys()}`);
-        console.log(`    Duration: ${note.getDuration()}`);
-      });
-    });
+    // beams.forEach((beam, index) => {
+    //   console.log(`Beam ${index + 1}:`);
+    //   const notes = beam.getNotes();
+    //   notes.forEach((note, noteIndex) => {
+    //     console.log(`  Note ${noteIndex + 1}:`, note);
+    //     console.log(`    Keys: ${note.getKeys()}`);
+    //     console.log(`    Duration: ${note.getDuration()}`);
+    //   });
+    // });
 
     // Draw beams and stems
     beams.forEach((b) => {
@@ -278,6 +277,10 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
       beatPlayer.off('note', handleNote);
     };
   }, []);
+
+  if (beat.beatNotes.length === 0) {
+    return <div>Beat has no notes</div>;
+  }
 
   return <div className="h-full w-full" ref={containerRef} />;
 };
