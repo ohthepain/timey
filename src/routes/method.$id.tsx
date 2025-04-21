@@ -32,14 +32,14 @@ function MethodPage() {
       <p className="mb-2">Description: {method.description || 'No description provided.'}</p>
       <p className="mb-2">Index: {method.index}</p>
       <p className="mb-2">Author ID: {method.authorId}</p>
-      <p className="text-sm text-gray-500">Created At: {new Date(method.createdAt).toLocaleString()}</p>
-      <p className="text-sm text-gray-500">Modified At: {new Date(method.modifiedAt).toLocaleString()}</p>
       <div className="mb-4">
         <ModuleList method={method} />
       </div>
       <div className="mb-4">
         <AddModule method={method} />
       </div>
+      <p className="text-sm text-gray-500">Created At: {new Date(method.createdAt).toISOString()}</p>
+      <p className="text-sm text-gray-500">Modified At: {new Date(method.modifiedAt).toISOString()}</p>
     </div>
   );
 }

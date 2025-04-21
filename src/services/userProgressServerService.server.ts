@@ -98,7 +98,7 @@ export const passBeatTempoServerFn = createServerFn({
   });
 
 const getBeatProgressForModuleServerFnArgs = z.object({
-  moduleId: z.string(),
+  id: z.string(),
 });
 
 export const getBeatProgressForModuleServerFn = createServerFn({
@@ -120,8 +120,8 @@ export const getBeatProgressForModuleServerFn = createServerFn({
         throw new Error('User not authenticated');
       }
       // checkUser(request);
-      const { moduleId } = ctx.data;
-      const moduleProgress = await beatProgressRepository.getBeatProgressForModule(userId, moduleId);
+      const { id } = ctx.data;
+      const moduleProgress = await beatProgressRepository.getBeatProgressForModule(userId, id);
       const beatProgress: BeatProgressView[] = moduleProgress.map((beat) => {
         const progress = (beat as any).beatProgress?.[0];
         return {

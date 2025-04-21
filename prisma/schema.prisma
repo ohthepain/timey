@@ -54,6 +54,8 @@ model Module {
 
   currentModuleUsers User[]           @relation("UserCurrentModule")
   moduleProgress     ModuleProgress[]
+
+  @@unique([title, methodId])
 }
 
 model Beat {
@@ -93,14 +95,14 @@ model BeatNote {
 }
 
 model MethodProgress {
-  id             String           @id @default(uuid())
-  user           User             @relation(fields: [userId], references: [id])
-  userId         String
-  method         Method           @relation(fields: [methodId], references: [id])
-  methodId       String
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  targetLevel    Int?
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  method      Method   @relation(fields: [methodId], references: [id])
+  methodId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  targetLevel Int?
 
   @@unique([userId, methodId])
 }
@@ -125,15 +127,15 @@ model MethodProgress {
 // target level for a beat, we automatically move on to the next beat in the module.
 
 model ModuleProgress {
-  id               String          @id @default(uuid())
-  user             User            @relation(fields: [userId], references: [id])
-  userId           String
-  module           Module          @relation(fields: [moduleId], references: [id])
-  moduleId         String
-  currentMethodId  String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  targetLevel      Int?
+  id              String   @id @default(uuid())
+  user            User     @relation(fields: [userId], references: [id])
+  userId          String
+  module          Module   @relation(fields: [moduleId], references: [id])
+  moduleId        String
+  currentMethodId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  targetLevel     Int?
 
   @@unique([userId, moduleId])
 }

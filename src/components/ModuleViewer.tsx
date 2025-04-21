@@ -49,13 +49,6 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
                   <p className="font-semibold">{beat.name}</p>
                   <button
                     onClick={async () => {
-                      // You may need to provide userId, moduleId, methodId, and beatId here
-                      // For demonstration, assuming you have access to userId, moduleId, and methodId
-                      // Replace 'userId', 'moduleId', and 'methodId' with actual values from your context or props
-
-                      // console.log('Fetching yourServerFn for beat:', beat.id);
-                      // const result = await yourServerFn({ data: { beatId: beat.id } });
-                      // console.log('Result from yourServerFn:', result);
                       console.log('Fetching startBeatServerFn for beat:', beat.id);
                       await startBeatServerFn({ data: { beatId: beat.id } });
                       /* TODO: implement play functionality */

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { moduleService } from '~/services/moduleService';
 import { Method } from '~/types/Method';
+import { useRouter } from '@tanstack/react-router';
+import { createModuleServerFn } from '~/services/moduleService.server';
 
 interface AddModuleProps {
   method: Method;
@@ -10,6 +11,7 @@ export const AddModule = ({ method }: AddModuleProps) => {
   const [title, setTitle] = useState('');
   const [index, setIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleAddModule = async () => {
     if (!title.trim()) {
@@ -18,16 +20,17 @@ export const AddModule = ({ method }: AddModuleProps) => {
     }
 
     try {
-      await moduleService.createModule({
-        title,
-        index,
-        authorId: method.authorId,
-        methodId: method.id,
+      await createModuleServerFn({
+        data: {
+          title,
+          index,
+          methodId: method.id,
+        },
       });
       setTitle('');
       setIndex(0);
       setError(null);
-      alert('Module added successfully');
+      router.invalidate();
     } catch (err) {
       console.error('Error adding module:', err);
       setError('Failed to add module');

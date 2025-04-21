@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { moduleService } from '~/services/moduleService';
 import { NotFound } from '~/components/NotFound';
 import { PostErrorComponent } from '~/components/PostErrorComponent';
 import { ModuleViewer } from '~/components/ModuleViewer';
 import { BeatEditor } from '~/components/BeatEditor';
 import { getBeatProgressForModuleServerFn, BeatProgressView } from '~/services/userProgressServerService.server';
+import { getModuleByIdServerFn } from '~/services/moduleService.server';
 
 export const loader = async ({ params }: { params: { id: string } }) => {
   console.log('loader: id:', params.id);
@@ -13,8 +13,8 @@ export const loader = async ({ params }: { params: { id: string } }) => {
     throw new Error('Module ID is required');
   }
 
-  const module = await moduleService.getModuleById(moduleId);
-  const beatProgress: BeatProgressView[] = await getBeatProgressForModuleServerFn({ data: { moduleId } });
+  const module = await getModuleByIdServerFn({ data: { id: moduleId } });
+  const beatProgress: BeatProgressView[] = await getBeatProgressForModuleServerFn({ data: { id: moduleId } });
   console.log('loader: beatProgress:', beatProgress);
 
   console.log('loader: Module:', module);
