@@ -2,34 +2,10 @@ import { useEffect, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { ScoreView } from '~/components/ScoreView2';
 import { Transport } from '~/components/Transport';
-import { useScoreStore } from '~/state/ScoreStore';
 import { Beat } from '~/types/Beat';
 import { getBeatByName } from '~/services/beatService';
 
-export const loader = async () => {
-  if (!useScoreStore.getState().beats['basic']) {
-    console.log('Loading beats...');
-    const hihatStr = 'h,h,h,h,h,h,h,h';
-    const kickStr = 'k,,,,k,,,';
-    const snareStr = ',,s,,,,s,';
-    const kickStr1 = 'k,kk,,,k,xkk,xk,';
-    const snareStr1 = ',,s,xs,xss,s,,xs';
-
-    const beatStrings = [
-      [hihatStr, hihatStr],
-      [kickStr, kickStr1],
-      [snareStr, snareStr1],
-    ];
-
-    const addBeat = useScoreStore.getState().addBeat;
-    addBeat('basic', beatStrings);
-  } else {
-    console.log('Beat already loaded');
-  }
-};
-
 export const Route = createFileRoute('/sequence/')({
-  loader: loader,
   component: SequenceIndexComponent,
 });
 
