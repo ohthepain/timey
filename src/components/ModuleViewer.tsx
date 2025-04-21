@@ -1,13 +1,27 @@
+import { useState } from 'react';
 import { Module } from '~/types/Module';
 import { deleteBeat } from '~/services/beatService';
 import { ScoreView } from '~/components/ScoreView2';
-import { passBeatTempoServerFn, startBeatServerFn } from '~/services/userProgressServerService.server';
+import {
+  passBeatTempoServerFn,
+  startBeatServerFn,
+  BeatProgressView,
+} from '~/services/userProgressServerService.server';
 
 export interface ModuleProps {
   module: Module;
+  beatProgress: BeatProgressView[];
 }
 
-export const ModuleViewer = ({ module }: ModuleProps) => {
+export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
+  const [beatProgressMap, setBeatProgressMap] = useState<Map<string, BeatProgressView>>(() => {
+    const map = new Map<string, BeatProgressView>();
+    beatProgress.forEach((beat) => {
+      map.set(beat.beatId, beat);
+    });
+    return map;
+  });
+
   const handleDeleteBeat = async (beatId: string) => {
     try {
       await deleteBeat(beatId);
@@ -25,8 +39,6 @@ export const ModuleViewer = ({ module }: ModuleProps) => {
       <p className="mb-2">Description: {module.description || 'No description provided.'}</p>
       <p className="mb-2">Index: {module.index}</p>
       <p className="mb-2">Author ID: {module.authorId}</p>
-      <p className="text-sm text-gray-500">Created At: {new Date(module.createdAt).toLocaleString()}</p>
-      <p className="text-sm text-gray-500">Modified At: {new Date(module.modifiedAt).toLocaleString()}</p>
       <div className="mt-4">
         <h2 className="text-xl font-bold">Beats</h2>
         {module.beats && module.beats.length > 0 ? (
@@ -54,19 +66,27 @@ export const ModuleViewer = ({ module }: ModuleProps) => {
                     ▶️
                   </button>
                   <ScoreView beat={beat} />
-                  {[90, 100, 120, 140].map((tempo) => (
-                    <button
-                      key={tempo}
-                      onClick={async () => {
-                        // Replace 'userId' with the actual user ID from your context or props
-                        await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
-                      }}
-                      className="bg-blue-100 hover:bg-blue-300 text-blue-800 font-bold py-1 px-2 mx-1 rounded text-xs"
-                      title={`Pass at tempo ${tempo}`}
-                    >
-                      {tempo}
-                    </button>
-                  ))}
+                  {[90, 100, 120, 140].map((tempo) => {
+                    const bestTempo = beatProgressMap.get(beat.id)?.bestTempo;
+                    const isBlue = bestTempo !== undefined && bestTempo >= tempo;
+                    return (
+                      <button
+                        key={tempo}
+                        onClick={async () => {
+                          await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
+                        }}
+                        className={
+                          `font-bold py-1 px-2 mx-1 rounded text-xs ` +
+                          (isBlue
+                            ? 'bg-blue-500 text-white hover:bg-blue-700'
+                            : 'bg-blue-100 hover:bg-blue-300 text-blue-800')
+                        }
+                        title={`Pass at tempo ${tempo}`}
+                      >
+                        {tempo}
+                      </button>
+                    );
+                  })}
                   <button onClick={() => handleDeleteBeat(beat.id)} className="text-red-500 hover:text-red-700 text-sm">
                     Delete
                   </button>
