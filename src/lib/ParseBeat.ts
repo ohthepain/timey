@@ -1,4 +1,5 @@
 import { Stem, StaveNote, Tuplet } from 'vexflow';
+import { BarSource, BeatSource } from '~/types/BarSource';
 import { Beat } from '~/types/Beat';
 
 const hihat = 'g/5/x';
@@ -68,15 +69,14 @@ export const ParseBeatString = (input: string) => {
 };
 
 // Parse the editable strings into a machine-readable format
-export function ParseBeatStrings(beatStrings: string[][]): string {
-  console.log(`ParseBeatStrings: input: ${beatStrings.length}`);
+export function ParseBeatSource(beatSource: BeatSource): string {
+  const numBars = beatSource.bars.length;
+  console.log(`ParseBeatStrings: input: ${numBars} bars`);
   let result = '';
-  const numBars = Math.max(...beatStrings.map((arr) => arr.length)); // Determine the number of bars
 
   for (let barNum = 0; barNum < numBars; barNum++) {
-    // Collect the strings for the current bar from all tracks
-    const currentBarStrings = beatStrings.map((track) => track[barNum] || '');
-    result += ParseBarStrings(barNum, currentBarStrings);
+    const bar: BarSource = beatSource.bars[barNum];
+    result += ParseBarSource(barNum, [bar.kick, bar.hihat, bar.snare, bar.accent]);
     result += '\n';
   }
 
@@ -86,12 +86,9 @@ export function ParseBeatStrings(beatStrings: string[][]): string {
 
 /**
  * Converts the source strings into a readable string format that represents each StaveNote.
- * @param hihatStr - String representing hi-hat beats.
- * @param kickStr - String representing kick beats.
- * @param snareStr - String representing snare beats.
  * @returns A readable string format of the notes.
  */
-export function ParseBarStrings(barNum: number, beatStrings: string[]): string {
+export function ParseBarSource(barNum: number, beatStrings: string[]): string {
   const beatArrays = beatStrings.map((beatStr) => beatStr.split(','));
 
   const result: string[] = ['// note,index,duration,keys,barNum,beatNum,divisionNum,subDivisionNum,numSubDivisions'];

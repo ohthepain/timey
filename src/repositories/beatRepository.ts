@@ -26,22 +26,6 @@ class BeatRepository {
     return prisma.beat.findFirst({ where: { name: name }, include: { beatNotes: true } });
   }
 
-  createBeat2({ name, description, index, authorId, moduleId, beatNotes }: any) {
-    return prisma.beat.create({
-      data: {
-        name,
-        description,
-        index,
-        authorId,
-        moduleId,
-        beatNotes: {
-          create: beatNotes,
-        },
-      },
-      include: { beatNotes: true },
-    });
-  }
-
   createBeat(data: any) {
     if (data.index === undefined || data.index === null) {
       throw new Error('Index is required and cannot be null or undefined');

@@ -1,23 +1,23 @@
 import { useState } from 'react';
-import { BarDef } from '~/types/BarDef';
+import { BarSource } from '~/types/BarSource';
 
 interface BarDefEditorProps {
-  barDef: BarDef;
+  barSource: BarSource;
   onDelete: () => void;
-  onChange?: (barDef: BarDef) => void;
+  onChange?: (barDef: BarSource) => void;
 }
 
-export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) => {
-  const [kick, setKick] = useState(barDef.kick);
-  const [hihat, setHihat] = useState(barDef.hihat);
-  const [snare, setSnare] = useState(barDef.snare);
-  const [accent, setAccent] = useState(barDef.accent);
+export const BarDefEditor = ({ barSource, onDelete, onChange }: BarDefEditorProps) => {
+  const [kick, setKick] = useState(barSource.kick);
+  const [hihat, setHihat] = useState(barSource.hihat);
+  const [snare, setSnare] = useState(barSource.snare);
+  const [accent, setAccent] = useState(barSource.accent);
 
   const handleDelete = () => {
     onDelete();
   };
 
-  const handleChange = (updatedBarDef: BarDef) => {
+  const handleChange = (updatedBarDef: BarSource) => {
     if (onChange) onChange(updatedBarDef);
   };
 
@@ -32,7 +32,7 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
             onClick={() => {
               setKick('');
               handleChange({
-                ...barDef,
+                ...barSource,
                 kick: '',
               });
             }}
@@ -48,7 +48,7 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
             onChange={(e) => {
               setKick(e.target.value);
               handleChange({
-                ...barDef,
+                ...barSource,
                 kick: e.target.value,
               });
             }}
@@ -65,7 +65,7 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
             onClick={() => {
               setHihat('');
               handleChange({
-                ...barDef,
+                ...barSource,
                 hihat: '',
               });
             }}
@@ -80,7 +80,7 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
           onChange={(e) => {
             setHihat(e.target.value);
             handleChange({
-              ...barDef,
+              ...barSource,
               kick,
               hihat: e.target.value,
               snare,
@@ -99,7 +99,7 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
             onClick={() => {
               setSnare('');
               handleChange({
-                ...barDef,
+                ...barSource,
                 snare: '',
               });
             }}
@@ -114,7 +114,7 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
           onChange={(e) => {
             setSnare(e.target.value);
             handleChange({
-              ...barDef,
+              ...barSource,
               kick,
               hihat,
               snare: e.target.value,
@@ -133,7 +133,7 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
             onClick={() => {
               setAccent('');
               handleChange({
-                ...barDef,
+                ...barSource,
                 accent: '',
               });
             }}
@@ -148,7 +148,7 @@ export const BarDefEditor = ({ barDef, onDelete, onChange }: BarDefEditorProps) 
           onChange={(e) => {
             setAccent(e.target.value);
             handleChange({
-              ...barDef,
+              ...barSource,
               kick,
               hihat,
               snare,

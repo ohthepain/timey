@@ -3,8 +3,8 @@ import { saveBeatServerFn } from '~/services/beatService.server';
 import type { Beat } from '~/types/Beat';
 import { Module } from '~/types/Module';
 import { BarDefEditor } from '~/components/BarDefEditor';
-import { BarDef } from '~/types/BarDef';
-import { ParseBeatStrings, ParseBeatString } from '~/lib/ParseBeat';
+import { BeatSource, BarSource } from '~/types/BarSource';
+import { ParseBeatSource, ParseBeatString } from '~/lib/ParseBeat';
 import { ScoreView } from '~/components/ScoreView2';
 import { useRouter } from '@tanstack/react-router';
 
@@ -27,21 +27,19 @@ const makeTempBeat = (moduleId: string) => {
   } as Beat;
 };
 
-export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
+export const  BeatEditor = ({ beat, module }: BeatEditorProps) => {
   const [name, setName] = useState(beat?.name || 'Basic Beat');
   const [index, setIndex] = useState(beat?.index || 1);
-  const [barDefs, setBarDefs] = useState<BarDef[]>([]);
+  const [beatSource, setBeatSource] = useState<BeatSource>(new BeatSource([]));
   const [tempBeat, setTempBeat] = useState<Beat>(beat || makeTempBeat(module.id));
   const [error, setError] = useState<string | null>(null);
 
   const router = useRouter();
 
-  const hihatStr = 'h,h,h,h,h,h,h,h';
   const kickStr = 'k,,,,k,,,';
+  const hihatStr = 'h,h,h,h,h,h,h,h';
   const snareStr = ',,s,,,,s,';
   const accentStr = 'a,,a,,a,,a,';
-  const kickStr1 = 'k,kk,,,k,xkk,xk,';
-  const snareStr1 = ',,s,xs,xss,s,,xs';
 
   const handleSave = async () => {
     console.log(`Saving beat: index ${index}`);
@@ -50,29 +48,18 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
       return;
     }
 
-    const beatStrings = [
-      barDefs.map((barDef) => barDef.hihat),
-      barDefs.map((barDef) => barDef.kick),
-      barDefs.map((barDef) => barDef.snare),
-    ];
-    console.log('Beat strings:', beatStrings);
-
-    const beatString = ParseBeatStrings(beatStrings);
+    const beatString = ParseBeatSource(beatSource);
     console.log('Beat string:', beatString);
 
     try {
-      console.log('Saving beat...: beat.id, module.id', beat?.id, module.id);
-      console.log(`Saving beat: index ${index}`);
-
       const savedBeat = await saveBeatServerFn({
         data: { ...tempBeat, name, index },
       });
 
-      console.log('Beat saved successfully:', savedBeat);
       setName('');
       setIndex(0);
       setError(null);
-      setBarDefs([]);
+      setBeatSource(new BeatSource([]));
       router.invalidate();
     } catch (err) {
       console.error('Error adding beat:', err);
@@ -81,43 +68,31 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
   };
 
   const addBarDef = () => {
-    const newBarDef = { kick: kickStr, hihat: hihatStr, snare: snareStr, accent: accentStr };
-    setBarDefs([...barDefs, newBarDef]);
+    const newBarSource: BarSource = { kick: kickStr, hihat: hihatStr, snare: snareStr, accent: accentStr };
+    setBeatSource(new BeatSource([...beatSource.bars, newBarSource]));
   };
 
-  const copyBarDef = () => {
-    let newBarDef: BarDef;
-    if (barDefs.length > 0) {
-      // Copy the last barDef
-      newBarDef = { ...barDefs[barDefs.length - 1] };
-    } else {
-      newBarDef = { kick: kickStr, hihat: hihatStr, snare: snareStr, accent: accentStr };
+  const copyBar = () => {
+    if (beatSource.bars.length === 0) {
+      return;
     }
-    setBarDefs([...barDefs, newBarDef]);
+    setBeatSource(new BeatSource([...beatSource.bars, beatSource.bars[beatSource.bars.length - 1]]));
   };
 
-  const deleteBarDef = (index: number) => {
-    const updatedBarDefs = [...barDefs];
-    updatedBarDefs.splice(index, 1);
-    setBarDefs(updatedBarDefs);
+  const deleteBar = (index: number) => {
+    const newBars = [...beatSource.bars];
+    newBars.splice(index, 1);
+    setBeatSource(new BeatSource(newBars));
   };
 
-  const handleBarDefChange = (index: number, updatedBarDef: BarDef) => {
+  const handleBarDefChange = (index: number, updatedBarDef: BarSource) => {
     console.log('Updated bar def:', index, updatedBarDef);
-    const newBarDefs = barDefs.map((barDef, i) => (i === index ? updatedBarDef : barDef));
-    setBarDefs(newBarDefs);
+    const newBars = beatSource.bars.map((barDef, i) => (i === index ? updatedBarDef : barDef));
+    setBeatSource(new BeatSource(newBars));
   };
 
   useEffect(() => {
-    const beatStrings = [
-      barDefs.map((barDef) => barDef.hihat),
-      barDefs.map((barDef) => barDef.kick),
-      barDefs.map((barDef) => barDef.snare),
-      barDefs.map((barDef) => barDef.accent),
-    ];
-    console.log('Beat strings:', beatStrings);
-
-    const beatString = ParseBeatStrings(beatStrings);
+    const beatString = ParseBeatSource(beatSource);
     console.log('Beat string:', beatString);
 
     const { beatNotes } = ParseBeatString(beatString);
@@ -128,7 +103,7 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
     };
     console.log('New temp beat:', newTempBeat);
     setTempBeat(newTempBeat);
-  }, [barDefs]);
+  }, [beatSource]);
 
   return (
     <div>
@@ -159,11 +134,11 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
         Save
       </button>
       <div className="bar-def-editors flex items-center">
-        {barDefs.map((barDef, index) => (
+        {beatSource.bars.map((barSource, index) => (
           <div className="inline-flex bg-pink-100 m-2" key={index}>
             <BarDefEditor
-              barDef={barDef}
-              onDelete={() => deleteBarDef(index)}
+              barSource={barSource}
+              onDelete={() => deleteBar(index)}
               onChange={(updatedBarDef) => handleBarDefChange(index, updatedBarDef)}
             />
           </div>
@@ -176,7 +151,7 @@ export const BeatEditor = ({ beat, module }: BeatEditorProps) => {
             Add Bar
           </button>
           <button
-            onClick={copyBarDef}
+            onClick={copyBar}
             className="btn btn-add bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mb-4 m-2"
           >
             Copy Bar
