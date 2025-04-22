@@ -25,11 +25,10 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
       <p className="mb-2">Index: {module.index}</p>
       <p className="mb-2">Author ID: {module.authorId}</p>
       <div className="mt-4">
-        <h2 className="text-xl font-bold">Beats</h2>
         {module.beats && module.beats.length > 0 ? (
-          <ul className="list-disc pl-5">
+          <ul className="pl-4">
             {module.beats.map((beat: Beat) => (
-              <li key={beat.id} className="mb-2">
+              <li key={beat.id} className="">
                 <BeatViewer
                   beat={beat}
                   beatProgress={beat.id ? beatProgressMap.get(beat.id) : undefined}

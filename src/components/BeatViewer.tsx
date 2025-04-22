@@ -19,6 +19,7 @@ interface BeatViewerProps {
 
 export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [name, setName] = useState(beat.name);
 
   const router = useRouter();
 
@@ -41,7 +42,16 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
     <div>
       <div className="flex justify-between items-center">
         <div className="flex-col items-center">
-          <p className="font-semibold">{beat.name}</p>
+          {isEditing ? (
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input-field px-4 py-2 border rounded w-full"
+            />
+          ) : (
+            <div className="font-semibold">{name}</div>
+          )}
           <div className="flex flex-row">
             <button
               onClick={async () => {
@@ -103,7 +113,15 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
           Delete
         </button>
       </div>
-      {isEditing && <BeatEditor beat={beat} module={module} />}
+      {isEditing && (
+        <BeatEditor
+          beat={beat}
+          module={module}
+          onSave={() => {
+            setIsEditing(false);
+          }}
+        />
+      )}
     </div>
   );
 }

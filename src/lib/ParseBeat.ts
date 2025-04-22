@@ -36,7 +36,6 @@ export const ParseBeatString = (input: string) => {
 
       if (match) {
         const [, index, durationCode, keysString, bar, beat, divisionNum, subDivisionNum, numSubDivisions] = match;
-        console.log(`numSubDivisions: ${numSubDivisions} keysString ${keysString}`);
         console.log(
           `note: ${index} ${durationCode} ${keysString} bar ${bar} beat ${beat} div ${divisionNum} sub ${subDivisionNum} of ${numSubDivisions}`
         );
@@ -292,4 +291,84 @@ export function MakeStaveNotesFromBeat(beat: Beat): {
   }
 
   return { noteEntries, tuplets };
+}
+
+export function createBeatSourceFromBeat(beat: Beat): BeatSource {
+  console.log('createBeatSourceFromBeat', beat);
+  const barsMap = new Map<number, BarSource>();
+
+  let subdivisionNum = 0;
+  let sumSubDivisions = 0;
+  let needComma = false;
+
+  for (let i = 0; i < beat.beatNotes.length; i++) {
+    const note = beat.beatNotes[i];
+    console.log('subdivisionNum', subdivisionNum, note.subDivisionNum, note.numSubDivisions);
+    if (subdivisionNum === 0) {
+      needComma = true;
+      console.log('subdivisionNum === 0');
+      subdivisionNum = note.numSubDivisions;
+      sumSubDivisions = note.numSubDivisions;
+    }
+    --subdivisionNum;
+    console.log('subdivisionNum', subdivisionNum);
+
+    const bar = barsMap.get(note.barNum) || { kick: '', hihat: '', snare: '', accent: '' };
+    // Parse noteString to determine which voices are present
+    const voices = note.noteString.split(',').map((s) => s.trim());
+    if (voices.includes('kick')) {
+      bar.kick += 'k';
+    } else {
+      bar.kick += 'x';
+    }
+    if (voices.includes('hihat')) {
+      bar.hihat += 'h';
+    } else {
+      bar.hihat += 'x';
+    }
+    if (voices.includes('snare')) {
+      bar.snare += 's';
+    } else {
+      bar.snare += 'x';
+    }
+    if (voices.includes('accent')) {
+      bar.accent += 'a';
+    } else {
+      bar.accent += 'x';
+    }
+
+    if (subdivisionNum === 0) {
+      // remove any trailing x's from the end of the string
+      bar.kick = bar.kick.replace(/x+$/, '');
+      bar.hihat = bar.hihat.replace(/x+$/, '');
+      bar.snare = bar.snare.replace(/x+$/, '');
+      bar.accent = bar.accent.replace(/x+$/, '');
+
+      if (i < beat.beatNotes.length - 1) {
+        // Add a comma if not the last note
+        bar.kick += ',';
+        bar.hihat += ',';
+        bar.snare += ',';
+        bar.accent += ',';
+      }
+    }
+
+    // Accent is not always present, but you can add logic if needed
+    barsMap.set(note.barNum, bar);
+  }
+
+  // Remove trailing comma from kick, hihat, snare and accent for all bars
+  for (const [, bar] of barsMap.entries()) {
+    bar.kick = bar.kick.replace(/,$/, '');
+    bar.hihat = bar.hihat.replace(/,$/, '');
+    bar.snare = bar.snare.replace(/,$/, '');
+    bar.accent = bar.accent.replace(/,$/, '');
+  }
+
+  // Convert map to array, sorted by barNum
+  const bars: BarSource[] = Array.from(barsMap.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([, bar]) => bar);
+
+  return new BeatSource(bars);
 }

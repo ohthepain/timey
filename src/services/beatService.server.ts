@@ -15,7 +15,7 @@ const saveBeatServerFnArgs = z.object({
   id: z.string().optional(),
   index: z.number().optional(),
   name: z.string(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   moduleId: z.string(),
   beatNotes: z.array(z.any()),
 });
