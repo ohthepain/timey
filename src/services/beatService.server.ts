@@ -49,6 +49,32 @@ export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data
     }
   });
 
+const copyBeatServerFnArgs = z.object({
+  id: z.string(),
+});
+
+export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
+  .validator((data: unknown) => copyBeatServerFnArgs.parse(data))
+  .handler(async (ctx) => {
+    // Fetch the original beat
+    const original = await beatRepository.getBeatById(ctx.data.id);
+    if (!original) throw new Error('Beat not found');
+    // Prepare new beat data
+    const newBeatData = {
+      name: original.name + ' (Copy)',
+      description: original.description,
+      index: original.index + 1,
+      authorId: original.authorId,
+      moduleId: original.moduleId,
+      beatNotes: original.beatNotes.map(({ id, beatId, ...note }) => ({
+        ...note,
+      })),
+    };
+    // Create the new beat
+    const newBeat = await beatRepository.createBeat(newBeatData);
+    return newBeat;
+  });
+
 const getBeatByNameServerFnArgs = z.object({
   name: z.string(),
 });

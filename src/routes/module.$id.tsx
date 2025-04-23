@@ -7,7 +7,6 @@ import { getBeatProgressForModuleServerFn, BeatProgressView } from '~/services/u
 import { getModuleByIdServerFn } from '~/services/moduleService.server';
 
 export const loader = async ({ params }: { params: { id: string } }) => {
-  console.log('loader: id:', params.id);
   const moduleId = params.id;
   if (!moduleId) {
     throw new Error('Module ID is required');
@@ -15,9 +14,7 @@ export const loader = async ({ params }: { params: { id: string } }) => {
 
   const module = await getModuleByIdServerFn({ data: { id: moduleId } });
   const beatProgress: BeatProgressView[] = await getBeatProgressForModuleServerFn({ data: { id: moduleId } });
-  console.log('loader: beatProgress:', beatProgress);
 
-  console.log('loader: Module:', module);
   if (!module) {
     throw new Error('Module not found');
   }
@@ -35,7 +32,6 @@ export const Route = createFileRoute('/module/$id')({
 
 function ModulePage() {
   const { module, beatProgress } = Route.useLoaderData();
-  console.log('ModulePage: module:', module);
 
   return (
     <div>

@@ -20,10 +20,7 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
 
   return (
     <div className="module-page p-4">
-      <h1 className="text-2xl font-bold mb-4">Module: {module.title}</h1>
-      <p className="mb-2">Description: {module.description || 'No description provided.'}</p>
-      <p className="mb-2">Index: {module.index}</p>
-      <p className="mb-2">Author ID: {module.authorId}</p>
+      <h1 className="text-3xl font-bold m-4 align-middle w-full text-center">{module.title}</h1>
       <div className="mt-4">
         {module.beats && module.beats.length > 0 ? (
           <ul className="pl-4">

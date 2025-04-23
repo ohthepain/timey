@@ -8,7 +8,7 @@ import {
   startBeatServerFn,
 } from '~/services/userProgressServerService.server';
 import { useRouter } from '@tanstack/react-router';
-import { deleteBeatServerFn } from '~/services/beatService.server';
+import { copyBeatServerFn, deleteBeatServerFn } from '~/services/beatService.server';
 import { ScoreView } from '~/components/ScoreView2';
 
 interface BeatViewerProps {
@@ -33,7 +33,16 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
     }
   };
 
-  const handleCopyBeat = async () => {};
+  const handleCopyBeat = async () => {
+    try {
+      await copyBeatServerFn({ data: { id: beat.id } });
+      router.invalidate();
+    } catch (error) {
+      console.error('Error copying beat:', error);
+      alert('Failed to copy beat');
+    }
+  };
+
   const handleEditBeat = async () => {
     setIsEditing(!isEditing);
   };
