@@ -1,6 +1,6 @@
 import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
-import { MidiDevicePreferences, MidiDeviceSettings, usePreferencesStore } from '~/state/PreferencesStore';
+import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
 
 // TempoService is a singleton that drives the MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
@@ -37,7 +37,6 @@ class TempoService {
   }
 
   stopIntervalTimer() {
-    console.log(`TempoService.stopIntervalTimer`);
     clearInterval(this.intervalId);
     this.eventsEmitter.emit('SPP', { spp: 0 });
     this.eventsEmitter.emit('');
@@ -45,12 +44,8 @@ class TempoService {
 
   startIntervalTimer() {
     this.stopIntervalTimer();
-    console.log(`TempoService.startIntervalTimer`);
     const pps = this.bpm * this.ppqn;
     this.pulseIntervalMsec = (60 * 1000) / pps;
-    console.log(
-      `TempoService.startIntervalTimer bpm ${this.bpm} interval ${this.pulseIntervalMsec} msec @ ${this.ppqn} = ${this.pulseIntervalMsec * this.ppqn} msec/qn`
-    );
 
     this.time = WebMidi.time;
     this.startTime = this.time;
@@ -58,9 +53,6 @@ class TempoService {
 
     this.handleInterval();
     this.intervalId = setInterval(this.handleInterval, this.pulseIntervalMsec);
-    // this.link.startUpdate(60, (beat: any, phase: any, bpm: any) => {
-    //     console.log("updated: ", beat, phase, bpm);
-    // });
   }
 
   handleInterval = () => {
@@ -75,7 +67,6 @@ class TempoService {
     }
 
     if (this.time > this.startTime + this.nextPulseNum * this.pulseIntervalMsec) {
-      // console.log(`send clock pulse ${this.nextPulseNum} at ${Math.floor(this.time - this.startTime)}`)
       this.sendClock(this.nextPulseNum);
       this.eventsEmitter.emit('MIDI pulse', {
         time: this.elapsedMsec,
@@ -93,9 +84,7 @@ class TempoService {
 
     const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
-      // console.log(`Preferences.getMidiOutputs: ${JSON.stringify(output)}`)
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
-        // console.log(`TempoService.sendStart: to ${output.name}`)
         output.sendStart();
       }
     });

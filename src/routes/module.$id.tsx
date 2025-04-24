@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { NotFound } from '~/components/NotFound';
 import { PostErrorComponent } from '~/components/PostErrorComponent';
 import { ModuleViewer } from '~/components/ModuleViewer';
-import { BeatEditor } from '~/components/BeatEditor';
 import { getBeatProgressForModuleServerFn, BeatProgressView } from '~/services/userProgressServerService.server';
 import { getModuleByIdServerFn } from '~/services/moduleService.server';
 
@@ -34,11 +33,8 @@ function ModulePage() {
   const { module, beatProgress } = Route.useLoaderData();
 
   return (
-    <div>
+    <div className="">
       <ModuleViewer module={module} beatProgress={beatProgress} />
-      <div className="m-4">
-        <BeatEditor beat={null} module={module} />
-      </div>
     </div>
   );
 }

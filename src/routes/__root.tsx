@@ -14,6 +14,7 @@ import {
   // UserButton,
 } from '@clerk/tanstack-react-start';
 import { UserButton } from '@clerk/clerk-react';
+import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -163,6 +164,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <hr />
+          <MidiSelector />
           {children}
           <TanStackRouterDevtools position="bottom-right" />
           <Scripts />

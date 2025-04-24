@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
-import MidiSelector from '~/components/DeviceSelector/MidiSelector';
-import { BeatAdminOperations } from '~/components/BeatAdminOperations';
+import { Metronome } from './Metronome';
+import { TempoInput } from './TempoInput';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [beatName, setBeatName] = useState('basic');
 
   const handlePlay = () => {
     console.log('Play clicked');
@@ -53,18 +52,10 @@ export const Transport = () => {
   }, []);
 
   return (
-    <div className="transport-controls flex gap-4 p-4 bg-green-100 rounded">
-      <BeatAdminOperations />
-      <input
-        type="text"
-        placeholder="Enter beat name"
-        value={beatName}
-        onChange={(e) => setBeatName(e.target.value)}
-        className="input-field px-4 py-2 border rounded"
-      />
-      <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handlePrev}>
+    <div className="transport-controls flex gap-4 p-4 align-center">
+      {/* <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handlePrev}>
         Prev
-      </button>
+      </button> */}
       {isRunning ? (
         <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
           Stop
@@ -89,10 +80,11 @@ export const Transport = () => {
           Record
         </button>
       )}
-      <button className="btn btn-next bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handleNext}>
+      {/* <button className="btn btn-next bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handleNext}>
         Next
-      </button>
-      <MidiSelector />
+      </button> */}
+      <TempoInput />
+      <Metronome beatsPerBar={4} />
     </div>
   );
 };

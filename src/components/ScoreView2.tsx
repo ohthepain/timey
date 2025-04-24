@@ -113,10 +113,10 @@ const plotLegendForNoteWidth = (ctx: RenderContext, x: number, y: number) => {
     lastY += spacing;
   }
 
-  legend('green', 'Note + Flag');
-  legend('red', 'Modifiers');
-  legend('#999', 'Displaced Head');
-  legend('#DDD', 'Formatter Shift');
+  legend('green', 'Good');
+  legend('red', 'Early');
+  legend('#999', 'Late');
+  legend('#DDD', 'Missed');
 
   ctx.restore();
 };
@@ -234,11 +234,11 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
       tupletRecord.tuplet.setContext(context).draw();
     });
 
-    // allNotes.forEach((note) => {
-    //   plotMetricsForNote(context, note.staveNote, 10);
-    // });
+    allNotes.forEach((note) => {
+      plotMetricsForNote(context, note.staveNote, 10);
+    });
 
-    // plotLegendForNoteWidth(context, barWidth * 2, 150);
+    plotLegendForNoteWidth(context, barWidth * 2, 150);
   };
 
   useEffect(() => {

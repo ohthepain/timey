@@ -4,12 +4,12 @@ import { ScoreView } from '~/components/ScoreView2';
 import { Transport } from '~/components/Transport';
 import { Beat } from '~/types/Beat';
 import { getBeatByNameServerFn } from '~/services/beatService.server';
+import MidiSelector from '~/components/DeviceSelector/MidiSelector';
+import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
 
 export const Route = createFileRoute('/sequence/')({
   component: SequenceIndexComponent,
 });
-
-console.log('zequence index Route loaded');
 
 function SequenceIndexComponent() {
   const [beat, setBeat] = useState<Beat | undefined>(undefined);
@@ -27,6 +27,14 @@ function SequenceIndexComponent() {
 
   return (
     <div>
+      <div className="flex flex-row justify-between items-center">
+        <div className="mx-8 my-2 p-2">
+          <MidiSelector />
+        </div>
+        <div className="mx-8 my-2 p-2">
+          <MetronomeMidiSettings />
+        </div>
+      </div>
       <Transport />
       <div id="scoreview" className="h-full w-full border-2 border-purple-700">
         <ScoreView beat={beat} />
