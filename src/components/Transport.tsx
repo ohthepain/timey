@@ -52,7 +52,7 @@ export const Transport = () => {
   }, []);
 
   return (
-    <div className="transport-controls flex gap-4 p-4 align-center">
+    <div className="transport-controls flex gap-4 p-4 items-center">
       {/* <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handlePrev}>
         Prev
       </button> */}

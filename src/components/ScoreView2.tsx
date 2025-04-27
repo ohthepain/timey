@@ -60,7 +60,6 @@ const plotMetricsForNote = (ctx: RenderContext, note: Tickable, yPos: number): v
 };
 
 const showNoteBar = (ctx: RenderContext, allNotes: NoteEntry[], noteNum: number, y: number): void => {
-  console.log(`showNoteBar ${noteNum}/${allNotes.length}`);
   const noteEntry = allNotes[noteNum];
   const staveNote = noteEntry.staveNote;
 

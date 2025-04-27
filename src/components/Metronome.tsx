@@ -40,7 +40,7 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
   }, []);
 
   return (
-    <div className="flex space-x-2 mb-4">
+    <div className="flex space-x-2 items-center">
       {Array.from({ length: beatsPerBar }).map((_, i) => (
         <div
           key={i}
