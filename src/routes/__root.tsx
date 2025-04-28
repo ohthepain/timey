@@ -14,6 +14,7 @@ import {
   // UserButton,
 } from '@clerk/tanstack-react-start';
 import { UserButton } from '@clerk/clerk-react';
+import { useState } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 
 export const Route = createRootRoute({
@@ -74,6 +75,7 @@ function RootComponent() {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const [showMidiPopup, setShowMidiPopup] = useState(false);
   return (
     <ClerkProvider>
       <html>
@@ -153,7 +155,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Right-aligned buttons */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <button
+                className="text-green-700 px-2 py-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
+                onClick={() => setShowMidiPopup(true)}
+                title="MIDI Settings"
+              >
+                MIDI
+              </button>
               <SignedOut>
                 <SignInButton />
               </SignedOut>
@@ -164,7 +173,28 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <hr />
-          <MidiSelector />
+          {/* MIDI Popup */}
+          {showMidiPopup && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+              onClick={() => setShowMidiPopup(false)}
+            >
+              <div
+                className="bg-white rounded shadow-lg p-6 min-w-[320px] relative"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 text-xl"
+                  onClick={() => setShowMidiPopup(false)}
+                  aria-label="Close MIDI Settings"
+                >
+                  ×
+                </button>
+                <h2 className="text-lg font-bold mb-4">MIDI Settings</h2>
+                <MidiSelector />
+              </div>
+            </div>
+          )}
           {children}
           <TanStackRouterDevtools position="bottom-right" />
           <Scripts />

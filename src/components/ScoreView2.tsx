@@ -5,6 +5,7 @@ import { useBeatPlayer } from '~/lib/UseBeatPlayer';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { NoteEntry } from '~/lib/ParseBeat';
 import { Beat } from '~/types/Beat';
+import { useNavigationStore } from '~/state/NavigationStore';
 
 const marginX = 20;
 const beatSpace = 10;
@@ -244,31 +245,35 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
     draw();
   }, []);
 
+  const handleNote = (noteIndex: number) => {
+    if (useNavigationStore.getState().currentBeat !== beat) {
+      return;
+    }
+
+    setCurrentNoteIndex(noteIndex);
+    let note = allNotes[noteIndex];
+    let noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
+    if (noteElement) {
+      noteElement.remove();
+    }
+
+    note.staveNote.setStyle({ fillStyle: 'red', strokeStyle: 'blue' });
+    note.staveNote.setContext(context).draw();
+
+    const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : allNotes.length - 1;
+    note = allNotes[previousNoteIndex];
+    noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
+    if (noteElement) {
+      noteElement.remove();
+    }
+
+    note.staveNote.setStyle({ fillStyle: 'black', strokeStyle: 'black' });
+    note.staveNote.setContext(context).draw();
+
+    showNoteBar(context, allNotes, noteIndex, 150);
+  };
+
   useEffect(() => {
-    const handleNote = (noteIndex: number) => {
-      setCurrentNoteIndex(noteIndex);
-      let note = allNotes[noteIndex];
-      let noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
-      if (noteElement) {
-        noteElement.remove();
-      }
-
-      note.staveNote.setStyle({ fillStyle: 'red', strokeStyle: 'blue' });
-      note.staveNote.setContext(context).draw();
-
-      const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : allNotes.length - 1;
-      note = allNotes[previousNoteIndex];
-      noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
-      if (noteElement) {
-        noteElement.remove();
-      }
-
-      note.staveNote.setStyle({ fillStyle: 'black', strokeStyle: 'black' });
-      note.staveNote.setContext(context).draw();
-
-      showNoteBar(context, allNotes, noteIndex, 150);
-    };
-
     beatPlayer.on('note', handleNote);
 
     return () => {

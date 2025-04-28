@@ -20,8 +20,8 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
 
   return (
     <div className="module-page flex flex-row items-start">
-      <div className="flex-1"> 
-        <h1 className="text-3xl font-bold mb-4 mx-16 align-middle p-2 text-center">{module.title}</h1>
+      <div className="flex-1">
+        <h1 className="text-3xl font-bold mb-4 align-middle text-center">{module.title}</h1>
         <div className="mt-4">
           {module.beats && module.beats.length > 0 ? (
             <ul className="">

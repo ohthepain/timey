@@ -3,6 +3,9 @@ import { getAuth } from '@clerk/tanstack-react-start/server';
 import { redirect } from '@tanstack/react-router';
 import { users } from '@clerk/clerk-sdk-node';
 
+// Clerk users are copied into our database.
+// checkUser checks if the user exists in our database and if not, creates a new user in our database.
+
 export const checkUser = async (req: any) => {
   console.log('checkUser');
   const { userId } = await getAuth(req);
@@ -21,11 +24,11 @@ export const checkUser = async (req: any) => {
     where: { id: userId },
   });
   if (existingUser) {
-    console.log('checkUser: User already exists in the database. Good good good.');
+    console.log('checkUser: Clerk User already exists in the database. Good good good.');
     return userId;
   }
 
-  console.log('checkUser: User does not exist in the database, creating a new user');
+  console.log('checkUser: Clerk User does not exist in the database, copying user into our database.');
 
   // Use the Backend SDK's `getUser()` method to get the Backend User object
   const user = await users.getUser(userId);

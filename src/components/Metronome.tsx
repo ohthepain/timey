@@ -7,17 +7,29 @@ interface MetronomeProps {
 
 export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
   const [beatNum, setBeatNum] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
   var nextNoteStartTicks: number = 0;
   const nextNoteStartTicksRef = useRef(nextNoteStartTicks);
 
-  const handlePlay = () => {
-    console.log('BeatPlayer: handlePlay');
+  const handleStateChange = (state: { isRunning: boolean }) => {
+    console.log('Metronome: handleStateChange', state);
+    if (state.isRunning) {
+      handleRun();
+    } else {
+      handleStop();
+    }
+  };
+
+  const handleRun = () => {
+    console.log('Metronome: handleRun');
     setBeatNum(0);
+    setIsRunning(true);
     nextNoteStartTicksRef.current = TempoService.ppqn;
   };
 
   const handleStop = () => {
-    console.log('BeatPlayer: handleStop');
+    console.log('Metronome: handleStop');
+    setIsRunning(false);
   };
 
   const handleMidiPulse = (event: { time: number; ticks: number }) => {
@@ -28,14 +40,12 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
   };
 
   useEffect(() => {
-    TempoService.eventsEmitter.addListener('start', handlePlay.bind(this));
-    TempoService.eventsEmitter.addListener('stop', handleStop.bind(this));
+    TempoService.eventsEmitter.addListener('stateChange', handleStateChange.bind(this));
     TempoService.eventsEmitter.addListener('MIDI pulse', handleMidiPulse.bind(this));
 
     return () => {
       TempoService.eventsEmitter.removeListener('MIDI pulse', handleMidiPulse.bind(this));
-      TempoService.eventsEmitter.removeListener('play', handlePlay.bind(this));
-      TempoService.eventsEmitter.removeListener('stop', handleStop.bind(this));
+      TempoService.eventsEmitter.removeListener('stateChange', handleStateChange.bind(this));
     };
   }, []);
 

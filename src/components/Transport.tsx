@@ -2,87 +2,79 @@ import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
+import { set } from 'zod';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
-  const handlePlay = () => {
-    console.log('Play clicked');
-    TempoService.start();
+  const handlePlayButton = () => {
+    console.log('Transport: handlePlayButton');
+    TempoService.play();
+    setIsRunning(true);
+    setIsPlaying(true);
   };
 
-  const handleRecord = () => {
-    console.log('Play clicked');
-    TempoService.start();
+  const handleRecordButton = () => {
+    console.log('Transport: handleRecordButton');
+    TempoService.record();
+    setIsRunning(true);
+    setIsRecording(true);
   };
 
   const handleStop = () => {
     console.log('Stop clicked');
     TempoService.stop();
     setIsRunning(false);
+    setIsPlaying(false);
     setIsRecording(false);
-  };
-
-  const handlePrev = () => {
-    console.log('Prev clicked');
-    const currentSpp = Math.max(TempoService.currentSpp - 16, 0);
-    TempoService.currentSpp = currentSpp;
-    TempoService.eventsEmitter.emit('SPP', { spp: currentSpp });
-  };
-
-  const handleNext = () => {
-    console.log('Next clicked');
-    const currentSpp = TempoService.currentSpp + 16;
-    TempoService.currentSpp = currentSpp;
-    TempoService.eventsEmitter.emit('SPP', { spp: currentSpp });
   };
 
   useEffect(() => {
     // Listen for changes in TempoService's running state
-    const updateRunningState = () => {
-      setIsRunning(TempoService.isRunning);
+    const tempoService_stateChange = (e: any) => {
+      console.log(
+        `Transport: tempoService_stateChange playing ${e.isPlaying} recording ${e.isRecording} running ${e.isRunning}`
+      );
+      setIsRunning(e.isRunning);
+      setIsPlaying(e.isPlaying);
+      setIsRecording(e.isRecording);
     };
 
-    TempoService.eventsEmitter.on('stateChange', updateRunningState);
+    // TempoService.eventsEmitter.on('stateChange', tempoService_stateChange);
 
-    return () => {
-      TempoService.eventsEmitter.off('stateChange', updateRunningState);
-    };
+    // return () => {
+    //   TempoService.eventsEmitter.off('stateChange', tempoService_stateChange);
+    // };
   }, []);
 
   return (
     <div className="transport-controls flex gap-4 p-4 items-center">
-      {/* <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handlePrev}>
-        Prev
-      </button> */}
-      {isRunning ? (
+      {isRunning && isPlaying ? (
         <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
           Stop
         </button>
       ) : (
         <button
           className="btn btn-play bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
-          onClick={handlePlay}
+          onClick={handlePlayButton}
         >
           Play
         </button>
       )}
-      {isRunning ? (
+      {isRunning && isRecording ? (
         <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
           Stop
         </button>
       ) : (
         <button
           className="btn btn-play bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
-          onClick={handleRecord}
+          onClick={handleRecordButton}
         >
           Record
         </button>
       )}
-      {/* <button className="btn btn-next bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handleNext}>
-        Next
-      </button> */}
       <TempoInput />
       <Metronome beatsPerBar={4} />
     </div>

@@ -1,5 +1,5 @@
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
-import { useMidiService } from '~/lib/MidiService';
+import { midiService, useMidiService } from '~/lib/MidiService';
 
 export default function MidiSelector() {
   const { midiInputs, midiOutputs, getDeviceNameById } = useMidiService();
@@ -50,7 +50,15 @@ export default function MidiSelector() {
       <div className="flex flex-row input-group gap-x-4">
         MIDI In:
         <div className="flex">
-          <select value={midiInputDeviceId || 'All MIDI devices'} onChange={onChangeMidiInputDeviceId}>
+          <select
+            value={midiInputDeviceId || 'All MIDI devices'}
+            onChange={onChangeMidiInputDeviceId}
+            onClick={async () => {
+              console.log('refreshDevices');
+              await midiService.enable();
+              midiService.refreshDevices();
+            }}
+          >
             <option value={''}> {'All MIDI devices'} </option>
             {midiInputs.map((input) => {
               return (
@@ -63,7 +71,15 @@ export default function MidiSelector() {
           </select>
         </div>
         <div className="flex">
-          <select value={midiInputChannelNum} onChange={onChangeMidiInputChannel}>
+          <select
+            value={midiInputChannelNum}
+            onChange={onChangeMidiInputChannel}
+            onClick={async () => {
+              console.log('refreshDevices');
+              await midiService.enable();
+              midiService.refreshDevices();
+            }}
+          >
             <option value={''}> {'All channels'} </option>
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map((n) => {
               return (

@@ -29,9 +29,6 @@ function SequenceIndexComponent() {
     <div>
       <div className="flex flex-row justify-between items-center">
         <div className="mx-8 my-2 p-2">
-          <MidiSelector />
-        </div>
-        <div className="mx-8 my-2 p-2">
           <MetronomeMidiSettings />
         </div>
       </div>

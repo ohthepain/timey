@@ -12,6 +12,7 @@ import { copyBeatServerFn, deleteBeatServerFn } from '~/services/beatService.ser
 import { ScoreView } from '~/components/ScoreView2';
 import { Transport } from './Transport';
 import { beatPlayer } from '~/lib/BeatPlayer';
+import { beatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { TempoLadder } from './TempoLadder';
@@ -69,17 +70,6 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
               ) : (
                 <div className="font-semibold">{name}</div>
               )}
-              <button
-                onClick={async () => {
-                  await startBeatServerFn({ data: { beatId: beat.id } });
-                  beatPlayer.setBeat(beat);
-                  TempoService.start();
-                }}
-                className="text-green-500 hover:text-green-700 text-3xl p-1"
-                title="Play"
-              >
-                ▶️
-              </button>
               {currentBeat === beat && <Transport />}
               <div className="flex justify-end">
                 <button
@@ -115,6 +105,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
           onClick={async () => {
             await startBeatServerFn({ data: { beatId: beat.id } });
             beatPlayer.setBeat(beat);
+            beatRecorder.setBeat(beat);
           }}
         >
           <div className="flex flex-row items-center">

@@ -1,7 +1,6 @@
 export interface BeatNote {
   id: string;
   index: number;
-  duration: number;
   noteString: string;
   barNum: number;
   beatNum: number;
@@ -9,4 +8,5 @@ export interface BeatNote {
   subDivisionNum: number;
   numSubDivisions: number;
   velocity: number;
+  microtiming: number;
 }

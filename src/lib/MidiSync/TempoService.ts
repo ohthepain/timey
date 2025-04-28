@@ -21,6 +21,8 @@ class TempoService {
   intervalId: any;
 
   isRunning: boolean = false;
+  isPlaying: boolean = false;
+  isRecording: boolean = false;
   time: number = 0;
   startTime: number = 0;
   elapsedMsec: number = 0;
@@ -177,15 +179,30 @@ class TempoService {
     return elapsed64ths;
   }
 
-  start() {
+  private start() {
     this.time = WebMidi.time;
     this.startTime = this.time;
     this.currentSpp = this.startSpp;
     this.eventsEmitter.emit('SPP', { spp: this.currentSpp });
     this.isRunning = true;
-    this.eventsEmitter.emit('stateChange', { isRunning: this.isRunning });
-    this.sendStart();
+    this.eventsEmitter.emit('stateChange', {
+      isRunning: this.isRunning,
+      isPlaying: this.isPlaying,
+      isRecording: this.isRecording,
+    });
     this.startIntervalTimer();
+  }
+
+  play() {
+    this.isPlaying = true;
+    this.isRecording = false;
+    this.start();
+  }
+
+  record() {
+    this.isRecording = true;
+    this.isPlaying = false;
+    this.start();
   }
 
   continue() {
@@ -197,6 +214,8 @@ class TempoService {
 
   stop() {
     this.isRunning = false;
+    this.isPlaying = false;
+    this.isRecording = false;
     this.stopIntervalTimer();
     this.sendStop();
     this.currentSpp = this.startSpp;

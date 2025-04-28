@@ -33,7 +33,7 @@ function ModulePage() {
   const { module, beatProgress } = Route.useLoaderData();
 
   return (
-    <div className="">
+    <div className="p-8">
       <ModuleViewer module={module} beatProgress={beatProgress} />
     </div>
   );

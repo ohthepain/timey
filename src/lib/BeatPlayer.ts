@@ -8,6 +8,7 @@ import { Beat } from '~/types/Beat';
 import { MakeStaveNotesFromBeat } from '~/lib/ParseBeat';
 
 class BeatPlayer extends EventEmitter {
+  private isPlaying: boolean = false;
   private allNotes: NoteEntry[] = [];
   private noteIndex: number = 0;
   private nextNoteStartTime: number = 0;
@@ -18,15 +19,14 @@ class BeatPlayer extends EventEmitter {
 
     // Subscribe to TempoService events
     console.log(`BeatPlayer:ctor - add listeners`);
-    TempoService.eventsEmitter.addListener('start', this.handlePlay.bind(this));
-    TempoService.eventsEmitter.addListener('stop', this.handleStop.bind(this));
+    TempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange.bind(this));
     TempoService.eventsEmitter.addListener('MIDI pulse', (event) => this.handleMidiPulse(event));
   }
 
   public setBeat(beat: Beat) {
     console.log('BeatPlayer: setBeat');
 
-    useNavigationStore.getState().setBeat(beat);
+    useNavigationStore.getState().setCurrentBeat(beat);
     const { noteEntries } = MakeStaveNotesFromBeat(beat);
     this.allNotes = noteEntries.map((noteEntry) => noteEntry);
     console.log(`BeatPlayer: allNotes: `, this.allNotes);
@@ -39,22 +39,23 @@ class BeatPlayer extends EventEmitter {
     this.emit('beatSet', beat);
   }
 
-  private handlePlay() {
-    console.log('BeatPlayer: handlePlay');
-    this.noteIndex = 0;
-    this.numLoops = 0;
-  }
-
-  private handleStop() {
-    console.log('BeatPlayer: handleStop');
-    this.noteIndex = 0;
-    this.numLoops = 0;
-    this.nextNoteStartTime = 0;
+  private tempoService_stateChange(e: any) {
+    console.log(`BeatPlayer: tempoService_stateChange playing ${e.isPlaying} running ${e.isRunning}`);
+    if (this.isPlaying != (e.isPlaying && e.isRunning)) {
+      this.noteIndex = 0;
+      this.numLoops = 0;
+      this.nextNoteStartTime = 0;
+      this.isPlaying = e.isPlaying && e.isRunning;
+    }
   }
 
   private handleMidiPulse(event: { time: number; ticks: number }) {
-    if (!TempoService.isRunning || !TempoService.startTime) {
+    if (!TempoService.isRunning || !TempoService.isPlaying) {
       return;
+    }
+
+    if (!TempoService.startTime) {
+      throw new Error('TempoService.startTime is not set');
     }
 
     if (this.allNotes.length === 0) {
@@ -77,8 +78,10 @@ class BeatPlayer extends EventEmitter {
         }
       }
       console.log(`BeatPlayer: handleMidiPulse - notes: `, notes);
-      midiService.playNote(midiOutputDeviceId, midiOutputChannelNum, notes, 127, 0, 0);
-      this.emit('note', this.noteIndex);
+      if (this.isPlaying) {
+        midiService.playNote(midiOutputDeviceId, midiOutputChannelNum, notes, 127, 0, 0);
+        this.emit('note', this.noteIndex);
+      }
 
       this.noteIndex++;
       if (this.noteIndex >= this.allNotes.length) {

@@ -9,7 +9,7 @@ const kick = 'g/4';
 export function ConvertNoteToMidiNote(note: string): number {
   switch (note.slice(0, 3)) {
     case 'g/5':
-      return 22; // Closed hi-hat, edge
+      return 42; // Closed hi-hat, edge
     case 'g/4':
       return 36; // MIDI note number for kick
     case 'e/5':
