@@ -1,10 +1,12 @@
 import { EventEmitter } from 'events';
 import { midiService } from '~/lib/MidiService';
 import { v4 as uuidv4 } from 'uuid';
-import type { Performance } from '~/types/Performance';
-import type { BeatNote } from '~/types/BeatNote';
+import { Performance } from '~/types/Performance';
+import { BeatNote } from '~/types/BeatNote';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { Beat } from '~/types/Beat';
+import { savePerformanceServerFn } from '~/services/performanceService.server';
+import { useNavigationStore } from '~/state/NavigationStore';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(timeMsec: number, bpm: number, referenceTime: number) {
@@ -42,6 +44,19 @@ class BeatRecorder extends EventEmitter {
     TempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange.bind(this));
     TempoService.eventsEmitter.removeListener('MIDI pulse', (event) => this.handleMidiPulse(event));
     // midiService.removeListener('note', this.handleMidiNote.bind(this));
+  }
+
+  async savePerformance() {
+    console.log('BeatRecorder: savePerformance', this.performance);
+    if (!this.performance) {
+      alert('No performance to save');
+      return;
+    }
+
+    useNavigationStore.getState().clearPerformancesForBeatId(this.performance.beatId);
+    useNavigationStore.getState().cachePerformance(this.performance);
+    await savePerformanceServerFn({ data: { performance: this.performance } });
+    console.log('Performance saved:', this.performance);
   }
 
   private handleMidiPulse(event: { time: number; ticks: number }) {
@@ -143,7 +158,7 @@ class BeatRecorder extends EventEmitter {
       this.lastQuantizedTime = quantized;
     }
     const noteString = e.note?.name || String(e.note?.number || e.note || 'unknown');
-    const beatNote: BeatNote = {
+    const beatNote = new BeatNote({
       id: uuidv4(),
       index: noteIndex,
       noteString,
@@ -154,7 +169,7 @@ class BeatRecorder extends EventEmitter {
       numSubDivisions: bestSubDiv,
       velocity: e.velocity || 100,
       microtiming: divisionElapsed - bestSubDivNum * (quarterNoteMsec / 2 / bestSubDiv),
-    };
+    });
 
     this.performance.notes.push(beatNote);
     this.emit('beatNote', beatNote);

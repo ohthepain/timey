@@ -1,4 +1,4 @@
-export interface BeatNote {
+export class BeatNote {
   id: string;
   index: number;
   noteString: string;
@@ -8,5 +8,20 @@ export interface BeatNote {
   subDivisionNum: number;
   numSubDivisions: number;
   velocity: number;
+  duration: number;
   microtiming: number;
+
+  constructor(data: any) {
+    this.id = data.id;
+    this.index = data.index;
+    this.noteString = data.noteString;
+    this.barNum = data.barNum;
+    this.beatNum = data.beatNum;
+    this.divisionNum = data.divisionNum;
+    this.subDivisionNum = data.subDivisionNum;
+    this.numSubDivisions = data.numSubDivisions;
+    this.velocity = data.velocity;
+    this.microtiming = data.microtiming;
+    this.duration = 0;
+  }
 }

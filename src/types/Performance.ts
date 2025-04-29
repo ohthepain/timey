@@ -1,6 +1,6 @@
 import { BeatNote } from './BeatNote';
 
-export interface Performance {
+export class Performance {
   id: string | undefined;
   beatId: string;
   index: number;
@@ -8,4 +8,14 @@ export interface Performance {
   createdAt: Date;
   modifiedAt: Date;
   notes: BeatNote[];
+
+  constructor(data: any) {
+    this.id = data.id;
+    this.beatId = data.beatId;
+    this.index = data.index;
+    this.userId = data.userId;
+    this.createdAt = data.createdAt;
+    this.modifiedAt = data.modifiedAt;
+    this.notes = data.notes.map((note: any) => new BeatNote(note));
+  }
 }

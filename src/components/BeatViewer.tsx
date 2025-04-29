@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Beat } from '~/types/Beat';
+import { Performance } from '~/types/Performance';
 import { Module } from '~/types/Module';
 import { BeatEditor } from './BeatEditor';
 import {
@@ -14,8 +15,8 @@ import { Transport } from './Transport';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { beatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
-import TempoService from '~/lib/MidiSync/TempoService';
 import { TempoLadder } from './TempoLadder';
+import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
 
 interface BeatViewerProps {
   beat: Beat;
@@ -26,7 +27,8 @@ interface BeatViewerProps {
 export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(beat.name);
-  const { currentBeat } = useNavigationStore();
+  const [performances, setPerformances] = useState<Performance[]>([]);
+  const { currentBeat, cachePerformance } = useNavigationStore();
 
   const router = useRouter();
 
@@ -54,6 +56,19 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
     setIsEditing(!isEditing);
   };
 
+  useEffect(() => {
+    const fetchBeatProgress = async () => {
+      if (beat.id) {
+        const beatId = beat.id;
+        const performances: Performance[] = await fetchUserPerformancesForBeat({ data: { beatId } });
+        for (const performance of performances) {
+          cachePerformance(performance);
+        }
+      }
+    };
+    fetchBeatProgress();
+  }, [beat.id]);
+
   return (
     <div>
       <div className="flex flex-col justify-between items-center">
@@ -71,17 +86,17 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                 <div className="font-semibold">{name}</div>
               )}
               {currentBeat === beat && <Transport />}
-              <div className="flex justify-end">
+              <div className="flex justify-end space-between">
                 <button
                   onClick={handleEditBeat}
-                  className="h-8 text-green-500 hover:text-green-700 text-xs px-1 mx-1 border border-green-500 rounded my-1.5"
+                  className="text-green-700 px-2 m-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
                   title="Edit"
                 >
                   Edit
                 </button>
                 <button
                   onClick={handleCopyBeat}
-                  className="h-8 text-blue-500 hover:text-blue-700 text-xs px-1 mx-1 border border-blue-500 rounded my-1.5"
+                  className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
                   title="Copy"
                 >
                   Copy
@@ -91,7 +106,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                     handleDeleteBeat(beat.id!);
                     router.invalidate();
                   }}
-                  className="h-8 text-red-500 hover:text-red-700 text-xs px-1 mx-1 border border-red-500 rounded my-1.5"
+                  className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
                   title="Delete"
                 >
                   Delete

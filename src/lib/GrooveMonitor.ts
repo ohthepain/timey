@@ -7,7 +7,6 @@ import { beatPlayer } from './BeatPlayer';
 
 class GrooveMonitor extends EventEmitter {
   private _isRunning: boolean;
-  private performance: Performance = new Performance();
 
   constructor() {
     super();

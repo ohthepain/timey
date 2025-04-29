@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
-import { set } from 'zod';
+import { beatRecorder } from '~/lib/BeatRecorder';
+import { useNavigationStore } from '~/state/NavigationStore';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const { currentBeat, getPerformancesForBeatId } = useNavigationStore();
 
   const handlePlayButton = () => {
     console.log('Transport: handlePlayButton');
@@ -50,29 +52,56 @@ export const Transport = () => {
   }, []);
 
   return (
-    <div className="transport-controls flex gap-4 p-4 items-center">
+    <div className="transport-controls flex gap-1 p-4 items-center">
       {isRunning && isPlaying ? (
-        <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
+        <button
+          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+          onClick={handleStop}
+        >
           Stop
         </button>
       ) : (
         <button
-          className="btn btn-play bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
+          className="text-green-700 px-2 m-1 rounded hover:bg-red-200 border-green-600 border-2 rounded-e-md text-sm"
           onClick={handlePlayButton}
         >
           Play
         </button>
       )}
       {isRunning && isRecording ? (
-        <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
+        <button
+          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+          onClick={handleStop}
+        >
           Stop
         </button>
       ) : (
         <button
-          className="btn btn-play bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
+          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
           onClick={handleRecordButton}
         >
           Record
+        </button>
+      )}
+      {!isRunning && (
+        <button
+          className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
+          onClick={async () => {
+            console.log('Start clicked');
+            beatRecorder.savePerformance();
+          }}
+        >
+          Save
+        </button>
+      )}
+      {!isRunning && currentBeat && currentBeat.id && (
+        <button
+          className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
+          onClick={async () => {
+            console.log('Start clicked');
+          }}
+        >
+          {`Replay (${getPerformancesForBeatId(currentBeat.id).length})`}
         </button>
       )}
       <TempoInput />
