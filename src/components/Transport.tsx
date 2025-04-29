@@ -4,6 +4,7 @@ import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
 import { beatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
+import { deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
@@ -102,6 +103,17 @@ export const Transport = () => {
           }}
         >
           {`Replay (${getPerformancesForBeatId(currentBeat.id).length})`}
+        </button>
+      )}
+      {!isRunning && currentBeat && currentBeat.id && (
+        <button
+          className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
+          onClick={async () => {
+            console.log('Start clicked');
+            await deletePerformancesByBeatIdAndUserId({ data: { beatId: currentBeat.id } });
+          }}
+        >
+          {`Delete ${getPerformancesForBeatId(currentBeat.id).length} recordings`}
         </button>
       )}
       <TempoInput />

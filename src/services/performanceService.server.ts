@@ -59,3 +59,21 @@ export const fetchUserPerformancesForBeat = createServerFn({ method: 'GET', resp
     const prismaPerformances = await performanceRepository.getPerformancesByBeatIdAndUserId(beatId, userId);
     return prismaPerformances.map((perf) => new Performance(perf));
   });
+
+const deleteUserPerformancesForBeatArgs = z.object({
+  beatId: z.string(),
+});
+
+export const deletePerformancesByBeatIdAndUserId = createServerFn({ method: 'POST', response: 'data' })
+  .validator((data: unknown) => deleteUserPerformancesForBeatArgs.parse(data))
+  .handler(async (ctx) => {
+    console.log('deletePerformancesByBeatIdAndUserId');
+    const request = getWebRequest();
+    const { userId } = await getAuth(request!);
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+    const { beatId } = ctx.data;
+    const deleted = await performanceRepository.deletePerformancesByBeatIdAndUserId(beatId, userId);
+    return deleted;
+  });

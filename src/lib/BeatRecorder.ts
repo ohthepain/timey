@@ -5,8 +5,9 @@ import { Performance } from '~/types/Performance';
 import { BeatNote } from '~/types/BeatNote';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { Beat } from '~/types/Beat';
-import { savePerformanceServerFn } from '~/services/performanceService.server';
+import { savePerformanceServerFn, deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 import { useNavigationStore } from '~/state/NavigationStore';
+import { useRouter } from '@tanstack/react-router';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(timeMsec: number, bpm: number, referenceTime: number) {
@@ -59,6 +60,17 @@ class BeatRecorder extends EventEmitter {
     console.log('Performance saved:', this.performance);
   }
 
+  async deletePerformancesForBeat() {
+    console.log('BeatRecorder: deletePerformances');
+    const success = await deletePerformancesByBeatIdAndUserId({ data: { performanceId: this.performance?.id } });
+    if (success) {
+      console.log('BeatRecorder: deletePerformances success', success);
+      useNavigationStore.getState().clearPerformancesForBeatId(this.performance!.beatId);
+    } else {
+      console.log('BeatRecorder: deletePerformances FAILED', success);
+    }
+  }
+
   private handleMidiPulse(event: { time: number; ticks: number }) {
     // Adjust referenceTime to correct for drift between measured and MIDI time
     // The difference between the expected time and the actual MIDI pulse time
@@ -94,6 +106,7 @@ class BeatRecorder extends EventEmitter {
 
   public start() {
     const beatId = this.beat!.id!;
+    useNavigationStore;
     console.log('BeatRecorder: start', beatId);
     this.performance = {
       id: uuidv4(),
