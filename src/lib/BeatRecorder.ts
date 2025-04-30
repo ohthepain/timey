@@ -106,7 +106,6 @@ class BeatRecorder extends EventEmitter {
 
   public start() {
     const beatId = this.beat!.id!;
-    useNavigationStore;
     console.log('BeatRecorder: start', beatId);
     this.performance = {
       id: uuidv4(),
