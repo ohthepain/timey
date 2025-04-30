@@ -35,7 +35,7 @@ class BeatRecorder extends EventEmitter {
     super();
     midiService.on('midiNote', this.handleMidiNote);
     TempoService.eventsEmitter.addListener('stateChange', this.handleStateChange);
-    TempoService.eventsEmitter.addListener('MIDI pulse', (event) => this.handleMidiPulse(event));
+    TempoService.eventsEmitter.addListener('MIDI pulse', this.handleMidiPulse);
     // midiService.addListener('note', this.handleM idiNote);
   }
 
@@ -43,7 +43,7 @@ class BeatRecorder extends EventEmitter {
     console.log('BeatRecorder: destroy');
     midiService.removeListener('midiNote', this.handleMidiNote);
     TempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange);
-    TempoService.eventsEmitter.removeListener('MIDI pulse', (event) => this.handleMidiPulse(event));
+    TempoService.eventsEmitter.removeListener('MIDI pulse', this.handleMidiPulse);
     // midiService.removeListener('note', this.handleMidiNote);
   }
 

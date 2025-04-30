@@ -63,7 +63,7 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
           }`}
         />
       ))}
-      <label className="flex items-center gap-2 text-xl font-bold>">
+      <label className="flex items-center gap-2 text-xl font-bold">
         {isMetronomeOn ? (
           <span title="Metronome On" role="img" aria-label="Ear">
             <GoUnmute />
