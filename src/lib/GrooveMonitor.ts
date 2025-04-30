@@ -12,38 +12,38 @@ class GrooveMonitor extends EventEmitter {
     super();
     this._isRunning = false;
 
-    TempoService.eventsEmitter.addListener('start', this.handlePlay.bind(this));
-    TempoService.eventsEmitter.addListener('stop', this.handleStop.bind(this));
+    TempoService.eventsEmitter.addListener('start', this.handlePlay);
+    TempoService.eventsEmitter.addListener('stop', this.handleStop);
     TempoService.eventsEmitter.addListener('MIDI pulse', (event) => this.handleMidiPulse(event));
 
     midiService.addListener('MIDI pulse', (event) => this.handleMidiPulse(event));
-    midiService.addListener('note', this.handleNote.bind(this));
+    midiService.addListener('note', this.handleNote);
 
-    beatPlayer.addListener('note', this.handleNote.bind(this));
-    beatPlayer.addListener('play', this.handlePlay.bind(this));
-    beatPlayer.addListener('stop', this.handleStop.bind(this));
+    beatPlayer.addListener('note', this.handleNote);
+    beatPlayer.addListener('play', this.handlePlay);
+    beatPlayer.addListener('stop', this.handleStop);
   }
 
-  private handlePlay() {
+  private handlePlay = () => {
     console.log('GrooveMonitor: handlePlay');
     if (this._isRunning) return;
 
     this._isRunning = true;
-  }
+  };
 
-  private handleStop() {
+  private handleStop = () => {
     console.log('GrooveMonitor: handleStop');
     if (!this._isRunning) return;
-  }
+  };
 
-  private handleMidiPulse(event: { time: number; ticks: number }) {
+  private handleMidiPulse = (event: { time: number; ticks: number }) => {
     console.log('GrooveMonitor: handleMidiPulse', event);
     if (!this._isRunning || !TempoService.startTime) {
       return;
     }
 
     // Handle the MIDI pulse event
-  }
+  };
 
   private handleNote(note: BeatNote) {
     console.log('GrooveMonitor: handleNote', note);

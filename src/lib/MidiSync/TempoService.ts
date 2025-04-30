@@ -1,6 +1,7 @@
 import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
 import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
+import { send } from '@tanstack/react-start/server';
 
 // TempoService is a singleton that drives the MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
@@ -82,6 +83,7 @@ class TempoService {
   };
 
   sendStart = () => {
+    console.log(`TempoService.sendStart: ${this.time}`);
     this.eventsEmitter.emit('start', { time: this.time });
 
     const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
@@ -190,6 +192,8 @@ class TempoService {
       isPlaying: this.isPlaying,
       isRecording: this.isRecording,
     });
+    this.sendStart();
+    this.sendSpp(this.currentSpp);
     this.startIntervalTimer();
   }
 
@@ -210,6 +214,8 @@ class TempoService {
     this.eventsEmitter.emit('stateChange', { isRunning: this.isRunning });
     this.sendContinue();
     this.startIntervalTimer();
+    this.sendSpp(this.currentSpp);
+    this.sendStart();
   }
 
   stop() {
@@ -221,6 +227,7 @@ class TempoService {
     this.currentSpp = this.startSpp;
     this.eventsEmitter.emit('SPP', { spp: this.currentSpp });
     this.eventsEmitter.emit('stateChange', { isRunning: this.isRunning });
+    this.sendStop();
   }
 }
 

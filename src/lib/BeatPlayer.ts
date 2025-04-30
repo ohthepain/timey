@@ -19,8 +19,14 @@ class BeatPlayer extends EventEmitter {
 
     // Subscribe to TempoService events
     console.log(`BeatPlayer:ctor - add listeners`);
-    TempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange.bind(this));
-    TempoService.eventsEmitter.addListener('MIDI pulse', (event) => this.handleMidiPulse(event));
+    TempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange);
+    TempoService.eventsEmitter.addListener('MIDI pulse', this.handleMidiPulse);
+  }
+
+  public destroy() {
+    console.log('BeatPlayer: destroy');
+    TempoService.eventsEmitter.removeListener('MIDI pulse', this.handleMidiPulse);
+    TempoService.eventsEmitter.removeListener('stateChange', this.tempoService_stateChange);
   }
 
   public setBeat(beat: Beat) {
@@ -39,7 +45,7 @@ class BeatPlayer extends EventEmitter {
     this.emit('beatSet', beat);
   }
 
-  private tempoService_stateChange(e: any) {
+  private tempoService_stateChange = (e: any) => {
     console.log(`BeatPlayer: tempoService_stateChange playing ${e.isPlaying} running ${e.isRunning}`);
     if (this.isPlaying != (e.isPlaying && e.isRunning)) {
       this.noteIndex = 0;
@@ -47,9 +53,9 @@ class BeatPlayer extends EventEmitter {
       this.nextNoteStartTime = 0;
       this.isPlaying = e.isPlaying && e.isRunning;
     }
-  }
+  };
 
-  private handleMidiPulse(event: { time: number; ticks: number }) {
+  private handleMidiPulse = (event: { time: number; ticks: number }) => {
     if (!TempoService.isRunning || !TempoService.isPlaying) {
       return;
     }
@@ -77,7 +83,7 @@ class BeatPlayer extends EventEmitter {
           notes.push(midiNote);
         }
       }
-      console.log(`BeatPlayer: handleMidiPulse - notes: `, notes);
+      // console.log(`BeatPlayer: handleMidiPulse - notes: `, notes);
       if (this.isPlaying) {
         midiService.playNote(midiOutputDeviceId, midiOutputChannelNum, notes, 127, 0, 0);
         this.emit('note', this.noteIndex);
@@ -96,14 +102,7 @@ class BeatPlayer extends EventEmitter {
         throw new Error('No more notes to play.');
       }
     }
-  }
-
-  public destroy() {
-    console.log('BeatPlayer: destroy');
-    TempoService.eventsEmitter.removeListener('MIDI pulse', this.handleMidiPulse.bind(this));
-    TempoService.eventsEmitter.removeListener('play', this.handlePlay.bind(this));
-    TempoService.eventsEmitter.removeListener('stop', this.handleStop.bind(this));
-  }
+  };
 }
 
 // Create a singleton instance

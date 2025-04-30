@@ -1,5 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
+import '~/lib/MetronomeService'; // Side-effects import
+import { useNavigationStore } from '~/state/NavigationStore';
+import { GoMute, GoUnmute } from 'react-icons/go';
 
 interface MetronomeProps {
   beatsPerBar: number;
@@ -10,6 +13,7 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
   const [isRunning, setIsRunning] = useState(false);
   var nextNoteStartTicks: number = 0;
   const nextNoteStartTicksRef = useRef(nextNoteStartTicks);
+  const { isMetronomeOn, setMetronomeOn } = useNavigationStore();
 
   const handleStateChange = (state: { isRunning: boolean }) => {
     console.log('Metronome: handleStateChange', state);
@@ -40,17 +44,17 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
   };
 
   useEffect(() => {
-    TempoService.eventsEmitter.addListener('stateChange', handleStateChange.bind(this));
-    TempoService.eventsEmitter.addListener('MIDI pulse', handleMidiPulse.bind(this));
+    TempoService.eventsEmitter.addListener('stateChange', handleStateChange);
+    TempoService.eventsEmitter.addListener('MIDI pulse', handleMidiPulse);
 
     return () => {
-      TempoService.eventsEmitter.removeListener('MIDI pulse', handleMidiPulse.bind(this));
-      TempoService.eventsEmitter.removeListener('stateChange', handleStateChange.bind(this));
+      TempoService.eventsEmitter.removeListener('MIDI pulse', handleMidiPulse);
+      TempoService.eventsEmitter.removeListener('stateChange', handleStateChange);
     };
   }, []);
 
   return (
-    <div className="flex space-x-2 items-center">
+    <div className="flex space-x-2 items-center" onClick={() => setMetronomeOn(!isMetronomeOn)}>
       {Array.from({ length: beatsPerBar }).map((_, i) => (
         <div
           key={i}
@@ -59,6 +63,17 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
           }`}
         />
       ))}
+      <label className="flex items-center gap-2 text-xl font-bold>">
+        {isMetronomeOn ? (
+          <span title="Metronome On" role="img" aria-label="Ear">
+            <GoUnmute />
+          </span>
+        ) : (
+          <span title="Metronome Off" role="img" aria-label="Ear with slash">
+            <GoMute />
+          </span>
+        )}
+      </label>
     </div>
   );
 };

@@ -33,18 +33,18 @@ class BeatRecorder extends EventEmitter {
   private constructor() {
     console.log('BeatRecorder: constructor');
     super();
-    midiService.on('midiNote', this.handleMidiNote.bind(this));
-    TempoService.eventsEmitter.addListener('stateChange', this.handleStateChange.bind(this));
+    midiService.on('midiNote', this.handleMidiNote);
+    TempoService.eventsEmitter.addListener('stateChange', this.handleStateChange);
     TempoService.eventsEmitter.addListener('MIDI pulse', (event) => this.handleMidiPulse(event));
-    // midiService.addListener('note', this.handleM idiNote.bind(this));
+    // midiService.addListener('note', this.handleM idiNote);
   }
 
   destroy() {
     console.log('BeatRecorder: destroy');
-    midiService.removeListener('midiNote', this.handleMidiNote.bind(this));
-    TempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange.bind(this));
+    midiService.removeListener('midiNote', this.handleMidiNote);
+    TempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange);
     TempoService.eventsEmitter.removeListener('MIDI pulse', (event) => this.handleMidiPulse(event));
-    // midiService.removeListener('note', this.handleMidiNote.bind(this));
+    // midiService.removeListener('note', this.handleMidiNote);
   }
 
   async savePerformance() {
@@ -71,14 +71,14 @@ class BeatRecorder extends EventEmitter {
     }
   }
 
-  private handleMidiPulse(event: { time: number; ticks: number }) {
+  private handleMidiPulse = (event: { time: number; ticks: number }) => {
     // Adjust referenceTime to correct for drift between measured and MIDI time
     // The difference between the expected time and the actual MIDI pulse time
     const now = TempoService.time;
     const midiTime = event.time;
     const drift = midiTime - now;
     this.referenceTime += drift;
-  }
+  };
 
   public static getInstance(): BeatRecorder {
     if (!BeatRecorder._instance) {
@@ -96,13 +96,13 @@ class BeatRecorder extends EventEmitter {
     this.lastQuantizedTime = -Infinity;
   }
 
-  private handleStateChange(e: any) {
+  private handleStateChange = (e: any) => {
     if (e.isRunning && e.isRecording) {
       this.start();
     } else {
       this.stop();
     }
-  }
+  };
 
   public start() {
     const beatId = this.beat!.id!;
