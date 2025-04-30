@@ -1,98 +1,123 @@
 import { useEffect, useState } from 'react';
 import TempoService from '~/lib/MidiSync/TempoService';
-import MidiSelector from '~/components/DeviceSelector/MidiSelector';
-import { BeatAdminOperations } from '~/components/BeatAdminOperations';
+import { Metronome } from './Metronome';
+import { TempoInput } from './TempoInput';
+import { beatRecorder } from '~/lib/BeatRecorder';
+import { useNavigationStore } from '~/state/NavigationStore';
+import { deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [beatName, setBeatName] = useState('basic');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const { currentBeat, getPerformancesForBeatId } = useNavigationStore();
 
-  const handlePlay = () => {
-    console.log('Play clicked');
-    TempoService.start();
+  const handlePlayButton = () => {
+    console.log('Transport: handlePlayButton');
+    TempoService.play();
+    setIsRunning(true);
+    setIsPlaying(true);
   };
 
-  const handleRecord = () => {
-    console.log('Play clicked');
-    TempoService.start();
+  const handleRecordButton = () => {
+    console.log('Transport: handleRecordButton');
+    TempoService.record();
+    setIsRunning(true);
+    setIsRecording(true);
   };
 
   const handleStop = () => {
     console.log('Stop clicked');
     TempoService.stop();
     setIsRunning(false);
+    setIsPlaying(false);
     setIsRecording(false);
-  };
-
-  const handlePrev = () => {
-    console.log('Prev clicked');
-    const currentSpp = Math.max(TempoService.currentSpp - 16, 0);
-    TempoService.currentSpp = currentSpp;
-    TempoService.eventsEmitter.emit('SPP', { spp: currentSpp });
-  };
-
-  const handleNext = () => {
-    console.log('Next clicked');
-    const currentSpp = TempoService.currentSpp + 16;
-    TempoService.currentSpp = currentSpp;
-    TempoService.eventsEmitter.emit('SPP', { spp: currentSpp });
   };
 
   useEffect(() => {
     // Listen for changes in TempoService's running state
-    const updateRunningState = () => {
-      setIsRunning(TempoService.isRunning);
+    const tempoService_stateChange = (e: any) => {
+      console.log(
+        `Transport: tempoService_stateChange playing ${e.isPlaying} recording ${e.isRecording} running ${e.isRunning}`
+      );
+      setIsRunning(e.isRunning);
+      setIsPlaying(e.isPlaying);
+      setIsRecording(e.isRecording);
     };
 
-    TempoService.eventsEmitter.on('stateChange', updateRunningState);
+    // TempoService.eventsEmitter.on('stateChange', tempoService_stateChange);
 
-    return () => {
-      TempoService.eventsEmitter.off('stateChange', updateRunningState);
-    };
+    // return () => {
+    //   TempoService.eventsEmitter.off('stateChange', tempoService_stateChange);
+    // };
   }, []);
 
   return (
-    <div className="transport-controls flex gap-4 p-4 bg-green-100 rounded">
-      <BeatAdminOperations />
-      <input
-        type="text"
-        placeholder="Enter beat name"
-        value={beatName}
-        onChange={(e) => setBeatName(e.target.value)}
-        className="input-field px-4 py-2 border rounded"
-      />
-      <button className="btn btn-prev bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handlePrev}>
-        Prev
-      </button>
-      {isRunning ? (
-        <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
+    <div className="transport-controls flex gap-1 p-4 items-center">
+      {isRunning && isPlaying ? (
+        <button
+          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+          onClick={handleStop}
+        >
           Stop
         </button>
       ) : (
         <button
-          className="btn btn-play bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
-          onClick={handlePlay}
+          className="text-green-700 px-2 m-1 rounded hover:bg-red-200 border-green-600 border-2 rounded-e-md text-sm"
+          onClick={handlePlayButton}
         >
           Play
         </button>
       )}
-      {isRunning ? (
-        <button className="btn btn-stop bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded" onClick={handleStop}>
+      {isRunning && isRecording ? (
+        <button
+          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+          onClick={handleStop}
+        >
           Stop
         </button>
       ) : (
         <button
-          className="btn btn-play bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
-          onClick={handleRecord}
+          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+          onClick={handleRecordButton}
         >
           Record
         </button>
       )}
-      <button className="btn btn-next bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded" onClick={handleNext}>
-        Next
-      </button>
-      <MidiSelector />
+      {!isRunning && (
+        <button
+          className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
+          onClick={async () => {
+            console.log('Start clicked');
+            beatRecorder.savePerformance();
+          }}
+        >
+          Save
+        </button>
+      )}
+      {!isRunning && currentBeat && currentBeat.id && (
+        <button
+          className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
+          onClick={async () => {
+            console.log('Start clicked');
+          }}
+        >
+          {`Replay (${getPerformancesForBeatId(currentBeat.id).length})`}
+        </button>
+      )}
+      {!isRunning && currentBeat && currentBeat.id && (
+        <button
+          className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
+          onClick={async () => {
+            console.log('Start clicked');
+            await deletePerformancesByBeatIdAndUserId({ data: { beatId: currentBeat.id } });
+          }}
+        >
+          {`Delete ${getPerformancesForBeatId(currentBeat.id).length} recordings`}
+        </button>
+      )}
+      <TempoInput />
+      <Metronome beatsPerBar={4} />
     </div>
   );
 };

@@ -19,27 +19,26 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
   });
 
   return (
-    <div className="module-page p-4">
-      <h1 className="text-2xl font-bold mb-4">Module: {module.title}</h1>
-      <p className="mb-2">Description: {module.description || 'No description provided.'}</p>
-      <p className="mb-2">Index: {module.index}</p>
-      <p className="mb-2">Author ID: {module.authorId}</p>
-      <div className="mt-4">
-        {module.beats && module.beats.length > 0 ? (
-          <ul className="pl-4">
-            {module.beats.map((beat: Beat) => (
-              <li key={beat.id} className="">
-                <BeatViewer
-                  beat={beat}
-                  beatProgress={beat.id ? beatProgressMap.get(beat.id) : undefined}
-                  module={module}
-                />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-gray-500">No beats available for this module.</p>
-        )}
+    <div className="module-page flex flex-row items-start">
+      <div className="flex-1">
+        <h1 className="text-3xl font-bold mb-4 align-middle text-center">{module.title}</h1>
+        <div className="mt-4">
+          {module.beats && module.beats.length > 0 ? (
+            <ul className="">
+              {module.beats.map((beat: Beat) => (
+                <li key={beat.id} className="">
+                  <BeatViewer
+                    beat={beat}
+                    beatProgress={beat.id ? beatProgressMap.get(beat.id) : undefined}
+                    module={module}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">No beats available for this module.</p>
+          )}
+        </div>
       </div>
     </div>
   );

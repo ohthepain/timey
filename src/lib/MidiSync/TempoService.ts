@@ -1,6 +1,7 @@
 import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
-import { MidiDevicePreferences, MidiDeviceSettings, usePreferencesStore } from '~/state/PreferencesStore';
+import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
+import { send } from '@tanstack/react-start/server';
 
 // TempoService is a singleton that drives the MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
@@ -21,6 +22,8 @@ class TempoService {
   intervalId: any;
 
   isRunning: boolean = false;
+  isPlaying: boolean = false;
+  isRecording: boolean = false;
   time: number = 0;
   startTime: number = 0;
   elapsedMsec: number = 0;
@@ -37,7 +40,6 @@ class TempoService {
   }
 
   stopIntervalTimer() {
-    console.log(`TempoService.stopIntervalTimer`);
     clearInterval(this.intervalId);
     this.eventsEmitter.emit('SPP', { spp: 0 });
     this.eventsEmitter.emit('');
@@ -45,12 +47,8 @@ class TempoService {
 
   startIntervalTimer() {
     this.stopIntervalTimer();
-    console.log(`TempoService.startIntervalTimer`);
     const pps = this.bpm * this.ppqn;
     this.pulseIntervalMsec = (60 * 1000) / pps;
-    console.log(
-      `TempoService.startIntervalTimer bpm ${this.bpm} interval ${this.pulseIntervalMsec} msec @ ${this.ppqn} = ${this.pulseIntervalMsec * this.ppqn} msec/qn`
-    );
 
     this.time = WebMidi.time;
     this.startTime = this.time;
@@ -58,9 +56,6 @@ class TempoService {
 
     this.handleInterval();
     this.intervalId = setInterval(this.handleInterval, this.pulseIntervalMsec);
-    // this.link.startUpdate(60, (beat: any, phase: any, bpm: any) => {
-    //     console.log("updated: ", beat, phase, bpm);
-    // });
   }
 
   handleInterval = () => {
@@ -75,7 +70,6 @@ class TempoService {
     }
 
     if (this.time > this.startTime + this.nextPulseNum * this.pulseIntervalMsec) {
-      // console.log(`send clock pulse ${this.nextPulseNum} at ${Math.floor(this.time - this.startTime)}`)
       this.sendClock(this.nextPulseNum);
       this.eventsEmitter.emit('MIDI pulse', {
         time: this.elapsedMsec,
@@ -89,13 +83,12 @@ class TempoService {
   };
 
   sendStart = () => {
+    console.log(`TempoService.sendStart: ${this.time}`);
     this.eventsEmitter.emit('start', { time: this.time });
 
     const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
-      // console.log(`Preferences.getMidiOutputs: ${JSON.stringify(output)}`)
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
-        // console.log(`TempoService.sendStart: to ${output.name}`)
         output.sendStart();
       }
     });
@@ -188,15 +181,32 @@ class TempoService {
     return elapsed64ths;
   }
 
-  start() {
+  private start() {
     this.time = WebMidi.time;
     this.startTime = this.time;
     this.currentSpp = this.startSpp;
     this.eventsEmitter.emit('SPP', { spp: this.currentSpp });
     this.isRunning = true;
-    this.eventsEmitter.emit('stateChange', { isRunning: this.isRunning });
+    this.eventsEmitter.emit('stateChange', {
+      isRunning: this.isRunning,
+      isPlaying: this.isPlaying,
+      isRecording: this.isRecording,
+    });
     this.sendStart();
+    this.sendSpp(this.currentSpp);
     this.startIntervalTimer();
+  }
+
+  play() {
+    this.isPlaying = true;
+    this.isRecording = false;
+    this.start();
+  }
+
+  record() {
+    this.isRecording = true;
+    this.isPlaying = false;
+    this.start();
   }
 
   continue() {
@@ -204,15 +214,20 @@ class TempoService {
     this.eventsEmitter.emit('stateChange', { isRunning: this.isRunning });
     this.sendContinue();
     this.startIntervalTimer();
+    this.sendSpp(this.currentSpp);
+    this.sendStart();
   }
 
   stop() {
     this.isRunning = false;
+    this.isPlaying = false;
+    this.isRecording = false;
     this.stopIntervalTimer();
     this.sendStop();
     this.currentSpp = this.startSpp;
     this.eventsEmitter.emit('SPP', { spp: this.currentSpp });
     this.eventsEmitter.emit('stateChange', { isRunning: this.isRunning });
+    this.sendStop();
   }
 }
 

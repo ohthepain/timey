@@ -9,7 +9,7 @@ const kick = 'g/4';
 export function ConvertNoteToMidiNote(note: string): number {
   switch (note.slice(0, 3)) {
     case 'g/5':
-      return 22; // Closed hi-hat, edge
+      return 42; // Closed hi-hat, edge
     case 'g/4':
       return 36; // MIDI note number for kick
     case 'e/5':
@@ -245,6 +245,7 @@ export function MakeStaveNotesFromBeat(beat: Beat): {
       if (key === 'hihat') return hihat;
       if (key === 'snare') return snare;
       if (key === 'kick') return kick;
+      if (key === 'rest') return 'g/4/x';
       console.warn(`Unknown key: ${key}`);
       return 'g/4/x'; // Default to rest
     });
@@ -279,7 +280,7 @@ export function MakeStaveNotesFromBeat(beat: Beat): {
 
       const noteRecords = noteEntries.slice(beatStartIndex + noteEntry.index, beatStartIndex + noteEntry.index + 2);
       const tupletNotes = noteRecords.map((noteRecord) => noteRecord.staveNote);
-      console.log('Tuplet notes:', noteRecords);
+      // console.log('Tuplet notes:', noteRecords);
       tuplets.push(
         new TupletRecord(noteEntry.barNum, tupletNotes, {
           numNotes: noteEntry.numSubDivisions,
@@ -298,20 +299,14 @@ export function createBeatSourceFromBeat(beat: Beat): BeatSource {
   const barsMap = new Map<number, BarSource>();
 
   let subdivisionNum = 0;
-  let sumSubDivisions = 0;
-  let needComma = false;
 
   for (let i = 0; i < beat.beatNotes.length; i++) {
     const note = beat.beatNotes[i];
     console.log('subdivisionNum', subdivisionNum, note.subDivisionNum, note.numSubDivisions);
     if (subdivisionNum === 0) {
-      needComma = true;
-      console.log('subdivisionNum === 0');
       subdivisionNum = note.numSubDivisions;
-      sumSubDivisions = note.numSubDivisions;
     }
     --subdivisionNum;
-    console.log('subdivisionNum', subdivisionNum);
 
     const bar = barsMap.get(note.barNum) || { kick: '', hihat: '', snare: '', accent: '' };
     // Parse noteString to determine which voices are present

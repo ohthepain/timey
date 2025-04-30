@@ -59,17 +59,18 @@ model Module {
 }
 
 model Beat {
-  id          String     @id @default(uuid())
-  name        String
-  description String?
-  index       Int
-  authorId    String
-  author      User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  createdAt   DateTime   @default(now())
-  modifiedAt  DateTime   @updatedAt
-  beatNotes   BeatNote[]
-  moduleId    String
-  module      Module     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  id           String        @id @default(uuid())
+  name         String
+  description  String?
+  index        Int
+  authorId     String
+  author       User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt    DateTime      @default(now())
+  modifiedAt   DateTime      @updatedAt
+  beatNotes    BeatNote[]
+  moduleId     String
+  module       Module        @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  performances Performance[] @relation("BeatPerformances")
 
   beatProgress BeatProgress[]
 
@@ -78,7 +79,7 @@ model Beat {
 }
 
 model BeatNote {
-  id              String @id @default(uuid())
+  id              String       @id @default(uuid())
   index           Int
   duration        Int
   noteString      String // A comma-separated string of notes like "kick", "snare", "hihat" and midi note numbers
@@ -88,8 +89,11 @@ model BeatNote {
   subDivisionNum  Int
   numSubDivisions Int
   velocity        Int
+  microtiming     Int          @default(0)
   beatId          String
-  beat            Beat   @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  beat            Beat         @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  Performance     Performance? @relation(fields: [performanceId], references: [id])
+  performanceId   String?
 
   @@index([beatId])
 }
@@ -151,4 +155,15 @@ model BeatProgress {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, beatId])
+}
+
+model Performance {
+  id         String     @id @default(uuid())
+  beatId     String
+  index      Int
+  userId     String
+  createdAt  DateTime   @default(now())
+  modifiedAt DateTime   @updatedAt
+  notes      BeatNote[]
+  beat       Beat       @relation("BeatPerformances", fields: [beatId], references: [id])
 }

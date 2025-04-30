@@ -1,5 +1,5 @@
 import { beatProgressRepository } from '~/repositories/beatProgressRepository';
-import { getBeatWithModuleAndMethod } from '~/repositories/beatRepository';
+import { beatRepository } from '~/repositories/beatRepository';
 import { moduleProgressRepository } from '~/repositories/moduleProgressRepository';
 import { userRepository } from '~/repositories/userRepository';
 import { checkUser } from '~/lib/checkUser';
@@ -39,7 +39,7 @@ export const startBeatServerFn = createServerFn({
         return { error: 'User not authenticated' };
       }
 
-      const beat = await getBeatWithModuleAndMethod(beatId);
+      const beat = await beatRepository.getBeatWithModuleAndMethod(beatId);
       if (!beat) {
         throw new Error(`Beat not found with id ${beatId}`);
       }

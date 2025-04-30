@@ -18,6 +18,27 @@ class BeatRepository {
     });
   }
 
+  getBeatWithPerformances(beatId: string, userId: string) {
+    console.log('Fetching beat with performances for user:', userId);
+    console.log('Fetching beat with performances for beatId:', beatId);
+    return prisma.beat.findUnique({
+      where: { id: beatId },
+      include: {
+        module: {
+          include: {
+            method: true,
+          },
+        },
+        performances: {
+          where: { userId: userId },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { notes: true },
+        },
+      },
+    });
+  }
+
   getBeatsByUser(userId: string) {
     return prisma.beat.findMany({ where: { authorId: userId }, include: { beatNotes: true } });
   }

@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
-import { useMidiService } from '~/lib/MidiService';
+import { midiService, useMidiService } from '~/lib/MidiService';
 
 export default function MidiSelector() {
   const { midiInputs, midiOutputs, getDeviceNameById } = useMidiService();
@@ -13,15 +12,6 @@ export default function MidiSelector() {
     midiOutputChannelNum,
     setMidiInputDevice,
     setMidiOutputDevice,
-
-    metronomeNoteNumber,
-    setMetronomeNoteNumber,
-    metronomeVelocity,
-    setMetronomeVelocity,
-    metronomeDownbeatNoteNumber,
-    setMetronomeDownbeatNoteNumber,
-    metronomeUpbeatNoteNumber,
-    setMetronomeUpbeatNoteNumber,
   } = useMidiSettingsStore();
 
   const onChangeMidiOutputDeviceId = (e: any) => {
@@ -56,11 +46,19 @@ export default function MidiSelector() {
   };
 
   return (
-    <div className="flex flex-col pb-2 gap-y-2">
-      <div className="flex flex-row input-group col-lg-4 gap-x-4">
+    <div className="flex gap-y-2 border-gray-800 p-2 border-1 rounded-sm m-2 gap-x-4 flex-auto">
+      <div className="flex flex-row input-group gap-x-4">
         MIDI In:
         <div className="flex">
-          <select value={midiInputDeviceId || 'All MIDI devices'} onChange={onChangeMidiInputDeviceId}>
+          <select
+            value={midiInputDeviceId || 'All MIDI devices'}
+            onChange={onChangeMidiInputDeviceId}
+            onClick={async () => {
+              console.log('refreshDevices');
+              await midiService.enable();
+              midiService.refreshDevices();
+            }}
+          >
             <option value={''}> {'All MIDI devices'} </option>
             {midiInputs.map((input) => {
               return (
@@ -73,7 +71,15 @@ export default function MidiSelector() {
           </select>
         </div>
         <div className="flex">
-          <select value={midiInputChannelNum} onChange={onChangeMidiInputChannel}>
+          <select
+            value={midiInputChannelNum}
+            onChange={onChangeMidiInputChannel}
+            onClick={async () => {
+              console.log('refreshDevices');
+              await midiService.enable();
+              midiService.refreshDevices();
+            }}
+          >
             <option value={''}> {'All channels'} </option>
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map((n) => {
               return (
@@ -86,7 +92,7 @@ export default function MidiSelector() {
           </select>
         </div>
       </div>
-      <div className="flex flex-row input-group col-lg-4 gap-x-4">
+      <div className="flex input-group gap-x-4">
         MIDI Out:
         <div className="flex">
           <select value={midiOutputDeviceId} onChange={onChangeMidiOutputDeviceId}>
@@ -114,33 +120,6 @@ export default function MidiSelector() {
             })}
           </select>
         </div>
-      </div>
-      Metronome:
-      <div className="flex flex-row input-group col-lg-4 gap-x-4 max-w-full overflow-auto">
-        Note:
-        <input
-          type="number"
-          value={metronomeNoteNumber}
-          onChange={(e) => setMetronomeNoteNumber(parseInt(e.target.value))}
-        />
-        Downbeat:
-        <input
-          type="number"
-          value={metronomeDownbeatNoteNumber}
-          onChange={(e) => setMetronomeDownbeatNoteNumber(parseInt(e.target.value))}
-        />
-        Upbeat:
-        <input
-          type="number"
-          value={metronomeUpbeatNoteNumber}
-          onChange={(e) => setMetronomeUpbeatNoteNumber(parseInt(e.target.value))}
-        />
-        Velocity:
-        <input
-          type="number"
-          value={metronomeVelocity}
-          onChange={(e) => setMetronomeVelocity(parseInt(e.target.value))}
-        />
       </div>
     </div>
   );
