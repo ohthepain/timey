@@ -5,6 +5,7 @@ import { useBeatPlayer } from '~/lib/UseBeatPlayer';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { NoteEntry } from '~/lib/ParseBeat';
 import { Beat } from '~/types/Beat';
+import { Performance } from '~/types/Performance';
 import { useNavigationStore } from '~/state/NavigationStore';
 
 const marginX = 20;
@@ -32,7 +33,8 @@ function stroke(ctx: RenderContext, x1: number, x2: number, y: number, color: st
   ctx.stroke();
 }
 
-const plotMetricsForNote = (ctx: RenderContext, note: Tickable, yPos: number): void => {
+const plotMetricsForNote = (ctx: RenderContext, noteEntry: NoteEntry, yPos: number): void => {
+  const note: Tickable = noteEntry.staveNote;
   const xStart = note.getAbsoluteX();
   const xEnd = xStart + 10; //(note.getFormatterMetrics().freedom.right || 0);
 
@@ -123,6 +125,7 @@ const plotLegendForNoteWidth = (ctx: RenderContext, x: number, y: number) => {
 
 interface ScoreViewProps {
   beat: Beat;
+  performance: Performance | null;
 }
 
 export const ScoreView = ({ beat }: ScoreViewProps) => {
@@ -235,7 +238,7 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
     });
 
     allNotes.forEach((note) => {
-      plotMetricsForNote(context, note.staveNote, 10);
+      plotMetricsForNote(context, note, 10);
     });
 
     plotLegendForNoteWidth(context, barWidth * 2, 150);

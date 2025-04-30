@@ -4,9 +4,11 @@ import { Performance } from '~/types/Performance';
 
 interface NavigationState {
   currentBeat: Beat | null;
+  currentPerformance: Performance | null;
   performancesByBeatId: Record<string, Performance[]>;
   isMetronomeOn: boolean;
   setCurrentBeat: (beat: Beat | null) => void;
+  setCurrentPerformance: (performance: Performance | null) => void;
   cachePerformance: (performance: Performance) => void;
   clearPerformancesForBeatId: (beatId: string) => void;
   getPerformancesForBeatId: (beatId: string) => Performance[];
@@ -15,9 +17,11 @@ interface NavigationState {
 
 export const useNavigationStore = create<NavigationState>((set) => ({
   currentBeat: null,
+  currentPerformance: null,
   performancesByBeatId: {},
   isMetronomeOn: true,
   setCurrentBeat: (beat) => set(() => ({ currentBeat: beat })),
+  setCurrentPerformance: (performance: Performance | null) => set(() => ({ currentPerformance: performance })),
   clearPerformancesForBeatId: (beatId) =>
     set((state) => ({
       performancesByBeatId: {

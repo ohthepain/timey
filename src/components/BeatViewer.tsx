@@ -28,7 +28,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(beat.name);
   const [performances, setPerformances] = useState<Performance[]>([]);
-  const { currentBeat, cachePerformance } = useNavigationStore();
+  const { currentBeat, currentPerformance, cachePerformance } = useNavigationStore();
 
   const router = useRouter();
 
@@ -54,6 +54,16 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
 
   const handleEditBeat = async () => {
     setIsEditing(!isEditing);
+
+    if (beat.id) {
+      const performances = useNavigationStore.getState().getPerformancesForBeatId(beat.id);
+      const performance: Performance | null = performances && performances.length > 0 ? performances[0] : null;
+      console.log('BeatViewer: setCurrentPerformance: ', performance);
+      useNavigationStore.getState().setCurrentPerformance(performance);
+    } else {
+      console.log('BeatViewer: setCurrentPerformance: to null');
+      useNavigationStore.getState().setCurrentPerformance(null);
+    }
   };
 
   useEffect(() => {
@@ -131,7 +141,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                 await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
               }}
             />
-            <ScoreView beat={beat} />
+            <ScoreView beat={beat} performance={currentPerformance} />
           </div>
         </div>
       </div>
