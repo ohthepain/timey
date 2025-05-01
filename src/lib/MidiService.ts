@@ -1,26 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Input, NoteMessageEvent, Output, WebMidi } from 'webmidi';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { EventEmitter } from 'events';
-import { subscribeWithSelector } from 'zustand/middleware';
-import { channel } from 'diagnostics_channel';
 
 class MidiService extends EventEmitter {
   receivedResponse: boolean = false;
   midiInputs: Array<{ id: string; label: string }> = [];
   midiOutputs: Array<{ id: string; label: string }> = [];
   listenersInitialized: boolean = false;
-  midiOutputChannelNum: number = -1;
-  midiOutputDeviceId: string | null = null;
-  midiInputChannelNum: number = -1;
-  midiInputDeviceId: string | null = null;
+  midiOutputChannelNum: number = useMidiSettingsStore.getState().midiOutputChannelNum;
+  midiOutputDeviceId: string | null = useMidiSettingsStore.getState().midiOutputDeviceId;
+  midiInputChannelNum: number = useMidiSettingsStore.getState().midiInputChannelNum;
+  midiInputDeviceId: string | null = useMidiSettingsStore.getState().midiInputDeviceId;
+
+  constructor() {
+    super();
+    this.enable();
+  }
 
   async enable() {
-    if (WebMidi.enabled) return;
-    await WebMidi.enable({ sysex: true });
+    if (!WebMidi.enabled) {
+      console.log('WebMidi not enabled, enabling...');
+      try {
+        await WebMidi.enable({ sysex: true });
+      } catch (error) {
+        console.error('Error enabling WebMidi:', error);
+        return;
+      }
+    }
+    console.log('WebMidi enabled (MidiService)');
     this.refreshDevices();
     this.initListeners();
-    console.log('WebMidi enabled (MidiService)');
   }
 
   isEnabled() {
@@ -35,15 +45,22 @@ class MidiService extends EventEmitter {
   }
 
   initListeners() {
+    console.log(`initListeners ${this.midiInputDeviceId} ${this.midiInputChannelNum}`);
     if (this.listenersInitialized) {
       return;
     }
+    console.log('initListeners 2');
     WebMidi.addListener('connected', () => {
       this.refreshDevices();
     });
     WebMidi.addListener('disconnected', () => {
       this.refreshDevices();
     });
+
+    this.refreshDevices();
+    if (this.midiInputDeviceId) {
+      this.listenToInput(this.midiInputDeviceId, this.midiInputChannelNum);
+    }
 
     useMidiSettingsStore.subscribe((state) => {
       console.log('MidiSettingsStore state changed:', state);
@@ -129,23 +146,32 @@ class MidiService extends EventEmitter {
   }
 
   listenToInput(midiInputDeviceId: string, channelNum?: number) {
+    console.log(`listenToInput ${midiInputDeviceId} channelNum: ${channelNum}`);
     const input = WebMidi.getInputById(midiInputDeviceId);
     if (!input) {
       console.warn(`No MIDI input device found: ${midiInputDeviceId}`);
       return;
     }
 
-    const channel = input.channels[this.midiInputChannelNum];
-    if (!channel) {
-      console.warn(`MIDI Input channel not found: ${this.midiInputChannelNum}`);
-      return;
-    }
+    if (channelNum) {
+      console.log(`listenToInput : channel ${channelNum}`);
+      const channel = input.channels[channelNum];
+      if (!channel) {
+        console.warn(`MIDI Input channel not found: ${channelNum}`);
+        return;
+      }
 
-    // Remove previous listeners to avoid duplicates
-    channel.removeListener('noteon');
-    channel.addListener('noteon', (e) => {
-      this.emit('midiNote', e);
-    });
+      channel.removeListener('noteon');
+      channel.addListener('noteon', (e) => {
+        this.emit('midiNote', e);
+      });
+    } else {
+      console.log(`listenToInput : all channels`);
+      input.removeListener('noteon');
+      input.addListener('noteon', (e: NoteMessageEvent) => {
+        this.emit('midiNote', e);
+      });
+    }
   }
 }
 
