@@ -5,6 +5,7 @@ package-lock.json
 .cache
 .env
 
+.vscode
 .vercel
 .output
 .vinxi
