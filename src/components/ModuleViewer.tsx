@@ -3,6 +3,7 @@ import { Module } from '~/types/Module';
 import { BeatProgressView } from '~/services/userProgressServerService.server';
 import { BeatViewer } from './BeatViewer';
 import { Beat } from '~/types/Beat';
+import { BeatEditor } from './BeatEditor';
 
 export interface ModuleProps {
   module: Module;
@@ -19,7 +20,7 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
   });
 
   return (
-    <div className="module-page flex flex-row items-start">
+    <div className="module-page flex flex-col items-start">
       <div className="flex-1">
         <h1 className="text-3xl font-bold mb-4 align-middle text-center">{module.title}</h1>
         <div className="mt-4">
@@ -40,6 +41,9 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
           )}
         </div>
       </div>
+      <div className="bg-gray-400 w-full h-1 m-8" />
+      New Beat:
+      <BeatEditor beat={new Beat({ name: 'New Beat', moduleId: module.id })} module={module} />
     </div>
   );
 };

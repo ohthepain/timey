@@ -138,7 +138,7 @@ const plotLegendForNoteWidth = (ctx: RenderContext, x: number, y: number) => {
 
 interface ScoreViewProps {
   beat: Beat;
-  performanceFeedback: PerformanceFeedback | null;
+  performanceFeedback: PerformanceFeedback | undefined;
 }
 
 export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
@@ -147,12 +147,7 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
 
   console.log(`ScoreView: ${beat.toJSON()}`);
 
-  // const { currentNote } = useBeatPlayer();
-  // const [currentNoteIndex, setCurrentNoteIndex] = useState<number>(0);
-
   const { tuplets, noteEntries } = MakeStaveNotesFromBeat(beat);
-
-  const allNotes: NoteEntry[] = noteEntries.map((noteEntry) => noteEntry);
 
   const numBars = Math.max(...noteEntries.map((noteEntry) => noteEntry.barNum)) + 1;
 
@@ -205,39 +200,19 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
         barLines.push(barLine);
       }
 
-      // const x =
-      //   beatSpace +
-      //   noteEntry.barNum * barWidth +
-      //   noteEntry.beatNum * beatWidth +
-      //   noteEntry.divisionNum * divisionWidth +
-      //   (noteEntry.subDivisionNum / (noteEntry.numSubDivisions + 1)) * divisionWidth;
       const x = getNoteEntryX(noteEntry);
-
       const note = noteEntry.staveNote;
       const tickContext = new TickContext();
       tickContext.addTickable(note);
-      // console.log(
-      //   `noteEntry: ${noteEntry.barNum} ${noteEntry.beatNum} ${noteEntry.divisionNum} at x: ${x}`
-      // );
       tickContext.preFormat().setX(x);
       note.setTickContext(tickContext);
       note.setStave(stave);
     });
 
-    allNotes.forEach((note) => {
+    noteEntries.forEach((note) => {
       note.staveNote.setStave(stave);
       note.staveNote.setContext(context).draw();
     });
-
-    // beams.forEach((beam, index) => {
-    //   console.log(`Beam ${index + 1}:`);
-    //   const notes = beam.getNotes();
-    //   notes.forEach((note, noteIndex) => {
-    //     console.log(`  Note ${noteIndex + 1}:`, note);
-    //     console.log(`    Keys: ${note.getKeys()}`);
-    //     console.log(`    Duration: ${note.getDuration()}`);
-    //   });
-    // });
 
     // Draw beams and stems
     beams.forEach((b) => {
@@ -252,21 +227,21 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
       tupletRecord.tuplet.setContext(context).draw();
     });
 
-    allNotes.forEach((note) => {
-      note.keys.forEach((key) => {
-        const beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
-          beat,
-          key,
-          note.getStartTimeMsec(TempoService.bpm),
-          100,
-          TempoService.bpm
-        );
+    // allNotes.forEach((note) => {
+    //   note.keys.forEach((key) => {
+    //     const beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
+    //       beat,
+    //       key,
+    //       note.getStartTimeMsec(TempoService.bpm),
+    //       100,
+    //       TempoService.bpm
+    //     );
 
-        if (beatNoteFeedback) {
-          plotMetricsForNote(context, note, beat, beatNoteFeedback, 10);
-        }
-      });
-    });
+    //     if (beatNoteFeedback) {
+    //       plotMetricsForNote(context, note, beat, beatNoteFeedback, 10);
+    //     }
+    //   });
+    // });
 
     plotLegendForNoteWidth(context, barWidth * 2, 150);
   };
@@ -281,7 +256,7 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
     }
 
     // setCurrentNoteIndex(noteIndex);
-    let note = allNotes[noteIndex];
+    let note = noteEntries[noteIndex];
     let noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
     if (noteElement) {
       noteElement.remove();
@@ -290,8 +265,8 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
     note.staveNote.setStyle({ fillStyle: 'red', strokeStyle: 'blue' });
     note.staveNote.setContext(context).draw();
 
-    const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : allNotes.length - 1;
-    note = allNotes[previousNoteIndex];
+    const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : noteEntries.length - 1;
+    note = noteEntries[previousNoteIndex];
     noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
     if (noteElement) {
       noteElement.remove();
@@ -300,7 +275,7 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
     note.staveNote.setStyle({ fillStyle: 'black', strokeStyle: 'black' });
     note.staveNote.setContext(context).draw();
 
-    showNoteBar(context, allNotes, noteIndex, 150);
+    showNoteBar(context, noteEntries, noteIndex, 150);
 
     const beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
       beat,
@@ -324,7 +299,7 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
     }
 
     if (beatNoteFeedback) {
-      let noteEntry = allNotes[beatNote.index];
+      let noteEntry = noteEntries[beatNoteFeedback.index];
       plotMetricsForNote(context, noteEntry, beat, beatNoteFeedback, 10);
     } else {
       console.log('No beat note feedback found for note: ', beatNote.noteString);

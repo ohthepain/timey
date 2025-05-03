@@ -40,4 +40,23 @@ export class BeatNote {
       duration: this.duration,
     };
   }
+
+  getTimeMsec(bpm: number): number {
+    const beatsPerBar = 4;
+    const divisionsPerBeat = 2; // 8th notes
+    const beatDurationMsec = 60000 / bpm;
+    const divisionDurationMsec = beatDurationMsec / divisionsPerBeat;
+
+    const barTime = this.barNum * beatsPerBar * beatDurationMsec;
+    const beatTime = this.beatNum * beatDurationMsec;
+    const divisionTime = this.divisionNum * divisionDurationMsec;
+
+    let subDivisionTime = 0;
+    if (this.numSubDivisions > 1) {
+      const subDivisionDurationMsec = divisionDurationMsec / this.numSubDivisions;
+      subDivisionTime = this.subDivisionNum * subDivisionDurationMsec;
+    }
+
+    return barTime + beatTime + divisionTime + subDivisionTime + (this.microtiming || 0);
+  }
 }

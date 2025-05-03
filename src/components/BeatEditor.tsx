@@ -54,10 +54,11 @@ export const BeatEditor = (props: BeatEditorProps) => {
 
     const beatString = ParseBeatSource(beatSource);
     console.log('Beat string:', beatString);
+    console.log('tempBeat:', tempBeat);
 
     try {
       await saveBeatServerFn({
-        data: { ...tempBeat, name, index },
+        data: { ...tempBeat, moduleId: module.id, name, index },
       });
 
       setName('');

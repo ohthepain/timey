@@ -133,8 +133,8 @@ class BeatRecorder extends EventEmitter {
     }
 
     const bpm = TempoService.bpm;
-    const timeMsec = TempoService.time;
-    const { quantized, elapsed, thirtySecondMsec } = quantizeTo32nd(timeMsec, bpm, this.referenceTime);
+    const elapsedMsec = TempoService.elapsedMsec;
+    const { quantized, elapsed, thirtySecondMsec } = quantizeTo32nd(elapsedMsec, bpm, this.referenceTime);
     // Calculate position in the bar
     const quarterNoteMsec = 60000 / bpm;
     const barLengthMsec = quarterNoteMsec * 4;
@@ -189,7 +189,7 @@ class BeatRecorder extends EventEmitter {
       beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
         this.beat,
         noteString,
-        timeMsec,
+        elapsedMsec,
         e.velocity || 100,
         TempoService.bpm
       );

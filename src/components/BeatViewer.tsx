@@ -17,6 +17,7 @@ import { beatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { TempoLadder } from './TempoLadder';
 import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
+import { SignedIn } from '@clerk/tanstack-react-start';
 
 interface BeatViewerProps {
   beat: Beat;
@@ -98,32 +99,34 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                 <div className="font-semibold">{name}</div>
               )}
               {currentBeat === beat && <Transport />}
-              <div className="flex justify-end space-between">
-                <button
-                  onClick={handleEditBeat}
-                  className="text-green-700 px-2 m-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
-                  title="Edit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={handleCopyBeat}
-                  className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
-                  title="Copy"
-                >
-                  Copy
-                </button>
-                <button
-                  onClick={async () => {
-                    handleDeleteBeat(beat.id!);
-                    router.invalidate();
-                  }}
-                  className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
-                  title="Delete"
-                >
-                  Delete
-                </button>
-              </div>
+              <SignedIn>
+                <div className="flex justify-end space-between">
+                  <button
+                    onClick={handleEditBeat}
+                    className="text-green-700 px-2 m-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
+                    title="Edit"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={handleCopyBeat}
+                    className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
+                    title="Copy"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    onClick={async () => {
+                      handleDeleteBeat(beat.id!);
+                      router.invalidate();
+                    }}
+                    className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+                    title="Delete"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </SignedIn>
             </div>
           </div>
         </div>

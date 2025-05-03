@@ -92,7 +92,7 @@ export function ParseBarSource(barNum: number, beatStrings: string[]): string {
 
   const result: string[] = ['// note,index,duration,keys,barNum,beatNum,divisionNum,subDivisionNum,numSubDivisions'];
   const tuples: string[] = ['// tuple,barNum,beatNum,startIndex,numNotes'];
-  let noteIndex = 1;
+  let noteIndex = 0;
   let notesThisQuarterNote = 0;
   let beatNumber = -1;
   let divisionNumber = -1;
