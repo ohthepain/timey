@@ -4,6 +4,7 @@ import { PostErrorComponent } from '~/components/PostErrorComponent';
 import { ModuleViewer } from '~/components/ModuleViewer';
 import { getBeatProgressForModuleServerFn, BeatProgressView } from '~/services/userProgressServerService.server';
 import { getModuleByIdServerFn } from '~/services/moduleService.server';
+import { Module } from '~/types/Module';
 
 export const loader = async ({ params }: { params: { id: string } }) => {
   const moduleId = params.id;
@@ -11,13 +12,22 @@ export const loader = async ({ params }: { params: { id: string } }) => {
     throw new Error('Module ID is required');
   }
 
-  const module = await getModuleByIdServerFn({ data: { id: moduleId } });
-  const beatProgress: BeatProgressView[] = await getBeatProgressForModuleServerFn({ data: { id: moduleId } });
-
-  if (!module) {
-    throw new Error('Module not found');
+  console.log(`module.id.loader for module ID: ${moduleId}`);
+  const moduleJson = await getModuleByIdServerFn({ data: { id: moduleId } });
+  if (!moduleJson) {
+    throw new Error('module.id.loader: Module not found');
   }
-  return { module, beatProgress };
+  // console.log(`module.id.loader: dunng module data for ${moduleId}`);
+  // console.log('module.id.loader: Module data:', data);
+  // const module = new Module(data);
+  // console.log('module.id.loader : Module.toJSON:', module.toJSON());
+  // for (const beat of module.beats!) {
+  //   console.log('module.id.loader: Beat:', beat.toJSON());
+  // }
+  const beatProgress: BeatProgressView[] = await getBeatProgressForModuleServerFn({ data: { id: moduleId } });
+  console.log('module.id.loader: Beat progress:', beatProgress);
+
+  return { moduleJson, beatProgress };
 };
 
 export const Route = createFileRoute('/module/$id')({
@@ -30,7 +40,8 @@ export const Route = createFileRoute('/module/$id')({
 });
 
 function ModulePage() {
-  const { module, beatProgress } = Route.useLoaderData();
+  const { moduleJson, beatProgress } = Route.useLoaderData();
+  const module = new Module(moduleJson);
 
   return (
     <div className="p-8">

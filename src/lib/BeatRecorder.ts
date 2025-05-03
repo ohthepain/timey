@@ -8,6 +8,7 @@ import { Beat } from '~/types/Beat';
 import { savePerformanceServerFn, deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { useRouter } from '@tanstack/react-router';
+import { grooveMonitor, PerformanceFeedback } from './GrooveMonitor';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(timeMsec: number, bpm: number, referenceTime: number) {
@@ -22,7 +23,8 @@ function quantizeTo32nd(timeMsec: number, bpm: number, referenceTime: number) {
 
 class BeatRecorder extends EventEmitter {
   private static _instance: BeatRecorder;
-  public performance: Performance | null = null;
+  public performance: Performance = new Performance({ beatId: 'no beat!' });
+  public performanceFeedback: PerformanceFeedback = new PerformanceFeedback([]);
   private isRecording = false;
   private referenceTime: number = 0;
   private lastIndex: number = 0;
@@ -33,7 +35,7 @@ class BeatRecorder extends EventEmitter {
   private constructor() {
     console.log('BeatRecorder: constructor');
     super();
-    midiService.on('midiNote', this.handleMidiNote);
+    midiService.on('midiNote', this.midiService_midiNote);
     TempoService.eventsEmitter.addListener('stateChange', this.handleStateChange);
     TempoService.eventsEmitter.addListener('MIDI pulse', this.handleMidiPulse);
     // midiService.addListener('note', this.handleM idiNote);
@@ -41,7 +43,7 @@ class BeatRecorder extends EventEmitter {
 
   destroy() {
     console.log('BeatRecorder: destroy');
-    midiService.removeListener('midiNote', this.handleMidiNote);
+    midiService.removeListener('midiNote', this.midiService_midiNote);
     TempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange);
     TempoService.eventsEmitter.removeListener('MIDI pulse', this.handleMidiPulse);
     // midiService.removeListener('note', this.handleMidiNote);
@@ -104,34 +106,31 @@ class BeatRecorder extends EventEmitter {
     }
   };
 
-  public start() {
+  public start = () => {
     const beatId = this.beat!.id!;
     console.log('BeatRecorder: start', beatId);
-    this.performance = {
-      id: uuidv4(),
-      beatId: beatId,
-      index: 0,
-      userId: '',
-      createdAt: new Date(),
-      modifiedAt: new Date(),
-      notes: [],
-    };
+    this.performance = new Performance({ beatId });
+    this.performanceFeedback = new PerformanceFeedback([]);
     this.isRecording = true;
     this.referenceTime = TempoService.time;
     this.lastIndex = 0;
     this.lastQuantizedTime = -Infinity;
-  }
+  };
 
-  public stop() {
+  public stop = () => {
     this.isRecording = false;
     console.log('BeatRecorder: stop', this.performance);
-  }
+  };
 
-  private handleMidiNote(e: any) {
-    if (!this.isRecording || !this.performance) {
+  private midiService_midiNote = (e: any) => {
+    if (!this.isRecording) {
       return;
     }
-    console.log('BeatRecorder: handleMidiNote', this.performance);
+
+    if (e.note?.number === 75) {
+      // Ignore metronome
+      return;
+    }
 
     const bpm = TempoService.bpm;
     const timeMsec = TempoService.time;
@@ -169,7 +168,7 @@ class BeatRecorder extends EventEmitter {
       noteIndex = ++this.lastIndex;
       this.lastQuantizedTime = quantized;
     }
-    const noteString = e.note?.name || String(e.note?.number || e.note || 'unknown');
+    const noteString = String(e.note?.number || e.note || 'unknown');
     const beatNote = new BeatNote({
       id: uuidv4(),
       index: noteIndex,
@@ -183,9 +182,26 @@ class BeatRecorder extends EventEmitter {
       microtiming: divisionElapsed - bestSubDivNum * (quarterNoteMsec / 2 / bestSubDiv),
     });
 
+    var beatNoteFeedback;
     this.performance.notes.push(beatNote);
-    this.emit('beatNote', beatNote);
-  }
+    console.log('BeatRecorder: handleMidiNote', noteString);
+    if (this.beat) {
+      beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
+        this.beat,
+        noteString,
+        timeMsec,
+        e.velocity || 100,
+        TempoService.bpm
+      );
+      if (beatNoteFeedback) {
+        this.performanceFeedback.beatNoteFeedback.push(beatNoteFeedback);
+      } else {
+        console.log('BeatRecorder: handleMidiNote - no match', beatNote);
+      }
+    }
+
+    this.emit('beatNote', beatNote, beatNoteFeedback);
+  };
 
   public getPerformance(): Performance | null {
     return this.performance;

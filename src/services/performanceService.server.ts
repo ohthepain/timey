@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { performanceRepository } from '~/repositories/performanceRepository';
 import { getWebRequest } from '@tanstack/react-start/server';
 import { getAuth } from '@clerk/tanstack-react-start/server';
+import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
 
 const beatNoteSchema = z.object({
@@ -37,9 +38,35 @@ export const savePerformanceServerFn = createServerFn({ method: 'POST', response
       throw new Error('User not authenticated');
     }
     const { performance } = ctx.data;
-    const savePerformanceArgs = { ...performance, userId };
+    const savePerformanceArgs = {
+      ...performance,
+      userId,
+      notes: performance.notes.map(
+        (note) =>
+          new BeatNote({
+            id: note.id,
+            index: note.index,
+            noteString: note.noteString,
+            barNum: note.barNum,
+            beatNum: note.beatNum,
+            divisionNum: note.divisionNum,
+            subDivisionNum: note.subDivisionNum,
+            numSubDivisions: note.numSubDivisions,
+            velocity: note.velocity,
+            microtiming: note.microtiming,
+            duration: note.duration,
+          })
+      ),
+      toJSON() {
+        return {
+          beatId: this.beatId,
+          index: this.index,
+          notes: this.notes,
+        };
+      },
+    };
     await performanceRepository.deletePerformancesByBeatIdAndUserId(performance.beatId, performance.userId);
-    const saved = await performanceRepository.createPerformance(savePerformanceArgs);
+    const saved = await performanceRepository.createPerformance(performance.toJSON()  , userId);
     return saved;
   });
 
@@ -56,8 +83,8 @@ export const fetchUserPerformancesForBeat = createServerFn({ method: 'GET', resp
       throw new Error('User not authenticated');
     }
     const { beatId } = ctx.data;
-    const prismaPerformances = await performanceRepository.getPerformancesByBeatIdAndUserId(beatId, userId);
-    return prismaPerformances.map((perf) => new Performance(perf));
+    const prismaPerformances = await performanceRepository.fetchPerformancesByBeatIdAndUserId(beatId, userId);
+    return prismaPerformances.map((perf) => perf.toJSON());
   });
 
 const deleteUserPerformancesForBeatArgs = z.object({
@@ -67,7 +94,6 @@ const deleteUserPerformancesForBeatArgs = z.object({
 export const deletePerformancesByBeatIdAndUserId = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => deleteUserPerformancesForBeatArgs.parse(data))
   .handler(async (ctx) => {
-    console.log('deletePerformancesByBeatIdAndUserId');
     const request = getWebRequest();
     const { userId } = await getAuth(request!);
     if (!userId) {

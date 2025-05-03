@@ -30,6 +30,8 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [performances, setPerformances] = useState<Performance[]>([]);
   const { currentBeat, currentPerformance, cachePerformance } = useNavigationStore();
 
+  console.log('BeatViewer: beat', beat.toJSON());
+
   const router = useRouter();
 
   const handleDeleteBeat = async (beatId: string) => {
@@ -141,7 +143,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                 await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
               }}
             />
-            <ScoreView beat={beat} performance={currentPerformance} />
+            <ScoreView beat={beat} performanceFeedback={null} />
           </div>
         </div>
       </div>

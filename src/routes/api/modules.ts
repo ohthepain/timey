@@ -35,10 +35,10 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
 
       const newMethod = await moduleRepository.createModule({
         title,
-        methodId,
+        index,
         description: '',
         authorId: userId,
-        index,
+        methodId,
       });
 
       return json(newMethod, { status: 201 });

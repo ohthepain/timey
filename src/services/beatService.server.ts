@@ -3,12 +3,17 @@ import { beatRepository } from '~/repositories/beatRepository';
 import { z } from 'zod';
 import { getWebRequest } from '@tanstack/react-start/server';
 import { getAuth } from '@clerk/tanstack-react-start/server';
-import type { Beat } from '~/types/Beat';
+import { Beat } from '~/types/Beat';
 
 export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async (ctx) => {
-    return beatRepository.deleteBeat(ctx.data.id);
+    const beat: Beat | null = await beatRepository.deleteBeat(ctx.data.id);
+    if (beat) {
+      return { success: true };
+    } else {
+      return { success: false };
+    }
   });
 
 const saveBeatServerFnArgs = z.object({
@@ -62,11 +67,9 @@ export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data
     // Prepare new beat data
     const newBeatData = {
       name: original.name + ' (Copy)',
-      description: original.description,
       index: original.index + 1,
       authorId: original.authorId,
-      moduleId: original.moduleId,
-      beatNotes: original.beatNotes.map(({ id, beatId, ...note }) => ({
+      beatNotes: original.beatNotes.map(({ id, ...note }) => ({
         ...note,
       })),
     };
@@ -81,6 +84,10 @@ const getBeatByNameServerFnArgs = z.object({
 
 export const getBeatByNameServerFn = createServerFn({ method: 'GET', response: 'data' })
   .validator((data: unknown) => getBeatByNameServerFnArgs.parse(data))
-  .handler(async (ctx): Promise<Beat | null> => {
-    return beatRepository.getBeatByName(ctx.data.name);
+  .handler(async (ctx): Promise<any> => {
+    const data = await beatRepository.getBeatByName(ctx.data.name);
+    if (!data) {
+      return null;
+    }
+    return new Beat(data).toJSON();
   });

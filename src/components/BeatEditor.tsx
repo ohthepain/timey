@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { saveBeatServerFn } from '~/services/beatService.server';
-import type { Beat } from '~/types/Beat';
+import { Beat } from '~/types/Beat';
 import { Module } from '~/types/Module';
 import { BarDefEditor } from '~/components/BarDefEditor';
 import { BeatSource, BarSource } from '~/types/BarSource';
@@ -14,8 +14,8 @@ interface BeatEditorProps {
   onSave?: () => void;
 }
 
-const makeTempBeat = (moduleId: string) => {
-  return {
+const makeTempBeat = (moduleId: string): Beat => {
+  return new Beat({
     id: undefined,
     name: 'temp',
     index: 0,
@@ -25,7 +25,7 @@ const makeTempBeat = (moduleId: string) => {
     beatNotes: [],
     description: '',
     moduleId,
-  } as Beat;
+  });
 };
 
 export const BeatEditor = (props: BeatEditorProps) => {
@@ -104,10 +104,10 @@ export const BeatEditor = (props: BeatEditorProps) => {
 
     const { beatNotes } = ParseBeatString(beatString);
 
-    const newTempBeat = {
+    const newTempBeat = new Beat({
       ...tempBeat,
       beatNotes: beatNotes,
-    };
+    });
     console.log('New temp beat:', newTempBeat);
     setTempBeat(newTempBeat);
   }, [beatSource]);

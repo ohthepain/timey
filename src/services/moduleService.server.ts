@@ -3,15 +3,18 @@ import { moduleRepository } from '~/repositories/moduleRepository';
 import { z } from 'zod';
 import { getAuth } from '@clerk/tanstack-react-start/server';
 import { getWebRequest } from '@tanstack/react-start/server';
+import { Module } from '~/types/Module';
 
 export const getAllModulesServerFn = createServerFn({ method: 'GET', response: 'data' }).handler(async () => {
-  return moduleRepository.getAllModules();
+  const data = await moduleRepository.getAllModules();
+  return data.map((module) => new Module(module).toJSON());
 });
 
 export const getModuleByIdServerFn = createServerFn({ method: 'GET', response: 'data' })
   .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async (ctx) => {
-    return moduleRepository.getModuleById(ctx.data.id);
+    const data = await moduleRepository.getModuleById(ctx.data.id);
+    return new Module(data).toJSON();
   });
 
 const createModuleServerFnArgs = z.object({
@@ -31,11 +34,12 @@ export const createModuleServerFn = createServerFn({ method: 'POST', response: '
     if (!userId) {
       throw new Error('User not authenticated');
     }
-    return moduleRepository.createModule({
+    const data = await moduleRepository.createModule({
       ...ctx.data,
-      description: ctx.data.description || null,
+      description: ctx.data.description || undefined,
       authorId: userId,
     });
+    return new Module(data).toJSON();
   });
 
 export const updateModuleServerFn = createServerFn({ method: 'POST', response: 'data' })

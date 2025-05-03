@@ -1,12 +1,14 @@
 import prisma from '../config/db';
+import { Beat } from '~/types/Beat';
 
 class BeatRepository {
   getBeatById(id: string) {
-    return prisma.beat.findUnique({ where: { id }, include: { beatNotes: true } });
+    const data = prisma.beat.findUnique({ where: { id }, include: { beatNotes: true } });
+    return data ? new Beat(data) : null;
   }
 
   getBeatWithModuleAndMethod(beatId: string) {
-    return prisma.beat.findUnique({
+    const data = prisma.beat.findUnique({
       where: { id: beatId },
       include: {
         module: {
@@ -16,12 +18,13 @@ class BeatRepository {
         },
       },
     });
+    return data ? new Beat(data) : null;
   }
 
   getBeatWithPerformances(beatId: string, userId: string) {
     console.log('Fetching beat with performances for user:', userId);
     console.log('Fetching beat with performances for beatId:', beatId);
-    return prisma.beat.findUnique({
+    const data = prisma.beat.findUnique({
       where: { id: beatId },
       include: {
         module: {
@@ -37,14 +40,18 @@ class BeatRepository {
         },
       },
     });
+    return data ? new Beat(data) : null;
   }
 
   getBeatsByUser(userId: string) {
-    return prisma.beat.findMany({ where: { authorId: userId }, include: { beatNotes: true } });
+    return prisma.beat
+      .findMany({ where: { authorId: userId }, include: { beatNotes: true } })
+      .then((data) => data.map((b) => new Beat(b)));
   }
 
   getBeatByName(name: string) {
-    return prisma.beat.findFirst({ where: { name: name }, include: { beatNotes: true } });
+    const data = prisma.beat.findFirst({ where: { name: name }, include: { beatNotes: true } });
+    return data ? new Beat(data) : null;
   }
 
   createBeat(data: any) {
@@ -84,7 +91,8 @@ class BeatRepository {
   }
 
   deleteBeat(id: string) {
-    return prisma.beat.delete({ where: { id } });
+    const data = prisma.beat.delete({ where: { id } });
+    return data ? new Beat(data) : null;
   }
 }
 

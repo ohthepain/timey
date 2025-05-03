@@ -90,10 +90,10 @@ model BeatNote {
   numSubDivisions Int
   velocity        Int
   microtiming     Int          @default(0)
-  beatId          String
-  beat            Beat         @relation(fields: [beatId], references: [id], onDelete: Cascade)
-  Performance     Performance? @relation(fields: [performanceId], references: [id])
+  beatId          String?
+  beat            Beat?        @relation(fields: [beatId], references: [id], onDelete: Cascade)
   performanceId   String?
+  Performance     Performance? @relation(fields: [performanceId], references: [id])
 
   @@index([beatId])
 }
@@ -160,10 +160,10 @@ model BeatProgress {
 model Performance {
   id         String     @id @default(uuid())
   beatId     String
+  beat       Beat       @relation("BeatPerformances", fields: [beatId], references: [id])
   index      Int
   userId     String
   createdAt  DateTime   @default(now())
   modifiedAt DateTime   @updatedAt
   notes      BeatNote[]
-  beat       Beat       @relation("BeatPerformances", fields: [beatId], references: [id])
 }

@@ -1,6 +1,6 @@
 import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
-import { getBeatById, deleteBeat } from '~/repositories/beatRepository';
+import { beatRepository } from '~/repositories/beatRepository';
 
 export const APIRoute = createAPIFileRoute('/api/beats/$id')({
   GET: async ({ params }) => {
@@ -12,7 +12,7 @@ export const APIRoute = createAPIFileRoute('/api/beats/$id')({
     }
 
     try {
-      const beat = await getBeatById(id);
+      const beat = await beatRepository.getBeatById(id);
 
       if (!beat) {
         return json({ error: 'Beat not found' }, { status: 404 });
@@ -31,7 +31,7 @@ export const APIRoute = createAPIFileRoute('/api/beats/$id')({
     }
     console.log(`/api/modules/${id} DELETE request`);
     try {
-      const beat = deleteBeat(id);
+      const beat = beatRepository.deleteBeat(id);
       if (!beat) {
         return json({ error: 'Beat not found' }, { status: 404 });
       }

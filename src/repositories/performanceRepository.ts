@@ -1,22 +1,23 @@
 import prisma from '../config/db';
 import { Performance } from '~/types/Performance';
-import { beatRepository } from './beatRepository';
 
 export const performanceRepository = {
-  async createPerformance(data: Omit<Performance, 'id' | 'createdAt' | 'modifiedAt'>) {
-    const beat = await beatRepository.getBeatById(data.beatId);
-    return prisma.performance.create({
+  async createPerformance(data: Omit<Performance, 'userId' | 'id' | 'createdAt' | 'modifiedAt'>, userId: string) {
+    const created = await prisma.performance.create({
       data: {
-        ...data,
+        beatId: data.beatId,
+        index: data.index,
+        userId,
         notes: {
           create: data.notes.map((note) => ({
             ...note,
-            beat: { connect: { id: beat!.id } }, // Transform 'beat' to the expected type
+            // Remove any fields not in the DB schema if needed
           })),
         },
       },
       include: { notes: true },
     });
+    return new Performance(created);
   },
 
   async getPerformanceById(id: string) {
@@ -43,7 +44,7 @@ export const performanceRepository = {
     return prismaPerformances.map((perf) => new Performance(perf));
   },
 
-  async getPerformancesByBeatIdAndUserId(beatId: string, userId: string) {
+  async fetchPerformancesByBeatIdAndUserId(beatId: string, userId: string) {
     const prismaPerformances = await prisma.performance.findMany({
       where: { beatId, userId },
       include: { notes: true },

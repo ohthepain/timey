@@ -22,6 +22,22 @@ export class BeatNote {
     this.numSubDivisions = data.numSubDivisions;
     this.velocity = data.velocity;
     this.microtiming = data.microtiming;
-    this.duration = 0;
+    this.duration = data.duration;
+  }
+
+  toJSON() {
+    return {
+      id: this.id,
+      index: this.index,
+      noteString: this.noteString,
+      barNum: this.barNum,
+      beatNum: this.beatNum,
+      divisionNum: this.divisionNum,
+      subDivisionNum: this.subDivisionNum,
+      numSubDivisions: this.numSubDivisions,
+      velocity: this.velocity,
+      microtiming: this.microtiming,
+      duration: this.duration,
+    };
   }
 }
