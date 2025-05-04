@@ -1,4 +1,5 @@
 import { Beat } from './Beat';
+import { Method } from './Method';
 
 export class Module {
   id: string;
@@ -10,6 +11,7 @@ export class Module {
   modifiedAt: Date;
   beats?: Beat[];
   methodId: string;
+  method: Method | null;
 
   constructor(data: any) {
     this.id = data.id;
@@ -20,6 +22,7 @@ export class Module {
     this.createdAt = data.createdAt || new Date();
     this.modifiedAt = data.modifiedAt || new Date();
     this.methodId = data.methodId;
+    this.method = data.method ? new Method(data.method) : null;
     this.beats = data.beats ? data.beats.map((b: any) => new Beat(b)) : [];
   }
 
@@ -34,6 +37,7 @@ export class Module {
       modifiedAt: this.modifiedAt,
       methodId: this.methodId,
       beats: this.beats ? this.beats.map((b) => b.toJSON()) : [],
+      // this.method: this.method ? this.method.toJSON() : null,
     };
   }
 }

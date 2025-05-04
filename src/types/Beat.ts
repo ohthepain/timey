@@ -1,4 +1,5 @@
 import { BeatNote } from './BeatNote';
+import { Module } from './Module';
 
 export class Beat {
   id: string | undefined;
@@ -8,7 +9,9 @@ export class Beat {
   createdAt: Date;
   modifiedAt: Date;
   beatNotes: BeatNote[];
-  beatsPerBar: number = 4;
+  beatsPerBar: number;
+  moduleId: string | undefined;
+  module: Module | undefined;
 
   constructor(data: any) {
     this.id = data.id;
@@ -18,6 +21,9 @@ export class Beat {
     this.createdAt = data.createdAt || new Date();
     this.modifiedAt = data.modifiedAt || new Date();
     this.beatNotes = data.beatNotes ? data.beatNotes.map((note: any) => new BeatNote(note)) : [];
+    this.beatsPerBar = data.beatsPerBar || 4;
+    this.moduleId = data.moduleId;
+    this.module = data.module ? new Module(data.module) : undefined;
   }
 
   toJSON() {
@@ -29,6 +35,9 @@ export class Beat {
       createdAt: this.createdAt,
       modifiedAt: this.modifiedAt,
       beatNotes: this.beatNotes.map((note) => note.toJSON()),
+      beatsPerBar: this.beatsPerBar,
+      moduleId: this.moduleId,
+      // module: this.module ? this.module.toJSON() : undefined,
     };
   }
 
@@ -57,7 +66,7 @@ export class Beat {
     const positionTime = timeMsec % loopLengthMsec;
     let targetNoteString = typeof noteStringOrMidi === 'number' ? String(noteStringOrMidi) : noteStringOrMidi;
 
-    console.log('Beat.findClosestBeatNoteIndex: ', noteStringOrMidi, timeMsec, bpm);
+    // console.log('Beat.findClosestBeatNoteIndex: ', noteStringOrMidi, timeMsec, bpm);
     let closest: BeatNote | null = null;
     let minDiff = Infinity;
     for (const beatNote of this.beatNotes) {
@@ -70,7 +79,7 @@ export class Beat {
 
       // Normal case
       if (diff < minDiff) {
-        console.log('Beat.findClosestBeatNoteIndex: matched NORMAL', noteStringOrMidi, timeMsec, bpm);
+        // console.log('Beat.findClosestBeatNoteIndex: matched NORMAL', noteStringOrMidi, timeMsec, bpm);
         minDiff = diff;
         closest = beatNote;
       }
@@ -78,7 +87,7 @@ export class Beat {
       // Special case: beatnote at start of beat is played early, closer to the end of the loop
       diff = Math.abs(beatNoteTime + loopLengthMsec - positionTime);
       if (diff < minDiff) {
-        console.log('Beat.findClosestBeatNoteIndex: matched EARLY', noteStringOrMidi, timeMsec, bpm);
+        // console.log('Beat.findClosestBeatNoteIndex: matched EARLY', noteStringOrMidi, timeMsec, bpm);
         minDiff = diff;
         closest = beatNote;
       }
@@ -86,7 +95,7 @@ export class Beat {
       // Special case: if the beat note at end of loop is played late, at start of loop
       diff = Math.abs(beatNoteTime - loopLengthMsec - positionTime);
       if (diff < minDiff) {
-        console.log('Beat.findClosestBeatNoteIndex: matched LATE', noteStringOrMidi, timeMsec, bpm);
+        // console.log('Beat.findClosestBeatNoteIndex: matched LATE', noteStringOrMidi, timeMsec, bpm);
         minDiff = diff;
         closest = beatNote;
       }

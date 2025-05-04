@@ -1,5 +1,7 @@
 import prisma from '../config/db';
 import { Beat } from '~/types/Beat';
+import { Method } from '~/types/Method';
+import { Module } from '~/types/Module';
 
 class BeatRepository {
   getBeatById(id: string) {
@@ -7,8 +9,8 @@ class BeatRepository {
     return data ? new Beat(data) : null;
   }
 
-  getBeatWithModuleAndMethod(beatId: string) {
-    const data = prisma.beat.findUnique({
+  async getBeatWithModuleAndMethod(beatId: string) {
+    const data = await prisma.beat.findUnique({
       where: { id: beatId },
       include: {
         module: {
@@ -16,12 +18,17 @@ class BeatRepository {
             method: true,
           },
         },
+        beatNotes: true,
       },
     });
-    return data ? new Beat(data) : null;
+    if (!data) return null;
+    // Wrap related objects with their constructors
+    const method = data.module?.method ? new Method(data.module.method) : undefined;
+    const module = data.module ? new Module({ ...data.module, method }) : undefined;
+    return new Beat({ ...data, module });
   }
 
-  getBeatWithPerformances(beatId: string, userId: string) {
+  async getBeatWithPerformances(beatId: string, userId: string) {
     console.log('Fetching beat with performances for user:', userId);
     console.log('Fetching beat with performances for beatId:', beatId);
     const data = prisma.beat.findUnique({
@@ -43,18 +50,18 @@ class BeatRepository {
     return data ? new Beat(data) : null;
   }
 
-  getBeatsByUser(userId: string) {
+  async getBeatsByUser(userId: string) {
     return prisma.beat
       .findMany({ where: { authorId: userId }, include: { beatNotes: true } })
       .then((data) => data.map((b) => new Beat(b)));
   }
 
-  getBeatByName(name: string) {
+  async getBeatByName(name: string) {
     const data = prisma.beat.findFirst({ where: { name: name }, include: { beatNotes: true } });
     return data ? new Beat(data) : null;
   }
 
-  createBeat(data: any) {
+  async createBeat(data: any) {
     if (data.index === undefined || data.index === null) {
       throw new Error('Index is required and cannot be null or undefined');
     }
@@ -73,7 +80,7 @@ class BeatRepository {
     });
   }
 
-  updateBeat(id: string, data: any) {
+  async updateBeat(id: string, data: any) {
     return prisma.beat.update({
       where: { id },
       data: {
@@ -90,7 +97,7 @@ class BeatRepository {
     });
   }
 
-  deleteBeat(id: string) {
+  async deleteBeat(id: string) {
     const data = prisma.beat.delete({ where: { id } });
     return data ? new Beat(data) : null;
   }

@@ -8,8 +8,9 @@ import { Beat } from '~/types/Beat';
 import { MakeStaveNotesFromBeat } from '~/lib/ParseBeat';
 
 class BeatPlayer extends EventEmitter {
-  private isPlaying: boolean = false;
+  private beat: Beat | null = null;
   private allNotes: NoteEntry[] = [];
+  private isPlaying: boolean = false;
   private noteIndex: number = 0;
   private nextNoteStartTime: number = 0;
   private numLoops: number = 0;
@@ -31,18 +32,18 @@ class BeatPlayer extends EventEmitter {
 
   public setBeat(beat: Beat) {
     console.log('BeatPlayer: setBeat');
+    this.beat = beat;
 
-    useNavigationStore.getState().setCurrentBeat(beat);
-    const { noteEntries } = MakeStaveNotesFromBeat(beat);
-    this.allNotes = noteEntries.map((noteEntry) => noteEntry);
-    console.log(`BeatPlayer: allNotes: `, this.allNotes);
+    useNavigationStore.getState().setCurrentBeat(this.beat);
+    const { noteEntries } = MakeStaveNotesFromBeat(this.beat);
+    this.allNotes = noteEntries;
 
     this.noteIndex = 0;
     this.numLoops = 0;
     this.nextNoteStartTime = 0;
 
     // Emit an event to notify that the beat has been set
-    this.emit('beatSet', beat);
+    this.emit('beatSet', this.beat);
   }
 
   private tempoService_stateChange = (e: any) => {
@@ -56,6 +57,11 @@ class BeatPlayer extends EventEmitter {
   };
 
   private handleMidiPulse = (event: { time: number; ticks: number }) => {
+    if (!this.beat) {
+      console.log('BeatPlayer: handleMidiPulse - no beat');
+      return;
+    }
+
     if (!TempoService.isRunning || !TempoService.isPlaying) {
       return;
     }
@@ -70,9 +76,7 @@ class BeatPlayer extends EventEmitter {
     }
 
     const elapsedTime = TempoService.time - TempoService.startTime;
-    const lastNote = this.allNotes[this.allNotes.length - 1];
-    const loopLengthMsec = ((lastNote.barNum + 1) * 4 * 60 * 1000) / TempoService.bpm;
-    // this.nextNoteStartTime += loopLengthMsec * this.numLoops;
+    const loopLengthMsec = this.beat?.getLoopLengthMsec(TempoService.bpm);
 
     if (elapsedTime >= this.nextNoteStartTime) {
       const { midiOutputDeviceId, midiOutputChannelNum } = useMidiSettingsStore.getState();

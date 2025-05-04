@@ -73,7 +73,9 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
     const fetchBeatProgress = async () => {
       if (beat.id) {
         const beatId = beat.id;
-        const performances: Performance[] = await fetchUserPerformancesForBeat({ data: { beatId } });
+        const performances: Performance[] = (await fetchUserPerformancesForBeat({ data: { beatId } })).map(
+          (performanceData) => new Performance(performanceData)
+        );
         for (const performance of performances) {
           cachePerformance(performance);
         }
@@ -146,7 +148,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                 await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
               }}
             />
-            <ScoreView beat={beat} performanceFeedback={null} />
+            <ScoreView beat={beat} performanceFeedback={undefined} />
           </div>
         </div>
       </div>
