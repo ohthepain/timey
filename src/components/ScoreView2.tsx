@@ -72,7 +72,11 @@ const plotMetricsForNote = (
   const xEnd = x + 20; //(note.getFormatterMetrics().freedom.right || 0);
   stroke(x, xEnd, 'red');
   stroke(x - note.getXShift(), x, '#BBB'); // Shift
-  drawDot(ctx, (x + xEnd) / 2 + beatNoteFeedback.timingDifferenceMs / 10, y, 'blue');
+  let dotOffset = beatNoteFeedback.timingDifferenceMs / 10;
+  if (Math.abs(dotOffset) > 20) {
+    dotOffset = dotOffset > 0 ? 20 : -20;
+  }
+  drawDot(ctx, (x + xEnd) / 2 + dotOffset, y, 'blue');
 
   // Not sure if this is required
   ctx.restore();

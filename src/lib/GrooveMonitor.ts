@@ -46,7 +46,7 @@ class GrooveMonitor extends EventEmitter {
       }
 
       const loopLengthMsec = beat.getLoopLengthMsec(bpm);
-      const tolerance = 60000; // / bpm; / 4;
+      const tolerance = 60000 / bpm / 4;
       const beatNoteTime = closestBeatNote.getTimeMsec(bpm);
 
       let timeDiff = timeMsec - beatNoteTime;
@@ -65,10 +65,10 @@ class GrooveMonitor extends EventEmitter {
           beatNote: closestBeatNote,
           performanceNote: new BeatNote({
             ...closestBeatNote,
-            microtiming: beatNoteTime + timeMsec,
+            microtiming: timeMsec,
             velocity: velocity,
           }),
-          timingDifferenceMs: timeMsec - (beatNoteTime || 0),
+          timingDifferenceMs: timeDiff,
           velocityDifference: velocity - (closestBeatNote.velocity || 0),
         };
       }
