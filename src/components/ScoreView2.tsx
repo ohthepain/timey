@@ -52,11 +52,7 @@ const plotMetricsForNote = (
   ctx.save();
   ctx.setFont('Arial', 8);
   ctx.setFillStyle('black'); // text color
-  ctx.fillText(
-    '#' + (beatNoteFeedback.beatNote ? beatNoteFeedback.beatNote.index : '?'),
-    x, //xStart + note.getXShift(),
-    yPos
-  );
+  ctx.fillText('' + Math.round(beatNoteFeedback.timingDifferenceMs), x, yPos);
 
   const y = yPos + 7;
   function stroke(x1: number, x2: number, color: string, yy: number = y) {
