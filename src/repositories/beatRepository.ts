@@ -4,8 +4,8 @@ import { Method } from '~/types/Method';
 import { Module } from '~/types/Module';
 
 class BeatRepository {
-  getBeatById(id: string) {
-    const data = prisma.beat.findUnique({ where: { id }, include: { beatNotes: true } });
+  async getBeatById(id: string) {
+    const data = await prisma.beat.findUnique({ where: { id }, include: { beatNotes: true } });
     return data ? new Beat(data) : null;
   }
 
@@ -31,7 +31,7 @@ class BeatRepository {
   async getBeatWithPerformances(beatId: string, userId: string) {
     console.log('Fetching beat with performances for user:', userId);
     console.log('Fetching beat with performances for beatId:', beatId);
-    const data = prisma.beat.findUnique({
+    const data = await prisma.beat.findUnique({
       where: { id: beatId },
       include: {
         module: {
@@ -57,7 +57,7 @@ class BeatRepository {
   }
 
   async getBeatByName(name: string) {
-    const data = prisma.beat.findFirst({ where: { name: name }, include: { beatNotes: true } });
+    const data = await prisma.beat.findFirst({ where: { name: name }, include: { beatNotes: true } });
     return data ? new Beat(data) : null;
   }
 
@@ -98,7 +98,7 @@ class BeatRepository {
   }
 
   async deleteBeat(id: string) {
-    const data = prisma.beat.delete({ where: { id } });
+    const data = await prisma.beat.delete({ where: { id } });
     return data ? new Beat(data) : null;
   }
 }
