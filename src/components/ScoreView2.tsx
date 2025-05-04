@@ -45,14 +45,16 @@ const plotMetricsForNote = (
   yPos: number
 ): void => {
   const note: Tickable = noteEntry.staveNote;
-  const xStart = note.getAbsoluteX();
-  const xEnd = xStart + 20; //(note.getFormatterMetrics().freedom.right || 0);
+
+  const x = note.getAbsoluteX();
+  ctx.clearRect(x - 10, yPos - 10, 30, 20);
 
   ctx.save();
   ctx.setFont('Arial', 8);
+  ctx.setFillStyle('black'); // text color
   ctx.fillText(
     '#' + (beatNoteFeedback.beatNote ? beatNoteFeedback.beatNote.index : '?'),
-    xStart + note.getXShift(),
+    x, //xStart + note.getXShift(),
     yPos
   );
 
@@ -67,9 +69,10 @@ const plotMetricsForNote = (
     ctx.stroke();
   }
 
-  stroke(xStart, xEnd, 'red');
-  stroke(xStart - note.getXShift(), xStart, '#BBB'); // Shift
-  drawDot(ctx, (xStart + xEnd) / 2 + beatNoteFeedback.timingDifferenceMs / 10, y, 'blue');
+  const xEnd = x + 20; //(note.getFormatterMetrics().freedom.right || 0);
+  stroke(x, xEnd, 'red');
+  stroke(x - note.getXShift(), x, '#BBB'); // Shift
+  drawDot(ctx, (x + xEnd) / 2 + beatNoteFeedback.timingDifferenceMs / 10, y, 'blue');
 
   // Not sure if this is required
   ctx.restore();
@@ -144,8 +147,6 @@ interface ScoreViewProps {
 export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   let context: any;
-
-  console.log(`ScoreView: ${beat.toJSON()}`);
 
   const { tuplets, noteEntries } = MakeStaveNotesFromBeat(beat);
 
@@ -287,8 +288,6 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
 
     if (beatNoteFeedback) {
       plotMetricsForNote(context, note, beat, beatNoteFeedback, 10);
-    } else {
-      console.log('No beat note feedback found for note: ', note);
     }
   };
 
@@ -301,8 +300,6 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
     if (beatNoteFeedback) {
       let noteEntry = noteEntries[beatNoteFeedback.index];
       plotMetricsForNote(context, noteEntry, beat, beatNoteFeedback, 10);
-    } else {
-      console.log('No beat note feedback found for note: ', beatNote.noteString);
     }
   };
 
