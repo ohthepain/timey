@@ -1,4 +1,4 @@
-import prisma from '~/config/db';
+import { prisma } from '~/config/db';
 import { getAuth } from '@clerk/tanstack-react-start/server';
 import { redirect } from '@tanstack/react-router';
 import { users } from '@clerk/clerk-sdk-node';

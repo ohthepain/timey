@@ -1,4 +1,4 @@
-import prisma from '../config/db';
+import { prisma } from '../config/db';
 import { Beat } from '~/types/Beat';
 import { Method } from '~/types/Method';
 import { Module } from '~/types/Module';

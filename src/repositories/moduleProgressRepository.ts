@@ -1,4 +1,4 @@
-import prisma from '~/config/db';
+import { prisma } from '~/config/db';
 import { ModuleProgress } from '@prisma/client';
 
 export const moduleProgressRepository = {

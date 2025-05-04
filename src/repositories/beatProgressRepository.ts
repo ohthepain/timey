@@ -1,4 +1,4 @@
-import prisma from '~/config/db';
+import { prisma } from '~/config/db';
 
 export class BeatProgressRepository {
   async setBeatBestTempo(userId: string, beatId: string, tempo: number) {

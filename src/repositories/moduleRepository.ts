@@ -1,4 +1,4 @@
-import prisma from '~/config/db';
+import { prisma } from '~/config/db';
 import { Module } from '~/types/Module';
 
 export const moduleRepository = {
