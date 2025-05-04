@@ -184,7 +184,6 @@ class BeatRecorder extends EventEmitter {
 
     var beatNoteFeedback;
     this.performance.notes.push(beatNote);
-    console.log('BeatRecorder: handleMidiNote', noteString);
     if (this.beat) {
       beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
         this.beat,

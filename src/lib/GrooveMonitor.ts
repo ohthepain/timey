@@ -37,6 +37,7 @@ class GrooveMonitor extends EventEmitter {
     velocity: number,
     bpm: number
   ): BeatNoteFeedback | null {
+    timeMsec %= beat.getLoopLengthMsec(bpm);
     const beatNoteIndex = beat.findClosestBeatNoteIndex(noteStringOrMidi, timeMsec, bpm);
     if (beatNoteIndex !== -1) {
       const closestBeatNote = beat.beatNotes.find((beatNote) => beatNote.index === beatNoteIndex);

@@ -47,7 +47,7 @@ const plotMetricsForNote = (
   const note: Tickable = noteEntry.staveNote;
 
   const x = note.getAbsoluteX();
-  ctx.clearRect(x - 10, yPos - 10, 30, 20);
+  ctx.clearRect(x - 20, yPos - 10, 50, 20);
 
   ctx.save();
   ctx.setFont('Arial', 8);
@@ -292,7 +292,6 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
   };
 
   const beatRecorder_beatNote = (beatNote: BeatNote, beatNoteFeedback: BeatNoteFeedback | undefined) => {
-    console.log('ScoreView: beatRecorder_beatNote', beatNote.noteString);
     if (useNavigationStore.getState().currentBeat !== beat) {
       return;
     }
