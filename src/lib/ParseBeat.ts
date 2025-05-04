@@ -40,14 +40,10 @@ export const ParseBeatString = (input: string) => {
           `note: ${index} ${durationCode} ${keysString} bar ${bar} beat ${beat} div ${divisionNum} sub ${subDivisionNum} of ${numSubDivisions}`
         );
 
-        // // Split the keysString into individual keys
-        // const keys = keysString.split(', ').map((key) => key.trim());
-        // console.log(`keys: ${keys}`);
-
         // Create a BeatNote for each key
-        // keys.forEach((key) => {
         beatNotes.push({
-          index: parseInt(index, 10),
+          // Fix indexes so that they don't restart at 0 for each bar
+          index: beatNotes.length, // parseInt(index, 10),
           duration: parseInt(durationCode, 10),
           noteString: keysString,
           barNum: parseInt(bar, 10),
@@ -57,7 +53,6 @@ export const ParseBeatString = (input: string) => {
           numSubDivisions: parseInt(numSubDivisions, 10),
           velocity: 127, // Default velocity
         });
-        // });
       } else {
         console.warn(`Failed to parse line: ${line}`);
       }
