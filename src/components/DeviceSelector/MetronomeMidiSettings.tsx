@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { midiService } from '~/lib/MidiService';
 import { GoUnmute, GoLock, GoUnlock } from 'react-icons/go';
+import { FaChevronUp, FaChevronDown } from 'react-icons/fa';
 
 // General MIDI drum note numbers and names
 const DRUM_NOTES = [
@@ -81,7 +82,7 @@ export default function MetronomeMidiSettings() {
   }, [metronomeNoteNumber, isDownbeatLocked, isUpbeatLocked]);
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center p-4">
       <div className="text-2xl font-bold text-center">Metronome MIDI Settings</div>
       <div>Select MIDI notes for the metronome.</div> <div>Tap to test!</div>
       <div className="grid grid-cols-[32px_1fr_1fr] gap-x-4 gap-y-2 mt-4 w-full max-w-md">
@@ -96,21 +97,55 @@ export default function MetronomeMidiSettings() {
             <GoUnmute size={16} />
           </span>
         </div>
-        <select
-          className="col-span-1"
-          value={metronomeNoteNumber}
-          onChange={(e) => {
-            const value = parseInt(e.target.value);
-            setMetronomeNoteNumber(value);
-            midiService.playNote(value, metronomeVelocity);
-          }}
-        >
-          {DRUM_NOTES.map((note) => (
-            <option key={note.number} value={note.number}>
-              {note.number} – {note.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center col-span-1">
+          <button
+            type="button"
+            className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-black border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ padding: 0, marginRight: 2 }}
+            aria-label="Previous note"
+            onClick={() => {
+              const idx = DRUM_NOTES.findIndex((n) => n.number === metronomeNoteNumber);
+              if (idx > 0) {
+                const value = DRUM_NOTES[idx - 1].number;
+                setMetronomeNoteNumber(value);
+                midiService.playNote(value, metronomeVelocity);
+              }
+            }}
+          >
+            <FaChevronUp size={12} />
+          </button>
+          <button
+            type="button"
+            className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-black border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ padding: 0, marginLeft: 2 }}
+            aria-label="Next note"
+            onClick={() => {
+              const idx = DRUM_NOTES.findIndex((n) => n.number === metronomeNoteNumber);
+              if (idx < DRUM_NOTES.length - 1) {
+                const value = DRUM_NOTES[idx + 1].number;
+                setMetronomeNoteNumber(value);
+                midiService.playNote(value, metronomeVelocity);
+              }
+            }}
+          >
+            <FaChevronDown size={12} />
+          </button>
+          <select
+            className="mx-1 flex-1"
+            value={metronomeNoteNumber}
+            onChange={(e) => {
+              const value = parseInt(e.target.value);
+              setMetronomeNoteNumber(value);
+              midiService.playNote(value, metronomeVelocity);
+            }}
+          >
+            {DRUM_NOTES.map((note) => (
+              <option key={note.number} value={note.number}>
+                {note.number} – {note.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Downbeat row */}
         <button
@@ -136,22 +171,60 @@ export default function MetronomeMidiSettings() {
             <GoUnmute size={16} />
           </span>
         </div>
-        <select
-          className="col-span-1"
-          value={metronomeDownbeatNoteNumber}
-          disabled={isDownbeatLocked}
-          onChange={(e) => {
-            const value = parseInt(e.target.value);
-            setMetronomeDownbeatNoteNumber(value);
-            midiService.playNote(value, metronomeVelocity);
-          }}
-        >
-          {DRUM_NOTES.map((note) => (
-            <option key={note.number} value={note.number}>
-              {note.number} – {note.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center col-span-1">
+          <button
+            type="button"
+            className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-black border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ padding: 0, marginRight: 2 }}
+            aria-label="Previous downbeat note"
+            disabled={isDownbeatLocked}
+            onClick={() => {
+              if (isDownbeatLocked) return;
+              const idx = DRUM_NOTES.findIndex((n) => n.number === metronomeDownbeatNoteNumber);
+              if (idx > 0) {
+                const value = DRUM_NOTES[idx - 1].number;
+                setMetronomeDownbeatNoteNumber(value);
+                midiService.playNote(value, metronomeVelocity);
+              }
+            }}
+          >
+            <FaChevronUp size={12} />
+          </button>
+          <button
+            type="button"
+            className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-black border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ padding: 0, marginLeft: 2 }}
+            aria-label="Next downbeat note"
+            disabled={isDownbeatLocked}
+            onClick={() => {
+              if (isDownbeatLocked) return;
+              const idx = DRUM_NOTES.findIndex((n) => n.number === metronomeDownbeatNoteNumber);
+              if (idx < DRUM_NOTES.length - 1) {
+                const value = DRUM_NOTES[idx + 1].number;
+                setMetronomeDownbeatNoteNumber(value);
+                midiService.playNote(value, metronomeVelocity);
+              }
+            }}
+          >
+            <FaChevronDown size={12} />
+          </button>
+          <select
+            className="mx-1 flex-1"
+            value={metronomeDownbeatNoteNumber}
+            disabled={isDownbeatLocked}
+            onChange={(e) => {
+              const value = parseInt(e.target.value);
+              setMetronomeDownbeatNoteNumber(value);
+              midiService.playNote(value, metronomeVelocity);
+            }}
+          >
+            {DRUM_NOTES.map((note) => (
+              <option key={note.number} value={note.number}>
+                {note.number} – {note.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Upbeat row */}
         <button
@@ -177,22 +250,60 @@ export default function MetronomeMidiSettings() {
             <GoUnmute size={16} />
           </span>
         </div>
-        <select
-          className="col-span-1"
-          value={metronomeUpbeatNoteNumber}
-          disabled={isUpbeatLocked}
-          onChange={(e) => {
-            const value = parseInt(e.target.value);
-            setMetronomeUpbeatNoteNumber(value);
-            midiService.playNote(value, metronomeVelocity);
-          }}
-        >
-          {DRUM_NOTES.map((note) => (
-            <option key={note.number} value={note.number}>
-              {note.number} – {note.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center col-span-1">
+          <button
+            type="button"
+            className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-black border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ padding: 0, marginRight: 2 }}
+            aria-label="Previous upbeat note"
+            disabled={isUpbeatLocked}
+            onClick={() => {
+              if (isUpbeatLocked) return;
+              const idx = DRUM_NOTES.findIndex((n) => n.number === metronomeUpbeatNoteNumber);
+              if (idx > 0) {
+                const value = DRUM_NOTES[idx - 1].number;
+                setMetronomeUpbeatNoteNumber(value);
+                midiService.playNote(value, metronomeVelocity);
+              }
+            }}
+          >
+            <FaChevronUp size={12} />
+          </button>
+          <button
+            type="button"
+            className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-black border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ padding: 0, marginLeft: 2 }}
+            aria-label="Next upbeat note"
+            disabled={isUpbeatLocked}
+            onClick={() => {
+              if (isUpbeatLocked) return;
+              const idx = DRUM_NOTES.findIndex((n) => n.number === metronomeUpbeatNoteNumber);
+              if (idx < DRUM_NOTES.length - 1) {
+                const value = DRUM_NOTES[idx + 1].number;
+                setMetronomeUpbeatNoteNumber(value);
+                midiService.playNote(value, metronomeVelocity);
+              }
+            }}
+          >
+            <FaChevronDown size={12} />
+          </button>
+          <select
+            className="mx-1 flex-1"
+            value={metronomeUpbeatNoteNumber}
+            disabled={isUpbeatLocked}
+            onChange={(e) => {
+              const value = parseInt(e.target.value);
+              setMetronomeUpbeatNoteNumber(value);
+              midiService.playNote(value, metronomeVelocity);
+            }}
+          >
+            {DRUM_NOTES.map((note) => (
+              <option key={note.number} value={note.number}>
+                {note.number} – {note.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Velocity row */}
         <div />
