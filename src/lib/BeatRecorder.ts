@@ -1,13 +1,12 @@
 import { EventEmitter } from 'events';
 import { midiService } from '~/lib/MidiService';
 import { v4 as uuidv4 } from 'uuid';
-import { Performance } from '~/types/Performance';
-import { BeatNote } from '~/types/BeatNote';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { Beat } from '~/types/Beat';
+import { BeatNote } from '~/types/BeatNote';
+import { Performance } from '~/types/Performance';
 import { savePerformanceServerFn, deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { useRouter } from '@tanstack/react-router';
 import { grooveMonitor, PerformanceFeedback } from './GrooveMonitor';
 
 // Helper to quantize a time to the nearest 32nd note
@@ -25,7 +24,6 @@ class BeatRecorder extends EventEmitter {
   private static _instance: BeatRecorder;
   public performance: Performance = new Performance({ beatId: 'no beat!' });
   public performanceFeedback: PerformanceFeedback = new PerformanceFeedback([]);
-  private isRecording = false;
   private referenceTime: number = 0;
   private lastIndex: number = 0;
   private lastQuantizedTime: number = -Infinity;
@@ -90,14 +88,13 @@ class BeatRecorder extends EventEmitter {
   public setBeat(beat: Beat) {
     console.log('BeatRecorder: setBeat', beat.id);
     this.beat = beat;
-    this.isRecording = false;
     this.referenceTime = 0;
     this.lastIndex = 0;
     this.lastQuantizedTime = -Infinity;
   }
 
-  private handleStateChange = (e: any) => {
-    if (e.isRunning && e.isRecording) {
+  private handleStateChange = (state: any) => {
+    if (state.isRunning && state.isRecording) {
       this.start();
     } else {
       this.stop();
@@ -109,19 +106,17 @@ class BeatRecorder extends EventEmitter {
     console.log('BeatRecorder: start', beatId);
     this.performance = new Performance({ beatId });
     this.performanceFeedback = new PerformanceFeedback([]);
-    this.isRecording = true;
     this.referenceTime = TempoService.time;
     this.lastIndex = 0;
     this.lastQuantizedTime = -Infinity;
   };
 
   public stop = () => {
-    this.isRecording = false;
-    console.log('BeatRecorder: stop', this.performance);
+    console.log('BeatRecorder: stop');
   };
 
   private midiService_midiNote = (e: any) => {
-    if (!this.isRecording) {
+    if (!TempoService.isRecording) {
       return;
     }
 

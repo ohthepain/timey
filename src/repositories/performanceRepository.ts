@@ -1,4 +1,4 @@
-import prisma from '../config/db';
+import { prisma } from '../config/db';
 import { Performance } from '~/types/Performance';
 
 export const performanceRepository = {
@@ -41,7 +41,7 @@ export const performanceRepository = {
       where: { userId },
       include: { notes: true },
     });
-    return prismaPerformances.map((perf) => new Performance(perf));
+    return prismaPerformances.map((perf: any) => new Performance(perf));
   },
 
   async fetchPerformancesByBeatIdAndUserId(beatId: string, userId: string) {
@@ -49,7 +49,7 @@ export const performanceRepository = {
       where: { beatId, userId },
       include: { notes: true },
     });
-    return prismaPerformances.map((perf) => new Performance(perf));
+    return prismaPerformances.map((perf: any) => new Performance(perf));
   },
 
   async deletePerformance(id: string) {
