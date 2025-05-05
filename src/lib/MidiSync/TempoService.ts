@@ -16,7 +16,7 @@ class TempoService {
   eventsEmitter: EventEmitter;
   lastTickTime: any;
   ppqn: any;
-  pulseIntervalMsec: any;
+  midiClockPulseInterval: any;
   nextPulseNum: number = 0;
   intervalId: any;
 
@@ -46,14 +46,15 @@ class TempoService {
   startIntervalTimer() {
     this.stopIntervalTimer();
     const pps = this.bpm * this.ppqn;
-    this.pulseIntervalMsec = (60 * 1000) / pps;
+    this.midiClockPulseInterval = (60 * 1000) / pps;
 
     this.time = WebMidi.time;
     this.startTime = this.time;
     this.nextPulseNum = 0;
 
     this.handleInterval();
-    this.intervalId = setInterval(this.handleInterval, this.pulseIntervalMsec);
+    // timer faster than clock pulse to reduce jitter
+    this.intervalId = setInterval(this.handleInterval, this.midiClockPulseInterval / 4);
   }
 
   continueIntervalTimer() {
@@ -65,15 +66,8 @@ class TempoService {
   handleInterval = () => {
     this.time = WebMidi.time;
     this.elapsedMsec = this.time - this.startTime;
-    // const pulseCount = elapsedMsec / this.pulseIntervalMsec;
 
-    this.currentSpp = Math.floor(((this.getElapsedMsec() / this.pulseIntervalMsec) * 16) / this.ppqn);
-    if (this.loopSpp !== 0 && this.currentSpp > this.loopSpp) {
-      this.currentSpp = this.loopSpp;
-      this.sendSpp(this.currentSpp);
-    }
-
-    if (this.time > this.startTime + this.nextPulseNum * this.pulseIntervalMsec) {
+    if (this.time > this.startTime + this.nextPulseNum * this.midiClockPulseInterval) {
       this.sendClock(this.nextPulseNum);
       this.eventsEmitter.emit('MIDI Clock Pulse', {
         time: this.elapsedMsec,
