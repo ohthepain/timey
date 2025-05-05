@@ -1,7 +1,6 @@
 import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
 import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
-import { send } from '@tanstack/react-start/server';
 
 // TempoService is a singleton that drives the MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
@@ -41,8 +40,7 @@ class TempoService {
 
   stopIntervalTimer() {
     clearInterval(this.intervalId);
-    this.eventsEmitter.emit('SPP', { spp: 0 });
-    this.eventsEmitter.emit('');
+    this.intervalId = null;
   }
 
   startIntervalTimer() {
@@ -58,6 +56,12 @@ class TempoService {
     this.intervalId = setInterval(this.handleInterval, this.pulseIntervalMsec);
   }
 
+  continueIntervalTimer() {
+    if (!this.intervalId) {
+      this.startIntervalTimer();
+    }
+  }
+
   handleInterval = () => {
     this.time = WebMidi.time;
     this.elapsedMsec = this.time - this.startTime;
@@ -71,7 +75,7 @@ class TempoService {
 
     if (this.time > this.startTime + this.nextPulseNum * this.pulseIntervalMsec) {
       this.sendClock(this.nextPulseNum);
-      this.eventsEmitter.emit('MIDI pulse', {
+      this.eventsEmitter.emit('MIDI Clock Pulse', {
         time: this.elapsedMsec,
         ticks: this.nextPulseNum,
       });
@@ -106,7 +110,7 @@ class TempoService {
   };
 
   sendContinue = () => {
-    this.eventsEmitter.emit('stop', { time: this.time });
+    this.eventsEmitter.emit('start', { time: this.time });
 
     const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
@@ -152,6 +156,21 @@ class TempoService {
     });
   };
 
+  sendStateChange = () => {
+    this.eventsEmitter.emit('stateChange', {
+      isRunning: this.isRunning,
+      isPlaying: this.isPlaying,
+      isRecording: this.isRecording,
+      elapsedMsec: this.getElapsedMsec(),
+      elapsed64ths: this.getElapsed64ths(),
+      currentSpp: this.currentSpp,
+      startSpp: this.startSpp,
+      loopSpp: this.loopSpp,
+      bpm: this.bpm,
+      ppqn: this.ppqn,
+    });
+  };
+
   setTempo(bpm: any) {
     this.bpm = bpm;
   }
@@ -185,16 +204,12 @@ class TempoService {
     this.time = WebMidi.time;
     this.startTime = this.time;
     this.currentSpp = this.startSpp;
-    this.eventsEmitter.emit('SPP', { spp: this.currentSpp });
+    this.sendSpp(this.currentSpp);
     this.isRunning = true;
-    this.eventsEmitter.emit('stateChange', {
-      isRunning: this.isRunning,
-      isPlaying: this.isPlaying,
-      isRecording: this.isRecording,
-    });
+    this.sendStateChange();
     this.sendStart();
     this.sendSpp(this.currentSpp);
-    this.startIntervalTimer();
+    this.continueIntervalTimer();
   }
 
   play() {
@@ -206,14 +221,14 @@ class TempoService {
   record() {
     this.isRecording = true;
     this.isPlaying = false;
-    this.start();
+    this.startIntervalTimer();
   }
 
   continue() {
     this.isRunning = true;
-    this.eventsEmitter.emit('stateChange', { isRunning: this.isRunning });
+    this.sendStateChange();
     this.sendContinue();
-    this.startIntervalTimer();
+    this.continueIntervalTimer();
     this.sendSpp(this.currentSpp);
     this.sendStart();
   }
@@ -223,10 +238,9 @@ class TempoService {
     this.isPlaying = false;
     this.isRecording = false;
     this.stopIntervalTimer();
-    this.sendStop();
     this.currentSpp = this.startSpp;
-    this.eventsEmitter.emit('SPP', { spp: this.currentSpp });
-    this.eventsEmitter.emit('stateChange', { isRunning: this.isRunning });
+    this.sendSpp(this.currentSpp);
+    this.sendStateChange();
     this.sendStop();
   }
 }

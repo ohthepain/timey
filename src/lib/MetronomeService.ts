@@ -11,7 +11,7 @@ class MetronomeService {
     // Listen for start/stop events from MidiService or TempoService
     TempoService.eventsEmitter.addListener('start', this.handleStart);
     TempoService.eventsEmitter.addListener('stop', this.handleStop);
-    TempoService.eventsEmitter.addListener('MIDI pulse', this.handlePulse);
+    TempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handlePulse);
   }
 
   static getInstance() {
@@ -45,18 +45,13 @@ class MetronomeService {
       return;
     }
 
-    midiService.playNote(
-      midiSettings.midiOutputDeviceId,
-      midiSettings.midiOutputChannelNum,
-      midiSettings.metronomeNoteNumber,
-      midiSettings.metronomeVelocity
-    );
+    midiService.playNote(midiSettings.metronomeNoteNumber, midiSettings.metronomeVelocity);
   };
 
   destroy() {
     TempoService.eventsEmitter.removeListener('start', this.handleStart);
     TempoService.eventsEmitter.removeListener('stop', this.handleStop);
-    TempoService.eventsEmitter.removeListener('MIDI pulse', this.handlePulse);
+    TempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handlePulse);
   }
 }
 

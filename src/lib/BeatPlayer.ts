@@ -1,7 +1,6 @@
 import { EventEmitter } from 'events';
 import TempoService from '~/lib/MidiSync/TempoService';
 import { NoteEntry, ConvertNoteToMidiNote } from '~/lib/ParseBeat';
-import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { midiService } from '~/lib/MidiService';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { Beat } from '~/types/Beat';
@@ -21,12 +20,12 @@ class BeatPlayer extends EventEmitter {
     // Subscribe to TempoService events
     console.log(`BeatPlayer:ctor - add listeners`);
     TempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange);
-    TempoService.eventsEmitter.addListener('MIDI pulse', this.handleMidiPulse);
+    TempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handleMidiPulse);
   }
 
   public destroy() {
     console.log('BeatPlayer: destroy');
-    TempoService.eventsEmitter.removeListener('MIDI pulse', this.handleMidiPulse);
+    TempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handleMidiPulse);
     TempoService.eventsEmitter.removeListener('stateChange', this.tempoService_stateChange);
   }
 
@@ -41,9 +40,6 @@ class BeatPlayer extends EventEmitter {
     this.noteIndex = 0;
     this.numLoops = 0;
     this.nextNoteStartTime = 0;
-
-    // Emit an event to notify that the beat has been set
-    this.emit('beatSet', this.beat);
   }
 
   private tempoService_stateChange = (e: any) => {
@@ -79,7 +75,6 @@ class BeatPlayer extends EventEmitter {
     const loopLengthMsec = this.beat?.getLoopLengthMsec(TempoService.bpm);
 
     if (elapsedTime >= this.nextNoteStartTime) {
-      const { midiOutputDeviceId, midiOutputChannelNum } = useMidiSettingsStore.getState();
       let notes: number[] = [];
       for (const note of this.allNotes[this.noteIndex].keys) {
         const midiNote = ConvertNoteToMidiNote(note);
@@ -89,7 +84,7 @@ class BeatPlayer extends EventEmitter {
       }
       // console.log(`BeatPlayer: handleMidiPulse - notes: `, notes);
       if (this.isPlaying) {
-        midiService.playNote(midiOutputDeviceId, midiOutputChannelNum, notes, 127, 0, 0);
+        midiService.playNote(notes, 127, 0, 0);
         this.emit('note', this.noteIndex);
       }
 

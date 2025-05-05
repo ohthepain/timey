@@ -37,16 +37,14 @@ class BeatRecorder extends EventEmitter {
     super();
     midiService.on('midiNote', this.midiService_midiNote);
     TempoService.eventsEmitter.addListener('stateChange', this.handleStateChange);
-    TempoService.eventsEmitter.addListener('MIDI pulse', this.handleMidiPulse);
-    // midiService.addListener('note', this.handleM idiNote);
+    TempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handleMidiPulse);
   }
 
   destroy() {
     console.log('BeatRecorder: destroy');
     midiService.removeListener('midiNote', this.midiService_midiNote);
     TempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange);
-    TempoService.eventsEmitter.removeListener('MIDI pulse', this.handleMidiPulse);
-    // midiService.removeListener('note', this.handleMidiNote);
+    TempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handleMidiPulse);
   }
 
   async savePerformance() {
@@ -75,7 +73,7 @@ class BeatRecorder extends EventEmitter {
 
   private handleMidiPulse = (event: { time: number; ticks: number }) => {
     // Adjust referenceTime to correct for drift between measured and MIDI time
-    // The difference between the expected time and the actual MIDI pulse time
+    // The difference between the expected time and the actual MIDI Clock Pulse time
     const now = TempoService.time;
     const midiTime = event.time;
     const drift = midiTime - now;
