@@ -83,8 +83,6 @@ class MidiService extends EventEmitter {
     }
 
     useMidiSettingsStore.subscribe((state) => {
-      console.log('MidiSettingsStore state changed:', state);
-
       if (
         this.midiOutputDeviceId !== state.midiOutputDeviceId ||
         this.midiOutputChannelNum !== state.midiOutputChannelNum

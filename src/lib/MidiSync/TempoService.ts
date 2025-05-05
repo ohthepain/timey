@@ -2,7 +2,7 @@ import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
 import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
 
-// TempoService is a singleton that drives the MIDI clock and song position pointer
+// TempoService is a singleton that drives the fake MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
 
 // TODO: Add a MIDI adapter to the MIDI service that drives tempo service
@@ -182,15 +182,12 @@ class TempoService {
   // TODO: Consider MIDI timecode
   getElapsedMsec(): number {
     const elapsed = this.time - this.startTime;
-    // console.log(`getElapsedMsec: WebMidi.time ${WebMidi.time} this.startTime ${this.startTime} = elapsed ${elapsed} ==> ${Math.floor(elapsed/1000)} seconds}`)
     return elapsed;
   }
 
   // TODO: Consider MIDI timecode
   getElapsed64ths(): number {
     const elapsed64ths = Math.floor(((this.getElapsedMsec() / 60000) * this.bpm * 64) / 4);
-    // const elapsed64ths = this.getElapsedMsec() / this.pulseIntervalMsec / this.ppqn * 16
-    // console.log(`getElapsed64ths: msec ${Math.floor(this.getElapsedMsec())} -> getElapsed64ths ${elapsed64ths} at bpm ${this.bpm}`)
     return elapsed64ths;
   }
 

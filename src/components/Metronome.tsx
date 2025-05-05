@@ -3,6 +3,7 @@ import { tempoService } from '~/lib/MidiSync/TempoService';
 import '~/lib/MetronomeService'; // Side-effects import
 import { useNavigationStore } from '~/state/NavigationStore';
 import { GoMute, GoUnmute } from 'react-icons/go';
+import MetronomeMidiSettings from './DeviceSelector/MetronomeMidiSettings';
 
 interface MetronomeProps {
   beatsPerBar: number;
@@ -14,6 +15,7 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
   var nextNoteStartTicks: number = 0;
   const nextNoteStartTicksRef = useRef(nextNoteStartTicks);
   const { isMetronomeOn, setMetronomeOn } = useNavigationStore();
+  const [showSettings, setShowSettings] = useState(false);
 
   const handleStateChange = (state: { isRunning: boolean }) => {
     console.log('Metronome: handleStateChange', state);
@@ -74,6 +76,35 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
           </span>
         )}
       </label>
+      {/* Settings Button */}
+      <button
+        type="button"
+        className="ml-2 px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowSettings(true);
+        }}
+      >
+        Metronome MIDI Settings
+      </button>
+      {/* Modal or Inline Settings */}
+      {showSettings && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+          onClick={() => setShowSettings(false)}
+        >
+          <div className="bg-white p-4 rounded shadow-lg relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl font-bold focus:outline-none"
+              aria-label="Close"
+              onClick={() => setShowSettings(false)}
+            >
+              ×
+            </button>
+            <MetronomeMidiSettings />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
