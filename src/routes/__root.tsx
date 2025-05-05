@@ -186,6 +186,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <div
               className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
               onClick={() => setShowMetronomeSettings(false)}
+              aria-modal="true"
+              role="dialog"
             >
               <div className="bg-white p-4 rounded shadow-lg relative" onClick={(e) => e.stopPropagation()}>
                 <button
@@ -204,6 +206,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <div
               className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
               onClick={() => setShowMidiPopup(false)}
+              aria-modal="true"
+              role="dialog"
             >
               <div
                 className="bg-white rounded shadow-lg p-6 min-w-[320px] relative"

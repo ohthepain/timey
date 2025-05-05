@@ -5,7 +5,6 @@ import { tempoService } from '~/lib/MidiSync/TempoService';
 
 class MetronomeService {
   private static _instance: MetronomeService;
-  private isRunning = false;
 
   private constructor() {
     // Listen for start/stop events from MidiService or TempoService
@@ -21,16 +20,12 @@ class MetronomeService {
     return MetronomeService._instance;
   }
 
-  private handleStart = () => {
-    this.isRunning = true;
-  };
+  private handleStart = () => {};
 
-  private handleStop = () => {
-    this.isRunning = false;
-  };
+  private handleStop = () => {};
 
   private handlePulse = (event: { time: number; ticks: number }) => {
-    if (!this.isRunning || !useNavigationStore.getState().isMetronomeOn) {
+    if (!tempoService.isRunning || !useNavigationStore.getState().isMetronomeOn) {
       return;
     }
 

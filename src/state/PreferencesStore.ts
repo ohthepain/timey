@@ -13,13 +13,12 @@ export class MidiDevicePreferences {
   inputs: Array<MidiDeviceSettings> = [];
   outputs: Array<MidiDeviceSettings> = [];
 
-  constructor(fake: any) {
-    //console.log(`MidiDevicePreferences.constructor ${JSON.stringify(fake)}`)
-    if (fake.inputs) {
-      this.inputs = [...fake.inputs];
+  constructor(data: any) {
+    if (data.inputs) {
+      this.inputs = [...data.inputs];
     }
-    if (fake.outputs) {
-      this.outputs = [...fake.outputs];
+    if (data.outputs) {
+      this.outputs = [...data.outputs];
     }
   }
 
@@ -27,7 +26,6 @@ export class MidiDevicePreferences {
     deviceId: string,
     deviceName: string | undefined = undefined
   ): MidiDeviceSettings | undefined {
-    //console.log(`MidiDevicePreferences.getMidiInputDevicePreferences(${deviceId},${deviceName})`)
     let settings: MidiDeviceSettings | undefined = this.inputs.find((candidate) => candidate.deviceId === deviceId);
     if (settings === undefined && deviceName !== undefined) {
       settings = this.inputs.find((candidate) => candidate.deviceName === deviceName);
@@ -37,7 +35,6 @@ export class MidiDevicePreferences {
   }
 
   getMidiOutputDevicePreferences(deviceId: string, deviceName?: string): MidiDeviceSettings | undefined {
-    //console.log(`MidiDevicePreferences.getMidiOutputDevicePreferences(${deviceId},${deviceName})`)
     let settings: MidiDeviceSettings | undefined = this.outputs.find((candidate) => candidate.deviceId === deviceId);
     if (settings === undefined && deviceName !== undefined) {
       settings = this.outputs.find((candidate) => candidate.deviceName === deviceName);
@@ -49,35 +46,30 @@ export class MidiDevicePreferences {
   isTrackingEnabledForMidiInputId(deviceId: string): boolean {
     const deviceSettings: MidiDeviceSettings | undefined = this.getMidiInputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.track : true;
-    // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 
   isRemoteEnabledForMidiInputId(deviceId: string): boolean {
     const deviceSettings: MidiDeviceSettings | undefined = this.getMidiInputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.remote : true;
-    // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 
   isTrackingEnabledForMidiOutputId(deviceId: string): boolean {
     const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.track : true;
-    // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 
   isSyncEnabledForMidiOutputId(deviceId: string): boolean {
     const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.sync : false;
-    // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 
   isRemoteEnabledForMidiOutputId(deviceId: string): boolean {
     const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.remote : true;
-    // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 }
@@ -85,11 +77,14 @@ export class MidiDevicePreferences {
 export type PreferencesState = {
   midiDevicePreferences: MidiDevicePreferences;
   numCountInBars: number;
-  // getMidiDevicePreferences: (deviceId: string, deviceName: string) => MidiDeviceSettings | undefined;
+  useFakeMidiClock: boolean;
+  fakeMidiClockTimerResolution: number;
   loadMidiDevicePreferences: (midiDeviceSettings: MidiDevicePreferences) => void;
   setMidiInputDeviceSettings: (midiDeviceSettings: MidiDeviceSettings) => void;
   setMidiOutputDeviceSettings: (midiDeviceSettings: MidiDeviceSettings) => void;
   setNumCountInBars: (numCountInBars: number) => void;
+  setUseFakeMidiClock: (useFakeMidiClock: boolean) => void;
+  setFakeMidiClockTimerResolution: (fakeMidiClockTimerResolution: number) => void;
 };
 
 const loadMidiDevicePreferences = (draft: PreferencesState, midiDevicePreferences: MidiDevicePreferences) => {
@@ -97,7 +92,6 @@ const loadMidiDevicePreferences = (draft: PreferencesState, midiDevicePreference
 };
 
 const setMidiInputDeviceSettings = (draft: PreferencesState, midiDeviceSettings: MidiDeviceSettings) => {
-  //console.log(`setMidiInputDeviceSettings.setMidiInputDeviceSettings(${JSON.stringify(midiDeviceSettings)})`)
   let index: number = draft.midiDevicePreferences.inputs.findIndex(
     (candidate) => candidate.deviceId === midiDeviceSettings.deviceId
   );
@@ -135,12 +129,30 @@ const setMidiOutputDeviceSettings = (draft: PreferencesState, midiDeviceSettings
 export const usePreferencesStore = create<PreferencesState>((set) => ({
   midiDevicePreferences: new MidiDevicePreferences({}),
   numCountInBars: 1,
+  useFakeMidiClock: true,
+  fakeMidiClockTimerResolution: 4,
   loadMidiDevicePreferences: (midiDevicePreferences: MidiDevicePreferences) =>
     set(produce((state) => loadMidiDevicePreferences(state, midiDevicePreferences))),
-  // getMidiDevicePreferences: (deviceId: string, deviceName: string) => getMidiDevicePreferences(state, deviceId, deviceName) },
   setMidiInputDeviceSettings: (midiDeviceSettings: MidiDeviceSettings) =>
     set(produce((state) => setMidiInputDeviceSettings(state, midiDeviceSettings))),
   setMidiOutputDeviceSettings: (midiDeviceSettings: MidiDeviceSettings) =>
     set(produce((state) => setMidiOutputDeviceSettings(state, midiDeviceSettings))),
-  setNumCountInBars: (numCountInBars: number) => set(produce((state) => (state.numCountInBars = numCountInBars))), // setNumCountInBars(state, numCountInBars)
+  setNumCountInBars: (numCountInBars: number) =>
+    set(
+      produce((state) => {
+        state.numCountInBars = numCountInBars;
+      })
+    ),
+  setUseFakeMidiClock: (useFakeMidiClock: boolean) =>
+    set(
+      produce((state) => {
+        state.useFakeMidiClock = useFakeMidiClock;
+      })
+    ),
+  setFakeMidiClockTimerResolution: (fakeMidiClockTimerResolution: number) =>
+    set(
+      produce((state) => {
+        state.fakeMidiClockTimerResolution = fakeMidiClockTimerResolution;
+      })
+    ),
 }));

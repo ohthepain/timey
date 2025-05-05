@@ -3,6 +3,7 @@ import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { midiService } from '~/lib/MidiService';
 import { GoUnmute, GoLock, GoUnlock } from 'react-icons/go';
 import { FaChevronUp, FaChevronDown } from 'react-icons/fa';
+import { usePreferencesStore } from '~/state/PreferencesStore';
 
 // General MIDI drum note numbers and names
 const DRUM_NOTES = [
@@ -71,6 +72,9 @@ export default function MetronomeMidiSettings() {
     setMetronomeUpbeatNoteNumber,
   } = useMidiSettingsStore();
 
+  const { useFakeMidiClock, setUseFakeMidiClock, fakeMidiClockTimerResolution, setFakeMidiClockTimerResolution } =
+    usePreferencesStore();
+
   // Sync downbeat/upbeat to note number when locked or when note changes
   useEffect(() => {
     if (isDownbeatLocked) {
@@ -85,7 +89,7 @@ export default function MetronomeMidiSettings() {
     <div className="flex flex-col items-center p-4">
       <div className="text-2xl font-bold text-center">Metronome MIDI Settings</div>
       <div>Select MIDI notes for the metronome.</div> <div>Tap to test!</div>
-      <div className="grid grid-cols-[32px_1fr_1fr] gap-x-4 gap-y-2 mt-4 w-full max-w-md">
+      <div className="grid grid-cols-[32px_1fr_1fr] gap-x-4 gap-y-2 mt-12 w-full max-w-md">
         {/* Note row */}
         <div />
         <div
@@ -326,6 +330,41 @@ export default function MetronomeMidiSettings() {
             midiService.playNote(metronomeNoteNumber, value);
           }}
         />
+      </div>
+      {/* Fake MIDI Clock toggle */}
+      <div className="mx-8 mt-8 w-full max-w-md flex items-center justify-between gap-4">
+        <label htmlFor="fake-midi-clock-toggle" className="font-semibold">
+          Use Fake MIDI Clock
+        </label>
+        <input
+          id="fake-midi-clock-toggle"
+          type="checkbox"
+          checked={useFakeMidiClock}
+          onChange={(e) => setUseFakeMidiClock(e.target.checked)}
+          className="h-5 w-5 accent-blue-500"
+        />
+      </div>
+      {/* Fake MIDI Clock Timer Resolution Editor */}
+      <div className="mx-8 mt-2 w-full max-w-md flex items-center justify-between gap-4">
+        <label
+          htmlFor="fake-midi-clock-timer-resolution"
+          className={`font-semibold ${!useFakeMidiClock ? 'text-gray-400' : ''}`}
+        >
+          Fake MIDI Clock Timer Resolution
+        </label>
+        <select
+          id="fake-midi-clock-timer-resolution"
+          className="border rounded px-2 py-1 w-24 text-right"
+          value={fakeMidiClockTimerResolution}
+          onChange={(e) => setFakeMidiClockTimerResolution(Number(e.target.value))}
+          disabled={!useFakeMidiClock}
+        >
+          {[1, 2, 4, 8, 16, 32, 64, 128].map((val) => (
+            <option key={val} value={val}>
+              {val}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );

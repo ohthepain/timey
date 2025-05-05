@@ -29,6 +29,7 @@ class TempoService {
   startSpp: number = 0;
   loopSpp: number = 0;
   currentSpp: number = 0;
+  fakeMidiClockTimerResolution: number = 4;
 
   constructor() {
     console.log(`hi from TempoService:ctor`);
@@ -53,8 +54,9 @@ class TempoService {
     this.nextPulseNum = 0;
 
     this.handleInterval();
-    // timer faster than clock pulse to reduce jitter
-    this.intervalId = setInterval(this.handleInterval, this.midiClockPulseInterval / 4);
+    // fakeMidiClockTimerResolution - timer faster than clock pulse to reduce jitter
+    this.fakeMidiClockTimerResolution = usePreferencesStore.getState().fakeMidiClockTimerResolution || 4;
+    this.intervalId = setInterval(this.handleInterval, this.midiClockPulseInterval / this.fakeMidiClockTimerResolution);
   }
 
   continueIntervalTimer() {
@@ -187,7 +189,9 @@ class TempoService {
 
   // TODO: Consider MIDI timecode
   getElapsed64ths(): number {
-    const elapsed64ths = Math.floor(((this.getElapsedMsec() / 60000) * this.bpm * 64) / 4);
+    const elapsed64ths = Math.floor(
+      ((this.getElapsedMsec() / 60000) * this.bpm * 64) / this.fakeMidiClockTimerResolution
+    );
     return elapsed64ths;
   }
 
