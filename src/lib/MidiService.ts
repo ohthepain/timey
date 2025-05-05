@@ -169,7 +169,8 @@ class MidiService extends EventEmitter {
     const channelNum = this.midiInputChannelNum;
     console.log(`listenToInput ${this.midiInputDeviceId} channelNum: ${this.midiInputChannelNum}`);
     if (!channelNum || !midiInputDeviceId) {
-      throw new Error('MIDI Input channel number or device ID is undefined');
+      console.warn('MIDI Input channel number or device ID is undefined');
+      return;
     }
     if (!WebMidi.enabled) {
       throw new Error('WebMidi is not enabled');
