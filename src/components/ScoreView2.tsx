@@ -1,14 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Beam, Renderer, Stave, StaveNote, TickContext, Tickable, Barline, RenderContext, drawDot } from 'vexflow';
 import { MakeStaveNotesFromBeat, TupletRecord } from '../lib/ParseBeat';
-import { useBeatPlayer } from '~/lib/UseBeatPlayer';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { NoteEntry } from '~/lib/ParseBeat';
 import { Beat } from '~/types/Beat';
-import { Performance } from '~/types/Performance';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { BeatNoteFeedback, grooveMonitor, PerformanceFeedback } from '~/lib/GrooveMonitor';
-import TempoService from '~/lib/MidiSync/TempoService';
+import { tempoService } from '~/lib/MidiSync/TempoService';
 import { beatRecorder } from '~/lib/BeatRecorder';
 import { BeatNote } from '~/types/BeatNote';
 
@@ -281,9 +279,9 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
     const beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
       beat,
       note.keys[0],
-      note.getStartTimeMsec(TempoService.bpm),
+      note.getStartTimeMsec(tempoService.bpm),
       100,
-      TempoService.bpm
+      tempoService.bpm
     );
 
     if (beatNoteFeedback) {

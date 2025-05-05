@@ -1,7 +1,7 @@
 import { midiService } from '~/lib/MidiService';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { useNavigationStore } from '~/state/NavigationStore';
-import TempoService from '~/lib/MidiSync/TempoService';
+import { tempoService } from '~/lib/MidiSync/TempoService';
 
 class MetronomeService {
   private static _instance: MetronomeService;
@@ -9,9 +9,9 @@ class MetronomeService {
 
   private constructor() {
     // Listen for start/stop events from MidiService or TempoService
-    TempoService.eventsEmitter.addListener('start', this.handleStart);
-    TempoService.eventsEmitter.addListener('stop', this.handleStop);
-    TempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handlePulse);
+    tempoService.eventsEmitter.addListener('start', this.handleStart);
+    tempoService.eventsEmitter.addListener('stop', this.handleStop);
+    tempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handlePulse);
   }
 
   static getInstance() {
@@ -35,7 +35,7 @@ class MetronomeService {
     }
 
     // Only play on quarter note ticks
-    const ppqn = TempoService.ppqn;
+    const ppqn = tempoService.ppqn;
     if (event.ticks % ppqn !== 0) {
       return;
     }
@@ -49,9 +49,9 @@ class MetronomeService {
   };
 
   destroy() {
-    TempoService.eventsEmitter.removeListener('start', this.handleStart);
-    TempoService.eventsEmitter.removeListener('stop', this.handleStop);
-    TempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handlePulse);
+    tempoService.eventsEmitter.removeListener('start', this.handleStart);
+    tempoService.eventsEmitter.removeListener('stop', this.handleStop);
+    tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handlePulse);
   }
 }
 

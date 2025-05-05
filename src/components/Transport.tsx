@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import TempoService from '~/lib/MidiSync/TempoService';
+import { tempoService } from '~/lib/MidiSync/TempoService';
 import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
 import { beatRecorder } from '~/lib/BeatRecorder';
@@ -14,21 +14,21 @@ export const Transport = () => {
 
   const handlePlayButton = () => {
     console.log('Transport: handlePlayButton');
-    TempoService.play();
+    tempoService.play();
     setIsRunning(true);
     setIsPlaying(true);
   };
 
   const handleRecordButton = () => {
     console.log('Transport: handleRecordButton');
-    TempoService.record();
+    tempoService.record();
     setIsRunning(true);
     setIsRecording(true);
   };
 
   const handleStop = () => {
     console.log('Stop clicked');
-    TempoService.stop();
+    tempoService.stop();
     setIsRunning(false);
     setIsPlaying(false);
     setIsRecording(false);

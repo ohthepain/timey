@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import TempoService from '~/lib/MidiSync/TempoService';
+import { tempoService } from '~/lib/MidiSync/TempoService';
 import '~/lib/MetronomeService'; // Side-effects import
 import { useNavigationStore } from '~/state/NavigationStore';
 import { GoMute, GoUnmute } from 'react-icons/go';
@@ -28,7 +28,7 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
     console.log('Metronome: handleRun');
     setBeatNum(0);
     setIsRunning(true);
-    nextNoteStartTicksRef.current = TempoService.ppqn;
+    nextNoteStartTicksRef.current = tempoService.ppqn;
   };
 
   const handleStop = () => {
@@ -38,18 +38,18 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
 
   const handleMidiPulse = (event: { time: number; ticks: number }) => {
     if (event.ticks >= nextNoteStartTicksRef.current) {
-      nextNoteStartTicksRef.current = nextNoteStartTicksRef.current + TempoService.ppqn;
+      nextNoteStartTicksRef.current = nextNoteStartTicksRef.current + tempoService.ppqn;
       setBeatNum((beatNum) => (beatNum + 1) % beatsPerBar);
     }
   };
 
   useEffect(() => {
-    TempoService.eventsEmitter.addListener('stateChange', handleStateChange);
-    TempoService.eventsEmitter.addListener('MIDI Clock Pulse', handleMidiPulse);
+    tempoService.eventsEmitter.addListener('stateChange', handleStateChange);
+    tempoService.eventsEmitter.addListener('MIDI Clock Pulse', handleMidiPulse);
 
     return () => {
-      TempoService.eventsEmitter.removeListener('MIDI Clock Pulse', handleMidiPulse);
-      TempoService.eventsEmitter.removeListener('stateChange', handleStateChange);
+      tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', handleMidiPulse);
+      tempoService.eventsEmitter.removeListener('stateChange', handleStateChange);
     };
   }, []);
 

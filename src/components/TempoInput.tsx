@@ -1,25 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import TempoService from '~/lib/MidiSync/TempoService';
+import { tempoService } from '~/lib/MidiSync/TempoService';
 
 export function TempoInput() {
-  const [tempo, setTempo] = useState<number>(TempoService.bpm);
+  const [tempo, setTempo] = useState<number>(tempoService.bpm);
 
   useEffect(() => {
-    setTempo(TempoService.bpm);
+    setTempo(tempoService.bpm);
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value, 10);
     if (!isNaN(value)) {
       setTempo(value);
-      TempoService.setTempo(value);
+      tempoService.setTempo(value);
     }
   };
 
   const handleIncrement = () => {
     setTempo((prev) => {
       const next = prev + 1;
-      TempoService.setTempo(next);
+      tempoService.setTempo(next);
       return next;
     });
   };
@@ -27,7 +27,7 @@ export function TempoInput() {
   const handleDecrement = () => {
     setTempo((prev) => {
       const next = prev - 1;
-      TempoService.setTempo(next);
+      tempoService.setTempo(next);
       return next;
     });
   };

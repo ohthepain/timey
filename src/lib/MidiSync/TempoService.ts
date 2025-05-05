@@ -245,4 +245,4 @@ class TempoService {
   }
 }
 
-export default new TempoService();
+export const tempoService = new TempoService();
