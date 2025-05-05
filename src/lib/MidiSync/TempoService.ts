@@ -216,7 +216,7 @@ class TempoService {
   record() {
     this.isRecording = true;
     this.isPlaying = false;
-    this.startIntervalTimer();
+    this.start();
   }
 
   continue() {
