@@ -28,70 +28,54 @@ export class MidiDevicePreferences {
     deviceName: string | undefined = undefined
   ): MidiDeviceSettings | undefined {
     //console.log(`MidiDevicePreferences.getMidiInputDevicePreferences(${deviceId},${deviceName})`)
-    let settings: MidiDeviceSettings | undefined = this.inputs.find(
-      (candidate) => candidate.deviceId === deviceId
-    );
+    let settings: MidiDeviceSettings | undefined = this.inputs.find((candidate) => candidate.deviceId === deviceId);
     if (settings === undefined && deviceName !== undefined) {
-      settings = this.inputs.find(
-        (candidate) => candidate.deviceName === deviceName
-      );
+      settings = this.inputs.find((candidate) => candidate.deviceName === deviceName);
     }
 
     return settings;
   }
 
-  getMidiOutputDevicePreferences(
-    deviceId: string,
-    deviceName?: string
-  ): MidiDeviceSettings | undefined {
+  getMidiOutputDevicePreferences(deviceId: string, deviceName?: string): MidiDeviceSettings | undefined {
     //console.log(`MidiDevicePreferences.getMidiOutputDevicePreferences(${deviceId},${deviceName})`)
-    let settings: MidiDeviceSettings | undefined = this.outputs.find(
-      (candidate) => candidate.deviceId === deviceId
-    );
+    let settings: MidiDeviceSettings | undefined = this.outputs.find((candidate) => candidate.deviceId === deviceId);
     if (settings === undefined && deviceName !== undefined) {
-      settings = this.outputs.find(
-        (candidate) => candidate.deviceName === deviceName
-      );
+      settings = this.outputs.find((candidate) => candidate.deviceName === deviceName);
     }
 
     return settings;
   }
 
   isTrackingEnabledForMidiInputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined =
-      this.getMidiInputDevicePreferences(deviceId);
+    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiInputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.track : true;
     // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 
   isRemoteEnabledForMidiInputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined =
-      this.getMidiInputDevicePreferences(deviceId);
+    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiInputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.remote : true;
     // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 
   isTrackingEnabledForMidiOutputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined =
-      this.getMidiOutputDevicePreferences(deviceId);
+    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.track : true;
     // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 
   isSyncEnabledForMidiOutputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined =
-      this.getMidiOutputDevicePreferences(deviceId);
+    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.sync : false;
     // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
   }
 
   isRemoteEnabledForMidiOutputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined =
-      this.getMidiOutputDevicePreferences(deviceId);
+    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.remote : true;
     // console.log(`isTrackingEnabledForMidiInputId: ${enabled} deviceId ${deviceId} ${JSON.stringify(deviceSettings)}`)
     return enabled;
@@ -100,25 +84,19 @@ export class MidiDevicePreferences {
 
 export type PreferencesState = {
   midiDevicePreferences: MidiDevicePreferences;
+  numCountInBars: number;
   // getMidiDevicePreferences: (deviceId: string, deviceName: string) => MidiDeviceSettings | undefined;
-  loadMidiDevicePreferences: (
-    midiDeviceSettings: MidiDevicePreferences
-  ) => void;
+  loadMidiDevicePreferences: (midiDeviceSettings: MidiDevicePreferences) => void;
   setMidiInputDeviceSettings: (midiDeviceSettings: MidiDeviceSettings) => void;
   setMidiOutputDeviceSettings: (midiDeviceSettings: MidiDeviceSettings) => void;
+  setNumCountInBars: (numCountInBars: number) => void;
 };
 
-const loadMidiDevicePreferences = (
-  draft: PreferencesState,
-  midiDevicePreferences: MidiDevicePreferences
-) => {
+const loadMidiDevicePreferences = (draft: PreferencesState, midiDevicePreferences: MidiDevicePreferences) => {
   draft.midiDevicePreferences = midiDevicePreferences;
 };
 
-const setMidiInputDeviceSettings = (
-  draft: PreferencesState,
-  midiDeviceSettings: MidiDeviceSettings
-) => {
+const setMidiInputDeviceSettings = (draft: PreferencesState, midiDeviceSettings: MidiDeviceSettings) => {
   //console.log(`setMidiInputDeviceSettings.setMidiInputDeviceSettings(${JSON.stringify(midiDeviceSettings)})`)
   let index: number = draft.midiDevicePreferences.inputs.findIndex(
     (candidate) => candidate.deviceId === midiDeviceSettings.deviceId
@@ -136,10 +114,7 @@ const setMidiInputDeviceSettings = (
   }
 };
 
-const setMidiOutputDeviceSettings = (
-  draft: PreferencesState,
-  midiDeviceSettings: MidiDeviceSettings
-) => {
+const setMidiOutputDeviceSettings = (draft: PreferencesState, midiDeviceSettings: MidiDeviceSettings) => {
   //console.log(`setMidiInputDeviceSettings.setMidiOutputDeviceSettings(${JSON.stringify(midiDeviceSettings)})`)
   let index: number = draft.midiDevicePreferences.outputs.findIndex(
     (candidate) => candidate.deviceId === midiDeviceSettings.deviceId
@@ -159,19 +134,13 @@ const setMidiOutputDeviceSettings = (
 
 export const usePreferencesStore = create<PreferencesState>((set) => ({
   midiDevicePreferences: new MidiDevicePreferences({}),
+  numCountInBars: 1,
   loadMidiDevicePreferences: (midiDevicePreferences: MidiDevicePreferences) =>
-    set(
-      produce((state) =>
-        loadMidiDevicePreferences(state, midiDevicePreferences)
-      )
-    ),
+    set(produce((state) => loadMidiDevicePreferences(state, midiDevicePreferences))),
   // getMidiDevicePreferences: (deviceId: string, deviceName: string) => getMidiDevicePreferences(state, deviceId, deviceName) },
   setMidiInputDeviceSettings: (midiDeviceSettings: MidiDeviceSettings) =>
-    set(
-      produce((state) => setMidiInputDeviceSettings(state, midiDeviceSettings))
-    ),
+    set(produce((state) => setMidiInputDeviceSettings(state, midiDeviceSettings))),
   setMidiOutputDeviceSettings: (midiDeviceSettings: MidiDeviceSettings) =>
-    set(
-      produce((state) => setMidiOutputDeviceSettings(state, midiDeviceSettings))
-    ),
+    set(produce((state) => setMidiOutputDeviceSettings(state, midiDeviceSettings))),
+  setNumCountInBars: (numCountInBars: number) => set(produce((state) => (state.numCountInBars = numCountInBars))), // setNumCountInBars(state, numCountInBars)
 }));

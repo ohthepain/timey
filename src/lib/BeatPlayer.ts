@@ -1,7 +1,6 @@
 import { EventEmitter } from 'events';
-import TempoService from '~/lib/MidiSync/TempoService';
+import { tempoService } from '~/lib/MidiSync/TempoService';
 import { NoteEntry, ConvertNoteToMidiNote } from '~/lib/ParseBeat';
-import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { midiService } from '~/lib/MidiService';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { Beat } from '~/types/Beat';
@@ -20,14 +19,14 @@ class BeatPlayer extends EventEmitter {
 
     // Subscribe to TempoService events
     console.log(`BeatPlayer:ctor - add listeners`);
-    TempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange);
-    TempoService.eventsEmitter.addListener('MIDI pulse', this.handleMidiPulse);
+    tempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange);
+    tempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handleMidiPulse);
   }
 
   public destroy() {
     console.log('BeatPlayer: destroy');
-    TempoService.eventsEmitter.removeListener('MIDI pulse', this.handleMidiPulse);
-    TempoService.eventsEmitter.removeListener('stateChange', this.tempoService_stateChange);
+    tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handleMidiPulse);
+    tempoService.eventsEmitter.removeListener('stateChange', this.tempoService_stateChange);
   }
 
   public setBeat(beat: Beat) {
@@ -41,9 +40,6 @@ class BeatPlayer extends EventEmitter {
     this.noteIndex = 0;
     this.numLoops = 0;
     this.nextNoteStartTime = 0;
-
-    // Emit an event to notify that the beat has been set
-    this.emit('beatSet', this.beat);
   }
 
   private tempoService_stateChange = (e: any) => {
@@ -62,11 +58,11 @@ class BeatPlayer extends EventEmitter {
       return;
     }
 
-    if (!TempoService.isRunning || !TempoService.isPlaying) {
+    if (!tempoService.isRunning || !tempoService.isPlaying) {
       return;
     }
 
-    if (!TempoService.startTime) {
+    if (!tempoService.startTime) {
       throw new Error('TempoService.startTime is not set');
     }
 
@@ -75,11 +71,10 @@ class BeatPlayer extends EventEmitter {
       return;
     }
 
-    const elapsedTime = TempoService.time - TempoService.startTime;
-    const loopLengthMsec = this.beat?.getLoopLengthMsec(TempoService.bpm);
+    const elapsedTime = tempoService.time - tempoService.startTime;
+    const loopLengthMsec = this.beat?.getLoopLengthMsec(tempoService.bpm);
 
     if (elapsedTime >= this.nextNoteStartTime) {
-      const { midiOutputDeviceId, midiOutputChannelNum } = useMidiSettingsStore.getState();
       let notes: number[] = [];
       for (const note of this.allNotes[this.noteIndex].keys) {
         const midiNote = ConvertNoteToMidiNote(note);
@@ -89,7 +84,7 @@ class BeatPlayer extends EventEmitter {
       }
       // console.log(`BeatPlayer: handleMidiPulse - notes: `, notes);
       if (this.isPlaying) {
-        midiService.playNote(midiOutputDeviceId, midiOutputChannelNum, notes, 127, 0, 0);
+        midiService.playNote(notes, 127, 0, 0);
         this.emit('note', this.noteIndex);
       }
 
@@ -101,7 +96,7 @@ class BeatPlayer extends EventEmitter {
       const nextNote = this.allNotes[this.noteIndex];
 
       // TODO: This won't handle tempo changes well. Calculate the amount of time to the next note relatively
-      this.nextNoteStartTime = nextNote.getStartTimeMsec(TempoService.bpm) + loopLengthMsec * this.numLoops;
+      this.nextNoteStartTime = nextNote.getStartTimeMsec(tempoService.bpm) + loopLengthMsec * this.numLoops;
       if (!nextNote) {
         throw new Error('No more notes to play.');
       }
