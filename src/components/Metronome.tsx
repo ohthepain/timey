@@ -10,7 +10,6 @@ interface MetronomeProps {
 
 export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
   const [beatNum, setBeatNum] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);
   var nextNoteStartTicks: number = 0;
   const nextNoteStartTicksRef = useRef(nextNoteStartTicks);
   const { isMetronomeOn, setMetronomeOn } = useNavigationStore();
@@ -27,13 +26,11 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
   const handleRun = () => {
     console.log('Metronome: handleRun');
     setBeatNum(0);
-    setIsRunning(true);
     nextNoteStartTicksRef.current = tempoService.ppqn;
   };
 
   const handleStop = () => {
     console.log('Metronome: handleStop');
-    setIsRunning(false);
   };
 
   const handleMidiPulse = (event: { time: number; ticks: number }) => {

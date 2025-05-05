@@ -16,6 +16,7 @@ import {
 import { UserButton } from '@clerk/clerk-react';
 import { useState } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
+import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -76,6 +77,7 @@ function RootComponent() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const [showMidiPopup, setShowMidiPopup] = useState(false);
+  const [showMetronomeSettings, setShowMetronomeSettings] = useState(false);
   return (
     <ClerkProvider>
       <html>
@@ -157,6 +159,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             {/* Right-aligned buttons */}
             <div className="flex gap-2 items-center">
               <button
+                className="text-amber-800 px-2 py-1 rounded hover:bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm"
+                onClick={() => setShowMetronomeSettings(true)}
+                title="Metronome Settings"
+              >
+                Metronome
+              </button>
+              <button
                 className="text-green-700 px-2 py-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
                 onClick={() => setShowMidiPopup(true)}
                 title="MIDI Settings"
@@ -173,11 +182,32 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <hr />
+          {showMetronomeSettings && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+              onClick={() => setShowMetronomeSettings(false)}
+              aria-modal="true"
+              role="dialog"
+            >
+              <div className="bg-white p-4 rounded shadow-lg relative" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl font-bold focus:outline-none"
+                  aria-label="Close"
+                  onClick={() => setShowMetronomeSettings(false)}
+                >
+                  ×
+                </button>
+                <MetronomeMidiSettings />
+              </div>
+            </div>
+          )}
           {/* MIDI Popup */}
           {showMidiPopup && (
             <div
               className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
               onClick={() => setShowMidiPopup(false)}
+              aria-modal="true"
+              role="dialog"
             >
               <div
                 className="bg-white rounded shadow-lg p-6 min-w-[320px] relative"

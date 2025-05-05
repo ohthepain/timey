@@ -11,7 +11,9 @@ interface MidiSettingsState {
   metronomeNoteNumber: number;
   metronomeVelocity: number;
   metronomeDownbeatNoteNumber: number;
+  isDownbeatLocked: boolean;
   metronomeUpbeatNoteNumber: number;
+  isUpbeatLocked: boolean;
 
   // Actions
   setMidiInputDevice: (id: string, name: string, channelNum: number) => void;
@@ -20,7 +22,9 @@ interface MidiSettingsState {
   setMetronomeNoteNumber: (noteNumber: number) => void;
   setMetronomeVelocity: (velocity: number) => void;
   setMetronomeDownbeatNoteNumber: (noteNumber: number) => void;
+  setIsDownbeatLocked: (locked: boolean) => void;
   setMetronomeUpbeatNoteNumber: (noteNumber: number) => void;
+  setIsUpbeatLocked: (locked: boolean) => void;
 
   resetSettings: () => void;
 }
@@ -38,7 +42,9 @@ export const useMidiSettingsStore = create(
       metronomeNoteNumber: 75,
       metronomeVelocity: 100,
       metronomeDownbeatNoteNumber: 76,
+      isDownbeatLocked: false,
       metronomeUpbeatNoteNumber: 75,
+      isUpbeatLocked: false,
 
       // Actions
       setMidiInputDevice: (id, name, channelNum) =>
@@ -67,9 +73,17 @@ export const useMidiSettingsStore = create(
         set(() => ({
           metronomeDownbeatNoteNumber: noteNumber,
         })),
+      setIsDownbeatLocked: (locked: boolean) =>
+        set(() => ({
+          isDownbeatLocked: locked,
+        })),
       setMetronomeUpbeatNoteNumber: (noteNumber: number) =>
         set(() => ({
           metronomeUpbeatNoteNumber: noteNumber,
+        })),
+      setIsUpbeatLocked: (locked: boolean) =>
+        set(() => ({
+          isUpbeatLocked: locked,
         })),
 
       resetSettings: () =>
