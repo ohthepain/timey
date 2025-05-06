@@ -54,70 +54,74 @@ export const Transport = () => {
 
   return (
     <div className="transport-controls flex gap-1 p-4 items-center">
-      {isRunning && isPlaying ? (
-        <button
-          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
-          onClick={handleStop}
-        >
-          Stop
-        </button>
-      ) : (
-        <button
-          className="text-green-700 px-2 m-1 rounded hover:bg-red-200 border-green-600 border-2 rounded-e-md text-sm"
-          onClick={handlePlayButton}
-        >
-          Play
-        </button>
-      )}
-      {isRunning && isRecording ? (
-        <button
-          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
-          onClick={handleStop}
-        >
-          Stop
-        </button>
-      ) : (
-        <button
-          className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
-          onClick={handleRecordButton}
-        >
-          Record
-        </button>
-      )}
-      {!isRunning && (
-        <button
-          className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
-          onClick={async () => {
-            console.log('Start clicked');
-            beatRecorder.savePerformance();
-          }}
-        >
-          Save
-        </button>
-      )}
-      {!isRunning && currentBeat && currentBeat.id && (
-        <button
-          className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
-          onClick={async () => {
-            console.log('Start clicked');
-          }}
-        >
-          {`Replay (${getPerformancesForBeatId(currentBeat.id).length})`}
-        </button>
-      )}
-      {!isRunning && currentBeat && currentBeat.id && (
-        <button
-          className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
-          onClick={async () => {
-            console.log('Start clicked');
-            await deletePerformancesByBeatIdAndUserId({ data: { beatId: currentBeat.id } });
-          }}
-        >
-          {`Delete ${getPerformancesForBeatId(currentBeat.id).length} recordings`}
-        </button>
-      )}
-      <TempoInput />
-      <Metronome beatsPerBar={4} />
+      <div className="flex flex-col w-full">
+        <div className="flex">
+          {isRunning && isPlaying ? (
+            <button
+              className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+              onClick={handleStop}
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              className="text-green-700 px-2 m-1 rounded hover:bg-red-200 border-green-600 border-2 rounded-e-md text-sm"
+              onClick={handlePlayButton}
+            >
+              Play
+            </button>
+          )}
+          {isRunning && isRecording ? (
+            <button
+              className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+              onClick={handleStop}
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+              onClick={handleRecordButton}
+            >
+              Record
+            </button>
+          )}
+          {!isRunning && (
+            <button
+              className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
+              onClick={async () => {
+                console.log('Start clicked');
+                beatRecorder.savePerformance();
+              }}
+            >
+              Save
+            </button>
+          )}
+          {!isRunning && currentBeat && currentBeat.id && (
+            <button
+              className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
+              onClick={async () => {
+                console.log('Start clicked');
+              }}
+            >
+              {`Replay (${getPerformancesForBeatId(currentBeat.id).length})`}
+            </button>
+          )}
+          {!isRunning && currentBeat && currentBeat.id && (
+            <button
+              className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
+              onClick={async () => {
+                console.log('Start clicked');
+                await deletePerformancesByBeatIdAndUserId({ data: { beatId: currentBeat.id } });
+              }}
+            >
+              {`Delete ${getPerformancesForBeatId(currentBeat.id).length} recordings`}
+            </button>
+          )}
+          <TempoInput />
+          <Metronome beatsPerBar={4} />
+        </div>
+      </div>
     </div>
   );
 };

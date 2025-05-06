@@ -187,6 +187,8 @@ class BeatRecorder extends EventEmitter {
       );
       if (beatNoteFeedback) {
         this.performanceFeedback.beatNoteFeedback.push(beatNoteFeedback);
+        const tempoFeedback = this.performanceFeedback.getTempoFeedback(tempoService.bpm);
+        this.emit('tempoFeedback', tempoFeedback);
       } else {
         console.log('BeatRecorder: handleMidiNote - no match', beatNote);
       }
