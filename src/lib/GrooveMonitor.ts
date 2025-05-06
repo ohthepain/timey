@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { allowedNodeEnvironmentFlags } from 'process';
 import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
@@ -8,6 +9,64 @@ export class PerformanceFeedback {
 
   constructor(beatNoteFeedback: BeatNoteFeedback[] | null) {
     this.beatNoteFeedback = beatNoteFeedback || [];
+  }
+
+  getEffectiveTempo(bpm: number, sliceSize: number): number | null {
+    // Slice off last beatNoteFeedbacks
+    // Go back to at least 4 indexes, and then to the nearest 8th
+    let notes: BeatNoteFeedback[] = [];
+    const lastBeatNum = this.beatNoteFeedback[this.beatNoteFeedback.length - 1].beatNote!.beatNum;
+    const previousBeatNum = lastBeatNum > 0 ? lastBeatNum - 1 : 3;
+    let numNotes = 0;
+    for (let i = this.beatNoteFeedback.length - 1; i >= 0; i--) {
+      const beatNote = this.beatNoteFeedback[i].beatNote;
+      if (beatNote!.beatNum !== lastBeatNum && beatNote!.beatNum !== previousBeatNum) {
+        notes = this.beatNoteFeedback.slice(-numNotes);
+        break;
+      }
+      ++numNotes;
+    }
+
+    if (notes.length === 0) {
+      return null;
+    }
+
+    // get average timingDifferenceMs for the notes
+    const timingDifferenceMs = notes.reduce((sum, feedback) => sum + feedback.timingDifferenceMs, 0) / notes.length;
+
+    const beatLengthMsec = (60000 * 4) / bpm;
+    // const effectiveTimingDifferenceMs = timingDifferenceMs / beatLengthMsec;
+    const effectiveBpm = (60000 * 4) / (beatLengthMsec + timingDifferenceMs);
+    return effectiveBpm;
+  }
+
+  getTempoFeedback(bpm: number): {
+    bpm: number | null;
+    min: number | null;
+    max: number | null;
+    skillLevel: number | null;
+  } {
+    const sliceSize = 4;
+    const effectiveBpm = this.getEffectiveTempo(bpm, sliceSize);
+
+    const gradeSliceSize = 16;
+    const gradeEffectiveBpm = this.getEffectiveTempo(bpm, gradeSliceSize);
+    let gradeMinTempo = null;
+    let gradeMaxTempo = null;
+    let skillLevel = null;
+    if (gradeEffectiveBpm) {
+      const diff = Math.abs(gradeEffectiveBpm - bpm);
+      if (diff < 1) {
+        skillLevel = 0;
+      } else {
+        skillLevel = Math.ceil(Math.log2(diff));
+      }
+      const nearestPowerOf2 = Math.pow(2, skillLevel);
+      gradeMinTempo = bpm - nearestPowerOf2;
+      gradeMaxTempo = bpm + nearestPowerOf2;
+    }
+
+    return { bpm: effectiveBpm, min: gradeMinTempo, max: gradeMaxTempo, skillLevel: skillLevel };
   }
 }
 

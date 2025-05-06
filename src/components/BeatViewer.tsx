@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { Beat } from '~/types/Beat';
 import { Performance } from '~/types/Performance';
 import { Module } from '~/types/Module';
@@ -18,6 +18,7 @@ import { useNavigationStore } from '~/state/NavigationStore';
 import { TempoLadder } from './TempoLadder';
 import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
 import { SignedIn } from '@clerk/tanstack-react-start';
+import { Speedometer } from './Speedometer';
 
 interface BeatViewerProps {
   beat: Beat;
@@ -25,13 +26,32 @@ interface BeatViewerProps {
   beatProgress: BeatProgressView | undefined;
 }
 
+// Returns the color name for a given belt rank (1 = black, 2 = brown, etc)
+function getSkillLevelColor(rank: number): string {
+  const beltColors = [
+    'bg-gray-600',
+    'bg-amber-800',
+    'bg-purple-300',
+    'bg-blue-300',
+    'bg-green',
+    'bg-orange-300',
+    'bg-yellow-300',
+  ];
+  if (rank >= 0 && rank < beltColors.length) {
+    return beltColors[rank];
+  } else {
+    return 'bg-white';
+  }
+}
+
 export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(beat.name);
   const [performances, setPerformances] = useState<Performance[]>([]);
+  const [tempoFeedback, setTempoFeedback] = useState<any>(null);
+  const [measuredBpm, setMeasuredBpm] = useState(0);
+  const [bgColor, setBgColor] = useState<string>('bg-white');
   const { currentBeat, currentPerformance, cachePerformance } = useNavigationStore();
-
-  console.log('BeatViewer: beat', beat.toJSON());
 
   const router = useRouter();
 
@@ -69,6 +89,25 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
     }
   };
 
+  const beatRecorder_tempoFeedback = (tempoFeedback: any) => {
+    setTempoFeedback(tempoFeedback);
+    setMeasuredBpm(tempoFeedback.bpm);
+    const bgColor = getSkillLevelColor(tempoFeedback.skillLevel);
+    setBgColor(bgColor);
+  };
+
+  useEffect(() => {
+    console.log('BeatViewer: useEffect: bgColor', bgColor);
+  }, [bgColor]);
+
+  useEffect(() => {
+    beatRecorder.on('tempoFeedback', beatRecorder_tempoFeedback);
+
+    return () => {
+      beatRecorder.off('tempoFeedback', beatRecorder_tempoFeedback);
+    };
+  }, []);
+
   useEffect(() => {
     const fetchBeatProgress = async () => {
       if (beat.id) {
@@ -87,6 +126,19 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   return (
     <div>
       <div className="flex flex-col justify-between items-center">
+        <div className="flex flex-row items-center justify-between w-full">
+          <div>{tempoFeedback?.min || '-'}</div>
+          <div>{measuredBpm ? measuredBpm.toFixed(1) : '-'}</div>
+          <div>{tempoFeedback?.max || '-'}</div>
+        </div>
+        <div className={'w-full h-32 shadow-sm'}>
+          <Speedometer
+            min={tempoFeedback?.min || 100}
+            max={tempoFeedback?.max || 140}
+            value={tempoFeedback?.bpm || 120}
+            bgColor={bgColor}
+          />
+        </div>
         <div className="flex flex-row w-full">
           <div className="flex-col items-center w-full">
             <div className="flex flex-row items-center ">
