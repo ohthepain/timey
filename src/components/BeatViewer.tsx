@@ -29,17 +29,16 @@ interface BeatViewerProps {
 // Returns the color name for a given belt rank (1 = black, 2 = brown, etc)
 function getSkillLevelColor(rank: number): string {
   const beltColors = [
-    'bg-grey-600', // 1
-    'bg-amber-800', // 2
-    'bg-purple-300', // 3
-    'bg-blue-300', // 4
-    'bg-green', // 5
-    'bg-orange-300', // 6
-    'bg-yellow-300', // 7
-    'bg-white', // 8
+    'bg-gray-600',
+    'bg-amber-800',
+    'bg-purple-300',
+    'bg-blue-300',
+    'bg-green',
+    'bg-orange-300',
+    'bg-yellow-300',
   ];
-  if (rank > 0 || rank < beltColors.length) {
-    return beltColors[rank - 1];
+  if (rank >= 0 && rank < beltColors.length) {
+    return beltColors[rank];
   } else {
     return 'bg-white';
   }
