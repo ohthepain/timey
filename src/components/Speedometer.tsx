@@ -1,6 +1,4 @@
 import { useRef, useEffect, useState } from 'react';
-import { b } from 'vitest/dist/chunks/suite.d.FvehnV49.js';
-import { set } from 'zod';
 import { circleCenterAndArc, getPointOnCircle } from '~/utils/circleCenter';
 
 type SpeedometerProps = {
@@ -16,6 +14,32 @@ export const Speedometer = (props: SpeedometerProps) => {
   const [strokeWidth, setStrokeWidth] = useState(0);
   const [pointOnCircle, setPointOnCircle] = useState({ x: 0, y: 0 });
   const [bgColor, setBgColor] = useState('bg-gray-200');
+  const [animatedValue, setAnimatedValue] = useState(props.value);
+
+  // Animate displayed value toward props.value at ~30fps
+  useEffect(() => {
+    let frame: number;
+    const fps = 30;
+    const interval = 1000 / fps;
+    let lastTime = performance.now();
+
+    function animate(now: number) {
+      const elapsed = now - lastTime;
+      if (elapsed >= interval) {
+        lastTime = now;
+        setAnimatedValue((prev) => {
+          // Smoothly approach props.value
+          const diff = props.value - prev;
+          if (Math.abs(diff) < 0.01) return props.value;
+          // Move a fraction toward the target (lerp)
+          return prev + diff * 0.2;
+        });
+      }
+      frame = requestAnimationFrame(animate);
+    }
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [props.value]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -46,14 +70,8 @@ export const Speedometer = (props: SpeedometerProps) => {
       });
 
       const radius = arc.y;
-      // console.log('arc.arc', arc.arc);
-      // console.log(`(${props.value} - ${props.min}) / (${props.max} - ${props.min})`);
-      const radians = Math.PI / 2 - arc.arc / 2 + ((props.value - props.min) / (props.max - props.min)) * arc.arc; // + arc.arc / 2; // - Math.PI / 2;
-      // console.log('radians', radians);
-      // console.log('cos', Math.cos(radians));
-      // console.log('sin', Math.sin(radians));
+      const radians = Math.PI / 2 - arc.arc / 2 + ((animatedValue - props.min) / (props.max - props.min)) * arc.arc;
       const pt = getPointOnCircle(arc.x, arc.y + strokeWidth * 2, -radius, radians);
-      // console.log('pt', pt);
 
       setPointOnCircle(pt);
     }
@@ -65,7 +83,7 @@ export const Speedometer = (props: SpeedometerProps) => {
     observer.observe(svg);
 
     return () => observer.disconnect();
-  }, [props]);
+  }, [props, animatedValue]);
 
   return (
     <div className={bgColor}>
