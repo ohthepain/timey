@@ -52,9 +52,14 @@ export class Beat {
     return totalBeats * beatDurationMsec;
   }
 
+  static loopedTimeDiff(timeMsec: number, beatNoteTime: number, loopLengthMsec: number): number {
+    const forwardDiff = (beatNoteTime - timeMsec + loopLengthMsec) % loopLengthMsec;
+    const backwardDiff = (timeMsec - beatNoteTime + loopLengthMsec) % loopLengthMsec;
+    return Math.min(forwardDiff, backwardDiff);
+  }
+
   findClosestBeatNoteIndex(noteStringOrMidi: string | number, timeMsec: number, bpm: number): number {
     let isDrumEquivalent = (a: string, b: string) => {
-      // console.log('Beat.findClosestBeatNoteIndex: isDrumEquivalent', a, b);
       if (a === b) return true;
       if ((b === '35' || b === '36') && a.includes('kick')) return true;
       if ((b === '38' || b === '40') && a.includes('snare')) return true;
@@ -63,39 +68,19 @@ export class Beat {
     };
 
     const loopLengthMsec = this.getLoopLengthMsec(bpm);
-    const positionTime = timeMsec % loopLengthMsec;
     let targetNoteString = typeof noteStringOrMidi === 'number' ? String(noteStringOrMidi) : noteStringOrMidi;
 
-    // console.log('Beat.findClosestBeatNoteIndex: ', noteStringOrMidi, timeMsec, bpm);
     let closest: BeatNote | null = null;
     let minDiff = Infinity;
+
     for (const beatNote of this.beatNotes) {
       if (!isDrumEquivalent(beatNote.noteString, targetNoteString)) {
         continue;
       }
 
       const beatNoteTime = beatNote.getTimeMsec(bpm);
-      let diff = Math.abs(beatNoteTime - positionTime);
-
-      // Normal case
+      const diff = Beat.loopedTimeDiff(timeMsec, beatNoteTime, loopLengthMsec);
       if (diff < minDiff) {
-        // console.log('Beat.findClosestBeatNoteIndex: matched NORMAL', noteStringOrMidi, timeMsec, bpm);
-        minDiff = diff;
-        closest = beatNote;
-      }
-
-      // Special case: beatnote at start of beat is played early, closer to the end of the loop
-      diff = Math.abs(beatNoteTime + loopLengthMsec - positionTime);
-      if (diff < minDiff) {
-        // console.log('Beat.findClosestBeatNoteIndex: matched EARLY', noteStringOrMidi, timeMsec, bpm);
-        minDiff = diff;
-        closest = beatNote;
-      }
-
-      // Special case: if the beat note at end of loop is played late, at start of loop
-      diff = Math.abs(beatNoteTime - loopLengthMsec - positionTime);
-      if (diff < minDiff) {
-        // console.log('Beat.findClosestBeatNoteIndex: matched LATE', noteStringOrMidi, timeMsec, bpm);
         minDiff = diff;
         closest = beatNote;
       }

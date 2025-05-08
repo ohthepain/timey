@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { ScoreView } from '~/components/ScoreView2';
+import { ScoreView } from '~/components/ScoreView';
 import { Transport } from '~/components/Transport';
 import { Beat } from '~/types/Beat';
 import { getBeatByNameServerFn } from '~/services/beatService.server';

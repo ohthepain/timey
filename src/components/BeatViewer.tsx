@@ -10,7 +10,7 @@ import {
 } from '~/services/userProgressServerService.server';
 import { useRouter } from '@tanstack/react-router';
 import { copyBeatServerFn, deleteBeatServerFn } from '~/services/beatService.server';
-import { ScoreView } from '~/components/ScoreView2';
+import { ScoreView } from '~/components/ScoreView';
 import { Transport } from './Transport';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { beatRecorder } from '~/lib/BeatRecorder';
@@ -19,6 +19,10 @@ import { TempoLadder } from './TempoLadder';
 import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
 import { SignedIn } from '@clerk/tanstack-react-start';
 import { Speedometer } from './Speedometer';
+import { tempoService } from '~/lib/MidiSync/TempoService';
+
+const boxStyle =
+  'text-amber-800 px-2 py-1 w-16 rounded bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm text-center';
 
 interface BeatViewerProps {
   beat: Beat;
@@ -47,10 +51,11 @@ function getSkillLevelColor(rank: number): string {
 export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(beat.name);
-  const [performances, setPerformances] = useState<Performance[]>([]);
   const [tempoFeedback, setTempoFeedback] = useState<any>(null);
   const [measuredBpm, setMeasuredBpm] = useState(0);
   const [bgColor, setBgColor] = useState<string>('bg-white');
+  const [gradeMinTempo, setGradeMinTempo] = useState(0);
+  const [gradeMaxTempo, setGradeMaxTempo] = useState(240);
   const { currentBeat, currentPerformance, cachePerformance } = useNavigationStore();
 
   const router = useRouter();
@@ -91,9 +96,17 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
 
   const beatRecorder_tempoFeedback = (tempoFeedback: any) => {
     setTempoFeedback(tempoFeedback);
+
+    // Set anything we want to react to
     setMeasuredBpm(tempoFeedback.bpm);
-    const bgColor = getSkillLevelColor(tempoFeedback.skillLevel);
+    const bgColor = getSkillLevelColor(tempoFeedback.windowSkillLevel);
     setBgColor(bgColor);
+
+    const nearestPowerOf2 = Math.pow(2, tempoFeedback.windowSkillLevel);
+    const gradeMinTempo = tempoService.bpm - nearestPowerOf2 * 2;
+    const gradeMaxTempo = tempoService.bpm + nearestPowerOf2 * 2;
+    setGradeMinTempo(gradeMinTempo);
+    setGradeMaxTempo(gradeMaxTempo);
   };
 
   useEffect(() => {
@@ -126,19 +139,6 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   return (
     <div>
       <div className="flex flex-col justify-between items-center">
-        <div className="flex flex-row items-center justify-between w-full">
-          <div>{tempoFeedback?.min || '-'}</div>
-          <div>{measuredBpm ? measuredBpm.toFixed(1) : '-'}</div>
-          <div>{tempoFeedback?.max || '-'}</div>
-        </div>
-        <div className={'w-full h-32 shadow-sm'}>
-          <Speedometer
-            min={tempoFeedback?.min || 100}
-            max={tempoFeedback?.max || 140}
-            value={tempoFeedback?.bpm || 120}
-            bgColor={bgColor}
-          />
-        </div>
         <div className="flex flex-row w-full">
           <div className="flex-col items-center w-full">
             <div className="flex flex-row items-center ">
@@ -184,15 +184,32 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
             </div>
           </div>
         </div>
+        {currentBeat === beat && (
+          <div className={'w-full shadow-sm'}>
+            <div className="flex flex-row items-center justify-between w-full">
+              <div className={boxStyle}>{gradeMinTempo || '...'}</div>
+              <div className={boxStyle}>{tempoFeedback?.bpm ? tempoFeedback?.bpm.toFixed(1) : '...'}</div>
+              <div className={boxStyle}>{gradeMaxTempo || '...'}</div>
+            </div>
+            <div className="">
+              <Speedometer
+                min={gradeMinTempo}
+                max={gradeMaxTempo}
+                value={tempoFeedback?.bpm || 120}
+                instantValue={tempoFeedback?.lastNoteEffectiveTempo || 120}
+                bgColor={bgColor}
+              />
+            </div>
+          </div>
+        )}
         <div
-          className="w-full"
           onClick={async () => {
             await startBeatServerFn({ data: { beatId: beat.id } });
             beatPlayer.setBeat(beat);
             beatRecorder.setBeat(beat);
           }}
         >
-          <div className="flex flex-row items-center">
+          <div className="flex flex-row items-center mt-4">
             <TempoLadder
               tempos={[140, 120, 100, 90]}
               currentTempo={beatProgress?.bestTempo || 0}
@@ -200,7 +217,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                 await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
               }}
             />
-            <ScoreView beat={beat} performanceFeedback={undefined} />
+            <ScoreView beat={beat} />
           </div>
         </div>
       </div>
