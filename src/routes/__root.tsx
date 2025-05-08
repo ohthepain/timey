@@ -172,15 +172,6 @@ function RootComponent() {
               >
                 Deferred
               </Link>
-              <Link
-                // @ts-expect-error
-                to="/this-route-does-not-exist"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                This Route Does Not Exist
-              </Link>
             </div>
 
             {/* Right-aligned buttons */}

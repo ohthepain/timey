@@ -1,4 +1,4 @@
-import { use, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Beat } from '~/types/Beat';
 import { Performance } from '~/types/Performance';
 import { Module } from '~/types/Module';
@@ -56,7 +56,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [bgColor, setBgColor] = useState<string>('bg-white');
   const [gradeMinTempo, setGradeMinTempo] = useState(0);
   const [gradeMaxTempo, setGradeMaxTempo] = useState(240);
-  const { currentBeat, currentPerformance, cachePerformance } = useNavigationStore();
+  const { currentBeat, enableAdmin, cachePerformance } = useNavigationStore();
 
   // Update name when beat changes
   useEffect(() => {
@@ -152,35 +152,37 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
         <div className="flex flex-row w-full">
           <div className="flex-col items-center w-full">
             <div className="flex flex-row items-center ">
-              <div className="font-semibold text-xl mx-4 ">{name}</div>
+              <div className="font-semibold text-3xl mx-4 ">{name}</div>
               {currentBeat === beat && <Transport />}
               <SignedIn>
-                <div className="flex justify-end space-between">
-                  <button
-                    onClick={handleEditBeat}
-                    className="text-green-700 px-2 mx-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
-                    title="Edit"
-                  >
-                    {isEditing ? 'Cancel' : 'Edit'}
-                  </button>
-                  <button
-                    onClick={handleCopyBeat}
-                    className="text-blue-700 px-2 mx-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
-                    title="Copy"
-                  >
-                    Copy
-                  </button>
-                  <button
-                    onClick={async () => {
-                      handleDeleteBeat(beat.id!);
-                      router.invalidate();
-                    }}
-                    className="text-red-700 px-2 mx-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
-                    title="Delete"
-                  >
-                    Delete
-                  </button>
-                </div>
+                {enableAdmin && (
+                  <div className="flex justify-end space-between">
+                    <button
+                      onClick={handleEditBeat}
+                      className="text-green-700 px-2 mx-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
+                      title="Edit"
+                    >
+                      {isEditing ? 'Cancel' : 'Edit'}
+                    </button>
+                    <button
+                      onClick={handleCopyBeat}
+                      className="text-blue-700 px-2 mx-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
+                      title="Copy"
+                    >
+                      Copy
+                    </button>
+                    <button
+                      onClick={async () => {
+                        handleDeleteBeat(beat.id!);
+                        router.invalidate();
+                      }}
+                      className="text-red-700 px-2 mx-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+                      title="Delete"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </SignedIn>
             </div>
           </div>
@@ -210,7 +212,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
             beatRecorder.setBeat(beat);
           }}
         >
-          <div className="flex flex-row items-center mt-4">
+          <div className="flex flex-row items-center mx-4">
             <TempoLadder
               tempos={[140, 120, 100, 90]}
               currentTempo={beatProgress?.bestTempo || 0}
