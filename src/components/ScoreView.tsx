@@ -5,8 +5,7 @@ import { beatPlayer } from '~/lib/BeatPlayer';
 import { NoteEntry } from '~/lib/ParseBeat';
 import { Beat } from '~/types/Beat';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { BeatNoteFeedback, PerformanceFeedback } from '~/lib/PerformanceFeedback';
-import { tempoService } from '~/lib/MidiSync/TempoService';
+import { BeatNoteFeedback } from '~/lib/PerformanceFeedback';
 import { beatRecorder } from '~/lib/BeatRecorder';
 import { BeatNote } from '~/types/BeatNote';
 
@@ -266,7 +265,7 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
   };
 
   const beatRecorder_beatNote = (beatNote: BeatNote, beatNoteFeedback: BeatNoteFeedback | undefined) => {
-    console.log('beatRecorder_beatNote', useNavigationStore.getState().currentBeat);
+    // console.log('beatRecorder_beatNote', useNavigationStore.getState().currentBeat);
     if (useNavigationStore.getState().currentBeat !== beat) {
       return;
     }
