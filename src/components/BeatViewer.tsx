@@ -58,6 +58,11 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [gradeMaxTempo, setGradeMaxTempo] = useState(240);
   const { currentBeat, currentPerformance, cachePerformance } = useNavigationStore();
 
+  // Update name when beat changes
+  useEffect(() => {
+    setName(beat.name);
+  }, [beat.name]);
+
   const router = useRouter();
 
   const handleDeleteBeat = async (beatId: string) => {
@@ -72,8 +77,13 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
 
   const handleCopyBeat = async () => {
     try {
-      await copyBeatServerFn({ data: { id: beat.id } });
-      router.invalidate();
+      const newBeat = await copyBeatServerFn({ data: { id: beat.id } });
+      if (newBeat) {
+        // Update the current beat with the new one
+        useNavigationStore.getState().setCurrentBeat(new Beat(newBeat));
+        // Refresh the router to update the UI
+        router.invalidate();
+      }
     } catch (error) {
       console.error('Error copying beat:', error);
       alert('Failed to copy beat');
@@ -142,29 +152,20 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
         <div className="flex flex-row w-full">
           <div className="flex-col items-center w-full">
             <div className="flex flex-row items-center ">
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="input-field px-4 py-2 border rounded w-full"
-                />
-              ) : (
-                <div className="font-semibold">{name}</div>
-              )}
+              <div className="font-semibold text-xl mx-4 ">{name}</div>
               {currentBeat === beat && <Transport />}
               <SignedIn>
                 <div className="flex justify-end space-between">
                   <button
                     onClick={handleEditBeat}
-                    className="text-green-700 px-2 m-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
+                    className="text-green-700 px-2 mx-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
                     title="Edit"
                   >
-                    Edit
+                    {isEditing ? 'Cancel' : 'Edit'}
                   </button>
                   <button
                     onClick={handleCopyBeat}
-                    className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
+                    className="text-blue-700 px-2 mx-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
                     title="Copy"
                   >
                     Copy
@@ -174,7 +175,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                       handleDeleteBeat(beat.id!);
                       router.invalidate();
                     }}
-                    className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+                    className="text-red-700 px-2 mx-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
                     title="Delete"
                   >
                     Delete

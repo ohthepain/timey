@@ -21,18 +21,20 @@ export const moduleRepository = {
             beatNotes: true,
           },
         },
+        method: true,
       },
     });
     return data ? new Module(data) : null;
   },
 
   async createModule(data: Omit<Module, 'id' | 'createdAt' | 'modifiedAt'>): Promise<Module> {
-    const d = await prisma.module.create({ data: { ...data, beats: { create: [] } } });
+    const { method, ...moduleData } = data;
+    const d = await prisma.module.create({ data: { ...moduleData, beats: { create: [] } } });
     return new Module(d);
   },
 
   async updateModule(data: Partial<Omit<Module, 'createdAt' | 'modifiedAt'>>): Promise<Module> {
-    const { id, ...updateData } = data;
+    const { id, method, ...updateData } = data;
     const m = await prisma.module.update({ where: { id }, data: updateData });
     return new Module(m);
   },

@@ -26,7 +26,7 @@ export class Module {
     this.beats = data.beats ? data.beats.map((b: any) => new Beat(b)) : [];
   }
 
-  toJSON() {
+  toJSON(): any {
     return {
       id: this.id,
       title: this.title,
@@ -36,8 +36,8 @@ export class Module {
       createdAt: this.createdAt,
       modifiedAt: this.modifiedAt,
       methodId: this.methodId,
+      method: this.method ? this.method.toJSON() : null,
       beats: this.beats ? this.beats.map((b) => b.toJSON()) : [],
-      // this.method: this.method ? this.method.toJSON() : null,
     };
   }
 }

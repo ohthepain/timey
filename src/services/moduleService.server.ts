@@ -14,7 +14,12 @@ export const getModuleByIdServerFn = createServerFn({ method: 'GET', response: '
   .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async (ctx) => {
     const data = await moduleRepository.getModuleById(ctx.data.id);
-    return new Module(data).toJSON();
+    if (!data) return null;
+    const module = new Module(data);
+    return {
+      ...module.toJSON(),
+      method: data.method,
+    };
   });
 
 const createModuleServerFnArgs = z.object({

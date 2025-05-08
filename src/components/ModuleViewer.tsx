@@ -4,6 +4,7 @@ import { BeatProgressView } from '~/services/userProgressServerService.server';
 import { BeatViewer } from './BeatViewer';
 import { Beat } from '~/types/Beat';
 import { BeatEditor } from './BeatEditor';
+import { Link } from '@tanstack/react-router';
 
 export interface ModuleProps {
   module: Module;
@@ -19,25 +20,31 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
     return map;
   });
 
+  // Sort beats by index
+  const sortedBeats = module.beats ? [...module.beats].sort((a, b) => a.index - b.index) : [];
+
   return (
     <div className="module-page flex flex-col items-start">
       <div className="flex-1">
-        <h1 className="text-3xl font-bold mb-4 align-middle text-center">{module.title}</h1>
+        <div className="module-header mb-4 text-center">
+          {module.method && (
+            <h2 className="font-medium text-gray-500 mb-1 text-xl">
+              <Link to="/method/$id" params={{ id: module.method.id }} className="hover:underline">
+                {module.method.title}
+              </Link>
+            </h2>
+          )}
+          <h1 className="text-3xl font-bold m-4">{module.title}</h1>
+        </div>
         <div className="mt-4">
-          {module.beats && module.beats.length > 0 ? (
-            <ul className="">
-              {module.beats.map((beat: Beat) => (
-                <li key={beat.id} className="">
-                  <BeatViewer
-                    beat={beat}
-                    beatProgress={beat.id ? beatProgressMap.get(beat.id) : undefined}
-                    module={module}
-                  />
-                </li>
+          {sortedBeats.length > 0 ? (
+            <div className="space-y-4">
+              {sortedBeats.map((beat) => (
+                <BeatViewer key={beat.id} beat={beat} module={module} beatProgress={beatProgressMap.get(beat.id!)} />
               ))}
-            </ul>
+            </div>
           ) : (
-            <p className="text-gray-500">No beats available for this module.</p>
+            <p className="text-gray-500">No beats yet. Add your first beat!</p>
           )}
         </div>
       </div>

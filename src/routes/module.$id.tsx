@@ -14,6 +14,7 @@ export const loader = async ({ params }: { params: { id: string } }) => {
 
   console.log(`module.id.loader for module ID: ${moduleId}`);
   const moduleJson = await getModuleByIdServerFn({ data: { id: moduleId } });
+  console.log('module.id.loader: moduleJson:', moduleJson);
   if (!moduleJson) {
     throw new Error('module.id.loader: Module not found');
   }
@@ -42,6 +43,7 @@ export const Route = createFileRoute('/module/$id')({
 function ModulePage() {
   const { moduleJson, beatProgress } = Route.useLoaderData();
   const module = new Module(moduleJson);
+  console.log('ModulePage:', moduleJson);
 
   return (
     <div className="p-8">
