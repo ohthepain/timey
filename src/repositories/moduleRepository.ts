@@ -34,8 +34,14 @@ export const moduleRepository = {
   },
 
   async updateModule(data: Partial<Omit<Module, 'createdAt' | 'modifiedAt'>>): Promise<Module> {
-    const { id, method, ...updateData } = data;
-    const m = await prisma.module.update({ where: { id }, data: updateData });
+    const { id, method, beats, ...updateData } = data;
+    const m = await prisma.module.update({
+      where: { id },
+      data: {
+        ...updateData,
+        methodId: method?.id || undefined,
+      },
+    });
     return new Module(m);
   },
 
