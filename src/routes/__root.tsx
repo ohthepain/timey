@@ -18,7 +18,7 @@ import { useState, useEffect } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
 import { saveLastUrl, getLastUrl } from '~/utils/urlPersistence';
-import { useNavigationStore } from '~/state/NavigationStore';
+import { usePersistedStore } from '~/state/PersistedStore';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -74,7 +74,7 @@ function RootComponent() {
   const router = useRouter();
   const isInitialLoad = useRef(true);
   const { navigate } = useRouter();
-  const { enableAdmin, setAdmin } = useNavigationStore();
+  const { enableAdmin, setAdmin } = usePersistedStore();
 
   // Check for saved URL on initial load
   useEffect(() => {

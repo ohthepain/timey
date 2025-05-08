@@ -15,6 +15,7 @@ import { Transport } from './Transport';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { beatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
+import { usePersistedStore } from '~/state/PersistedStore';
 import { TempoLadder } from './TempoLadder';
 import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
 import { SignedIn } from '@clerk/tanstack-react-start';
@@ -56,7 +57,8 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [bgColor, setBgColor] = useState<string>('bg-white');
   const [gradeMinTempo, setGradeMinTempo] = useState(0);
   const [gradeMaxTempo, setGradeMaxTempo] = useState(240);
-  const { currentBeat, enableAdmin, cachePerformance } = useNavigationStore();
+  const { currentBeat, cachePerformance } = useNavigationStore();
+  const { enableAdmin } = usePersistedStore();
 
   // Update name when beat changes
   useEffect(() => {
