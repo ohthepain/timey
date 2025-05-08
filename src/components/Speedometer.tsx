@@ -6,6 +6,7 @@ type SpeedometerProps = {
   max: number;
   value: number;
   bgColor?: string;
+  instantValue?: number;
 };
 
 export const Speedometer = (props: SpeedometerProps) => {
@@ -13,6 +14,7 @@ export const Speedometer = (props: SpeedometerProps) => {
   const [size, setSize] = useState({ width: 0, height: 0, cx: 0, cy: 0, r: 1, arcRadians: 0 });
   const [strokeWidth, setStrokeWidth] = useState(0);
   const [pointOnCircle, setPointOnCircle] = useState({ x: 0, y: 0 });
+  const [pointOnCircleInstant, setPointOnCircleInstant] = useState({ x: 0, y: 0 });
   const [bgColor, setBgColor] = useState('bg-gray-200');
   const [animatedValue, setAnimatedValue] = useState(props.value);
 
@@ -70,10 +72,17 @@ export const Speedometer = (props: SpeedometerProps) => {
       });
 
       const radius = arc.y;
-      const radians = Math.PI / 2 - arc.arc / 2 + ((animatedValue - props.min) / (props.max - props.min)) * arc.arc;
-      const pt = getPointOnCircle(arc.x, arc.y + strokeWidth * 2, -radius, radians);
+      let radians = Math.PI / 2 - arc.arc / 2 + ((animatedValue - props.min) / (props.max - props.min)) * arc.arc;
+      let pt = getPointOnCircle(arc.x, arc.y + strokeWidth * 2, -radius, radians);
 
       setPointOnCircle(pt);
+
+      if (props.instantValue) {
+        radians = Math.PI / 2 - arc.arc / 2 + ((props.instantValue - props.min) / (props.max - props.min)) * arc.arc;
+        pt = getPointOnCircle(arc.x, arc.y + strokeWidth * 2, -radius, radians);
+      }
+
+      setPointOnCircleInstant(pt);
     }
 
     setBgColor(props.bgColor || 'bg-gray-200');
@@ -89,6 +98,17 @@ export const Speedometer = (props: SpeedometerProps) => {
     <div className={bgColor}>
       <svg ref={svgRef} width="100%" height="100%">
         <circle cx={size.cx} cy={size.cy} r={size.r} fill="none" stroke="gray" strokeWidth={strokeWidth} />
+        {props.instantValue && (
+          <line
+            x1={size.cx}
+            y1={size.cy}
+            x2={pointOnCircleInstant.x}
+            y2={pointOnCircleInstant.y}
+            stroke="white"
+            strokeWidth={8}
+            strokeLinecap="round"
+          />
+        )}
         <line
           x1={size.cx}
           y1={size.cy}

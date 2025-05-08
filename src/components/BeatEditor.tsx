@@ -5,7 +5,7 @@ import { Module } from '~/types/Module';
 import { BarDefEditor } from '~/components/BarDefEditor';
 import { BeatSource, BarSource } from '~/types/BarSource';
 import { createBeatSourceFromBeat, ParseBeatSource, ParseBeatString } from '~/lib/ParseBeat';
-import { ScoreView } from '~/components/ScoreView2';
+import { ScoreView } from '~/components/ScoreView';
 import { useRouter } from '@tanstack/react-router';
 
 interface BeatEditorProps {

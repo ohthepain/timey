@@ -5,8 +5,7 @@ import { beatPlayer } from '~/lib/BeatPlayer';
 import { NoteEntry } from '~/lib/ParseBeat';
 import { Beat } from '~/types/Beat';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { BeatNoteFeedback, grooveMonitor, PerformanceFeedback } from '~/lib/GrooveMonitor';
-import { tempoService } from '~/lib/MidiSync/TempoService';
+import { BeatNoteFeedback } from '~/lib/PerformanceFeedback';
 import { beatRecorder } from '~/lib/BeatRecorder';
 import { BeatNote } from '~/types/BeatNote';
 
@@ -139,10 +138,9 @@ const plotLegendForNoteWidth = (ctx: RenderContext, x: number, y: number) => {
 
 interface ScoreViewProps {
   beat: Beat;
-  performanceFeedback: PerformanceFeedback | undefined;
 }
 
-export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
+export const ScoreView = ({ beat }: ScoreViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   let context: any;
 
@@ -226,22 +224,6 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
       tupletRecord.tuplet.setContext(context).draw();
     });
 
-    // allNotes.forEach((note) => {
-    //   note.keys.forEach((key) => {
-    //     const beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
-    //       beat,
-    //       key,
-    //       note.getStartTimeMsec(TempoService.bpm),
-    //       100,
-    //       TempoService.bpm
-    //     );
-
-    //     if (beatNoteFeedback) {
-    //       plotMetricsForNote(context, note, beat, beatNoteFeedback, 10);
-    //     }
-    //   });
-    // });
-
     plotLegendForNoteWidth(context, barWidth * 2, 150);
   };
 
@@ -249,54 +231,54 @@ export const ScoreView = ({ beat, performanceFeedback }: ScoreViewProps) => {
     draw();
   }, []);
 
-  const beatPlayer_note = (noteIndex: number) => {
-    if (useNavigationStore.getState().currentBeat !== beat) {
-      return;
-    }
-
-    // setCurrentNoteIndex(noteIndex);
+  const drawNote = (context: RenderContext, noteIndex: number, fillStyle: string) => {
     let note = noteEntries[noteIndex];
     let noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
     if (noteElement) {
       noteElement.remove();
     }
 
-    note.staveNote.setStyle({ fillStyle: 'red', strokeStyle: 'blue' });
+    note.staveNote.setStyle({ fillStyle: fillStyle, strokeStyle: 'blue' });
     note.staveNote.setContext(context).draw();
 
-    const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : noteEntries.length - 1;
-    note = noteEntries[previousNoteIndex];
-    noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
-    if (noteElement) {
-      noteElement.remove();
+    // const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : noteEntries.length - 1;
+    // note = noteEntries[previousNoteIndex];
+    // noteElement = document.querySelector(`[data-id="${note.staveNote.getAttribute('id')}"]`);
+    // if (noteElement) {
+    //   noteElement.remove();
+    // }
+
+    // note.staveNote.setStyle({ fillStyle: 'black', strokeStyle: 'black' });
+    // note.staveNote.setContext(context).draw();
+  };
+
+  const beatPlayer_note = (noteIndex: number) => {
+    if (useNavigationStore.getState().currentBeat !== beat) {
+      return;
     }
 
-    note.staveNote.setStyle({ fillStyle: 'black', strokeStyle: 'black' });
-    note.staveNote.setContext(context).draw();
+    drawNote(context, noteIndex, 'red');
+    const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : noteEntries.length - 1;
+    drawNote(context, previousNoteIndex, 'black');
 
     showNoteBar(context, noteEntries, noteIndex, 150);
-
-    const beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
-      beat,
-      note.keys[0],
-      note.getStartTimeMsec(tempoService.bpm),
-      100,
-      tempoService.bpm
-    );
-
-    if (beatNoteFeedback) {
-      plotMetricsForNote(context, note, beat, beatNoteFeedback, 10);
-    }
   };
 
   const beatRecorder_beatNote = (beatNote: BeatNote, beatNoteFeedback: BeatNoteFeedback | undefined) => {
+    // console.log('beatRecorder_beatNote', useNavigationStore.getState().currentBeat);
     if (useNavigationStore.getState().currentBeat !== beat) {
       return;
     }
 
     if (beatNoteFeedback) {
+      drawNote(context, beatNoteFeedback.index, 'red');
+      const previousNoteIndex = beatNoteFeedback.index > 0 ? beatNoteFeedback.index - 1 : noteEntries.length - 1;
+      drawNote(context, previousNoteIndex, 'black');
+
       let noteEntry = noteEntries[beatNoteFeedback.index];
       plotMetricsForNote(context, noteEntry, beat, beatNoteFeedback, 10);
+
+      showNoteBar(context, noteEntries, beatNoteFeedback.index, 150);
     }
   };
 

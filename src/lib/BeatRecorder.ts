@@ -7,7 +7,7 @@ import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
 import { savePerformanceServerFn, deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { grooveMonitor, PerformanceFeedback } from './GrooveMonitor';
+import { PerformanceFeedback } from './PerformanceFeedback';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(timeMsec: number, bpm: number, referenceTime: number) {
@@ -178,15 +178,8 @@ class BeatRecorder extends EventEmitter {
     var beatNoteFeedback;
     this.performance.notes.push(beatNote);
     if (this.beat) {
-      beatNoteFeedback = grooveMonitor.matchBeatNoteFromPerformance(
-        this.beat,
-        noteString,
-        elapsedMsec,
-        e.velocity || 100,
-        tempoService.bpm
-      );
+      beatNoteFeedback = this.performanceFeedback.addBeatNote(this.beat, noteString, e.velocity || 100);
       if (beatNoteFeedback) {
-        this.performanceFeedback.beatNoteFeedback.push(beatNoteFeedback);
         const tempoFeedback = this.performanceFeedback.getTempoFeedback(tempoService.bpm);
         this.emit('tempoFeedback', tempoFeedback);
       } else {
