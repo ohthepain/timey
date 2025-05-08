@@ -71,9 +71,22 @@ export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data
     const original = await beatRepository.getBeatById(ctx.data.id);
     if (!original) throw new Error('Beat not found');
 
+    // Generate new name based on the original name
+    let newName: string;
+    const match = original.name.match(/(.*?)(\d+)$/);
+    if (match) {
+      // If name ends with a number, increment it
+      const baseName = match[1];
+      const number = parseInt(match[2], 10);
+      newName = `${baseName}${number + 1}`;
+    } else {
+      // Otherwise, prepend "Copy of "
+      newName = `Copy of ${original.name}`;
+    }
+
     // Prepare new beat data
     const newBeatData = {
-      name: original.name + ' (Copy)',
+      name: newName,
       index: original.index + 1,
       authorId: userId,
       moduleId: original.moduleId,
