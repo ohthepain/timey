@@ -1,6 +1,6 @@
-import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router';
+import { useRef } from 'react';
+import { HeadContent, Link, Outlet, Scripts, createRootRoute, useRouter } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
-import * as React from 'react';
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary';
 import { NotFound } from '~/components/NotFound';
 import appCss from '~/styles/app.css?url';
@@ -14,9 +14,10 @@ import {
   // UserButton,
 } from '@clerk/tanstack-react-start';
 import { UserButton } from '@clerk/clerk-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
+import { saveLastUrl, getLastUrl } from '~/utils/urlPersistence';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -29,8 +30,8 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       ...seo({
-        title: 'TanStack Start | Type-Safe, Client-First, Full-Stack React Framework',
-        description: `TanStack Start is a type-safe, client-first, full-stack React framework. `,
+        title: 'themethod.live',
+        description: `TheMethod is the fastest way to learn drums on your TD-27. `,
       }),
     ],
     links: [
@@ -58,9 +59,10 @@ export const Route = createRootRoute({
   }),
   errorComponent: (props) => {
     return (
-      <RootDocument>
+      <>
+        <RootComponent />
         <DefaultCatchBoundary {...props} />
-      </RootDocument>
+      </>
     );
   },
   notFoundComponent: () => <NotFound />,
@@ -68,14 +70,37 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
-  return (
-    <RootDocument>
-      <Outlet />
-    </RootDocument>
-  );
-}
+  const router = useRouter();
+  const isInitialLoad = useRef(true);
+  const { navigate } = useRouter();
 
-function RootDocument({ children }: { children: React.ReactNode }) {
+  // Check for saved URL on initial load
+  useEffect(() => {
+    const unsubscribe = router.subscribe('onResolved', () => {
+      if (isInitialLoad.current) {
+        isInitialLoad.current = false;
+        const lastUrl = getLastUrl();
+        if (lastUrl && lastUrl !== window.location.pathname) {
+          navigate({ to: lastUrl });
+        }
+      } else {
+        saveLastUrl(router.state.location.pathname);
+      }
+    });
+
+    const lastUrl = getLastUrl();
+    if (lastUrl && lastUrl !== window.location.pathname) {
+      navigate({ to: lastUrl });
+    }
+
+    return unsubscribe;
+  }, []);
+
+  // const lastUrl = getLastUrl();
+  // if (lastUrl && lastUrl !== window.location.pathname) {
+  //   navigate({ to: lastUrl });
+  // }
+
   const [showMidiPopup, setShowMidiPopup] = useState(false);
   const [showMetronomeSettings, setShowMetronomeSettings] = useState(false);
   return (
@@ -225,7 +250,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           )}
-          {children}
+          <Outlet />
           <TanStackRouterDevtools position="bottom-right" />
           <Scripts />
         </body>
