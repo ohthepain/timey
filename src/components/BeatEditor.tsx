@@ -37,6 +37,8 @@ export const BeatEditor = (props: BeatEditorProps) => {
   const [beatSource, setBeatSource] = useState<BeatSource>(createBeatSourceFromBeat(beat));
   const [tempBeat, setTempBeat] = useState<Beat>(beat || makeTempBeat(module.id));
   const [error, setError] = useState<string | null>(null);
+  const [showNameDialog, setShowNameDialog] = useState(false);
+  const [tempName, setTempName] = useState('');
 
   const router = useRouter();
 
@@ -46,9 +48,9 @@ export const BeatEditor = (props: BeatEditorProps) => {
   const accentStr = 'a,,a,,a,,a,';
 
   const handleSave = async () => {
-    console.log(`Saving beat: index ${index}`);
     if (!name.trim()) {
-      setError('Name is required');
+      setTempName('');
+      setShowNameDialog(true);
       return;
     }
 
@@ -72,6 +74,14 @@ export const BeatEditor = (props: BeatEditorProps) => {
     } catch (err) {
       console.error('Error adding beat:', err);
       setError('Failed to add beat');
+    }
+  };
+
+  const handleNameSubmit = () => {
+    if (tempName.trim()) {
+      setName(tempName);
+      setShowNameDialog(false);
+      handleSave();
     }
   };
 
@@ -127,6 +137,26 @@ export const BeatEditor = (props: BeatEditorProps) => {
           </div>
         ))}
         <div className="flex flex-col">
+          <div className="mb-4 m-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-4 py-2 border rounded"
+              placeholder="Enter beat name"
+            />
+          </div>
+          <div className="mb-4 m-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Index</label>
+            <input
+              type="number"
+              value={index}
+              onChange={(e) => setIndex(parseInt(e.target.value) || 0)}
+              className="w-full px-4 py-2 border rounded"
+              placeholder="Enter beat index"
+            />
+          </div>
           <button
             onClick={addBarDef}
             className="btn btn-add bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mb-4 m-2"
@@ -148,6 +178,37 @@ export const BeatEditor = (props: BeatEditorProps) => {
         </div>
       </div>
       <ScoreView beat={tempBeat} />
+
+      {/* Name Input Dialog */}
+      {showNameDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Enter Beat Name</h3>
+            <input
+              type="text"
+              value={tempName}
+              onChange={(e) => setTempName(e.target.value)}
+              className="w-full px-4 py-2 border rounded mb-4"
+              placeholder="Enter beat name"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowNameDialog(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleNameSubmit}
+                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

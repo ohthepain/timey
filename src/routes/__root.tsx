@@ -18,6 +18,7 @@ import { useState, useEffect } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
 import { saveLastUrl, getLastUrl } from '~/utils/urlPersistence';
+import { useNavigationStore } from '~/state/NavigationStore';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -73,6 +74,7 @@ function RootComponent() {
   const router = useRouter();
   const isInitialLoad = useRef(true);
   const { navigate } = useRouter();
+  const { enableAdmin, setAdmin } = useNavigationStore();
 
   // Check for saved URL on initial load
   useEffect(() => {
@@ -170,19 +172,17 @@ function RootComponent() {
               >
                 Deferred
               </Link>
-              <Link
-                // @ts-expect-error
-                to="/this-route-does-not-exist"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                This Route Does Not Exist
-              </Link>
             </div>
 
             {/* Right-aligned buttons */}
             <div className="flex gap-2 items-center">
+              <button
+                className={`text-${enableAdmin ? 'blue' : 'gray'}-700 px-2 py-1 rounded hover:bg-${enableAdmin ? 'blue' : 'gray'}-200 border-${enableAdmin ? 'blue' : 'gray'}-600 border-2 rounded-e-md text-sm`}
+                onClick={() => setAdmin(!enableAdmin)}
+                title="Toggle Admin Mode"
+              >
+                Admin
+              </button>
               <button
                 className="text-amber-800 px-2 py-1 rounded hover:bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm"
                 onClick={() => setShowMetronomeSettings(true)}
