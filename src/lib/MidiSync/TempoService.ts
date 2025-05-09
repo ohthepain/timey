@@ -23,6 +23,7 @@ class TempoService {
   isRunning: boolean = false;
   isPlaying: boolean = false;
   isRecording: boolean = false;
+  isSimulatedTimerForTesting: boolean = false;
   time: number = 0;
   startTime: number = 0;
   elapsedMsec: number = 0;
@@ -44,29 +45,57 @@ class TempoService {
     this.intervalId = null;
   }
 
-  startIntervalTimer() {
+  private getTime() {
+    if (this.isSimulatedTimerForTesting) {
+      return this.time;
+    }
+    return WebMidi.time;
+  }
+
+  prepareIntervalTimer() {
     this.stopIntervalTimer();
     const pps = this.bpm * this.ppqn;
     this.midiClockPulseInterval = (60 * 1000) / pps;
 
-    this.time = WebMidi.time;
+    this.time = this.getTime();
     this.startTime = this.time;
     this.nextPulseNum = 0;
+  }
 
-    this.handleInterval();
-    // fakeMidiClockTimerResolution - timer faster than clock pulse to reduce jitter
-    this.fakeMidiClockTimerResolution = usePreferencesStore.getState().fakeMidiClockTimerResolution || 4;
-    this.intervalId = setInterval(this.handleInterval, this.midiClockPulseInterval / this.fakeMidiClockTimerResolution);
+  startSimulatedIntervalTimerForTesting() {
+    this.isSimulatedTimerForTesting = true;
+    this.time = this.getTime();
+    this.startTime = this.time;
+  }
+
+  startIntervalTimer() {
+    this.prepareIntervalTimer();
+    this.isSimulatedTimerForTesting = false;
   }
 
   continueIntervalTimer() {
-    if (!this.intervalId) {
-      this.startIntervalTimer();
+    if (!this.isSimulatedTimerForTesting) {
+      if (!this.intervalId) {
+        this.handleIntervalTimer();
+        // fakeMidiClockTimerResolution - timer faster than clock pulse to reduce jitter
+        this.fakeMidiClockTimerResolution = usePreferencesStore.getState().fakeMidiClockTimerResolution || 4;
+        this.intervalId = setInterval(
+          this.handleInterval,
+          this.midiClockPulseInterval / this.fakeMidiClockTimerResolution
+        );
+      }
     }
   }
 
+  handleIntervalTimer = () => {
+    if (this.isSimulatedTimerForTesting) {
+      throw new Error('TempoService: handleIntervalTimer - simulated timer but we got a timer pulse');
+    }
+    this.handleInterval();
+  };
+
   handleInterval = () => {
-    this.time = WebMidi.time;
+    this.time = this.getTime();
     this.elapsedMsec = this.time - this.startTime;
 
     if (this.time > this.startTime + this.nextPulseNum * this.midiClockPulseInterval) {
@@ -204,6 +233,7 @@ class TempoService {
     this.sendStateChange();
     this.sendStart();
     this.sendSpp(this.currentSpp);
+    this.prepareIntervalTimer();
     this.continueIntervalTimer();
   }
 

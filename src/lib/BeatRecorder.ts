@@ -7,17 +7,17 @@ import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
 import { savePerformanceServerFn, deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { PerformanceFeedback } from './PerformanceFeedback';
+import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
+import { should } from 'vitest';
 
 // Helper to quantize a time to the nearest 32nd note
-function quantizeTo32nd(timeMsec: number, bpm: number, referenceTime: number) {
+function quantizeTo32nd(elapsedMsec: number, bpm: number) {
   // 1 quarter note = 60,000 / bpm ms
   // 1 32nd note = quarterNoteMsec / 8
   const quarterNoteMsec = 60000 / bpm;
   const thirtySecondMsec = quarterNoteMsec / 8;
-  const elapsed = timeMsec - referenceTime;
-  const quantized = Math.round(elapsed / thirtySecondMsec) * thirtySecondMsec;
-  return { quantized, elapsed, thirtySecondMsec };
+  const quantized = Math.round(elapsedMsec / thirtySecondMsec) * thirtySecondMsec;
+  return { quantized, thirtySecondMsec };
 }
 
 class BeatRecorder extends EventEmitter {
@@ -25,10 +25,9 @@ class BeatRecorder extends EventEmitter {
   public performance: Performance = new Performance({ beatId: 'no beat!' });
   public performanceFeedback: PerformanceFeedback = new PerformanceFeedback([]);
   private referenceTime: number = 0;
-  private lastIndex: number = 0;
-  private lastQuantizedTime: number = -Infinity;
-  private quantizeThreshold: number = 10; // ms threshold for simultaneity
   private beat: Beat | null = null;
+  private currentNoteIndex: number = 0;
+  private playedNotesForCurrentIndex: number[] = [];
 
   private constructor() {
     console.log('BeatRecorder: constructor');
@@ -76,6 +75,28 @@ class BeatRecorder extends EventEmitter {
     const midiTime = event.time;
     const drift = midiTime - now;
     this.referenceTime += drift;
+
+    if (this.beat) {
+      const elapsedMsec = tempoService.elapsedMsec;
+      const position = elapsedMsec % this.beat.getLoopLengthMsec(tempoService.bpm);
+      const currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
+      const nextNoteIndex = (this.currentNoteIndex + 1) % this.beat.beatNotes.length;
+      const nextBeatNote = this.beat.beatNotes[nextNoteIndex];
+      const nextBeatNoteTime = nextBeatNote.getTimeMsec(tempoService.bpm);
+
+      // Special case for the last note: check if we're at the end of the beat
+      const isLastNote = this.currentNoteIndex === this.beat.beatNotes.length - 1;
+      const shouldAdvance = isLastNote
+        ? position < 100 // If we're at the last note, advance when we're near the start of the loop
+        : position >= nextBeatNoteTime; // Otherwise, advance when we pass the next note's time
+
+      if (shouldAdvance) {
+        this.checkUnplayedNotes();
+        // Go to next note
+        this.currentNoteIndex = nextNoteIndex;
+        this.playedNotesForCurrentIndex = [];
+      }
+    }
   };
 
   public static getInstance(): BeatRecorder {
@@ -89,8 +110,6 @@ class BeatRecorder extends EventEmitter {
     console.log('BeatRecorder: setBeat', beat.id);
     this.beat = beat;
     this.referenceTime = 0;
-    this.lastIndex = 0;
-    this.lastQuantizedTime = -Infinity;
   }
 
   private handleStateChange = (state: any) => {
@@ -107,32 +126,64 @@ class BeatRecorder extends EventEmitter {
     this.performance = new Performance({ beatId });
     this.performanceFeedback = new PerformanceFeedback([]);
     this.referenceTime = tempoService.time;
-    this.lastIndex = 0;
-    this.lastQuantizedTime = -Infinity;
+    this.currentNoteIndex = 0;
   };
 
   public stop = () => {
     console.log('BeatRecorder: stop');
   };
 
+  private findUnplayedNotes(currentBeatNote: BeatNote, playedNotes: string[]): string[] {
+    // Parse the noteString to get expected notes
+    const expectedNotes = currentBeatNote.noteString
+      .replace(/[\[\]]/g, '') // Remove brackets
+      .split(',')
+      .map((note) => note.trim());
+
+    // Find notes that weren't played
+    return expectedNotes.filter(
+      (expectedNote) => !playedNotes.some((playedNote) => Beat.isDrumEquivalent(expectedNote, String(playedNote)))
+    );
+  }
+
+  // Once we have passed a note, check if any notes were missed. if so, emit a missedNotes event
+  private checkUnplayedNotes = () => {
+    console.log('BeatRecorder: checkUnplayedNotes', this.currentNoteIndex);
+    const currentBeatNote: BeatNote = this.beat!.beatNotes[this.currentNoteIndex];
+    const unplayedNotes = this.findUnplayedNotes(currentBeatNote, this.playedNotesForCurrentIndex.map(String));
+    if (unplayedNotes.length > 0) {
+      console.log('Missed notes:', unplayedNotes);
+      const beatNoteFeedback = new BeatNoteFeedback({
+        beat: this.beat,
+        index: this.currentNoteIndex,
+        beatNote: currentBeatNote,
+        missedNotes: unplayedNotes,
+      });
+      this.performanceFeedback.beatNoteFeedback.push(beatNoteFeedback);
+      this.emit('missedNotes', beatNoteFeedback);
+    }
+  };
+
   private midiService_midiNote = (e: any) => {
-    if (!tempoService.isRecording) {
+    if (!tempoService.isRecording || !this.beat) {
       return;
     }
 
-    if (e.note?.number === 75) {
+    if (e.note === 75) {
       // Ignore metronome
       return;
     }
 
     const bpm = tempoService.bpm;
     const elapsedMsec = tempoService.elapsedMsec;
-    const { quantized, elapsed, thirtySecondMsec } = quantizeTo32nd(elapsedMsec, bpm, this.referenceTime);
+    const position = elapsedMsec % this.beat!.getLoopLengthMsec(bpm);
+    // TODO: remove this.referenceTime
+    const { quantized, thirtySecondMsec } = quantizeTo32nd(elapsedMsec, bpm);
     // Calculate position in the bar
     const quarterNoteMsec = 60000 / bpm;
     const barLengthMsec = quarterNoteMsec * 4;
-    const barNum = Math.floor(elapsed / barLengthMsec);
-    const barElapsed = elapsed - barNum * barLengthMsec;
+    const barNum = Math.floor(quantized / barLengthMsec);
+    const barElapsed = quantized - barNum * barLengthMsec;
     const beatNum = Math.floor(barElapsed / quarterNoteMsec);
     const beatElapsed = barElapsed - beatNum * quarterNoteMsec;
     const divisionNum = Math.floor(beatElapsed / (quarterNoteMsec / 2)); // 8th note
@@ -155,39 +206,59 @@ class BeatRecorder extends EventEmitter {
         }
       }
     }
-    // Simultaneous/flammed notes: if quantized time is close to last, use same index
-    let noteIndex = this.lastIndex;
-    if (Math.abs(quantized - this.lastQuantizedTime) > this.quantizeThreshold) {
-      noteIndex = ++this.lastIndex;
-      this.lastQuantizedTime = quantized;
-    }
-    const noteString = String(e.note?.number || e.note || 'unknown');
-    const beatNote = new BeatNote({
+
+    const noteString = String(e.note);
+
+    const playedNote = new BeatNote({
       id: uuidv4(),
-      index: noteIndex,
+      index: this.currentNoteIndex,
       noteString,
       barNum,
       beatNum,
       divisionNum,
       subDivisionNum: bestSubDivNum,
       numSubDivisions: bestSubDiv,
-      velocity: e.velocity || 100,
+      velocity: e.velocity,
       microtiming: divisionElapsed - bestSubDivNum * (quarterNoteMsec / 2 / bestSubDiv),
     });
 
     var beatNoteFeedback;
-    this.performance.notes.push(beatNote);
+    this.performance.notes.push(playedNote);
     if (this.beat) {
-      beatNoteFeedback = this.performanceFeedback.addBeatNote(this.beat, noteString, e.velocity || 100);
+      beatNoteFeedback = this.performanceFeedback.addBeatNote(this.beat, noteString, e.velocity);
       if (beatNoteFeedback) {
         const tempoFeedback = this.performanceFeedback.getTempoFeedback(tempoService.bpm);
         this.emit('tempoFeedback', tempoFeedback);
       } else {
-        console.log('BeatRecorder: handleMidiNote - no match', beatNote);
+        console.log('BeatRecorder: handleMidiNote - no match', playedNote);
       }
     }
 
-    this.emit('beatNote', beatNote, beatNoteFeedback);
+    this.emit('beatNote', beatNoteFeedback);
+    const currentBeatNote = this.beat!.beatNotes[this.currentNoteIndex];
+
+    this.playedNotesForCurrentIndex.push(e.note?.number);
+    const unplayedNotes = this.findUnplayedNotes(currentBeatNote, this.playedNotesForCurrentIndex.map(String));
+    if (unplayedNotes.length === 0) {
+      // // If enough time has passed, go to next note
+      // const currentBeatNoteTime = currentBeatNote.getTimeMsec(bpm);
+      // // TODO: remove this.referenceTime and quantized
+      // const isLastNote = this.currentNoteIndex === this.beat.beatNotes.length - 1;
+      // const nextNoteIndex = (this.currentNoteIndex + 1) % this.beat.beatNotes.length;
+      // const nextBeatNote = this.beat.beatNotes[nextNoteIndex];
+      // const nextBeatNoteTime = nextBeatNote.getTimeMsec(tempoService.bpm);
+      // const shouldAdvance = isLastNote
+      //   ? position < 100 // If we're at the last note, advance when we're near the start of the loop
+      //   : position >= nextBeatNoteTime; // Otherwise, advance when we pass the next note's time
+
+      // if (shouldAdvance) {
+      // Find any unplayed notes
+      // this.checkUnplayedNotes();
+
+      // Go to next note
+      this.currentNoteIndex = (this.currentNoteIndex + 1) % this.beat!.beatNotes.length;
+      this.playedNotesForCurrentIndex = [];
+    }
   };
 
   public getPerformance(): Performance | null {

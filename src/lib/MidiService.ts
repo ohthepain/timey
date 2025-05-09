@@ -190,13 +190,21 @@ class MidiService extends EventEmitter {
 
       channel.removeListener('noteon');
       channel.addListener('noteon', (e) => {
-        this.emit('midiNote', e);
+        if (e.message.type === 'noteon') {
+          const note = e.message.dataBytes[0];
+          const velocity = e.message.dataBytes[1];
+          this.emit('midiNote', { note: note, velocity: velocity || 100 });
+        }
       });
     } else {
       console.log(`listenToInput : all channels`);
       this.midiInputDevice.removeListener('noteon');
       this.midiInputDevice.addListener('noteon', (e: NoteMessageEvent) => {
-        this.emit('midiNote', e);
+        if (e.message.type === 'noteon') {
+          const note = e.message.dataBytes[0];
+          const velocity = e.message.dataBytes[1];
+          this.emit('midiNote', { note: note, velocity: velocity || 100 });
+        }
       });
     }
   }

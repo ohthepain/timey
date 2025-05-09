@@ -11,7 +11,7 @@ class BeatPlayer extends EventEmitter {
   private allNotes: NoteEntry[] = [];
   private isPlaying: boolean = false;
   private noteIndex: number = 0;
-  private nextNoteStartTime: number = 0;
+  private nextNoteStartMsec: number = 0;
   private numLoops: number = 0;
 
   constructor() {
@@ -39,7 +39,7 @@ class BeatPlayer extends EventEmitter {
 
     this.noteIndex = 0;
     this.numLoops = 0;
-    this.nextNoteStartTime = 0;
+    this.nextNoteStartMsec = 0;
   }
 
   private tempoService_stateChange = (e: any) => {
@@ -47,7 +47,7 @@ class BeatPlayer extends EventEmitter {
     if (this.isPlaying != (e.isPlaying && e.isRunning)) {
       this.noteIndex = 0;
       this.numLoops = 0;
-      this.nextNoteStartTime = 0;
+      this.nextNoteStartMsec = 0;
       this.isPlaying = e.isPlaying && e.isRunning;
     }
   };
@@ -62,19 +62,16 @@ class BeatPlayer extends EventEmitter {
       return;
     }
 
-    if (!tempoService.startTime) {
-      throw new Error('TempoService.startTime is not set');
-    }
-
     if (this.allNotes.length === 0) {
       console.log('BeatPlayer: handleMidiPulse - no notes to play');
       return;
     }
 
-    const elapsedTime = tempoService.time - tempoService.startTime;
+    const elapsedMsec = tempoService.elapsedMsec;
     const loopLengthMsec = this.beat?.getLoopLengthMsec(tempoService.bpm);
+    const positionMsec = elapsedMsec % loopLengthMsec;
 
-    if (elapsedTime >= this.nextNoteStartTime) {
+    if (positionMsec >= this.nextNoteStartMsec) {
       let notes: number[] = [];
       for (const note of this.allNotes[this.noteIndex].keys) {
         const midiNote = ConvertNoteToMidiNote(note);
@@ -96,7 +93,7 @@ class BeatPlayer extends EventEmitter {
       const nextNote = this.allNotes[this.noteIndex];
 
       // TODO: This won't handle tempo changes well. Calculate the amount of time to the next note relatively
-      this.nextNoteStartTime = nextNote.getStartTimeMsec(tempoService.bpm) + loopLengthMsec * this.numLoops;
+      this.nextNoteStartMsec = nextNote.getStartTimeMsec(tempoService.bpm) + loopLengthMsec * this.numLoops;
       if (!nextNote) {
         throw new Error('No more notes to play.');
       }

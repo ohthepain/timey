@@ -41,17 +41,6 @@ const plotMetricsForNote = (
   beatNoteFeedback: BeatNoteFeedback,
   yPos: number
 ): void => {
-  const note: Tickable = noteEntry.staveNote;
-
-  const x = note.getAbsoluteX();
-  ctx.clearRect(x - 20, yPos - 10, 50, 20);
-
-  ctx.save();
-  ctx.setFont('Arial', 8);
-  ctx.setFillStyle('black'); // text color
-  ctx.fillText('' + Math.round(beatNoteFeedback.timingDifferenceMs), x, yPos);
-
-  const y = yPos + 7;
   function stroke(x1: number, x2: number, color: string, yy: number = y) {
     ctx.beginPath();
     ctx.setStrokeStyle(color);
@@ -62,14 +51,31 @@ const plotMetricsForNote = (
     ctx.stroke();
   }
 
-  const xEnd = x + 20; //(note.getFormatterMetrics().freedom.right || 0);
-  stroke(x, xEnd, 'red');
-  stroke(x - note.getXShift(), x, '#BBB'); // Shift
-  let dotOffset = beatNoteFeedback.timingDifferenceMs / 10;
-  if (Math.abs(dotOffset) > 20) {
-    dotOffset = dotOffset > 0 ? 20 : -20;
+  const note: Tickable = noteEntry.staveNote;
+  const x = note.getAbsoluteX();
+  ctx.clearRect(x - 20, yPos - 10, 50, 20);
+
+  let feedback = 'X';
+  if (beatNoteFeedback.timingDifferenceMs) {
+    feedback = Math.round(beatNoteFeedback.timingDifferenceMs) + '';
   }
-  drawDot(ctx, (x + xEnd) / 2 + dotOffset, y, 'blue');
+
+  ctx.save();
+  ctx.setFont('Arial', 8);
+  ctx.setFillStyle('black'); // text color
+  ctx.fillText(feedback, x, yPos);
+
+  const y = yPos + 7;
+  if (beatNoteFeedback.timingDifferenceMs) {
+    const xEnd = x + 20; //(note.getFormatterMetrics().freedom.right || 0);
+    stroke(x, xEnd, 'red');
+    stroke(x - note.getXShift(), x, '#BBB'); // Shift
+    let dotOffset = beatNoteFeedback.timingDifferenceMs / 10;
+    if (Math.abs(dotOffset) > 20) {
+      dotOffset = dotOffset > 0 ? 20 : -20;
+    }
+    drawDot(ctx, (x + xEnd) / 2 + dotOffset, y, 'blue');
+  }
 
   // Not sure if this is required
   ctx.restore();
@@ -264,7 +270,15 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
     showNoteBar(context, noteEntries, noteIndex, 150);
   };
 
-  const beatRecorder_beatNote = (beatNote: BeatNote, beatNoteFeedback: BeatNoteFeedback | undefined) => {
+  const beatRecorder_missedNotes = (beatNoteFeedback: BeatNoteFeedback) => {
+    if (useNavigationStore.getState().currentBeat !== beat) {
+      return;
+    }
+
+    drawNote(context, beatNoteFeedback.index, 'red');
+  };
+
+  const beatRecorder_beatNote = (beatNoteFeedback: BeatNoteFeedback | undefined) => {
     // console.log('beatRecorder_beatNote', useNavigationStore.getState().currentBeat);
     if (useNavigationStore.getState().currentBeat !== beat) {
       return;
@@ -285,10 +299,12 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
   useEffect(() => {
     beatPlayer.on('note', beatPlayer_note);
     beatRecorder.on('beatNote', beatRecorder_beatNote);
+    beatRecorder.on('missedNotes', beatRecorder_missedNotes);
 
     return () => {
       beatPlayer.off('note', beatPlayer_note);
       beatRecorder.off('beatNote', beatRecorder_beatNote);
+      beatRecorder.off('missedNotes', beatRecorder_missedNotes);
     };
   }, []);
 

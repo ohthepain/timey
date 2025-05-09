@@ -2,13 +2,24 @@ import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
 import { tempoService } from '~/lib/MidiSync/TempoService';
 
-export interface BeatNoteFeedback {
+export class BeatNoteFeedback {
   beat: Beat;
   index: number;
   beatNote: BeatNote | null;
   performanceNote: BeatNote | null;
-  timingDifferenceMs: number;
-  velocityDifference: number;
+  timingDifferenceMs: number | null;
+  velocityDifference: number | null;
+  missedNotes: string[] | undefined;
+
+  constructor(data: any) {
+    this.beat = data.beat;
+    this.index = data.index;
+    this.beatNote = data.beatNote;
+    this.performanceNote = data.performanceNote;
+    this.timingDifferenceMs = data.timingDifferenceMs;
+    this.velocityDifference = data.velocityDifference;
+    this.missedNotes = data.missedNotes;
+  }
 }
 
 export class PerformanceFeedback {
@@ -40,7 +51,7 @@ export class PerformanceFeedback {
       const timeDiff = Beat.loopedTimeDiff(timeMsec, closestBeatNote.getTimeMsec(bpm), beat.getLoopLengthMsec(bpm));
       const tolerance = 60000 / bpm;
       if (Math.abs(timeDiff) <= tolerance) {
-        return {
+        return new BeatNoteFeedback({
           beat,
           index: closestBeatNote.index,
           beatNote: closestBeatNote,
@@ -51,7 +62,8 @@ export class PerformanceFeedback {
           }),
           timingDifferenceMs: timeDiff,
           velocityDifference: velocity - (closestBeatNote.velocity || 0),
-        };
+          missedNotes: undefined,
+        });
       }
     }
 

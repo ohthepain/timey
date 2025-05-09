@@ -58,15 +58,15 @@ export class Beat {
     return Math.min(forwardDiff, backwardDiff);
   }
 
-  findClosestBeatNoteIndex(noteStringOrMidi: string | number, timeMsec: number, bpm: number): number {
-    let isDrumEquivalent = (a: string, b: string) => {
-      if (a === b) return true;
-      if ((b === '35' || b === '36') && a.includes('kick')) return true;
-      if ((b === '38' || b === '40') && a.includes('snare')) return true;
-      if ((b === '42' || b === '44' || b === '46') && a.includes('hihat')) return true;
-      return false;
-    };
+  static isDrumEquivalent = (a: string, b: string) => {
+    if (a === b) return true;
+    if ((b === '35' || b === '36') && a.includes('kick')) return true;
+    if ((b === '38' || b === '40') && a.includes('snare')) return true;
+    if ((b === '42' || b === '44' || b === '46') && a.includes('hihat')) return true;
+    return false;
+  };
 
+  findClosestBeatNoteIndex(noteStringOrMidi: string | number, timeMsec: number, bpm: number): number {
     const loopLengthMsec = this.getLoopLengthMsec(bpm);
     let targetNoteString = typeof noteStringOrMidi === 'number' ? String(noteStringOrMidi) : noteStringOrMidi;
 
@@ -74,7 +74,7 @@ export class Beat {
     let minDiff = Infinity;
 
     for (const beatNote of this.beatNotes) {
-      if (!isDrumEquivalent(beatNote.noteString, targetNoteString)) {
+      if (!Beat.isDrumEquivalent(beatNote.noteString, targetNoteString)) {
         continue;
       }
 
