@@ -87,6 +87,11 @@ class TempoService {
     }
   }
 
+  simulateInterval = (intervalMsec: number) => {
+    this.time += intervalMsec;
+    this.handleInterval();
+  };
+
   handleIntervalTimer = () => {
     if (this.isSimulatedTimerForTesting) {
       throw new Error('TempoService: handleIntervalTimer - simulated timer but we got a timer pulse');

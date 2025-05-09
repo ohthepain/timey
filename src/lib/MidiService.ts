@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Input, NoteMessageEvent, Output, WebMidi } from 'webmidi';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { EventEmitter } from 'events';
+import { tempoService } from '~/lib/MidiSync/TempoService';
 
 class MidiService extends EventEmitter {
   receivedResponse: boolean = false;
@@ -23,6 +24,9 @@ class MidiService extends EventEmitter {
   }
 
   async enable() {
+    if (tempoService.isSimulatedTimerForTesting) {
+      return;
+    }
     if (!WebMidi.enabled) {
       console.log('WebMidi not enabled, enabling...');
       try {
@@ -162,6 +166,10 @@ class MidiService extends EventEmitter {
     outputChannel.sendControlChange(ccNumber, value);
   }
 
+  emitMidiNote(note: number, velocity: number) {
+    this.emit('midiNote', { note: note, velocity: velocity || 100 });
+  }
+
   listenToInput() {
     const midiInputDeviceId = this.midiInputDeviceId;
     const channelNum = this.midiInputChannelNum;
@@ -193,7 +201,7 @@ class MidiService extends EventEmitter {
         if (e.message.type === 'noteon') {
           const note = e.message.dataBytes[0];
           const velocity = e.message.dataBytes[1];
-          this.emit('midiNote', { note: note, velocity: velocity || 100 });
+          this.emitMidiNote(note, velocity);
         }
       });
     } else {
@@ -203,7 +211,7 @@ class MidiService extends EventEmitter {
         if (e.message.type === 'noteon') {
           const note = e.message.dataBytes[0];
           const velocity = e.message.dataBytes[1];
-          this.emit('midiNote', { note: note, velocity: velocity || 100 });
+          this.emitMidiNote(note, velocity);
         }
       });
     }
