@@ -64,13 +64,13 @@ class TempoService {
 
   startSimulatedIntervalTimerForTesting() {
     this.isSimulatedTimerForTesting = true;
-    this.time = this.getTime();
+    this.time = 0;
     this.startTime = this.time;
+    this.startIntervalTimer();
   }
 
   startIntervalTimer() {
     this.prepareIntervalTimer();
-    this.isSimulatedTimerForTesting = false;
   }
 
   continueIntervalTimer() {
@@ -89,6 +89,9 @@ class TempoService {
 
   simulateInterval = (intervalMsec: number) => {
     this.time += intervalMsec;
+    if (this.getTime() !== this.time) {
+      throw new Error('TempoService: simulateInterval - time mismatch');
+    }
     this.handleInterval();
   };
 

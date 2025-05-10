@@ -36,9 +36,6 @@ export const ParseBeatString = (input: string) => {
 
       if (match) {
         const [, index, durationCode, keysString, bar, beat, divisionNum, subDivisionNum, numSubDivisions] = match;
-        console.log(
-          `note: ${index} ${durationCode} ${keysString} bar ${bar} beat ${beat} div ${divisionNum} sub ${subDivisionNum} of ${numSubDivisions}`
-        );
 
         // Create a BeatNote for each key
         beatNotes.push({

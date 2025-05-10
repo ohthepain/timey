@@ -33,22 +33,31 @@ export class PerformanceFeedback {
     this.beatNoteFeedback = beatNoteFeedback || [];
   }
 
-  matchBeatNoteFromPerformance(
+  matchNoteToBeat(
     beat: Beat,
-    noteStringOrMidi: string | number,
+    index: number,
+    noteNum: number,
     timeMsec: number,
     velocity: number,
     bpm: number
   ): BeatNoteFeedback | null {
     timeMsec %= beat.getLoopLengthMsec(bpm);
-    const beatNoteIndex = beat.findClosestBeatNoteIndex(noteStringOrMidi, timeMsec, bpm);
-    if (beatNoteIndex !== -1) {
+
+    // Special case: the note has already been played for the current index AND exists at the next index.
+    // In this case we advance to the next index
+
+    const beatNoteIndex = beat.findClosestBeatNoteIndex(noteNum, timeMsec, bpm);
+    if (beatNoteIndex === index || beatNoteIndex === index + 1) {
       const closestBeatNote = beat.beatNotes.find((beatNote) => beatNote.index === beatNoteIndex);
       if (!closestBeatNote) {
         throw new Error('findClosestBeatNoteIndex returned a bad index?!?!?');
       }
 
-      const timeDiff = Beat.loopedTimeDiff(timeMsec, closestBeatNote.getTimeMsec(bpm), beat.getLoopLengthMsec(bpm));
+      const timeDiff = Beat.loopedTimeDiff(
+        tempoService.getElapsedMsec(),
+        closestBeatNote.getTimeMsec(bpm),
+        beat.getLoopLengthMsec(bpm)
+      );
       const tolerance = 60000 / bpm;
       if (Math.abs(timeDiff) <= tolerance) {
         return new BeatNoteFeedback({
@@ -92,7 +101,7 @@ export class PerformanceFeedback {
     }
 
     // get average timingDifferenceMs for the notes
-    const timingDifferenceMs = notes.reduce((sum, feedback) => sum + feedback.timingDifferenceMs, 0) / notes.length;
+    const timingDifferenceMs = notes.reduce((sum, feedback) => sum + feedback.timingDifferenceMs!, 0) / notes.length;
 
     const beatLengthMsec = (60000 * 4) / bpm;
     // const effectiveTimingDifferenceMs = timingDifferenceMs / beatLengthMsec;
@@ -100,14 +109,14 @@ export class PerformanceFeedback {
     return effectiveBpm;
   }
 
-  addBeatNote(beat: Beat, noteString: string, velocity: number): BeatNoteFeedback | null {
-    const beatNoteFeedback = this.matchBeatNoteFromPerformance(
-      beat,
-      noteString,
-      tempoService.elapsedMsec,
-      velocity,
-      tempoService.bpm
-    );
+  addBeatNote(
+    beat: Beat,
+    index: number,
+    positionMsec: number,
+    noteNum: number,
+    velocity: number
+  ): BeatNoteFeedback | null {
+    const beatNoteFeedback = this.matchNoteToBeat(beat, index, noteNum, positionMsec, velocity, tempoService.bpm);
     if (beatNoteFeedback) {
       this.beatNoteFeedback.push(beatNoteFeedback);
     }

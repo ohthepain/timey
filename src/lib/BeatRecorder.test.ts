@@ -7,6 +7,7 @@ import { Performance } from '~/types/Performance';
 import { PerformanceFeedback } from './PerformanceFeedback';
 import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
+import { GeneralMidiService } from './GeneralMidiService';
 
 describe('BeatRecorder', () => {
   let beat: Beat;
@@ -37,21 +38,29 @@ describe('BeatRecorder', () => {
     tempoService.stop();
   });
 
-  // Helper function to simulate a bar of time
-  function simulateEighth() {
-    const quarterNoteMsec = 60000 / tempoService.bpm;
-    tempoService.simulateInterval(quarterNoteMsec / 2);
+  function eighthNoteMsec() {
+    return 60000 / tempoService.bpm / 2;
   }
 
-  // MIDI note mapping
-  const midiNoteMap: Record<string, number> = {
-    kick: 36,
-    snare: 38,
-    hihat: 42,
-    tom: 45,
-    ride: 51,
-    crash: 49,
-  };
+  function sixteenthNoteMsec() {
+    return 60000 / tempoService.bpm / 4;
+  }
+
+  // Helper function to simulate a bar of time
+  function simulateEighth() {
+    tempoService.simulateInterval(eighthNoteMsec());
+  }
+
+  function simulateSixteenth() {
+    tempoService.simulateInterval(sixteenthNoteMsec());
+  }
+
+  // Use GeneralMidiService instead of local map
+  function getNote(drumName: string): number {
+    const note = GeneralMidiService.getNoteNumber(drumName);
+    if (!note) throw new Error(`Unknown drum name: ${drumName}`);
+    return note;
+  }
 
   it('play the beat perfectly!', () => {
     beatRecorder.setBeat(beat);
@@ -68,7 +77,7 @@ describe('BeatRecorder', () => {
 
       // Play each expected note
       for (const note of expectedNotes) {
-        const midiNote = midiNoteMap[note] || 36; // Default to kick if note not found
+        const midiNote = getNote(note) || 36; // Default to kick if note not found
         midiService.emitMidiNote(midiNote, 100);
         numNotes++;
         // debugger; // This will force a breakpoint
@@ -93,40 +102,245 @@ describe('BeatRecorder', () => {
     });
   });
 
-  it('test manual play of beat', () => {
+  it('test first note', () => {
     beatRecorder.setBeat(beat);
     tempoService.isRecording = true;
 
-    midiService.emitMidiNote(midiNoteMap.kick, 100);
-    midiService.emitMidiNote(midiNoteMap.hihat, 100);
-    simulateEighth();
-    midiService.emitMidiNote(midiNoteMap.hihat, 100);
-    simulateEighth();
-    midiService.emitMidiNote(midiNoteMap.kick, 100);
-    midiService.emitMidiNote(midiNoteMap.snare, 100);
-    simulateEighth();
-    midiService.emitMidiNote(midiNoteMap.hihat, 100);
-    simulateEighth();
-    midiService.emitMidiNote(midiNoteMap.kick, 100);
-    midiService.emitMidiNote(midiNoteMap.hihat, 100);
-    simulateEighth();
-    midiService.emitMidiNote(midiNoteMap.hihat, 100);
-    simulateEighth();
-    midiService.emitMidiNote(midiNoteMap.kick, 100);
-    midiService.emitMidiNote(midiNoteMap.snare, 100);
-    simulateEighth();
-    midiService.emitMidiNote(midiNoteMap.hihat, 100);
-    simulateEighth();
+    midiService.emitMidiNote(getNote('kick'), 100);
 
-    // Check the results
-    expect(beatRecorder.performance.notes).toHaveLength(12);
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(12);
+    expect(beatRecorder.performance.notes).toHaveLength(1);
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(1);
 
     // Verify each note was recorded correctly
     const notes = beatRecorder.performance.notes;
     notes.forEach((note: BeatNote) => {
       expect(note.microtiming).toBe(0);
       // Add more specific assertions based on the expected note structure
+    });
+  });
+
+  it('test missing first note', () => {
+    beatRecorder.setBeat(beat);
+    tempoService.isRecording = true;
+
+    // midiService.emitMidiNote(getNote('kick'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    simulateEighth();
+
+    expect(beatRecorder.performance.notes).toHaveLength(1);
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(2);
+
+    // Verify each note was recorded correctly
+    let numMissedNotes = 0;
+    const notes = beatRecorder.performance.notes;
+    notes.forEach((note: BeatNote) => {
+      expect(note.microtiming).toBe(0);
+    });
+
+    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+      const f = feedback;
+      if (feedback.missedNotes?.length) {
+        numMissedNotes += feedback.missedNotes.length;
+        expect(feedback.beat).toBe(beat);
+        expect(feedback.index).toBe(0);
+        expect(feedback.beatNote!.barNum).toBe(0);
+        expect(feedback.beatNote!.noteString).toBe('kick, hihat');
+        expect(feedback.performanceNote).toBe(undefined);
+        expect(feedback.timingDifferenceMs).toBe(undefined);
+        expect(feedback.velocityDifference).toBe(undefined);
+        expect(feedback.missedNotes).toEqual(['kick']);
+      }
+    });
+
+    expect(numMissedNotes).toBe(1);
+  });
+
+  it('test missing first note 2, with extra note', () => {
+    beatRecorder.setBeat(beat);
+    tempoService.isRecording = true;
+
+    // midiService.emitMidiNote(getNote('kick'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    midiService.emitMidiNote(getNote('snare'), 100);
+    simulateEighth();
+    midiService.emitMidiNote(getNote('hihat'), 100);
+
+    expect(beatRecorder.performance.notes).toHaveLength(3);
+    const f = beatRecorder.performanceFeedback.beatNoteFeedback;
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
+
+    // Verify each note was recorded correctly
+    let numMissedNotes = 0;
+    const notes = beatRecorder.performance.notes;
+    notes.forEach((note: BeatNote) => {
+      expect(note.microtiming).toBe(0);
+    });
+
+    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+      const f = feedback;
+      if (feedback.missedNotes?.length) {
+        numMissedNotes += feedback.missedNotes.length;
+        expect(feedback.beat).toBe(beat);
+        expect(feedback.index).toBe(0);
+        expect(feedback.beatNote!.barNum).toBe(0);
+        expect(feedback.beatNote!.noteString).toBe('kick, hihat');
+        expect(feedback.performanceNote).toBe(undefined);
+        expect(feedback.timingDifferenceMs).toBe(undefined);
+        expect(feedback.velocityDifference).toBe(undefined);
+        expect(feedback.missedNotes).toEqual(['kick']);
+      }
+    });
+
+    expect(numMissedNotes).toBe(1);
+  });
+
+  it('test auto-advance on extra note', () => {
+    beatRecorder.setBeat(beat);
+    tempoService.isRecording = true;
+
+    midiService.emitMidiNote(getNote('kick'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+
+    expect(beatRecorder.performance.notes).toHaveLength(3);
+    const f = beatRecorder.performanceFeedback.beatNoteFeedback;
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
+
+    // Verify each note was recorded correctly
+    let numMissedNotes = 0;
+    const notes = beatRecorder.performance.notes;
+    notes.forEach((note: BeatNote) => {
+      expect([0, -sixteenthNoteMsec()]).toContain(note.microtiming);
+    });
+
+    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+      const f = feedback;
+      if (feedback.missedNotes?.length) {
+        numMissedNotes += feedback.missedNotes.length;
+        expect(feedback.beat).toBe(beat);
+        expect(feedback.index).toBe(0);
+        expect(feedback.beatNote!.barNum).toBe(0);
+        expect(feedback.beatNote!.noteString).toBe('kick, hihat');
+        expect(feedback.performanceNote).toBe(undefined);
+        expect(feedback.timingDifferenceMs).toBe(undefined);
+        expect(feedback.velocityDifference).toBe(undefined);
+        expect(feedback.missedNotes).toEqual(['kick']);
+      }
+    });
+
+    expect(numMissedNotes).toBe(0);
+  });
+
+  it('test auto-advance only works during interval of current index', () => {
+    beatRecorder.setBeat(beat);
+    tempoService.isRecording = true;
+
+    midiService.emitMidiNote(getNote('kick'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+
+    expect(beatRecorder.performance.notes).toHaveLength(4);
+    const f = beatRecorder.performanceFeedback.beatNoteFeedback;
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
+
+    // Verify each note was recorded correctly
+    let numMissedNotes = 0;
+    const notes = beatRecorder.performance.notes;
+    notes.forEach((note: BeatNote) => {
+      expect([0, -sixteenthNoteMsec()]).toContain(note.microtiming);
+    });
+
+    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+      const f = feedback;
+      if (feedback.missedNotes?.length) {
+        numMissedNotes += feedback.missedNotes.length;
+        expect(feedback.beat).toBe(beat);
+        expect(feedback.index).toBe(0);
+        expect(feedback.beatNote!.barNum).toBe(0);
+        expect(feedback.beatNote!.noteString).toBe('kick, hihat');
+        expect(feedback.performanceNote).toBe(undefined);
+        expect(feedback.timingDifferenceMs).toBe(undefined);
+        expect(feedback.velocityDifference).toBe(undefined);
+        expect(feedback.missedNotes).toEqual(['kick']);
+      }
+    });
+
+    expect(numMissedNotes).toBe(0);
+  });
+
+  it('wip: test miss first note', () => {
+    beatRecorder.setBeat(beat);
+    tempoService.isRecording = true;
+
+    // midiService.emitMidiNote(getNote('kick'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    simulateEighth();
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    simulateEighth();
+    midiService.emitMidiNote(getNote('kick'), 100);
+    midiService.emitMidiNote(getNote('snare'), 100);
+    simulateEighth();
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    simulateEighth();
+    midiService.emitMidiNote(getNote('kick'), 100);
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    simulateEighth();
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    simulateEighth();
+    midiService.emitMidiNote(getNote('kick'), 100);
+    midiService.emitMidiNote(getNote('snare'), 100);
+    simulateEighth();
+    midiService.emitMidiNote(getNote('hihat'), 100);
+    simulateEighth();
+
+    // Check the results
+    expect(beatRecorder.performance.notes).toHaveLength(12);
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(12);
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback[0].missedNotes?.length).toBe(1);
+
+    // Verify each note was recorded correctly
+    const notes = beatRecorder.performance.notes;
+    notes.forEach((note: BeatNote) => {
+      expect(note.microtiming).toBe(0);
+      // Add more specific assertions based on the expected note structure
+    });
+
+    it('test manual play of beat', () => {
+      beatRecorder.setBeat(beat);
+      tempoService.isRecording = true;
+
+      midiService.emitMidiNote(getNote('kick'), 100);
+      midiService.emitMidiNote(getNote('hihat'), 100);
+      simulateEighth();
+      midiService.emitMidiNote(getNote('hihat'), 100);
+      simulateEighth();
+      midiService.emitMidiNote(getNote('kick'), 100);
+      midiService.emitMidiNote(getNote('snare'), 100);
+      simulateEighth();
+      midiService.emitMidiNote(getNote('hihat'), 100);
+      simulateEighth();
+      midiService.emitMidiNote(getNote('kick'), 100);
+      midiService.emitMidiNote(getNote('hihat'), 100);
+      simulateEighth();
+      midiService.emitMidiNote(getNote('hihat'), 100);
+      simulateEighth();
+      midiService.emitMidiNote(getNote('kick'), 100);
+      midiService.emitMidiNote(getNote('snare'), 100);
+      simulateEighth();
+      midiService.emitMidiNote(getNote('hihat'), 100);
+      simulateEighth();
+
+      // Check the results
+      expect(beatRecorder.performance.notes).toHaveLength(12);
+      expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(12);
+
+      // Verify each note was recorded correctly
+      const notes = beatRecorder.performance.notes;
+      notes.forEach((note: BeatNote) => {
+        expect(note.microtiming).toBe(0);
+        // Add more specific assertions based on the expected note structure
+      });
     });
   });
 });

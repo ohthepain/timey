@@ -66,15 +66,14 @@ export class Beat {
     return false;
   };
 
-  findClosestBeatNoteIndex(noteStringOrMidi: string | number, timeMsec: number, bpm: number): number {
+  findClosestBeatNoteIndex(noteNum: number, timeMsec: number, bpm: number): number {
     const loopLengthMsec = this.getLoopLengthMsec(bpm);
-    let targetNoteString = typeof noteStringOrMidi === 'number' ? String(noteStringOrMidi) : noteStringOrMidi;
 
     let closest: BeatNote | null = null;
     let minDiff = Infinity;
 
     for (const beatNote of this.beatNotes) {
-      if (!Beat.isDrumEquivalent(beatNote.noteString, targetNoteString)) {
+      if (!beatNote.includesMidiNote(noteNum)) {
         continue;
       }
 
@@ -87,7 +86,7 @@ export class Beat {
     }
 
     if (!closest) {
-      console.log('Beat.findClosestBeatNoteIndex: drum not found', noteStringOrMidi);
+      console.log('Beat.findClosestBeatNoteIndex: drum not found', noteNum);
       return -1;
     }
 
