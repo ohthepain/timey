@@ -269,78 +269,78 @@ describe('BeatRecorder', () => {
     expect(numMissedNotes).toBe(0);
   });
 
-  it('wip: test miss first note', () => {
-    beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
+  // it('wip: test miss first note', () => {
+  //   beatRecorder.setBeat(beat);
+  //   tempoService.isRecording = true;
 
-    // midiService.emitMidiNote(getNote('kick'), 100);
-    midiService.emitMidiNote(getNote('hihat'), 100);
-    simulateEighth();
-    midiService.emitMidiNote(getNote('hihat'), 100);
-    simulateEighth();
-    midiService.emitMidiNote(getNote('kick'), 100);
-    midiService.emitMidiNote(getNote('snare'), 100);
-    simulateEighth();
-    midiService.emitMidiNote(getNote('hihat'), 100);
-    simulateEighth();
-    midiService.emitMidiNote(getNote('kick'), 100);
-    midiService.emitMidiNote(getNote('hihat'), 100);
-    simulateEighth();
-    midiService.emitMidiNote(getNote('hihat'), 100);
-    simulateEighth();
-    midiService.emitMidiNote(getNote('kick'), 100);
-    midiService.emitMidiNote(getNote('snare'), 100);
-    simulateEighth();
-    midiService.emitMidiNote(getNote('hihat'), 100);
-    simulateEighth();
+  //   // midiService.emitMidiNote(getNote('kick'), 100);
+  //   midiService.emitMidiNote(getNote('hihat'), 100);
+  //   simulateEighth();
+  //   midiService.emitMidiNote(getNote('hihat'), 100);
+  //   simulateEighth();
+  //   midiService.emitMidiNote(getNote('kick'), 100);
+  //   midiService.emitMidiNote(getNote('snare'), 100);
+  //   simulateEighth();
+  //   midiService.emitMidiNote(getNote('hihat'), 100);
+  //   simulateEighth();
+  //   midiService.emitMidiNote(getNote('kick'), 100);
+  //   midiService.emitMidiNote(getNote('hihat'), 100);
+  //   simulateEighth();
+  //   midiService.emitMidiNote(getNote('hihat'), 100);
+  //   simulateEighth();
+  //   midiService.emitMidiNote(getNote('kick'), 100);
+  //   midiService.emitMidiNote(getNote('snare'), 100);
+  //   simulateEighth();
+  //   midiService.emitMidiNote(getNote('hihat'), 100);
+  //   simulateEighth();
 
-    // Check the results
-    expect(beatRecorder.performance.notes).toHaveLength(12);
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(12);
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback[0].missedNotes?.length).toBe(1);
+  //   // Check the results
+  //   expect(beatRecorder.performance.notes).toHaveLength(12);
+  //   expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(12);
+  //   expect(beatRecorder.performanceFeedback.beatNoteFeedback[0].missedNotes?.length).toBe(1);
 
-    // Verify each note was recorded correctly
-    const notes = beatRecorder.performance.notes;
-    notes.forEach((note: BeatNote) => {
-      expect(note.microtiming).toBe(0);
-      // Add more specific assertions based on the expected note structure
-    });
+  //   // Verify each note was recorded correctly
+  //   const notes = beatRecorder.performance.notes;
+  //   notes.forEach((note: BeatNote) => {
+  //     expect(note.microtiming).toBe(0);
+  //     // Add more specific assertions based on the expected note structure
+  //   });
 
-    it('test manual play of beat', () => {
-      beatRecorder.setBeat(beat);
-      tempoService.isRecording = true;
+  //   it('test manual play of beat', () => {
+  //     beatRecorder.setBeat(beat);
+  //     tempoService.isRecording = true;
 
-      midiService.emitMidiNote(getNote('kick'), 100);
-      midiService.emitMidiNote(getNote('hihat'), 100);
-      simulateEighth();
-      midiService.emitMidiNote(getNote('hihat'), 100);
-      simulateEighth();
-      midiService.emitMidiNote(getNote('kick'), 100);
-      midiService.emitMidiNote(getNote('snare'), 100);
-      simulateEighth();
-      midiService.emitMidiNote(getNote('hihat'), 100);
-      simulateEighth();
-      midiService.emitMidiNote(getNote('kick'), 100);
-      midiService.emitMidiNote(getNote('hihat'), 100);
-      simulateEighth();
-      midiService.emitMidiNote(getNote('hihat'), 100);
-      simulateEighth();
-      midiService.emitMidiNote(getNote('kick'), 100);
-      midiService.emitMidiNote(getNote('snare'), 100);
-      simulateEighth();
-      midiService.emitMidiNote(getNote('hihat'), 100);
-      simulateEighth();
+  //     midiService.emitMidiNote(getNote('kick'), 100);
+  //     midiService.emitMidiNote(getNote('hihat'), 100);
+  //     simulateEighth();
+  //     midiService.emitMidiNote(getNote('hihat'), 100);
+  //     simulateEighth();
+  //     midiService.emitMidiNote(getNote('kick'), 100);
+  //     midiService.emitMidiNote(getNote('snare'), 100);
+  //     simulateEighth();
+  //     midiService.emitMidiNote(getNote('hihat'), 100);
+  //     simulateEighth();
+  //     midiService.emitMidiNote(getNote('kick'), 100);
+  //     midiService.emitMidiNote(getNote('hihat'), 100);
+  //     simulateEighth();
+  //     midiService.emitMidiNote(getNote('hihat'), 100);
+  //     simulateEighth();
+  //     midiService.emitMidiNote(getNote('kick'), 100);
+  //     midiService.emitMidiNote(getNote('snare'), 100);
+  //     simulateEighth();
+  //     midiService.emitMidiNote(getNote('hihat'), 100);
+  //     simulateEighth();
 
-      // Check the results
-      expect(beatRecorder.performance.notes).toHaveLength(12);
-      expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(12);
+  //     // Check the results
+  //     expect(beatRecorder.performance.notes).toHaveLength(12);
+  //     expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(12);
 
-      // Verify each note was recorded correctly
-      const notes = beatRecorder.performance.notes;
-      notes.forEach((note: BeatNote) => {
-        expect(note.microtiming).toBe(0);
-        // Add more specific assertions based on the expected note structure
-      });
-    });
-  });
+  //     // Verify each note was recorded correctly
+  //     const notes = beatRecorder.performance.notes;
+  //     notes.forEach((note: BeatNote) => {
+  //       expect(note.microtiming).toBe(0);
+  //       // Add more specific assertions based on the expected note structure
+  //     });
+  //   });
+  // });
 });

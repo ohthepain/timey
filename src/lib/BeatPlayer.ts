@@ -69,9 +69,8 @@ class BeatPlayer extends EventEmitter {
 
     const elapsedMsec = tempoService.elapsedMsec;
     const loopLengthMsec = this.beat?.getLoopLengthMsec(tempoService.bpm);
-    const positionMsec = elapsedMsec % loopLengthMsec;
 
-    if (positionMsec >= this.nextNoteStartMsec) {
+    if (elapsedMsec >= this.nextNoteStartMsec) {
       let notes: number[] = [];
       for (const note of this.allNotes[this.noteIndex].keys) {
         const midiNote = ConvertNoteToMidiNote(note);

@@ -53,9 +53,22 @@ export class Beat {
   }
 
   static loopedTimeDiff(timeMsec: number, beatNoteTime: number, loopLengthMsec: number): number {
-    const forwardDiff = (beatNoteTime - timeMsec + loopLengthMsec) % loopLengthMsec;
-    const backwardDiff = (timeMsec - beatNoteTime + loopLengthMsec) % loopLengthMsec;
-    return Math.min(forwardDiff, backwardDiff);
+    timeMsec %= loopLengthMsec;
+    beatNoteTime %= loopLengthMsec;
+
+    // Calculate the difference, ensuring we get the shortest path around the loop
+    let diff = timeMsec - beatNoteTime;
+
+    // If the difference is more than half the loop length, we should go the other way
+    if (diff > loopLengthMsec / 2) {
+      diff -= loopLengthMsec;
+    }
+    // If the difference is less than negative half the loop length, we should go the other way
+    else if (diff < -loopLengthMsec / 2) {
+      diff += loopLengthMsec;
+    }
+
+    return diff;
   }
 
   static isDrumEquivalent = (a: string, b: string) => {
@@ -79,7 +92,7 @@ export class Beat {
 
       const beatNoteTime = beatNote.getTimeMsec(bpm);
       const diff = Beat.loopedTimeDiff(timeMsec, beatNoteTime, loopLengthMsec);
-      if (diff < minDiff) {
+      if (Math.abs(diff) < Math.abs(minDiff)) {
         minDiff = diff;
         closest = beatNote;
       }

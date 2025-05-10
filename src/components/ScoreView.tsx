@@ -263,7 +263,7 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
       return;
     }
 
-    drawNote(context, noteIndex, 'red');
+    drawNote(context, noteIndex, 'green');
     const previousNoteIndex = noteIndex > 0 ? noteIndex - 1 : noteEntries.length - 1;
     drawNote(context, previousNoteIndex, 'black');
 
@@ -285,7 +285,7 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
     }
 
     if (beatNoteFeedback) {
-      drawNote(context, beatNoteFeedback.index, 'red');
+      drawNote(context, beatNoteFeedback.index, 'green');
       const previousNoteIndex = beatNoteFeedback.index > 0 ? beatNoteFeedback.index - 1 : noteEntries.length - 1;
       drawNote(context, previousNoteIndex, 'black');
 

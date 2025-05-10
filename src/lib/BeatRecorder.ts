@@ -117,7 +117,6 @@ class BeatRecorder extends EventEmitter {
 
   // Once we have passed a note, check if any notes were missed. if so, emit a missedNotes event
   private checkUnplayedNotes = () => {
-    console.log('BeatRecorder: checkUnplayedNotes', this.currentNoteIndex);
     const currentBeatNote: BeatNote = this.beat!.beatNotes[this.currentNoteIndex];
     const unplayedNotes = this.findUnplayedNotes(currentBeatNote, this.playedNotesForCurrentIndex);
     if (unplayedNotes.length > 0) {
@@ -141,7 +140,7 @@ class BeatRecorder extends EventEmitter {
     const drift = midiTime - now;
     this.referenceTime += drift;
 
-    if (this.beat) {
+    if (this.beat && tempoService.isRecording) {
       const elapsedMsec = tempoService.elapsedMsec;
       const position = elapsedMsec % this.beat.getLoopLengthMsec(tempoService.bpm);
       const currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
@@ -179,7 +178,6 @@ class BeatRecorder extends EventEmitter {
 
     const bpm = tempoService.bpm;
     const elapsedMsec = tempoService.elapsedMsec;
-    const position = elapsedMsec % this.beat!.getLoopLengthMsec(bpm);
     // TODO: remove this.referenceTime
     const { quantized, thirtySecondMsec } = quantizeTo32nd(elapsedMsec, bpm);
     // Calculate position in the bar
@@ -246,10 +244,11 @@ class BeatRecorder extends EventEmitter {
 
     this.playedNotesForCurrentIndex.push(e.note);
 
+    const position = elapsedMsec % this.beat!.getLoopLengthMsec(bpm);
     beatNoteFeedback = this.performanceFeedback.addBeatNote(
       this.beat,
       this.currentNoteIndex,
-      currentBeatNoteTime,
+      position,
       e.note,
       e.velocity
     );
