@@ -120,25 +120,28 @@ class ExtraNoteRecord implements EventRecord {
 class TimingPulseRecord implements EventRecord {
   timestamp: number;
   type: EventType = 'timing';
-  private elapsedMsec: number;
+  private intervalMsec: number;
   private noteIndex: number;
 
-  constructor() {
-    this.timestamp = tempoService.time;
-    this.elapsedMsec = tempoService.elapsedMsec;
+  constructor(intervalMsec: number) {
+    if (intervalMsec <= 0) {
+      throw new Error('Interval must be greater than 0');
+    }
+    this.timestamp = tempoService.elapsedMsec;
+    this.intervalMsec = intervalMsec;
     this.noteIndex = beatRecorder.getCurrentNoteIndex();
   }
 
   toString(): string {
-    return `[${this.timestamp}ms] Timing pulse (elapsed: ${this.elapsedMsec}ms)`;
+    return `[${this.timestamp}ms] Timing pulse (elapsed: ${this.intervalMsec}ms)`;
   }
 
   toCsv(): string {
-    return `${this.timestamp},${this.noteIndex},timing,,${this.elapsedMsec},`;
+    return `${this.timestamp},${this.noteIndex},timing,,${this.intervalMsec},`;
   }
 
   replay(): void {
-    tempoService.simulateInterval(this.elapsedMsec);
+    tempoService.simulateInterval(this.intervalMsec);
   }
 }
 
@@ -171,8 +174,8 @@ class EventRecorderService {
     this.events.addEvent(new MissedNoteRecord(feedback));
   }
 
-  recordTimingPulse() {
-    this.events.addEvent(new TimingPulseRecord());
+  recordTimingPulse(intervalMsec: number) {
+    this.events.addEvent(new TimingPulseRecord(intervalMsec));
   }
 
   getEvents(): EventRecord[] {
@@ -192,6 +195,9 @@ class EventRecorderService {
   }
 
   replay(): void {
+    beatRecorder.setBeat(beatRecorder.beat!);
+    tempoService.prepareIntervalTimer();
+
     const wasRecording = tempoService.isRecording;
     tempoService.reset();
     tempoService.startSimulatedIntervalTimerForTesting();
@@ -214,12 +220,12 @@ class EventRecorderService {
     // Save previous version if file exists
     if (fs.existsSync(filename)) {
       const prevContent = fs.readFileSync(filename, 'utf8');
-      if (prevContent !== csv) {
+      if (prevContent != csv) {
         console.log(`Changes detected in ${filename}`);
-        const { dir, name, ext } = path.parse(filename);
-        const prevFile = path.join(dir, `${name}-prev${ext}`);
-        fs.writeFileSync(prevFile, prevContent);
       }
+      const { dir, name, ext } = path.parse(filename);
+      const prevFile = path.join(dir, `${name}-prev${ext}`);
+      fs.writeFileSync(prevFile, prevContent);
     }
 
     fs.writeFileSync(filename, csv);
