@@ -57,15 +57,16 @@ class TempoService {
     const pps = this.bpm * this.ppqn;
     this.midiClockPulseInterval = (60 * 1000) / pps;
 
-    this.time = this.getTime();
-    this.startTimeMsec = this.time;
+    this.time = 0;
+    this.startTimeMsec = this.getTime();
     this.nextPulseNum = 0;
   }
 
   startSimulatedIntervalTimerForTesting() {
     this.isSimulatedTimerForTesting = true;
     this.time = 0;
-    this.startTimeMsec = this.time;
+    this.startTimeMsec = this.getTime();
+    this.elapsedMsec = 0;
     this.startIntervalTimer();
   }
 
@@ -234,7 +235,7 @@ class TempoService {
   }
 
   private start() {
-    this.time = WebMidi.time;
+    this.time = this.getTime();
     this.startTimeMsec = this.time;
     this.currentSpp = this.startSpp;
     this.sendSpp(this.currentSpp);

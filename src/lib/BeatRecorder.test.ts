@@ -219,8 +219,7 @@ describe('BeatRecorder', () => {
     expect(numMissedNotes).toBe(1);
 
     // Reset state, including performance and performanceFeedback
-    beatRecorder.setBeat(beat);
-    tempoService.record();
+    eventRecorder.saveToCsv('test.csv');
     eventRecorder.replay();
     eventRecorder.saveToCsv('test.csv');
 

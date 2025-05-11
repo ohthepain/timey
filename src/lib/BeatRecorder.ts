@@ -23,7 +23,7 @@ function quantizeTo32nd(elapsedMsec: number, bpm: number) {
 
 class BeatRecorder extends EventEmitter {
   private static _instance: BeatRecorder;
-  private beat: Beat | null = null;
+  public beat: Beat | null = null;
   // Note: setBeat must reset entire object state
   public performance: Performance = new Performance({ beatId: 'no beat!' });
   public performanceFeedback: PerformanceFeedback = new PerformanceFeedback([]);
