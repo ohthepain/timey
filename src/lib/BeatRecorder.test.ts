@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest';
 import { beatRecorder } from './BeatRecorder';
 import { tempoService } from './MidiSync/TempoService';
 import { midiService } from './MidiService';
@@ -36,9 +36,7 @@ function dump(performance: Performance, feedback: BeatNoteFeedback[]) {
 describe('BeatRecorder', () => {
   let beat: Beat;
 
-  beforeEach(async () => {
-    tempoService.reset();
-
+  beforeAll(async () => {
     // Fetch the real module
     const module = await moduleRepository.getModuleById('c55b83e4-11d9-48f3-acc9-bbcbfb8a1a1f');
     if (!module || !module.beats || module.beats.length === 0) {
@@ -53,8 +51,11 @@ describe('BeatRecorder', () => {
 
     // Reset the recorder state
     beatRecorder.setBeat(beat);
+  });
 
+  beforeEach(async () => {
     // Start the tempo service with simulated timer
+    tempoService.reset();
     tempoService.startSimulatedIntervalTimerForTesting();
     tempoService.bpm = 120; // Set a standard BPM for testing
   });
@@ -183,24 +184,52 @@ describe('BeatRecorder', () => {
 
   it('miss first note 2, with extra note', () => {
     beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
 
     // midiService.emitMidiNote(getNote('kick'), 100);
+    tempoService.record();
     tempoService.simulateInterval(10);
     midiService.emitMidiNote(getNote('hihat'), 100);
     midiService.emitMidiNote(getNote('snare'), 100);
     simulateEighth();
     midiService.emitMidiNote(getNote('hihat'), 100);
 
-    dump(beatRecorder.performance, beatRecorder.performanceFeedback.beatNoteFeedback);
+    // dump(beatRecorder.performance, beatRecorder.performanceFeedback.beatNoteFeedback);
+    eventRecorder.saveToCsv('test.csv');
+
+    const a = beatRecorder;
+    expect(beatRecorder.performance.notes).toHaveLength(3);
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
+
+    // Verify each note was recorded correctly
+    let numMissedNotes = 0;
+    let notes = beatRecorder.performance.notes;
+    notes.forEach((note: BeatNote) => {
+      expect(note.microtiming).toBe(0);
+    });
+
+    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+      const f = feedback;
+      if (feedback.missedNotes?.length) {
+        numMissedNotes += feedback.missedNotes.length;
+        expect(feedback.index).toBe(0);
+        expect(feedback.missedNotes).toEqual(['kick']);
+      }
+    });
+
+    expect(numMissedNotes).toBe(1);
+
+    // Reset state, including performance and performanceFeedback
+    beatRecorder.setBeat(beat);
+    tempoService.record();
+    eventRecorder.replay();
     eventRecorder.saveToCsv('test.csv');
 
     expect(beatRecorder.performance.notes).toHaveLength(3);
     expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
 
     // Verify each note was recorded correctly
-    let numMissedNotes = 0;
-    const notes = beatRecorder.performance.notes;
+    numMissedNotes = 0;
+    notes = beatRecorder.performance.notes;
     notes.forEach((note: BeatNote) => {
       expect(note.microtiming).toBe(0);
     });

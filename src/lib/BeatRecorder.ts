@@ -23,10 +23,10 @@ function quantizeTo32nd(elapsedMsec: number, bpm: number) {
 
 class BeatRecorder extends EventEmitter {
   private static _instance: BeatRecorder;
+  private beat: Beat | null = null;
+  // Note: setBeat must reset entire object state
   public performance: Performance = new Performance({ beatId: 'no beat!' });
   public performanceFeedback: PerformanceFeedback = new PerformanceFeedback([]);
-  private referenceTime: number = 0;
-  private beat: Beat | null = null;
   private currentNoteIndex: number = 0;
   private playedNotesForCurrentIndex: number[] = [];
 
@@ -43,6 +43,23 @@ class BeatRecorder extends EventEmitter {
     midiService.removeListener('midiNote', this.midiService_midiNote);
     tempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange);
     tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handleMidiPulse);
+  }
+
+  public static getInstance(): BeatRecorder {
+    if (!BeatRecorder._instance) {
+      BeatRecorder._instance = new BeatRecorder();
+    }
+    return BeatRecorder._instance;
+  }
+
+  public setBeat(beat: Beat) {
+    console.log('BeatRecorder: setBeat', beat.id);
+    this.beat = beat;
+    // Must reset entire object state when we set a new beat
+    this.performance = new Performance({ beatId: 'no beat!' });
+    this.performanceFeedback = new PerformanceFeedback([]);
+    this.currentNoteIndex = 0;
+    this.playedNotesForCurrentIndex = [];
   }
 
   async savePerformance() {
@@ -69,19 +86,6 @@ class BeatRecorder extends EventEmitter {
     }
   }
 
-  public static getInstance(): BeatRecorder {
-    if (!BeatRecorder._instance) {
-      BeatRecorder._instance = new BeatRecorder();
-    }
-    return BeatRecorder._instance;
-  }
-
-  public setBeat(beat: Beat) {
-    console.log('BeatRecorder: setBeat', beat.id);
-    this.beat = beat;
-    this.referenceTime = 0;
-  }
-
   private handleStateChange = (state: any) => {
     if (state.isRunning && state.isRecording) {
       this.start();
@@ -95,7 +99,6 @@ class BeatRecorder extends EventEmitter {
     console.log('BeatRecorder: start', beatId);
     this.performance = new Performance({ beatId });
     this.performanceFeedback = new PerformanceFeedback([]);
-    this.referenceTime = tempoService.time;
     this.currentNoteIndex = 0;
   };
 
@@ -135,15 +138,8 @@ class BeatRecorder extends EventEmitter {
   };
 
   private handleMidiPulse = (event: { time: number; ticks: number }) => {
-    // Adjust referenceTime to correct for drift between measured and MIDI time
-    // The difference between the expected time and the actual MIDI Clock Pulse time
-    const now = tempoService.time;
-    const midiTime = event.time;
-    const drift = midiTime - now;
-    this.referenceTime += drift;
-
     // Record the timing pulse before any other processing
-    eventRecorder.recordTimingPulse();
+    eventRecorder.recordTimingPulse(event.time);
 
     if (this.beat && tempoService.isRecording) {
       const elapsedMsec = tempoService.elapsedMsec;
@@ -189,7 +185,6 @@ class BeatRecorder extends EventEmitter {
   private makeBeatNote = (note: number, velocity: number) => {
     const bpm = tempoService.bpm;
     const elapsedMsec = tempoService.elapsedMsec;
-    // TODO: remove this.referenceTime
     const { quantized, thirtySecondMsec } = quantizeTo32nd(elapsedMsec, bpm);
     // Calculate position in the bar
     const quarterNoteMsec = 60000 / bpm;
