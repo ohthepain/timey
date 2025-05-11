@@ -206,11 +206,11 @@ export class NoteEntry {
   }
 
   /**
-   * Calculates the start time of this note in milliseconds.
+   * Calculates the start position of this note in milliseconds.
    * @param tempo - The tempo in beats per minute (BPM).
-   * @returns The start time of the note in milliseconds.
+   * @returns The start position of the note in milliseconds.
    */
-  getStartTimeMsec(tempo: number): number {
+  getStartPositionMsec(tempo: number): number {
     const beatDuration = (60 / tempo) * 1000;
     const divisionDuration = beatDuration / 2;
     const subDivisionDuration = divisionDuration / this.numSubDivisions;

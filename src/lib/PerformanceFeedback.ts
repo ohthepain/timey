@@ -1,6 +1,7 @@
 import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
 import { tempoService } from '~/lib/MidiSync/TempoService';
+import { eventRecorder } from './EventRecorderService';
 
 export class BeatNoteFeedback {
   beat: Beat;
@@ -27,7 +28,7 @@ export class PerformanceFeedback {
   lastNoteEffectiveTempo: number | null = 8;
   currentSkillLevel: number = 8;
   windowSkillLevel: number = 8;
-  windowStartTime: number = 0;
+  windowStartMsec: number = 0;
 
   constructor(beatNoteFeedback: BeatNoteFeedback[] | null) {
     this.beatNoteFeedback = beatNoteFeedback || [];
@@ -42,15 +43,15 @@ export class PerformanceFeedback {
     bpm: number
   ): BeatNoteFeedback | null {
     const position = timeMsec % beat.getLoopLengthMsec(bpm);
-    const beatNoteIndex = beat.findClosestBeatNoteIndex(noteNum, position, bpm);
+    const beatNoteIndex = index; //beat.findClosestBeatNoteIndex(noteNum, position, bpm);
     if (beatNoteIndex === index || beatNoteIndex === index + 1) {
       const closestBeatNote = beat.beatNotes.find((beatNote) => beatNote.index === beatNoteIndex);
       if (!closestBeatNote) {
         throw new Error('findClosestBeatNoteIndex returned a bad index?!?!?');
       }
 
-      const idealBeatTime = closestBeatNote.getTimeMsec(bpm);
-      const timeDiff = Beat.loopedTimeDiff(position, idealBeatTime, beat.getLoopLengthMsec(bpm));
+      const idealBeatPosition = closestBeatNote.getPositionMsec(bpm);
+      const timeDiff = Beat.loopedTimeDiff(position, idealBeatPosition, beat.getLoopLengthMsec(bpm));
       const tolerance = 60000 / bpm;
       if (Math.abs(timeDiff) <= tolerance) {
         return new BeatNoteFeedback({
@@ -104,14 +105,22 @@ export class PerformanceFeedback {
 
   addBeatNote(
     beat: Beat,
+    playedNote: BeatNote,
     index: number,
     positionMsec: number,
-    noteNum: number,
-    velocity: number
+    noteNum: number
   ): BeatNoteFeedback | null {
-    const beatNoteFeedback = this.matchNoteToBeat(beat, index, noteNum, positionMsec, velocity, tempoService.bpm);
+    const beatNoteFeedback = this.matchNoteToBeat(
+      beat,
+      index,
+      noteNum,
+      positionMsec,
+      playedNote.velocity,
+      tempoService.bpm
+    );
     if (beatNoteFeedback) {
       this.beatNoteFeedback.push(beatNoteFeedback);
+      eventRecorder.recordNoteFeedback(playedNote, beatNoteFeedback);
     }
 
     this.lastNoteEffectiveTempo = this.getEffectiveTempo(tempoService.bpm, 1);
@@ -120,11 +129,11 @@ export class PerformanceFeedback {
       if (lastNoteSkillLevel > this.windowSkillLevel) {
         // Reset skill window whenever skill drops. Punish them!!
         this.windowSkillLevel = lastNoteSkillLevel;
-        this.windowStartTime = tempoService.elapsedMsec;
-      } else if (tempoService.elapsedMsec - this.windowStartTime > 2000) {
+        this.windowStartMsec = tempoService.elapsedMsec;
+      } else if (tempoService.elapsedMsec - this.windowStartMsec > 2000) {
         // If skill is good, but we've been playing for a while, increase skill level
         this.windowSkillLevel = lastNoteSkillLevel;
-        this.windowStartTime = tempoService.elapsedMsec;
+        this.windowStartMsec = tempoService.elapsedMsec;
       }
     }
 

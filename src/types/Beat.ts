@@ -53,11 +53,11 @@ export class Beat {
   }
 
   static loopedTimeDiff(timeMsec: number, beatNoteTime: number, loopLengthMsec: number): number {
-    timeMsec %= loopLengthMsec;
+    const position = timeMsec % loopLengthMsec;
     beatNoteTime %= loopLengthMsec;
 
     // Calculate the difference, ensuring we get the shortest path around the loop
-    let diff = timeMsec - beatNoteTime;
+    let diff = position - beatNoteTime;
 
     // If the difference is more than half the loop length, we should go the other way
     if (diff > loopLengthMsec / 2) {
@@ -79,30 +79,30 @@ export class Beat {
     return false;
   };
 
-  findClosestBeatNoteIndex(noteNum: number, timeMsec: number, bpm: number): number {
-    const loopLengthMsec = this.getLoopLengthMsec(bpm);
+  // findClosestBeatNoteIndex(noteNum: number, timeMsec: number, bpm: number): number {
+  //   const loopLengthMsec = this.getLoopLengthMsec(bpm);
 
-    let closest: BeatNote | null = null;
-    let minDiff = Infinity;
+  //   let closest: BeatNote | null = null;
+  //   let minDiff = Infinity;
 
-    for (const beatNote of this.beatNotes) {
-      if (!beatNote.includesMidiNote(noteNum)) {
-        continue;
-      }
+  //   for (const beatNote of this.beatNotes) {
+  //     if (!beatNote.includesMidiNote(noteNum)) {
+  //       continue;
+  //     }
 
-      const beatNoteTime = beatNote.getTimeMsec(bpm);
-      const diff = Beat.loopedTimeDiff(timeMsec, beatNoteTime, loopLengthMsec);
-      if (Math.abs(diff) < Math.abs(minDiff)) {
-        minDiff = diff;
-        closest = beatNote;
-      }
-    }
+  //     const beatNoteTime = beatNote.getTimeMsec(bpm);
+  //     const diff = Beat.loopedTimeDiff(timeMsec, beatNoteTime, loopLengthMsec);
+  //     if (Math.abs(diff) < Math.abs(minDiff)) {
+  //       minDiff = diff;
+  //       closest = beatNote;
+  //     }
+  //   }
 
-    if (!closest) {
-      console.log('Beat.findClosestBeatNoteIndex: drum not found', noteNum);
-      return -1;
-    }
+  //   if (!closest) {
+  //     console.log('Beat.findClosestBeatNoteIndex: drum not found', noteNum);
+  //     return -1;
+  //   }
 
-    return closest.index;
-  }
+  //   return closest.index;
+  // }
 }

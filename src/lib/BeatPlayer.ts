@@ -92,7 +92,7 @@ class BeatPlayer extends EventEmitter {
       const nextNote = this.allNotes[this.noteIndex];
 
       // TODO: This won't handle tempo changes well. Calculate the amount of time to the next note relatively
-      this.nextNoteStartMsec = nextNote.getStartTimeMsec(tempoService.bpm) + loopLengthMsec * this.numLoops;
+      this.nextNoteStartMsec = nextNote.getStartPositionMsec(tempoService.bpm) + loopLengthMsec * this.numLoops;
       if (!nextNote) {
         throw new Error('No more notes to play.');
       }

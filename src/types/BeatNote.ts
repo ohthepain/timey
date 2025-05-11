@@ -43,7 +43,7 @@ export class BeatNote {
     };
   }
 
-  getTimeMsec(bpm: number): number {
+  getPositionMsec(bpm: number): number {
     const beatsPerBar = 4;
     const divisionsPerBeat = 2; // 8th notes
     const beatDurationMsec = 60000 / bpm;

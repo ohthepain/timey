@@ -14,7 +14,7 @@ import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesS
 class TempoService {
   bpm: any;
   eventsEmitter: EventEmitter;
-  lastTickTime: any;
+  lastTickTimeMsec: number = 0;
   ppqn: any;
   midiClockPulseInterval: any;
   nextPulseNum: number = 0;
@@ -25,7 +25,7 @@ class TempoService {
   isRecording: boolean = false;
   isSimulatedTimerForTesting: boolean = false;
   time: number = 0;
-  startTime: number = 0;
+  startTimeMsec: number = 0;
   elapsedMsec: number = 0;
   startSpp: number = 0;
   loopSpp: number = 0;
@@ -58,14 +58,14 @@ class TempoService {
     this.midiClockPulseInterval = (60 * 1000) / pps;
 
     this.time = this.getTime();
-    this.startTime = this.time;
+    this.startTimeMsec = this.time;
     this.nextPulseNum = 0;
   }
 
   startSimulatedIntervalTimerForTesting() {
     this.isSimulatedTimerForTesting = true;
     this.time = 0;
-    this.startTime = this.time;
+    this.startTimeMsec = this.time;
     this.startIntervalTimer();
   }
 
@@ -104,16 +104,16 @@ class TempoService {
 
   handleInterval = () => {
     this.time = this.getTime();
-    this.elapsedMsec = this.time - this.startTime;
+    this.elapsedMsec = this.time - this.startTimeMsec;
 
-    if (this.time > this.startTime + this.nextPulseNum * this.midiClockPulseInterval) {
+    if (this.time > this.startTimeMsec + this.nextPulseNum * this.midiClockPulseInterval) {
       this.sendClock(this.nextPulseNum);
       this.eventsEmitter.emit('MIDI Clock Pulse', {
         time: this.elapsedMsec,
         ticks: this.nextPulseNum,
       });
 
-      this.lastTickTime = this.time;
+      this.lastTickTimeMsec = this.time;
 
       ++this.nextPulseNum;
     }
@@ -214,13 +214,14 @@ class TempoService {
 
   reset() {
     console.log(`TempoService.reset bpm ${this.bpm}`);
-    this.startTime = this.time;
-    this.lastTickTime = this.time;
+    this.stop();
+    this.startTimeMsec = this.time;
+    this.lastTickTimeMsec = this.time;
   }
 
   // TODO: Consider MIDI timecode
   getElapsedMsec(): number {
-    const elapsed = this.time - this.startTime;
+    const elapsed = this.time - this.startTimeMsec;
     return elapsed;
   }
 
@@ -234,7 +235,7 @@ class TempoService {
 
   private start() {
     this.time = WebMidi.time;
-    this.startTime = this.time;
+    this.startTimeMsec = this.time;
     this.currentSpp = this.startSpp;
     this.sendSpp(this.currentSpp);
     this.isRunning = true;

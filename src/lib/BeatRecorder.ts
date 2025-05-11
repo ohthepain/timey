@@ -9,6 +9,7 @@ import { savePerformanceServerFn, deletePerformancesByBeatIdAndUserId } from '~/
 import { useNavigationStore } from '~/state/NavigationStore';
 import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
 import { should } from 'vitest';
+import { eventRecorder } from './EventRecorderService';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(elapsedMsec: number, bpm: number) {
@@ -128,6 +129,7 @@ class BeatRecorder extends EventEmitter {
         missedNotes: unplayedNotes,
       });
       this.performanceFeedback.beatNoteFeedback.push(beatNoteFeedback);
+      eventRecorder.recordMissedNotes(beatNoteFeedback);
       this.emit('missedNotes', beatNoteFeedback);
     }
   };
@@ -140,13 +142,16 @@ class BeatRecorder extends EventEmitter {
     const drift = midiTime - now;
     this.referenceTime += drift;
 
+    // Record the timing pulse before any other processing
+    eventRecorder.recordTimingPulse();
+
     if (this.beat && tempoService.isRecording) {
       const elapsedMsec = tempoService.elapsedMsec;
       const position = elapsedMsec % this.beat.getLoopLengthMsec(tempoService.bpm);
       const currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
       const nextNoteIndex = (this.currentNoteIndex + 1) % this.beat.beatNotes.length;
       const nextBeatNote = this.beat.beatNotes[nextNoteIndex];
-      const nextBeatNoteTime = nextBeatNote.getTimeMsec(tempoService.bpm);
+      const nextBeatNoteTime = nextBeatNote.getPositionMsec(tempoService.bpm);
 
       // Special case for the last note: check if we're at the end of the beat
       const isLastNote = this.currentNoteIndex === this.beat.beatNotes.length - 1;
@@ -161,21 +166,24 @@ class BeatRecorder extends EventEmitter {
   };
 
   private advanceToNextIndex = () => {
+    const currentBeatNote = this.beat!.beatNotes[this.currentNoteIndex];
+    const currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+    const elapsedMsec = tempoService.elapsedMsec;
+    const position = elapsedMsec % this.beat!.getLoopLengthMsec(tempoService.bpm);
+
+    // Don't allow advancing before we've reached the start time of the current note
+    if (position < currentBeatNoteTime) {
+      throw new Error(
+        `Cannot advance to next index before reaching current note's start time. Current position: ${position}ms, Note start time: ${currentBeatNoteTime}ms`
+      );
+    }
+
     this.checkUnplayedNotes();
     this.currentNoteIndex = (this.currentNoteIndex + 1) % this.beat!.beatNotes.length;
     this.playedNotesForCurrentIndex = [];
   };
 
-  private midiService_midiNote = (e: any) => {
-    if (!tempoService.isRecording || !this.beat) {
-      return;
-    }
-
-    if (e.note === 75) {
-      // Ignore metronome
-      return;
-    }
-
+  private makeBeatNote = (note: number, velocity: number) => {
     const bpm = tempoService.bpm;
     const elapsedMsec = tempoService.elapsedMsec;
     // TODO: remove this.referenceTime
@@ -208,91 +216,81 @@ class BeatRecorder extends EventEmitter {
       }
     }
 
-    const noteString = String(e.note);
+    const noteString = String(note);
 
     const playedNote = new BeatNote({
       id: uuidv4(),
-      index: this.currentNoteIndex,
+      index: this.currentNoteIndex, // TODO: This will be wrong if we advance to the next index below
       noteString,
       barNum,
       beatNum,
       divisionNum,
       subDivisionNum: bestSubDivNum,
       numSubDivisions: bestSubDiv,
-      velocity: e.velocity,
+      velocity: velocity,
       microtiming: divisionElapsed - bestSubDivNum * (quarterNoteMsec / 2 / bestSubDiv),
     });
 
-    var beatNoteFeedback;
+    return playedNote;
+  };
+
+  private midiService_midiNote = (e: any) => {
+    if (!tempoService.isRecording || !this.beat) {
+      return;
+    }
+
+    if (e.note === 75) {
+      // Ignore metronome
+      return;
+    }
+
+    // Record the raw MIDI note input immediately
+    eventRecorder.recordMidiNote(e.note, e.velocity);
+
+    const playedNote = this.makeBeatNote(e.note, e.velocity);
     this.performance.notes.push(playedNote);
+
+    const elapsedMsec = tempoService.elapsedMsec;
+    const bpm = tempoService.bpm;
 
     // Special case: the note has already been played for the current index AND exists at the next index.
     // In this case we advance to the next index. BUT only if we have already reached the time of the current index.
     let currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-    let currentBeatNoteTime = currentBeatNote.getTimeMsec(tempoService.bpm);
-    if (this.playedNotesForCurrentIndex.includes(e.note) && currentBeatNote.includesMidiNote(e.note)) {
-      if (elapsedMsec >= currentBeatNoteTime) {
+    let currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+    const nextBeatNote = this.beat.beatNotes[(this.currentNoteIndex + 1) % this.beat.beatNotes.length];
+
+    if (!currentBeatNote.includesMidiNote(e.note) || this.playedNotesForCurrentIndex.includes(e.note)) {
+      if (nextBeatNote.includesMidiNote(e.note)) {
         this.advanceToNextIndex();
         currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-        currentBeatNoteTime = currentBeatNote.getTimeMsec(tempoService.bpm);
+        currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
       } else {
-        // We have already advanced to the next index, but we're still in the interval of the current index.
-        // So we don't want to create any feedback for this note. It's an extra note.
+        console.log('BeatRecorder: handleMidiNote - extra note', playedNote);
+        eventRecorder.recordExtraNote(playedNote);
         return;
       }
     }
 
-    this.playedNotesForCurrentIndex.push(e.note);
-
     const position = elapsedMsec % this.beat!.getLoopLengthMsec(bpm);
-    beatNoteFeedback = this.performanceFeedback.addBeatNote(
+    const beatNoteFeedback = this.performanceFeedback.addBeatNote(
       this.beat,
-      this.currentNoteIndex,
+      playedNote,
+      this.currentNoteIndex, // This is the wrong index as it seems to have advanced, so we get the wrong time
       position,
-      e.note,
-      e.velocity
+      e.note
     );
+
     if (beatNoteFeedback) {
-      if (beatNoteFeedback.index !== this.currentNoteIndex) {
-        this.advanceToNextIndex();
-        if (beatNoteFeedback.index !== this.currentNoteIndex) {
-          throw new Error('BeatRecorder: handleMidiNote - index mismatch');
-        }
-        this.playedNotesForCurrentIndex.push(e.note);
-      }
+      // Record the played note with its feedback
       const tempoFeedback = this.performanceFeedback.getTempoFeedback(tempoService.bpm);
       this.emit('tempoFeedback', tempoFeedback);
     } else {
       console.log('BeatRecorder: handleMidiNote - no match', playedNote);
+      // Record as extra note if it doesn't match any expected note
+      eventRecorder.recordExtraNote(playedNote);
     }
 
     this.emit('beatNote', beatNoteFeedback);
-    // const currentBeatNote = this.beat!.beatNotes[this.currentNoteIndex];
-    // Removed the check for unplayed notes here - we can do that based on MIDI clock
-
-    // // If there are no unplayed notes left, move to the next note
-    // const unplayedNotes = this.findUnplayedNotes(currentBeatNote, this.playedNotesForCurrentIndex);
-    // if (unplayedNotes.length === 0) {
-    //   // // If enough time has passed, go to next note
-    //   // const currentBeatNoteTime = currentBeatNote.getTimeMsec(bpm);
-    //   // // TODO: remove this.referenceTime and quantized
-    //   // const isLastNote = this.currentNoteIndex === this.beat.beatNotes.length - 1;
-    //   // const nextNoteIndex = (this.currentNoteIndex + 1) % this.beat.beatNotes.length;
-    //   // const nextBeatNote = this.beat.beatNotes[nextNoteIndex];
-    //   // const nextBeatNoteTime = nextBeatNote.getTimeMsec(tempoService.bpm);
-    //   // const shouldAdvance = isLastNote
-    //   //   ? position < 100 // If we're at the last note, advance when we're near the start of the loop
-    //   //   : position >= nextBeatNoteTime; // Otherwise, advance when we pass the next note's time
-
-    //   // if (shouldAdvance) {
-    //   // Find any unplayed notes
-    //   // TODO: This makes no sense
-    //   this.checkUnplayedNotes();
-
-    //   // Go to next note
-    //   this.currentNoteIndex = (this.currentNoteIndex + 1) % this.beat!.beatNotes.length;
-    //   this.playedNotesForCurrentIndex = [];
-    // }
   };
 
   public getPerformance(): Performance | null {
