@@ -167,6 +167,13 @@ class BeatRecorder extends EventEmitter {
     const position = elapsedMsec % this.beat.getLoopLengthMsec(tempoService.bpm);
     const currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
     const currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+
+    // Special case for the last note: we've reached it if we're near the start of the loop
+    const isLastNote = this.currentNoteIndex === this.beat.beatNotes.length - 1;
+    if (isLastNote) {
+      return position < 100; // If we're at the last note, we've reached it when we're near the start of the loop
+    }
+
     return position >= currentBeatNoteTime;
   }
 

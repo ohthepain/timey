@@ -104,7 +104,7 @@ describe('BeatRecorder', () => {
 
       // Play each expected note
       for (const note of expectedNotes) {
-        const midiNote = getNote(note) || 36; // Default to kick if note not found
+        const midiNote = getNote(note);
         midiService.emitMidiNote(midiNote, 100);
         numNotes++;
         // debugger; // This will force a breakpoint
