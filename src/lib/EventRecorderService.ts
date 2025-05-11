@@ -2,6 +2,7 @@ import { tempoService } from './MidiSync/TempoService';
 import { BeatNote } from '~/types/BeatNote';
 import { BeatNoteFeedback } from './PerformanceFeedback';
 import { GeneralMidiService } from './GeneralMidiService';
+import { beatRecorder } from './BeatRecorder';
 
 type EventType = 'midi' | 'played' | 'missed' | 'extra' | 'timing';
 
@@ -17,11 +18,13 @@ class MidiNoteRecord implements EventRecord {
   type: EventType = 'midi';
   private note: number;
   private velocity: number;
+  private noteIndex: number;
 
   constructor(note: number, velocity: number) {
     this.timestamp = tempoService.time;
     this.note = note;
     this.velocity = velocity;
+    this.noteIndex = beatRecorder.getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -31,7 +34,7 @@ class MidiNoteRecord implements EventRecord {
 
   toCsv(): string {
     const drumName = GeneralMidiService.getDrumName(this.note) || `note ${this.note}`;
-    return `${this.timestamp},midi,${drumName},,${this.velocity}`;
+    return `${this.timestamp},${this.noteIndex},midi,${drumName},,${this.velocity}`;
   }
 }
 
@@ -43,6 +46,7 @@ class PlayedNoteRecord implements EventRecord {
   private diffMs: number;
   private velocity: number;
   private velocityDiff: number;
+  private noteIndex: number;
 
   constructor(note: BeatNote, feedback: BeatNoteFeedback) {
     this.timestamp = tempoService.time;
@@ -51,6 +55,7 @@ class PlayedNoteRecord implements EventRecord {
     this.diffMs = feedback.timingDifferenceMs || 0;
     this.velocity = note.velocity;
     this.velocityDiff = feedback.velocityDifference || 0;
+    this.noteIndex = beatRecorder.getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -58,7 +63,8 @@ class PlayedNoteRecord implements EventRecord {
   }
 
   toCsv(): string {
-    return `${this.timestamp},played,${this.note},${this.diffMs},${this.velocity}`;
+    const drumName = GeneralMidiService.getDrumName(this.note) || `note ${this.note}`;
+    return `${this.timestamp},${this.noteIndex},played,${drumName},${this.diffMs},${this.velocity}`;
   }
 }
 
@@ -66,10 +72,12 @@ class MissedNoteRecord implements EventRecord {
   timestamp: number;
   type: EventType = 'missed';
   private noteString: string;
+  private noteIndex: number;
 
   constructor(feedback: BeatNoteFeedback) {
     this.timestamp = tempoService.time;
     this.noteString = feedback.missedNotes?.join(' ') || '';
+    this.noteIndex = beatRecorder.getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -77,7 +85,7 @@ class MissedNoteRecord implements EventRecord {
   }
 
   toCsv(): string {
-    return `${this.timestamp},missed,${this.noteString},,`;
+    return `${this.timestamp},${this.noteIndex},missed,${this.noteString},,`;
   }
 }
 
@@ -86,11 +94,13 @@ class ExtraNoteRecord implements EventRecord {
   type: EventType = 'extra';
   private note: number;
   private noteString: string;
+  private noteIndex: number;
 
   constructor(note: BeatNote) {
     this.timestamp = tempoService.time;
     this.note = Number(note.noteString);
     this.noteString = note.noteString;
+    this.noteIndex = beatRecorder.getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -100,7 +110,7 @@ class ExtraNoteRecord implements EventRecord {
 
   toCsv(): string {
     const drumName = GeneralMidiService.getDrumName(this.note) || `note ${this.note}`;
-    return `${this.timestamp},extra,${drumName},,`;
+    return `${this.timestamp},${this.noteIndex},extra,${drumName},,`;
   }
 }
 
@@ -108,10 +118,12 @@ class TimingPulseRecord implements EventRecord {
   timestamp: number;
   type: EventType = 'timing';
   private elapsedMsec: number;
+  private noteIndex: number;
 
   constructor() {
     this.timestamp = tempoService.time;
     this.elapsedMsec = tempoService.elapsedMsec;
+    this.noteIndex = beatRecorder.getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -119,7 +131,7 @@ class TimingPulseRecord implements EventRecord {
   }
 
   toCsv(): string {
-    return `${this.timestamp},timing,,${this.elapsedMsec},`;
+    return `${this.timestamp},${this.noteIndex},timing,,${this.elapsedMsec},`;
   }
 }
 
@@ -169,7 +181,7 @@ class EventRecorderService {
   }
 
   toCsv(): string {
-    const header = 'timestamp,type,note,timing,velocity';
+    const header = 'timestamp,noteIndex,type,note,timing,velocity';
     const rows = this.events.map((e) => e.toCsv());
     return [header, ...rows].join('\n');
   }

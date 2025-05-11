@@ -8,8 +8,8 @@ import { Performance } from '~/types/Performance';
 import { savePerformanceServerFn, deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
-import { should } from 'vitest';
 import { eventRecorder } from './EventRecorderService';
+import { GeneralMidiService } from '~/lib/GeneralMidiService';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(elapsedMsec: number, bpm: number) {
@@ -165,16 +165,19 @@ class BeatRecorder extends EventEmitter {
     }
   };
 
-  private advanceToNextIndex = () => {
-    const currentBeatNote = this.beat!.beatNotes[this.currentNoteIndex];
-    const currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+  private hasReachedCurrentIndex(): boolean {
+    if (!this.beat) return false;
     const elapsedMsec = tempoService.elapsedMsec;
-    const position = elapsedMsec % this.beat!.getLoopLengthMsec(tempoService.bpm);
+    const position = elapsedMsec % this.beat.getLoopLengthMsec(tempoService.bpm);
+    const currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
+    const currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+    return position >= currentBeatNoteTime;
+  }
 
-    // Don't allow advancing before we've reached the start time of the current note
-    if (position < currentBeatNoteTime) {
+  private advanceToNextIndex = () => {
+    if (!this.hasReachedCurrentIndex()) {
       throw new Error(
-        `Cannot advance to next index before reaching current note's start time. Current position: ${position}ms, Note start time: ${currentBeatNoteTime}ms`
+        `Cannot advance to next index before reaching current note's start time. Current position: ${tempoService.elapsedMsec % this.beat!.getLoopLengthMsec(tempoService.bpm)}ms, Note start time: ${this.beat!.beatNotes[this.currentNoteIndex].getPositionMsec(tempoService.bpm)}ms`
       );
     }
 
@@ -256,14 +259,15 @@ class BeatRecorder extends EventEmitter {
     // Special case: the note has already been played for the current index AND exists at the next index.
     // In this case we advance to the next index. BUT only if we have already reached the time of the current index.
     let currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-    let currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+    // let currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
     const nextBeatNote = this.beat.beatNotes[(this.currentNoteIndex + 1) % this.beat.beatNotes.length];
+    const position = elapsedMsec % this.beat.getLoopLengthMsec(bpm);
 
     if (!currentBeatNote.includesMidiNote(e.note) || this.playedNotesForCurrentIndex.includes(e.note)) {
-      if (nextBeatNote.includesMidiNote(e.note)) {
+      if (nextBeatNote.includesMidiNote(e.note) && this.hasReachedCurrentIndex()) {
         this.advanceToNextIndex();
         currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-        currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+        // currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
       } else {
         console.log('BeatRecorder: handleMidiNote - extra note', playedNote);
         eventRecorder.recordExtraNote(playedNote);
@@ -271,11 +275,15 @@ class BeatRecorder extends EventEmitter {
       }
     }
 
-    const position = elapsedMsec % this.beat!.getLoopLengthMsec(bpm);
+    // Add the note to playedNotesForCurrentIndex if it's expected in the current beat note
+    if (currentBeatNote.includesMidiNote(e.note)) {
+      this.playedNotesForCurrentIndex.push(e.note);
+    }
+
     const beatNoteFeedback = this.performanceFeedback.addBeatNote(
       this.beat,
       playedNote,
-      this.currentNoteIndex, // This is the wrong index as it seems to have advanced, so we get the wrong time
+      this.currentNoteIndex,
       position,
       e.note
     );
@@ -295,6 +303,10 @@ class BeatRecorder extends EventEmitter {
 
   public getPerformance(): Performance | null {
     return this.performance;
+  }
+
+  public getCurrentNoteIndex(): number {
+    return this.currentNoteIndex;
   }
 }
 
