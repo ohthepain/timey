@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { TempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/TempoService';
 import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
 import { beatRecorder } from '~/lib/BeatRecorder';

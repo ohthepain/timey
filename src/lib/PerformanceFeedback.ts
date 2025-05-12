@@ -1,6 +1,6 @@
 import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
-import { TempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/TempoService';
 import { EventRecorderService } from './EventRecorderService';
 
 export class BeatNoteFeedback {

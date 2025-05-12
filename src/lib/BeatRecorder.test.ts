@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest';
 import { beatRecorder } from './BeatRecorder';
-import { TempoService } from './MidiSync/TempoService';
+import { TempoService } from './TempoService';
 import { midiService } from './MidiService';
 import { moduleRepository } from '~/repositories/moduleRepository';
 import { Performance } from '~/types/Performance';

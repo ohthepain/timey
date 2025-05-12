@@ -1,7 +1,7 @@
 import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
 import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
-import { EventRecorderService } from '../EventRecorderService';
+import { EventRecorderService } from './EventRecorderService';
 
 // TempoService is a singleton that drives the fake MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter

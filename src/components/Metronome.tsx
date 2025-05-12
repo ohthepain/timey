@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { TempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/TempoService';
 import '~/lib/MetronomeService'; // Side-effects import
 import { useNavigationStore } from '~/state/NavigationStore';
 import { GoMute, GoUnmute } from 'react-icons/go';

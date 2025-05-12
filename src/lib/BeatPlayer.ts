@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { TempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/TempoService';
 import { NoteEntry, ConvertNoteToMidiNote } from '~/lib/ParseBeat';
 import { midiService } from '~/lib/MidiService';
 import { useNavigationStore } from '~/state/NavigationStore';

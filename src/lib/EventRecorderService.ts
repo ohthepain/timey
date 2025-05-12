@@ -1,4 +1,4 @@
-import { TempoService } from './MidiSync/TempoService';
+import { TempoService } from './TempoService';
 import { BeatNote } from '~/types/BeatNote';
 import { BeatNoteFeedback } from './PerformanceFeedback';
 import { GeneralMidiService } from './GeneralMidiService';

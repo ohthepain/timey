@@ -1,7 +1,7 @@
 import { midiService } from '~/lib/MidiService';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { TempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/TempoService';
 
 class MetronomeService {
   private static _instance: MetronomeService;

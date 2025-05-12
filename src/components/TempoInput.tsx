@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/TempoService';
 
 export function TempoInput() {
   const tempoService = TempoService.getInstance();
