@@ -1,6 +1,7 @@
 import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
 import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
+import { EventRecorderService } from '../EventRecorderService';
 
 // TempoService is a singleton that drives the fake MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
@@ -11,7 +12,8 @@ import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesS
 
 // Also need MIDI service to subscribe to start and stop events?
 
-class TempoService {
+export class TempoService {
+  private static _instance: TempoService | null = null;
   bpm: any;
   eventsEmitter: EventEmitter;
   lastTickTimeMsec: number = 0;
@@ -31,6 +33,10 @@ class TempoService {
   loopSpp: number = 0;
   currentSpp: number = 0;
   fakeMidiClockTimerResolution: number = 4;
+
+  get eventRecorder(): EventRecorderService {
+    return EventRecorderService.getInstance();
+  }
 
   constructor() {
     console.log(`hi from TempoService:ctor`);
@@ -89,6 +95,9 @@ class TempoService {
   }
 
   simulateInterval = (intervalMsec: number) => {
+    // Record the timing pulse before any other processing
+    this.eventRecorder.recordTimingPulse(intervalMsec);
+
     this.time += intervalMsec;
     if (this.getTime() !== this.time) {
       throw new Error('TempoService: simulateInterval - time mismatch');
@@ -278,6 +287,11 @@ class TempoService {
     this.sendStateChange();
     this.sendStop();
   }
-}
 
-export const tempoService = new TempoService();
+  static getInstance() {
+    if (!TempoService._instance) {
+      TempoService._instance = new TempoService();
+    }
+    return TempoService._instance;
+  }
+}

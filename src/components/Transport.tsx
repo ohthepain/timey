@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { tempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/MidiSync/TempoService';
 import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
 import { beatRecorder } from '~/lib/BeatRecorder';
@@ -11,6 +11,7 @@ export const Transport = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const { currentBeat, getPerformancesForBeatId } = useNavigationStore();
+  const tempoService = TempoService.getInstance();
 
   const handlePlayButton = () => {
     console.log('Transport: handlePlayButton');

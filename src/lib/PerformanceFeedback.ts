@@ -1,7 +1,7 @@
 import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
-import { tempoService } from '~/lib/MidiSync/TempoService';
-import { eventRecorder } from './EventRecorderService';
+import { TempoService } from '~/lib/MidiSync/TempoService';
+import { EventRecorderService } from './EventRecorderService';
 
 export class BeatNoteFeedback {
   beat: Beat;
@@ -32,6 +32,14 @@ export class PerformanceFeedback {
 
   constructor(beatNoteFeedback: BeatNoteFeedback[] | null) {
     this.beatNoteFeedback = beatNoteFeedback || [];
+  }
+
+  get tempoService(): TempoService {
+    return TempoService.getInstance();
+  }
+
+  get eventRecorder(): EventRecorderService {
+    return EventRecorderService.getInstance();
   }
 
   matchNoteToBeat(
@@ -116,24 +124,24 @@ export class PerformanceFeedback {
       noteNum,
       positionMsec,
       playedNote.velocity,
-      tempoService.bpm
+      this.tempoService.bpm
     );
     if (beatNoteFeedback) {
       this.beatNoteFeedback.push(beatNoteFeedback);
-      eventRecorder.recordNoteFeedback(playedNote, beatNoteFeedback);
+      this.eventRecorder.recordNoteFeedback(playedNote, beatNoteFeedback);
     }
 
-    this.lastNoteEffectiveTempo = this.getEffectiveTempo(tempoService.bpm, 1);
+    this.lastNoteEffectiveTempo = this.getEffectiveTempo(this.tempoService.bpm, 1);
     if (this.lastNoteEffectiveTempo) {
-      const lastNoteSkillLevel = this.getSkillLevelForTempo(this.lastNoteEffectiveTempo, tempoService.bpm);
+      const lastNoteSkillLevel = this.getSkillLevelForTempo(this.lastNoteEffectiveTempo, this.tempoService.bpm);
       if (lastNoteSkillLevel > this.windowSkillLevel) {
         // Reset skill window whenever skill drops. Punish them!!
         this.windowSkillLevel = lastNoteSkillLevel;
-        this.windowStartMsec = tempoService.elapsedMsec;
-      } else if (tempoService.elapsedMsec - this.windowStartMsec > 2000) {
+        this.windowStartMsec = this.tempoService.elapsedMsec;
+      } else if (this.tempoService.elapsedMsec - this.windowStartMsec > 2000) {
         // If skill is good, but we've been playing for a while, increase skill level
         this.windowSkillLevel = lastNoteSkillLevel;
-        this.windowStartMsec = tempoService.elapsedMsec;
+        this.windowStartMsec = this.tempoService.elapsedMsec;
       }
     }
 

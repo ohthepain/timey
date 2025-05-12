@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Input, NoteMessageEvent, Output, WebMidi } from 'webmidi';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { EventEmitter } from 'events';
-import { tempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/MidiSync/TempoService';
 
 class MidiService extends EventEmitter {
   receivedResponse: boolean = false;
@@ -23,8 +23,12 @@ class MidiService extends EventEmitter {
     this.enable();
   }
 
+  get tempoService(): TempoService {
+    return TempoService.getInstance();
+  }
+
   async enable() {
-    if (tempoService.isSimulatedTimerForTesting) {
+    if (this.tempoService.isSimulatedTimerForTesting) {
       return;
     }
     if (!WebMidi.enabled) {

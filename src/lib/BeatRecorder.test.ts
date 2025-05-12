@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest';
 import { beatRecorder } from './BeatRecorder';
-import { tempoService } from './MidiSync/TempoService';
+import { TempoService } from './MidiSync/TempoService';
 import { midiService } from './MidiService';
 import { moduleRepository } from '~/repositories/moduleRepository';
 import { Performance } from '~/types/Performance';
@@ -9,7 +9,7 @@ import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
 import { GeneralMidiService } from './GeneralMidiService';
 import { BeatNoteFeedback } from './PerformanceFeedback';
-import { eventRecorder } from './EventRecorderService';
+import { EventRecorderService } from './EventRecorderService';
 
 // Helper function to dump performance and feedback data
 function dump(performance: Performance, feedback: BeatNoteFeedback[]) {
@@ -35,8 +35,13 @@ function dump(performance: Performance, feedback: BeatNoteFeedback[]) {
 
 describe('BeatRecorder', () => {
   let beat: Beat;
+  let eventRecorder: EventRecorderService;
+  let tempoService: TempoService;
 
   beforeAll(async () => {
+    eventRecorder = EventRecorderService.getInstance();
+    tempoService = TempoService.getInstance();
+
     // Fetch the real module
     const module = await moduleRepository.getModuleById('c55b83e4-11d9-48f3-acc9-bbcbfb8a1a1f');
     if (!module || !module.beats || module.beats.length === 0) {
@@ -91,6 +96,7 @@ describe('BeatRecorder', () => {
 
   it('play the beat perfectly!', () => {
     beatRecorder.setBeat(beat);
+    beatRecorder.start();
     tempoService.isRecording = true;
 
     // Play through all notes in the beat

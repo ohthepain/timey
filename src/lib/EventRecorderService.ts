@@ -1,4 +1,4 @@
-import { tempoService } from './MidiSync/TempoService';
+import { TempoService } from './MidiSync/TempoService';
 import { BeatNote } from '~/types/BeatNote';
 import { BeatNoteFeedback } from './PerformanceFeedback';
 import { GeneralMidiService } from './GeneralMidiService';
@@ -14,10 +14,14 @@ class MidiNoteRecord implements EventRecord {
   private noteIndex: number;
 
   constructor(note: number, velocity: number) {
-    this.timestamp = tempoService.elapsedMsec;
+    this.timestamp = TempoService.getInstance().elapsedMsec;
     this.note = note;
     this.velocity = velocity;
     this.noteIndex = beatRecorder.getCurrentNoteIndex();
+  }
+
+  get tempoService(): TempoService {
+    return TempoService.getInstance();
   }
 
   toString(): string {
@@ -46,7 +50,7 @@ class PlayedNoteRecord implements EventRecord {
   private noteIndex: number;
 
   constructor(note: BeatNote, feedback: BeatNoteFeedback) {
-    this.timestamp = tempoService.elapsedMsec;
+    this.timestamp = TempoService.getInstance().elapsedMsec;
     this.note = Number(note.noteString);
     this.noteString = note.noteString;
     this.diffMs = feedback.timingDifferenceMs || 0;
@@ -74,7 +78,7 @@ class MissedNoteRecord implements EventRecord {
   private noteIndex: number;
 
   constructor(feedback: BeatNoteFeedback) {
-    this.timestamp = tempoService.elapsedMsec;
+    this.timestamp = TempoService.getInstance().elapsedMsec;
     this.noteString = feedback.missedNotes?.join(' ') || '';
     this.noteIndex = beatRecorder.getCurrentNoteIndex();
   }
@@ -98,7 +102,7 @@ class ExtraNoteRecord implements EventRecord {
   private noteIndex: number;
 
   constructor(note: BeatNote) {
-    this.timestamp = tempoService.elapsedMsec;
+    this.timestamp = TempoService.getInstance().elapsedMsec;
     this.note = Number(note.noteString);
     this.noteString = note.noteString;
     this.noteIndex = beatRecorder.getCurrentNoteIndex();
@@ -127,7 +131,7 @@ class TimingPulseRecord implements EventRecord {
     if (intervalMsec <= 0) {
       throw new Error('Interval must be greater than 0');
     }
-    this.timestamp = tempoService.elapsedMsec;
+    this.timestamp = TempoService.getInstance().elapsedMsec;
     this.intervalMsec = intervalMsec;
     this.noteIndex = beatRecorder.getCurrentNoteIndex();
   }
@@ -141,21 +145,24 @@ class TimingPulseRecord implements EventRecord {
   }
 
   replay(): void {
-    tempoService.simulateInterval(this.intervalMsec);
+    TempoService.getInstance().simulateInterval(this.intervalMsec);
   }
 }
 
-class EventRecorderService {
+export class EventRecorderService {
   private static _instance: EventRecorderService;
-  private events: EventList = new EventList();
-
-  private constructor() {}
-
   static getInstance(): EventRecorderService {
     if (!EventRecorderService._instance) {
       EventRecorderService._instance = new EventRecorderService();
     }
     return EventRecorderService._instance;
+  }
+  private events: EventList = new EventList();
+
+  private constructor() {}
+
+  get tempoService(): TempoService {
+    return TempoService.getInstance();
   }
 
   recordMidiNote(note: number, velocity: number) {
@@ -196,13 +203,13 @@ class EventRecorderService {
 
   replay(): void {
     beatRecorder.setBeat(beatRecorder.beat!);
-    tempoService.prepareIntervalTimer();
+    this.tempoService.prepareIntervalTimer();
 
-    const wasRecording = tempoService.isRecording;
-    tempoService.reset();
-    tempoService.startSimulatedIntervalTimerForTesting();
+    const wasRecording = this.tempoService.isRecording;
+    this.tempoService.reset();
+    this.tempoService.startSimulatedIntervalTimerForTesting();
     if (wasRecording) {
-      tempoService.record();
+      this.tempoService.record();
     }
 
     const playbackEvents = new EventList(this.events);
@@ -231,5 +238,3 @@ class EventRecorderService {
     fs.writeFileSync(filename, csv);
   }
 }
-
-export const eventRecorder = EventRecorderService.getInstance();
