@@ -2,6 +2,7 @@ import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
 import { TempoService } from '~/lib/TempoService';
 import { EventRecorderService } from './EventRecorderService';
+import { GeneralMidiService } from './GeneralMidiService';
 
 export class BeatNoteFeedback {
   beat: Beat;
@@ -128,7 +129,14 @@ export class PerformanceFeedback {
     );
     if (beatNoteFeedback) {
       this.beatNoteFeedback.push(beatNoteFeedback);
-      this.eventRecorder.recordNoteFeedback(playedNote, beatNoteFeedback);
+      this.eventRecorder.recordNoteFeedback(
+        // convert string to note number but note with GeneralMidiService
+        parseInt(playedNote.noteString),
+        beatNoteFeedback.timingDifferenceMs || 0,
+        beatNoteFeedback.velocityDifference || 0,
+        playedNote.index,
+        TempoService.getInstance().elapsedMsec
+      );
     }
 
     this.lastNoteEffectiveTempo = this.getEffectiveTempo(this.tempoService.bpm, 1);

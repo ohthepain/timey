@@ -1,5 +1,4 @@
 import { TempoService } from './TempoService';
-import { BeatNote } from '~/types/BeatNote';
 import { BeatNoteFeedback } from './PerformanceFeedback';
 import { GeneralMidiService } from './GeneralMidiService';
 import { BeatRecorder } from './BeatRecorder';
@@ -13,11 +12,11 @@ class MidiNoteRecord implements EventRecord {
   private velocity: number;
   private noteIndex: number;
 
-  constructor(note: number, velocity: number) {
-    this.timestamp = TempoService.getInstance().elapsedMsec;
+  constructor(note: number, velocity: number, noteIndex: number, timestamp: number) {
+    this.timestamp = timestamp;
     this.note = note;
     this.velocity = velocity;
-    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
+    this.noteIndex = noteIndex;
   }
 
   get tempoService(): TempoService {
@@ -45,27 +44,25 @@ class PlayedNoteRecord implements EventRecord {
   private note: number;
   private noteString: string;
   private diffMs: number;
-  private velocity: number;
   private velocityDiff: number;
   private noteIndex: number;
 
-  constructor(note: BeatNote, feedback: BeatNoteFeedback) {
-    this.timestamp = TempoService.getInstance().elapsedMsec;
-    this.note = Number(note.noteString);
-    this.noteString = note.noteString;
-    this.diffMs = feedback.timingDifferenceMs || 0;
-    this.velocity = note.velocity;
-    this.velocityDiff = feedback.velocityDifference || 0;
-    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
+  constructor(note: number, timeDiffMs: number, velocityDiff: number, noteIndex: number, timestamp: number) {
+    this.note = note;
+    this.noteString = GeneralMidiService.getDrumName(note)!;
+    this.diffMs = timeDiffMs;
+    this.velocityDiff = velocityDiff;
+    this.noteIndex = noteIndex;
+    this.timestamp = timestamp;
   }
 
   toString(): string {
-    return `[${this.timestamp}ms] Played ${this.noteString} (timing: ${this.diffMs}ms, velocity: ${this.velocity}, diff: ${this.velocityDiff})`;
+    return `[${this.timestamp}ms] Played ${this.noteString} (timing: ${this.diffMs}ms, velocity: ${this.velocityDiff}, diff: ${this.velocityDiff})`;
   }
 
   toCsv(): string {
     const drumName = GeneralMidiService.getDrumName(this.note) || `note ${this.note}`;
-    return `${this.timestamp},${this.noteIndex},played,${drumName},${this.diffMs},${this.velocity}`;
+    return `${this.timestamp},${this.noteIndex},played,${drumName},${this.diffMs},${this.velocityDiff}`;
   }
 
   replay(): void {}
@@ -74,21 +71,21 @@ class PlayedNoteRecord implements EventRecord {
 class MissedNoteRecord implements EventRecord {
   timestamp: number;
   type: EventType = 'missed';
-  private noteString: string;
+  private noteNum: number;
   private noteIndex: number;
 
-  constructor(feedback: BeatNoteFeedback) {
-    this.timestamp = TempoService.getInstance().elapsedMsec;
-    this.noteString = feedback.missedNotes?.join(' ') || '';
-    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
+  constructor(noteNum: number, noteIndex: number, timestamp: number) {
+    this.noteNum = noteNum;
+    this.noteIndex = noteIndex;
+    this.timestamp = timestamp;
   }
 
   toString(): string {
-    return `[${this.timestamp}ms] Missed ${this.noteString}`;
+    return `[${this.timestamp}ms] Missed ${GeneralMidiService.getDrumName(this.noteNum)}`;
   }
 
   toCsv(): string {
-    return `${this.timestamp},${this.noteIndex},missed,${this.noteString},,`;
+    return `${this.timestamp},${this.noteIndex},missed,${GeneralMidiService.getDrumName(this.noteNum)},,`;
   }
 
   replay(): void {}
@@ -98,14 +95,12 @@ class ExtraNoteRecord implements EventRecord {
   timestamp: number;
   type: EventType = 'extra';
   private note: number;
-  private noteString: string;
   private noteIndex: number;
 
-  constructor(note: BeatNote) {
-    this.timestamp = TempoService.getInstance().elapsedMsec;
-    this.note = Number(note.noteString);
-    this.noteString = note.noteString;
-    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
+  constructor(note: number, noteIndex: number, timestamp: number) {
+    this.note = note;
+    this.noteIndex = noteIndex;
+    this.timestamp = timestamp;
   }
 
   toString(): string {
@@ -127,13 +122,13 @@ class TimingPulseRecord implements EventRecord {
   private intervalMsec: number;
   private noteIndex: number;
 
-  constructor(intervalMsec: number) {
-    if (intervalMsec <= 0) {
-      throw new Error('Interval must be greater than 0');
+  constructor(intervalMsec: number, noteIndex: number, timestamp: number) {
+    if (!intervalMsec || typeof intervalMsec !== 'number' || intervalMsec <= 0) {
+      throw new Error('Interval must be a number greater than 0');
     }
-    this.timestamp = TempoService.getInstance().elapsedMsec;
+    this.timestamp = timestamp;
+    this.noteIndex = noteIndex;
     this.intervalMsec = intervalMsec;
-    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -166,23 +161,36 @@ export class EventRecorderService {
   }
 
   recordMidiNote(note: number, velocity: number) {
-    this.events.addEvent(new MidiNoteRecord(note, velocity));
+    this.events.addEvent(
+      new MidiNoteRecord(
+        note,
+        velocity,
+        BeatRecorder.getInstance().getCurrentNoteIndex(),
+        TempoService.getInstance().elapsedMsec
+      )
+    );
   }
 
-  recordNoteFeedback(note: BeatNote, feedback: BeatNoteFeedback) {
-    this.events.addEvent(new PlayedNoteRecord(note, feedback));
+  recordNoteFeedback(note: number, timeDiffMs: number, velocityDiff: number, noteIndex: number, timestamp: number) {
+    this.events.addEvent(new PlayedNoteRecord(note, timeDiffMs, velocityDiff, noteIndex, timestamp));
   }
 
-  recordExtraNote(note: BeatNote) {
-    this.events.addEvent(new ExtraNoteRecord(note));
+  recordExtraNote(note: number, noteIndex: number, timestamp: number) {
+    this.events.addEvent(new ExtraNoteRecord(note, noteIndex, timestamp));
   }
 
-  recordMissedNotes(feedback: BeatNoteFeedback) {
-    this.events.addEvent(new MissedNoteRecord(feedback));
+  recordMissedNotes(feedback: BeatNoteFeedback, noteIndex: number, timestamp: number) {
+    this.events.addEvent(new MissedNoteRecord(feedback, noteIndex, timestamp));
   }
 
   recordTimingPulse(intervalMsec: number) {
-    this.events.addEvent(new TimingPulseRecord(intervalMsec));
+    this.events.addEvent(
+      new TimingPulseRecord(
+        intervalMsec,
+        BeatRecorder.getInstance().getCurrentNoteIndex(),
+        TempoService.getInstance().elapsedMsec
+      )
+    );
   }
 
   getEvents(): EventRecord[] {
@@ -237,5 +245,49 @@ export class EventRecorderService {
     }
 
     fs.writeFileSync(filename, csv);
+  }
+
+  loadFromCsv(filename: string) {
+    const fs = require('fs');
+    const csv = fs.readFileSync(filename, 'utf8');
+    this.events.clear();
+    const lines = csv.split('\n');
+    for (const line of lines) {
+      // ignore lines that don't begin with a number
+      if (!line.match(/^\d/)) {
+        continue;
+      }
+
+      // split the line into an array of strings and convert the first element to a number
+      let [timestamp, noteIndex, type, noteString, timing, velocity] = line.split(',');
+      timestamp = parseInt(timestamp);
+      noteIndex = parseInt(noteIndex);
+      const noteNum: number = GeneralMidiService.getNoteNumber(noteString)!;
+      timing = parseInt(timing);
+      velocity = parseInt(velocity);
+      let event: EventRecord | undefined = undefined;
+      switch (type) {
+        case 'timing':
+          event = new TimingPulseRecord(timing, noteIndex, timestamp);
+          break;
+        case 'midi':
+          event = new MidiNoteRecord(noteNum, velocity, noteIndex, timestamp);
+          break;
+        case 'played':
+          event = new PlayedNoteRecord(noteNum, timing, velocity as number, noteIndex, timestamp);
+          break;
+        case 'missed':
+          event = new MissedNoteRecord(noteNum, noteIndex, timestamp);
+          break;
+        case 'extra':
+          event = new ExtraNoteRecord(noteNum, noteIndex, timestamp);
+          break;
+        default:
+          event = undefined;
+      }
+      if (event) {
+        this.events.addEvent(event);
+      }
+    }
   }
 }

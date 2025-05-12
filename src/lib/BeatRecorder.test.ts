@@ -117,21 +117,37 @@ describe('BeatRecorder', () => {
       simulateEighth();
     }
 
-    // Check the results
-    console.log('Final state:', {
-      performanceNotes: beatRecorder.performance.notes,
-      feedback: beatRecorder.performanceFeedback.beatNoteFeedback,
-      numNotes,
-    });
-    expect(beatRecorder.performance.notes).toHaveLength(numNotes);
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(numNotes);
+    const checkResults = () => {
+      console.log('Final state:', {
+        performanceNotes: beatRecorder.performance.notes,
+        feedback: beatRecorder.performanceFeedback.beatNoteFeedback,
+        numNotes,
+      });
+      expect(beatRecorder.performance.notes).toHaveLength(numNotes);
+      expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(numNotes);
 
-    // Verify each note was recorded correctly
-    const notes = beatRecorder.performance.notes;
-    notes.forEach((note: BeatNote) => {
-      expect(note.microtiming).toBe(0);
-      // Add more specific assertions based on the expected note structure
-    });
+      // Verify each note was recorded correctly
+      const notes = beatRecorder.performance.notes;
+      notes.forEach((note: BeatNote) => {
+        expect(note.microtiming).toBe(0);
+        // Add more specific assertions based on the expected note structure
+      });
+    };
+
+    checkResults();
+
+    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.loadFromCsv('test.csv');
+    eventRecorder.replay();
+    eventRecorder.saveToCsv('test2.csv');
+
+    checkResults();
+  });
+
+  it('replay test.csv', () => {
+    eventRecorder.loadFromCsv('test.csv');
+    eventRecorder.replay();
+    eventRecorder.saveToCsv('test.csv');
   });
 
   it('first note', () => {
@@ -153,32 +169,42 @@ describe('BeatRecorder', () => {
     midiService.emitMidiNote(getNote('hihat'), 100);
     simulateEighth();
 
-    expect(beatRecorder.performance.notes).toHaveLength(1);
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(2);
+    const checkResults = () => {
+      expect(beatRecorder.performance.notes).toHaveLength(1);
+      expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(2);
 
-    // Verify each note was recorded correctly
-    let numMissedNotes = 0;
-    const notes = beatRecorder.performance.notes;
-    notes.forEach((note: BeatNote) => {
-      expect(note.microtiming).toBe(0);
-    });
+      // Verify each note was recorded correctly
+      let numMissedNotes = 0;
+      const notes = beatRecorder.performance.notes;
+      notes.forEach((note: BeatNote) => {
+        expect(note.microtiming).toBe(0);
+      });
 
-    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
-      const f = feedback;
-      if (feedback.missedNotes?.length) {
-        numMissedNotes += feedback.missedNotes.length;
-        expect(feedback.beat).toBe(beat);
-        expect(feedback.index).toBe(0);
-        expect(feedback.beatNote!.barNum).toBe(0);
-        expect(feedback.beatNote!.noteString).toBe('kick, hihat');
-        expect(feedback.performanceNote).toBe(undefined);
-        expect(feedback.timingDifferenceMs).toBe(undefined);
-        expect(feedback.velocityDifference).toBe(undefined);
-        expect(feedback.missedNotes).toEqual(['kick']);
-      }
-    });
+      beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+        const f = feedback;
+        if (feedback.missedNotes?.length) {
+          numMissedNotes += feedback.missedNotes.length;
+          expect(feedback.beat).toBe(beat);
+          expect(feedback.index).toBe(0);
+          expect(feedback.beatNote!.barNum).toBe(0);
+          expect(feedback.beatNote!.noteString).toBe('kick, hihat');
+          expect(feedback.performanceNote).toBe(undefined);
+          expect(feedback.timingDifferenceMs).toBe(undefined);
+          expect(feedback.velocityDifference).toBe(undefined);
+          expect(feedback.missedNotes).toEqual(['kick']);
+        }
+      });
 
-    expect(numMissedNotes).toBe(1);
+      expect(numMissedNotes).toBe(1);
+    };
+
+    checkResults();
+
+    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.replay();
+    eventRecorder.saveToCsv('test.csv');
+
+    checkResults();
   });
 
   it('miss first note 2, with extra note', () => {
@@ -189,56 +215,39 @@ describe('BeatRecorder', () => {
     simulateEighth();
     midiService.emitMidiNote(getNote('hihat'), 100);
 
+    const checkResults = () => {
+      const a = beatRecorder;
+      expect(beatRecorder.performance.notes).toHaveLength(3);
+      expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
+
+      // Verify each note was recorded correctly
+      let numMissedNotes = 0;
+      let notes = beatRecorder.performance.notes;
+      notes.forEach((note: BeatNote) => {
+        expect(note.microtiming).toBe(0);
+      });
+
+      beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+        const f = feedback;
+        if (feedback.missedNotes?.length) {
+          numMissedNotes += feedback.missedNotes.length;
+          expect(feedback.index).toBe(0);
+          expect(feedback.missedNotes).toEqual(['kick']);
+        }
+      });
+
+      expect(numMissedNotes).toBe(1);
+    };
+
+    checkResults();
+
     // dump(beatRecorder.performance, beatRecorder.performanceFeedback.beatNoteFeedback);
-    eventRecorder.saveToCsv('test.csv');
-
-    const a = beatRecorder;
-    expect(beatRecorder.performance.notes).toHaveLength(3);
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
-
-    // Verify each note was recorded correctly
-    let numMissedNotes = 0;
-    let notes = beatRecorder.performance.notes;
-    notes.forEach((note: BeatNote) => {
-      expect(note.microtiming).toBe(0);
-    });
-
-    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
-      const f = feedback;
-      if (feedback.missedNotes?.length) {
-        numMissedNotes += feedback.missedNotes.length;
-        expect(feedback.index).toBe(0);
-        expect(feedback.missedNotes).toEqual(['kick']);
-      }
-    });
-
-    expect(numMissedNotes).toBe(1);
-
     // Reset state, including performance and performanceFeedback
     eventRecorder.saveToCsv('test.csv');
     eventRecorder.replay();
     eventRecorder.saveToCsv('test.csv');
 
-    expect(beatRecorder.performance.notes).toHaveLength(3);
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
-
-    // Verify each note was recorded correctly
-    numMissedNotes = 0;
-    notes = beatRecorder.performance.notes;
-    notes.forEach((note: BeatNote) => {
-      expect(note.microtiming).toBe(0);
-    });
-
-    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
-      const f = feedback;
-      if (feedback.missedNotes?.length) {
-        numMissedNotes += feedback.missedNotes.length;
-        expect(feedback.index).toBe(0);
-        expect(feedback.missedNotes).toEqual(['kick']);
-      }
-    });
-
-    expect(numMissedNotes).toBe(1);
+    checkResults();
   });
 
   it('auto-advance on extra note', () => {
@@ -246,33 +255,43 @@ describe('BeatRecorder', () => {
     midiService.emitMidiNote(getNote('hihat'), 100);
     midiService.emitMidiNote(getNote('hihat'), 100);
 
-    expect(beatRecorder.performance.notes).toHaveLength(3);
-    const f = beatRecorder.performanceFeedback.beatNoteFeedback;
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
+    const checkResults = () => {
+      expect(beatRecorder.performance.notes).toHaveLength(3);
+      const f = beatRecorder.performanceFeedback.beatNoteFeedback;
+      expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
 
-    // Verify each note was recorded correctly
-    let numMissedNotes = 0;
-    const notes = beatRecorder.performance.notes;
-    notes.forEach((note: BeatNote) => {
-      expect([0, -sixteenthNoteMsec()]).toContain(note.microtiming);
-    });
+      // Verify each note was recorded correctly
+      let numMissedNotes = 0;
+      const notes = beatRecorder.performance.notes;
+      notes.forEach((note: BeatNote) => {
+        expect([0, -sixteenthNoteMsec()]).toContain(note.microtiming);
+      });
 
-    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
-      const f = feedback;
-      if (feedback.missedNotes?.length) {
-        numMissedNotes += feedback.missedNotes.length;
-        expect(feedback.beat).toBe(beat);
-        expect(feedback.index).toBe(0);
-        expect(feedback.beatNote!.barNum).toBe(0);
-        expect(feedback.beatNote!.noteString).toBe('kick, hihat');
-        expect(feedback.performanceNote).toBe(undefined);
-        expect(feedback.timingDifferenceMs).toBe(undefined);
-        expect(feedback.velocityDifference).toBe(undefined);
-        expect(feedback.missedNotes).toEqual(['kick']);
-      }
-    });
+      beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+        const f = feedback;
+        if (feedback.missedNotes?.length) {
+          numMissedNotes += feedback.missedNotes.length;
+          expect(feedback.beat).toBe(beat);
+          expect(feedback.index).toBe(0);
+          expect(feedback.beatNote!.barNum).toBe(0);
+          expect(feedback.beatNote!.noteString).toBe('kick, hihat');
+          expect(feedback.performanceNote).toBe(undefined);
+          expect(feedback.timingDifferenceMs).toBe(undefined);
+          expect(feedback.velocityDifference).toBe(undefined);
+          expect(feedback.missedNotes).toEqual(['kick']);
+        }
+      });
 
-    expect(numMissedNotes).toBe(0);
+      expect(numMissedNotes).toBe(0);
+    };
+
+    checkResults();
+
+    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.replay();
+    eventRecorder.saveToCsv('test.csv');
+
+    checkResults();
   });
 
   it('auto-advance only works during interval of current index', () => {
@@ -281,33 +300,43 @@ describe('BeatRecorder', () => {
     midiService.emitMidiNote(getNote('hihat'), 100);
     midiService.emitMidiNote(getNote('hihat'), 100);
 
-    expect(beatRecorder.performance.notes).toHaveLength(4);
-    const f = beatRecorder.performanceFeedback.beatNoteFeedback;
-    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
+    const checkResults = () => {
+      expect(beatRecorder.performance.notes).toHaveLength(4);
+      const f = beatRecorder.performanceFeedback.beatNoteFeedback;
+      expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(3);
 
-    // Verify each note was recorded correctly
-    let numMissedNotes = 0;
-    const notes = beatRecorder.performance.notes;
-    notes.forEach((note: BeatNote) => {
-      expect([0, -sixteenthNoteMsec()]).toContain(note.microtiming);
-    });
+      // Verify each note was recorded correctly
+      let numMissedNotes = 0;
+      const notes = beatRecorder.performance.notes;
+      notes.forEach((note: BeatNote) => {
+        expect([0, -sixteenthNoteMsec()]).toContain(note.microtiming);
+      });
 
-    beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
-      const f = feedback;
-      if (feedback.missedNotes?.length) {
-        numMissedNotes += feedback.missedNotes.length;
-        expect(feedback.beat).toBe(beat);
-        expect(feedback.index).toBe(0);
-        expect(feedback.beatNote!.barNum).toBe(0);
-        expect(feedback.beatNote!.noteString).toBe('kick, hihat');
-        expect(feedback.performanceNote).toBe(undefined);
-        expect(feedback.timingDifferenceMs).toBe(undefined);
-        expect(feedback.velocityDifference).toBe(undefined);
-        expect(feedback.missedNotes).toEqual(['kick']);
-      }
-    });
+      beatRecorder.performanceFeedback.beatNoteFeedback.forEach((feedback) => {
+        const f = feedback;
+        if (feedback.missedNotes?.length) {
+          numMissedNotes += feedback.missedNotes.length;
+          expect(feedback.beat).toBe(beat);
+          expect(feedback.index).toBe(0);
+          expect(feedback.beatNote!.barNum).toBe(0);
+          expect(feedback.beatNote!.noteString).toBe('kick, hihat');
+          expect(feedback.performanceNote).toBe(undefined);
+          expect(feedback.timingDifferenceMs).toBe(undefined);
+          expect(feedback.velocityDifference).toBe(undefined);
+          expect(feedback.missedNotes).toEqual(['kick']);
+        }
+      });
 
-    expect(numMissedNotes).toBe(0);
+      expect(numMissedNotes).toBe(0);
+    };
+
+    checkResults();
+
+    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.replay();
+    eventRecorder.saveToCsv('test.csv');
+
+    checkResults();
   });
 
   // it('wip: test miss first note', () => {
