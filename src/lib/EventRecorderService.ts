@@ -202,10 +202,11 @@ export class EventRecorderService {
   }
 
   replay(): void {
+    const wasRecording = this.tempoService.isRecording;
+
     beatRecorder.setBeat(beatRecorder.beat!);
     this.tempoService.prepareIntervalTimer();
 
-    const wasRecording = this.tempoService.isRecording;
     this.tempoService.reset();
     this.tempoService.startSimulatedIntervalTimerForTesting();
     if (wasRecording) {

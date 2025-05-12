@@ -49,13 +49,6 @@ describe('BeatRecorder', () => {
     }
 
     beat = new Beat(module.beats[0]); // Properly instantiate the Beat class
-
-    // Reset the beat recorder
-    beatRecorder.performance = new Performance({ beatId: beat.id });
-    beatRecorder.performanceFeedback = new PerformanceFeedback([]);
-
-    // Reset the recorder state
-    beatRecorder.setBeat(beat);
   });
 
   beforeEach(async () => {
@@ -63,6 +56,14 @@ describe('BeatRecorder', () => {
     tempoService.reset();
     tempoService.startSimulatedIntervalTimerForTesting();
     tempoService.bpm = 120; // Set a standard BPM for testing
+
+    // Reset the beat recorder
+    beatRecorder.performance = new Performance({ beatId: beat.id });
+    beatRecorder.performanceFeedback = new PerformanceFeedback([]);
+
+    // Reset the recorder state
+    beatRecorder.setBeat(beat);
+    tempoService.isRecording = true;
   });
 
   afterEach(() => {
@@ -95,10 +96,6 @@ describe('BeatRecorder', () => {
   }
 
   it('play the beat perfectly!', () => {
-    beatRecorder.setBeat(beat);
-    beatRecorder.start();
-    tempoService.isRecording = true;
-
     // Play through all notes in the beat
     let numNotes = 0;
     for (const beatNote of beat.beatNotes) {
@@ -136,9 +133,6 @@ describe('BeatRecorder', () => {
   });
 
   it('first note', () => {
-    beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
-
     midiService.emitMidiNote(getNote('kick'), 100);
 
     expect(beatRecorder.performance.notes).toHaveLength(1);
@@ -153,9 +147,6 @@ describe('BeatRecorder', () => {
   });
 
   it('missing first note', () => {
-    beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
-
     // midiService.emitMidiNote(getNote('kick'), 100);
     midiService.emitMidiNote(getNote('hihat'), 100);
     simulateEighth();
@@ -189,10 +180,7 @@ describe('BeatRecorder', () => {
   });
 
   it('miss first note 2, with extra note', () => {
-    beatRecorder.setBeat(beat);
-
     // midiService.emitMidiNote(getNote('kick'), 100);
-    tempoService.record();
     tempoService.simulateInterval(10);
     midiService.emitMidiNote(getNote('hihat'), 100);
     midiService.emitMidiNote(getNote('snare'), 100);
@@ -252,9 +240,6 @@ describe('BeatRecorder', () => {
   });
 
   it('auto-advance on extra note', () => {
-    beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
-
     midiService.emitMidiNote(getNote('kick'), 100);
     midiService.emitMidiNote(getNote('hihat'), 100);
     midiService.emitMidiNote(getNote('hihat'), 100);
@@ -289,9 +274,6 @@ describe('BeatRecorder', () => {
   });
 
   it('auto-advance only works during interval of current index', () => {
-    beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
-
     midiService.emitMidiNote(getNote('kick'), 100);
     midiService.emitMidiNote(getNote('hihat'), 100);
     midiService.emitMidiNote(getNote('hihat'), 100);

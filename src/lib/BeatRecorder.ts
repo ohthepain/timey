@@ -40,6 +40,15 @@ class BeatRecorder extends EventEmitter {
   private constructor() {
     console.log('BeatRecorder: constructor');
     super();
+
+    if (typeof window !== 'undefined') {
+      if (!midiService) {
+        throw new Error('midiService is not initialized');
+      }
+      midiService.on('midiNote', this.midiService_midiNote);
+      this.tempoService.eventsEmitter.addListener('stateChange', this.handleStateChange);
+      this.tempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handleMidiPulse);
+    }
   }
 
   destroy() {
@@ -66,6 +75,8 @@ class BeatRecorder extends EventEmitter {
     this.performanceFeedback = new PerformanceFeedback([]);
     this.currentNoteIndex = 0;
     this.playedNotesForCurrentIndex = [];
+
+    this.start();
   }
 
   async savePerformance() {
@@ -106,15 +117,6 @@ class BeatRecorder extends EventEmitter {
     this.performance = new Performance({ beatId });
     this.performanceFeedback = new PerformanceFeedback([]);
     this.currentNoteIndex = 0;
-
-    if (typeof window !== 'undefined') {
-      if (!midiService) {
-        throw new Error('midiService is not initialized');
-      }
-      midiService.on('midiNote', this.midiService_midiNote);
-      this.tempoService.eventsEmitter.addListener('stateChange', this.handleStateChange);
-      this.tempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handleMidiPulse);
-    }
   };
 
   public stop = () => {
