@@ -6,7 +6,7 @@ import { NoteEntry } from '~/lib/ParseBeat';
 import { Beat } from '~/types/Beat';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { BeatNoteFeedback } from '~/lib/PerformanceFeedback';
-import { beatRecorder } from '~/lib/BeatRecorder';
+import { BeatRecorder } from '~/lib/BeatRecorder';
 import { BeatNote } from '~/types/BeatNote';
 
 const marginX = 20;
@@ -298,13 +298,13 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
 
   useEffect(() => {
     beatPlayer.on('note', beatPlayer_note);
-    beatRecorder.on('beatNote', beatRecorder_beatNote);
-    beatRecorder.on('missedNotes', beatRecorder_missedNotes);
+    BeatRecorder.getInstance().on('beatNote', beatRecorder_beatNote);
+    BeatRecorder.getInstance().on('missedNotes', beatRecorder_missedNotes);
 
     return () => {
       beatPlayer.off('note', beatPlayer_note);
-      beatRecorder.off('beatNote', beatRecorder_beatNote);
-      beatRecorder.off('missedNotes', beatRecorder_missedNotes);
+      BeatRecorder.getInstance().off('beatNote', beatRecorder_beatNote);
+      BeatRecorder.getInstance().off('missedNotes', beatRecorder_missedNotes);
     };
   }, []);
 

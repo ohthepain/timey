@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { TempoService } from '~/lib/TempoService';
 import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
-import { beatRecorder } from '~/lib/BeatRecorder';
+import { BeatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 
@@ -12,7 +12,7 @@ export const Transport = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const { currentBeat, getPerformancesForBeatId } = useNavigationStore();
   const tempoService = TempoService.getInstance();
-
+  const beatRecorder = BeatRecorder.getInstance();
   const handlePlayButton = () => {
     console.log('Transport: handlePlayButton');
     tempoService.play();
@@ -22,7 +22,10 @@ export const Transport = () => {
 
   const handleRecordButton = () => {
     console.log('Transport: handleRecordButton');
-    tempoService.record();
+    beatRecorder.start();
+    // beatRecorder.setBeat(beat);
+    tempoService.isRecording = true;
+
     setIsRunning(true);
     setIsRecording(true);
   };

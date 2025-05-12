@@ -13,7 +13,7 @@ import { copyBeatServerFn, deleteBeatServerFn } from '~/services/beatService.ser
 import { ScoreView } from '~/components/ScoreView';
 import { Transport } from './Transport';
 import { beatPlayer } from '~/lib/BeatPlayer';
-import { beatRecorder } from '~/lib/BeatRecorder';
+import { BeatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { usePersistedStore } from '~/state/PersistedStore';
 import { TempoLadder } from './TempoLadder';
@@ -128,10 +128,10 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   }, [bgColor]);
 
   useEffect(() => {
-    beatRecorder.on('tempoFeedback', beatRecorder_tempoFeedback);
+    BeatRecorder.getInstance().on('tempoFeedback', beatRecorder_tempoFeedback);
 
     return () => {
-      beatRecorder.off('tempoFeedback', beatRecorder_tempoFeedback);
+      BeatRecorder.getInstance().off('tempoFeedback', beatRecorder_tempoFeedback);
     };
   }, []);
 
@@ -213,7 +213,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
           onClick={async () => {
             await startBeatServerFn({ data: { beatId: beat.id } });
             beatPlayer.setBeat(beat);
-            beatRecorder.setBeat(beat);
+            BeatRecorder.getInstance().setBeat(beat);
           }}
         >
           <div className="flex flex-row items-center mx-4">

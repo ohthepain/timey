@@ -20,7 +20,7 @@ function quantizeTo32nd(elapsedMsec: number, bpm: number) {
   return { quantized, thirtySecondMsec };
 }
 
-class BeatRecorder extends EventEmitter {
+export class BeatRecorder extends EventEmitter {
   private static _instance: BeatRecorder;
   public beat: Beat | null = null;
   // Note: setBeat must reset entire object state
@@ -35,6 +35,13 @@ class BeatRecorder extends EventEmitter {
 
   private get tempoService() {
     return TempoService.getInstance();
+  }
+
+  public static getInstance(): BeatRecorder {
+    if (!BeatRecorder._instance) {
+      BeatRecorder._instance = new BeatRecorder();
+    }
+    return BeatRecorder._instance;
   }
 
   private constructor() {
@@ -58,13 +65,6 @@ class BeatRecorder extends EventEmitter {
       this.tempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange);
       this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handleMidiPulse);
     }
-  }
-
-  public static getInstance(): BeatRecorder {
-    if (!BeatRecorder._instance) {
-      BeatRecorder._instance = new BeatRecorder();
-    }
-    return BeatRecorder._instance;
   }
 
   public setBeat(beat: Beat) {
@@ -326,10 +326,8 @@ class BeatRecorder extends EventEmitter {
   }
 }
 
-export const beatRecorder = BeatRecorder.getInstance();
-
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
-    beatRecorder.destroy();
+    BeatRecorder.getInstance().destroy();
   });
 }

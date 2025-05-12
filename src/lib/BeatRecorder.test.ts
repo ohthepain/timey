@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest';
-import { beatRecorder } from './BeatRecorder';
+import { BeatRecorder } from './BeatRecorder';
 import { TempoService } from './TempoService';
 import { midiService } from './MidiService';
 import { moduleRepository } from '~/repositories/moduleRepository';
@@ -37,6 +37,7 @@ describe('BeatRecorder', () => {
   let beat: Beat;
   let eventRecorder: EventRecorderService;
   let tempoService: TempoService;
+  let beatRecorder: BeatRecorder;
 
   beforeAll(async () => {
     eventRecorder = EventRecorderService.getInstance();
@@ -49,6 +50,7 @@ describe('BeatRecorder', () => {
     }
 
     beat = new Beat(module.beats[0]); // Properly instantiate the Beat class
+    beatRecorder = BeatRecorder.getInstance();
   });
 
   beforeEach(async () => {

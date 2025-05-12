@@ -2,7 +2,7 @@ import { TempoService } from './TempoService';
 import { BeatNote } from '~/types/BeatNote';
 import { BeatNoteFeedback } from './PerformanceFeedback';
 import { GeneralMidiService } from './GeneralMidiService';
-import { beatRecorder } from './BeatRecorder';
+import { BeatRecorder } from './BeatRecorder';
 import { EventRecord, EventType, EventList } from './EventList';
 import { midiService } from './MidiService';
 
@@ -17,7 +17,7 @@ class MidiNoteRecord implements EventRecord {
     this.timestamp = TempoService.getInstance().elapsedMsec;
     this.note = note;
     this.velocity = velocity;
-    this.noteIndex = beatRecorder.getCurrentNoteIndex();
+    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
   }
 
   get tempoService(): TempoService {
@@ -56,7 +56,7 @@ class PlayedNoteRecord implements EventRecord {
     this.diffMs = feedback.timingDifferenceMs || 0;
     this.velocity = note.velocity;
     this.velocityDiff = feedback.velocityDifference || 0;
-    this.noteIndex = beatRecorder.getCurrentNoteIndex();
+    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -80,7 +80,7 @@ class MissedNoteRecord implements EventRecord {
   constructor(feedback: BeatNoteFeedback) {
     this.timestamp = TempoService.getInstance().elapsedMsec;
     this.noteString = feedback.missedNotes?.join(' ') || '';
-    this.noteIndex = beatRecorder.getCurrentNoteIndex();
+    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -105,7 +105,7 @@ class ExtraNoteRecord implements EventRecord {
     this.timestamp = TempoService.getInstance().elapsedMsec;
     this.note = Number(note.noteString);
     this.noteString = note.noteString;
-    this.noteIndex = beatRecorder.getCurrentNoteIndex();
+    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -133,7 +133,7 @@ class TimingPulseRecord implements EventRecord {
     }
     this.timestamp = TempoService.getInstance().elapsedMsec;
     this.intervalMsec = intervalMsec;
-    this.noteIndex = beatRecorder.getCurrentNoteIndex();
+    this.noteIndex = BeatRecorder.getInstance().getCurrentNoteIndex();
   }
 
   toString(): string {
@@ -204,7 +204,7 @@ export class EventRecorderService {
   replay(): void {
     const wasRecording = this.tempoService.isRecording;
 
-    beatRecorder.setBeat(beatRecorder.beat!);
+    BeatRecorder.getInstance().setBeat(BeatRecorder.getInstance().beat!);
     this.tempoService.prepareIntervalTimer();
 
     this.tempoService.reset();
