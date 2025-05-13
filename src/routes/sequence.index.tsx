@@ -32,7 +32,7 @@ function SequenceIndexComponent() {
           <MetronomeMidiSettings />
         </div>
       </div>
-      <Transport />
+      <Transport beat={beat} />
       <div id="scoreview" className="h-full w-full border-2 border-purple-700">
         <ScoreView beat={beat} />
       </div>

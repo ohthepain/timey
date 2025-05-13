@@ -9,6 +9,7 @@ import { useNavigationStore } from '~/state/NavigationStore';
 import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
 import { TempoService } from '~/lib/TempoService';
 import { EventRecorderService } from './EventRecorderService';
+import { GeneralMidiService } from './GeneralMidiService';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(elapsedMsec: number, bpm: number) {
@@ -185,7 +186,7 @@ export class BeatRecorder extends EventEmitter {
     // Special case for the last note: we've reached it if we're near the start of the loop
     const isLastNote = this.currentNoteIndex === this.beat.beatNotes.length - 1;
     if (isLastNote) {
-      return position < 100; // If we're at the last note, we've reached it when we're near the start of the loop
+      return position >= currentBeatNoteTime || position < 100; // If we're at the last note, we've reached it when we're near the start of the loop
     }
 
     return position >= currentBeatNoteTime;
@@ -263,6 +264,10 @@ export class BeatRecorder extends EventEmitter {
       return;
     }
 
+    if (e.note === GeneralMidiService.getNoteNumber('kick') && this.currentNoteIndex === 15) {
+      console.log('Kick at 15');
+    }
+
     // Record the raw MIDI note input immediately
     this.eventRecorder.recordMidiNote(e.note, e.velocity);
 
@@ -280,13 +285,14 @@ export class BeatRecorder extends EventEmitter {
     const position = elapsedMsec % this.beat.getLoopLengthMsec(bpm);
 
     if (!currentBeatNote.includesMidiNote(e.note) || this.playedNotesForCurrentIndex.includes(e.note)) {
+      // Note was not expected
       if (nextBeatNote.includesMidiNote(e.note) && this.hasReachedCurrentIndex()) {
         this.advanceToNextIndex();
         currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
         // currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
       } else {
         console.log('BeatRecorder: handleMidiNote - extra note', playedNote);
-        this.eventRecorder.recordExtraNote(playedNote);
+        this.eventRecorder.recordExtraNote(e.note);
         return;
       }
     }
@@ -311,7 +317,7 @@ export class BeatRecorder extends EventEmitter {
     } else {
       console.log('BeatRecorder: handleMidiNote - no match', playedNote);
       // Record as extra note if it doesn't match any expected note
-      this.eventRecorder.recordExtraNote(playedNote);
+      this.eventRecorder.recordExtraNote(e.note);
     }
 
     this.emit('beatNote', beatNoteFeedback);

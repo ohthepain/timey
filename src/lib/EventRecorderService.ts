@@ -171,16 +171,37 @@ export class EventRecorderService {
     );
   }
 
-  recordNoteFeedback(note: number, timeDiffMs: number, velocityDiff: number, noteIndex: number, timestamp: number) {
-    this.events.addEvent(new PlayedNoteRecord(note, timeDiffMs, velocityDiff, noteIndex, timestamp));
+  recordNoteFeedback(note: number, timeDiffMs: number, velocityDiff: number) {
+    this.events.addEvent(
+      new PlayedNoteRecord(
+        note,
+        timeDiffMs,
+        velocityDiff,
+        BeatRecorder.getInstance().getCurrentNoteIndex(),
+        TempoService.getInstance().elapsedMsec
+      )
+    );
   }
 
-  recordExtraNote(note: number, noteIndex: number, timestamp: number) {
-    this.events.addEvent(new ExtraNoteRecord(note, noteIndex, timestamp));
+  recordExtraNote(note: number) {
+    this.events.addEvent(
+      new ExtraNoteRecord(
+        note,
+        BeatRecorder.getInstance().getCurrentNoteIndex(),
+        TempoService.getInstance().elapsedMsec
+      )
+    );
   }
 
-  recordMissedNotes(feedback: BeatNoteFeedback, noteIndex: number, timestamp: number) {
-    this.events.addEvent(new MissedNoteRecord(feedback, noteIndex, timestamp));
+  recordMissedNotes(feedback: BeatNoteFeedback) {
+    const noteNum = GeneralMidiService.getNoteNumber(feedback.missedNotes![0]);
+    this.events.addEvent(
+      new MissedNoteRecord(
+        noteNum!,
+        BeatRecorder.getInstance().getCurrentNoteIndex(),
+        TempoService.getInstance().elapsedMsec
+      )
+    );
   }
 
   recordTimingPulse(intervalMsec: number) {
@@ -212,8 +233,9 @@ export class EventRecorderService {
   replay(): void {
     const wasRecording = this.tempoService.isRecording;
 
-    BeatRecorder.getInstance().setBeat(BeatRecorder.getInstance().beat!);
-    this.tempoService.prepareIntervalTimer();
+    const beatRecorder = BeatRecorder.getInstance();
+    beatRecorder.setBeat(beatRecorder.beat!);
+    this.tempoService.prepareIntervalTimer(); // TODO: Why is this here for replay? We don't use the interval timer.
 
     this.tempoService.reset();
     this.tempoService.startSimulatedIntervalTimerForTesting();
@@ -228,7 +250,7 @@ export class EventRecorderService {
     }
   }
 
-  saveToCsv(filename: string) {
+  saveToCsvServer(filename: string) {
     const fs = require('fs');
     const path = require('path');
     const csv = this.toCsv();
@@ -247,9 +269,40 @@ export class EventRecorderService {
     fs.writeFileSync(filename, csv);
   }
 
-  loadFromCsv(filename: string) {
+  saveToCsvBrowser(filename: string) {
+    const downloadStringAsFile = (content: string, filename: string, mimeType = 'text/plain') => {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename; // Suggested filename
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      URL.revokeObjectURL(url); // Clean up
+    };
+    // Download the csv
+    const csv = this.toCsv();
+    downloadStringAsFile(csv, filename);
+  }
+
+  saveToCsv(filename: string, forceServer = false) {
+    if (typeof window === 'undefined' || forceServer) {
+      this.saveToCsvServer(filename);
+    } else {
+      this.saveToCsvBrowser(filename);
+    }
+  }
+
+  loadFromCsvFile(filename: string) {
     const fs = require('fs');
     const csv = fs.readFileSync(filename, 'utf8');
+    this.loadFromCsvText(csv);
+  }
+
+  loadFromCsvText(csv: string) {
     this.events.clear();
     const lines = csv.split('\n');
     for (const line of lines) {
@@ -259,12 +312,12 @@ export class EventRecorderService {
       }
 
       // split the line into an array of strings and convert the first element to a number
-      let [timestamp, noteIndex, type, noteString, timing, velocity] = line.split(',');
-      timestamp = parseInt(timestamp);
-      noteIndex = parseInt(noteIndex);
+      let [timestamp_s, noteIndex_s, type, noteString, timing_s, velocity_s] = line.split(',');
+      const timestamp = parseFloat(timestamp_s);
+      const noteIndex = parseInt(noteIndex_s);
       const noteNum: number = GeneralMidiService.getNoteNumber(noteString)!;
-      timing = parseInt(timing);
-      velocity = parseInt(velocity);
+      const timing = parseFloat(timing_s);
+      const velocity = parseInt(velocity_s);
       let event: EventRecord | undefined = undefined;
       switch (type) {
         case 'timing':

@@ -78,6 +78,7 @@ export class TempoService {
 
   startIntervalTimer() {
     this.prepareIntervalTimer();
+    this.continueIntervalTimer();
   }
 
   continueIntervalTimer() {
@@ -96,8 +97,6 @@ export class TempoService {
 
   simulateInterval = (intervalMsec: number) => {
     // Record the timing pulse before any other processing
-    this.eventRecorder.recordTimingPulse(intervalMsec);
-
     this.time += intervalMsec;
     if (this.getTime() !== this.time) {
       throw new Error('TempoService: simulateInterval - time mismatch');
@@ -123,6 +122,7 @@ export class TempoService {
         ticks: this.nextPulseNum,
       });
 
+      this.eventRecorder.recordTimingPulse(this.time - this.lastTickTimeMsec);
       this.lastTickTimeMsec = this.time;
 
       ++this.nextPulseNum;
@@ -246,6 +246,7 @@ export class TempoService {
   private start() {
     this.time = this.getTime();
     this.startTimeMsec = this.time;
+    this.lastTickTimeMsec = this.time;
     this.currentSpp = this.startSpp;
     this.sendSpp(this.currentSpp);
     this.isRunning = true;

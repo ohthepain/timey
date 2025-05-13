@@ -135,19 +135,17 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-
-    eventRecorder.saveToCsv('test.csv');
-    eventRecorder.loadFromCsv('test.csv');
+    eventRecorder.saveToCsv('test.csv', true);
+    eventRecorder.loadFromCsvFile('test.csv');
     eventRecorder.replay();
-    eventRecorder.saveToCsv('test2.csv');
-
+    eventRecorder.saveToCsv('test2.csv', true);
     checkResults();
   });
 
   it('replay test.csv', () => {
-    eventRecorder.loadFromCsv('test.csv');
+    eventRecorder.loadFromCsvFile('test.csv');
     eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.saveToCsv('test.csv', true);
   });
 
   it('first note', () => {
@@ -199,11 +197,9 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-
-    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.saveToCsv('test.csv', true);
     eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv');
-
+    eventRecorder.saveToCsv('test.csv', true);
     checkResults();
   });
 
@@ -240,13 +236,9 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-
-    // dump(beatRecorder.performance, beatRecorder.performanceFeedback.beatNoteFeedback);
-    // Reset state, including performance and performanceFeedback
-    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.saveToCsv('test.csv', true);
     eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv');
-
+    eventRecorder.saveToCsv('test.csv', true);
     checkResults();
   });
 
@@ -286,11 +278,9 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-
-    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.saveToCsv('test.csv', true);
     eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv');
-
+    eventRecorder.saveToCsv('test.csv', true);
     checkResults();
   });
 
@@ -331,11 +321,9 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-
-    eventRecorder.saveToCsv('test.csv');
+    eventRecorder.saveToCsv('test.csv', true);
     eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv');
-
+    eventRecorder.saveToCsv('test.csv', true);
     checkResults();
   });
 

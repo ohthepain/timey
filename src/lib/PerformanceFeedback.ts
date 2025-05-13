@@ -130,12 +130,10 @@ export class PerformanceFeedback {
     if (beatNoteFeedback) {
       this.beatNoteFeedback.push(beatNoteFeedback);
       this.eventRecorder.recordNoteFeedback(
-        // convert string to note number but note with GeneralMidiService
+        // convert string to note number but not with GeneralMidiService
         parseInt(playedNote.noteString),
         beatNoteFeedback.timingDifferenceMs || 0,
-        beatNoteFeedback.velocityDifference || 0,
-        playedNote.index,
-        TempoService.getInstance().elapsedMsec
+        beatNoteFeedback.velocityDifference || 0
       );
     }
 
