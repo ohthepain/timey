@@ -13,13 +13,14 @@ import { copyBeatServerFn, deleteBeatServerFn } from '~/services/beatService.ser
 import { ScoreView } from '~/components/ScoreView';
 import { Transport } from './Transport';
 import { beatPlayer } from '~/lib/BeatPlayer';
-import { beatRecorder } from '~/lib/BeatRecorder';
+import { BeatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
+import { usePersistedStore } from '~/state/PersistedStore';
 import { TempoLadder } from './TempoLadder';
 import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
 import { SignedIn } from '@clerk/tanstack-react-start';
 import { Speedometer } from './Speedometer';
-import { tempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/TempoService';
 
 const boxStyle =
   'text-amber-800 px-2 py-1 w-16 rounded bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm text-center';
@@ -56,7 +57,10 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [bgColor, setBgColor] = useState<string>('bg-white');
   const [gradeMinTempo, setGradeMinTempo] = useState(0);
   const [gradeMaxTempo, setGradeMaxTempo] = useState(240);
-  const { currentBeat, enableAdmin, cachePerformance } = useNavigationStore();
+  const { currentBeat, cachePerformance } = useNavigationStore();
+  const { enableAdmin } = usePersistedStore();
+
+  const tempoService = TempoService.getInstance();
 
   // Update name when beat changes
   useEffect(() => {
@@ -124,10 +128,10 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   }, [bgColor]);
 
   useEffect(() => {
-    beatRecorder.on('tempoFeedback', beatRecorder_tempoFeedback);
+    BeatRecorder.getInstance().on('tempoFeedback', beatRecorder_tempoFeedback);
 
     return () => {
-      beatRecorder.off('tempoFeedback', beatRecorder_tempoFeedback);
+      BeatRecorder.getInstance().off('tempoFeedback', beatRecorder_tempoFeedback);
     };
   }, []);
 
@@ -209,7 +213,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
           onClick={async () => {
             await startBeatServerFn({ data: { beatId: beat.id } });
             beatPlayer.setBeat(beat);
-            beatRecorder.setBeat(beat);
+            BeatRecorder.getInstance().setBeat(beat);
           }}
         >
           <div className="flex flex-row items-center mx-4">

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { tempoService } from '~/lib/MidiSync/TempoService';
+import { TempoService } from '~/lib/TempoService';
 
 export function TempoInput() {
+  const tempoService = TempoService.getInstance();
   const [tempo, setTempo] = useState<number>(tempoService.bpm);
 
   useEffect(() => {

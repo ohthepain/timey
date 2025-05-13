@@ -1,3 +1,5 @@
+import { GeneralMidiService } from '~/lib/GeneralMidiService';
+
 export class BeatNote {
   id: string;
   index: number;
@@ -41,7 +43,7 @@ export class BeatNote {
     };
   }
 
-  getTimeMsec(bpm: number): number {
+  getPositionMsec(bpm: number): number {
     const beatsPerBar = 4;
     const divisionsPerBeat = 2; // 8th notes
     const beatDurationMsec = 60000 / bpm;
@@ -58,5 +60,15 @@ export class BeatNote {
     }
 
     return barTime + beatTime + divisionTime + subDivisionTime + (this.microtiming || 0);
+  }
+
+  includesMidiNote(midiNote: number): boolean {
+    const drumName = GeneralMidiService.getDrumName(midiNote);
+    if (!drumName) {
+      throw new Error(`Unknown MIDI note: ${midiNote}`);
+    }
+
+    const notes = this.noteString.split(', ');
+    return notes.some((note) => note === drumName);
   }
 }

@@ -53,44 +53,56 @@ export class Beat {
   }
 
   static loopedTimeDiff(timeMsec: number, beatNoteTime: number, loopLengthMsec: number): number {
-    const forwardDiff = (beatNoteTime - timeMsec + loopLengthMsec) % loopLengthMsec;
-    const backwardDiff = (timeMsec - beatNoteTime + loopLengthMsec) % loopLengthMsec;
-    return Math.min(forwardDiff, backwardDiff);
-  }
+    const position = timeMsec % loopLengthMsec;
+    beatNoteTime %= loopLengthMsec;
 
-  findClosestBeatNoteIndex(noteStringOrMidi: string | number, timeMsec: number, bpm: number): number {
-    let isDrumEquivalent = (a: string, b: string) => {
-      if (a === b) return true;
-      if ((b === '35' || b === '36') && a.includes('kick')) return true;
-      if ((b === '38' || b === '40') && a.includes('snare')) return true;
-      if ((b === '42' || b === '44' || b === '46') && a.includes('hihat')) return true;
-      return false;
-    };
+    // Calculate the difference, ensuring we get the shortest path around the loop
+    let diff = position - beatNoteTime;
 
-    const loopLengthMsec = this.getLoopLengthMsec(bpm);
-    let targetNoteString = typeof noteStringOrMidi === 'number' ? String(noteStringOrMidi) : noteStringOrMidi;
-
-    let closest: BeatNote | null = null;
-    let minDiff = Infinity;
-
-    for (const beatNote of this.beatNotes) {
-      if (!isDrumEquivalent(beatNote.noteString, targetNoteString)) {
-        continue;
-      }
-
-      const beatNoteTime = beatNote.getTimeMsec(bpm);
-      const diff = Beat.loopedTimeDiff(timeMsec, beatNoteTime, loopLengthMsec);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = beatNote;
-      }
+    // If the difference is more than half the loop length, we should go the other way
+    if (diff > loopLengthMsec / 2) {
+      diff -= loopLengthMsec;
+    }
+    // If the difference is less than negative half the loop length, we should go the other way
+    else if (diff < -loopLengthMsec / 2) {
+      diff += loopLengthMsec;
     }
 
-    if (!closest) {
-      console.log('Beat.findClosestBeatNoteIndex: drum not found', noteStringOrMidi);
-      return -1;
-    }
-
-    return closest.index;
+    return diff;
   }
+
+  static isDrumEquivalent = (a: string, b: string) => {
+    if (a === b) return true;
+    if ((b === '35' || b === '36') && a.includes('kick')) return true;
+    if ((b === '38' || b === '40') && a.includes('snare')) return true;
+    if ((b === '42' || b === '44' || b === '46') && a.includes('hihat')) return true;
+    return false;
+  };
+
+  // findClosestBeatNoteIndex(noteNum: number, timeMsec: number, bpm: number): number {
+  //   const loopLengthMsec = this.getLoopLengthMsec(bpm);
+
+  //   let closest: BeatNote | null = null;
+  //   let minDiff = Infinity;
+
+  //   for (const beatNote of this.beatNotes) {
+  //     if (!beatNote.includesMidiNote(noteNum)) {
+  //       continue;
+  //     }
+
+  //     const beatNoteTime = beatNote.getTimeMsec(bpm);
+  //     const diff = Beat.loopedTimeDiff(timeMsec, beatNoteTime, loopLengthMsec);
+  //     if (Math.abs(diff) < Math.abs(minDiff)) {
+  //       minDiff = diff;
+  //       closest = beatNote;
+  //     }
+  //   }
+
+  //   if (!closest) {
+  //     console.log('Beat.findClosestBeatNoteIndex: drum not found', noteNum);
+  //     return -1;
+  //   }
+
+  //   return closest.index;
+  // }
 }

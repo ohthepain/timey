@@ -36,9 +36,6 @@ export const ParseBeatString = (input: string) => {
 
       if (match) {
         const [, index, durationCode, keysString, bar, beat, divisionNum, subDivisionNum, numSubDivisions] = match;
-        console.log(
-          `note: ${index} ${durationCode} ${keysString} bar ${bar} beat ${beat} div ${divisionNum} sub ${subDivisionNum} of ${numSubDivisions}`
-        );
 
         // Create a BeatNote for each key
         beatNotes.push({
@@ -209,11 +206,11 @@ export class NoteEntry {
   }
 
   /**
-   * Calculates the start time of this note in milliseconds.
+   * Calculates the start position of this note in milliseconds.
    * @param tempo - The tempo in beats per minute (BPM).
-   * @returns The start time of the note in milliseconds.
+   * @returns The start position of the note in milliseconds.
    */
-  getStartTimeMsec(tempo: number): number {
+  getStartPositionMsec(tempo: number): number {
     const beatDuration = (60 / tempo) * 1000;
     const divisionDuration = beatDuration / 2;
     const subDivisionDuration = divisionDuration / this.numSubDivisions;

@@ -19,29 +19,32 @@ export const Speedometer = (props: SpeedometerProps) => {
   const [animatedValue, setAnimatedValue] = useState(props.value);
 
   // Animate displayed value toward props.value at ~30fps
-  useEffect(() => {
-    let frame: number;
-    const fps = 30;
-    const interval = 1000 / fps;
-    let lastTime = performance.now();
+  const animate = false;
+  if (animate) {
+    useEffect(() => {
+      let frame: number;
+      const fps = 30;
+      const interval = 1000 / fps;
+      let lastTime = performance.now();
 
-    function animate(now: number) {
-      const elapsed = now - lastTime;
-      if (elapsed >= interval) {
-        lastTime = now;
-        setAnimatedValue((prev) => {
-          // Smoothly approach props.value
-          const diff = props.value - prev;
-          if (Math.abs(diff) < 0.01) return props.value;
-          // Move a fraction toward the target (lerp)
-          return prev + diff * 0.2;
-        });
+      function animate(now: number) {
+        const elapsed = now - lastTime;
+        if (elapsed >= interval) {
+          lastTime = now;
+          setAnimatedValue((prev) => {
+            // Smoothly approach props.value
+            const diff = props.value - prev;
+            if (Math.abs(diff) < 0.01) return props.value;
+            // Move a fraction toward the target (lerp)
+            return prev + diff * 0.2;
+          });
+        }
+        frame = requestAnimationFrame(animate);
       }
       frame = requestAnimationFrame(animate);
-    }
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [props.value]);
+      return () => cancelAnimationFrame(frame);
+    }, [props.value]);
+  }
 
   useEffect(() => {
     const svg = svgRef.current;

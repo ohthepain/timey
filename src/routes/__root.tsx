@@ -18,7 +18,7 @@ import { useState, useEffect } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
 import { saveLastUrl, getLastUrl } from '~/utils/urlPersistence';
-import { useNavigationStore } from '~/state/NavigationStore';
+import { usePersistedStore } from '~/state/PersistedStore';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -74,7 +74,7 @@ function RootComponent() {
   const router = useRouter();
   const isInitialLoad = useRef(true);
   const { navigate } = useRouter();
-  const { enableAdmin, setAdmin } = useNavigationStore();
+  const { enableAdmin, setAdmin, devMode, setDevMode } = usePersistedStore();
 
   // Check for saved URL on initial load
   useEffect(() => {
@@ -176,6 +176,13 @@ function RootComponent() {
 
             {/* Right-aligned buttons */}
             <div className="flex gap-2 items-center">
+              <button
+                className={`text-${devMode ? 'orange' : 'gray'}-700 px-2 py-1 rounded hover:bg-${devMode ? 'orange' : 'gray'}-200 border-${devMode ? 'orange' : 'gray'}-600 border-2 rounded-e-md text-sm`}
+                onClick={() => setDevMode(!devMode)}
+                title="Toggle Dev Mode"
+              >
+                Dev
+              </button>
               <button
                 className={`text-${enableAdmin ? 'blue' : 'gray'}-700 px-2 py-1 rounded hover:bg-${enableAdmin ? 'blue' : 'gray'}-200 border-${enableAdmin ? 'blue' : 'gray'}-600 border-2 rounded-e-md text-sm`}
                 onClick={() => setAdmin(!enableAdmin)}

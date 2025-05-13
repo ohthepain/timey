@@ -7,14 +7,12 @@ interface NavigationState {
   currentPerformance: Performance | null;
   performancesByBeatId: Record<string, Performance[]>;
   isMetronomeOn: boolean;
-  enableAdmin: boolean;
   setCurrentBeat: (beat: Beat | null) => void;
   setCurrentPerformance: (performance: Performance | null) => void;
   cachePerformance: (performance: Performance) => void;
   clearPerformancesForBeatId: (beatId: string) => void;
   getPerformancesForBeatId: (beatId: string) => Performance[];
   setMetronomeOn: (on: boolean) => void;
-  setAdmin: (on: boolean) => void;
 }
 
 export const useNavigationStore = create<NavigationState>((set) => ({
@@ -22,7 +20,6 @@ export const useNavigationStore = create<NavigationState>((set) => ({
   currentPerformance: null,
   performancesByBeatId: {},
   isMetronomeOn: true,
-  enableAdmin: false,
   setCurrentBeat: (beat) => set(() => ({ currentBeat: beat })),
   setCurrentPerformance: (performance: Performance | null) => set(() => ({ currentPerformance: performance })),
   clearPerformancesForBeatId: (beatId) =>
@@ -44,5 +41,4 @@ export const useNavigationStore = create<NavigationState>((set) => ({
     return performances || [];
   },
   setMetronomeOn: (on: boolean) => set(() => ({ isMetronomeOn: on })),
-  setAdmin: (on: boolean) => set(() => ({ enableAdmin: on })),
 }));

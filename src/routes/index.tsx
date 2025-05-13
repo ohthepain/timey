@@ -31,8 +31,8 @@ function Home() {
       <div className="relative bg-gradient-to-br from-orange-500 to-purple-900 rounded-3xl m-16">
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:flex lg:items-center lg:gap-x-10 lg:px-8">
           <div className="mx-auto max-w-2xl lg:mx-0 lg:flex-auto">
-            <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl">themethod.live</h1>
-            <p className="mt-6 text-2xl leading-8 text-gray-600">Your intelligent time management assistant</p>
+            <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl">themethod.live</h1>
+            <p className="mt-6 text-2xl leading-8 text-white">Your intelligent time management assistant</p>
             <div className="mt-10 flex items-center gap-x-6">
               <Link
                 to="/methods"
@@ -40,7 +40,7 @@ function Home() {
               >
                 Get Started
               </Link>
-              <a href="#" className="text-sm font-semibold leading-6 text-gray-900">
+              <a href="#" className="text-sm font-semibold leading-6 text-white">
                 Learn more <span aria-hidden="true">→</span>
               </a>
             </div>
