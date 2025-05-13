@@ -194,14 +194,19 @@ export class EventRecorderService {
   }
 
   recordMissedNotes(feedback: BeatNoteFeedback) {
-    const noteNum = GeneralMidiService.getNoteNumber(feedback.missedNotes![0]);
-    this.events.addEvent(
-      new MissedNoteRecord(
-        noteNum!,
-        BeatRecorder.getInstance().getCurrentNoteIndex(),
-        TempoService.getInstance().elapsedMsec
-      )
-    );
+    if (!feedback.missedNotes || feedback.missedNotes.length === 0) {
+      throw new Error('recordMissedNotes: no notes provided');
+    }
+    for (const notestring in feedback.missedNotes) {
+      const noteNum = GeneralMidiService.getNoteNumber(notestring);
+      this.events.addEvent(
+        new MissedNoteRecord(
+          noteNum!,
+          BeatRecorder.getInstance().getCurrentNoteIndex(),
+          TempoService.getInstance().elapsedMsec
+        )
+      );
+    }
   }
 
   recordTimingPulse(intervalMsec: number) {

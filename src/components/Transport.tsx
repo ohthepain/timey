@@ -6,12 +6,15 @@ import { BeatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
 import { EventRecorderService } from '~/lib/EventRecorderService';
+import { usePersistedStore } from '~/state/PersistedStore';
 
 export const Transport = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const { currentBeat, getPerformancesForBeatId } = useNavigationStore();
+  const { devMode } = usePersistedStore();
+
   const tempoService = TempoService.getInstance();
   const beatRecorder = BeatRecorder.getInstance();
   const handlePlayButton = () => {
@@ -53,18 +56,11 @@ export const Transport = () => {
     setIsPlaying(false);
     setIsRecording(false);
 
-    if (wasRecording) {
+    if (devMode && wasRecording) {
       const eventRecorder = EventRecorderService.getInstance();
       const csv = eventRecorder.toCsv();
       downloadCSV('live.csv', csv);
     }
-  };
-
-  const handleReplay2 = () => {
-    const eventRecorder = EventRecorderService.getInstance();
-    eventRecorder.loadFromCsvFile('live.csv');
-    eventRecorder.replay();
-    eventRecorder.saveToCsv('live-replay.csv');
   };
 
   const handleReplay = () => {
