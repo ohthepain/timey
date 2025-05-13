@@ -197,7 +197,7 @@ export class EventRecorderService {
     if (!feedback.missedNotes || feedback.missedNotes.length === 0) {
       throw new Error('recordMissedNotes: no notes provided');
     }
-    for (const notestring in feedback.missedNotes) {
+    for (const notestring of feedback.missedNotes) {
       const noteNum = GeneralMidiService.getNoteNumber(notestring);
       this.events.addEvent(
         new MissedNoteRecord(
