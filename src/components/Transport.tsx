@@ -60,6 +60,7 @@ export const Transport = () => {
       const eventRecorder = EventRecorderService.getInstance();
       const csv = eventRecorder.toCsv();
       downloadCSV('live.csv', csv);
+      eventRecorder.clear();
     }
   };
 
