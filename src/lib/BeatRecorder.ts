@@ -282,16 +282,14 @@ export class BeatRecorder extends EventEmitter {
     // Special case: the note has already been played for the current index AND exists at the next index.
     // In this case we advance to the next index. BUT only if we have already reached the time of the current index.
     let currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-    // let currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
-    const nextBeatNote = this.beat.beatNotes[(this.currentNoteIndex + 1) % this.beat.beatNotes.length];
+    let nextBeatNote = this.beat.beatNotes[(this.currentNoteIndex + 1) % this.beat.beatNotes.length];
     const position = elapsedMsec % this.beat.getLoopLengthMsec(bpm);
 
     if (!currentBeatNote.matchMidiNote(e.note) || this.WasNotePlayedForCurrentIndex(e.note)) {
       // Note was not expected
       if (nextBeatNote.matchMidiNote(e.note) && this.hasReachedCurrentIndex()) {
         this.advanceToNextIndex();
-        currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-        // currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+        currentBeatNote = nextBeatNote;
       } else {
         console.log('BeatRecorder: handleMidiNote - extra note', playedNote);
         this.eventRecorder.recordExtraNote(e.note);

@@ -83,9 +83,13 @@ export class BeatNote {
         if (hihats.includes(midiNote)) {
           return 'hihat';
         }
+      }
+      if (note === 'kick') {
         if (kicks.includes(midiNote)) {
           return 'kick';
         }
+      }
+      if (note === 'snare') {
         if (snares.includes(midiNote)) {
           return 'snare';
         }
