@@ -1,5 +1,9 @@
 import { GeneralMidiService } from '~/lib/GeneralMidiService';
 
+const hihats = [42, 46, 51, 53, 59];
+const kicks = [36, 35];
+const snares = [37, 38, 39, 40];
+
 export class BeatNote {
   id: string;
   index: number;
@@ -62,7 +66,7 @@ export class BeatNote {
     return barTime + beatTime + divisionTime + subDivisionTime + (this.microtiming || 0);
   }
 
-  includesMidiNote(midiNote: number): boolean {
+  matchMidiNote(midiNote: number): string | null {
     const drumName = GeneralMidiService.getDrumName(midiNote);
     if (!drumName) {
       throw new Error(`Unknown MIDI note: ${midiNote}`);
@@ -70,27 +74,24 @@ export class BeatNote {
 
     const notes = this.noteString.split(', ');
     if (notes.some((note) => note === drumName)) {
-      return true;
+      return drumName;
     }
 
     for (const note of notes) {
       if (note === 'hihat') {
         // If midiNote is in list then return true
-        const hihats = [42, 46, 51, 53, 59];
         if (hihats.includes(midiNote)) {
-          return true;
+          return 'hihat';
         }
-        const kicks = [36, 35];
         if (kicks.includes(midiNote)) {
-          return true;
+          return 'kick';
         }
-        const snares = [37, 38, 39, 40];
         if (snares.includes(midiNote)) {
-          return true;
+          return 'snare';
         }
       }
     }
 
-    return false;
+    return null;
   }
 }
