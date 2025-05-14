@@ -3,7 +3,7 @@ import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { methodRepository } from '~/repositories/methodRepository';
 import { checkUser } from '~/lib/checkUser';
 import { getAuth } from '@clerk/tanstack-react-start/server';
-import { redirect } from '@tanstack/react-router';
+import { RedirectToSignIn } from '@clerk/tanstack-react-start';
 
 export const APIRoute = createAPIFileRoute('/api/methods/$id')({
   GET: async ({ params }) => {
@@ -43,8 +43,8 @@ export const APIRoute = createAPIFileRoute('/api/methods/$id')({
     try {
       const { userId } = await getAuth(request);
       if (!userId) {
-        throw redirect({
-          to: '/sign-in/$',
+        throw RedirectToSignIn({
+          redirectUrl: request.url,
         });
       }
 

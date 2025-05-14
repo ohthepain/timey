@@ -162,9 +162,15 @@ export class EventRecorderService {
 
   public static shutdown() {
     if (EventRecorderService._instance) {
+      EventRecorderService._instance.destroy();
       EventRecorderService._instance = null;
     }
   }
+
+  destroy() {
+    this.events.clear();
+  }
+
   get tempoService(): TempoService {
     return TempoService.getInstance();
   }

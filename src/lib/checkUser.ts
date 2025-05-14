@@ -1,7 +1,7 @@
 import { prisma } from '~/config/db';
 import { getAuth } from '@clerk/tanstack-react-start/server';
-import { redirect } from '@tanstack/react-router';
 import { users } from '@clerk/clerk-sdk-node';
+import { RedirectToSignIn } from '@clerk/tanstack-react-start';
 
 // Clerk users are copied into our database.
 // checkUser checks if the user exists in our database and if not, creates a new user in our database.
@@ -11,11 +11,10 @@ export const checkUser = async (req: any) => {
   const { userId } = await getAuth(req);
   if (!userId) {
     console.log('checkUser: User is not authenticated');
-    throw new Error('User is not authenticated');
   }
   if (!userId) {
-    throw redirect({
-      to: '/sign-in/$',
+    throw RedirectToSignIn({
+      redirectUrl: req.url,
     });
   }
 

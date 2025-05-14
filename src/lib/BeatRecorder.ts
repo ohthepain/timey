@@ -9,7 +9,6 @@ import { useNavigationStore } from '~/state/NavigationStore';
 import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
 import { TempoService } from '~/lib/TempoService';
 import { EventRecorderService } from './EventRecorderService';
-import { GeneralMidiService } from './GeneralMidiService';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(elapsedMsec: number, bpm: number) {
