@@ -11,8 +11,6 @@ export const checkUser = async (req: any) => {
   const { userId } = await getAuth(req);
   if (!userId) {
     console.log('checkUser: User is not authenticated');
-  }
-  if (!userId) {
     throw RedirectToSignIn({
       redirectUrl: req.url,
     });

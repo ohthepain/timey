@@ -139,7 +139,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
 
   useEffect(() => {
     const fetchBeatProgress = async () => {
-      if (beat.id && useAuth().isSignedIn) {
+      if (beat.id && isSignedIn) {
         const beatId = beat.id;
         const performances: Performance[] = (await fetchUserPerformancesForBeat({ data: { beatId } })).map(
           (performanceData) => new Performance(performanceData)
@@ -226,7 +226,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                 tempos={[140, 120, 100, 90]}
                 currentTempo={beatProgress?.bestTempo || 0}
                 onSelectTempo={async (tempo) => {
-                  if (useAuth().isSignedIn) {
+                  if (isSignedIn) {
                     await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
                   }
                 }}

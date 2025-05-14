@@ -31,6 +31,12 @@ class MetronomeService {
     }
   }
 
+  destroy() {
+    this.tempoService.eventsEmitter.removeListener('start', this.handleStart);
+    this.tempoService.eventsEmitter.removeListener('stop', this.handleStop);
+    this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handlePulse);
+  }
+
   private handleStart = () => {};
 
   private handleStop = () => {};
@@ -53,12 +59,6 @@ class MetronomeService {
 
     midiService.playNote(midiSettings.metronomeNoteNumber, midiSettings.metronomeVelocity);
   };
-
-  destroy() {
-    this.tempoService.eventsEmitter.removeListener('start', this.handleStart);
-    this.tempoService.eventsEmitter.removeListener('stop', this.handleStop);
-    this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handlePulse);
-  }
 }
 
 export const metronomeService = MetronomeService.getInstance();
