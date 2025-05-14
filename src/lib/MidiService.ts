@@ -273,7 +273,7 @@ class MidiService extends EventEmitter {
   };
 
   private handleMidiStart = () => {
-    this.tempoService.play();
+    this.tempoService.record();
   };
 
   private handleMidiStop = () => {

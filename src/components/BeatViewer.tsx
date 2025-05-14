@@ -116,13 +116,11 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const beatRecorder_tempoFeedback = (tempoFeedback: any) => {
     setTempoFeedback(tempoFeedback);
     if (tempoFeedback.windowSkillLevel != skillLevel) {
-      console.log('BeatViewer: tempoFeedback.windowSkillLevel', tempoFeedback.windowSkillLevel);
       setSkillLevel(tempoFeedback.windowSkillLevel);
     }
     // Set anything we want to react to
     setMeasuredBpm(tempoFeedback.bpm);
     const bgColor = getSkillLevelColor(tempoFeedback.windowSkillLevel);
-    console.log('BeatViewer: tempoFeedback.windowSkillLevel', tempoFeedback.windowSkillLevel);
     setBgColor(bgColor);
 
     const nearestPowerOf2 = Math.pow(2, tempoFeedback.windowSkillLevel);
