@@ -4,6 +4,7 @@ import { moduleRepository } from '~/repositories/moduleRepository';
 import { checkUser } from '~/lib/checkUser';
 import { getAuth } from '@clerk/tanstack-react-start/server';
 import { redirect } from '@tanstack/react-router';
+import { RedirectToSignIn } from '@clerk/tanstack-react-start';
 
 export const APIRoute = createAPIFileRoute('/api/modules')({
   GET: async () => {
@@ -21,8 +22,8 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
     try {
       const { userId } = await getAuth(request);
       if (!userId) {
-        throw redirect({
-          to: '/sign-in/$',
+        throw RedirectToSignIn({
+          redirectUrl: request.url,
         });
       }
 
@@ -52,8 +53,8 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
     try {
       const { userId } = await getAuth(request);
       if (!userId) {
-        throw redirect({
-          to: '/sign-in/$',
+        throw RedirectToSignIn({
+          redirectUrl: request.url,
         });
       }
 
@@ -81,8 +82,8 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
     try {
       const { userId } = await getAuth(request);
       if (!userId) {
-        throw redirect({
-          to: '/sign-in/$',
+        throw RedirectToSignIn({
+          redirectUrl: request.url,
         });
       }
 

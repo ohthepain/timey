@@ -149,7 +149,7 @@ class ExtraNoteRecord implements EventRecord {
 }
 
 export class EventRecorderService {
-  private static _instance: EventRecorderService;
+  private static _instance: EventRecorderService | null = null;
   static getInstance(): EventRecorderService {
     if (!EventRecorderService._instance) {
       EventRecorderService._instance = new EventRecorderService();
@@ -159,6 +159,17 @@ export class EventRecorderService {
   private events: EventList = new EventList();
 
   private constructor() {}
+
+  public static shutdown() {
+    if (EventRecorderService._instance) {
+      EventRecorderService._instance.destroy();
+      EventRecorderService._instance = null;
+    }
+  }
+
+  destroy() {
+    this.events.clear();
+  }
 
   get tempoService(): TempoService {
     return TempoService.getInstance();

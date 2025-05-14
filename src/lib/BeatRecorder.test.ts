@@ -40,9 +40,6 @@ describe('BeatRecorder', () => {
   let beatRecorder: BeatRecorder;
 
   beforeAll(async () => {
-    eventRecorder = EventRecorderService.getInstance();
-    tempoService = TempoService.getInstance();
-
     // Fetch the real module
     const module = await moduleRepository.getModuleById('c55b83e4-11d9-48f3-acc9-bbcbfb8a1a1f');
     if (!module || !module.beats || module.beats.length === 0) {
@@ -50,10 +47,16 @@ describe('BeatRecorder', () => {
     }
 
     beat = new Beat(module.beats[0]); // Properly instantiate the Beat class
-    beatRecorder = BeatRecorder.getInstance();
   });
 
   beforeEach(async () => {
+    EventRecorderService.shutdown();
+    TempoService.shutdown();
+    BeatRecorder.shutdown();
+    eventRecorder = EventRecorderService.getInstance();
+    tempoService = TempoService.getInstance();
+    beatRecorder = BeatRecorder.getInstance();
+
     // Start the tempo service with simulated timer
     tempoService.reset();
     tempoService.startSimulatedIntervalTimerForTesting();

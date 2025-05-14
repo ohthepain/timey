@@ -4,7 +4,7 @@ import { useNavigationStore } from '~/state/NavigationStore';
 import { TempoService } from '~/lib/TempoService';
 
 class MetronomeService {
-  private static _instance: MetronomeService;
+  private static _instance: MetronomeService | null = null;
 
   private constructor() {
     // Listen for start/stop events from MidiService or TempoService
@@ -22,6 +22,19 @@ class MetronomeService {
       MetronomeService._instance = new MetronomeService();
     }
     return MetronomeService._instance;
+  }
+
+  public static shutdown() {
+    if (MetronomeService._instance) {
+      MetronomeService._instance.destroy();
+      MetronomeService._instance = null;
+    }
+  }
+
+  destroy() {
+    this.tempoService.eventsEmitter.removeListener('start', this.handleStart);
+    this.tempoService.eventsEmitter.removeListener('stop', this.handleStop);
+    this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handlePulse);
   }
 
   private handleStart = () => {};
@@ -46,12 +59,6 @@ class MetronomeService {
 
     midiService.playNote(midiSettings.metronomeNoteNumber, midiSettings.metronomeVelocity);
   };
-
-  destroy() {
-    this.tempoService.eventsEmitter.removeListener('start', this.handleStart);
-    this.tempoService.eventsEmitter.removeListener('stop', this.handleStop);
-    this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handlePulse);
-  }
 }
 
 export const metronomeService = MetronomeService.getInstance();

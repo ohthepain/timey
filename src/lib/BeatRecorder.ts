@@ -9,7 +9,6 @@ import { useNavigationStore } from '~/state/NavigationStore';
 import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
 import { TempoService } from '~/lib/TempoService';
 import { EventRecorderService } from './EventRecorderService';
-import { GeneralMidiService } from './GeneralMidiService';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(elapsedMsec: number, bpm: number) {
@@ -22,7 +21,7 @@ function quantizeTo32nd(elapsedMsec: number, bpm: number) {
 }
 
 export class BeatRecorder extends EventEmitter {
-  private static _instance: BeatRecorder;
+  private static _instance: BeatRecorder | null = null;
   public beat: Beat | null = null;
   // Note: setBeat must reset entire object state
   public performance: Performance = new Performance({ beatId: 'no beat!' });
@@ -43,6 +42,13 @@ export class BeatRecorder extends EventEmitter {
       BeatRecorder._instance = new BeatRecorder();
     }
     return BeatRecorder._instance;
+  }
+
+  public static shutdown() {
+    if (BeatRecorder._instance) {
+      BeatRecorder._instance.destroy();
+      BeatRecorder._instance = null;
+    }
   }
 
   private constructor() {

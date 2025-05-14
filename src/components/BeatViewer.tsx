@@ -21,6 +21,7 @@ import { fetchUserPerformancesForBeat } from '~/services/performanceService.serv
 import { SignedIn } from '@clerk/tanstack-react-start';
 import { Speedometer } from './Speedometer';
 import { TempoService } from '~/lib/TempoService';
+import { useAuth } from '@clerk/tanstack-react-start';
 
 const boxStyle =
   'text-amber-800 px-2 py-1 w-16 rounded bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm text-center';
@@ -59,6 +60,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [gradeMaxTempo, setGradeMaxTempo] = useState(240);
   const { currentBeat, cachePerformance } = useNavigationStore();
   const { enableAdmin } = usePersistedStore();
+  const { isSignedIn } = useAuth();
 
   const tempoService = TempoService.getInstance();
 
@@ -137,7 +139,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
 
   useEffect(() => {
     const fetchBeatProgress = async () => {
-      if (beat.id) {
+      if (beat.id && isSignedIn) {
         const beatId = beat.id;
         const performances: Performance[] = (await fetchUserPerformancesForBeat({ data: { beatId } })).map(
           (performanceData) => new Performance(performanceData)
@@ -211,19 +213,25 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
         )}
         <div
           onClick={async () => {
-            await startBeatServerFn({ data: { beatId: beat.id } });
+            if (isSignedIn) {
+              await startBeatServerFn({ data: { beatId: beat.id } });
+            }
             beatPlayer.setBeat(beat);
             BeatRecorder.getInstance().setBeat(beat);
           }}
         >
           <div className="flex flex-row items-center mx-4">
-            <TempoLadder
-              tempos={[140, 120, 100, 90]}
-              currentTempo={beatProgress?.bestTempo || 0}
-              onSelectTempo={async (tempo) => {
-                await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
-              }}
-            />
+            <SignedIn>
+              <TempoLadder
+                tempos={[140, 120, 100, 90]}
+                currentTempo={beatProgress?.bestTempo || 0}
+                onSelectTempo={async (tempo) => {
+                  if (isSignedIn) {
+                    await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
+                  }
+                }}
+              />
+            </SignedIn>
             <ScoreView beat={beat} />
           </div>
         </div>

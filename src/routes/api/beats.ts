@@ -5,6 +5,7 @@ import { redirect } from '@tanstack/react-router';
 import { checkUser } from '~/lib/checkUser';
 import { beatRepository } from '~/repositories/beatRepository';
 import { ParseBeatString } from '~/lib/ParseBeat';
+import { RedirectToSignIn } from '@clerk/tanstack-react-start';
 
 export const APIRoute = createAPIFileRoute('/api/beats')({
   PUT: async ({ request }) => {
@@ -15,7 +16,7 @@ export const APIRoute = createAPIFileRoute('/api/beats')({
       console.log('Request body:', { id, name, beatString, index, description, moduleId });
 
       if (!userId) {
-        throw redirect({ to: '/sign-in/$' });
+        throw RedirectToSignIn({ redirectUrl: request.url });
       }
 
       if (!beatString || typeof beatString !== 'string') {

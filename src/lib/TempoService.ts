@@ -295,4 +295,16 @@ export class TempoService {
     }
     return TempoService._instance;
   }
+
+  destroy() {
+    this.stop();
+    this.eventsEmitter.removeAllListeners();
+  }
+
+  public static shutdown() {
+    if (TempoService._instance) {
+      TempoService._instance.destroy();
+      TempoService._instance = null;
+    }
+  }
 }
