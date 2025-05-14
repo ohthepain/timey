@@ -28,7 +28,7 @@ export class BeatRecorder extends EventEmitter {
   public performance: Performance = new Performance({ beatId: 'no beat!' });
   public performanceFeedback: PerformanceFeedback = new PerformanceFeedback([]);
   private currentNoteIndex: number = 0;
-  private playedNotesForCurrentIndex: number[] = [];
+  private playedNotesForCurrentIndex: string[] = [];
 
   private get eventRecorder() {
     return EventRecorderService.getInstance();
@@ -124,17 +124,16 @@ export class BeatRecorder extends EventEmitter {
     console.log('BeatRecorder: stop');
   };
 
-  private findUnplayedNotes(currentBeatNote: BeatNote, playedNotes: number[]): string[] {
+  private findUnplayedNotes(currentBeatNote: BeatNote, playedNotes: string[]): string[] {
     // Parse the noteString to get expected notes
     const expectedNotes = currentBeatNote.noteString
       .replace(/[\[\]]/g, '') // Remove brackets
       .split(',')
       .map((note) => note.trim());
 
-    // Find notes that weren't played
-    return expectedNotes.filter(
-      (expectedNote) => !playedNotes.some((playedNote) => Beat.isDrumEquivalent(expectedNote, String(playedNote)))
-    );
+    // Return strings in expectedNotes that do not appear in playedNotes
+    const unplayedNotes = expectedNotes.filter((expectedNote) => !playedNotes.includes(expectedNote));
+    return unplayedNotes;
   }
 
   // Once we have passed a note, check if any notes were missed. if so, emit a missedNotes event
@@ -159,7 +158,6 @@ export class BeatRecorder extends EventEmitter {
     if (this.beat && this.tempoService.isRecording) {
       const elapsedMsec = this.tempoService.elapsedMsec;
       const position = elapsedMsec % this.beat.getLoopLengthMsec(this.tempoService.bpm);
-      const currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
       const nextNoteIndex = (this.currentNoteIndex + 1) % this.beat.beatNotes.length;
       const nextBeatNote = this.beat.beatNotes[nextNoteIndex];
       const nextBeatNoteTime = nextBeatNote.getPositionMsec(this.tempoService.bpm);
@@ -254,6 +252,14 @@ export class BeatRecorder extends EventEmitter {
     return playedNote;
   };
 
+  private WasNotePlayedForCurrentIndex(note: number): boolean {
+    const matchedNote = this.beat!.beatNotes[this.currentNoteIndex].matchMidiNote(note);
+    if (!matchedNote) {
+      return false;
+    }
+    return this.playedNotesForCurrentIndex.includes(matchedNote);
+  }
+
   private midiService_midiNote = (e: any) => {
     if (!this.tempoService.isRecording || !this.beat) {
       return;
@@ -262,10 +268,6 @@ export class BeatRecorder extends EventEmitter {
     if (e.note === 75) {
       // Ignore metronome
       return;
-    }
-
-    if (e.note === GeneralMidiService.getNoteNumber('kick') && this.currentNoteIndex === 15) {
-      console.log('Kick at 15');
     }
 
     // Record the raw MIDI note input immediately
@@ -280,16 +282,14 @@ export class BeatRecorder extends EventEmitter {
     // Special case: the note has already been played for the current index AND exists at the next index.
     // In this case we advance to the next index. BUT only if we have already reached the time of the current index.
     let currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-    // let currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
-    const nextBeatNote = this.beat.beatNotes[(this.currentNoteIndex + 1) % this.beat.beatNotes.length];
+    let nextBeatNote = this.beat.beatNotes[(this.currentNoteIndex + 1) % this.beat.beatNotes.length];
     const position = elapsedMsec % this.beat.getLoopLengthMsec(bpm);
 
-    if (!currentBeatNote.includesMidiNote(e.note) || this.playedNotesForCurrentIndex.includes(e.note)) {
+    if (!currentBeatNote.matchMidiNote(e.note) || this.WasNotePlayedForCurrentIndex(e.note)) {
       // Note was not expected
-      if (nextBeatNote.includesMidiNote(e.note) && this.hasReachedCurrentIndex()) {
+      if (nextBeatNote.matchMidiNote(e.note) && this.hasReachedCurrentIndex()) {
         this.advanceToNextIndex();
-        currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-        // currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
+        currentBeatNote = nextBeatNote;
       } else {
         console.log('BeatRecorder: handleMidiNote - extra note', playedNote);
         this.eventRecorder.recordExtraNote(e.note);
@@ -298,8 +298,9 @@ export class BeatRecorder extends EventEmitter {
     }
 
     // Add the note to playedNotesForCurrentIndex if it's expected in the current beat note
-    if (currentBeatNote.includesMidiNote(e.note)) {
-      this.playedNotesForCurrentIndex.push(e.note);
+    const matchedNote: string | null = currentBeatNote.matchMidiNote(e.note);
+    if (matchedNote) {
+      this.playedNotesForCurrentIndex.push(matchedNote);
     }
 
     const beatNoteFeedback = this.performanceFeedback.addBeatNote(
