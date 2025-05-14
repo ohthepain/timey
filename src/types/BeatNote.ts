@@ -69,6 +69,28 @@ export class BeatNote {
     }
 
     const notes = this.noteString.split(', ');
-    return notes.some((note) => note === drumName);
+    if (notes.some((note) => note === drumName)) {
+      return true;
+    }
+
+    for (const note of notes) {
+      if (note === 'hihat') {
+        // If midiNote is in list then return true
+        const hihats = [42, 46, 51, 53, 59];
+        if (hihats.includes(midiNote)) {
+          return true;
+        }
+        const kicks = [36, 35];
+        if (kicks.includes(midiNote)) {
+          return true;
+        }
+        const snares = [37, 38, 39, 40];
+        if (snares.includes(midiNote)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 }
