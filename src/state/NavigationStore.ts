@@ -7,12 +7,16 @@ interface NavigationState {
   currentPerformance: Performance | null;
   performancesByBeatId: Record<string, Performance[]>;
   isMetronomeOn: boolean;
+  isUsingExternalMidiClock: boolean;
+  externalMidiClockBpm: number;
+  externalMidiClockPpqn: number;
   setCurrentBeat: (beat: Beat | null) => void;
   setCurrentPerformance: (performance: Performance | null) => void;
   cachePerformance: (performance: Performance) => void;
   clearPerformancesForBeatId: (beatId: string) => void;
   getPerformancesForBeatId: (beatId: string) => Performance[];
   setMetronomeOn: (on: boolean) => void;
+  setExternalMidiClockState: (isUsing: boolean, bpm?: number, ppqn?: number) => void;
 }
 
 export const useNavigationStore = create<NavigationState>((set) => ({
@@ -20,6 +24,9 @@ export const useNavigationStore = create<NavigationState>((set) => ({
   currentPerformance: null,
   performancesByBeatId: {},
   isMetronomeOn: true,
+  isUsingExternalMidiClock: false,
+  externalMidiClockBpm: 120,
+  externalMidiClockPpqn: 24,
   setCurrentBeat: (beat) => set(() => ({ currentBeat: beat })),
   setCurrentPerformance: (performance: Performance | null) => set(() => ({ currentPerformance: performance })),
   clearPerformancesForBeatId: (beatId) =>
@@ -41,4 +48,10 @@ export const useNavigationStore = create<NavigationState>((set) => ({
     return performances || [];
   },
   setMetronomeOn: (on: boolean) => set(() => ({ isMetronomeOn: on })),
+  setExternalMidiClockState: (isUsing: boolean, bpm?: number, ppqn?: number) =>
+    set((state) => ({
+      isUsingExternalMidiClock: isUsing,
+      externalMidiClockBpm: bpm ?? state.externalMidiClockBpm,
+      externalMidiClockPpqn: ppqn ?? state.externalMidiClockPpqn,
+    })),
 }));

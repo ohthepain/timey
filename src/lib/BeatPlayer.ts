@@ -58,7 +58,6 @@ class BeatPlayer extends EventEmitter {
 
   private handleMidiPulse = (event: { time: number; ticks: number }) => {
     if (!this.beat) {
-      console.log('BeatPlayer: handleMidiPulse - no beat');
       return;
     }
 

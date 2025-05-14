@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Beat } from '~/types/Beat';
 import { Performance } from '~/types/Performance';
 import { Module } from '~/types/Module';
@@ -16,12 +16,13 @@ import { beatPlayer } from '~/lib/BeatPlayer';
 import { BeatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { usePersistedStore } from '~/state/PersistedStore';
-import { TempoLadder } from './TempoLadder';
+import { Ladder } from './Ladder';
 import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
 import { SignedIn } from '@clerk/tanstack-react-start';
 import { Speedometer } from './Speedometer';
 import { TempoService } from '~/lib/TempoService';
 import { useAuth } from '@clerk/tanstack-react-start';
+import { kMaxWindowSkillLevel } from '~/lib/PerformanceFeedback';
 
 const boxStyle =
   'text-amber-800 px-2 py-1 w-16 rounded bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm text-center';
@@ -54,6 +55,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(beat.name);
   const [tempoFeedback, setTempoFeedback] = useState<any>(null);
+  const [skillLevel, setSkillLevel] = useState(kMaxWindowSkillLevel);
   const [measuredBpm, setMeasuredBpm] = useState(0);
   const [bgColor, setBgColor] = useState<string>('bg-white');
   const [gradeMinTempo, setGradeMinTempo] = useState(0);
@@ -61,6 +63,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const { currentBeat, cachePerformance } = useNavigationStore();
   const { enableAdmin } = usePersistedStore();
   const { isSignedIn } = useAuth();
+  const possibleTempos = [0, 1, 2, 3, 4, 5];
 
   const tempoService = TempoService.getInstance();
 
@@ -112,10 +115,14 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
 
   const beatRecorder_tempoFeedback = (tempoFeedback: any) => {
     setTempoFeedback(tempoFeedback);
-
+    if (tempoFeedback.windowSkillLevel != skillLevel) {
+      console.log('BeatViewer: tempoFeedback.windowSkillLevel', tempoFeedback.windowSkillLevel);
+      setSkillLevel(tempoFeedback.windowSkillLevel);
+    }
     // Set anything we want to react to
     setMeasuredBpm(tempoFeedback.bpm);
     const bgColor = getSkillLevelColor(tempoFeedback.windowSkillLevel);
+    console.log('BeatViewer: tempoFeedback.windowSkillLevel', tempoFeedback.windowSkillLevel);
     setBgColor(bgColor);
 
     const nearestPowerOf2 = Math.pow(2, tempoFeedback.windowSkillLevel);
@@ -200,14 +207,19 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
               <div className={boxStyle}>{tempoFeedback?.bpm ? tempoFeedback?.bpm.toFixed(1) : '...'}</div>
               <div className={boxStyle}>{gradeMaxTempo || '...'}</div>
             </div>
-            <div className="">
-              <Speedometer
-                min={gradeMinTempo}
-                max={gradeMaxTempo}
-                value={tempoFeedback?.bpm || 120}
-                instantValue={tempoFeedback?.lastNoteEffectiveTempo || 120}
-                bgColor={bgColor}
-              />
+            <div className="flex w-full">
+              <div className="flex-1">
+                <Speedometer
+                  min={gradeMinTempo}
+                  max={gradeMaxTempo}
+                  value={tempoFeedback?.bpm || 120}
+                  instantValue={tempoFeedback?.lastNoteEffectiveTempo || 120}
+                  bgColor={bgColor}
+                />
+              </div>
+              <div className="flex-shrink-0">
+                <Ladder values={possibleTempos} currentValue={skillLevel} />
+              </div>
             </div>
           </div>
         )}
@@ -222,10 +234,10 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
         >
           <div className="flex flex-row items-center mx-4">
             <SignedIn>
-              <TempoLadder
-                tempos={[140, 120, 100, 90]}
-                currentTempo={beatProgress?.bestTempo || 0}
-                onSelectTempo={async (tempo) => {
+              <Ladder
+                values={[140, 120, 100, 90]}
+                currentValue={beatProgress?.bestTempo || 0}
+                onSelectValue={async (tempo) => {
                   if (isSignedIn) {
                     await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
                   }
