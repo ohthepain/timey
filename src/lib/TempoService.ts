@@ -295,4 +295,11 @@ export class TempoService {
     }
     return TempoService._instance;
   }
+
+  public static shutdown() {
+    if (TempoService._instance) {
+      TempoService._instance.stop();
+      TempoService._instance = null;
+    }
+  }
 }

@@ -4,7 +4,7 @@ import { useNavigationStore } from '~/state/NavigationStore';
 import { TempoService } from '~/lib/TempoService';
 
 class MetronomeService {
-  private static _instance: MetronomeService;
+  private static _instance: MetronomeService | null = null;
 
   private constructor() {
     // Listen for start/stop events from MidiService or TempoService
@@ -22,6 +22,13 @@ class MetronomeService {
       MetronomeService._instance = new MetronomeService();
     }
     return MetronomeService._instance;
+  }
+
+  public static shutdown() {
+    if (MetronomeService._instance) {
+      MetronomeService._instance.destroy();
+      MetronomeService._instance = null;
+    }
   }
 
   private handleStart = () => {};
