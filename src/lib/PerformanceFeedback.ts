@@ -24,11 +24,13 @@ export class BeatNoteFeedback {
   }
 }
 
+export const kMaxWindowSkillLevel = 8;
+
 export class PerformanceFeedback {
   beatNoteFeedback: BeatNoteFeedback[];
   lastNoteEffectiveTempo: number | null = 8;
-  currentSkillLevel: number = 8;
-  windowSkillLevel: number = 8;
+  currentSkillLevel: number = kMaxWindowSkillLevel;
+  windowSkillLevel: number = kMaxWindowSkillLevel;
   windowStartMsec: number = 0;
 
   constructor(beatNoteFeedback: BeatNoteFeedback[] | null) {

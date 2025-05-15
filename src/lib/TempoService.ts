@@ -2,6 +2,7 @@ import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
 import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
 import { EventRecorderService } from './EventRecorderService';
+import { useNavigationStore } from '~/state/NavigationStore';
 
 // TempoService is a singleton that drives the fake MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
@@ -77,18 +78,24 @@ export class TempoService {
   }
 
   startIntervalTimer() {
+    if (useNavigationStore.getState().isUsingExternalMidiClock) {
+      return;
+    }
     this.prepareIntervalTimer();
     this.continueIntervalTimer();
   }
 
   continueIntervalTimer() {
+    if (useNavigationStore.getState().isUsingExternalMidiClock) {
+      return;
+    }
+
     if (!this.isSimulatedTimerForTesting) {
       if (!this.intervalId) {
         this.handleIntervalTimer();
-        // fakeMidiClockTimerResolution - timer faster than clock pulse to reduce jitter
         this.fakeMidiClockTimerResolution = usePreferencesStore.getState().fakeMidiClockTimerResolution || 4;
         this.intervalId = setInterval(
-          this.handleInterval,
+          this.handleIntervalTimer,
           this.midiClockPulseInterval / this.fakeMidiClockTimerResolution
         );
       }
@@ -101,32 +108,30 @@ export class TempoService {
     if (this.getTime() !== this.time) {
       throw new Error('TempoService: simulateInterval - time mismatch');
     }
-    this.handleInterval();
+    this.handleIntervalTimer();
   };
 
   handleIntervalTimer = () => {
-    if (this.isSimulatedTimerForTesting) {
-      throw new Error('TempoService: handleIntervalTimer - simulated timer but we got a timer pulse');
+    this.time = this.getTime();
+    if (this.time > this.startTimeMsec + this.nextPulseNum * this.midiClockPulseInterval) {
+      // send fake MIDI clock pulse
+      this.sendClock(this.nextPulseNum);
+      this.handleMidiClockPulse();
     }
-    this.handleInterval();
   };
 
-  handleInterval = () => {
+  handleMidiClockPulse = () => {
     this.time = this.getTime();
     this.elapsedMsec = this.time - this.startTimeMsec;
+    this.eventRecorder.recordTimingPulse(this.time - this.lastTickTimeMsec);
+    this.eventsEmitter.emit('MIDI Clock Pulse', {
+      time: this.elapsedMsec,
+      ticks: this.nextPulseNum,
+    });
 
-    if (this.time > this.startTimeMsec + this.nextPulseNum * this.midiClockPulseInterval) {
-      this.eventRecorder.recordTimingPulse(this.time - this.lastTickTimeMsec);
-      this.sendClock(this.nextPulseNum);
-      this.eventsEmitter.emit('MIDI Clock Pulse', {
-        time: this.elapsedMsec,
-        ticks: this.nextPulseNum,
-      });
+    this.lastTickTimeMsec = this.time;
 
-      this.lastTickTimeMsec = this.time;
-
-      ++this.nextPulseNum;
-    }
+    ++this.nextPulseNum;
   };
 
   sendStart = () => {
@@ -177,11 +182,13 @@ export class TempoService {
   };
 
   sendClock = (timePulses: number) => {
+    if (useNavigationStore.getState().isUsingExternalMidiClock) {
+      return;
+    }
+
     const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
-      // console.log(`Preferences.getMidiOutputs: ${JSON.stringify(output)}`)
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
-        // console.log(`TempoService.sendClock: to ${output.name} - ${timePulses} pulses`)
         output.sendClock({ time: timePulses });
       }
     });
@@ -192,7 +199,6 @@ export class TempoService {
 
     const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
     WebMidi.outputs.forEach((output) => {
-      // console.log(`Preferences.getMidiOutputs: ${JSON.stringify(output)}`)
       if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
         output.sendSongPosition(spp);
       }

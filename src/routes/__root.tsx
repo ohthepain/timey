@@ -19,6 +19,7 @@ import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
 import { saveLastUrl, getLastUrl } from '~/utils/urlPersistence';
 import { usePersistedStore } from '~/state/PersistedStore';
+import { useNavigationStore } from '~/state/NavigationStore';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -74,7 +75,8 @@ function RootComponent() {
   const router = useRouter();
   const isInitialLoad = useRef(true);
   const { navigate } = useRouter();
-  const { enableAdmin, setAdmin, devMode, setDevMode } = usePersistedStore();
+  const { enableAdmin, setAdmin, devMode, setDevMode, midiSlave, setMidiSlave } = usePersistedStore();
+  const { isUsingExternalMidiClock } = useNavigationStore();
 
   // Check for saved URL on initial load
   useEffect(() => {
@@ -191,12 +193,20 @@ function RootComponent() {
                 Admin
               </button>
               <button
+                className={`text-${midiSlave ? 'red' : 'gray'}-700 px-2 py-1 rounded hover:bg-${midiSlave ? 'red' : 'gray'}-200 border-${midiSlave ? 'blue' : 'gray'}-600 border-2 rounded-e-md text-sm`}
+                onClick={() => setMidiSlave(!midiSlave)}
+                title="Toggle MIDI Slave Mode"
+              >
+                {midiSlave ? 'Slave' : 'INT'}
+              </button>
+              <button
                 className="text-amber-800 px-2 py-1 rounded hover:bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm"
                 onClick={() => setShowMetronomeSettings(true)}
                 title="Metronome Settings"
               >
                 Metronome
               </button>
+              <div className={`text-${isUsingExternalMidiClock ? 'red' : 'green'}-600`}>EXT</div>
               <button
                 className="text-green-700 px-2 py-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
                 onClick={() => setShowMidiPopup(true)}

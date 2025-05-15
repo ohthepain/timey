@@ -3,6 +3,7 @@ import { Input, NoteMessageEvent, Output, WebMidi } from 'webmidi';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { EventEmitter } from 'events';
 import { TempoService } from '~/lib/TempoService';
+import { useNavigationStore } from '~/state/NavigationStore';
 
 class MidiService extends EventEmitter {
   receivedResponse: boolean = false;
@@ -17,6 +18,9 @@ class MidiService extends EventEmitter {
   midiOutputDevice: Output | undefined = undefined;
   midiInputChannel: any = null;
   midiOutputChannel: any = null;
+  private lastClockTime: number = 0;
+  private clockCount: number = 0;
+  private clockTimeout: any = null;
 
   constructor() {
     super();
@@ -192,6 +196,18 @@ class MidiService extends EventEmitter {
       return;
     }
 
+    // Remove existing listeners
+    this.midiInputDevice.removeListener('clock');
+    this.midiInputDevice.removeListener('start');
+    this.midiInputDevice.removeListener('stop');
+    this.midiInputDevice.removeListener('continue');
+
+    // Add MIDI clock listeners
+    this.midiInputDevice.addListener('clock', this.handleMidiClock);
+    this.midiInputDevice.addListener('start', this.handleMidiStart);
+    this.midiInputDevice.addListener('stop', this.handleMidiStop);
+    this.midiInputDevice.addListener('continue', this.handleMidiContinue);
+
     if (channelNum) {
       console.log(`listenToInput : channel ${channelNum}`);
       const channel = this.midiInputDevice.channels[channelNum];
@@ -210,7 +226,6 @@ class MidiService extends EventEmitter {
       });
     } else {
       console.log(`listenToInput : all channels`);
-      this.midiInputDevice.removeListener('noteon');
       this.midiInputDevice.addListener('noteon', (e: NoteMessageEvent) => {
         if (e.message.type === 'noteon') {
           const note = e.message.dataBytes[0];
@@ -220,6 +235,54 @@ class MidiService extends EventEmitter {
       });
     }
   }
+
+  private handleMidiClock = () => {
+    const now = WebMidi.time;
+
+    // Clear any existing timeout
+    if (this.clockTimeout) {
+      clearTimeout(this.clockTimeout);
+    }
+
+    // Set a timeout to detect when clock stops
+    this.clockTimeout = setTimeout(() => {
+      useNavigationStore.getState().setExternalMidiClockState(false);
+      // Only restart internal clock if we're in an active state
+      if (this.tempoService.isPlaying || this.tempoService.isRecording) {
+        this.tempoService.startIntervalTimer();
+      }
+    }, 1000); // If no clock for 1 second, assume it stopped
+
+    // Calculate BPM based on clock timing
+    if (this.lastClockTime > 0) {
+      const interval = now - this.lastClockTime;
+      const bpm = 60000 / (interval * 24); // 24 PPQN is standard
+
+      // Update state with external clock info
+      useNavigationStore.getState().setExternalMidiClockState(true, bpm, 24);
+
+      // Stop internal clock if it's running
+      this.tempoService.stopIntervalTimer();
+
+      // Forward the clock pulse to TempoService
+      this.tempoService.handleMidiClockPulse();
+    }
+
+    this.lastClockTime = now;
+    this.clockCount++;
+  };
+
+  private handleMidiStart = () => {
+    this.tempoService.record();
+  };
+
+  private handleMidiStop = () => {
+    this.tempoService.stop();
+  };
+
+  private handleMidiContinue = () => {
+    this.tempoService.continue();
+  };
 }
 
 export const midiService = new MidiService();
