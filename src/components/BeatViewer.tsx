@@ -24,8 +24,9 @@ import { TempoService } from '~/lib/TempoService';
 import { useAuth } from '@clerk/tanstack-react-start';
 import { kMaxWindowSkillLevel } from '~/lib/PerformanceFeedback';
 
-const boxStyle =
+const xboxStyle =
   'text-amber-800 px-2 py-1 w-16 rounded bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm text-center';
+const boxStyle = 'text-amber-800 px-2 py-1 w-16 text-sm text-center';
 
 interface BeatViewerProps {
   beat: Beat;
@@ -199,12 +200,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
           </div>
         </div>
         {currentBeat === beat && (
-          <div className={'w-full shadow-sm'}>
-            <div className="flex flex-row items-center justify-between w-full">
-              <div className={boxStyle}>{gradeMinTempo || '...'}</div>
-              <div className={boxStyle}>{tempoFeedback?.bpm ? tempoFeedback?.bpm.toFixed(1) : '...'}</div>
-              <div className={boxStyle}>{gradeMaxTempo || '...'}</div>
-            </div>
+          <div className={'w-full shadow-sm bg-white'}>
             <div className="flex w-full">
               <div className="flex-1">
                 <Speedometer
@@ -214,6 +210,11 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
                   instantValue={tempoFeedback?.lastNoteEffectiveTempo || 120}
                   bgColor={bgColor}
                 />
+                <div className="flex flex-row items-center justify-between w-full">
+                  <div className={boxStyle}>{gradeMinTempo || '...'}</div>
+                  <div className={boxStyle}>{tempoFeedback?.bpm ? tempoFeedback?.bpm.toFixed(1) : '...'}</div>
+                  <div className={boxStyle}>{gradeMaxTempo || '...'}</div>
+                </div>
               </div>
               <div className="flex-shrink-0">
                 <Ladder values={possibleTempos} currentValue={skillLevel} />

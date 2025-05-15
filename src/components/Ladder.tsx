@@ -7,11 +7,12 @@ interface LadderProps {
 }
 
 function LadderComponent({ values, currentValue, onSelectValue }: LadderProps) {
-  if (!values.includes(currentValue)) {
-    if (currentValue < values[0]) {
-      currentValue = values[0];
+  let value = currentValue;
+  if (!values.includes(value)) {
+    if (value < values[0]) {
+      value = values[0];
     } else {
-      currentValue = values[values.length - 1];
+      value = values[values.length - 1];
     }
   }
 
@@ -21,9 +22,7 @@ function LadderComponent({ values, currentValue, onSelectValue }: LadderProps) {
         <button
           key={value}
           className={`w-full px-2 mx-1 font-bold text-xs py-1 rounded ${
-            value === currentValue
-              ? 'bg-blue-500 text-white hover:bg-blue-700'
-              : 'bg-blue-100 hover:bg-blue-300 text-blue-800'
+            value === value ? 'bg-blue-500 text-white hover:bg-blue-700' : 'bg-blue-100 hover:bg-blue-300 text-blue-800'
           }`}
           onClick={() => {
             onSelectValue?.(value);
