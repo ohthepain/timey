@@ -1,4 +1,4 @@
-import { prisma } from '~/config/db';
+import { prisma, safeQuery } from '~/config/db';
 import { getAuth } from '@clerk/tanstack-react-start/server';
 import { users } from '@clerk/clerk-sdk-node';
 import { RedirectToSignIn } from '@clerk/tanstack-react-start';
@@ -17,9 +17,7 @@ export const checkUser = async (req: any) => {
   }
 
   // Check if the user already exists in the database
-  const existingUser = await prisma.user.findUnique({
-    where: { id: userId },
-  });
+  const existingUser = await safeQuery(() => prisma.user.findUnique({ where: { id: userId } }));
   if (existingUser) {
     console.log('checkUser: Clerk User already exists in the database. Good good good.');
     return userId;
@@ -36,14 +34,16 @@ export const checkUser = async (req: any) => {
   console.log('Email:', email);
 
   // Create the user in the database
-  await prisma.user.create({
-    data: {
-      id: userId,
-      email: email?.emailAddress || '',
-      firstName: `${user.firstName || ''}`.trim(),
-      lastName: `${user.lastName || ''}`.trim(),
-    },
-  });
+  await safeQuery(() =>
+    prisma.user.create({
+      data: {
+        id: userId,
+        email: email?.emailAddress || '',
+        firstName: `${user.firstName || ''}`.trim(),
+        lastName: `${user.lastName || ''}`.trim(),
+      },
+    })
+  );
 
   return userId;
 };

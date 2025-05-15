@@ -1,11 +1,13 @@
-import { prisma } from '~/config/db';
+import { prisma, safeQuery } from '~/config/db';
 
 export const userRepository = {
   async getCurrentModule(userId: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { moduleProgress: true },
-    });
+    const user = await safeQuery(() =>
+      prisma.user.findUnique({
+        where: { id: userId },
+        include: { moduleProgress: true },
+      })
+    );
     if (!user) {
       throw new Error(`User not found with id ${userId}`);
     }
@@ -13,9 +15,11 @@ export const userRepository = {
   },
 
   async setCurrentModule(userId: string, moduleId: string) {
-    return prisma.user.update({
-      where: { id: userId },
-      data: { currentModuleId: moduleId },
-    });
+    return safeQuery(() =>
+      prisma.user.update({
+        where: { id: userId },
+        data: { currentModuleId: moduleId },
+      })
+    );
   },
 };
