@@ -6,7 +6,7 @@ export class BeatProgressRepository {
       where: { userId_beatId: { userId, beatId } },
     });
     if (!existing || existing.bestTempo == null || tempo > existing.bestTempo) {
-      return safeQuery(() =>
+      return await safeQuery(() =>
         prisma.beatProgress.upsert({
           where: { userId_beatId: { userId, beatId } },
           update: { bestTempo: tempo },
@@ -21,7 +21,7 @@ export class BeatProgressRepository {
     userId: string,
     moduleId: string
   ): Promise<Awaited<ReturnType<typeof prisma.beat.findMany>>> {
-    return safeQuery(() =>
+    return await safeQuery(() =>
       prisma.beat.findMany({
         where: { moduleId },
         include: {

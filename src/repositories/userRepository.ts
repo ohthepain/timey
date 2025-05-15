@@ -15,7 +15,7 @@ export const userRepository = {
   },
 
   async setCurrentModule(userId: string, moduleId: string) {
-    return safeQuery(() =>
+    return await safeQuery(() =>
       prisma.user.update({
         where: { id: userId },
         data: { currentModuleId: moduleId },

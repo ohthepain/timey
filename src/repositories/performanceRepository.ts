@@ -64,7 +64,7 @@ export const performanceRepository = {
   },
 
   async deletePerformance(id: string) {
-    return safeQuery(() =>
+    return await safeQuery(() =>
       prisma.performance.delete({
         where: { id },
       })
@@ -72,7 +72,7 @@ export const performanceRepository = {
   },
 
   async deletePerformancesByBeatIdAndUserId(beatId: string, userId: string) {
-    return safeQuery(() =>
+    return await safeQuery(() =>
       prisma.performance.deleteMany({
         where: { beatId, userId },
       })

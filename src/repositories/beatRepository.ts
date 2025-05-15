@@ -55,7 +55,7 @@ class BeatRepository {
   }
 
   async getBeatsByUser(userId: string) {
-    return safeQuery(() =>
+    return await safeQuery(() =>
       prisma.beat
         .findMany({ where: { authorId: userId }, include: { beatNotes: true } })
         .then((data) => data.map((b) => new Beat(b)))
@@ -71,7 +71,7 @@ class BeatRepository {
     if (data.index === undefined || data.index === null) {
       throw new Error('Index is required and cannot be null or undefined');
     }
-    return safeQuery(() =>
+    return await safeQuery(() =>
       prisma.beat.create({
         data: {
           name: data.name,
@@ -89,7 +89,7 @@ class BeatRepository {
   }
 
   async updateBeat(id: string, data: any) {
-    return safeQuery(() =>
+    return await safeQuery(() =>
       prisma.beat.update({
         where: { id },
         data: {
