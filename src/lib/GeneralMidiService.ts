@@ -1,5 +1,6 @@
 export class GeneralMidiService {
   private static readonly DRUM_MAP: Record<string, number> = {
+    'hihat-open-edge-td27': 26,
     // Bass Drums
     kick: 36,
     kick2: 35,
