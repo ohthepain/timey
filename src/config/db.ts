@@ -13,6 +13,19 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
+/**
+ * Executes a database query with retry logic for specific errors.
+ * 
+ * If the query fails due to a database connection issue (e.g., error code P1001,
+ * "Timed out", or "Connection pool"), the function will attempt to reconnect
+ * to the database and retry the query once.
+ * 
+ * @template T - The type of the result returned by the query.
+ * @param {() => Promise<T>} fn - A function that performs the database query.
+ * @returns {Promise<T>} The result of the query.
+ * @throws Will rethrow the original error if it is not a connection issue or if
+ *         the retry attempt also fails.
+ */
 export async function safeQuery<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
