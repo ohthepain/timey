@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
 import { EventRecorderService } from './EventRecorderService';
 import { useNavigationStore } from '~/state/NavigationStore';
+import { usePersistedStore } from '~/state/PersistedStore';
 
 // TempoService is a singleton that drives the fake MIDI clock and song position pointer
 // It can optionally be driven by a MIDI adapter
@@ -78,15 +79,12 @@ export class TempoService {
   }
 
   startIntervalTimer() {
-    if (useNavigationStore.getState().isUsingExternalMidiClock) {
-      return;
-    }
     this.prepareIntervalTimer();
     this.continueIntervalTimer();
   }
 
   continueIntervalTimer() {
-    if (useNavigationStore.getState().isUsingExternalMidiClock) {
+    if (usePersistedStore.getState().midiSlave) {
       return;
     }
 

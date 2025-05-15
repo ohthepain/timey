@@ -4,6 +4,7 @@ import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { EventEmitter } from 'events';
 import { TempoService } from '~/lib/TempoService';
 import { useNavigationStore } from '~/state/NavigationStore';
+import { usePersistedStore } from '~/state/PersistedStore';
 
 class MidiService extends EventEmitter {
   receivedResponse: boolean = false;
@@ -273,7 +274,9 @@ class MidiService extends EventEmitter {
   };
 
   private handleMidiStart = () => {
-    this.tempoService.record();
+    if (usePersistedStore.getState().midiSlave) {
+      this.tempoService.record();
+    }
   };
 
   private handleMidiStop = () => {

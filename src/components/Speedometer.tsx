@@ -9,6 +9,8 @@ type SpeedometerProps = {
   instantValue?: number;
 };
 
+const textOn = false;
+
 export const Speedometer = (props: SpeedometerProps) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const minTextRef = useRef<SVGTextElement | null>(null);
@@ -91,50 +93,52 @@ export const Speedometer = (props: SpeedometerProps) => {
       setPointOnCircleInstant(pt);
 
       // Create text elements if they don't exist
-      if (!minTextRef.current && svg) {
-        const textColor = 'white';
-        const fontSize = strokeWidth * 1.1;
+      if (textOn) {
+        if (!minTextRef.current && svg) {
+          const textColor = 'white';
+          const fontSize = strokeWidth * 1.1;
 
-        // Min value (top left)
-        const minText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        minText.setAttribute('x', '12');
-        minText.setAttribute('y', '20');
-        minText.setAttribute('text-anchor', 'start');
-        minText.setAttribute('fill', textColor);
-        minText.setAttribute('font-size', fontSize.toString());
-        svg.appendChild(minText);
-        minTextRef.current = minText;
+          // Min value (top left)
+          const minText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          minText.setAttribute('x', '12');
+          minText.setAttribute('y', '20');
+          minText.setAttribute('text-anchor', 'start');
+          minText.setAttribute('fill', textColor);
+          minText.setAttribute('font-size', fontSize.toString());
+          svg.appendChild(minText);
+          minTextRef.current = minText;
 
-        // Max value (top right)
-        const maxText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        maxText.setAttribute('x', (svg.clientWidth - 10).toString());
-        maxText.setAttribute('y', '20');
-        maxText.setAttribute('text-anchor', 'end');
-        maxText.setAttribute('fill', textColor);
-        maxText.setAttribute('font-size', fontSize.toString());
-        svg.appendChild(maxText);
-        maxTextRef.current = maxText;
+          // Max value (top right)
+          const maxText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          maxText.setAttribute('x', (svg.clientWidth - 10).toString());
+          maxText.setAttribute('y', '20');
+          maxText.setAttribute('text-anchor', 'end');
+          maxText.setAttribute('fill', textColor);
+          maxText.setAttribute('font-size', fontSize.toString());
+          svg.appendChild(maxText);
+          maxTextRef.current = maxText;
 
-        // Current value (bottom center)
-        const currentText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        currentText.setAttribute('x', (svg.clientWidth / 2).toString());
-        currentText.setAttribute('y', (svg.clientHeight - 10).toString());
-        currentText.setAttribute('text-anchor', 'middle');
-        currentText.setAttribute('fill', textColor);
-        currentText.setAttribute('font-size', fontSize.toString());
-        svg.appendChild(currentText);
-        currentTextRef.current = currentText;
-      }
+          // Current value (bottom center)
+          const currentText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          currentText.setAttribute('x', (svg.clientWidth / 2).toString());
+          currentText.setAttribute('y', (svg.clientHeight - 10).toString());
+          currentText.setAttribute('text-anchor', 'middle');
+          currentText.setAttribute('fill', textColor);
+          currentText.setAttribute('font-size', fontSize.toString());
+          svg.appendChild(currentText);
+          currentTextRef.current = currentText;
+        }
 
-      // Update text content and positions
-      if (minTextRef.current) {
-        minTextRef.current.textContent = props.min.toFixed(0);
-      }
-      if (maxTextRef.current && svg) {
-        maxTextRef.current.textContent = props.max.toFixed(0);
-      }
-      if (currentTextRef.current && svg) {
-        currentTextRef.current.textContent = animatedValue.toFixed(0);
+        // Update text content and positions
+        if (minTextRef.current) {
+          minTextRef.current.textContent = props.min.toFixed(0);
+        }
+        if (maxTextRef.current && svg) {
+          maxTextRef.current.textContent = props.max.toFixed(0);
+        }
+        if (currentTextRef.current && svg) {
+          currentTextRef.current.textContent = animatedValue.toFixed(0);
+        }
       }
     }
 
