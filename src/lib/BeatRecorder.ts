@@ -160,7 +160,7 @@ export class BeatRecorder extends EventEmitter {
     }
   };
 
-  private handleMidiPulse = (event: { time: number; ticks: number }) => {
+  private tempoService_midiPulse = (event: { time: number; ticks: number }) => {
     if (this.beat && this.tempoService.isRecording) {
       const elapsedMsec = this.tempoService.elapsedMsec;
       const position = elapsedMsec % this.beat.getLoopLengthMsec(this.tempoService.bpm);
