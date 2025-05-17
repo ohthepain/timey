@@ -24,12 +24,12 @@ class BeatPlayer extends EventEmitter {
     // Subscribe to TempoService events
     console.log(`BeatPlayer:ctor - add listeners`);
     this.tempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange);
-    this.tempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handleMidiPulse);
+    this.tempoService.eventsEmitter.addListener('midiClockPulse', this.handleMidiPulse);
   }
 
   public destroy() {
     console.log('BeatPlayer: destroy');
-    this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handleMidiPulse);
+    this.tempoService.eventsEmitter.removeListener('midiClockPulse', this.handleMidiPulse);
     this.tempoService.eventsEmitter.removeListener('stateChange', this.tempoService_stateChange);
   }
 
