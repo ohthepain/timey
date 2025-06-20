@@ -1,23 +1,14 @@
 import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
-import { getAuth } from '@clerk/tanstack-react-start/server';
-import { redirect } from '@tanstack/react-router';
-import { checkUser } from '~/lib/checkUser';
 import { beatRepository } from '~/repositories/beatRepository';
 import { ParseBeatString } from '~/lib/ParseBeat';
-import { RedirectToSignIn } from '@clerk/tanstack-react-start';
 
 export const APIRoute = createAPIFileRoute('/api/beats')({
   PUT: async ({ request }) => {
     console.log(`/api/beats PUT request`);
     try {
-      const { userId } = await getAuth(request);
       const { id, name, beatString, index, description, moduleId } = await request.json();
       console.log('Request body:', { id, name, beatString, index, description, moduleId });
-
-      if (!userId) {
-        throw RedirectToSignIn({ redirectUrl: request.url });
-      }
 
       if (!beatString || typeof beatString !== 'string') {
         return json({ error: 'Invalid beat string' }, { status: 400 });
@@ -28,7 +19,8 @@ export const APIRoute = createAPIFileRoute('/api/beats')({
         return json({ error: 'Index is required' }, { status: 400 });
       }
 
-      await checkUser(request);
+      // For now, use a default author ID since we removed authentication
+      const defaultAuthorId = 'default-user';
 
       const { beatNotes } = ParseBeatString(beatString);
       console.log('Parsed beat notes:', beatNotes);
@@ -48,7 +40,7 @@ export const APIRoute = createAPIFileRoute('/api/beats')({
           name,
           description,
           index,
-          authorId: userId,
+          authorId: defaultAuthorId,
           moduleId,
           beatNotes: beatNotes,
         });

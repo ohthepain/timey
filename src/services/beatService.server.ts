@@ -2,7 +2,6 @@ import { createServerFn } from '@tanstack/react-start';
 import { beatRepository } from '~/repositories/beatRepository';
 import { z } from 'zod';
 import { getWebRequest } from '@tanstack/react-start/server';
-import { getAuth } from '@clerk/tanstack-react-start/server';
 import { Beat } from '~/types/Beat';
 
 export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
@@ -30,18 +29,16 @@ export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data
     return saveBeatServerFnArgs.parse(data);
   })
   .handler(async (ctx) => {
-    const request = getWebRequest();
-    const { userId } = await getAuth(request!);
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+    // For now, use a default author ID since we removed authentication
+    const defaultAuthorId = 'default-user';
+
     if (ctx.data.id) {
       console.log('Updating beat with ID:', ctx.data.id);
       return beatRepository.updateBeat(ctx.data.id, {
         ...ctx.data,
         index: ctx.data.index || 0,
         description: ctx.data.description || null,
-        authorId: userId,
+        authorId: defaultAuthorId,
       });
     } else {
       console.log('Creating new beat with beat notes:', ctx.data.beatNotes);
@@ -49,7 +46,7 @@ export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data
         ...ctx.data,
         index: ctx.data.index || 0,
         description: ctx.data.description || null,
-        authorId: userId,
+        authorId: defaultAuthorId,
       });
     }
   });
@@ -61,11 +58,8 @@ const copyBeatServerFnArgs = z.object({
 export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => copyBeatServerFnArgs.parse(data))
   .handler(async (ctx) => {
-    const request = getWebRequest();
-    const { userId } = await getAuth(request!);
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+    // For now, use a default author ID since we removed authentication
+    const defaultAuthorId = 'default-user';
 
     // Fetch the original beat
     const original = await beatRepository.getBeatById(ctx.data.id);
@@ -88,7 +82,7 @@ export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data
     const newBeatData = {
       name: newName,
       index: original.index + 1,
-      authorId: userId,
+      authorId: defaultAuthorId,
       moduleId: original.moduleId,
       beatNotes: original.beatNotes.map(({ id, ...note }) => ({
         ...note,

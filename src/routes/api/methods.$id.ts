@@ -1,9 +1,6 @@
 import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { methodRepository } from '~/repositories/methodRepository';
-import { checkUser } from '~/lib/checkUser';
-import { getAuth } from '@clerk/tanstack-react-start/server';
-import { RedirectToSignIn } from '@clerk/tanstack-react-start';
 
 export const APIRoute = createAPIFileRoute('/api/methods/$id')({
   GET: async ({ params }) => {
@@ -41,23 +38,17 @@ export const APIRoute = createAPIFileRoute('/api/methods/$id')({
   POST: async ({ request }) => {
     console.log(`/api/methods POST request`);
     try {
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        throw RedirectToSignIn({
-          redirectUrl: request.url,
-        });
-      }
-
       const { title } = await request.json();
       if (!title) {
-        return json({ error: 'Title and authorId are required' }, { status: 400 });
+        return json({ error: 'Title is required' }, { status: 400 });
       }
 
-      await checkUser(request);
+      // For now, use a default author ID since we removed authentication
+      const defaultAuthorId = 'default-user';
 
       const newMethod = await methodRepository.createMethod({
         title,
-        authorId: userId,
+        authorId: defaultAuthorId,
         description: '',
         index: 0,
       });

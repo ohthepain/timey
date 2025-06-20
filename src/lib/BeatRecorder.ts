@@ -60,8 +60,8 @@ export class BeatRecorder extends EventEmitter {
         throw new Error('midiService is not initialized');
       }
       midiService.on('midiNote', this.midiService_midiNote);
-      this.tempoService.eventsEmitter.addListener('stateChange', this.handleStateChange);
-      this.tempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handleMidiPulse);
+      this.tempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange);
+      this.tempoService.eventsEmitter.addListener('midiClockPulse', this.tempoService_midiPulse);
     }
   }
 
@@ -69,8 +69,8 @@ export class BeatRecorder extends EventEmitter {
     console.log('BeatRecorder: destroy');
     if (typeof window !== 'undefined') {
       midiService.removeListener('midiNote', this.midiService_midiNote);
-      this.tempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange);
-      this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handleMidiPulse);
+      this.tempoService.eventsEmitter.removeListener('stateChange', this.tempoService_stateChange);
+      this.tempoService.eventsEmitter.removeListener('midiClockPulse', this.tempoService_midiPulse);
     }
   }
 
@@ -110,7 +110,7 @@ export class BeatRecorder extends EventEmitter {
     }
   }
 
-  private handleStateChange = (state: any) => {
+  private tempoService_stateChange = (state: any) => {
     if (state.isRunning && state.isRecording) {
       this.start();
     } else {
@@ -160,7 +160,7 @@ export class BeatRecorder extends EventEmitter {
     }
   };
 
-  private handleMidiPulse = (event: { time: number; ticks: number }) => {
+  private tempoService_midiPulse = (event: { time: number; ticks: number }) => {
     if (this.beat && this.tempoService.isRecording) {
       const elapsedMsec = this.tempoService.elapsedMsec;
       const position = elapsedMsec % this.beat.getLoopLengthMsec(this.tempoService.bpm);

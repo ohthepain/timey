@@ -10,7 +10,7 @@ class MetronomeService {
     // Listen for start/stop events from MidiService or TempoService
     this.tempoService.eventsEmitter.addListener('start', this.handleStart);
     this.tempoService.eventsEmitter.addListener('stop', this.handleStop);
-    this.tempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handlePulse);
+    this.tempoService.eventsEmitter.addListener('midiClockPulse', this.handlePulse);
   }
 
   get tempoService(): TempoService {
@@ -34,7 +34,7 @@ class MetronomeService {
   destroy() {
     this.tempoService.eventsEmitter.removeListener('start', this.handleStart);
     this.tempoService.eventsEmitter.removeListener('stop', this.handleStop);
-    this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handlePulse);
+    this.tempoService.eventsEmitter.removeListener('midiClockPulse', this.handlePulse);
   }
 
   private handleStart = () => {};

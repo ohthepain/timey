@@ -280,11 +280,15 @@ class MidiService extends EventEmitter {
   };
 
   private handleMidiStop = () => {
-    this.tempoService.stop();
+    if (usePersistedStore.getState().midiSlave) {
+      this.tempoService.stop();
+    }
   };
 
   private handleMidiContinue = () => {
-    this.tempoService.continue();
+    if (usePersistedStore.getState().midiSlave) {
+      this.tempoService.continue();
+    }
   };
 }
 

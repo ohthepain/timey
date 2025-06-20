@@ -5,21 +5,15 @@ import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary';
 import { NotFound } from '~/components/NotFound';
 import appCss from '~/styles/app.css?url';
 import { seo } from '~/utils/seo';
-import {
-  ClerkProvider,
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  SignOutButton,
-  // UserButton,
-} from '@clerk/tanstack-react-start';
-import { UserButton } from '@clerk/clerk-react';
 import { useState, useEffect } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
 import { saveLastUrl, getLastUrl } from '~/utils/urlPersistence';
 import { usePersistedStore } from '~/state/PersistedStore';
 import { useNavigationStore } from '~/state/NavigationStore';
+import { KeycloakProvider } from '~/contexts/KeycloakContext';
+import { UserMenu } from '~/components/auth/UserMenu';
+import { LoginButton } from '~/components/auth/LoginButton';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -100,15 +94,10 @@ function RootComponent() {
     return unsubscribe;
   }, []);
 
-  // const lastUrl = getLastUrl();
-  // if (lastUrl && lastUrl !== window.location.pathname) {
-  //   navigate({ to: lastUrl });
-  // }
-
   const [showMidiPopup, setShowMidiPopup] = useState(false);
   const [showMetronomeSettings, setShowMetronomeSettings] = useState(false);
   return (
-    <ClerkProvider>
+    <KeycloakProvider>
       <html>
         <head>
           <HeadContent />
@@ -214,13 +203,8 @@ function RootComponent() {
               >
                 MIDI
               </button>
-              <SignedOut>
-                <SignInButton />
-              </SignedOut>
-              <SignedIn>
-                <SignOutButton />
-                <UserButton />
-              </SignedIn>
+              <LoginButton />
+              <UserMenu />
             </div>
           </div>
           <hr />
@@ -272,6 +256,6 @@ function RootComponent() {
           <Scripts />
         </body>
       </html>
-    </ClerkProvider>
+    </KeycloakProvider>
   );
 }

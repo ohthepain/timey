@@ -122,7 +122,7 @@ export class TempoService {
     this.time = this.getTime();
     this.elapsedMsec = this.time - this.startTimeMsec;
     this.eventRecorder.recordTimingPulse(this.time - this.lastTickTimeMsec);
-    this.eventsEmitter.emit('MIDI Clock Pulse', {
+    this.eventsEmitter.emit('midiClockPulse', {
       time: this.elapsedMsec,
       ticks: this.nextPulseNum,
     });

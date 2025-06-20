@@ -43,10 +43,10 @@ export const Metronome = ({ beatsPerBar }: MetronomeProps) => {
 
   useEffect(() => {
     tempoService.eventsEmitter.addListener('stateChange', handleStateChange);
-    tempoService.eventsEmitter.addListener('MIDI Clock Pulse', handleMidiPulse);
+    tempoService.eventsEmitter.addListener('midiClockPulse', handleMidiPulse);
 
     return () => {
-      tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', handleMidiPulse);
+      tempoService.eventsEmitter.removeListener('midiClockPulse', handleMidiPulse);
       tempoService.eventsEmitter.removeListener('stateChange', handleStateChange);
     };
   }, []);

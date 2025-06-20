@@ -1,7 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import { moduleRepository } from '~/repositories/moduleRepository';
 import { z } from 'zod';
-import { getAuth } from '@clerk/tanstack-react-start/server';
 import { getWebRequest } from '@tanstack/react-start/server';
 import { Module } from '~/types/Module';
 
@@ -34,15 +33,13 @@ export const createModuleServerFn = createServerFn({ method: 'POST', response: '
     return createModuleServerFnArgs.parse(data);
   })
   .handler(async (ctx) => {
-    const request = getWebRequest();
-    const { userId } = await getAuth(request!);
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+    // For now, use a default author ID since we removed authentication
+    const defaultAuthorId = 'default-user';
+
     const data = await moduleRepository.createModule({
       ...ctx.data,
       description: ctx.data.description || undefined,
-      authorId: userId,
+      authorId: defaultAuthorId,
     });
     return new Module(data).toJSON();
   });

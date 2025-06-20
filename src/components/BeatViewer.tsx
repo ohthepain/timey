@@ -18,10 +18,8 @@ import { useNavigationStore } from '~/state/NavigationStore';
 import { usePersistedStore } from '~/state/PersistedStore';
 import { Ladder } from './Ladder';
 import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
-import { SignedIn } from '@clerk/tanstack-react-start';
 import { Speedometer } from './Speedometer';
 import { TempoService } from '~/lib/TempoService';
-import { useAuth } from '@clerk/tanstack-react-start';
 import { kMaxWindowSkillLevel } from '~/lib/PerformanceFeedback';
 
 const xboxStyle =
@@ -63,7 +61,6 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [gradeMaxTempo, setGradeMaxTempo] = useState(240);
   const { currentBeat, cachePerformance } = useNavigationStore();
   const { enableAdmin } = usePersistedStore();
-  const { isSignedIn } = useAuth();
   const possibleTempos = [0, 1, 2, 3, 4, 5];
 
   const tempoService = TempoService.getInstance();
@@ -145,7 +142,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
 
   useEffect(() => {
     const fetchBeatProgress = async () => {
-      if (beat.id && isSignedIn) {
+      if (beat.id) {
         const beatId = beat.id;
         const performances: Performance[] = (await fetchUserPerformancesForBeat({ data: { beatId } })).map(
           (performanceData) => new Performance(performanceData)
@@ -166,36 +163,34 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
             <div className="flex flex-row items-center ">
               <div className="font-semibold text-3xl mx-4 ">{name}</div>
               {currentBeat === beat && <Transport />}
-              <SignedIn>
-                {enableAdmin && (
-                  <div className="flex justify-end space-between">
-                    <button
-                      onClick={handleEditBeat}
-                      className="text-green-700 px-2 mx-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
-                      title="Edit"
-                    >
-                      {isEditing ? 'Cancel' : 'Edit'}
-                    </button>
-                    <button
-                      onClick={handleCopyBeat}
-                      className="text-blue-700 px-2 mx-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
-                      title="Copy"
-                    >
-                      Copy
-                    </button>
-                    <button
-                      onClick={async () => {
-                        handleDeleteBeat(beat.id!);
-                        router.invalidate();
-                      }}
-                      className="text-red-700 px-2 mx-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
-                      title="Delete"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-              </SignedIn>
+              {enableAdmin && (
+                <div className="flex justify-end space-between">
+                  <button
+                    onClick={handleEditBeat}
+                    className="text-green-700 px-2 mx-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
+                    title="Edit"
+                  >
+                    {isEditing ? 'Cancel' : 'Edit'}
+                  </button>
+                  <button
+                    onClick={handleCopyBeat}
+                    className="text-blue-700 px-2 mx-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
+                    title="Copy"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    onClick={async () => {
+                      handleDeleteBeat(beat.id!);
+                      router.invalidate();
+                    }}
+                    className="text-red-700 px-2 mx-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
+                    title="Delete"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -224,25 +219,19 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
         )}
         <div
           onClick={async () => {
-            if (isSignedIn) {
-              await startBeatServerFn({ data: { beatId: beat.id } });
-            }
+            await startBeatServerFn({ data: { beatId: beat.id } });
             beatPlayer.setBeat(beat);
             BeatRecorder.getInstance().setBeat(beat);
           }}
         >
           <div className="flex flex-row items-center mx-4">
-            <SignedIn>
-              <Ladder
-                values={[140, 120, 100, 90]}
-                currentValue={beatProgress?.bestTempo || 0}
-                onSelectValue={async (tempo) => {
-                  if (isSignedIn) {
-                    await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
-                  }
-                }}
-              />
-            </SignedIn>
+            <Ladder
+              values={[140, 120, 100, 90]}
+              currentValue={beatProgress?.bestTempo || 0}
+              onSelectValue={async (tempo) => {
+                await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
+              }}
+            />
             <ScoreView beat={beat} />
           </div>
         </div>

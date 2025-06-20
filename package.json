@@ -13,13 +13,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@clerk/clerk-sdk-node": "^4.13.23",
-    "@clerk/tanstack-react-start": "^0.12.2",
     "@prisma/client": "^6.5.0",
     "@tanstack/react-router": "^1.114.13",
     "@tanstack/react-router-devtools": "^1.114.13",
     "@tanstack/react-start": "^1.114.13",
     "immer": "^10.1.1",
+    "keycloak-js": "^26.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.5.0",
