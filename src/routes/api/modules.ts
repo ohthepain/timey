@@ -1,10 +1,6 @@
 import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { moduleRepository } from '~/repositories/moduleRepository';
-import { checkUser } from '~/lib/checkUser';
-import { getAuth } from '@clerk/tanstack-react-start/server';
-import { redirect } from '@tanstack/react-router';
-import { RedirectToSignIn } from '@clerk/tanstack-react-start';
 
 export const APIRoute = createAPIFileRoute('/api/modules')({
   GET: async () => {
@@ -20,25 +16,19 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
   POST: async ({ request }) => {
     console.log(`/api/modules POST request`);
     try {
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        throw RedirectToSignIn({
-          redirectUrl: request.url,
-        });
-      }
-
       const { title, index, methodId } = await request.json();
       if (!title || !methodId) {
         return json({ error: 'Title and methodId are required' }, { status: 400 });
       }
 
-      await checkUser(request);
+      // For now, use a default author ID since we removed authentication
+      const defaultAuthorId = 'default-user';
 
       const newMethod = await moduleRepository.createModule({
         title,
         index,
         description: '',
-        authorId: userId,
+        authorId: defaultAuthorId,
         methodId,
       });
 
@@ -51,19 +41,10 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
   PUT: async ({ request }) => {
     console.log(`/api/modules PUT request`);
     try {
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        throw RedirectToSignIn({
-          redirectUrl: request.url,
-        });
-      }
-
       const { id, title, index } = await request.json();
       if (!id || !title) {
         return json({ error: 'ID and title are required' }, { status: 400 });
       }
-
-      await checkUser(request);
 
       const updatedMethod = await moduleRepository.updateModule({
         id,
@@ -80,19 +61,10 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
   DELETE: async ({ request }) => {
     console.log(`/api/modules DELETE request`);
     try {
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        throw RedirectToSignIn({
-          redirectUrl: request.url,
-        });
-      }
-
       const { id } = await request.json();
       if (!id) {
         return json({ error: 'ID is required' }, { status: 400 });
       }
-
-      await checkUser(request);
 
       const deletedMethod = await moduleRepository.deleteModule(id);
       return json(deletedMethod, { status: 200 });

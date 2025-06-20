@@ -2,11 +2,9 @@ import { beatProgressRepository } from '~/repositories/beatProgressRepository';
 import { beatRepository } from '~/repositories/beatRepository';
 import { moduleProgressRepository } from '~/repositories/moduleProgressRepository';
 import { userRepository } from '~/repositories/userRepository';
-import { checkUser } from '~/lib/checkUser';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { getWebRequest } from '@tanstack/react-start/server';
-import { getAuth } from '@clerk/tanstack-react-start/server';
 
 export interface BeatProgressView {
   beatId: string;
@@ -27,17 +25,9 @@ export const startBeatServerFn = createServerFn({
     try {
       const { beatId } = ctx.data;
       console.log('Received request to start beat', beatId);
-      const request = getWebRequest();
-      if (!request) {
-        throw new Error('Request is not available');
-      }
-      checkUser(request);
-      const { userId } = await getAuth(request);
-      console.log('User ID:', userId);
-      if (!userId) {
-        // Don't send these requests for users that aren't logged in
-        return { error: 'User not authenticated' };
-      }
+
+      // For now, use a default user ID since we removed authentication
+      const defaultUserId = 'default-user';
 
       const beat = await beatRepository.getBeatWithModuleAndMethod(beatId);
       if (!beat) {
@@ -53,10 +43,10 @@ export const startBeatServerFn = createServerFn({
       const methodId = beat.module.method.id;
 
       // Set the user's current module
-      await moduleProgressRepository.setCurrentMethodForModule(userId, moduleId, methodId);
+      await moduleProgressRepository.setCurrentMethodForModule(defaultUserId, moduleId, methodId);
 
       // Set the user's current method for the module
-      await userRepository.setCurrentModule(userId, moduleId);
+      await userRepository.setCurrentModule(defaultUserId, moduleId);
       return { success: true };
     } catch (error) {
       console.error('Error starting beat:', error);
@@ -80,17 +70,11 @@ export const passBeatTempoServerFn = createServerFn({
     try {
       const { beatId, tempo } = ctx.data;
       console.log('Received request to pass beat tempo', beatId, tempo);
-      const request = getWebRequest();
-      if (!request) {
-        throw new Error('Request is not available');
-      }
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        // Don't send these requests for users that aren't logged in
-        return { error: 'User not authenticated' };
-      }
-      // await checkUser(userId);
-      return beatProgressRepository.setBeatBestTempo(userId, beatId, tempo);
+
+      // For now, use a default user ID since we removed authentication
+      const defaultUserId = 'default-user';
+
+      return beatProgressRepository.setBeatBestTempo(defaultUserId, beatId, tempo);
     } catch (error) {
       console.error('Error passing beat tempo:', error);
       return { error: 'Failed to pass beat tempo' };
@@ -110,18 +94,11 @@ export const getBeatProgressForModuleServerFn = createServerFn({
   })
   .handler(async (ctx) => {
     try {
-      const request = getWebRequest();
-      if (!request) {
-        throw new Error('Request is not available');
-      }
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        // Don't send these requests for users that aren't logged in
-        throw new Error('User not authenticated');
-      }
-      // checkUser(request);
+      // For now, use a default user ID since we removed authentication
+      const defaultUserId = 'default-user';
+
       const { id } = ctx.data;
-      const moduleProgress = await beatProgressRepository.getBeatProgressForModule(userId, id);
+      const moduleProgress = await beatProgressRepository.getBeatProgressForModule(defaultUserId, id);
       const beatProgress: BeatProgressView[] = moduleProgress.map((beat) => {
         const progress = (beat as any).beatProgress?.[0];
         return {

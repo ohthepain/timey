@@ -5,15 +5,6 @@ import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary';
 import { NotFound } from '~/components/NotFound';
 import appCss from '~/styles/app.css?url';
 import { seo } from '~/utils/seo';
-import {
-  ClerkProvider,
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  SignOutButton,
-  // UserButton,
-} from '@clerk/tanstack-react-start';
-import { UserButton } from '@clerk/clerk-react';
 import { useState, useEffect } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
@@ -100,178 +91,161 @@ function RootComponent() {
     return unsubscribe;
   }, []);
 
-  // const lastUrl = getLastUrl();
-  // if (lastUrl && lastUrl !== window.location.pathname) {
-  //   navigate({ to: lastUrl });
-  // }
-
   const [showMidiPopup, setShowMidiPopup] = useState(false);
   const [showMetronomeSettings, setShowMetronomeSettings] = useState(false);
   return (
-    <ClerkProvider>
-      <html>
-        <head>
-          <HeadContent />
-        </head>
-        <body>
-          <div className="p-2 flex justify-between items-center text-lg">
-            {/* Left-aligned navigation links */}
-            <div className="flex gap-6 items-center">
-              <Link
-                to="/"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-                activeOptions={{ exact: true }}
-              >
-                Home
-              </Link>
-              <Link
-                to="/posts"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Posts
-              </Link>
-              <Link
-                to="/methods"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Methods
-              </Link>
-              <Link
-                to="/sequence"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Sequence
-              </Link>
-              <Link
-                to="/users"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Users
-              </Link>
-              <Link
-                to="/route-a"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Pathless Layout
-              </Link>
-              <Link
-                to="/deferred"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Deferred
-              </Link>
-            </div>
+    <html>
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        <div className="p-2 flex justify-between items-center text-lg">
+          {/* Left-aligned navigation links */}
+          <div className="flex gap-6 items-center">
+            <Link
+              to="/"
+              activeProps={{
+                className: 'font-bold',
+              }}
+              activeOptions={{ exact: true }}
+            >
+              Home
+            </Link>
+            <Link
+              to="/posts"
+              activeProps={{
+                className: 'font-bold',
+              }}
+            >
+              Posts
+            </Link>
+            <Link
+              to="/methods"
+              activeProps={{
+                className: 'font-bold',
+              }}
+            >
+              Methods
+            </Link>
+            <Link
+              to="/sequence"
+              activeProps={{
+                className: 'font-bold',
+              }}
+            >
+              Sequence
+            </Link>
+            <Link
+              to="/users"
+              activeProps={{
+                className: 'font-bold',
+              }}
+            >
+              Users
+            </Link>
+            <Link
+              to="/route-a"
+              activeProps={{
+                className: 'font-bold',
+              }}
+            >
+              Pathless Layout
+            </Link>
+            <Link
+              to="/deferred"
+              activeProps={{
+                className: 'font-bold',
+              }}
+            >
+              Deferred
+            </Link>
+          </div>
 
-            {/* Right-aligned buttons */}
-            <div className="flex gap-2 items-center">
+          {/* Right-aligned buttons */}
+          <div className="flex gap-2 items-center">
+            <button
+              className={`text-${devMode ? 'orange' : 'gray'}-700 px-2 py-1 rounded hover:bg-${devMode ? 'orange' : 'gray'}-200 border-${devMode ? 'orange' : 'gray'}-600 border-2 rounded-e-md text-sm`}
+              onClick={() => setDevMode(!devMode)}
+              title="Toggle Dev Mode"
+            >
+              Dev
+            </button>
+            <button
+              className={`text-${enableAdmin ? 'blue' : 'gray'}-700 px-2 py-1 rounded hover:bg-${enableAdmin ? 'blue' : 'gray'}-200 border-${enableAdmin ? 'blue' : 'gray'}-600 border-2 rounded-e-md text-sm`}
+              onClick={() => setAdmin(!enableAdmin)}
+              title="Toggle Admin Mode"
+            >
+              Admin
+            </button>
+            <button
+              className={`text-${midiSlave ? 'red' : 'gray'}-700 px-2 py-1 rounded hover:bg-${midiSlave ? 'red' : 'gray'}-200 border-${midiSlave ? 'blue' : 'gray'}-600 border-2 rounded-e-md text-sm`}
+              onClick={() => setMidiSlave(!midiSlave)}
+              title="Toggle MIDI Slave Mode"
+            >
+              {midiSlave ? 'Slave' : 'INT'}
+            </button>
+            <button
+              className="text-amber-800 px-2 py-1 rounded hover:bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm"
+              onClick={() => setShowMetronomeSettings(true)}
+              title="Metronome Settings"
+            >
+              Metronome
+            </button>
+            <div className={`text-${isUsingExternalMidiClock ? 'red' : 'green'}-600`}>EXT</div>
+            <button
+              className="text-green-700 px-2 py-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
+              onClick={() => setShowMidiPopup(true)}
+              title="MIDI Settings"
+            >
+              MIDI
+            </button>
+          </div>
+        </div>
+        <hr />
+        {showMetronomeSettings && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+            onClick={() => setShowMetronomeSettings(false)}
+            aria-modal="true"
+            role="dialog"
+          >
+            <div className="bg-white p-4 rounded shadow-lg relative" onClick={(e) => e.stopPropagation()}>
               <button
-                className={`text-${devMode ? 'orange' : 'gray'}-700 px-2 py-1 rounded hover:bg-${devMode ? 'orange' : 'gray'}-200 border-${devMode ? 'orange' : 'gray'}-600 border-2 rounded-e-md text-sm`}
-                onClick={() => setDevMode(!devMode)}
-                title="Toggle Dev Mode"
+                className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl font-bold focus:outline-none"
+                aria-label="Close"
+                onClick={() => setShowMetronomeSettings(false)}
               >
-                Dev
+                ×
               </button>
-              <button
-                className={`text-${enableAdmin ? 'blue' : 'gray'}-700 px-2 py-1 rounded hover:bg-${enableAdmin ? 'blue' : 'gray'}-200 border-${enableAdmin ? 'blue' : 'gray'}-600 border-2 rounded-e-md text-sm`}
-                onClick={() => setAdmin(!enableAdmin)}
-                title="Toggle Admin Mode"
-              >
-                Admin
-              </button>
-              <button
-                className={`text-${midiSlave ? 'red' : 'gray'}-700 px-2 py-1 rounded hover:bg-${midiSlave ? 'red' : 'gray'}-200 border-${midiSlave ? 'blue' : 'gray'}-600 border-2 rounded-e-md text-sm`}
-                onClick={() => setMidiSlave(!midiSlave)}
-                title="Toggle MIDI Slave Mode"
-              >
-                {midiSlave ? 'Slave' : 'INT'}
-              </button>
-              <button
-                className="text-amber-800 px-2 py-1 rounded hover:bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm"
-                onClick={() => setShowMetronomeSettings(true)}
-                title="Metronome Settings"
-              >
-                Metronome
-              </button>
-              <div className={`text-${isUsingExternalMidiClock ? 'red' : 'green'}-600`}>EXT</div>
-              <button
-                className="text-green-700 px-2 py-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
-                onClick={() => setShowMidiPopup(true)}
-                title="MIDI Settings"
-              >
-                MIDI
-              </button>
-              <SignedOut>
-                <SignInButton />
-              </SignedOut>
-              <SignedIn>
-                <SignOutButton />
-                <UserButton />
-              </SignedIn>
+              <MetronomeMidiSettings />
             </div>
           </div>
-          <hr />
-          {showMetronomeSettings && (
-            <div
-              className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
-              onClick={() => setShowMetronomeSettings(false)}
-              aria-modal="true"
-              role="dialog"
-            >
-              <div className="bg-white p-4 rounded shadow-lg relative" onClick={(e) => e.stopPropagation()}>
-                <button
-                  className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl font-bold focus:outline-none"
-                  aria-label="Close"
-                  onClick={() => setShowMetronomeSettings(false)}
-                >
-                  ×
-                </button>
-                <MetronomeMidiSettings />
-              </div>
-            </div>
-          )}
-          {/* MIDI Popup */}
-          {showMidiPopup && (
-            <div
-              className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
-              onClick={() => setShowMidiPopup(false)}
-              aria-modal="true"
-              role="dialog"
-            >
-              <div
-                className="bg-white rounded shadow-lg p-6 min-w-[320px] relative"
-                onClick={(e) => e.stopPropagation()}
+        )}
+        {/* MIDI Popup */}
+        {showMidiPopup && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+            onClick={() => setShowMidiPopup(false)}
+            aria-modal="true"
+            role="dialog"
+          >
+            <div className="bg-white rounded shadow-lg p-6 min-w-[320px] relative" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 text-xl"
+                onClick={() => setShowMidiPopup(false)}
+                aria-label="Close MIDI Settings"
               >
-                <button
-                  className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 text-xl"
-                  onClick={() => setShowMidiPopup(false)}
-                  aria-label="Close MIDI Settings"
-                >
-                  ×
-                </button>
-                <h2 className="text-lg font-bold mb-4">MIDI Settings</h2>
-                <MidiSelector />
-              </div>
+                ×
+              </button>
+              <h2 className="text-lg font-bold mb-4">MIDI Settings</h2>
+              <MidiSelector />
             </div>
-          )}
-          <Outlet />
-          <TanStackRouterDevtools position="bottom-right" />
-          <Scripts />
-        </body>
-      </html>
-    </ClerkProvider>
+          </div>
+        )}
+        <Outlet />
+        <TanStackRouterDevtools position="bottom-right" />
+        <Scripts />
+      </body>
+    </html>
   );
 }

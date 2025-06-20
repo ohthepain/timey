@@ -2,7 +2,6 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { performanceRepository } from '~/repositories/performanceRepository';
 import { getWebRequest } from '@tanstack/react-start/server';
-import { getAuth } from '@clerk/tanstack-react-start/server';
 import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
 
@@ -32,15 +31,13 @@ const savePerformanceArgs = z.object({
 export const savePerformanceServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => savePerformanceArgs.parse(data))
   .handler(async (ctx) => {
-    const request = getWebRequest();
-    const { userId } = await getAuth(request!);
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+    // For now, use a default user ID since we removed authentication
+    const defaultUserId = 'default-user';
+
     const { performance } = ctx.data;
     const savePerformanceArgs = {
       ...performance,
-      userId,
+      userId: defaultUserId,
       notes: performance.notes.map(
         (note) =>
           new BeatNote({
@@ -65,8 +62,8 @@ export const savePerformanceServerFn = createServerFn({ method: 'POST', response
         };
       },
     };
-    await performanceRepository.deletePerformancesByBeatIdAndUserId(performance.beatId, performance.userId);
-    const saved = await performanceRepository.createPerformance(performance.toJSON()  , userId);
+    await performanceRepository.deletePerformancesByBeatIdAndUserId(performance.beatId, defaultUserId);
+    const saved = await performanceRepository.createPerformance(performance.toJSON(), defaultUserId);
     return saved;
   });
 
@@ -77,13 +74,11 @@ const fetchUserPerformancesForBeatArgs = z.object({
 export const fetchUserPerformancesForBeat = createServerFn({ method: 'GET', response: 'data' })
   .validator((data: unknown) => fetchUserPerformancesForBeatArgs.parse(data))
   .handler(async (ctx) => {
-    const request = getWebRequest();
-    const { userId } = await getAuth(request!);
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+    // For now, use a default user ID since we removed authentication
+    const defaultUserId = 'default-user';
+
     const { beatId } = ctx.data;
-    const prismaPerformances = await performanceRepository.fetchPerformancesByBeatIdAndUserId(beatId, userId);
+    const prismaPerformances = await performanceRepository.fetchPerformancesByBeatIdAndUserId(beatId, defaultUserId);
     return prismaPerformances.map((perf) => perf.toJSON());
   });
 
@@ -94,12 +89,10 @@ const deleteUserPerformancesForBeatArgs = z.object({
 export const deletePerformancesByBeatIdAndUserId = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => deleteUserPerformancesForBeatArgs.parse(data))
   .handler(async (ctx) => {
-    const request = getWebRequest();
-    const { userId } = await getAuth(request!);
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+    // For now, use a default user ID since we removed authentication
+    const defaultUserId = 'default-user';
+
     const { beatId } = ctx.data;
-    const deleted = await performanceRepository.deletePerformancesByBeatIdAndUserId(beatId, userId);
+    const deleted = await performanceRepository.deletePerformancesByBeatIdAndUserId(beatId, defaultUserId);
     return deleted;
   });
