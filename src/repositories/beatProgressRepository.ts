@@ -1,4 +1,4 @@
-import { prisma } from '~/config/db';
+import { prisma, safeQuery } from '~/config/db';
 
 export class BeatProgressRepository {
   async setBeatBestTempo(userId: string, beatId: string, tempo: number) {
@@ -6,11 +6,13 @@ export class BeatProgressRepository {
       where: { userId_beatId: { userId, beatId } },
     });
     if (!existing || existing.bestTempo == null || tempo > existing.bestTempo) {
-      return prisma.beatProgress.upsert({
-        where: { userId_beatId: { userId, beatId } },
-        update: { bestTempo: tempo },
-        create: { userId, beatId, bestTempo: tempo },
-      });
+      return await safeQuery(() =>
+        prisma.beatProgress.upsert({
+          where: { userId_beatId: { userId, beatId } },
+          update: { bestTempo: tempo },
+          create: { userId, beatId, bestTempo: tempo },
+        })
+      );
     }
     return existing;
   }
@@ -19,14 +21,16 @@ export class BeatProgressRepository {
     userId: string,
     moduleId: string
   ): Promise<Awaited<ReturnType<typeof prisma.beat.findMany>>> {
-    return prisma.beat.findMany({
-      where: { moduleId },
-      include: {
-        beatProgress: {
-          where: { userId },
+    return await safeQuery(() =>
+      prisma.beat.findMany({
+        where: { moduleId },
+        include: {
+          beatProgress: {
+            where: { userId },
+          },
         },
-      },
-    });
+      })
+    );
   }
 }
 
