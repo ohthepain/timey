@@ -1,7 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { performanceRepository } from '~/repositories/performanceRepository';
-import { getWebRequest } from '@tanstack/react-start/server';
 import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
 
