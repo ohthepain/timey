@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.keycloak
     container_name: timey-keycloak
     environment:
       KEYCLOAK_ADMIN: admin

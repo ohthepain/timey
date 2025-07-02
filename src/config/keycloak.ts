@@ -35,10 +35,11 @@ export const getKeycloakInitOptions = () => {
   }
 
   return {
-    onLoad: 'check-sso',
+    onLoad: 'check-sso' as const,
     silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
     checkLoginIframe: false,
     enableLogging: import.meta.env.DEV,
+    pkceMethod: 'S256' as const,
   };
 };
 

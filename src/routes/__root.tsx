@@ -148,6 +148,14 @@ function RootComponent() {
                 Users
               </Link>
               <Link
+                to="/signup"
+                activeProps={{
+                  className: 'font-bold',
+                }}
+              >
+                Sign Up
+              </Link>
+              <Link
                 to="/route-a"
                 activeProps={{
                   className: 'font-bold',

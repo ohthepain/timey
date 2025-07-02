@@ -34,11 +34,55 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
           return;
         }
 
+        console.log('Initializing Keycloak...');
         const kc = getKeycloak();
         setKeycloak(kc);
 
+        // Set up event listeners first
+        (kc as any).onReady = () => {
+          console.log('Keycloak is ready');
+          setLoading(false);
+        };
+
+        (kc as any).onInitError = (error: any) => {
+          console.error('Keycloak initialization error:', error);
+          setLoading(false);
+        };
+
+        (kc as any).onAuthSuccess = async () => {
+          console.log('Authentication successful');
+          setAuthenticated(true);
+          await loadUserInfo(kc);
+          setLoading(false);
+        };
+
+        (kc as any).onAuthError = (error: any) => {
+          console.error('Authentication error:', error);
+          setAuthenticated(false);
+          setUser(null);
+          setLoading(false);
+        };
+
+        (kc as any).onAuthLogout = () => {
+          console.log('User logged out');
+          setAuthenticated(false);
+          setUser(null);
+          setLoading(false);
+        };
+
+        (kc as any).onTokenExpired = async () => {
+          console.log('Token expired, attempting refresh');
+          const refreshed = await updateToken(70);
+          if (!refreshed) {
+            login();
+          }
+        };
+
         const keycloakInitOptions = getKeycloakInitOptions();
+        console.log('Keycloak init options:', keycloakInitOptions);
+
         const authenticated = await kc.init(keycloakInitOptions);
+        console.log('Keycloak init result:', authenticated);
         setAuthenticated(authenticated);
 
         if (authenticated) {
@@ -46,7 +90,6 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
         }
       } catch (error) {
         console.error('Keycloak initialization failed:', error);
-      } finally {
         setLoading(false);
       }
     };
@@ -74,6 +117,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
 
   const login = () => {
     if (keycloak) {
+      console.log('Initiating login...');
       keycloak.login({
         redirectUri: window.location.origin,
       });
@@ -114,66 +158,6 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
       return false;
     }
   };
-
-  // Set up event listeners
-  useEffect(() => {
-    if (!keycloak || typeof window === 'undefined') return;
-
-    const onReady = () => {
-      console.log('Keycloak is ready');
-    };
-
-    const onInitError = (error: any) => {
-      console.error('Keycloak initialization error:', error);
-      setLoading(false);
-    };
-
-    const onAuthSuccess = async () => {
-      console.log('Authentication successful');
-      setAuthenticated(true);
-      await loadUserInfo(keycloak);
-    };
-
-    const onAuthError = (error: any) => {
-      console.error('Authentication error:', error);
-      setAuthenticated(false);
-      setUser(null);
-    };
-
-    const onAuthLogout = () => {
-      console.log('User logged out');
-      setAuthenticated(false);
-      setUser(null);
-    };
-
-    const onTokenExpired = async () => {
-      console.log('Token expired, attempting refresh');
-      const refreshed = await updateToken(70);
-      if (!refreshed) {
-        login();
-      }
-    };
-
-    // Add event listeners
-    keycloak.onReady = onReady;
-    keycloak.onInitError = onInitError;
-    keycloak.onAuthSuccess = onAuthSuccess;
-    keycloak.onAuthError = onAuthError;
-    keycloak.onAuthLogout = onAuthLogout;
-    keycloak.onTokenExpired = onTokenExpired;
-
-    // Cleanup function
-    return () => {
-      if (keycloak) {
-        keycloak.onReady = undefined;
-        keycloak.onInitError = undefined;
-        keycloak.onAuthSuccess = undefined;
-        keycloak.onAuthError = undefined;
-        keycloak.onAuthLogout = undefined;
-        keycloak.onTokenExpired = undefined;
-      }
-    };
-  }, [keycloak]);
 
   const value: KeycloakContextType = {
     keycloak,
