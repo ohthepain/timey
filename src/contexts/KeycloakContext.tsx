@@ -118,6 +118,10 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
           id: userInfo.sub || '',
           username: userInfo.preferred_username || '',
           email: userInfo.email,
+          userName:
+            userInfo.userName || (userInfo.given_name && userInfo.family_name)
+              ? `${userInfo.given_name} ${userInfo.family_name}`.trim()
+              : userInfo.preferred_username || 'User',
           firstName: userInfo.given_name,
           lastName: userInfo.family_name,
           roles: kc.realmAccess?.roles || [],

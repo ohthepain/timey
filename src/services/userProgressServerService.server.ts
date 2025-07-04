@@ -5,6 +5,7 @@ import { userRepository } from '~/repositories/userRepository';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { getWebRequest } from '@tanstack/react-start/server';
+import { requireKeycloakUser } from '~/lib/ensureKeycloakUser';
 
 export interface BeatProgressView {
   beatId: string;
@@ -26,8 +27,8 @@ export const startBeatServerFn = createServerFn({
       const { beatId } = ctx.data;
       console.log('Received request to start beat', beatId);
 
-      // For now, use a default user ID since we removed authentication
-      const defaultUserId = 'default-user';
+      // Get the authenticated user ID
+      const userId = await requireKeycloakUser();
 
       const beat = await beatRepository.getBeatWithModuleAndMethod(beatId);
       if (!beat) {
@@ -43,10 +44,10 @@ export const startBeatServerFn = createServerFn({
       const methodId = beat.module.method.id;
 
       // Set the user's current module
-      await moduleProgressRepository.setCurrentMethodForModule(defaultUserId, moduleId, methodId);
+      await moduleProgressRepository.setCurrentMethodForModule(userId, moduleId, methodId);
 
       // Set the user's current method for the module
-      await userRepository.setCurrentModule(defaultUserId, moduleId);
+      await userRepository.setCurrentModule(userId, moduleId);
       return { success: true };
     } catch (error) {
       console.error('Error starting beat:', error);
@@ -71,10 +72,10 @@ export const passBeatTempoServerFn = createServerFn({
       const { beatId, tempo } = ctx.data;
       console.log('Received request to pass beat tempo', beatId, tempo);
 
-      // For now, use a default user ID since we removed authentication
-      const defaultUserId = 'default-user';
+      // Get the authenticated user ID
+      const userId = await requireKeycloakUser();
 
-      return beatProgressRepository.setBeatBestTempo(defaultUserId, beatId, tempo);
+      return beatProgressRepository.setBeatBestTempo(userId, beatId, tempo);
     } catch (error) {
       console.error('Error passing beat tempo:', error);
       return { error: 'Failed to pass beat tempo' };
@@ -94,11 +95,11 @@ export const getBeatProgressForModuleServerFn = createServerFn({
   })
   .handler(async (ctx) => {
     try {
-      // For now, use a default user ID since we removed authentication
-      const defaultUserId = 'default-user';
+      // Get the authenticated user ID
+      const userId = await requireKeycloakUser();
 
       const { id } = ctx.data;
-      const moduleProgress = await beatProgressRepository.getBeatProgressForModule(defaultUserId, id);
+      const moduleProgress = await beatProgressRepository.getBeatProgressForModule(userId, id);
       const beatProgress: BeatProgressView[] = moduleProgress.map((beat) => {
         const progress = (beat as any).beatProgress?.[0];
         return {

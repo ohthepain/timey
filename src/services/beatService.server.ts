@@ -3,6 +3,7 @@ import { beatRepository } from '~/repositories/beatRepository';
 import { z } from 'zod';
 import { getWebRequest } from '@tanstack/react-start/server';
 import { Beat } from '~/types/Beat';
+import { requireKeycloakUser } from '~/lib/ensureKeycloakUser';
 
 export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
@@ -29,8 +30,8 @@ export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data
     return saveBeatServerFnArgs.parse(data);
   })
   .handler(async (ctx) => {
-    // For now, use a default author ID since we removed authentication
-    const defaultAuthorId = 'default-user';
+    // Get the authenticated user ID
+    const authorId = await requireKeycloakUser();
 
     if (ctx.data.id) {
       console.log('Updating beat with ID:', ctx.data.id);
@@ -38,7 +39,7 @@ export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data
         ...ctx.data,
         index: ctx.data.index || 0,
         description: ctx.data.description || null,
-        authorId: defaultAuthorId,
+        authorId,
       });
     } else {
       console.log('Creating new beat with beat notes:', ctx.data.beatNotes);
@@ -46,7 +47,7 @@ export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data
         ...ctx.data,
         index: ctx.data.index || 0,
         description: ctx.data.description || null,
-        authorId: defaultAuthorId,
+        authorId,
       });
     }
   });
@@ -58,8 +59,8 @@ const copyBeatServerFnArgs = z.object({
 export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => copyBeatServerFnArgs.parse(data))
   .handler(async (ctx) => {
-    // For now, use a default author ID since we removed authentication
-    const defaultAuthorId = 'default-user';
+    // Get the authenticated user ID
+    const authorId = await requireKeycloakUser();
 
     // Fetch the original beat
     const original = await beatRepository.getBeatById(ctx.data.id);
@@ -82,7 +83,7 @@ export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data
     const newBeatData = {
       name: newName,
       index: original.index + 1,
-      authorId: defaultAuthorId,
+      authorId,
       moduleId: original.moduleId,
       beatNotes: original.beatNotes.map(({ id, ...note }) => ({
         ...note,

@@ -62,7 +62,8 @@ export interface KeycloakUser {
   id: string;
   username: string;
   email?: string;
-  firstName?: string;
-  lastName?: string;
+  userName?: string;
+  firstName?: string; // Keep for backward compatibility with Keycloak
+  lastName?: string; // Keep for backward compatibility with Keycloak
   roles?: string[];
 }

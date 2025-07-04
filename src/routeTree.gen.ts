@@ -14,6 +14,7 @@ import { Route as rootRoute } from './routes/__root'
 import { Route as SignupImport } from './routes/signup'
 import { Route as RedirectImport } from './routes/redirect'
 import { Route as MethodsImport } from './routes/methods'
+import { Route as LoginImport } from './routes/login'
 import { Route as DeferredImport } from './routes/deferred'
 import { Route as PathlessLayoutImport } from './routes/_pathlessLayout'
 import { Route as UsersRouteImport } from './routes/users.route'
@@ -48,6 +49,12 @@ const RedirectRoute = RedirectImport.update({
 const MethodsRoute = MethodsImport.update({
   id: '/methods',
   path: '/methods',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const LoginRoute = LoginImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -186,6 +193,13 @@ declare module '@tanstack/react-router' {
       path: '/deferred'
       fullPath: '/deferred'
       preLoaderRoute: typeof DeferredImport
+      parentRoute: typeof rootRoute
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginImport
       parentRoute: typeof rootRoute
     }
     '/methods': {
@@ -355,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/users': typeof UsersRouteRouteWithChildren
   '': typeof PathlessLayoutNestedLayoutRouteWithChildren
   '/deferred': typeof DeferredRoute
+  '/login': typeof LoginRoute
   '/methods': typeof MethodsRoute
   '/redirect': typeof RedirectRoute
   '/signup': typeof SignupRoute
@@ -374,6 +389,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '': typeof PathlessLayoutNestedLayoutRouteWithChildren
   '/deferred': typeof DeferredRoute
+  '/login': typeof LoginRoute
   '/methods': typeof MethodsRoute
   '/redirect': typeof RedirectRoute
   '/signup': typeof SignupRoute
@@ -396,6 +412,7 @@ export interface FileRoutesById {
   '/users': typeof UsersRouteRouteWithChildren
   '/_pathlessLayout': typeof PathlessLayoutRouteWithChildren
   '/deferred': typeof DeferredRoute
+  '/login': typeof LoginRoute
   '/methods': typeof MethodsRoute
   '/redirect': typeof RedirectRoute
   '/signup': typeof SignupRoute
@@ -420,6 +437,7 @@ export interface FileRouteTypes {
     | '/users'
     | ''
     | '/deferred'
+    | '/login'
     | '/methods'
     | '/redirect'
     | '/signup'
@@ -438,6 +456,7 @@ export interface FileRouteTypes {
     | '/'
     | ''
     | '/deferred'
+    | '/login'
     | '/methods'
     | '/redirect'
     | '/signup'
@@ -458,6 +477,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/_pathlessLayout'
     | '/deferred'
+    | '/login'
     | '/methods'
     | '/redirect'
     | '/signup'
@@ -481,6 +501,7 @@ export interface RootRouteChildren {
   UsersRouteRoute: typeof UsersRouteRouteWithChildren
   PathlessLayoutRoute: typeof PathlessLayoutRouteWithChildren
   DeferredRoute: typeof DeferredRoute
+  LoginRoute: typeof LoginRoute
   MethodsRoute: typeof MethodsRoute
   RedirectRoute: typeof RedirectRoute
   SignupRoute: typeof SignupRoute
@@ -496,6 +517,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsersRouteRoute: UsersRouteRouteWithChildren,
   PathlessLayoutRoute: PathlessLayoutRouteWithChildren,
   DeferredRoute: DeferredRoute,
+  LoginRoute: LoginRoute,
   MethodsRoute: MethodsRoute,
   RedirectRoute: RedirectRoute,
   SignupRoute: SignupRoute,
@@ -520,6 +542,7 @@ export const routeTree = rootRoute
         "/users",
         "/_pathlessLayout",
         "/deferred",
+        "/login",
         "/methods",
         "/redirect",
         "/signup",
@@ -554,6 +577,9 @@ export const routeTree = rootRoute
     },
     "/deferred": {
       "filePath": "deferred.tsx"
+    },
+    "/login": {
+      "filePath": "login.tsx"
     },
     "/methods": {
       "filePath": "methods.tsx"

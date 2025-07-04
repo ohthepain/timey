@@ -3,6 +3,7 @@ import { moduleRepository } from '~/repositories/moduleRepository';
 import { z } from 'zod';
 import { getWebRequest } from '@tanstack/react-start/server';
 import { Module } from '~/types/Module';
+import { requireKeycloakUser } from '~/lib/ensureKeycloakUser';
 
 export const getAllModulesServerFn = createServerFn({ method: 'GET', response: 'data' }).handler(async () => {
   const data = await moduleRepository.getAllModules();
@@ -33,13 +34,13 @@ export const createModuleServerFn = createServerFn({ method: 'POST', response: '
     return createModuleServerFnArgs.parse(data);
   })
   .handler(async (ctx) => {
-    // For now, use a default author ID since we removed authentication
-    const defaultAuthorId = 'default-user';
+    // Get the authenticated user ID
+    const authorId = await requireKeycloakUser();
 
     const data = await moduleRepository.createModule({
       ...ctx.data,
       description: ctx.data.description || undefined,
-      authorId: defaultAuthorId,
+      authorId,
     });
     return new Module(data).toJSON();
   });

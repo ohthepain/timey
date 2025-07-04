@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { performanceRepository } from '~/repositories/performanceRepository';
 import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
+import { requireKeycloakUser } from '~/lib/ensureKeycloakUser';
 
 const beatNoteSchema = z.object({
   id: z.string(),
@@ -30,13 +31,13 @@ const savePerformanceArgs = z.object({
 export const savePerformanceServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => savePerformanceArgs.parse(data))
   .handler(async (ctx) => {
-    // For now, use a default user ID since we removed authentication
-    const defaultUserId = 'default-user';
+    // Get the authenticated user ID
+    const userId = await requireKeycloakUser();
 
     const { performance } = ctx.data;
     const savePerformanceArgs = {
       ...performance,
-      userId: defaultUserId,
+      userId,
       notes: performance.notes.map(
         (note) =>
           new BeatNote({
@@ -61,8 +62,8 @@ export const savePerformanceServerFn = createServerFn({ method: 'POST', response
         };
       },
     };
-    await performanceRepository.deletePerformancesByBeatIdAndUserId(performance.beatId, defaultUserId);
-    const saved = await performanceRepository.createPerformance(performance.toJSON(), defaultUserId);
+    await performanceRepository.deletePerformancesByBeatIdAndUserId(performance.beatId, userId);
+    const saved = await performanceRepository.createPerformance(performance.toJSON(), userId);
     return saved;
   });
 
@@ -73,11 +74,11 @@ const fetchUserPerformancesForBeatArgs = z.object({
 export const fetchUserPerformancesForBeat = createServerFn({ method: 'GET', response: 'data' })
   .validator((data: unknown) => fetchUserPerformancesForBeatArgs.parse(data))
   .handler(async (ctx) => {
-    // For now, use a default user ID since we removed authentication
-    const defaultUserId = 'default-user';
+    // Get the authenticated user ID
+    const userId = await requireKeycloakUser();
 
     const { beatId } = ctx.data;
-    const prismaPerformances = await performanceRepository.fetchPerformancesByBeatIdAndUserId(beatId, defaultUserId);
+    const prismaPerformances = await performanceRepository.fetchPerformancesByBeatIdAndUserId(beatId, userId);
     return prismaPerformances.map((perf) => perf.toJSON());
   });
 
@@ -88,10 +89,10 @@ const deleteUserPerformancesForBeatArgs = z.object({
 export const deletePerformancesByBeatIdAndUserId = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => deleteUserPerformancesForBeatArgs.parse(data))
   .handler(async (ctx) => {
-    // For now, use a default user ID since we removed authentication
-    const defaultUserId = 'default-user';
+    // Get the authenticated user ID
+    const userId = await requireKeycloakUser();
 
     const { beatId } = ctx.data;
-    const deleted = await performanceRepository.deletePerformancesByBeatIdAndUserId(beatId, defaultUserId);
+    const deleted = await performanceRepository.deletePerformancesByBeatIdAndUserId(beatId, userId);
     return deleted;
   });

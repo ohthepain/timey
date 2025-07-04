@@ -2,6 +2,7 @@ import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { beatRepository } from '~/repositories/beatRepository';
 import { ParseBeatString } from '~/lib/ParseBeat';
+import { requireKeycloakUser } from '~/lib/ensureKeycloakUser';
 
 export const APIRoute = createAPIFileRoute('/api/beats')({
   PUT: async ({ request }) => {
@@ -19,8 +20,8 @@ export const APIRoute = createAPIFileRoute('/api/beats')({
         return json({ error: 'Index is required' }, { status: 400 });
       }
 
-      // For now, use a default author ID since we removed authentication
-      const defaultAuthorId = 'default-user';
+      // Get the authenticated user ID
+      const authorId = await requireKeycloakUser();
 
       const { beatNotes } = ParseBeatString(beatString);
       console.log('Parsed beat notes:', beatNotes);
@@ -40,7 +41,7 @@ export const APIRoute = createAPIFileRoute('/api/beats')({
           name,
           description,
           index,
-          authorId: defaultAuthorId,
+          authorId,
           moduleId,
           beatNotes: beatNotes,
         });
@@ -49,6 +50,9 @@ export const APIRoute = createAPIFileRoute('/api/beats')({
       }
     } catch (error) {
       console.error('Error saving/updating beat:', error);
+      if (error instanceof Error && error.message === 'Authentication required') {
+        return json({ error: 'Authentication required' }, { status: 401 });
+      }
       return json({ error: 'Failed to save/update beat' }, { status: 500 });
     }
   },

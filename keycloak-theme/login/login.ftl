@@ -2,8 +2,8 @@
 <@layout.registrationLayout displayInfo=social.displayInfo displayWide=(realm.password && social.providers??); section>
     <#if section = "header">
         <div class="login-header">
-            <h1>Welcome to Timey</h1>
-            <p>Sign in to continue your drumming journey</p>
+            <h1>Welcome to The Method</h1>
+            <p>Sign in to keep rockin'</p>
         </div>
     <#elseif section = "form">
         <form id="kc-form-login" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">

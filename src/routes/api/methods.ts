@@ -1,6 +1,7 @@
 import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { methodRepository } from '~/repositories/methodRepository';
+import { requireKeycloakUser } from '~/lib/ensureKeycloakUser';
 
 export const APIRoute = createAPIFileRoute('/api/methods')({
   GET: async () => {
@@ -21,12 +22,12 @@ export const APIRoute = createAPIFileRoute('/api/methods')({
         return json({ error: 'Title is required' }, { status: 400 });
       }
 
-      // For now, use a default author ID since we removed authentication
-      const defaultAuthorId = 'default-user';
+      // Get the authenticated user ID
+      const authorId = await requireKeycloakUser();
 
       const newMethod = await methodRepository.createMethod({
         title,
-        authorId: defaultAuthorId,
+        authorId,
         description: '',
         index: 0,
       });
@@ -34,6 +35,9 @@ export const APIRoute = createAPIFileRoute('/api/methods')({
       return json(newMethod, { status: 201 });
     } catch (error) {
       console.error('Error creating method:', error);
+      if (error instanceof Error && error.message === 'Authentication required') {
+        return json({ error: 'Authentication required' }, { status: 401 });
+      }
       return json({ error: 'Failed to create method' }, { status: 500 });
     }
   },

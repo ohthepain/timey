@@ -4,8 +4,9 @@ export interface KeycloakUser {
   id: string;
   username: string;
   email?: string;
-  firstName?: string;
-  lastName?: string;
+  userName?: string;
+  firstName?: string; // Keep for backward compatibility with Keycloak
+  lastName?: string; // Keep for backward compatibility with Keycloak
   roles?: string[];
 }
 
@@ -35,8 +36,12 @@ export const getKeycloakUser = async (): Promise<KeycloakUser | null> => {
       id: payload.sub || '',
       username: payload.preferred_username || '',
       email: payload.email,
-      firstName: payload.given_name,
-      lastName: payload.family_name,
+      userName:
+        payload.userName || (payload.given_name && payload.family_name)
+          ? `${payload.given_name} ${payload.family_name}`.trim()
+          : payload.preferred_username || 'User',
+      firstName: payload.given_name, // Keep for backward compatibility
+      lastName: payload.family_name, // Keep for backward compatibility
       roles: payload.realm_access?.roles || [],
     };
   } catch (error) {
