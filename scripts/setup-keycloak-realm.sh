@@ -87,17 +87,28 @@ else
     echo "⚠️  Test user might already exist or there was an issue"
 fi
 
+# Configure theme
+echo "🎨 Configuring theme..."
+THEME_RESPONSE=$(curl -s -X PUT \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"realm\":\"$REALM_NAME\",
+    \"loginTheme\":\"timey\"
+  }" \
+  "$KEYCLOAK_URL/admin/realms/$REALM_NAME")
+
+if [ $? -eq 0 ]; then
+    echo "✅ Theme 'timey' configured successfully"
+else
+    echo "⚠️  Theme configuration might have failed"
+fi
+
 echo ""
 echo "🎉 Keycloak setup complete!"
 echo ""
-echo "Next steps:"
-echo "1. Go to Keycloak Admin Console: http://localhost:8080"
-echo "2. Login with admin/admin"
-echo "3. Select the 'timey' realm"
-echo "4. Go to Realm Settings > Themes"
-echo "5. Set 'Login Theme' to 'timey'"
-echo "6. Save"
-echo ""
 echo "Test login:"
 echo "- Username: testuser"
-echo "- Password: password" 
+echo "- Password: password"
+echo ""
+echo "Keycloak Admin Console: http://localhost:8080 (admin/admin)" 
