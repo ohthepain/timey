@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { methodService } from '~/services/methodService';
+import { getMethodByIdServerFn } from '~/services/methodService.server';
 import { NotFound } from '~/components/NotFound';
 import { PostErrorComponent } from '~/components/PostErrorComponent';
 import { ModuleList } from '~/components/ModuleList';
 import { AddModule } from '~/components/AddModule';
 
 export const loader = async ({ params }: { params: { id: string } }) => {
-  const method = await methodService.getMethodById(params.id);
+  const method = await getMethodByIdServerFn({ id: params.id });
   console.log('loader: Method:', method);
   if (!method) {
     throw new Error('Method not found');

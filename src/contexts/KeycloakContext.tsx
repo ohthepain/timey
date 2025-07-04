@@ -53,6 +53,27 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
           console.log('Authentication successful');
           setAuthenticated(true);
           await loadUserInfo(kc);
+
+          // Ensure user exists in the database
+          try {
+            const response = await fetch('/api/auth/ensure-user', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${kc.token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (response.ok) {
+              const { userId } = await response.json();
+              console.log('User ensured in database:', userId);
+            } else {
+              console.error('Failed to ensure user in database');
+            }
+          } catch (error) {
+            console.error('Error ensuring user in database:', error);
+          }
+
           setLoading(false);
         };
 
@@ -87,6 +108,26 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
 
         if (authenticated) {
           await loadUserInfo(kc);
+
+          // Ensure user exists in the database
+          try {
+            const response = await fetch('/api/auth/ensure-user', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${kc.token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (response.ok) {
+              const { userId } = await response.json();
+              console.log('User ensured in database:', userId);
+            } else {
+              console.error('Failed to ensure user in database');
+            }
+          } catch (error) {
+            console.error('Error ensuring user in database:', error);
+          }
         }
       } catch (error) {
         console.error('Keycloak initialization failed:', error);
