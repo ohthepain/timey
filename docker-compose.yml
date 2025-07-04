@@ -36,9 +36,9 @@ services:
     image: quay.io/keycloak/keycloak:26.1.0
     container_name: keycloak
     ports:
-      - 8082:8082
-    # volumes:
-    #   - ${KEYCLOAK_IMPORT_DIR:-./docker/oauth/data}:/opt/keycloak/data/import
+      - 8080:8080
+    volumes:
+      - ./keycloak-theme:/opt/keycloak/themes/timey
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
@@ -54,7 +54,7 @@ services:
       [
         'start-dev',
         '--import-realm',
-        '--http-port=8082',
+        '--http-port=8080',
         '--health-enabled=true',
         '--hostname-strict=false',
         '--proxy-headers=forwarded',
