@@ -115,14 +115,7 @@ function RootComponent() {
               >
                 Home
               </Link>
-              <Link
-                to="/posts"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Posts
-              </Link>
+
               <Link
                 to="/methods"
                 activeProps={{
@@ -146,14 +139,6 @@ function RootComponent() {
                 }}
               >
                 Users
-              </Link>
-              <Link
-                to="/signup"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Sign Up
               </Link>
               <Link
                 to="/route-a"
