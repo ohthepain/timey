@@ -95,6 +95,19 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
     };
 
     initKeycloak();
+
+    // Cleanup function to remove event listeners on unmount
+    return () => {
+      if (keycloak) {
+        // Remove all event listeners
+        (keycloak as any).onReady = null;
+        (keycloak as any).onInitError = null;
+        (keycloak as any).onAuthSuccess = null;
+        (keycloak as any).onAuthError = null;
+        (keycloak as any).onAuthLogout = null;
+        (keycloak as any).onTokenExpired = null;
+      }
+    };
   }, []);
 
   const loadUserInfo = async (kc: any) => {
