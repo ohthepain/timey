@@ -51,7 +51,7 @@ export const APIRoute = createAPIFileRoute('/api/beats')({
     } catch (error) {
       console.error('Error saving/updating beat:', error);
       if (error instanceof Error && error.message === 'Authentication required') {
-        return json({ error: 'Authentication required' }, { status: 401 });
+        return json({ error: 'Authentication required' }, { status: 500 });
       }
       return json({ error: 'Failed to save/update beat' }, { status: 500 });
     }

@@ -29,10 +29,20 @@ export const moduleRepository = {
     return data ? new Module(data) : null;
   },
 
-  async createModule(data: Omit<Module, 'id' | 'createdAt' | 'modifiedAt'>): Promise<Module> {
-    const { method, ...moduleData } = data;
-    const d = await safeQuery(() => prisma.module.create({ data: { ...moduleData, beats: { create: [] } } }));
-    return new Module(d);
+  async createModule(data: {
+    title: string;
+    description?: string;
+    index: number;
+    authorId: string;
+    methodId: string;
+  }): Promise<Module> {
+    try {
+      const d = await safeQuery(() => prisma.module.create({ data: { ...data, beats: { create: [] } } }));
+      return new Module(d);
+    } catch (error) {
+      console.error('Error creating module:', error);
+      throw error;
+    }
   },
 
   async updateModule(data: Partial<Omit<Module, 'createdAt' | 'modifiedAt'>>): Promise<Module> {

@@ -52,6 +52,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
         (kc as any).onAuthSuccess = async () => {
           console.log('Authentication successful');
           setAuthenticated(true);
+
           await loadUserInfo(kc);
 
           // Ensure user exists in the database
@@ -204,7 +205,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
     try {
       const refreshed = await keycloak.updateToken(minValidity);
       if (refreshed) {
-        // Token was refreshed, update user info if needed
+        // Token was refreshed, update user info
         await loadUserInfo(keycloak);
       }
       return refreshed;

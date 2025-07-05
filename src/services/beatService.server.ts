@@ -3,7 +3,7 @@ import { beatRepository } from '~/repositories/beatRepository';
 import { z } from 'zod';
 import { getWebRequest } from '@tanstack/react-start/server';
 import { Beat } from '~/types/Beat';
-import { requireKeycloakUser } from '~/lib/ensureKeycloakUser';
+import { withAuth } from '~/utils/authenticatedServerFn';
 
 export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
@@ -26,31 +26,28 @@ const saveBeatServerFnArgs = z.object({
 });
 
 export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator((data: unknown) => {
-    return saveBeatServerFnArgs.parse(data);
-  })
-  .handler(async (ctx) => {
-    // Get the authenticated user ID
-    const authorId = await requireKeycloakUser();
-
-    if (ctx.data.id) {
-      console.log('Updating beat with ID:', ctx.data.id);
-      return beatRepository.updateBeat(ctx.data.id, {
-        ...ctx.data,
-        index: ctx.data.index || 0,
-        description: ctx.data.description || null,
-        authorId,
-      });
-    } else {
-      console.log('Creating new beat with beat notes:', ctx.data.beatNotes);
-      return beatRepository.createBeat({
-        ...ctx.data,
-        index: ctx.data.index || 0,
-        description: ctx.data.description || null,
-        authorId,
-      });
-    }
-  });
+  .validator(saveBeatServerFnArgs)
+  .handler(
+    withAuth(async (ctx, userId) => {
+      if (ctx.data.id) {
+        console.log('Updating beat with ID:', ctx.data.id);
+        return beatRepository.updateBeat(ctx.data.id, {
+          ...ctx.data,
+          index: ctx.data.index || 0,
+          description: ctx.data.description || null,
+          authorId: userId,
+        });
+      } else {
+        console.log('Creating new beat with beat notes:', ctx.data.beatNotes);
+        return beatRepository.createBeat({
+          ...ctx.data,
+          index: ctx.data.index || 0,
+          description: ctx.data.description || null,
+          authorId: userId,
+        });
+      }
+    })
+  );
 
 const copyBeatServerFnArgs = z.object({
   id: z.string(),
@@ -58,42 +55,57 @@ const copyBeatServerFnArgs = z.object({
 
 export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => copyBeatServerFnArgs.parse(data))
-  .handler(async (ctx) => {
-    // Get the authenticated user ID
-    const authorId = await requireKeycloakUser();
+  .handler(
+    withAuth(async (ctx, userId) => {
+      // Fetch the original beat
+      const original = await beatRepository.getBeatById(ctx.data.id);
+      if (!original) throw new Error('Beat not found');
 
-    // Fetch the original beat
-    const original = await beatRepository.getBeatById(ctx.data.id);
-    if (!original) throw new Error('Beat not found');
+      // Generate new name based on the original name
+      let newName: string;
+      const match = original.name.match(/(.*?)(\d+)$/);
+      if (match) {
+        // If name ends with a number, increment it
+        const baseName = match[1];
+        const number = parseInt(match[2], 10);
+        newName = `${baseName}${number + 1}`;
+      } else {
+        // Otherwise, prepend "Copy of "
+        newName = `Copy of ${original.name}`;
+      }
 
-    // Generate new name based on the original name
-    let newName: string;
-    const match = original.name.match(/(.*?)(\d+)$/);
-    if (match) {
-      // If name ends with a number, increment it
-      const baseName = match[1];
-      const number = parseInt(match[2], 10);
-      newName = `${baseName}${number + 1}`;
-    } else {
-      // Otherwise, prepend "Copy of "
-      newName = `Copy of ${original.name}`;
-    }
+      // Prepare new beat data
+      const newBeatData = {
+        name: newName,
+        index: original.index + 1,
+        authorId: userId,
+        moduleId: original.moduleId,
+        beatNotes: original.beatNotes.map(({ id, ...note }) => ({
+          ...note,
+        })),
+      };
 
-    // Prepare new beat data
-    const newBeatData = {
-      name: newName,
-      index: original.index + 1,
-      authorId,
-      moduleId: original.moduleId,
-      beatNotes: original.beatNotes.map(({ id, ...note }) => ({
-        ...note,
-      })),
-    };
+      // Create the new beat
+      const newBeat = await beatRepository.createBeat(newBeatData);
+      return newBeat;
+    })
+  );
 
-    // Create the new beat
-    const newBeat = await beatRepository.createBeat(newBeatData);
-    return newBeat;
-  });
+const getBeatWithPerformancesServerFnArgs = z.object({
+  beatId: z.string(),
+});
+
+export const getBeatWithPerformancesServerFn = createServerFn({ method: 'GET', response: 'data' })
+  .validator(getBeatWithPerformancesServerFnArgs)
+  .handler(
+    withAuth(async (ctx, userId) => {
+      const beat = await beatRepository.getBeatWithPerformances(ctx.data.beatId, userId);
+      if (!beat) {
+        return null;
+      }
+      return beat.toJSON();
+    })
+  );
 
 const getBeatByNameServerFnArgs = z.object({
   name: z.string(),

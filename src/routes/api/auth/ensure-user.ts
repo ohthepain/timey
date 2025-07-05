@@ -4,7 +4,6 @@ import { ensureKeycloakUser } from '~/lib/ensureKeycloakUser';
 
 export const APIRoute = createAPIFileRoute('/api/auth/ensure-user')({
   POST: async ({ request }) => {
-    console.log('/api/auth/ensure-user POST request');
     try {
       // This will ensure the user exists in the database
       const userId = await ensureKeycloakUser();

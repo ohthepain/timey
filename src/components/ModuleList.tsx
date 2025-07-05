@@ -2,6 +2,7 @@ import { Method } from '~/types/Method';
 import { Link } from '@tanstack/react-router';
 import { useRouter } from '@tanstack/react-router';
 import { deleteModuleServerFn } from '~/services/moduleService.server';
+import { useKeycloak } from '~/contexts/KeycloakContext';
 
 interface ModuleListProps {
   method: Method;
@@ -11,11 +12,13 @@ export const ModuleList = ({ method }: ModuleListProps) => {
   const modules = method.modules || [];
   const sortedModules = modules.sort((a, b) => a.index - b.index);
   const router = useRouter();
+  const { keycloak } = useKeycloak();
 
   const handleDeleteModule = async (moduleId: string) => {
     if (confirm('Are you sure you want to delete this module?')) {
       try {
-        await deleteModuleServerFn({ data: { id: moduleId } });
+        const token = keycloak?.token;
+        await deleteModuleServerFn({ data: { id: moduleId, token: token } });
         router.invalidate();
       } catch (error) {
         alert('Failed to delete module');

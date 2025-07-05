@@ -1,12 +1,18 @@
 import { useState, useEffect } from 'react';
-import { methodService } from '~/services/methodService';
-import { Method } from '@prisma/client';
+import {
+  getAllMethodsServerFn,
+  createMethodServerFn,
+  updateMethodServerFn,
+  deleteMethodServerFn,
+} from '~/services/methodService.server';
 import { Link } from '@tanstack/react-router';
+import { useKeycloak } from '~/contexts/KeycloakContext';
 
 export const MethodsAdminPage = () => {
-  const [methods, setMethods] = useState<Method[]>([]);
+  const [methods, setMethods] = useState<any[]>([]);
   const [newMethodName, setNewMethodName] = useState('');
-  const [selectedMethod, setSelectedMethod] = useState<Method | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<any | null>(null);
+  const { keycloak } = useKeycloak();
 
   useEffect(() => {
     fetchMethods();
@@ -15,8 +21,8 @@ export const MethodsAdminPage = () => {
   const fetchMethods = async () => {
     console.log('Fetching methods...');
     try {
-      const response = await methodService.getAllMethods();
-      setMethods(response.methods);
+      const response = await getAllMethodsServerFn();
+      setMethods(response);
     } catch (error) {
       console.error('Error fetching methods:', error);
     }
@@ -25,7 +31,13 @@ export const MethodsAdminPage = () => {
   const handleCreate = async () => {
     if (!newMethodName.trim()) return;
     try {
-      const newMethod = await methodService.createMethod(newMethodName);
+      const token = keycloak?.token;
+      const newMethod = await createMethodServerFn({
+        data: {
+          title: newMethodName,
+          token: token,
+        },
+      });
       setMethods((prev) => [...prev, newMethod]);
       setNewMethodName('');
     } catch (error) {
@@ -37,8 +49,13 @@ export const MethodsAdminPage = () => {
     if (!selectedMethod) return;
 
     try {
-      const updatedMethod = await methodService.updateMethod(selectedMethod.id, {
-        title: selectedMethod.title,
+      const token = keycloak?.token;
+      const updatedMethod = await updateMethodServerFn({
+        data: {
+          id: selectedMethod.id,
+          title: selectedMethod.title,
+          token: token,
+        },
       });
       setMethods((prev) => prev.map((m) => (m.id === updatedMethod.id ? updatedMethod : m)));
       setSelectedMethod(null);
@@ -49,7 +66,13 @@ export const MethodsAdminPage = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await methodService.deleteMethod(id);
+      const token = keycloak?.token;
+      await deleteMethodServerFn({
+        data: {
+          id,
+          token: token,
+        },
+      });
       setMethods((prev) => prev.filter((m) => m.id !== id));
     } catch (error) {
       console.error('Error deleting method:', error);

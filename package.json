@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vinxi dev",
+    "dev:debug": "node --inspect=0.0.0.0:9229 ./node_modules/vinxi/bin/cli.mjs dev",
     "build": "vinxi build",
     "start": "vinxi start",
     "format": "prettier --write .",

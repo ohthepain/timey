@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { NotFound } from '~/components/NotFound';
-import { PostErrorComponent } from '~/components/PostErrorComponent';
+import { UserErrorComponent } from '~/components/UserError';
 import { ModuleViewer } from '~/components/ModuleViewer';
 import { getBeatProgressForModuleServerFn, BeatProgressView } from '~/services/userProgressServerService.server';
 import { getModuleByIdServerFn } from '~/services/moduleService.server';
@@ -17,13 +17,7 @@ export const loader = async ({ params }: { params: { id: string } }) => {
   if (!moduleJson) {
     throw new Error('module.id.loader: Module not found');
   }
-  // console.log(`module.id.loader: dunng module data for ${moduleId}`);
-  // console.log('module.id.loader: Module data:', data);
-  // const module = new Module(data);
-  // console.log('module.id.loader : Module.toJSON:', module.toJSON());
-  // for (const beat of module.beats!) {
-  //   console.log('module.id.loader: Beat:', beat.toJSON());
-  // }
+
   const beatProgress: BeatProgressView[] = await getBeatProgressForModuleServerFn({ data: { id: moduleId } });
   console.log('module.id.loader: Beat progress:', beatProgress);
 
@@ -32,7 +26,7 @@ export const loader = async ({ params }: { params: { id: string } }) => {
 
 export const Route = createFileRoute('/module/$id')({
   loader,
-  errorComponent: ({ error }: { error: Error }) => <PostErrorComponent error={error.message} />,
+  errorComponent: UserErrorComponent,
   component: ModulePage,
   notFoundComponent: () => {
     return <NotFound>Module not found</NotFound>;

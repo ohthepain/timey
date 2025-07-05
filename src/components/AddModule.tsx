@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Method } from '~/types/Method';
 import { useRouter } from '@tanstack/react-router';
 import { createModuleServerFn } from '~/services/moduleService.server';
+import { useKeycloak } from '~/contexts/KeycloakContext';
 
 interface AddModuleProps {
   method: Method;
@@ -12,6 +13,7 @@ export const AddModule = ({ method }: AddModuleProps) => {
   const [index, setIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { keycloak } = useKeycloak();
 
   const handleAddModule = async () => {
     if (!title.trim()) {
@@ -20,11 +22,13 @@ export const AddModule = ({ method }: AddModuleProps) => {
     }
 
     try {
+      const token = keycloak?.token;
       await createModuleServerFn({
         data: {
           title,
           index,
           methodId: method.id,
+          token: token,
         },
       });
       setTitle('');

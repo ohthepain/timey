@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { getMethodByIdServerFn } from '~/services/methodService.server';
 import { NotFound } from '~/components/NotFound';
-import { PostErrorComponent } from '~/components/PostErrorComponent';
+import { UserErrorComponent } from '~/components/UserError';
 import { ModuleList } from '~/components/ModuleList';
 import { AddModule } from '~/components/AddModule';
 
 export const loader = async ({ params }: { params: { id: string } }) => {
-  const method = await getMethodByIdServerFn({ id: params.id });
+  const method = await getMethodByIdServerFn({ data: { id: params.id } });
   console.log('loader: Method:', method);
   if (!method) {
     throw new Error('Method not found');
@@ -16,7 +16,7 @@ export const loader = async ({ params }: { params: { id: string } }) => {
 
 export const Route = createFileRoute('/method/$id')({
   loader,
-  errorComponent: ({ error }: { error: Error }) => <PostErrorComponent error={error.message} />,
+  errorComponent: UserErrorComponent,
   component: MethodPage,
   notFoundComponent: () => {
     return <NotFound>Post not found</NotFound>;
