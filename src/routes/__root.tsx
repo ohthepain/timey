@@ -140,22 +140,6 @@ function RootComponent() {
               >
                 Users
               </Link>
-              <Link
-                to="/route-a"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Pathless Layout
-              </Link>
-              <Link
-                to="/deferred"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Deferred
-              </Link>
             </div>
 
             {/* Right-aligned buttons */}
