@@ -54,7 +54,14 @@ services:
     depends_on:
       - postgres
     command:
-      ['start-dev', '--http-port=8080', '--health-enabled=true', '--hostname-strict=false', '--proxy-headers=forwarded']
+      [
+        'start-dev',
+        '--http-port=8080',
+        '--health-enabled=true',
+        '--hostname-strict=false',
+        '--proxy-headers=forwarded',
+        '--import-realm',
+      ]
 
 volumes:
   postgres:

@@ -12,6 +12,3 @@ RUN chown keycloak:keycloak /opt/keycloak/data/import/realm-export.json
 
 USER keycloak
 
-# Set the import realm flag
-ENV KC_IMPORT_REALM=/opt/keycloak/data/import/realm-export.json
-
