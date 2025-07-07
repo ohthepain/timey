@@ -59,8 +59,9 @@ export const BeatEditor = (props: BeatEditorProps) => {
     console.log('tempBeat:', tempBeat);
 
     try {
+      const token = keycloak?.token;
       await saveBeatServerFn({
-        data: { ...tempBeat, moduleId: module.id, name, index },
+        data: { ...tempBeat, moduleId: module.id, name, index, token },
       });
 
       setName('');

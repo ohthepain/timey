@@ -1,7 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import { moduleRepository } from '~/repositories/moduleRepository';
 import { z } from 'zod';
-import { getWebRequest } from '@tanstack/react-start/server';
 import { Module } from '~/types/Module';
 import { withAuth } from '~/utils/authenticatedServerFn';
 
@@ -13,7 +12,7 @@ export const getAllModulesServerFn = createServerFn({ method: 'GET', response: '
 export const getModuleByIdServerFn = createServerFn({ method: 'GET', response: 'data' })
   .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async (ctx) => {
-    const data = await moduleRepository.getModuleById(ctx.data.id);
+    const data = await getModuleById(ctx.data.id);
     if (!data) return null;
     const module = new Module(data);
     return {
@@ -21,6 +20,16 @@ export const getModuleByIdServerFn = createServerFn({ method: 'GET', response: '
       method: data.method,
     };
   });
+
+export const getModuleById = async (id: string) => {
+  const data = await moduleRepository.getModuleById(id);
+  if (!data) return null;
+  const module = new Module(data);
+  return {
+    ...module.toJSON(),
+    method: data.method,
+  };
+};
 
 const createModuleServerFnArgs = z.object({
   title: z.string(),

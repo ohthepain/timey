@@ -23,6 +23,7 @@ const saveBeatServerFnArgs = z.object({
   description: z.string().nullable().optional(),
   moduleId: z.string(),
   beatNotes: z.array(z.any()),
+  token: z.string(),
 });
 
 export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data' })

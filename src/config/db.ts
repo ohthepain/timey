@@ -3,23 +3,41 @@ import { PrismaClient } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({
-    // log: ['query', 'info', 'warn', 'error'], // uncomment for debugging
-  });
+// Only create Prisma client on server side
+let prisma: PrismaClient | null = null;
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+if (typeof window === 'undefined') {
+  // Server-side only
+  prisma =
+    globalForPrisma.prisma ||
+    new PrismaClient({
+      // log: ['query', 'info', 'warn', 'error'], // uncomment for debugging
+    });
+
+  if (process.env.NODE_ENV !== 'production') {
+    globalForPrisma.prisma = prisma;
+  }
+
+  // Graceful shutdown - only on server side
+  if (typeof process !== 'undefined' && process.on) {
+    process.on('SIGTERM', async () => {
+      await prisma?.$disconnect();
+    });
+    process.on('SIGINT', async () => {
+      await prisma?.$disconnect();
+    });
+  }
 }
+
+export { prisma };
 
 /**
  * Executes a database query with retry logic for specific errors.
- * 
+ *
  * If the query fails due to a database connection issue (e.g., error code P1001,
  * "Timed out", or "Connection pool"), the function will attempt to reconnect
  * to the database and retry the query once.
- * 
+ *
  * @template T - The type of the result returned by the query.
  * @param {() => Promise<T>} fn - A function that performs the database query.
  * @returns {Promise<T>} The result of the query.
@@ -27,6 +45,10 @@ if (process.env.NODE_ENV !== 'production') {
  *         the retry attempt also fails.
  */
 export async function safeQuery<T>(fn: () => Promise<T>): Promise<T> {
+  if (!prisma) {
+    throw new Error('Database not available on client side');
+  }
+
   try {
     return await fn();
   } catch (e: any) {
@@ -43,11 +65,3 @@ export async function safeQuery<T>(fn: () => Promise<T>): Promise<T> {
     throw e;
   }
 }
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  await prisma.$disconnect();
-});
-process.on('SIGINT', async () => {
-  await prisma.$disconnect();
-});
