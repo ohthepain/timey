@@ -33,7 +33,10 @@ services:
   #     - keycloak-db
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.keycloak
+    image: keycloak-timey:latest
     container_name: keycloak
     ports:
       - 8080:8080
@@ -51,14 +54,7 @@ services:
     depends_on:
       - postgres
     command:
-      [
-        'start-dev',
-        '--import-realm',
-        '--http-port=8080',
-        '--health-enabled=true',
-        '--hostname-strict=false',
-        '--proxy-headers=forwarded',
-      ]
+      ['start-dev', '--http-port=8080', '--health-enabled=true', '--hostname-strict=false', '--proxy-headers=forwarded']
 
 volumes:
   postgres:

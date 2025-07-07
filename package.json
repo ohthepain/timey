@@ -12,7 +12,8 @@
     "format-check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "setup-keycloak": "sh ./scripts/setup-keycloak-realm.sh"
+    "setup-keycloak": "sh ./scripts/setup-keycloak-realm.sh",
+    "export:realm": "sh ./scripts/export_realm.sh ./keycloak-theme/realm-export.json"
   },
   "dependencies": {
     "@prisma/client": "^6.11.1",
