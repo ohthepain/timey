@@ -31,10 +31,10 @@ function Home() {
       <div className="relative bg-gradient-to-br from-orange-500 to-purple-900 rounded-3xl m-16 mb-0">
         <div className="mx-auto py-24 flex items-center gap-x-10">
           <div className="flex flex-col mx-auto justify-center">
-            <div className="flex flex-wrap ">
-              <div className="flex flex-col p-8">
+            <div className="flex flex-wrap p-8">
+              <div className="flex flex-col">
                 <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl">themethod.live</h1>
-                <p className="mt-6 text-2xl leading-8 text-white">Your intelligent meter management assistant</p>
+                <p className="mt-6 pr-8 text-2xl leading-8 text-white">Your intelligent meter management assistant</p>
               </div>
               <div className="bg-white rounded-xl p-2 flex items-center justify-center">
                 <div className="w-128 h-128 rounded-xl bg-gray-100">
