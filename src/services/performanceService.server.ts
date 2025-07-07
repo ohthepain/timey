@@ -59,9 +59,10 @@ export const savePerformanceServerFn = createServerFn({ method: 'POST', response
 
 const fetchUserPerformancesForBeatArgs = z.object({
   beatId: z.string(),
+  token: z.string(),
 });
 
-export const fetchUserPerformancesForBeat = createServerFn({ method: 'GET', response: 'data' })
+export const fetchUserPerformancesForBeatServerFn = createServerFn({ method: 'GET', response: 'data' })
   .validator(fetchUserPerformancesForBeatArgs)
   .handler(
     withAuth(async (ctx, userId) => {

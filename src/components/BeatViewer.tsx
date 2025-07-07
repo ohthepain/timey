@@ -17,7 +17,7 @@ import { BeatRecorder } from '~/lib/BeatRecorder';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { usePersistedStore } from '~/state/PersistedStore';
 import { Ladder } from './Ladder';
-import { fetchUserPerformancesForBeat } from '~/services/performanceService.server';
+import { fetchUserPerformancesForBeatServerFn } from '~/services/performanceService.server';
 import { Speedometer } from './Speedometer';
 import { TempoService } from '~/lib/TempoService';
 import { kMaxWindowSkillLevel } from '~/lib/PerformanceFeedback';
@@ -144,11 +144,14 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
     const fetchBeatProgress = async () => {
       if (beat.id) {
         const beatId = beat.id;
-        const performances: Performance[] = (await fetchUserPerformancesForBeat({ data: { beatId } })).map(
-          (performanceData) => new Performance(performanceData)
-        );
-        for (const performance of performances) {
-          cachePerformance(performance);
+        const token = keycloak?.token;
+        if (token) {
+          const performances: Performance[] = (
+            await fetchUserPerformancesForBeatServerFn({ data: { beatId, token } })
+          ).map((performanceData) => new Performance(performanceData));
+          for (const performance of performances) {
+            cachePerformance(performance);
+          }
         }
       }
     };

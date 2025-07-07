@@ -18,11 +18,11 @@ export const Route = createFileRoute('/module/$id')({
 
 function ModulePage() {
   const params = Route.useParams();
-  const { keycloak } = useKeycloak();
   const [module, setModule] = useState<Module | null>(null);
   const [beatProgress, setBeatProgress] = useState<BeatProgressView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { keycloak } = useKeycloak();
 
   useEffect(() => {
     const loadModule = async () => {
@@ -36,18 +36,22 @@ function ModulePage() {
           return;
         }
 
+        // Does not require authentication
         console.log(`Loading module ID: ${moduleId}`);
         const moduleJson = await getModuleByIdServerFn({ data: { id: moduleId } });
         if (!moduleJson) {
           setError('Module not found');
           return;
         }
-
-        const progress = await getBeatProgressForModuleServerFn({ data: { id: moduleId } });
-        console.log('Beat progress:', progress);
-
         setModule(new Module(moduleJson));
-        setBeatProgress(progress);
+
+        // Requires authentication
+        const token = keycloak?.token;
+        if (token) {
+          const progress = await getBeatProgressForModuleServerFn({ data: { id: moduleId, token } });
+          console.log('Beat progress:', progress);
+          setBeatProgress(progress);
+        }
       } catch (err) {
         console.error('Error loading module:', err);
         setError('Failed to load module');

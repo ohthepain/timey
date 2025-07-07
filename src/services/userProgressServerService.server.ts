@@ -71,10 +71,6 @@ export const passBeatTempoServerFn = createServerFn({ method: 'POST', response: 
     })
   );
 
-const getBeatProgressForModuleServerFnArgs = z.object({
-  id: z.string(),
-});
-
 export const getBeatProgressForModule = async (userId: string, id: string): Promise<BeatProgressView[]> => {
   try {
     const moduleProgress = await beatProgressRepository.getBeatProgressForModule(userId, id);
@@ -92,6 +88,11 @@ export const getBeatProgressForModule = async (userId: string, id: string): Prom
     return [];
   }
 };
+
+const getBeatProgressForModuleServerFnArgs = z.object({
+  id: z.string(),
+  token: z.string(),
+});
 
 export const getBeatProgressForModuleServerFn = createServerFn({ method: 'GET', response: 'data' })
   .validator(getBeatProgressForModuleServerFnArgs)
