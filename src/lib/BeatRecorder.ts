@@ -318,6 +318,7 @@ export class BeatRecorder extends EventEmitter {
     );
 
     if (beatNoteFeedback) {
+      this.emit('beatNoteFeedback', beatNoteFeedback);
       // Record the played note with its feedback
       const tempoFeedback = this.performanceFeedback.getTempoFeedback(this.tempoService.bpm);
       this.emit('tempoFeedback', tempoFeedback);

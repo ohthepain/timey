@@ -20,7 +20,8 @@ import { Ladder } from './Ladder';
 import { fetchUserPerformancesForBeatServerFn } from '~/services/performanceService.server';
 import { Speedometer } from './Speedometer';
 import { TempoService } from '~/lib/TempoService';
-import { kMaxWindowSkillLevel } from '~/lib/PerformanceFeedback';
+import { BeatNoteFeedback, kMaxWindowSkillLevel } from '~/lib/PerformanceFeedback';
+import { useKeycloak } from '~/contexts/KeycloakContext';
 
 const xboxStyle =
   'text-amber-800 px-2 py-1 w-16 rounded bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm text-center';
@@ -53,15 +54,19 @@ function getSkillLevelColor(rank: number): string {
 export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(beat.name);
+  const [beatNoteFeedback, setBeatNoteFeedback] = useState<BeatNoteFeedback | null>(null);
   const [tempoFeedback, setTempoFeedback] = useState<any>(null);
-  const [skillLevel, setSkillLevel] = useState(kMaxWindowSkillLevel);
+  const [skillLevel, setSkillLevel] = useState(1); // default to 1, not 0
   const [measuredBpm, setMeasuredBpm] = useState(0);
   const [bgColor, setBgColor] = useState<string>('bg-white');
   const [gradeMinTempo, setGradeMinTempo] = useState(0);
   const [gradeMaxTempo, setGradeMaxTempo] = useState(240);
+  const [gradeMinError, setGradeMinError] = useState(-2);
+  const [gradeMaxError, setGradeMaxError] = useState(2);
   const { currentBeat, cachePerformance } = useNavigationStore();
   const { enableAdmin } = usePersistedStore();
   const possibleTempos = [0, 1, 2, 3, 4, 5];
+  const { keycloak } = useKeycloak();
 
   const tempoService = TempoService.getInstance();
 
@@ -111,21 +116,28 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
     }
   };
 
+  const beatRecorder_beatNoteFeedback = (beatNoteFeedback: BeatNoteFeedback) => {
+    console.log('BeatViewer: beatRecorder_beatNoteFeedback: ', beatNoteFeedback.timingDifferenceMs);
+    setBeatNoteFeedback(beatNoteFeedback);
+  };
+
   const beatRecorder_tempoFeedback = (tempoFeedback: any) => {
     setTempoFeedback(tempoFeedback);
-    if (tempoFeedback.windowSkillLevel != skillLevel) {
-      setSkillLevel(tempoFeedback.windowSkillLevel);
-    }
-    // Set anything we want to react to
-    setMeasuredBpm(tempoFeedback.bpm);
-    const bgColor = getSkillLevelColor(tempoFeedback.windowSkillLevel);
-    setBgColor(bgColor);
 
-    const nearestPowerOf2 = Math.pow(2, tempoFeedback.windowSkillLevel);
-    const gradeMinTempo = tempoService.bpm - nearestPowerOf2 * 2;
-    const gradeMaxTempo = tempoService.bpm + nearestPowerOf2 * 2;
-    setGradeMinTempo(gradeMinTempo);
-    setGradeMaxTempo(gradeMaxTempo);
+    // Get last 8 timing errors from PerformanceFeedback
+    const feedbackArr = BeatRecorder.getInstance().performanceFeedback.beatNoteFeedback;
+    const last8 = feedbackArr.slice(-8);
+    const maxError = last8.length > 0 ? Math.max(...last8.map((fb) => Math.abs(fb.timingDifferenceMs ?? 0))) : 0;
+    // Grade is log2 of max error margin, min 1
+    let grade = Math.max(1, Math.ceil(Math.log2(maxError / 2)));
+    if (!isFinite(grade) || maxError === 0) grade = 1;
+    if (grade !== skillLevel) {
+      setSkillLevel(grade);
+    }
+    // Calculate ms error bounds for the current grade (min grade 1)
+    const errorMargin = Math.pow(2, grade + 1);
+    setGradeMinError(-errorMargin);
+    setGradeMaxError(errorMargin);
   };
 
   useEffect(() => {
@@ -134,9 +146,11 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
 
   useEffect(() => {
     BeatRecorder.getInstance().on('tempoFeedback', beatRecorder_tempoFeedback);
+    BeatRecorder.getInstance().on('beatNoteFeedback', beatRecorder_beatNoteFeedback);
 
     return () => {
       BeatRecorder.getInstance().off('tempoFeedback', beatRecorder_tempoFeedback);
+      BeatRecorder.getInstance().off('beatNoteFeedback', beatRecorder_beatNoteFeedback);
     };
   }, []);
 
@@ -202,27 +216,29 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
             <div className="flex w-full">
               <div className="flex-1">
                 <Speedometer
-                  min={gradeMinTempo}
-                  max={gradeMaxTempo}
-                  value={tempoFeedback?.bpm || 120}
-                  instantValue={tempoFeedback?.lastNoteEffectiveTempo || 120}
+                  min={gradeMinError}
+                  max={gradeMaxError}
+                  value={beatNoteFeedback?.timingDifferenceMs || 0}
+                  instantValue={beatNoteFeedback?.timingDifferenceMs || 0}
                   bgColor={bgColor}
                 />
                 <div className="flex flex-row items-center justify-between w-full">
-                  <div className={boxStyle}>{gradeMinTempo || '...'}</div>
-                  <div className={boxStyle}>{tempoFeedback?.bpm ? tempoFeedback?.bpm.toFixed(1) : '...'}</div>
-                  <div className={boxStyle}>{gradeMaxTempo || '...'}</div>
+                  <div className={boxStyle}>{gradeMinError || '...'}</div>
+                  <div className={boxStyle}>0</div>
+                  <div className={boxStyle}>{gradeMaxError || '...'}</div>
                 </div>
               </div>
               <div className="flex-shrink-0">
-                <Ladder values={possibleTempos} currentValue={skillLevel} />
+                <Ladder values={possibleTempos.filter((g) => g >= 1)} currentValue={skillLevel} />
               </div>
             </div>
           </div>
         )}
         <div
           onClick={async () => {
-            await startBeatServerFn({ data: { beatId: beat.id } });
+            if (keycloak?.token && beat.id) {
+              await startBeatServerFn({ data: { token: keycloak?.token, beatId: beat.id } });
+            }
             beatPlayer.setBeat(beat);
             BeatRecorder.getInstance().setBeat(beat);
           }}
@@ -232,7 +248,9 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
               values={[140, 120, 100, 90]}
               currentValue={beatProgress?.bestTempo || 0}
               onSelectValue={async (tempo) => {
-                await passBeatTempoServerFn({ data: { beatId: beat.id, tempo: tempo } });
+                if (keycloak?.token && beat.id) {
+                  await passBeatTempoServerFn({ data: { token: keycloak?.token, beatId: beat.id, tempo: tempo } });
+                }
               }}
             />
             <ScoreView beat={beat} />

@@ -14,6 +14,7 @@ export interface BeatProgressView {
 
 const startBeatServerFnArgs = z.object({
   beatId: z.string(),
+  token: z.string(),
 });
 
 export const startBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
@@ -53,6 +54,7 @@ export const startBeatServerFn = createServerFn({ method: 'POST', response: 'dat
 const passBeatTempoServerFnArgs = z.object({
   beatId: z.string(),
   tempo: z.number(),
+  token: z.string(),
 });
 
 export const passBeatTempoServerFn = createServerFn({ method: 'POST', response: 'data' })

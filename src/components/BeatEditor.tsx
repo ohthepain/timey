@@ -36,7 +36,7 @@ export const BeatEditor = (props: BeatEditorProps) => {
 
   const [name, setName] = useState(beat.name);
   const [index, setIndex] = useState(beat.index);
-  const [beatSource, setBeatSource] = useState<BeatSource>(createBeatSourceFromBeat(beat));
+  const [beatSource, setBeatSource] = useState<BeatSource>(() => createBeatSourceFromBeat(beat));
   const [tempBeat, setTempBeat] = useState<Beat>(beat || makeTempBeat(module.id));
   const [error, setError] = useState<string | null>(null);
   const [showNameDialog, setShowNameDialog] = useState(false);
