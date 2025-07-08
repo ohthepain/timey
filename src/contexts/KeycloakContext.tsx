@@ -34,6 +34,13 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
           return;
         }
 
+        // Add a timeout to prevent infinite loading
+        const timeoutId = setTimeout(() => {
+          console.warn('Keycloak initialization timeout - forcing loading to false');
+          console.warn('This might indicate a network issue or Keycloak server problem');
+          setLoading(false);
+        }, 10000); // 10 second timeout
+
         console.log('Initializing Keycloak...');
         const kc = getKeycloak();
         setKeycloak(kc);
@@ -41,16 +48,19 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
         // Set up event listeners first
         (kc as any).onReady = () => {
           console.log('Keycloak is ready');
+          clearTimeout(timeoutId);
           setLoading(false);
         };
 
         (kc as any).onInitError = (error: any) => {
           console.error('Keycloak initialization error:', error);
+          clearTimeout(timeoutId);
           setLoading(false);
         };
 
         (kc as any).onAuthSuccess = async () => {
           console.log('Authentication successful');
+          clearTimeout(timeoutId);
           setAuthenticated(true);
 
           await loadUserInfo(kc);
@@ -80,6 +90,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
 
         (kc as any).onAuthError = (error: any) => {
           console.error('Authentication error:', error);
+          clearTimeout(timeoutId);
           setAuthenticated(false);
           setUser(null);
           setLoading(false);
@@ -87,6 +98,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
 
         (kc as any).onAuthLogout = () => {
           console.log('User logged out');
+          clearTimeout(timeoutId);
           setAuthenticated(false);
           setUser(null);
           setLoading(false);
@@ -96,7 +108,8 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
           console.log('Token expired, attempting refresh');
           const refreshed = await updateToken(70);
           if (!refreshed) {
-            login();
+            // Don't call login() here to avoid infinite loops
+            console.log('Token refresh failed, user needs to login manually');
           }
         };
 
@@ -130,6 +143,10 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
             console.error('Error ensuring user in database:', error);
           }
         }
+
+        // Always set loading to false after initialization, regardless of authentication status
+        clearTimeout(timeoutId);
+        setLoading(false);
       } catch (error) {
         console.error('Keycloak initialization failed:', error);
         setLoading(false);

@@ -105,7 +105,7 @@ function RootComponent() {
         <body>
           <div className="p-2 flex justify-between items-center text-lg">
             {/* Left-aligned navigation links */}
-            <div className="flex gap-6 items-center">
+            <div className="flex gap-6 items-center ml-8">
               <Link
                 to="/"
                 activeProps={{
@@ -139,22 +139,6 @@ function RootComponent() {
                 }}
               >
                 Users
-              </Link>
-              <Link
-                to="/route-a"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Pathless Layout
-              </Link>
-              <Link
-                to="/deferred"
-                activeProps={{
-                  className: 'font-bold',
-                }}
-              >
-                Deferred
               </Link>
             </div>
 

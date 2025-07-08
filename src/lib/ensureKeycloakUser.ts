@@ -12,7 +12,7 @@ export const ensureKeycloakUser = async (token?: string): Promise<string | null>
     }
 
     // Check if the user already exists in the database by Keycloak ID
-    const existingUser = await safeQuery(() => prisma.user.findUnique({ where: { keycloakId: keycloakUser.id } }));
+    const existingUser = await prisma.user.findUnique({ where: { keycloakId: keycloakUser.id } });
 
     if (existingUser) {
       return existingUser.id; // Return the Prisma user ID, not the Keycloak ID

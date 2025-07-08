@@ -71,8 +71,27 @@ export const passBeatTempoServerFn = createServerFn({ method: 'POST', response: 
     })
   );
 
+export const getBeatProgressForModule = async (userId: string, id: string): Promise<BeatProgressView[]> => {
+  try {
+    const moduleProgress = await beatProgressRepository.getBeatProgressForModule(userId, id);
+    const beatProgress: BeatProgressView[] = moduleProgress.map((beat) => {
+      const progress = (beat as any).beatProgress?.[0];
+      return {
+        beatId: beat.id,
+        bestTempo: progress ? progress.bestTempo : null,
+      };
+    });
+    console.log('Beat progress for module:', beatProgress);
+    return beatProgress;
+  } catch (error) {
+    console.error('Error getting beat progress for module:', error);
+    return [];
+  }
+};
+
 const getBeatProgressForModuleServerFnArgs = z.object({
   id: z.string(),
+  token: z.string(),
 });
 
 export const getBeatProgressForModuleServerFn = createServerFn({ method: 'GET', response: 'data' })
@@ -81,15 +100,7 @@ export const getBeatProgressForModuleServerFn = createServerFn({ method: 'GET', 
     withAuth(async (ctx, userId) => {
       try {
         const { id } = ctx.data;
-        const moduleProgress = await beatProgressRepository.getBeatProgressForModule(userId, id);
-        const beatProgress: BeatProgressView[] = moduleProgress.map((beat) => {
-          const progress = (beat as any).beatProgress?.[0];
-          return {
-            beatId: beat.id,
-            bestTempo: progress ? progress.bestTempo : null,
-          };
-        });
-        console.log('Beat progress for module:', beatProgress);
+        const beatProgress = await getBeatProgressForModule(userId, id);
         return beatProgress;
       } catch (error) {
         console.error('Error getting beat progress for module:', error);

@@ -1,30 +1,73 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { getMethodByIdServerFn } from '~/services/methodService.server';
 import { NotFound } from '~/components/NotFound';
 import { UserErrorComponent } from '~/components/UserError';
 import { ModuleList } from '~/components/ModuleList';
 import { AddModule } from '~/components/AddModule';
-
-export const loader = async ({ params }: { params: { id: string } }) => {
-  const method = await getMethodByIdServerFn({ data: { id: params.id } });
-  console.log('loader: Method:', method);
-  if (!method) {
-    throw new Error('Method not found');
-  }
-  return method;
-};
+import { Method } from '~/types/Method';
+import { getMethodByIdServerFn } from '~/services/methodService.server';
+import { useState, useEffect } from 'react';
+import { useKeycloak } from '~/contexts/KeycloakContext';
 
 export const Route = createFileRoute('/method/$id')({
-  loader,
   errorComponent: UserErrorComponent,
   component: MethodPage,
   notFoundComponent: () => {
-    return <NotFound>Post not found</NotFound>;
+    return <NotFound>Method not found</NotFound>;
   },
 });
 
 function MethodPage() {
-  const method = Route.useLoaderData();
+  const params = Route.useParams();
+  const { keycloak } = useKeycloak();
+  const [method, setMethod] = useState<Method | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadMethod = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const methodData = await getMethodByIdServerFn({ data: { id: params.id } });
+        if (!methodData) {
+          setError('Method not found');
+          return;
+        }
+
+        setMethod(new Method(methodData));
+      } catch (err) {
+        console.error('Error loading method:', err);
+        setError('Failed to load method');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMethod();
+  }, [params.id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading method...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !method) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-red-600 mb-4">Error</h2>
+          <p className="text-gray-600">{error || 'Method not found'}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="method-page p-4">

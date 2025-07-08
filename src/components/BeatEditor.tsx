@@ -7,6 +7,7 @@ import { BeatSource, BarSource } from '~/types/BarSource';
 import { createBeatSourceFromBeat, ParseBeatSource, ParseBeatString } from '~/lib/ParseBeat';
 import { ScoreView } from '~/components/ScoreView';
 import { useRouter } from '@tanstack/react-router';
+import { useKeycloak } from '~/contexts/KeycloakContext';
 
 interface BeatEditorProps {
   beat: Beat | null;
@@ -31,6 +32,7 @@ const makeTempBeat = (moduleId: string): Beat => {
 export const BeatEditor = (props: BeatEditorProps) => {
   const module = props.module;
   const beat = props.beat || makeTempBeat(module.id);
+  const { keycloak } = useKeycloak();
 
   const [name, setName] = useState(beat.name);
   const [index, setIndex] = useState(beat.index);
@@ -59,8 +61,9 @@ export const BeatEditor = (props: BeatEditorProps) => {
     console.log('tempBeat:', tempBeat);
 
     try {
+      const token = keycloak?.token;
       await saveBeatServerFn({
-        data: { ...tempBeat, moduleId: module.id, name, index },
+        data: { ...tempBeat, moduleId: module.id, name, index, token },
       });
 
       setName('');
