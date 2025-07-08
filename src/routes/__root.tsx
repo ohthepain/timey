@@ -105,7 +105,7 @@ function RootComponent() {
         <body>
           <div className="p-2 flex justify-between items-center text-lg">
             {/* Left-aligned navigation links */}
-            <div className="flex gap-6 items-center">
+            <div className="flex gap-6 items-center ml-8">
               <Link
                 to="/"
                 activeProps={{
