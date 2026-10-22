@@ -54,13 +54,42 @@ The staged hook is installed in this checkout; new checkouts use `npm run hooks:
 ## Remaining work and next action
 
 The local queue contains bootstrap, recorder isolation, inherited typecheck, and
-formatting reports. The registry is initialized with no recommendations or workers.
-Its empty state means no factory action has been launched by this implementation.
+formatting reports. No worker has been launched.
 
-Next manual entry point: `$factory`. Evaluate the queue, choose prerequisite work
-and useful grouping, and save ranked actions. Do not dispatch during evaluation.
-The user separately selects `$factory launch ACTION_ID`. The recorder-test
-isolation pilot is approved but its worker launch remains manual.
+### Decision iteration 1 — 2026-10-22
+
+The coordinator inspected all four reports and the empty dispatch registry on
+bootstrap revision `3843dad`. No active worker needs reconciliation. No issue was
+closed, implementation performed, or human verification marked passed.
+
+| Priority | Recommended action                                                  | Policy                                                                        | Why / grouping                                                                                                                                                                                           |
+| -------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1        | Implement recorder-test isolation (`20261022T163741000-d582`)       | Automatic merge after evidence and an explicit integration trigger            | Selected pilot; one coherent change covers CSV paths, test independence, and cleanup. Its evidence contributes to bootstrap acceptance.                                                                  |
+| 2        | Investigate inherited compiler failures (`20261022T163741000-bba3`) | No merge; diagnostic result only                                              | Restore a trustworthy full gate next. Group the shared Prisma-nullability cause within this investigation; assess the two UI typing cases separately. Can run alongside the pilot without changing code. |
+| 3        | Repair remaining formatting drift (`20261022T163741000-d1be`)       | Automatic merge after a formatting-only diff and explicit integration trigger | Lower priority than the pilot and compiler blocker. Recheck the actual tracked files and exclude local/generated artifacts appropriately; preserve configuration values and source behavior.             |
+
+The bootstrap report (`20261022T163741000-d76a`) remains open: live multi-chat
+dispatch, integration, and resumption evidence are still missing, and its final
+human-judgment obligation is pending. Recommend its final verification/review
+after the pilot and compiler-gate work rather than offering premature closure.
+
+Do not combine pilot, compiler repair, and formatting into one implementation:
+they have different causes and acceptance evidence. Their common contribution to
+verification is an effort-level relationship, not a shared code fix. Compiler
+failures do not prevent isolated pilot checks, but the aggregate verifier cannot
+be reported green until they are repaired.
+
+Read-only recheck of the original formatting list found nine remaining tracked
+files; bootstrap already corrected three listed docs, and the original local
+queue-file finding is outside tracked source. This is a bounded recheck, not a
+claim that repository-wide formatting now passes.
+
+Next action: manually launch the recorder-isolation recommendation. Saved full
+action IDs, scope, evidence requirements, and freshness fingerprints live in
+`.issues/factory.json`; generate them only after this documentation update is
+committed. A fresh coordinator reads this decision and that registry together.
+Launching priority 2 separately permits useful parallel investigation. Starting
+any action still requires the user's explicit `$factory launch ACTION_ID`.
 
 Real parallel worker chats, live integration, fresh coordinator resumption across
 those chats, and final human review are still to be demonstrated through the
