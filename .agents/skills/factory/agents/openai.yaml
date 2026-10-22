@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Factory'
+  short_description: 'Manually evaluate work and launch selected actions'
+  default_prompt: "Use $factory to evaluate this project's queue and recommend the next actions without launching them."
+policy:
+  allow_implicit_invocation: false

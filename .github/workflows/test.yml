@@ -1,4 +1,4 @@
-name: Run Vitest
+name: Verify
 
 on:
   push:
@@ -12,15 +12,32 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version-file: .nvmrc
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run Vitest
-        run: npx vitest run --coverage
+      - name: Verify snapshot
+        env:
+          AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$AUDIT_BASE" ] || ! git rev-parse --verify "$AUDIT_BASE^{commit}" >/dev/null 2>&1; then
+            AUDIT_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"
+          fi
+          npm run verify -- --base "$AUDIT_BASE"
+
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-evidence
+          path: .issues/evidence/
+          include-hidden-files: true

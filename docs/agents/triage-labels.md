@@ -13,12 +13,12 @@ in `.issues/triage-labels.md`.
 For Matt Pocock triage, retain these metadata values:
 
 | Matt Pocock role | `triage_role` value |
-| --- | --- |
-| needs-triage | needs-triage |
-| needs-info | needs-info |
-| ready-for-agent | ready-for-agent |
-| ready-for-human | ready-for-human |
-| wontfix | wontfix |
+| ---------------- | ------------------- |
+| needs-triage     | needs-triage        |
+| needs-info       | needs-info          |
+| ready-for-agent  | ready-for-agent     |
+| ready-for-human  | ready-for-human     |
+| wontfix          | wontfix             |
 
 Record `triage_role` only when a skill explicitly performs Matt Pocock triage.
 Local queue operations need only their lifecycle state and required queue metadata.
@@ -40,4 +40,3 @@ Do not require these fields on reports captured through the local skills.
 For a `wontfix` recommendation, record the reason; apply closure only when
 authorized under the local queue contract. A classification command alone
 authorizes changing classification, not closing or deleting a report.
-

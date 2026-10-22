@@ -1,0 +1,34 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+test('staged audit sees the index even when unstaged changes hide an unused file', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'staged-audit-check-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'pipe' }).toString();
+  git('init', '-q');
+  git('config', 'user.email', 'fixture@example.invalid');
+  git('config', 'user.name', 'Fixture');
+  writeFileSync(join(root, '.gitignore'), 'node_modules\n.issues/\n');
+  writeFileSync(join(root, 'package.json'), '{"name":"audit-fixture","type":"module","main":"index.js"}\n');
+  writeFileSync(join(root, 'package-lock.json'), readFileSync('package-lock.json'));
+  writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js"]}\n');
+  writeFileSync(join(root, 'index.js'), 'console.log("baseline");\n');
+  git('add', '.');
+  git('commit', '-qm', 'baseline');
+  symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+  writeFileSync(join(root, 'extra.js'), 'export const extra = 42;\n');
+  git('add', 'extra.js');
+  writeFileSync(join(root, 'index.js'), 'import { extra } from "./extra.js";\nconsole.log(extra);\n');
+  const before = git('diff', '--binary', 'HEAD');
+  const script = resolve('scripts/verify.mjs');
+  const staged = spawnSync(process.execPath, [script, '--staged', '--audit-only'], { cwd: root, encoding: 'utf8' });
+  assert.equal(staged.status, 1, staged.stdout + staged.stderr);
+  assert.match(staged.stdout, /FAIL fallow/);
+  const working = spawnSync(process.execPath, [script, '--audit-only'], { cwd: root, encoding: 'utf8' });
+  assert.equal(working.status, 0, working.stdout + working.stderr);
+  assert.equal(git('diff', '--binary', 'HEAD'), before, 'audit must not modify the original index or worktree');
+});

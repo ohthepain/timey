@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/fallow/schema.json",
+  "entry": ["src/routes/**/*.{ts,tsx}", "src/client.tsx", "src/ssr.tsx", "src/api.ts", "src/global-middleware.ts"],
+  "ignorePatterns": [".vinxi/**", ".output/**", "src/routeTree.gen.ts"],
+  "audit": {
+    "gate": "new-only"
+  },
+  "ignoreCommandEntries": ["node"],
+  "framework": [
+    {
+      "name": "factory-tooling",
+      "entryPoints": ["scripts/*.mjs"],
+      "entryPointRole": "support",
+      "toolingDependencies": ["fallow", "yaml"],
+      "detection": {
+        "type": "fileExists",
+        "pattern": "scripts/*.mjs"
+      }
+    }
+  ]
+}

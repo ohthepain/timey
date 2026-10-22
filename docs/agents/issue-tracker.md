@@ -25,6 +25,22 @@ Record durable terminology and architecture decisions using
 
 The queue remains locally excluded from Git.
 
+## Factory policy overrides
+
+For this repo, [verification](verification.md) defines separate human evidence
+and judgment checks; [operating rules](operating.md) define manual evaluation and
+launches. These explicit repo rules override the shared queue contract where it
+requires all manual verification before every local commit. Passed relevant
+automated checks permit local progress commits with human obligations recorded.
+Unresolved checks still block affected work or closure. `resolved` means ready
+for final human review here, not accepted or closed.
+
+Only the coordinator writes the authoritative queue and dispatch registry.
+Workers in isolated worktrees return evidence; they do not initialize another
+queue or run a competing fixer. The factory skill never turns a decision
+invocation into an action launch. Reuse `$issue`/`$issues`/`$fix-issues` within
+these repo policies; manual factory recommendations do not change their meaning.
+
 ## Matt Pocock skill adapter
 
 Use these operations when a skill assumes GitHub, `.scratch/`, a `Status:` line,
