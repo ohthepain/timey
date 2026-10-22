@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { Beat } from '~/types/Beat';
 import { Performance } from '~/types/Performance';
 import { Module } from '~/types/Module';
@@ -20,11 +20,9 @@ import { Ladder } from './Ladder';
 import { fetchUserPerformancesForBeatServerFn } from '~/services/performanceService.server';
 import { Speedometer } from './Speedometer';
 import { TempoService } from '~/lib/TempoService';
-import { BeatNoteFeedback, kMaxWindowSkillLevel } from '~/lib/PerformanceFeedback';
+import { BeatNoteFeedback } from '~/lib/PerformanceFeedback';
 import { useKeycloak } from '~/contexts/KeycloakContext';
 
-const xboxStyle =
-  'text-amber-800 px-2 py-1 w-16 rounded bg-amber-200 border-amber-700 border-2 rounded-e-md text-sm text-center';
 const boxStyle = 'text-amber-800 px-2 py-1 w-16 text-sm text-center';
 
 interface BeatViewerProps {
@@ -119,12 +117,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   const beatRecorder_beatNoteFeedback = (beatNoteFeedback: BeatNoteFeedback) => {
     console.log('BeatViewer: beatRecorder_beatNoteFeedback: ', beatNoteFeedback.timingDifferenceMs);
     setBeatNoteFeedback(beatNoteFeedback);
-  };
 
-  const beatRecorder_tempoFeedback = (tempoFeedback: any) => {
-    setTempoFeedback(tempoFeedback);
-
-    // Get last 8 timing errors from PerformanceFeedback
     const feedbackArr = BeatRecorder.getInstance().performanceFeedback.beatNoteFeedback;
     const last8 = feedbackArr.slice(-8);
     const maxError = last8.length > 0 ? Math.max(...last8.map((fb) => Math.abs(fb.timingDifferenceMs ?? 0))) : 0;
@@ -145,11 +138,9 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
   }, [bgColor]);
 
   useEffect(() => {
-    BeatRecorder.getInstance().on('tempoFeedback', beatRecorder_tempoFeedback);
     BeatRecorder.getInstance().on('beatNoteFeedback', beatRecorder_beatNoteFeedback);
 
     return () => {
-      BeatRecorder.getInstance().off('tempoFeedback', beatRecorder_tempoFeedback);
       BeatRecorder.getInstance().off('beatNoteFeedback', beatRecorder_beatNoteFeedback);
     };
   }, []);

@@ -33,7 +33,10 @@ class MidiService extends EventEmitter {
   }
 
   async enable() {
-    if (this.tempoService.isSimulatedTimerForTesting) {
+    // Don't access tempoService during initialization to avoid circular dependency issues
+    // The tempoService getter will be called later when actually needed
+    if (typeof window === 'undefined') {
+      // In test environment, skip WebMidi initialization
       return;
     }
     if (!WebMidi.enabled) {

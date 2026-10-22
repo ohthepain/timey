@@ -78,31 +78,4 @@ export class Beat {
     if ((b === '42' || b === '44' || b === '46') && a.includes('hihat')) return true;
     return false;
   };
-
-  // findClosestBeatNoteIndex(noteNum: number, timeMsec: number, bpm: number): number {
-  //   const loopLengthMsec = this.getLoopLengthMsec(bpm);
-
-  //   let closest: BeatNote | null = null;
-  //   let minDiff = Infinity;
-
-  //   for (const beatNote of this.beatNotes) {
-  //     if (!beatNote.includesMidiNote(noteNum)) {
-  //       continue;
-  //     }
-
-  //     const beatNoteTime = beatNote.getTimeMsec(bpm);
-  //     const diff = Beat.loopedTimeDiff(timeMsec, beatNoteTime, loopLengthMsec);
-  //     if (Math.abs(diff) < Math.abs(minDiff)) {
-  //       minDiff = diff;
-  //       closest = beatNote;
-  //     }
-  //   }
-
-  //   if (!closest) {
-  //     console.log('Beat.findClosestBeatNoteIndex: drum not found', noteNum);
-  //     return -1;
-  //   }
-
-  //   return closest.index;
-  // }
 }

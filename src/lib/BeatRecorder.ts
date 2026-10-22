@@ -128,6 +128,7 @@ export class BeatRecorder extends EventEmitter {
 
   public stop = () => {
     console.log('BeatRecorder: stop');
+    console.log('BeatRecorder: performanceFeedback', this.performanceFeedback?.beatNoteFeedback);
   };
 
   private findUnplayedNotes(currentBeatNote: BeatNote, playedNotes: string[]): string[] {
@@ -319,9 +320,6 @@ export class BeatRecorder extends EventEmitter {
 
     if (beatNoteFeedback) {
       this.emit('beatNoteFeedback', beatNoteFeedback);
-      // Record the played note with its feedback
-      const tempoFeedback = this.performanceFeedback.getTempoFeedback(this.tempoService.bpm);
-      this.emit('tempoFeedback', tempoFeedback);
     } else {
       console.log('BeatRecorder: handleMidiNote - no match', playedNote);
       // Record as extra note if it doesn't match any expected note

@@ -88,7 +88,7 @@ export const Speedometer = (props: SpeedometerProps) => {
       if (props.instantValue) {
         radians = Math.PI / 2 - arc.arc / 2 + ((props.instantValue - props.min) / (props.max - props.min)) * arc.arc;
         pt = getPointOnCircle(arc.x, arc.y + strokeWidth * 2, -radius, radians);
-        console.log('instantValue: ', props.instantValue, animatedValue);
+        // console.log('Speedometer: instantValue: ', props.instantValue, animatedValue);
       }
 
       setPointOnCircleInstant(pt);
