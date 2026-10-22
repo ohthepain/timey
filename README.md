@@ -7,6 +7,10 @@ npm install
 npm run dev
 ```
 
+## Issues
+
+The repo currently tracks issues localling using skills from the local-issues-skills project.
+
 ## Data structures
 
 Beat - contains notes and timing
