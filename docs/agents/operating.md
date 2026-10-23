@@ -1,5 +1,19 @@
 # Factory operating rules
 
+## Communication
+
+In coordinator and worker chats, write as one professional speaking to another:
+use plain language, connected sentences and concise explanations. Lead with the
+result and the next useful action or decision. Include checks and limitations
+that affect that decision.
+
+Use technical terms only when they help, and explain unfamiliar ones. Keep IDs,
+commit hashes and detailed logs in linked evidence or actionable commands unless
+the reader needs them in the explanation. Describe progress directly, for example:
+"The change passes its checks and is ready to merge." Keep finished work, merged
+changes and user acceptance distinct in plain language. Prefer short paragraphs;
+use lists for separate results or choices.
+
 ## Manual control
 
 The [factory interface](factory.md) defines queue-wide, issue-focused, listing
