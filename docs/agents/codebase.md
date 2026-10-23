@@ -13,6 +13,7 @@ configuration; this map explains responsibilities and the useful starting points
 | Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                     | Practice hierarchy and recorded performance                        |
 | Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                       | Repository calls, server operations, relational storage            |
 | Authentication           | `src/contexts/KeycloakContext.tsx`, `src/config/keycloak.ts`, `src/utils/authenticatedServerFn.ts` | Browser identity and protected server access                       |
+| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                           | Isolated staged/working snapshots, strict audit and step evidence  |
 | Factory controls         | `scripts/factory.mjs`, `.agents/skills/factory/SKILL.md`                                           | Manual decisions, guarded dispatch ledger; no background scheduler |
 
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing

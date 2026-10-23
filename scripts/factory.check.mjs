@@ -1,21 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { factory } from './factory.mjs';
+import { gitFixture } from './git-fixture.mjs';
 
 function fixture(t) {
-  const root = mkdtempSync(join(tmpdir(), 'factory-check-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const git = (...args) =>
-    execFileSync('git', ['-C', root, ...args], { stdio: 'pipe' })
-      .toString()
-      .trim();
-  git('init', '-q');
-  git('config', 'user.email', 'fixture@example.invalid');
-  git('config', 'user.name', 'Fixture');
+  const { root, git } = gitFixture(t, 'factory-check-');
   mkdirSync(join(root, '.issues'));
   writeFileSync(join(root, '.gitignore'), '.issues/\n');
   writeFileSync(join(root, 'source.js'), 'export const answer = 42;\n');

@@ -3,7 +3,7 @@
   "entry": ["src/routes/**/*.{ts,tsx}", "src/client.tsx", "src/ssr.tsx", "src/api.ts", "src/global-middleware.ts"],
   "ignorePatterns": [".vinxi/**", ".output/**", "src/routeTree.gen.ts"],
   "audit": {
-    "gate": "new-only"
+    "gate": "all"
   },
   "ignoreCommandEntries": ["node"],
   "framework": [

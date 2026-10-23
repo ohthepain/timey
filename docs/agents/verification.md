@@ -11,7 +11,8 @@ Use npm and the checked-in `package-lock.json`. `.nvmrc` pins the local runtime;
 | `npm run typecheck`                | TypeScript compiler result; report existing failures explicitly                                            |
 | `npm test`                         | Mock-backed Vitest behavior; before the pilot this writes root CSVs, so use `npm run verify` to isolate it |
 | `npm run build`                    | Production compilation, not runtime or device behavior                                                     |
-| `npm run audit:diff -- --base REF` | Fallow new-findings gate against an explicit base, using an exported working snapshot                      |
+| `npm run audit:diff -- --base REF` | Strict Fallow gate for all reported findings in changed files, using an exported working snapshot          |
+| `npm run audit:step -- --base REF` | Required audit before declaring an implementation step complete, even without a commit                     |
 | `npm run audit:staged`             | Exact index snapshot audit; unstaged fixes cannot hide staged findings                                     |
 | `npm run verify -- --base REF`     | Changed-file formatting, factory checks, types, tests, build, and Fallow; runs all and fails if any fails  |
 | `npm run format-check`             | Repository-wide formatting, including inherited drift                                                      |
@@ -25,10 +26,47 @@ base and snapshot mode; a failed or unavailable check remains a failure/blocker.
 Install the checked-in staged Fallow hook with `npm run hooks:install`. It refuses
 to replace another hooks directory. It runs the audit on the index snapshot before
 commit; it does not imply all tests passed. Run relevant checks as well. Fallow is
-pinned, and uses `audit --gate new-only`, never the always-successful `review` mode.
+pinned to 3.35.0. Both checkpoint paths invoke
+`npx --no-install --offline fallow audit --base <resolved-commit> --gate all --format json`
+in the exported snapshot, using the existing local dependency. They never use the
+always-successful `review` mode, download another binary, or waive inherited
+findings in changed files. The full changed files are analyzed; line-only diff
+filtering must not hide older findings elsewhere in those files.
 An empty diff is not evidence that new uncommitted files were audited: the snapshot
 helper stages its exported files before computing the diff. Sources, index, and
 queue of the original checkout are not modified by verification.
+
+### Commit and step-completion checkpoints
+
+Before a commit, the pre-commit hook audits the exact staged snapshot against
+HEAD. Before declaring an implementation step complete, including an uncommitted
+step, run `npm run audit:step -- --base <step-start-commit>`. Use the recorded
+starting revision, not the new HEAD after committing (which could hide that step's
+changes). Full `verify -- --base REF` uses the same strict audit in addition to its
+other checks. A successful audit does not establish type/build/device success.
+
+A checkpoint fails on a nonzero process exit, non-pass verdict, reported findings,
+warning output, degraded analysis, missing/unsupported JSON, or a mismatched gate.
+Inspect and fix findings, then rerun. Do not suppress warnings, add exclusions,
+weaken thresholds, or select a later base to make the checkpoint green. Findings
+outside the authorized scope remain explicit blockers for a human decision;
+record the failed evidence and say the step is incomplete.
+
+Summary evidence records the full resolved base, source HEAD, exported Git tree,
+changed files, checkpoint kind, actual command, raw log/JSON, reasons and pass/fail.
+Recheck evidence after any relevant source/index change. An empty scope is recorded
+as empty, not proof that unrelated code was audited. The two unconfigured-detector
+diagnostics (architecture boundaries and policy rule packs) are retained as
+unmeasured coverage, not counted as successful checks; configuring those detectors
+is separate architecture work. Other diagnostics fail closed. The audit covers
+configured analyses in changed files, not every unchanged file in the repository.
+
+Repository-local Git environment variables are preserved only for reading the
+source index; child clone/Git/check processes receive a clean repository context.
+This supports hooks and alternate indexes without auditing or changing another
+repository's index. The checkpoint commands enforce failure when invoked; agent
+completion still depends on following this guide and reviewing current evidence.
+There is no global chat-completion interceptor.
 
 The original baseline passed 10 Vitest tests and the production build in a
 disposable checkout. Typechecking failed on existing Prisma-nullability and UI
