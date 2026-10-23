@@ -109,12 +109,7 @@ try {
       .split('\0')
       .filter(Boolean);
     if (changed.length) run('format-changed', bin('prettier'), ['--check', '--ignore-unknown', ...changed]);
-    run('factory', process.execPath, [
-      '--test',
-      'scripts/factory.check.mjs',
-      'scripts/verify.check.mjs',
-      'scripts/audit-result.check.mjs',
-    ]);
+    run('factory', 'npm', ['run', 'test:factory']);
     run('typecheck', bin('tsc'), ['--noEmit']);
     run('tests', bin('vitest'), ['run']);
     run('build', 'npm', ['run', 'build']);
