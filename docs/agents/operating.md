@@ -2,14 +2,18 @@
 
 ## Manual control
 
-`$factory` performs one decision iteration. It reviews the queue, active worker
-snapshots, and effort plan; reconciles available evidence; evaluates grouping;
+The [factory interface](factory.md) defines queue-wide, issue-focused, listing
+and explicit continuation commands.
+
+`$factory` or `$factory ISSUE_ID ...` performs one decision iteration. It reviews
+the queue, active worker snapshots, and effort plan; reconciles available evidence; evaluates grouping;
 and saves ranked recommendations. It creates no worker chats, runs no recommended
 actions, merges no code, and never schedules the next iteration.
 
-`$factory launch ACTION_ID` is a separate, explicit action trigger. It validates
-the saved recommendation, reserves it, then starts one worker chat. Starting a
-worker does not trigger another evaluation. Several explicitly selected independent
+`$factory launch ACTION_ID ...` is a separate, explicit action trigger. It validates
+the selected saved recommendations and starts each through its own reservation
+and chat attachment. The Both choice also opens human input in the caller's chat.
+Starting a worker does not trigger another evaluation. Several explicitly selected independent
 actions can run concurrently. Reuse existing Codex chat/worktree tools rather than
 building a daemon. Present native follow-up suggestions with a copyable fallback;
 do not promise actual composer prefill.

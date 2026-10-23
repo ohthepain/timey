@@ -14,6 +14,7 @@ import {
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
+import { decisionView, listIssues } from './factory-interface.mjs';
 
 const active = new Set(['reserved', 'setup', 'running', 'blocked', 'completed']);
 const kinds = new Set(['investigate', 'prototype', 'implement', 'verify', 'review', 'integrate', 'retro']);
@@ -50,10 +51,7 @@ function validateRecoveredWorker(action, known) {
     kinds.has(action.kind) && ['setup', 'running', 'blocked', 'completed'].includes(action.status),
     'Invalid recovered worker kind/status.'
   );
-  assert(
-    Array.isArray(action.issues) && action.issues.length > 0 && action.issues.every((id) => known.includes(id)),
-    'Recovered worker must link known local issues.'
-  );
+  validateRecoveredIssues(action.issues, known);
   assert(
     typeof action.recovery_evidence === 'string' && action.recovery_evidence.trim(),
     'Link actual chat discovery evidence.'
@@ -62,6 +60,147 @@ function validateRecoveredWorker(action, known) {
   validateRecoveredCode(action);
   validateRecoveredReference(action);
   return action.id;
+}
+
+function validateRecoveredIssues(issues, known) {
+  assert(
+    Array.isArray(issues) && issues.length > 0 && issues.every((id) => known.includes(id)),
+    'Recovered worker must link known local issues.'
+  );
+}
+
+function validateHumanCheck(check, identities, name) {
+  assert(check && typeof check.id === 'string' && !identities.has(check.id), `Invalid/duplicate human check: ${name}`);
+  identities.add(check.id);
+  validateHumanCheckClassification(check, name);
+  validateHumanCheckEvidence(check, name);
+}
+
+function validateHumanCheckClassification(check, name) {
+  assert(
+    ['evidence', 'judgment'].includes(check.kind) &&
+      ['pending', 'passed', 'failed'].includes(check.status) &&
+      ['dependent-work', 'closure'].includes(check.blocks),
+    `Invalid human check classification: ${name}`
+  );
+}
+
+const hasText = (value) => typeof value === 'string' && value.trim();
+
+function validateHumanCheckEvidence(check, name) {
+  assert(hasText(check.instructions), `Missing human instructions: ${name}`);
+  if (check.status !== 'passed') return;
+  assert(hasText(check.revision) && hasText(check.result), `Human pass needs revision and actual result: ${name}`);
+}
+
+function validateReport(content, name) {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  assert(match, `Missing report YAML: ${name}`);
+  const metadata = parse(match[1]);
+  assert(metadata && typeof metadata.id === 'string' && typeof metadata.state === 'string', `Invalid report: ${name}`);
+  if (metadata.human_checks !== undefined) {
+    assert(Array.isArray(metadata.human_checks), `human_checks must be a list: ${name}`);
+    const identities = new Set();
+    metadata.human_checks.forEach((check) => validateHumanCheck(check, identities, name));
+  }
+  return metadata;
+}
+
+function validateProposalText(proposal) {
+  for (const key of ['title', 'scope', 'reason', 'verification', 'worker_prompt']) {
+    assert(typeof proposal[key] === 'string' && proposal[key].trim(), `Missing ${key}.`);
+  }
+}
+
+function validateProposalIssues(issues, current) {
+  assert(Array.isArray(issues) && issues.length > 0, 'Link at least one local issue.');
+  assert(new Set(issues).size === issues.length, 'Duplicate issue IDs.');
+  for (const id of issues) {
+    assert(current.filter((report) => report.metadata.id === id).length === 1, `Missing or ambiguous issue: ${id}`);
+  }
+}
+
+const inspectsResult = (action, prior) =>
+  ['review', 'verify', 'integrate'].includes(action.kind) && prior.status === 'completed';
+
+function validateDependencies(action, data, find) {
+  for (const dependency of action.dependencies) {
+    const prior = find(data, dependency);
+    assert(
+      ['integrated', 'reconciled'].includes(prior.status) || inspectsResult(action, prior),
+      `Dependency not reconciled/integrated: ${dependency}`
+    );
+  }
+}
+
+function claimsIssue(entry, action) {
+  if (inspectsResult(action, entry) && action.dependencies.includes(entry.id)) return false;
+  return active.has(entry.status) && entry.issues.some((issue) => action.issues.includes(issue));
+}
+
+function validateDispatchableReport(report, action, closed) {
+  assert(
+    report.state !== closed && !report.grill_later && !report.kind?.startsWith('wayfinder-'),
+    'Closed, deferred or planning-only report is not dispatchable.'
+  );
+  if (!['implement', 'integrate'].includes(action.kind)) return;
+  assert(
+    !report.human_checks?.some((check) => check.blocks === 'dependent-work' && check.status !== 'passed'),
+    'A required human check blocks this work.'
+  );
+}
+
+function validateChatReference(reference) {
+  assert(
+    (typeof reference.threadId === 'string' && typeof reference.hostId === 'string') ||
+      typeof reference.clientThreadId === 'string',
+    'Need ready threadId/hostId or pending clientThreadId.'
+  );
+  assert(!(reference.threadId && reference.clientThreadId), 'Pending setup ID is not a ready thread ID.');
+}
+
+function copyChatReference(action, reference) {
+  for (const key of ['threadId', 'hostId', 'clientThreadId']) {
+    if (reference[key]) action[key] = reference[key];
+  }
+}
+
+function validateIntegration(action, update, git) {
+  assert(action.merge !== 'none', 'Action has no integration authority.');
+  assert(action.merge !== 'human-first' || update.human_approved === true, 'Record actual prior human merge approval.');
+  assert(
+    update.verified_revision === git('rev-parse', 'HEAD').trim(),
+    'Integration evidence must name the current HEAD.'
+  );
+  assert(update.checks_passed === true, 'Integration needs passed relevant checks, not just worker completion.');
+  assert(typeof action.worker_revision === 'string', 'Record the completed worker revision before integration.');
+  git('merge-base', '--is-ancestor', action.worker_revision, 'HEAD');
+}
+
+function recordCodeCompletion(action, update) {
+  if (!['implement', 'integrate'].includes(action.kind)) return;
+  assert(
+    typeof update.worker_revision === 'string' && /^[0-9a-f]{40}$/.test(update.worker_revision),
+    'Completed code work needs its exact worker commit.'
+  );
+  action.worker_revision = update.worker_revision;
+}
+
+function validateResultStatus(action, update, git) {
+  const validators = new Map([
+    ['integrated', () => validateIntegration(action, update, git)],
+    ['completed', () => recordCodeCompletion(action, update)],
+    [
+      'reconciled',
+      () =>
+        assert(!['implement', 'integrate'].includes(action.kind), 'Code actions require integrated revision evidence.'),
+    ],
+    [
+      'running',
+      () => assert(typeof action.threadId === 'string', 'Reconcile a ready worker ID before marking running.'),
+    ],
+  ]);
+  validators.get(update.status)?.();
 }
 
 export function factory(project) {
@@ -83,44 +222,7 @@ export function factory(project) {
       .sort()
       .map((name) => {
         const content = readFileSync(join(queue, name), 'utf8');
-        const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-        assert(match, `Missing report YAML: ${name}`);
-        const metadata = parse(match[1]);
-        assert(
-          metadata && typeof metadata.id === 'string' && typeof metadata.state === 'string',
-          `Invalid report: ${name}`
-        );
-        if (metadata.human_checks !== undefined) {
-          assert(Array.isArray(metadata.human_checks), `human_checks must be a list: ${name}`);
-          const identities = new Set();
-          for (const check of metadata.human_checks) {
-            assert(
-              check && typeof check.id === 'string' && !identities.has(check.id),
-              `Invalid/duplicate human check: ${name}`
-            );
-            identities.add(check.id);
-            assert(
-              ['evidence', 'judgment'].includes(check.kind) &&
-                ['pending', 'passed', 'failed'].includes(check.status) &&
-                ['dependent-work', 'closure'].includes(check.blocks),
-              `Invalid human check classification: ${name}`
-            );
-            assert(
-              typeof check.instructions === 'string' && check.instructions.trim(),
-              `Missing human instructions: ${name}`
-            );
-            if (check.status === 'passed') {
-              assert(
-                typeof check.revision === 'string' &&
-                  check.revision.trim() &&
-                  typeof check.result === 'string' &&
-                  check.result.trim(),
-                `Human pass needs revision and actual result: ${name}`
-              );
-            }
-          }
-        }
-        return { path: join(queue, name), metadata, content };
+        return { path: join(queue, name), metadata: validateReport(content, name), content };
       });
   const snapshot = () => ({
     head: git('rev-parse', 'HEAD').trim(),
@@ -218,22 +320,13 @@ export function factory(project) {
         const basis = snapshot();
         const batch = proposals.map((proposal) => {
           assert(kinds.has(proposal.kind), 'Unknown action kind.');
-          for (const key of ['title', 'scope', 'reason', 'verification', 'worker_prompt']) {
-            assert(typeof proposal[key] === 'string' && proposal[key].trim(), `Missing ${key}.`);
-          }
+          validateProposalText(proposal);
           assert(['automatic', 'human-first', 'none'].includes(proposal.merge), 'Choose an explicit merge policy.');
           assert(
             !['implement', 'integrate'].includes(proposal.kind) || proposal.merge !== 'none',
             'Code actions need an automatic or human-first integration policy.'
           );
-          assert(Array.isArray(proposal.issues) && proposal.issues.length > 0, 'Link at least one local issue.');
-          assert(new Set(proposal.issues).size === proposal.issues.length, 'Duplicate issue IDs.');
-          for (const id of proposal.issues) {
-            assert(
-              current.filter((report) => report.metadata.id === id).length === 1,
-              `Missing or ambiguous issue: ${id}`
-            );
-          }
+          validateProposalIssues(proposal.issues, current);
           assert(
             Array.isArray(proposal.dependencies) && proposal.dependencies.every((id) => typeof id === 'string'),
             'Declare dependency action IDs (or []).'
@@ -256,25 +349,8 @@ export function factory(project) {
           !git('status', '--porcelain', '--untracked-files=all').trim(),
           'Commit or isolate source changes before starting a worktree from HEAD.'
         );
-        for (const dependency of action.dependencies) {
-          const prior = find(data, dependency);
-          const inspectingResult =
-            ['review', 'verify', 'integrate'].includes(action.kind) && prior.status === 'completed';
-          assert(
-            ['integrated', 'reconciled'].includes(prior.status) || inspectingResult,
-            `Dependency not reconciled/integrated: ${dependency}`
-          );
-        }
-        const conflict = data.actions.find(
-          (entry) =>
-            active.has(entry.status) &&
-            entry.issues.some((issue) => action.issues.includes(issue)) &&
-            !(
-              entry.status === 'completed' &&
-              action.dependencies.includes(entry.id) &&
-              ['review', 'verify', 'integrate'].includes(action.kind)
-            )
-        );
+        validateDependencies(action, data, find);
+        const conflict = data.actions.find((entry) => claimsIssue(entry, action));
         assert(!conflict, `Issue already claimed by action ${conflict?.id}.`);
         const current = reports();
         const closed = readFileSync(join(queue, 'triage-labels.md'), 'utf8')
@@ -284,16 +360,7 @@ export function factory(project) {
         assert(closed, 'Lifecycle has no closed-role mapping.');
         for (const id of action.issues) {
           const report = current.find((entry) => entry.metadata.id === id).metadata;
-          assert(
-            report.state !== closed && !report.grill_later && !report.kind?.startsWith('wayfinder-'),
-            'Closed, deferred or planning-only report is not dispatchable.'
-          );
-          if (['implement', 'integrate'].includes(action.kind)) {
-            assert(
-              !report.human_checks?.some((check) => check.blocks === 'dependent-work' && check.status !== 'passed'),
-              'A required human check blocks this work.'
-            );
-          }
+          validateDispatchableReport(report, action, closed);
         }
         action.status = 'reserved';
         action.reserved = new Date().toISOString();
@@ -308,15 +375,8 @@ export function factory(project) {
           'Only an unbound reservation/setup can attach a chat.'
         );
         assert(!action.threadId, 'Chat already bound.');
-        assert(
-          (typeof reference.threadId === 'string' && typeof reference.hostId === 'string') ||
-            typeof reference.clientThreadId === 'string',
-          'Need ready threadId/hostId or pending clientThreadId.'
-        );
-        assert(!(reference.threadId && reference.clientThreadId), 'Pending setup ID is not a ready thread ID.');
-        for (const key of ['threadId', 'hostId', 'clientThreadId']) {
-          if (reference[key]) action[key] = reference[key];
-        }
+        validateChatReference(reference);
+        copyChatReference(action, reference);
         if (reference.threadId) delete action.clientThreadId;
         action.status = reference.threadId ? 'running' : 'setup';
         return action;
@@ -342,41 +402,8 @@ export function factory(project) {
           typeof update.evidence === 'string' && update.evidence.trim(),
           'Record an evidence pointer or specific failure reason.'
         );
-        if (update.status === 'integrated') {
-          assert(action.merge !== 'none', 'Action has no integration authority.');
-          assert(
-            action.merge !== 'human-first' || update.human_approved === true,
-            'Record actual prior human merge approval.'
-          );
-          assert(
-            update.verified_revision === git('rev-parse', 'HEAD').trim(),
-            'Integration evidence must name the current HEAD.'
-          );
-          assert(
-            update.checks_passed === true,
-            'Integration needs passed relevant checks, not just worker completion.'
-          );
-          assert(
-            typeof action.worker_revision === 'string',
-            'Record the completed worker revision before integration.'
-          );
-          git('merge-base', '--is-ancestor', action.worker_revision, 'HEAD');
-        }
-        if (update.status === 'completed' && ['implement', 'integrate'].includes(action.kind)) {
-          assert(
-            typeof update.worker_revision === 'string' && /^[0-9a-f]{40}$/.test(update.worker_revision),
-            'Completed code work needs its exact worker commit.'
-          );
-          action.worker_revision = update.worker_revision;
-        }
-        if (update.status === 'reconciled')
-          assert(
-            !['implement', 'integrate'].includes(action.kind),
-            'Code actions require integrated revision evidence.'
-          );
+        validateResultStatus(action, update, git);
         Object.assign(action, { status: update.status, evidence: update.evidence, updated: new Date().toISOString() });
-        if (update.status === 'running')
-          assert(typeof action.threadId === 'string', 'Reconcile a ready worker ID before marking running.');
         if (update.status === 'integrated') action.verified_revision = update.verified_revision;
         return action;
       });
@@ -384,32 +411,29 @@ export function factory(project) {
   };
 }
 
+function runCommand(project, argv) {
+  const [command, ...args] = argv;
+  // The listing path bypasses the coordinator parser and registry entirely.
+  if (command === 'issues') return listIssues(project, args);
+  if (['human', 'launch', 'both', 'integrate'].includes(command))
+    throw Error(`Use $factory ${argv.join(' ')} in chat; this operation needs the coordinator and app tools.`);
+  const api = factory(project);
+  const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
+  const commands = new Map([
+    ['init', () => api.init()],
+    ['recover', () => api.recover(json(args[0]))],
+    ['inspect', () => api.inspect()],
+    ['recommend', () => api.recommend(json(args[0]))],
+    ['reserve', () => api.reserve(args[0])],
+    ['attach', () => api.attach(args[0], json(args[1]))],
+    ['record', () => api.record(args[0], json(args[1]))],
+  ]);
+  return commands.has(command) ? commands.get(command)() : decisionView(api.inspect(), argv);
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const [command, ...args] = process.argv.slice(2);
-    const api = factory(process.cwd());
-    const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
-    const result =
-      command === 'init'
-        ? api.init()
-        : command === 'recover'
-          ? api.recover(json(args[0]))
-          : command === 'inspect'
-            ? api.inspect()
-            : command === 'recommend'
-              ? api.recommend(json(args[0]))
-              : command === 'reserve'
-                ? api.reserve(args[0])
-                : command === 'attach'
-                  ? api.attach(args[0], json(args[1]))
-                  : command === 'record'
-                    ? api.record(args[0], json(args[1]))
-                    : (() => {
-                        throw Error(
-                          'Usage: factory.mjs init|recover FILE|inspect|recommend FILE|reserve ID|attach ID FILE|record ID FILE'
-                        );
-                      })();
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(runCommand(process.cwd(), process.argv.slice(2)), null, 2));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

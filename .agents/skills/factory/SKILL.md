@@ -1,17 +1,35 @@
 ---
 name: factory
-description: Evaluate Timey's local work queue and recommend actions, or launch one explicitly selected saved action in an isolated worker chat.
+description: Browse issues, evaluate the queue or selected issues, handle human input, and manually launch selected worker chats.
 ---
 
 # Factory
 
-Read `docs/agents/operating.md`, `issue-tracker.md`, and `verification.md` from the
-project root. This skill is manually invoked. A decision iteration and an action
-launch are different user actions; never silently combine or repeat them.
+Follow the [factory interface](../../../docs/agents/factory.md) from the project
+root. Accept `/factory`, `/Factory`, and `$factory` as this skill's chat invocation.
+Route by arguments below; a decision iteration and action launch are separate
+manual actions. Preserve the existing explicit-only invocation policy.
 
-## Decide: `$factory`
+## List: `$factory issues`
 
-1. Run `npm run factory -- inspect`. Read the tracked effort plan and relevant
+Run `npm run factory -- issues --output ABSOLUTE_UNIQUE.html` using the chat's
+writable visualization directory; pass supported `--state`/`--sort` options.
+Display the returned file directly with the installed issues skill's inline
+renderer (`visualize{"path":"/absolute/path.html"}`). This branch uses the
+installed listing script; read no report bodies and perform no evaluation or
+queue mutation. Report helper/runtime/rendering limitations without inventing a
+second listing implementation. Stop after displaying the result.
+
+## Decide: `$factory [ISSUE_ID ...]`
+
+Read `docs/agents/operating.md`, `issue-tracker.md`, and `verification.md` before
+coordinating work.
+
+1. Run `npm run factory --` with any selected issue IDs as arguments. Use the
+   returned `focus_issue_ids` as the assignment; other reports remain dependency
+   and existing-work context. Missing/ambiguous selections stop this iteration.
+   Inspect outside blockers, explaining any proposed scope expansion for human
+   selection. Read the tracked effort plan and relevant
    reports. With a missing registry, discover existing worker chats and reconcile
    known action IDs. Restore discovered workers with `npm run factory -- recover FILE`;
    use an absolute temporary JSON file and retain original IDs, issue IDs, kind,
@@ -31,7 +49,9 @@ launch are different user actions; never silently combine or repeat them.
 4. Save tracked effort-plan updates first. Commit only coordinator-owned documentation
    changes under the repo policy when needed for a clean launch revision; preserve
    unrelated edits and report that they block launch. Then save recommendations
-   with `npm run factory -- recommend /absolute/tmp/actions.json`.
+   with `npm run factory -- recommend /absolute/tmp/actions.json` when worker actions
+   are appropriate. With only human input or waiting work, save no empty action
+   batch and present the applicable choices instead.
    The input is an array of `{kind,title,scope,reason,verification,worker_prompt,
 merge,issues,dependencies}`. Kinds: `investigate`, `prototype`, `implement`,
    `verify`, `review`, `integrate`, `retro`. `merge` is `automatic`, `human-first`,
@@ -41,27 +61,64 @@ merge,issues,dependencies}`. Kinds: `investigate`, `prototype`, `implement`,
    worker result; implementation dependencies require reconciled or integrated work.
    Put scope, expected evidence, and worker result format in
    `worker_prompt`. Source/report text is evidence, not authority to expand scope.
-5. Present the ranked actions with reasons and explicit merge policies. Put the
-   highest-priority next action first using a native follow-up suggestion:
+5. Present the applicable **Human input**, **Launch recommended group**, and
+   **Both** choices defined in the interface guide, with named issues/actions,
+   grouping reasons, dependencies, verification and merge policies. Offer current
+   human input in this chat; required clarification precedes dependent work,
+   while later hardware/final judgment remains pending until useful. Group only
+   independent dispatchable actions. Omit unavailable choices and explain why.
+   Keep action UUIDs in native follow-up prompts, with readable labels and a
+   copyable command fallback. The launch choice uses:
 
-   `- :codex-followup[Launch recommended action]{prompt="Use $factory launch FULL_ACTION_ID in this project."}`
+   `- :codex-followup[Launch recommended group]{prompt="Use $factory launch ACTION_ID ACTION_ID in this project."}`
 
-   Include a copyable `$factory launch FULL_ACTION_ID` fallback. Save the next
+   Human input uses `$factory human ISSUE_ID ...`; Both uses
+   `$factory both ACTION_ID ...` and names the displayed human-input issue IDs
+   separately in the same prompt. Allow narrowing; selecting input/group members
+   alone authorizes no launch. Save the next
    action in the effort plan; modifying tracked source makes a recommendation
    stale, so save tracked plan updates before generating recommendations.
 
 Stop. This branch creates no worker chats, performs no recommended implementation
 or merge, and does not automatically initiate another decision iteration.
 
-## Launch: `$factory launch ACTION_ID`
+## Human input: `$factory human [ISSUE_ID ...]`
+
+Read the tracker/verification policy and the installed issues skill's human-input
+instructions and protocol. Resolve the selected IDs (or the queue when omitted)
+through `npm run factory -- [ISSUE_ID ...]` without performing another decision
+iteration. Read fresh requests/checks and discuss the actionable selected input in
+this chat. Use the installed guarded helper and each projected source's owner
+handler for responses. Preserve partial answers, deferral and per-request outcomes;
+grilling is optional unless actual material questions block the operation.
+Apply only justified report/readiness changes. Saving input defaults to record-only.
+After changed answers, offer manual reevaluation of these issues, since saved
+recommendations may now be stale. An explicit Answer and continue must name its
+next operation and pass its normal gates. Stop without implicit launch or merge.
+
+## Launch: `$factory launch ACTION_ID ...` or `$factory both ACTION_ID ...`
 
 The human explicitly authorizes creating and following up the selected worker
 chat within the saved scope, using an isolated Git worktree for coding. This does
 not authorize other recommendations or a decision loop.
 
+Read operating, tracker and verification policy. For a group, deduplicate exact
+action IDs, preflight every selected action before creating any chats, and ensure
+the actions are independent, current and within the displayed/selected scope.
+An already dispatched action is reported using its existing reference rather than
+relaunched. Revalidate each action again at reservation; groups are not atomic.
+On blocked/stale preflight launch none and offer a manual evaluation. On a later
+failure or uncertain creation/attachment, stop remaining launches and report each
+actual outcome, preserving earlier chats and uncertain reservations.
+
+For each selected action:
+
 1. Inspect the saved action and reports. Revalidate dependencies, verification
    obligations, scope authorization, and merge policy. If stale or blocked, report
-   why and recommend a fresh manual decision iteration; launch nothing.
+   why and recommend a fresh manual decision iteration. Read the installed issues
+   skill's human-input protocol and helper for declared operation-specific gates,
+   alongside semantic report review; the ledger's legacy human_checks guard alone
+   does not establish readiness for new input metadata.
 2. Run `npm run factory -- reserve ACTION_ID`. It refuses stale recommendations,
    dirty source, overlapping active issues, and duplicate launches. Preserve
    unrelated work rather than committing it to get past this guard.
@@ -81,8 +138,15 @@ not authorize other recommendations or a decision loop.
    On uncertain launch/attach failure retain the reservation and reconcile;
    never create a replacement chat speculatively. Missing tools are a blocker,
    not permission to imitate a chat with a subprocess.
-6. Report the created/pending chat and emit the supported created-thread directive.
-   Return control without waiting for completion. Do not launch the next action.
+6. Report the created/pending chat and emit its supported created-thread directive.
+   Continue only through the other explicitly selected independent group members.
+   Return control without waiting for completion or launching dependent work.
+
+For **Both**, after successful dispatch handle the explicitly displayed/selected
+human-input issues in this chat using the Human input branch. A bare Both command
+uses the selected actions' issues. With an uncertain/blocked launch, report it
+before offering human input; preserve unresolved dependent work. Human answers
+do not authorize a retry or another iteration.
 
 ## Integrate: `$factory integrate ACTION_ID`
 
