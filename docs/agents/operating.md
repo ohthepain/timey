@@ -14,6 +14,13 @@ the reader needs them in the explanation. Describe progress directly, for exampl
 changes and user acceptance distinct in plain language. Prefer short paragraphs;
 use lists for separate results or choices.
 
+When the chat's assigned work is finished and nothing remains for it to handle,
+tell the user plainly that it's okay to close the chat. Save the decisions,
+results and any needed handoff first; if work continues elsewhere, say where.
+If this chat still has work or unanswered questions, explain what remains.
+Offer closing as a suggestion for the user; issue acceptance remains a separate
+decision.
+
 ## Manual control
 
 The [factory interface](factory.md) defines queue-wide, issue-focused, listing
