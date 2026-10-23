@@ -68,7 +68,7 @@ describe('BeatRecorder', () => {
 
     // Reset the recorder state
     beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
+    tempoService.record();
   });
 
   afterEach(() => {
@@ -140,14 +140,14 @@ describe('BeatRecorder', () => {
     checkResults();
     eventRecorder.saveToCsv('test.csv', true);
     eventRecorder.loadFromCsvFile('test.csv');
-    eventRecorder.replay();
+    beatRecorder.replay();
     eventRecorder.saveToCsv('test2.csv', true);
     checkResults();
   });
 
   it('replay test.csv', () => {
     eventRecorder.loadFromCsvFile('test.csv');
-    eventRecorder.replay();
+    beatRecorder.replay();
     eventRecorder.saveToCsv('test.csv', true);
   });
 
@@ -201,7 +201,7 @@ describe('BeatRecorder', () => {
 
     checkResults();
     eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.replay();
+    beatRecorder.replay();
     eventRecorder.saveToCsv('test.csv', true);
     checkResults();
   });
@@ -240,7 +240,7 @@ describe('BeatRecorder', () => {
 
     checkResults();
     eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.replay();
+    beatRecorder.replay();
     eventRecorder.saveToCsv('test.csv', true);
     checkResults();
   });
@@ -282,7 +282,7 @@ describe('BeatRecorder', () => {
 
     checkResults();
     eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.replay();
+    beatRecorder.replay();
     eventRecorder.saveToCsv('test.csv', true);
     checkResults();
   });
@@ -325,7 +325,7 @@ describe('BeatRecorder', () => {
 
     checkResults();
     eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.replay();
+    beatRecorder.replay();
     eventRecorder.saveToCsv('test.csv', true);
     checkResults();
   });
@@ -369,7 +369,7 @@ describe('BeatRecorder', () => {
 
   //   it('manual play of beat', () => {
   //     beatRecorder.setBeat(beat);
-  //     tempoService.isRecording = true;
+  //     tempoService.record();
 
   //     midiService.emitMidiNote(getNote('kick'), 100);
   //     midiService.emitMidiNote(getNote('hihat'), 100);

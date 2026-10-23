@@ -1,7 +1,5 @@
 import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
-import { TempoService } from '~/lib/TempoService';
-import { EventRecorderService } from './EventRecorderService';
 
 export class BeatNoteFeedback {
   beat: Beat;
@@ -28,14 +26,6 @@ export class PerformanceFeedback {
 
   constructor(beatNoteFeedback: BeatNoteFeedback[] | null) {
     this.beatNoteFeedback = beatNoteFeedback || [];
-  }
-
-  get tempoService(): TempoService {
-    return TempoService.getInstance();
-  }
-
-  get eventRecorder(): EventRecorderService {
-    return EventRecorderService.getInstance();
   }
 
   matchNoteToBeat(
@@ -82,24 +72,12 @@ export class PerformanceFeedback {
     playedNote: BeatNote,
     index: number,
     positionMsec: number,
-    noteNum: number
+    noteNum: number,
+    bpm: number
   ): BeatNoteFeedback | null {
-    const beatNoteFeedback = this.matchNoteToBeat(
-      beat,
-      index,
-      noteNum,
-      positionMsec,
-      playedNote.velocity,
-      this.tempoService.bpm
-    );
+    const beatNoteFeedback = this.matchNoteToBeat(beat, index, noteNum, positionMsec, playedNote.velocity, bpm);
     if (beatNoteFeedback) {
       this.beatNoteFeedback.push(beatNoteFeedback);
-      this.eventRecorder.recordNoteFeedback(
-        // convert string to note number but not with GeneralMidiService
-        parseInt(playedNote.noteString),
-        beatNoteFeedback.timingDifferenceMs || 0,
-        beatNoteFeedback.velocityDifference || 0
-      );
     }
 
     return beatNoteFeedback;

@@ -1,9 +1,9 @@
-import { TempoService } from './TempoService';
-import { BeatNoteFeedback } from './PerformanceFeedback';
+import type { BeatNoteFeedback } from './PerformanceFeedback';
 import { GeneralMidiService } from './GeneralMidiService';
-import { BeatRecorder } from './BeatRecorder';
-import { EventRecord, EventType, EventList } from './EventList';
-import { midiService } from './MidiService';
+import { EventList } from './EventList';
+import type { EventRecord, EventType, ReplayTarget } from './EventList';
+
+export type EventPosition = { noteIndex: number; timestamp: number };
 
 class TimingPulseRecord implements EventRecord {
   timestamp: number;
@@ -20,20 +20,12 @@ class TimingPulseRecord implements EventRecord {
     this.intervalMsec = intervalMsec;
   }
 
-  addInterval(intervalMsec: number) {
-    this.intervalMsec += intervalMsec;
-  }
-
-  toString(): string {
-    return `[${this.timestamp}ms] Timing pulse (elapsed: ${this.intervalMsec}ms)`;
-  }
-
   toCsv(): string {
     return `${this.timestamp},${this.noteIndex},timing,,${this.intervalMsec},`;
   }
 
-  replay(): void {
-    TempoService.getInstance().simulateInterval(this.intervalMsec);
+  replay(target: ReplayTarget): void {
+    target.advanceTime(this.intervalMsec);
   }
 }
 
@@ -51,22 +43,13 @@ class MidiNoteRecord implements EventRecord {
     this.noteIndex = noteIndex;
   }
 
-  get tempoService(): TempoService {
-    return TempoService.getInstance();
-  }
-
-  toString(): string {
-    const drumName = GeneralMidiService.getDrumName(this.note) || `note ${this.note}`;
-    return `[${this.timestamp}ms] MIDI note ${drumName} (velocity: ${this.velocity})`;
-  }
-
   toCsv(): string {
     const drumName = GeneralMidiService.getDrumName(this.note) || `note ${this.note}`;
     return `${this.timestamp},${this.noteIndex},midi,${drumName},,${this.velocity}`;
   }
 
-  replay(): void {
-    midiService.emitMidiNote(this.note, this.velocity);
+  replay(target: ReplayTarget): void {
+    target.emitMidiNote(this.note, this.velocity);
   }
 }
 
@@ -74,22 +57,16 @@ class PlayedNoteRecord implements EventRecord {
   timestamp: number;
   type: EventType = 'played';
   private note: number;
-  private noteString: string;
   private diffMs: number;
   private velocityDiff: number;
   private noteIndex: number;
 
   constructor(note: number, timeDiffMs: number, velocityDiff: number, noteIndex: number, timestamp: number) {
     this.note = note;
-    this.noteString = GeneralMidiService.getDrumName(note)!;
     this.diffMs = timeDiffMs;
     this.velocityDiff = velocityDiff;
     this.noteIndex = noteIndex;
     this.timestamp = timestamp;
-  }
-
-  toString(): string {
-    return `[${this.timestamp}ms] Played ${this.noteString} (timing: ${this.diffMs}ms, velocity: ${this.velocityDiff}, diff: ${this.velocityDiff})`;
   }
 
   toCsv(): string {
@@ -112,10 +89,6 @@ class MissedNoteRecord implements EventRecord {
     this.timestamp = timestamp;
   }
 
-  toString(): string {
-    return `[${this.timestamp}ms] Missed ${GeneralMidiService.getDrumName(this.noteNum)}`;
-  }
-
   toCsv(): string {
     return `${this.timestamp},${this.noteIndex},missed,${GeneralMidiService.getDrumName(this.noteNum)},,`;
   }
@@ -133,11 +106,6 @@ class ExtraNoteRecord implements EventRecord {
     this.note = note;
     this.noteIndex = noteIndex;
     this.timestamp = timestamp;
-  }
-
-  toString(): string {
-    const drumName = GeneralMidiService.getDrumName(this.note) || `note ${this.note}`;
-    return `[${this.timestamp}ms] Extra ${drumName}`;
   }
 
   toCsv(): string {
@@ -171,112 +139,45 @@ export class EventRecorderService {
     this.events.clear();
   }
 
-  get tempoService(): TempoService {
-    return TempoService.getInstance();
+  recordTimingPulse(intervalMsec: number, position: EventPosition) {
+    this.events.addEvent(new TimingPulseRecord(intervalMsec, position.noteIndex, position.timestamp));
   }
 
-  recordTimingPulse(intervalMsec: number) {
-    // if (
-    //   this.events.getEvents().length > 1 &&
-    //   this.events.getEvents()[this.events.getEvents().length - 1] instanceof TimingPulseRecord
-    // ) {
-    //   // if the previous event was a timing pulse, just add the new interval to it (keeping original timestamp)
-    //   const previousTimingPulse = this.events.getEvents()[this.events.getEvents().length - 1] as TimingPulseRecord;
-    //   previousTimingPulse.addInterval(intervalMsec);
-    //   return;
-    // }
-
-    this.events.addEvent(
-      new TimingPulseRecord(
-        intervalMsec,
-        BeatRecorder.getInstance().getCurrentNoteIndex(),
-        TempoService.getInstance().elapsedMsec
-      )
-    );
+  recordMidiNote(note: number, velocity: number, position: EventPosition) {
+    this.events.addEvent(new MidiNoteRecord(note, velocity, position.noteIndex, position.timestamp));
   }
 
-  recordMidiNote(note: number, velocity: number) {
-    this.events.addEvent(
-      new MidiNoteRecord(
-        note,
-        velocity,
-        BeatRecorder.getInstance().getCurrentNoteIndex(),
-        TempoService.getInstance().elapsedMsec
-      )
-    );
+  recordNoteFeedback(note: number, timeDiffMs: number, velocityDiff: number, position: EventPosition) {
+    this.events.addEvent(new PlayedNoteRecord(note, timeDiffMs, velocityDiff, position.noteIndex, position.timestamp));
   }
 
-  recordNoteFeedback(note: number, timeDiffMs: number, velocityDiff: number) {
-    this.events.addEvent(
-      new PlayedNoteRecord(
-        note,
-        timeDiffMs,
-        velocityDiff,
-        BeatRecorder.getInstance().getCurrentNoteIndex(),
-        TempoService.getInstance().elapsedMsec
-      )
-    );
+  recordExtraNote(note: number, position: EventPosition) {
+    this.events.addEvent(new ExtraNoteRecord(note, position.noteIndex, position.timestamp));
   }
 
-  recordExtraNote(note: number) {
-    this.events.addEvent(
-      new ExtraNoteRecord(
-        note,
-        BeatRecorder.getInstance().getCurrentNoteIndex(),
-        TempoService.getInstance().elapsedMsec
-      )
-    );
-  }
-
-  recordMissedNotes(feedback: BeatNoteFeedback) {
+  recordMissedNotes(feedback: BeatNoteFeedback, position: EventPosition) {
     if (!feedback.missedNotes || feedback.missedNotes.length === 0) {
       throw new Error('recordMissedNotes: no notes provided');
     }
     for (const notestring of feedback.missedNotes) {
       const noteNum = GeneralMidiService.getNoteNumber(notestring);
-      this.events.addEvent(
-        new MissedNoteRecord(
-          noteNum!,
-          BeatRecorder.getInstance().getCurrentNoteIndex(),
-          TempoService.getInstance().elapsedMsec
-        )
-      );
+      this.events.addEvent(new MissedNoteRecord(noteNum!, position.noteIndex, position.timestamp));
     }
-  }
-
-  getEvents(): EventRecord[] {
-    return this.events.getEvents();
   }
 
   clear() {
     this.events.clear();
   }
 
-  toString(): string {
-    return this.events.toString();
-  }
-
   toCsv(): string {
     return this.events.toCsv();
   }
 
-  replay(): void {
-    const wasRecording = this.tempoService.isRecording;
-
-    const beatRecorder = BeatRecorder.getInstance();
-    beatRecorder.setBeat(beatRecorder.beat!);
-    this.tempoService.prepareIntervalTimer(); // TODO: Why is this here for replay? We don't use the interval timer.
-
-    this.tempoService.reset();
-    this.tempoService.startSimulatedIntervalTimerForTesting();
-    if (wasRecording) {
-      this.tempoService.record();
-    }
-
+  replay(target: ReplayTarget): void {
     const playbackEvents = new EventList(this.events);
     this.events.clear();
     for (const event of playbackEvents.getEvents()) {
-      event.replay();
+      event.replay(target);
     }
   }
 

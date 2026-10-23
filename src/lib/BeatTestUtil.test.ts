@@ -43,7 +43,7 @@ describe('BeatTestUtil', () => {
 
     // Reset the recorder state
     beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
+    tempoService.record();
   });
 
   afterEach(() => {

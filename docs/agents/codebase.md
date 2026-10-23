@@ -27,6 +27,29 @@ conditions. Authenticated handlers preserve their result types through `withAuth
 browser callers receive the framework's serialized data contract. A jsdom mock is
 not database evidence.
 
+Transport state belongs to `TempoService`: `getTransportState` provides a stable,
+read-only snapshot and `subscribeTransportState` releases its listener on cleanup.
+`Transport` reads it through `useSyncExternalStore`; UI and MIDI invoke the same
+play/record/stop/continue transitions. `stateChange` still drives recorder reset,
+playback and metronome listeners. Replay enters recording with a simulated clock
+inside `TempoService.replay`, then stops and restores the prior clock mode in
+`finally`. `BeatRecorder.replay` orchestrates beat reset and supplies timing/note
+callbacks to `EventRecorderService.replay`, which owns event iteration. Selecting
+or cancelling a replay file does not change transport state. See the
+[transport plan and evidence](../plans/transport-state-ownership.md).
+
+Dependencies flow from `BeatRecorder` to MIDI/tempo, feedback and recorded events;
+tempo and recorded events do not import each other or capture. Tempo's pulse
+contains its interval; capture logs it with the current note index before index
+advancement. `EventRecorderService` receives explicit timestamp/index context,
+retains CSV serialization, and replays original timing/note inputs through the
+supplied callbacks. `PerformanceFeedback.addBeatNote` receives BPM explicitly and
+only calculates/accumulates feedback; capture logs derived feedback before
+publishing it. This preserves event ordering without singleton lookups in the
+calculation or event data. Tests in `TempoService.test.ts`,
+`EventRecorderService.test.ts` and `Transport.test.tsx` exercise those interfaces,
+including exact live/replay CSV parity and lifecycle cleanup.
+
 Read [verification](verification.md) before exercising behavior and
 [operating rules](operating.md) before coordinating work. Domain meanings belong
 in `GLOSSARY.md`; architecture rationale belongs in relevant `docs/adr/` records.

@@ -1,18 +1,18 @@
 import { WebMidi } from 'webmidi';
 import { EventEmitter } from 'events';
 import { MidiDevicePreferences, usePreferencesStore } from '~/state/PreferencesStore';
-import { EventRecorderService } from './EventRecorderService';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { usePersistedStore } from '~/state/PersistedStore';
 
-// TempoService is a singleton that drives the fake MIDI clock and song position pointer
-// It can optionally be driven by a MIDI adapter
+// Owns transport state and clock pulses. Capture observes pulses without the
+// clock importing the recorder; MIDI and replay use the same transitions.
 
-// TODO: Add a MIDI adapter to the MIDI service that drives tempo service
-//  it should use WebMidi.time to set a system midi time value midiTime. This should optionally drive the tempo service
-//  (maybe it should also optionally drive the song position pointer)
-
-// Also need MIDI service to subscribe to start and stop events?
+type TransportState = Readonly<{
+  isRunning: boolean;
+  isPlaying: boolean;
+  isRecording: boolean;
+  isReplaying: boolean;
+}>;
 
 export class TempoService {
   private static _instance: TempoService | null = null;
@@ -24,9 +24,45 @@ export class TempoService {
   nextPulseNum: number = 0;
   intervalId: any;
 
-  isRunning: boolean = false;
-  isPlaying: boolean = false;
-  isRecording: boolean = false;
+  private transportState: TransportState = Object.freeze({
+    isRunning: false,
+    isPlaying: false,
+    isRecording: false,
+    isReplaying: false,
+  });
+
+  get isRunning() {
+    return this.transportState.isRunning;
+  }
+
+  get isPlaying() {
+    return this.transportState.isPlaying;
+  }
+
+  get isRecording() {
+    return this.transportState.isRecording;
+  }
+
+  getTransportState = (): TransportState => this.transportState;
+
+  subscribeTransportState = (listener: () => void) => {
+    this.eventsEmitter.on('transportChange', listener);
+    return () => {
+      this.eventsEmitter.off('transportChange', listener);
+    };
+  };
+
+  private setTransportState(
+    mode: 'stopped' | 'playing' | 'recording' | 'running',
+    isReplaying = this.transportState.isReplaying
+  ) {
+    this.transportState = Object.freeze({
+      isRunning: mode !== 'stopped',
+      isPlaying: mode === 'playing',
+      isRecording: mode === 'recording',
+      isReplaying,
+    });
+  }
   isSimulatedTimerForTesting: boolean = false;
   time: number = 0;
   startTimeMsec: number = 0;
@@ -35,10 +71,6 @@ export class TempoService {
   loopSpp: number = 0;
   currentSpp: number = 0;
   fakeMidiClockTimerResolution: number = 4;
-
-  get eventRecorder(): EventRecorderService {
-    return EventRecorderService.getInstance();
-  }
 
   constructor() {
     console.log(`hi from TempoService:ctor`);
@@ -121,10 +153,10 @@ export class TempoService {
   handleMidiClockPulse = () => {
     this.time = this.getTime();
     this.elapsedMsec = this.time - this.startTimeMsec;
-    this.eventRecorder.recordTimingPulse(this.time - this.lastTickTimeMsec);
     this.eventsEmitter.emit('midiClockPulse', {
       time: this.elapsedMsec,
       ticks: this.nextPulseNum,
+      intervalMsec: this.time - this.lastTickTimeMsec,
     });
 
     this.lastTickTimeMsec = this.time;
@@ -132,52 +164,15 @@ export class TempoService {
     ++this.nextPulseNum;
   };
 
-  sendStart = () => {
-    console.log(`TempoService.sendStart: ${this.time}`);
-    this.eventsEmitter.emit('start', { time: this.time });
-
-    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
-    WebMidi.outputs.forEach((output) => {
-      if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
-        output.sendStart();
+  private sendTransportMessage(message: 'sendStart' | 'sendStop' | 'sendContinue') {
+    this.eventsEmitter.emit(message === 'sendStop' ? 'stop' : 'start', { time: this.time });
+    const preferences = usePreferencesStore.getState().midiDevicePreferences;
+    for (const output of WebMidi.outputs) {
+      if (preferences.isSyncEnabledForMidiOutputId(output.id)) {
+        output[message]();
       }
-    });
-  };
-
-  sendStop = () => {
-    this.eventsEmitter.emit('stop', { time: this.time });
-
-    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
-    WebMidi.outputs.forEach((output) => {
-      if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
-        output.sendStop();
-      }
-    });
-  };
-
-  sendContinue = () => {
-    this.eventsEmitter.emit('start', { time: this.time });
-
-    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
-    WebMidi.outputs.forEach((output) => {
-      if (midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id)) {
-        output.sendContinue();
-      }
-    });
-  };
-
-  // Panic button?
-  sendReset = () => {
-    const midiDevicePreferences: MidiDevicePreferences = usePreferencesStore.getState().midiDevicePreferences;
-    WebMidi.outputs.forEach((output) => {
-      if (
-        midiDevicePreferences.isSyncEnabledForMidiOutputId(output.id) ||
-        midiDevicePreferences.isTrackingEnabledForMidiOutputId(output.id)
-      ) {
-        output.sendReset();
-      }
-    });
-  };
+    }
+  }
 
   sendClock = (timePulses: number) => {
     if (useNavigationStore.getState().isUsingExternalMidiClock) {
@@ -216,6 +211,7 @@ export class TempoService {
       bpm: this.bpm,
       ppqn: this.ppqn,
     });
+    this.eventsEmitter.emit('transportChange');
   };
 
   setTempo(bpm: any) {
@@ -253,44 +249,54 @@ export class TempoService {
     this.lastTickTimeMsec = this.time;
     this.currentSpp = this.startSpp;
     this.sendSpp(this.currentSpp);
-    this.isRunning = true;
     this.sendStateChange();
-    this.sendStart();
+    this.sendTransportMessage('sendStart');
     this.sendSpp(this.currentSpp);
     this.prepareIntervalTimer();
     this.continueIntervalTimer();
   }
 
   play() {
-    this.isPlaying = true;
-    this.isRecording = false;
+    this.setTransportState('playing');
     this.start();
   }
 
   record() {
-    this.isRecording = true;
-    this.isPlaying = false;
+    this.setTransportState('recording');
     this.start();
   }
 
   continue() {
-    this.isRunning = true;
+    this.setTransportState(this.isPlaying ? 'playing' : this.isRecording ? 'recording' : 'running');
     this.sendStateChange();
-    this.sendContinue();
+    this.sendTransportMessage('sendContinue');
     this.continueIntervalTimer();
     this.sendSpp(this.currentSpp);
-    this.sendStart();
+    this.sendTransportMessage('sendStart');
   }
 
   stop() {
-    this.isRunning = false;
-    this.isPlaying = false;
-    this.isRecording = false;
+    this.setTransportState('stopped');
     this.stopIntervalTimer();
     this.currentSpp = this.startSpp;
     this.sendSpp(this.currentSpp);
     this.sendStateChange();
-    this.sendStop();
+    this.sendTransportMessage('sendStop');
+  }
+
+  replay(events: () => void) {
+    const previousClockMode = this.isSimulatedTimerForTesting;
+    this.stop();
+    try {
+      this.startSimulatedIntervalTimerForTesting();
+      this.setTransportState('recording', true);
+      this.start();
+      events();
+    } finally {
+      this.isSimulatedTimerForTesting = previousClockMode;
+      this.setTransportState('stopped', false);
+      this.stop();
+    }
   }
 
   static getInstance() {

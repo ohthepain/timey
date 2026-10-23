@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { TempoService } from '~/lib/TempoService';
 import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
@@ -9,32 +9,18 @@ import { EventRecorderService } from '~/lib/EventRecorderService';
 import { usePersistedStore } from '~/state/PersistedStore';
 
 export const Transport = () => {
-  const [isRunning, setIsRunning] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const { currentBeat, getPerformancesForBeatId } = useNavigationStore();
   const { devMode } = usePersistedStore();
 
   const tempoService = TempoService.getInstance();
+  const { isRunning, isRecording } = useSyncExternalStore(
+    tempoService.subscribeTransportState,
+    tempoService.getTransportState,
+    tempoService.getTransportState
+  );
   const beatRecorder = BeatRecorder.getInstance();
-  const handlePlayButton = () => {
-    console.log('Transport: handlePlayButton');
-    tempoService.play();
-    setIsRunning(true);
-    setIsPlaying(true);
-  };
-
-  const handleRecordButton = () => {
-    console.log('Transport: handleRecordButton');
-    beatRecorder.start();
-    // beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
-
-    setIsRunning(true);
-    setIsRecording(true);
-
-    tempoService.record();
-  };
+  const handlePlayButton = () => tempoService.play();
+  const handleRecordButton = () => tempoService.record();
 
   function downloadCSV(filename: string, content: string) {
     const blob = new Blob([content], { type: 'text/csv' });
@@ -50,11 +36,8 @@ export const Transport = () => {
 
   const handleStop = async () => {
     console.log('Stop clicked');
-    const wasRecording = isRecording;
+    const wasRecording = tempoService.isRecording;
     tempoService.stop();
-    setIsRunning(false);
-    setIsPlaying(false);
-    setIsRecording(false);
 
     if (devMode && wasRecording) {
       const eventRecorder = EventRecorderService.getInstance();
@@ -69,10 +52,6 @@ export const Transport = () => {
     input.type = 'file';
     input.accept = '.csv';
 
-    // This is a hack to get the tempo service to record the replay. Currently starting a recording
-    // also starts the callback timer.
-    tempoService.isRecording = true;
-
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
@@ -81,9 +60,19 @@ export const Transport = () => {
       const reader = new FileReader();
 
       reader.onload = (event) => {
+        if (tempoService.isRunning) {
+          alert('Stop practice before replaying.');
+          return;
+        }
         const content = event.target?.result as string;
-        eventRecorder.loadFromCsvText(content);
-        eventRecorder.replay();
+        try {
+          eventRecorder.loadFromCsvText(content);
+          beatRecorder.replay();
+        } catch (error) {
+          console.error('Replay failed:', error);
+          alert('Unable to replay this recording.');
+          return;
+        }
 
         // Create replay filename by adding '-replay' before the extension
         const filename = file.name;
@@ -92,35 +81,18 @@ export const Transport = () => {
         eventRecorder.saveToCsv(replayFilename);
       };
 
+      reader.onerror = () => alert('Unable to read this recording.');
       reader.readAsText(file);
     };
 
     input.click();
   };
 
-  useEffect(() => {
-    // Listen for changes in TempoService's running state
-    const tempoService_stateChange = (e: any) => {
-      console.log(
-        `Transport: tempoService_stateChange playing ${e.isPlaying} recording ${e.isRecording} running ${e.isRunning}`
-      );
-      setIsRunning(e.isRunning);
-      setIsPlaying(e.isPlaying);
-      setIsRecording(e.isRecording);
-    };
-
-    // TempoService.eventsEmitter.on('stateChange', tempoService_stateChange);
-
-    // return () => {
-    //   TempoService.eventsEmitter.off('stateChange', tempoService_stateChange);
-    // };
-  }, []);
-
   return (
     <div className="transport-controls flex gap-1 p-4 items-center">
       <div className="flex flex-col w-full">
         <div className="flex">
-          {isRunning && isPlaying ? (
+          {isRunning && !isRecording ? (
             <button
               className="text-red-700 px-2 m-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
               onClick={async () => {
