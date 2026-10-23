@@ -4,8 +4,8 @@
 
 In coordinator and worker chats, write as one professional speaking to another:
 use plain language, connected sentences and concise explanations. Lead with the
-result and the next useful action or decision. Include checks and limitations
-that affect that decision.
+result. When there is a next step, say clearly what it is and whether it belongs
+in this chat or elsewhere. Include checks and limitations that affect that decision.
 
 Use technical terms only when they help, and explain unfamiliar ones. Keep IDs,
 commit hashes and detailed logs in linked evidence or actionable commands unless
@@ -16,7 +16,7 @@ use lists for separate results or choices.
 
 When the chat's assigned work is finished and nothing remains for it to handle,
 tell the user plainly that it's okay to close the chat. Save the decisions,
-results and any needed handoff first; if work continues elsewhere, say where.
+results and any needed handoff first.
 If this chat still has work or unanswered questions, explain what remains.
 Offer closing as a suggestion for the user; issue acceptance remains a separate
 decision.
