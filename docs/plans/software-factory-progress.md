@@ -217,3 +217,28 @@ integrated pilot; auth/admin plan review remains separate, ORM still depends on
 auth, formatting is lower priority, and the parked reconciliation test stays
 parked. This evaluation performs no source implementation, worker launch, merge,
 human-check completion, lifecycle advance or issue closure.
+
+## Verifier integration checkpoint — 2026-10-23
+
+The user explicitly selected `$factory integrate 67d25227-cffe-48df-975f-9de2487d872a`.
+This checkpoint combines candidate `670c1183c7f0b3077af88332c9ba489858f59803`
+with dev starting at `57418da848ad59681cd8a55647fcaeb202d479c1`. The action's
+automatic policy permits this integration after evidence review. Its three-file
+diff reuses the package factory entry point, tests actual public-path dispatch
+and source/index/queue preservation, and updates verification documentation.
+Reviewed worker evidence includes strict saved-base/staged audits, full verification,
+and an injected interface failure followed by a clean 23-test factory suite.
+
+Combined-source verification, strict checkpoints, the final checked revision,
+and the integration result are retained under
+`.issues/evidence/verifier-integration-20261023/`, including `integration-evidence.json`.
+The dispatch registry records the checked revision only after the combined checks
+pass. Matching-lockfile dependencies are reused; no fresh install is asserted.
+Fallow architecture boundaries and policy rule packs remain unconfigured and
+unmeasured. No check is weakened or exempted.
+
+This trigger selects only the verifier correction. Recorder integration still
+requires its separate explicit command; architecture scope selection and final
+factory judgment remain pending. The parked report-reconciliation test and
+original issue reports remain untouched. No issue acceptance, closure, new
+decision iteration, worker dispatch, or push is part of this operation.
