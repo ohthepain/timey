@@ -1,0 +1,56 @@
+# Timey
+
+Language used to coordinate work and review changes.
+
+## Language
+
+**Human input**:
+A person's contribution to an issue through clarification, grilling, observed
+evidence, judgment, or acceptance. Its timing and purpose determine which work
+depends on it.
+_Avoid_: Triage role
+
+**Human input request**:
+A specific contribution requested from a person for an issue, with an expected
+outcome and the work that depends on it. One issue can have several independent
+requests.
+_Avoid_: Issue status
+
+**Grilling**:
+A structured interview used to settle an issue’s intent, scope, and design
+decisions. Some issues need no grilling.
+_Avoid_: Verification, acceptance
+
+**Completed grilling**:
+An interview whose material questions are settled, decisions are recorded, and
+shared understanding is confirmed by the person.
+_Avoid_: Skill invocation, implementation approval
+
+**Stale grilling**:
+Previously completed grilling whose conclusions no longer settle the issue's
+current scope. Its earlier decisions remain part of the history.
+_Avoid_: Never grilled
+
+**Deferred human input request**:
+A request the person has chosen to address later. Deferral leaves the requirement
+and its effect on dependent work intact.
+_Avoid_: Completed request, waived requirement
+
+**Delegated decision**:
+A choice the person explicitly authorizes the agent to make within a defined
+scope. It records the agent's judgment, not an observation or acceptance supplied
+by the person.
+_Avoid_: Human verification, completed grilling
+
+**Human evidence**:
+An observation or measurement a person must supply when the agent cannot establish
+the required behavior itself.
+_Avoid_: Human approval
+
+**Human judgment**:
+A person’s assessment of work against expectations, including usability and taste.
+_Avoid_: Automated verification
+
+**Acceptance**:
+The user’s explicit decision that an issue is complete.
+_Avoid_: Worker completion, integration
