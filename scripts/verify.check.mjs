@@ -57,6 +57,92 @@ test('step completion requires its explicit starting revision', (t) => {
   assert.match(result.stderr, /Step completion requires --base/);
 });
 
+function aggregateFixture(t) {
+  const { root, git } = auditFixture(t);
+  const manifestPath = join(root, 'package.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  manifest.scripts['test:factory'] = 'node --test scripts/factory-interface.check.mjs';
+  manifest.scripts.build = 'node index.js';
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  writeFileSync(join(root, 'tsconfig.json'), '{"compilerOptions":{"skipLibCheck":true},"files":["index.ts"]}\n');
+  writeFileSync(join(root, 'index.ts'), 'console.log("types");\n');
+  writeFileSync(
+    join(root, 'fixture.test.js'),
+    'import { test, expect } from "vitest";\ntest("fixture", () => expect(1).toBe(1));\n'
+  );
+  const interfacePath = join(root, 'scripts/factory-interface.check.mjs');
+  const interfaceCheck = `import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+test('interface dispatch sentinel', () => {
+  assert.notEqual(process.cwd(), ${JSON.stringify(root)});
+  assert.equal(process.env.GIT_INDEX_FILE, undefined);
+  assert.equal(execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(), process.cwd());
+});
+`;
+  writeFileSync(interfacePath, interfaceCheck);
+  git('add', '.');
+  git('commit', '-qm', 'aggregate fixture');
+  const base = git('rev-parse', 'HEAD');
+  mkdirSync(join(root, '.issues'), { recursive: true });
+  const queuePath = join(root, '.issues/report.md');
+  writeFileSync(queuePath, 'queue must remain unchanged\n');
+  // Leave distinct staged and unstaged source so preservation covers both.
+  writeFileSync(join(root, 'index.js'), 'console.log("staged");\n');
+  git('add', 'index.js');
+  writeFileSync(join(root, 'index.js'), 'console.log("working");\n');
+  const run = () => {
+    const before = {
+      head: git('rev-parse', 'HEAD'),
+      index: git('diff', '--cached', '--binary'),
+      source: git('diff', '--binary'),
+      queue: readFileSync(queuePath, 'utf8'),
+    };
+    // Start a fresh public CLI invocation, rather than a nested node:test runner.
+    const env = { ...process.env, GIT_INDEX_FILE: join(root, '.git/index') };
+    delete env.NODE_TEST_CONTEXT;
+    const result = spawnSync(process.execPath, [resolve('scripts/verify.mjs'), '--base', base], {
+      cwd: root,
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(git('rev-parse', 'HEAD'), before.head);
+    assert.equal(git('diff', '--cached', '--binary'), before.index);
+    assert.equal(git('diff', '--binary'), before.source);
+    assert.equal(readFileSync(queuePath, 'utf8'), before.queue);
+    const evidence = join(root, '.issues/evidence');
+    const summaryPath = readdirSync(evidence)
+      .filter((name) => name.endsWith('-summary.json'))
+      .sort()
+      .at(-1);
+    const summary = JSON.parse(readFileSync(join(evidence, summaryPath), 'utf8'));
+    return { result, summary, factory: summary.checks.find((check) => check.name === 'factory') };
+  };
+  return { run, interfacePath, interfaceCheck };
+}
+
+test('aggregate verification dispatches the package factory suite in an isolated export', (t) => {
+  const { run, interfacePath, interfaceCheck } = aggregateFixture(t);
+  writeFileSync(interfacePath, interfaceCheck + 'throw Error("deliberate interface failure");\n');
+  const failed = run();
+  assert.equal(failed.result.status, 1, failed.result.stdout + failed.result.stderr);
+  assert.equal(failed.factory.passed, false, readFileSync(failed.factory.log, 'utf8'));
+  assert.match(readFileSync(failed.factory.log, 'utf8'), /deliberate interface failure/);
+  assert.deepEqual(
+    failed.summary.checks.map((check) => check.name),
+    ['fallow', 'format-changed', 'factory', 'typecheck', 'tests', 'build']
+  );
+  writeFileSync(interfacePath, interfaceCheck);
+  const passed = run();
+  assert.equal(
+    passed.result.status,
+    0,
+    passed.summary.checks.map((check) => readFileSync(check.log, 'utf8')).join('\n')
+  );
+  assert.equal(passed.summary.passed, true);
+  assert.match(readFileSync(passed.factory.log, 'utf8'), /interface dispatch sentinel/);
+});
+
 test('step and commit audits reject inherited findings anywhere in changed files', (t) => {
   const { root, git, run } = auditFixture(t, { 'unused.js': 'export const unused = 1;\n' });
   // This dead file already existed in the baseline. A new-only gate waived it.

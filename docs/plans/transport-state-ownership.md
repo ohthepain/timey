@@ -219,3 +219,23 @@ Integrate with dev's already adopted recorder isolation and aggregate verifier
 coverage fixes, preserve their behavior, and verify the combined result before
 recording completion. Physical MIDI and authenticated/database evidence remain
 unverified at closure; they are not fabricated as passed. No remote push is requested.
+
+## Integration preparation
+
+Committed transport candidate: `541d6dbda7cb9050af44dbe9141e89bfaedc32a5`.
+The user authorized integrating with current dev at
+`4a8afb0c6d3d5aac70433af1e3332210c6617d30`. In the isolated worker checkout,
+combined those revisions before changing dev. Resolved the recorder-test conflict
+by retaining dev's per-test CSV directories, self-contained replay fixture and
+backup assertions, while using record() and BeatRecorder.replay() from this change.
+Retained the coordinator's complete assessment report and its evidence pointers,
+adding the subsequent user decisions. Other dev documentation/tooling changes
+were preserved. Combined-result verification is required before finalization.
+
+Combined verification passed all six checks against the original starting commit.
+Summary: `.issues/evidence/2026-10-23T20-21-48.546Z-55f5b166-1367-4fbb-825d-cb4e0fa15fb4-summary.json`.
+Combined source tree: `1457c65825cc2a9ec41d40f2c5fec5a30d62671f`.
+The aggregate factory command now includes all current factory checks. Both the
+transport replay scenarios and dev’s self-contained CSV/backup tests passed.
+The later user instruction authorizes merging this verified result and closing
+the issue, with the documented physical MIDI/authenticated-practice limits intact.

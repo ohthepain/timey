@@ -5,23 +5,31 @@
 Use npm and the checked-in `package-lock.json`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions. Run `npm ci` in a clean checkout.
 
-| Command                            | What it establishes                                                                                        |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `npm run test:factory`             | Ledger invariants and staged-audit isolation using disposable Git repositories                             |
-| `npm run typecheck`                | TypeScript compiler result; report existing failures explicitly                                            |
-| `npm test`                         | Mock-backed Vitest behavior; before the pilot this writes root CSVs, so use `npm run verify` to isolate it |
-| `npm run build`                    | Production compilation, not runtime or device behavior                                                     |
-| `npm run audit:diff -- --base REF` | Strict Fallow gate for all reported findings in changed files, using an exported working snapshot          |
-| `npm run audit:step -- --base REF` | Required audit before declaring an implementation step complete, even without a commit                     |
-| `npm run audit:staged`             | Exact index snapshot audit; unstaged fixes cannot hide staged findings                                     |
-| `npm run verify -- --base REF`     | Changed-file formatting, factory checks, types, tests, build, and Fallow; runs all and fails if any fails  |
-| `npm run format-check`             | Repository-wide formatting, including inherited drift                                                      |
+| Command                            | What it establishes                                                                                       |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `npm run test:factory`             | Ledger, interface, verifier dispatch/isolation, and audit-result checks using disposable Git repositories |
+| `npm run typecheck`                | TypeScript compiler result; report existing failures explicitly                                           |
+| `npm test`                         | Mock-backed Vitest behavior; recorder CSVs and backups use per-test temporary directories                 |
+| `npm run build`                    | Production compilation, not runtime or device behavior                                                    |
+| `npm run audit:diff -- --base REF` | Strict Fallow gate for all reported findings in changed files, using an exported working snapshot         |
+| `npm run audit:step -- --base REF` | Required audit before declaring an implementation step complete, even without a commit                    |
+| `npm run audit:staged`             | Exact index snapshot audit; unstaged fixes cannot hide staged findings                                    |
+| `npm run verify -- --base REF`     | Changed-file formatting, factory checks, types, tests, build, and Fallow; runs all and fails if any fails |
+| `npm run format-check`             | Repository-wide formatting, including inherited drift                                                     |
+
+Recorder tests create a unique directory under the system temporary directory for
+each test and remove it in teardown, including after assertion failures. Replay
+inputs are self-contained; individual replay tests do not depend on earlier tests
+or root CSV files. Existing root CSVs are never test cleanup targets.
 
 `verify` exports source into a disposable local clone, shares installed dependencies
 only when lockfiles match, and deletes the clone afterward. Evidence stays under
 `.issues/evidence/` with a JSON summary and per-command logs. Preserve relevant
 results in the tracked effort plan before a fresh-worktree handoff. Reports identify
 base and snapshot mode; a failed or unavailable check remains a failure/blocker.
+The aggregate verifier invokes `npm run test:factory` inside that export so its
+factory coverage follows the package entry point. A factory failure fails the
+aggregate result while the other required checks still run and report separately.
 
 Install the checked-in staged Fallow hook with `npm run hooks:install`. It refuses
 to replace another hooks directory. It runs the audit on the index snapshot before
