@@ -242,3 +242,29 @@ requires its separate explicit command; architecture scope selection and final
 factory judgment remain pending. The parked report-reconciliation test and
 original issue reports remain untouched. No issue acceptance, closure, new
 decision iteration, worker dispatch, or push is part of this operation.
+
+## Recorder integration checkpoint — 2026-10-23
+
+The user explicitly selected `$factory integrate a509c227-e5de-44b7-b205-285e63b322e0`.
+This checkpoint combines the original recorder candidate
+`86394522d859f038f4aea5425a2941497cae556d` with dev starting at
+`9f81c91bb985aeb09aa49edd11707f828e2d0fab`, including the integrated verifier
+correction. The automatic merge policy applies after evidence review. Standards
+and spec review found no issues; the recorder test bytes are the exact candidate.
+The documentation conflict keeps all current strict audit and complete factory
+suite guidance, updating only the recorder fixture description. No product
+exporter or runtime behavior changes.
+
+Combined full verification, strict recorded-start audit, staged commit checkpoint,
+fresh disposable isolation probes, root-file preservation, and the exact checked
+revision are retained in `.issues/evidence/recorder-integration-20261023/`,
+including `integration-evidence.json`. The dispatch registry records integration
+only after successful checks. Repeated and independent tests, concurrent processes,
+assertion-failure cleanup, and binary root CSV sentinels are checked in disposable
+exports. Abrupt process termination is outside the cleanup claim.
+
+This checkpoint does not establish user acceptance or complete the broader
+factory. Final factory judgment, runtime/device/database evidence in its original
+scope, architecture selection, and the parked report-reconciliation test remain
+pending. Original issue reports stay untouched. No new decision iteration,
+dispatch, push, issue closure, or human result is authorized by this integration.
