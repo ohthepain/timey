@@ -2,6 +2,7 @@
 
 Implementation approved on 2026-10-22. This is the bootstrap handoff, not a claim
 that the live multi-chat factory or pilot has been proven end to end.
+For the current coordinator frontier, read [completed group and integration decisions](#completed-group-and-integration-decisions--2026-10-23).
 
 ## Delivered
 
@@ -165,3 +166,54 @@ committed. Allow narrowing to any member. No human answer is required before
 these bounded assignments; their outputs may create later decisions. This
 iteration creates no worker chats, performs no recommended code work, and merges
 or accepts nothing.
+
+## Completed group and integration decisions — 2026-10-23
+
+The user explicitly launched the preceding three-action group, then invoked one
+new manual factory evaluation. All three worker chats are complete and idle.
+Recovered their original ready references, retained monitoring cursors, inspected
+actual artifacts and recorded outcomes through the factory helper. Full results
+are under `.issues/evidence/factory-results-20261023/`; original issue reports
+remain unchanged while the report-reconciliation test stays parked.
+
+| Action                                 | Reviewed outcome                                                                                                                                                                                                                                                                                                                   | Remaining step                                                                                                                                                                                                                                                                             |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `67d25227-cffe-48df-975f-9de2487d872a` | Completed code candidate `670c1183c7f0b3077af88332c9ba489858f59803`; clean worker; only verifier, its tests and verification docs changed. Full six-check verification, 23 factory tests, recorded-base strict audit and staged hook passed. Actual injected interface failure failed aggregate verification; restoring it passed. | Separate manual integration into dev; automatic merge policy after current target checks. Final factory judgment/acceptance stays pending.                                                                                                                                                 |
+| `3d04b02e-4dab-4546-a183-ae6829eed33d` | Recorder review reconciled: Standards 0, Spec 0; combined source tree `d20af19c361899a96b74a40810de8b96b2f01d82`; explicit factory 22, app 19, aggregate verify and strict Fallow passed. Independent/repeated/concurrent recorder runs, assertion-failure cleanup and sentinel preservation passed.                               | Separately integrate original action `a509c227-e5de-44b7-b205-285e63b322e0`, candidate `86394522d859f038f4aea5425a2941497cae556d`, under its automatic policy. Preserve current strict verification rules while resolving the documented conflict, then verify the actual combined target. |
+| `8e1b2c69-1739-4583-ad7c-afbe63d9e9e9` | Architecture investigation reconciled as proposals. Worker source unchanged; three recommendations retained in [architecture assessment](architecture-assessment.md). HTML structure checked; browser security policy blocked preview, so rendering/CDNs/runtime remain unverified.                                                | Human selection or deferral, then bounded scope decisions before implementation. No recommendation has been adopted or grilled.                                                                                                                                                            |
+
+Checked verifier export tree `6059491d4c99531766d5d32908a4198af3dbe969` against
+the exact candidate Git tree and read its raw verification/audit/probe evidence.
+Dependencies were copied from an identical-lock checkout; no fresh install was
+claimed. Recorder evidence covers full changed files under the strict audit; its
+baseline build warnings and abrupt-termination/runtime/device limits remain
+explicit. Its aggregate still used the older 18-tooling-check command, so the
+separately executed 22-test suite is essential evidence. The verifier candidate
+corrects that gap. No detector configuration or evidence gate was weakened.
+
+### Next manual choices
+
+1. **Integrate verifier correction first:** `$factory integrate 67d25227-cffe-48df-975f-9de2487d872a`.
+   This improves the gate used by subsequent integrations. Recheck dev drift,
+   the exact candidate and current human obligations; merge and verify only on
+   that explicit trigger. Completion is recorded, integration is not.
+2. **Integrate recorder pilot next:** `$factory integrate a509c227-e5de-44b7-b205-285e63b322e0`.
+   Use the reviewed documentation conflict guidance in the retained recorder
+   report/patch. The verifier candidate also edits verification documentation;
+   preserve both changes and rerun the combined checks rather than replaying an
+   old patch as proof of a verified target. Serialize these two merges.
+3. **Human input, independently:** `$factory human 20261022T205814928-1fdb`.
+   Review transport-state ownership (top recommendation), MIDI subscription
+   ownership (smaller alternative), or note attribution/feedback capture (more
+   speculative), or defer. Confirm scope and listed behavior decisions before
+   implementing; optional grilling can help. Source findings are not runtime
+   bug reproductions or approval of a redesign.
+
+No new worker group is recommended while these completed results await their
+explicit integration/selection. The Both launch mode therefore has no new group
+to dispatch in this iteration. Architecture input can be handled independently
+of the technical integration steps. Final factory judgment waits for the runnable
+integrated pilot; auth/admin plan review remains separate, ORM still depends on
+auth, formatting is lower priority, and the parked reconciliation test stays
+parked. This evaluation performs no source implementation, worker launch, merge,
+human-check completion, lifecycle advance or issue closure.
