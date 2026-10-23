@@ -1,12 +1,12 @@
-import { prisma, safeQuery } from '~/config/db';
+import { getServerPrisma, safeQuery } from '~/config/db';
 
-export class BeatProgressRepository {
+class BeatProgressRepository {
   async setBeatBestTempo(userId: string, beatId: string, tempo: number) {
-    const existing = await prisma.beatProgress.findUnique({
+    const existing = await getServerPrisma().beatProgress.findUnique({
       where: { userId_beatId: { userId, beatId } },
     });
     if (!existing || existing.bestTempo == null || tempo > existing.bestTempo) {
-      return await safeQuery(() =>
+      return await safeQuery((prisma) =>
         prisma.beatProgress.upsert({
           where: { userId_beatId: { userId, beatId } },
           update: { bestTempo: tempo },
@@ -17,11 +17,8 @@ export class BeatProgressRepository {
     return existing;
   }
 
-  async getBeatProgressForModule(
-    userId: string,
-    moduleId: string
-  ): Promise<Awaited<ReturnType<typeof prisma.beat.findMany>>> {
-    return await safeQuery(() =>
+  async getBeatProgressForModule(userId: string, moduleId: string) {
+    return await safeQuery((prisma) =>
       prisma.beat.findMany({
         where: { moduleId },
         include: {

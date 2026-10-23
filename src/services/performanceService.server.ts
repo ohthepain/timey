@@ -24,21 +24,7 @@ const savePerformanceArgs = z.object({
   performance: z.object({
     beatId: z.string(),
     index: z.number(),
-    notes: z.array(
-      z.object({
-        id: z.string(),
-        index: z.number(),
-        noteString: z.string(),
-        barNum: z.number(),
-        beatNum: z.number(),
-        divisionNum: z.number(),
-        subDivisionNum: z.number(),
-        numSubDivisions: z.number(),
-        velocity: z.number(),
-        microtiming: z.number(),
-        duration: z.number(),
-      })
-    ),
+    notes: z.array(beatNoteSchema),
   }),
 });
 
@@ -53,7 +39,7 @@ export const savePerformanceServerFn = createServerFn({ method: 'POST', response
 
       // Create new performance
       const saved = await performanceRepository.createPerformance(performance, userId);
-      return saved;
+      return saved.toJSON();
     })
   );
 

@@ -1,10 +1,10 @@
-import { prisma, safeQuery } from '../config/db';
+import { safeQuery } from '../config/db';
 import { Performance as PrismaPerformance } from '@prisma/client';
 import { Performance } from '~/types/Performance';
 
 export const performanceRepository = {
   async createPerformance(data: Omit<Performance, 'userId' | 'id' | 'createdAt' | 'modifiedAt'>, userId: string) {
-    const created = await safeQuery(() =>
+    const created = await safeQuery((prisma) =>
       prisma.performance.create({
         data: {
           beatId: data.beatId,
@@ -24,7 +24,7 @@ export const performanceRepository = {
   },
 
   async getPerformanceById(id: string) {
-    const prismaPerformance = await safeQuery(() =>
+    const prismaPerformance = await safeQuery((prisma) =>
       prisma.performance.findUnique({
         where: { id },
         include: { notes: true },
@@ -34,7 +34,7 @@ export const performanceRepository = {
   },
 
   async getPerformancesByBeatId(beatId: string) {
-    const prismaPerformance = await safeQuery(() =>
+    const prismaPerformance = await safeQuery((prisma) =>
       prisma.performance.findMany({
         where: { beatId },
         include: { notes: true },
@@ -44,7 +44,7 @@ export const performanceRepository = {
   },
 
   async getPerformancesByUserId(userId: string) {
-    const prismaPerformances = await safeQuery(() =>
+    const prismaPerformances = await safeQuery((prisma) =>
       prisma.performance.findMany({
         where: { userId },
         include: { notes: true },
@@ -54,7 +54,7 @@ export const performanceRepository = {
   },
 
   async fetchPerformancesByBeatIdAndUserId(beatId: string, userId: string) {
-    const prismaPerformances = await safeQuery(() =>
+    const prismaPerformances = await safeQuery((prisma) =>
       prisma.performance.findMany({
         where: { beatId, userId },
         include: { notes: true },
@@ -64,7 +64,7 @@ export const performanceRepository = {
   },
 
   async deletePerformance(id: string) {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.performance.delete({
         where: { id },
       })
@@ -72,7 +72,7 @@ export const performanceRepository = {
   },
 
   async deletePerformancesByBeatIdAndUserId(beatId: string, userId: string) {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.performance.deleteMany({
         where: { beatId, userId },
       })

@@ -1,4 +1,4 @@
-import { prisma, safeQuery } from '~/config/db';
+import { getServerPrisma, safeQuery } from '~/config/db';
 import { getKeycloakUser, KeycloakUser } from './keycloakAuth';
 
 // Ensure Keycloak users exist in our database.
@@ -12,14 +12,14 @@ export const ensureKeycloakUser = async (token?: string): Promise<string | null>
     }
 
     // Check if the user already exists in the database by Keycloak ID
-    const existingUser = await prisma.user.findUnique({ where: { keycloakId: keycloakUser.id } });
+    const existingUser = await getServerPrisma().user.findUnique({ where: { keycloakId: keycloakUser.id } });
 
     if (existingUser) {
       return existingUser.id; // Return the Prisma user ID, not the Keycloak ID
     }
 
     // Create the user in the database with info from Keycloak
-    const newUser = await safeQuery(() =>
+    const newUser = await safeQuery((prisma) =>
       prisma.user.create({
         data: {
           keycloakId: keycloakUser.id, // Store Keycloak ID separately

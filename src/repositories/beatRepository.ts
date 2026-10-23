@@ -1,16 +1,16 @@
-import { prisma, safeQuery } from '../config/db';
+import { safeQuery } from '../config/db';
 import { Beat } from '~/types/Beat';
 import { Method } from '~/types/Method';
 import { Module } from '~/types/Module';
 
 class BeatRepository {
   async getBeatById(id: string) {
-    const data = await safeQuery(() => prisma.beat.findUnique({ where: { id }, include: { beatNotes: true } }));
+    const data = await safeQuery((prisma) => prisma.beat.findUnique({ where: { id }, include: { beatNotes: true } }));
     return data ? new Beat(data) : null;
   }
 
   async getBeatWithModuleAndMethod(beatId: string) {
-    const data = await safeQuery(() =>
+    const data = await safeQuery((prisma) =>
       prisma.beat.findUnique({
         where: { id: beatId },
         include: {
@@ -33,7 +33,7 @@ class BeatRepository {
   async getBeatWithPerformances(beatId: string, userId: string) {
     console.log('Fetching beat with performances for user:', userId);
     console.log('Fetching beat with performances for beatId:', beatId);
-    const data = await safeQuery(() =>
+    const data = await safeQuery((prisma) =>
       prisma.beat.findUnique({
         where: { id: beatId },
         include: {
@@ -55,7 +55,7 @@ class BeatRepository {
   }
 
   async getBeatsByUser(userId: string) {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.beat
         .findMany({ where: { authorId: userId }, include: { beatNotes: true } })
         .then((data) => data.map((b) => new Beat(b)))
@@ -63,7 +63,9 @@ class BeatRepository {
   }
 
   async getBeatByName(name: string) {
-    const data = await safeQuery(() => prisma.beat.findFirst({ where: { name: name }, include: { beatNotes: true } }));
+    const data = await safeQuery((prisma) =>
+      prisma.beat.findFirst({ where: { name: name }, include: { beatNotes: true } })
+    );
     return data ? new Beat(data) : null;
   }
 
@@ -71,7 +73,7 @@ class BeatRepository {
     if (data.index === undefined || data.index === null) {
       throw new Error('Index is required and cannot be null or undefined');
     }
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.beat.create({
         data: {
           name: data.name,
@@ -89,7 +91,7 @@ class BeatRepository {
   }
 
   async updateBeat(id: string, data: any) {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.beat.update({
         where: { id },
         data: {
@@ -108,7 +110,7 @@ class BeatRepository {
   }
 
   async deleteBeat(id: string) {
-    const data = await safeQuery(() => prisma.beat.delete({ where: { id } }));
+    const data = await safeQuery((prisma) => prisma.beat.delete({ where: { id } }));
     return data ? new Beat(data) : null;
   }
 }

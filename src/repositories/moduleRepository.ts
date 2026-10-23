@@ -1,19 +1,19 @@
-import { prisma, safeQuery } from '~/config/db';
+import { safeQuery } from '~/config/db';
 import { Module } from '~/types/Module';
 
 export const moduleRepository = {
   async getAllModules(): Promise<Module[]> {
-    const data = await safeQuery(() => prisma.module.findMany());
+    const data = await safeQuery((prisma) => prisma.module.findMany());
     return data.map((m) => new Module(m));
   },
 
   async getModulesForMethod(methodId: string): Promise<Module[]> {
-    const data = await safeQuery(() => prisma.module.findMany({ where: { methodId } }));
+    const data = await safeQuery((prisma) => prisma.module.findMany({ where: { methodId } }));
     return data.map((m) => new Module(m));
   },
 
   async getModuleById(id: string): Promise<Module | null> {
-    const data = await safeQuery(() =>
+    const data = await safeQuery((prisma) =>
       prisma.module.findUnique({
         where: { id },
         include: {
@@ -37,7 +37,7 @@ export const moduleRepository = {
     methodId: string;
   }): Promise<Module> {
     try {
-      const d = await safeQuery(() => prisma.module.create({ data: { ...data, beats: { create: [] } } }));
+      const d = await safeQuery((prisma) => prisma.module.create({ data: { ...data, beats: { create: [] } } }));
       return new Module(d);
     } catch (error) {
       console.error('Error creating module:', error);
@@ -47,7 +47,7 @@ export const moduleRepository = {
 
   async updateModule(data: Partial<Omit<Module, 'createdAt' | 'modifiedAt'>>): Promise<Module> {
     const { id, method, beats, ...updateData } = data;
-    const m = await safeQuery(() =>
+    const m = await safeQuery((prisma) =>
       prisma.module.update({
         where: { id },
         data: {
@@ -60,7 +60,7 @@ export const moduleRepository = {
   },
 
   async deleteModule(id: string): Promise<Module> {
-    const data = await safeQuery(() => prisma.module.delete({ where: { id } }));
+    const data = await safeQuery((prisma) => prisma.module.delete({ where: { id } }));
     return new Module(data);
   },
 };

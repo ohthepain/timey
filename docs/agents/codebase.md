@@ -19,7 +19,13 @@ configuration; this map explains responsibilities and the useful starting points
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
 timestamp semantics. Replay uses these same services; test their interaction, not
 just the display. Services use singleton state, so tests must reset ownership and
-timers. Server repositories depend on Prisma; a jsdom mock is not database evidence.
+timers. Server repositories obtain a checked Prisma client from `getServerPrisma`
+or the typed `safeQuery` callback in `src/config/db.ts`. Acquire it when executing
+a query, not at repository module scope: browser imports must not attempt database
+access. `safeQuery` retains one reconnect-and-retry for existing connection-error
+conditions. Authenticated handlers preserve their result types through `withAuth`;
+browser callers receive the framework's serialized data contract. A jsdom mock is
+not database evidence.
 
 Read [verification](verification.md) before exercising behavior and
 [operating rules](operating.md) before coordinating work. Domain meanings belong

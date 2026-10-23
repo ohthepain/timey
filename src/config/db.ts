@@ -29,7 +29,12 @@ if (typeof window === 'undefined') {
   }
 }
 
-export { prisma };
+export function getServerPrisma(): PrismaClient {
+  if (typeof window !== 'undefined' || !prisma) {
+    throw new Error('Database not available on client side');
+  }
+  return prisma;
+}
 
 /**
  * Executes a database query with retry logic for specific errors.
@@ -39,18 +44,16 @@ export { prisma };
  * to the database and retry the query once.
  *
  * @template T - The type of the result returned by the query.
- * @param {() => Promise<T>} fn - A function that performs the database query.
+ * @param {(client: PrismaClient) => Promise<T>} fn - A function that performs the database query.
  * @returns {Promise<T>} The result of the query.
  * @throws Will rethrow the original error if it is not a connection issue or if
  *         the retry attempt also fails.
  */
-export async function safeQuery<T>(fn: () => Promise<T>): Promise<T> {
-  if (!prisma) {
-    throw new Error('Database not available on client side');
-  }
+export async function safeQuery<T>(fn: (client: PrismaClient) => Promise<T>): Promise<T> {
+  const client = getServerPrisma();
 
   try {
-    return await fn();
+    return await fn(client);
   } catch (e: any) {
     if (
       e.code === 'P1001' || // can't reach DB
@@ -58,9 +61,9 @@ export async function safeQuery<T>(fn: () => Promise<T>): Promise<T> {
       e.message?.includes('Connection pool')
     ) {
       console.warn('[safeQuery] Reconnecting Prisma...');
-      await prisma.$disconnect();
-      await prisma.$connect();
-      return await fn(); // retry once
+      await client.$disconnect();
+      await client.$connect();
+      return await fn(client); // retry once
     }
     throw e;
   }

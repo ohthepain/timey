@@ -1,13 +1,14 @@
-import { prisma, safeQuery } from '~/config/db';
+import { safeQuery } from '~/config/db';
 import { Method } from '@prisma/client';
+import { moduleProgressRepository } from './moduleProgressRepository';
 
 export const methodRepository = {
   async getAllMethods(): Promise<Method[]> {
-    return await safeQuery(() => prisma.method.findMany());
+    return await safeQuery((prisma) => prisma.method.findMany());
   },
 
   async getMethodById(id: string): Promise<Method | null> {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.method.findUnique({
         where: { id },
         include: { modules: true },
@@ -16,7 +17,7 @@ export const methodRepository = {
   },
 
   async getMethodByTitle(title: string): Promise<Method | null> {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.method.findUnique({
         where: { title },
       })
@@ -24,7 +25,7 @@ export const methodRepository = {
   },
 
   async createMethod(data: Omit<Method, 'id' | 'createdAt' | 'modifiedAt'>): Promise<Method> {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.method.create({
         data,
       })
@@ -32,7 +33,7 @@ export const methodRepository = {
   },
 
   async updateMethod(id: string, data: Partial<Omit<Method, 'id' | 'createdAt' | 'modifiedAt'>>): Promise<Method> {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.method.update({
         where: { id },
         data,
@@ -41,18 +42,12 @@ export const methodRepository = {
   },
 
   async deleteMethod(id: string): Promise<Method> {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.method.delete({
         where: { id },
       })
     );
   },
 
-  async getModuleProgress(userId: string, moduleId: string) {
-    return await safeQuery(() =>
-      prisma.moduleProgress.findUnique({
-        where: { userId_moduleId: { userId, moduleId } },
-      })
-    );
-  },
+  getModuleProgress: moduleProgressRepository.getModuleProgress,
 };

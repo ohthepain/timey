@@ -1,9 +1,9 @@
-import { prisma, safeQuery } from '~/config/db';
+import { safeQuery } from '~/config/db';
 import { ModuleProgress } from '@prisma/client';
 
 export const moduleProgressRepository = {
   async deleteModuleProgress(userId: string, moduleId: string) {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.moduleProgress.delete({
         where: { userId_moduleId: { userId, moduleId } },
       })
@@ -11,7 +11,7 @@ export const moduleProgressRepository = {
   },
 
   async setModuleProgress(userId: string, moduleId: string, data: Partial<ModuleProgress>) {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.moduleProgress.upsert({
         where: { userId_moduleId: { userId, moduleId } },
         update: data,
@@ -21,7 +21,7 @@ export const moduleProgressRepository = {
   },
 
   async getModuleProgress(userId: string, moduleId: string) {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.moduleProgress.findUnique({
         where: { userId_moduleId: { userId, moduleId } },
       })
@@ -29,7 +29,7 @@ export const moduleProgressRepository = {
   },
 
   async setCurrentMethodForModule(userId: string, moduleId: string, methodId: string) {
-    return await safeQuery(() =>
+    return await safeQuery((prisma) =>
       prisma.moduleProgress.upsert({
         where: { userId_moduleId: { userId, moduleId } },
         update: { currentMethodId: methodId },
@@ -39,7 +39,7 @@ export const moduleProgressRepository = {
   },
 
   async getCurrentMethodForModule(userId: string, moduleId: string) {
-    const moduleProgress = await safeQuery(() =>
+    const moduleProgress = await safeQuery((prisma) =>
       prisma.moduleProgress.findUnique({
         where: { userId_moduleId: { userId, moduleId } },
         select: { currentMethodId: true },
