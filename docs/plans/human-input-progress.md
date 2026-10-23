@@ -38,11 +38,14 @@ can advance to the configured ready-for-fix state without starting implementatio
 
 ## Why a preflight is first
 
-The shared implementation belongs in local-issues-skills. Its observed HEAD is
-`fc76de842cf13bc3fef5cd5f493679501f9f9c09`; unrelated changes exist in README,
-validation documentation, tutorial metadata, and new consistently/handoff skills.
-Preserve them. Do not assume those uncommitted sources travel with a worker's
-starting revision.
+The shared implementation belongs in local-issues-skills. During evaluation its
+HEAD advanced from `fc76de842cf13bc3fef5cd5f493679501f9f9c09` to
+`56c31554a8bea2349ac5e11209bf5cb00d109f6e`, committing the previously unrelated
+README/validation/tutorial and consistently/handoff-skill edits. The shared
+checkout is now clean. The compared paths do not change the canonical queue,
+listing, or table implementation. Preserve that separate work and require a
+fresh shared-source check at launch. The preliminary unlaunched recommendation
+using the older shared revision was cancelled before presentation.
 
 Timey's current factory launch/integration procedure assumes a Timey worktree and
 checks a worker commit against Timey's Git history. It has no declared shared-repo
