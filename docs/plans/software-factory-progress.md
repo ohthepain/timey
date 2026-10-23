@@ -268,3 +268,80 @@ factory. Final factory judgment, runtime/device/database evidence in its origina
 scope, architecture selection, and the parked report-reconciliation test remain
 pending. Original issue reports stay untouched. No new decision iteration,
 dispatch, push, issue closure, or human result is authorized by this integration.
+
+## Post-integration decision — 2026-10-23
+
+The user requested one factory evaluation reviewing the integrated recorder pilot
+and verifier correction, reconciling completed work, and recommending the next step.
+Evaluation started on clean dev `1eec7983a9f8a4c3775971465678e79d21c30ca5`.
+Both code actions are already integrated in the registry; the review/investigation
+outcomes are reconciled. Preserve these terminal records rather than recording
+another integration or dispatching duplicate work.
+
+- Recorder action `a509c227-e5de-44b7-b205-285e63b322e0`: candidate `8639452`,
+  integrated at `1eec798`. Original test assertions and production exporter remain;
+  independent/repeated/concurrent-process runs, assertion-failure cleanup and root
+  CSV preservation passed. Standards and spec review: zero findings.
+- Verifier action `67d25227-cffe-48df-975f-9de2487d872a`: candidate `670c118`,
+  integrated at `9f81c91`. Aggregate now invokes the complete package factory suite;
+  actual injected interface-failure and restored-success evidence was retained.
+- Fresh combined post-commit verification against `9f81c91` passed all six checks:
+  strict full-file Fallow, changed formatting, 23 factory tests, types, 19 app tests,
+  and build. Exported tree equals committed tree `6b9de6c1044f6879f91395e16b5bbfe9ba883a28`.
+  Source/index remained clean and every regular root file remained byte-identical.
+  Evidence: `.issues/evidence/2026-10-23T19-37-09.850Z-098bc7c5-343e-4072-b4df-a84f194479e2-summary.json`;
+  integration/probe packages remain in the two `*-integration-20261023/` directories.
+
+The explicit request resumes factual reconciliation only for recorder and factory
+reports. Recorder moves to `resolved` (ready for final human review) because fix,
+automated verification and local commit requirements are evidenced; acceptance
+remains pending. Factory stays `in-review` with its judgment still pending. The
+separate general stale-report/self-healing test remains parked and untouched, as
+do compiler, architecture, auth/admin/ORM and human-input report histories.
+
+### Recommended next action
+
+**Verify the remaining factory proof and record a targeted retrospective.**
+Kind `verify`; merge policy `none`; issue `20261022T163741000-d76a`; dependencies
+are the integrated recorder and verifier actions. This is one coherent verification
+package for implementation-plan slices 5–6, not additional product implementation.
+Save its action ID and exact source/queue basis in the registry after this checkpoint.
+
+The approved plan still needs a disposable integration-interaction failure fixture,
+a fresh-chat coordinator resumption demonstration, and a targeted retrospective.
+The interaction fixture must show two individually passing changes and the same
+combined tree failing a relevant real gate; a lone deliberately failing test is
+not equivalent. The fresh worker should reconstruct status and a safe next action
+from the repo and bounded local evidence without the original chats, touching no
+authoritative queue and launching nothing. Retrospective observations should cite
+actual friction (hook/index leakage now repaired, gate coverage drift now repaired,
+and serialized integration contention); proposed repairs remain proposals. Return
+exact revisions, trees, commands, raw pass/fail logs and a concise review package.
+Perform no production repairs or claim human judgment, acceptance or closure.
+
+Human judgment of the installed controls can be supplied separately, but even a
+favorable verdict cannot erase the remaining objective validation gaps. The
+historical pending check is not an approval of current dev. Offer final review
+against the actual integrated revision with limitations explicit.
+
+### Independent work and alternatives
+
+A compact snapshot found later user-authorized transport implementation and audit
+cleanup in the original architecture chat, beyond its completed non-code assessment.
+The worker at `/Users/paulwilkinson/.codex/worktrees/23c5/timey` is idle with
+uncommitted changes on `28b5afc`; its latest message reports 32 app tests and a clean
+strict audit. This evaluation inspected the dirty path list and the user's explicit
+audit-repair authorization, but has not reviewed that implementation or its raw
+new evidence. Keep the original assessment action reconciled as non-code evidence;
+newer work is a separate unreviewed candidate, not integrated architecture. Do not
+launch duplicate transport work or merge the dirty worker as part of this decision.
+
+Auth/admin plan review and subsequent auth-first/ORM ordering remain separate;
+formatting is lower priority. No broader implementation group is recommended now.
+The shared human-input preflight is already reconciled; its later implementation
+and any cross-repository status need a separate focused evaluation, not duplication
+based on stale report prose.
+
+Next manual choice: launch the saved factory verification action, provide the
+pending factory judgment, or explicitly choose Both. This evaluation launches no
+worker, performs no new product change or integration, and invents no human result.

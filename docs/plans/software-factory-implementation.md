@@ -1,7 +1,7 @@
 # Software factory implementation plan
 
-Status: approved; bootstrap implementation ready for review. Coordinator decisions,
-worker launches, and the recorder pilot remain manual and have not been triggered.
+Status: approved; bootstrap, verifier correction and recorder pilot are integrated.
+Remaining factory validation and explicit human judgment/acceptance are pending.
 Current results and remaining work are in [the progress record](software-factory-progress.md).
 Agreed goals and boundaries are in
 [the discovery brief](software-factory.md).
