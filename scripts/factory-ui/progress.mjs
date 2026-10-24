@@ -101,7 +101,7 @@ async function reviewWorker(service, queue, issue, run) {
   const action = queue.actions.find((a) => a.id === run.actionId);
   const guards = service.guard(service.root, action, reviewOperation(queue, issue), queue.head);
   service.store.update(run, { status: 'running', summary: 'Finding the existing worker and its saved result.' });
-  const worker = await inspectWorker(service.codex, service.root, action);
+  const worker = await inspectWorker(service.codex, service.root, action, service.store.runs);
   if (worker.pending) {
     service.store.update(run, {
       status: 'completed',

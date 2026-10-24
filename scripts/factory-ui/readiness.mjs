@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { nextProgress, progressIssue } from './next-action.mjs';
-import { inspectWorker } from './worker-history.mjs';
+import { inspectWorker, chatConnectionProblem } from './worker-history.mjs';
 import { digest, requireThat } from './common.mjs';
 
 const workKinds = ['worker', 'coordinator', 'integration', 'evaluation', 'reconciliation'];
@@ -36,10 +36,15 @@ export function readinessView(queue, issue, runs) {
   const followup = finishedReviewBlock(queue, issue, runs);
   if (followup) return followup;
   const choice = nextProgress(queue, issue, runs);
+  const restored = connectionReadiness(queue, issue, runs);
+  if (restored) return restored;
+  return knownActionReadiness(queue, issue, choice) || recordedReadiness(queue, issue, runs);
+}
+function knownActionReadiness(queue, issue, choice) {
   if (choice.kind === 'reconcile') return { status: 'ready', summary: choice.summary };
   if (queue.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-to-close'))
     return { status: 'blocked', label: 'Waiting for your decision', summary: choice.summary };
-  return recordedReadiness(queue, issue, runs);
+  return null;
 }
 function recordedReadiness(queue, issue, runs) {
   const checked = runs.findLast(
@@ -132,7 +137,7 @@ async function inspectReview(service, queue, issue, choice, run) {
   );
   const action = queue.actions.find((a) => a.id === choice.actionId);
   const guards = service.guard(service.root, action, reviewOperation(queue, issue), queue.head);
-  const worker = await inspectWorker(service.codex, service.root, action);
+  const worker = await inspectWorker(service.codex, service.root, action, service.store.runs);
   if (worker.pending) return pendingWorker(worker);
   return {
     ...(await semanticReview(service, queue, issue, action, run, guards, worker)),
@@ -154,8 +159,8 @@ function ready(summary) {
   return { status: 'ready', summary };
 }
 export function explainBlock(message) {
-  if (/exactly one original worker|saved chat reference|page of possible workers/.test(message))
-    return 'We need to reconnect this assignment to its original chat before reviewing its result. Open the coordinator chat to identify and record the correct worker. Do not start another worker.';
+  if (chatConnectionProblem(message))
+    return 'The UI lost the link to the Codex chat that did this task. Choose Find existing chat to restore it. Your work is kept; this will not start the task again.';
   if (/Human input blocks/.test(message))
     return 'An answer or manual check required for this action is still missing. Review Your input and record that response in the coordinator chat, then check readiness again.';
   return message;
@@ -247,4 +252,21 @@ function planningReadiness(choice) {
       'The review has a plan ready to save. Saving records the recommendation and route; it starts no work.'
     );
   return null;
+}
+
+function connectionReadiness(queue, issue, runs) {
+  const connected = latestConnection(issue, runs);
+  if (!connected) return null;
+  if (connected.workerPending) return null;
+  if (connected.connectionBasis !== JSON.stringify(queue)) return null;
+  return {
+    status: 'ready',
+    summary: 'The existing Codex chat is connected. Use Progress to review its result and record what is finished.',
+  };
+}
+
+function latestConnection(issue, runs) {
+  const latest = runs.findLast((r) => r.issueId === issue.id);
+  if (latest?.kind !== 'connection') return null;
+  return latest.issueState === issue.state ? latest : null;
 }

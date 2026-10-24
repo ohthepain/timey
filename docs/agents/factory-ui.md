@@ -238,3 +238,19 @@ issue to the configured investigation stage. It preserves source, commits and
 all report history, records a human reopening event, and starts no worker. Prior
 completed stages remain in history but do not count as current outcomes after a
 reopening. Duplicate/stale submissions cannot close or reopen a different state.
+
+## Finding an existing worker chat
+
+Continuing a worker conversation does not change its task identity. Before
+searching, result review uses original-worker references retained by earlier UI
+reviews. Each recovered reference must start with the exact original assignment
+and belong to the same Git project. Search considers assignment headers, not
+conversations that merely mention the action ID. It does not choose a review
+chat as a worker or silently pick between multiple actual workers.
+
+When the task/chat link is missing, **Find existing chat** restores a confirmed
+connection. If several matches remain, the user can select one or paste its Codex
+chat link. Connection rechecks the displayed queue and assignment before using
+the existing ledger attach operation. It records neither work completion nor
+issue advancement and starts no conversation. Progress then reviews the existing
+result. Opening an issue remains read-only.

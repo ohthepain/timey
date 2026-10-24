@@ -33,6 +33,8 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value) {
   const routes = {
+    '/api/find-worker': () => service.findConnection(value.issueId, value.state, value.basis),
+    '/api/connect-worker': () => service.connectWorker(value.issueId, value.state, value.basis, value.link),
     '/api/issue-decision': () => service.decideIssue(value.issueId, value.state, value.kind, value.basis, value.reason),
     '/api/check-readiness': () => service.checkReadiness(value.issueId, value.state),
     '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),

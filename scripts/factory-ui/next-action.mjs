@@ -1,3 +1,4 @@
+import { chatConnectionProblem } from './worker-history.mjs';
 import { reviewFollowup } from './review-followup.mjs';
 import { digest, requireThat } from './common.mjs';
 
@@ -60,7 +61,7 @@ function chooseWork(queue, issue, stage, runs) {
 function existingWork(action, runs) {
   if (needsIntegration(action)) return integration(action);
   const previous = runs.findLast((r) => r.actionId === action.id && r.kind === 'coordinator');
-  return reviewChoice(action.id, previous);
+  return restoredReview(action, previous) || reviewChoice(action.id, previous);
 }
 function reviewChoice(actionId, previous) {
   const retry = previous?.status === 'blocked';
@@ -113,4 +114,16 @@ function stageFollowup(queue, issue, stage, runs, choice) {
 function invalidStage(stage) {
   if (!stage) return unavailable('The issue needs a valid lifecycle stage.');
   return stage.role === 'closed' ? unavailable('This issue is closed.') : null;
+}
+
+function restoredReview(action, previous) {
+  if (!action.threadId) return null;
+  if (!chatConnectionProblem(previous?.summary)) return null;
+  return {
+    kind: 'review',
+    actionId: action.id,
+    title: 'Review finished work',
+    summary:
+      'The existing Codex chat is connected. Review its result and supporting files, then record what is finished and what still needs work. This does not repeat the assignment.',
+  };
 }

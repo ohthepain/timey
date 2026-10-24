@@ -262,3 +262,19 @@ manual blockers, evidence changes and reopened history with disposable reports.
 Inspect Review and both confirmation dialogs on the real compiler issue without
 accepting or reopening it. Retain validation in
 `.issues/evidence/final-review-buttons-validation.json`.
+
+## Recover a worker connection inside the UI
+
+Starting revision: `10879a8bc57524b44afca777e62e19f9143d61b5`.
+
+The factory verification action retained a temporary setup reference even though
+an earlier result review had identified the original worker. Searching every chat
+whose opening text mentioned the action confused worker and review conversations.
+Use retained original-worker references, confirm the original assignment and
+project, and search only exact assignment headers. Preserve continuation turns.
+
+Replace the instruction to open a coordinator chat with Find existing chat and a
+choice/link form when necessary. Reconnection saves only the existing chat link;
+it does not start work, record completion, advance or accept the issue. The real
+factory issue is reconnected to its confirmed original chat with final judgment
+pending. Retain validation at `.issues/evidence/worker-connection-validation.json`.

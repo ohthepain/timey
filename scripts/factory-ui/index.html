@@ -699,7 +699,7 @@
             reserved: 'Starting',
             setup: 'Starting',
             preparing: 'Starting',
-            running: 'Working',
+            running: 'Chat connected',
             checking: 'Running checks',
             completed: 'Finished',
             blocked: 'Needs attention',
@@ -952,6 +952,8 @@
       function progressControls(issue) {
         const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
         if (['ready-to-close', 'closed'].includes(role) && issue.progress.disabled) return finalControls(issue, role);
+        if (/UI lost the link/.test(issue.readiness?.summary || ''))
+          return `<section class="next-action"><div><h3>Find the existing work</h3><p>The UI lost the link to the Codex chat that worked on this task. It can look it up and restore the link so you can review the finished result.</p><button class="primary" data-find-worker="${esc(issue.id)}" data-worker-state="${esc(issue.state)}">Find existing chat</button></div></section>`;
         const choice = issue.progress;
         if (!choice) return '';
         const r = issue.readiness || { status: 'unchecked' };
@@ -1008,7 +1010,7 @@
         selection = await request('progress-preflight', { issueId: id, state });
         const a = selection.action;
         $('selection').innerHTML =
-          `<h2>${esc(selection.choice.title)}</h2><p>${esc(selection.choice.summary)}</p><p>${selection.choice.kind === 'reconcile' ? 'This records steps that are already finished and stops at the first requirement still needing attention. It does not start workers, merge changes or close the issue.' : 'This performs one selected action. Further work needs another click.'}</p>${selection.choice.kind === 'save-review' ? savePreview(selection.choice) + '<p>This records the reviewed recommendation and planned route only. Worker launch, integration and issue acceptance remain separate actions.</p>' : ''}${selection.choice.kind === 'review' ? '<p>A separate coordinator chat will inspect the existing worker’s evidence and record the result. It can advance to the configured next stage only when its requirements are met. Human acceptance and closure remain separate.</p>' : ''}${selection.choice.kind === 'plan' ? '<p>A separate chat will review this issue. If the work already exists, its completed steps will be recorded automatically. New assignments, worker launches and integration remain separate choices.</p>' : ''}${a ? `<h3>${esc(a.title)}</h3><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p>` : ''}${selection.diff !== undefined && selection.diff !== null ? `<details><summary>Candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details>` : ''}${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
+          `<h2>${esc(selection.choice.title)}</h2><p>${esc(selection.choice.summary)}</p><p>${selection.choice.kind === 'reconcile' ? 'This records steps that are already finished and stops at the first requirement still needing attention. It does not start workers, merge changes or close the issue.' : 'This performs one selected action. Further work needs another click.'}</p>${selection.choice.kind === 'save-review' ? savePreview(selection.choice) + '<p>This records the reviewed recommendation and planned route only. Worker launch, integration and issue acceptance remain separate actions.</p>' : ''}${selection.choice.kind === 'review' ? '<p>A Codex review chat will read the existing result and supporting files, then update this issue. It can move the issue forward when that work is complete. It will not restart the worker or close the issue.</p>' : ''}${selection.choice.kind === 'plan' ? '<p>A separate chat will review this issue. If the work already exists, its completed steps will be recorded automatically. New assignments, worker launches and integration remain separate choices.</p>' : ''}${a ? `<h3>${esc(a.title)}</h3><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p>` : ''}${selection.diff !== undefined && selection.diff !== null ? `<details><summary>Candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details>` : ''}${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
         $('approve').textContent = selection.choice.title;
         $('approve').disabled = selection.requiresApproval === true;
         if (selection.requiresApproval)
@@ -1047,7 +1049,22 @@
         $('app').innerHTML = route[1] === 'issue' ? issue(decodeURIComponent(route.slice(2).join('/'))) : queue();
         bind();
       }
+      async function findExistingWorker(button) {
+        const issueId = button.dataset.findWorker,
+          state = button.dataset.workerState;
+        const found = await request('find-worker', { issueId, state, basis: data.reviewBasis });
+        if (found.connected) return;
+        selection = { connection: true, issueId, state, basis: found.basis };
+        $('selection').innerHTML =
+          `<h2>Connect the chat that did this task</h2><p>Choose its Codex chat below, or paste a Codex chat link. This keeps the existing work and does not start another worker.</p>${found.candidates.length ? `<label>Matching chats<select id="worker-choice"><option value="">Choose a chat</option>${found.candidates.map((t) => `<option value="${esc(t.id)}">${esc(t.title)}</option>`).join('')}</select></label>` : '<p>No matching chat was found automatically.</p>'}<label>Codex chat link<input id="worker-link" placeholder="codex://threads/…"></label>`;
+        $('approve').textContent = 'Connect this chat';
+        $('approve').disabled = false;
+        $('confirm').showModal();
+      }
       function bind() {
+        document.querySelectorAll('[data-find-worker]').forEach((button) => {
+          button.onclick = () => act(() => findExistingWorker(button));
+        });
         document.querySelectorAll('[data-review-result]').forEach((button) => {
           button.onclick = () => reviewRecordedResult(button.dataset.reviewResult);
         });
@@ -1137,7 +1154,12 @@
       $('cancel').onclick = () => $('confirm').close();
       $('approve').onclick = () =>
         act(async () => {
-          if (selection.decision)
+          if (selection.connection)
+            await request('connect-worker', {
+              ...selection,
+              link: $('worker-link').value || $('worker-choice')?.value || '',
+            });
+          else if (selection.decision)
             await request('issue-decision', { ...selection, reason: $('reopen-reason')?.value || '' });
           else if (selection.progress)
             await request('progress-start', {

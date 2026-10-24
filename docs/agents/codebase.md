@@ -76,3 +76,6 @@ launches workers, merges code or accepts issues.
 
 `factory-ui/issue-decision.mjs` owns explicit final-review acceptance/closure and
 reopening, with current report/evidence guards and preserved historical outcomes.
+
+`factory-ui/worker-connection.mjs` restores missing task/chat connections using
+validated existing conversations and the original ledger attach operation.

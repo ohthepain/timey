@@ -301,7 +301,7 @@ function pendingReview(t, options = {}) {
     `import{createInterface}from'node:readline';import{appendFileSync}from'node:fs';const c=${JSON.stringify(config)};const send=m=>process.stdout.write(JSON.stringify(m)+'\\n');createInterface({input:process.stdin}).on('line',l=>{const m=JSON.parse(l);if(m.id===undefined)return;appendFileSync(c.root+'/.issues/rpc.jsonl',JSON.stringify(m)+'\\n');let result;
     if(m.method==='initialize')result={userAgent:'fixture'};
     if(m.method==='thread/list'){const t={id:'original-worker',cwd:c.root,preview:'Factory action '+c.actionId};result={data:c.duplicates?[t,{...t,id:'ambiguous'}]:[t],nextCursor:null};}
-    if(m.method==='thread/read')result={thread:{id:'original-worker',cwd:c.root}};
+    if(m.method==='thread/read')result={thread:{id:'original-worker',cwd:c.root,preview:'Factory action '+c.actionId}};
     if(m.method==='thread/turns/list')result={data:[{id:'original-turn',status:c.status,items:[{type:'agentMessage',text:'Evidence report: '+c.result.evidence[0]}]}]};
     if(m.method==='thread/start')result={thread:{id:'review-coordinator'}};
     if(m.method==='turn/start' && m.params.outputSchema.properties.status){send({id:m.id,result:{turn:{id:'readiness-turn'}}});send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify({status:'ready',summary:'Nothing blocks this specific next action.'})}}});send({method:'turn/completed',params:{threadId:m.params.threadId,turn:{status:'completed'}}});return;}
@@ -585,7 +585,7 @@ test('ambiguous worker identity is a concrete red blocker, not permission to lau
   const { root, service, api } = pendingReview(t, { duplicates: true });
   const result = await checkNow(service);
   assert.equal(result.readiness.status, 'blocked');
-  assert.match(result.summary, /reconnect this assignment to its original chat/);
+  assert.match(result.summary, /Find existing chat/);
   assert.equal(service.snapshot().issues[0].stageStates.investigate.status, 'blocked');
   assert.equal(
     reviewCalls(root).some((call) => call.method === 'thread/start'),
@@ -1100,4 +1100,44 @@ test('closing refuses stale source, changed evidence and outstanding manual chec
     /recorded result changed/
   );
   assert.equal(service.snapshot().issues[0].state, 'final');
+});
+
+test('a retained original-worker reference survives follow-up chats that mention the assignment', async (t) => {
+  const { service, root, api } = pendingReview(t, { duplicates: true });
+  const action = api.inspect().registry.actions[0];
+  const old = service.store.add(action, 'coordinator', readQueue(root).head);
+  service.store.update(old, { status: 'blocked', workerThreadId: 'original-worker' });
+  service.store.connected.delete(old.id);
+  const result = await service.findConnection('20261022-one', 'investigate', service.snapshot().reviewBasis);
+  assert.equal(result.connected, true);
+  assert.equal(api.inspect().registry.actions[0].threadId, 'original-worker');
+  assert.equal(service.snapshot().issues[0].readiness.status, 'ready');
+  assert.equal(
+    reviewCalls(root).some((c) => c.method === 'thread/start'),
+    false
+  );
+});
+test('multiple actual workers require a choice; a wrong task chat cannot replace the connection', async (t) => {
+  const { service, api, root } = pendingReview(t, { duplicates: true });
+  const basis = service.snapshot().reviewBasis;
+  const found = await service.findConnection('20261022-one', 'investigate', basis);
+  assert.equal(found.connected, false);
+  assert.equal(found.candidates.length, 2);
+  assert.equal(api.inspect().registry.actions[0].threadId, undefined);
+  const originalCall = service.codex.call.bind(service.codex);
+  service.codex.call = async (method, args) =>
+    method === 'thread/read'
+      ? { thread: { id: args.threadId, cwd: root, preview: 'Unrelated work' } }
+      : originalCall(method, args);
+  await assert.rejects(service.connectWorker('20261022-one', 'investigate', basis, 'wrong-chat'), /did not start with/);
+  assert.equal(api.inspect().registry.actions[0].threadId, undefined);
+});
+
+test('connecting an unfinished chat does not offer a ready result review', async (t) => {
+  const { service, api } = pendingReview(t, { status: 'inProgress' });
+  const found = await service.findConnection('20261022-one', 'investigate', service.snapshot().reviewBasis);
+  assert.equal(found.connected, true);
+  assert.equal(api.inspect().registry.actions[0].threadId, 'original-worker');
+  assert.equal(service.store.runs.at(-1).workerPending, true);
+  assert.equal(service.snapshot().issues[0].readiness.status, 'unchecked');
 });
