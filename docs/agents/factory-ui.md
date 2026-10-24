@@ -397,3 +397,8 @@ stages, outstanding assignments and required human checks still apply.
 This path does not prove a self-healing exercise or any other unperformed test.
 Those limits remain in the result for final acceptance. It cannot change source,
 registry entries, other reports or human check outcomes, and never closes the issue.
+
+The queue hides the configured Closed stage by default. Show closed issues includes
+those records, and choosing Closed in the stage filter enables that option.
+Search, stage and visibility choices survive live refreshes while the page is open.
+Filtering is read-only; issue links and saved reports remain available.

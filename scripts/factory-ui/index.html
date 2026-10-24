@@ -783,11 +783,42 @@
           .map((e) => e.params.item.text);
         return `<section class="card"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
+      const queueFilters = { search: '', stage: '', showClosed: false };
+      function closedIssueState(state) {
+        return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
+      }
+      function queueIssues() {
+        return data.issues.filter(
+          (issue) =>
+            (queueFilters.showClosed || !closedIssueState(issue.state)) &&
+            (!queueFilters.stage || issue.state === queueFilters.stage) &&
+            JSON.stringify(issue).toLowerCase().includes(queueFilters.search.toLowerCase())
+        );
+      }
+      function bindQueueFilters() {
+        const filter = () => {
+          Object.assign(queueFilters, {
+            search: $('search').value,
+            stage: $('stage').value,
+            showClosed: $('show-closed').checked,
+          });
+          $('issues').innerHTML = rows(queueIssues());
+        };
+        $('search').oninput = filter;
+        $('stage').onchange = () => {
+          if (closedIssueState($('stage').value)) $('show-closed').checked = true;
+          filter();
+        };
+        $('show-closed').onchange = () => {
+          if (!$('show-closed').checked && closedIssueState($('stage').value)) $('stage').value = '';
+          filter();
+        };
+      }
       function queue() {
         const counts = data.lifecycle
           .map((s) => `<span>${esc(s.name)} <b>${data.issues.filter((i) => i.state === s.state).length}</b></span>`)
           .join(' · ');
-        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}">${esc(s.name)}</option>`).join('')}</select><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Stage</th><th>Your input</th></tr></thead><tbody id="issues">${rows(data.issues)}</tbody></table></div><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Stage</th><th>Your input</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><h2>Suggested work</h2>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -1510,19 +1541,7 @@
               $('approve').disabled = false;
               $('confirm').showModal();
             });
-        if ($('search')) {
-          const filter = () => {
-            $('issues').innerHTML = rows(
-              data.issues.filter(
-                (i) =>
-                  (!$('stage').value || i.state === $('stage').value) &&
-                  JSON.stringify(i).toLowerCase().includes($('search').value.toLowerCase())
-              )
-            );
-          };
-          $('search').oninput = filter;
-          $('stage').onchange = filter;
-        }
+        if ($('search')) bindQueueFilters();
       }
       async function select(actionId, kind) {
         selection = await request('preflight', { actionId, kind });
