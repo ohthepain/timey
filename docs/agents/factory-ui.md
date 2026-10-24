@@ -362,3 +362,9 @@ Explicitly continuing a saved review also reopens that exact chat if Codex repor
 it archived. The UI retries the read-only resume once using the installed
 thread/unarchive operation; it creates no replacement chat and does not unarchive
 unrelated workers or conversations.
+
+Saved implementation checklists remain visible in the current lifecycle stage after
+verification, including Commit, integration and final review. Advancing the issue
+does not hide the recorded plan steps or their passed and skipped outcomes.
+Earlier results retain their recorded status and are labeled as earlier results
+when their inputs need another check; they do not authorize new actions.

@@ -1633,3 +1633,62 @@ test('the Codex transport unarchives exactly the selected thread through the sup
   await connection.unarchive('existing-review');
   assert.deepEqual(calls, [{ method: 'thread/unarchive', params: { threadId: 'existing-review' } }]);
 });
+
+test('saved implementation steps remain visible after verification advances to commit and later stages', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function currentStageContent('),
+    html.indexOf('      const expandedChecks')
+  );
+  const render = new Function(
+    'implementationChecklist',
+    'reviewFileProblems',
+    'progressControls',
+    'latestReviewResult',
+    source + ';return currentStageContent;'
+  )(
+    () => '<checklist>Saved passed and skipped steps</checklist>',
+    () => '<file-problems/>',
+    () => '<progress/>',
+    () => '<result/>'
+  );
+  const issue = { implementation: { record: { steps: [{ name: 'Saved step' }] } } };
+  for (const role of ['ready-to-verify', 'ready-for-commit', 'integration', 'ready-to-close', 'closed']) {
+    const content = render(issue, { role });
+    assert.match(content, /<checklist>/, role);
+    assert.match(content, /<progress\/>/, role);
+  }
+  assert.doesNotMatch(render({ implementation: { record: null } }, { role: 'ready-for-repro' }), /<checklist>/);
+  assert.match(render({ implementation: { record: null } }, { role: 'ready-to-verify' }), /<checklist>/);
+});
+
+test('earlier checklist results keep their recorded status without enabling actions', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function implementationCriterion('),
+    html.indexOf('      function skippableCriterion(')
+  );
+  const render = new Function(
+    'esc',
+    'checkCircle',
+    'checkLabels',
+    'criterionSkip',
+    source + ';return implementationCriterion;'
+  )(
+    (value) => value,
+    (status) => `<circle>${status}</circle>`,
+    { passed: 'Passed', skipped: 'Skipped' },
+    () => ''
+  );
+  for (const status of ['passed', 'skipped']) {
+    const content = render(
+      { implementation: { fresh: false } },
+      { name: 'Saved check', status, source: 'Plan', evidence: [] },
+      'step',
+      0
+    );
+    assert.ok(content.includes(`<circle>${status}</circle>`));
+    assert.match(content, /Earlier result/);
+    assert.match(content, /Check again before relying on the earlier result/);
+  }
+});

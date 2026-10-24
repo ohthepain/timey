@@ -976,7 +976,10 @@
         return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use the button in this step for its next action. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Actions are available on the current step.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
       }
       function currentStageContent(issue, step) {
-        if (['ready-to-verify', 'ready-to-close'].includes(step.role) && issue.implementation)
+        if (
+          issue.implementation &&
+          (issue.implementation.record || ['ready-to-verify', 'ready-to-close'].includes(step.role))
+        )
           return implementationChecklist(issue) + reviewFileProblems(issue) + progressControls(issue);
         return latestReviewResult(issue) + reviewFileProblems(issue) + progressControls(issue);
       }
@@ -1041,21 +1044,21 @@
       }
       function implementationStep(issue, step) {
         const view = issue.implementation;
-        const status = view.running ? 'checking' : view.fresh ? implementationStatus(step.criteria) : 'not-checked';
+        const status = view.running ? 'checking' : implementationStatus(step.criteria);
         const key = issue.id + ':' + step.id;
         const open = expandedChecks.has(key) ? expandedChecks.get(key) : status === 'failed';
-        return `<details class="implementation-step" data-plan-step="${esc(key)}" ${open ? 'open' : ''}><summary>${checkCircle(status)}<strong>${esc(step.name)}</strong><span class="check-label">${view.fresh ? step.criteria.filter((c) => c.status === 'passed').length + '/' + step.criteria.length + ' passed · ' : ''}${esc(checkLabels[status])}</span></summary><div class="acceptance-list"><p class="muted">This step passes when:</p>${step.criteria.map((c, index) => implementationCriterion(issue, c, step.id, index)).join('')}<button data-open-plan="${esc(view.path)}">Read original requirements</button></div></details>`;
+        return `<details class="implementation-step" data-plan-step="${esc(key)}" ${open ? 'open' : ''}><summary>${checkCircle(status)}<strong>${esc(step.name)}</strong><span class="check-label">${view.fresh ? '' : 'Earlier result · '}${step.criteria.filter((c) => c.status === 'passed').length}/${step.criteria.length} passed · ${esc(checkLabels[status])}</span></summary><div class="acceptance-list"><p class="muted">This step passes when:</p>${step.criteria.map((c, index) => implementationCriterion(issue, c, step.id, index)).join('')}<button data-open-plan="${esc(view.path)}">Read original requirements</button></div></details>`;
       }
       function implementationCriterion(issue, criterion, stepId, criterionIndex) {
         const fresh = issue.implementation.fresh;
-        const status = fresh ? criterion.status : 'not-checked';
+        const status = criterion.status;
         const evidence = criterion.evidence
           .map(
             (path) =>
               `<button class="evidence-button" data-check-evidence="${esc(path)}" data-evidence-issue="${esc(issue.id)}">${esc(path.split('/').pop())}</button>`
           )
           .join(' ');
-        return `<div class="acceptance-item">${checkCircle(status)}<div><b>${esc(criterion.name)}</b><span class="check-label">${esc(checkLabels[status])}</span>${fresh ? `<p>${esc(criterion.explanation)}</p>${criterion.next_action ? `<p><b>Next:</b> ${esc(criterion.next_action)}</p>` : ''}` : '<p>Check again before relying on the earlier result.</p>'}<details><summary>Supporting details</summary><blockquote>${esc(criterion.source)}</blockquote>${evidence || '<p>No supporting file recorded yet.</p>'}</details>${criterionSkip(issue, criterion, stepId, criterionIndex)}</div></div>`;
+        return `<div class="acceptance-item">${checkCircle(status)}<div><b>${esc(criterion.name)}</b><span class="check-label">${fresh ? '' : 'Earlier result · '}${esc(checkLabels[status])}</span>${fresh ? `<p>${esc(criterion.explanation)}</p>${criterion.next_action ? `<p><b>Next:</b> ${esc(criterion.next_action)}</p>` : ''}` : '<p>Check again before relying on the earlier result.</p>'}<details><summary>Supporting details</summary><blockquote>${esc(criterion.source)}</blockquote>${evidence || '<p>No supporting file recorded yet.</p>'}</details>${criterionSkip(issue, criterion, stepId, criterionIndex)}</div></div>`;
       }
       function skippableCriterion(criterion) {
         return !criterion.human_check_id && !['passed', 'skipped'].includes(criterion.status);
