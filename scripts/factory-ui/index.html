@@ -332,6 +332,22 @@
         outline-offset: -3px;
       }
 
+      .latest-result {
+        border: 2px solid #93b3d0;
+        background: #f5f9ff;
+      }
+      .latest-result h4 {
+        margin: 18px 0 6px;
+      }
+      .suggestion {
+        border-top: 1px solid #cfdeec;
+        margin-top: 18px;
+      }
+      .plan-problem {
+        padding: 12px;
+        background: #fff1e9;
+        border-radius: 6px;
+      }
       .step-shell {
         position: relative;
         margin: 0 auto 24px;
@@ -619,12 +635,16 @@
           : 'The review stopped before recording finished. A completed review response does not mean this stage passed.';
         const next = recorded
           ? 'Use Progress to recommend the next task.'
-          : 'Use Progress to review the existing result again; the worker assignment will not be repeated.';
+          : 'Follow the current step’s next-action panel before trying another review; the worker assignment will not be repeated.';
         return `<h3>${heading}</h3><p>${esc(result.summary)}</p><p>${esc(stage)}</p>${interactive && !result.next_state ? `<p>${next}</p>` : ''}${result.remaining?.length ? `<h4>What still needs work</h4><ul>${result.remaining.map((text) => `<li>${esc(text)}</li>`).join('')}</ul>` : ''}<details><summary>Reviewer’s explanation</summary><p class="prose">${esc(result.notes)}</p></details>`;
       }
       function routePreview(run) {
         if (run.kind !== 'evaluation' || !run.result?.routes?.length) return '';
-        return `<details><summary>${run.savedRoutes ? 'Saved route' : 'Proposed route — not saved yet'}</summary>${run.result.routes.map((route) => `<h3>${link(route.issueId)}</h3><ul>${route.steps.map((step) => `<li><b>${esc(data.lifecycle.find((s) => s.state === step.state)?.name || 'Integrate')}</b>: ${esc({ take: 'Planned', skip: 'Planned to skip', undecided: 'Not decided' }[step.decision])}. ${esc(step.reason)}</li>`).join('')}</ul>`).join('')}</details>`;
+        return routeDetails(run.result.routes, Boolean(run.savedRoutes));
+      }
+      function routeDetails(routes, saved) {
+        if (!routes.length) return '';
+        return `<details><summary>${saved ? 'Saved route' : 'Proposed route — not saved yet'}</summary>${routes.map((route) => `<h3>${link(route.issueId)}</h3><ul>${route.steps.map((step) => `<li><b>${esc(data.lifecycle.find((s) => s.state === step.state)?.name || 'Integrate')}</b>: ${esc({ take: 'Planned', skip: 'Planned to skip', undecided: 'Not decided' }[step.decision])}. ${esc(step.reason)}</li>`).join('')}</ul>`).join('')}</details>`;
       }
       function progress(run, interactive = true) {
         const messages = run.events
@@ -812,7 +832,7 @@
         const compact = ['completed', 'skipped', 'planned-skip'].includes(state.status);
         const helpId = 'step-help-' + index;
         const history = stageReviews(i, step, current);
-        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? progressControls(i) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${stepWork(step, actions)}${history}${extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use the button in this step for its next action. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Actions are available on the current step.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? latestReviewResult(i) + progressControls(i) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${stepWork(step, actions)}${history}${extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use the button in this step for its next action. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Actions are available on the current step.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
       }
       function stageEvidence(state) {
         if (!state.evidence?.length) return '';
@@ -880,6 +900,19 @@
           return 'Address the named problem, then check readiness again. A pending final acceptance only blocks work that requires that acceptance.';
         return 'Check readiness inspects required answers, saved work and the original worker where needed. It may open a read-only chat to review those requirements. It starts no worker, integrates no changes and advances no stage.';
       }
+      function reviewConclusion(summary) {
+        const full = summary.trim();
+        const lead = full
+          .split(/(?<=[.!?])\s+/)
+          .slice(0, 2)
+          .join(' ');
+        return `<p>${esc(lead)}</p>${lead !== full ? `<details><summary>Full conclusion and limits</summary><p class="prose">${esc(full)}</p></details>` : ''}`;
+      }
+      function latestReviewResult(issue) {
+        const result = issue.latestResult;
+        if (!result) return '';
+        return `<section class="card latest-result" id="latest-review-result"><small>${result.fresh ? 'Result of your last review' : 'Earlier review — information has changed'}</small><h3>Review finished</h3><p><b>${result.recommendations.length ? `${result.recommendations.length} suggested assignment${result.recommendations.length === 1 ? '' : 's'}` : 'No new worker recommended'}</b></p>${reviewConclusion(result.summary)}${result.recommendations.map((a) => `<div class="suggestion"><h4>${esc(a.title)}</h4><p>${esc(a.scope)}</p><p><b>Why:</b> ${esc(a.reason)}</p></div>`).join('')}${routeDetails(result.routes, result.saved)}<h4>What to do next</h4><p>${esc(result.nextStep)}</p>${result.fresh && result.saveProblem ? `<p class="plan-problem"><b>The proposed route cannot be saved:</b> ${esc(result.saveProblem)} Ask the coordinator to correct the plan or record the finished work. This read-only review has not changed the issue.</p>` : ''}${result.saved ? '<p>The recommendation and route were saved. Saving did not start a worker.</p>' : ''}${chatLink(result.threadId)}</section>`;
+      }
       function progressControls(issue) {
         const choice = issue.progress;
         if (!choice) return '';
@@ -891,11 +924,29 @@
             run.connected &&
             (run.issueId === issue.id || data.actions.some((a) => a.id === run.actionId && a.issues.includes(issue.id)))
         );
-        return `<section class="next-action"><div><small>${ready ? 'Ready for the next action' : 'What happens next'}</small><h3>${esc(busy ? 'Work in progress' : ready ? choice.title : r.status === 'blocked' ? 'Resolve the blocker' : checkLabel)}</h3><p>${esc(busy ? issue.stageStates[issue.state].summary : r.summary || readinessExplanation(issue))}${r.status === 'blocked' ? stepChatLinks(issue) : ''}</p>${ready ? `<small>Checked recently. We check the requirements again before starting.</small>` : ''}</div>${ready || r.approvalAvailable ? `<button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled ? 'disabled' : ''}>${r.approvalAvailable ? 'Review required approval' : 'Progress →'}</button>` : ''}<button data-check-issue="${esc(issue.id)}" data-check-state="${esc(issue.state)}" ${busy ? 'disabled' : ''}>${busy ? 'Work in progress' : checkLabel}</button></section>`;
+        const title = progressTitle(issue, busy, ready, checkLabel);
+        const summary = choice.disabled
+          ? choice.summary
+          : busy
+            ? issue.stageStates[issue.state].summary
+            : r.summary || readinessExplanation(issue);
+        const finished = choice.disabled && issue.latestResult?.fresh;
+        return `<section class="next-action"><div><small>${finished ? 'No repeat action' : ready ? 'Ready for the next action' : 'What happens next'}</small><h3>${esc(title)}</h3><p>${esc(summary)}</p>${r.status === 'blocked' ? stepChatLinks(issue) : ''}${ready && !choice.disabled ? '<small>Requirements are checked again before starting.</small>' : ''}</div>${ready || r.approvalAvailable || finished ? `<button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled ? 'disabled' : ''}>${r.approvalAvailable ? 'Review required approval' : 'Progress →'}</button>` : ''}${!finished ? `<button data-check-issue="${esc(issue.id)}" data-check-state="${esc(issue.state)}" ${busy ? 'disabled' : ''}>${busy ? 'Work in progress' : checkLabel}</button>` : ''}</section>`;
+      }
+      function progressTitle(issue, busy, ready, checkLabel) {
+        if (issue.progress.disabled) return issue.progress.title;
+        if (busy) return 'Work in progress';
+        if (ready) return issue.progress.title;
+        return issue.readiness?.status === 'blocked' ? 'Resolve the blocker' : checkLabel;
       }
       function stageReviews(issue, stage, current) {
         return data.runs
-          .filter((run) => (run.kind !== 'readiness' || run.connected) && belongsInStage(run, issue, stage, current))
+          .filter(
+            (run) =>
+              !(current && run.id === issue.latestResult?.runId) &&
+              (run.kind !== 'readiness' || run.connected) &&
+              belongsInStage(run, issue, stage, current)
+          )
           .slice()
           .reverse()
           .map((run) => progress(run, current))
@@ -910,11 +961,16 @@
         const role = run.kind === 'integration' ? 'integration' : actionRoles[action.kind];
         return role === stage.role;
       }
+      function savePreview(choice) {
+        const run = data.runs.find((r) => r.id === choice.runId);
+        if (!run?.result) return '';
+        return `<p class="prose">${esc(run.result.summary)}</p><ul>${run.result.recommendations.map((a) => `<li><b>${esc(a.title)}</b>: ${esc(a.scope)}</li>`).join('')}</ul>${routePreview(run)}`;
+      }
       async function selectProgress(id, state) {
         selection = await request('progress-preflight', { issueId: id, state });
         const a = selection.action;
         $('selection').innerHTML =
-          `<h2>${esc(selection.choice.title)}</h2><p>${esc(selection.choice.summary)}</p><p>This performs one selected action. Further work needs another click.</p>${selection.choice.kind === 'review' ? '<p>A separate coordinator chat will inspect the existing worker’s evidence and record the result. It can advance to the configured next stage only when its requirements are met. Human acceptance and closure remain separate.</p>' : ''}${selection.choice.kind === 'plan' ? '<p>A separate read-only chat will recommend work for this issue. Saving and launching remain separate choices.</p>' : ''}${a ? `<h3>${esc(a.title)}</h3><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p>` : ''}${selection.diff !== undefined && selection.diff !== null ? `<details><summary>Candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details>` : ''}${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
+          `<h2>${esc(selection.choice.title)}</h2><p>${esc(selection.choice.summary)}</p><p>This performs one selected action. Further work needs another click.</p>${selection.choice.kind === 'save-review' ? savePreview(selection.choice) + '<p>This records the reviewed recommendation and planned route only. Worker launch, integration and issue acceptance remain separate actions.</p>' : ''}${selection.choice.kind === 'review' ? '<p>A separate coordinator chat will inspect the existing worker’s evidence and record the result. It can advance to the configured next stage only when its requirements are met. Human acceptance and closure remain separate.</p>' : ''}${selection.choice.kind === 'plan' ? '<p>A separate read-only chat will recommend work for this issue. Saving and launching remain separate choices.</p>' : ''}${a ? `<h3>${esc(a.title)}</h3><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p>` : ''}${selection.diff !== undefined && selection.diff !== null ? `<details><summary>Candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details>` : ''}${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
         $('approve').textContent = selection.choice.title;
         $('approve').disabled = selection.requiresApproval === true;
         if (selection.requiresApproval)

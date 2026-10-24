@@ -731,3 +731,133 @@ test('integration approval is shown as a current requirement; checking never int
   assert.equal(service.codex.child, undefined);
   assert.equal(api.inspect().registry.actions[0].status, 'completed');
 });
+
+test('finished issue review is shown and cannot repeat against unchanged input', (t) => {
+  const { service, root } = fixture(t);
+  service.ownServer();
+  const basis = service.snapshot().reviewBasis;
+  const run = service.store.add({ id: 'queue-review' }, 'evaluation', readQueue(root).head);
+  service.store.update(run, {
+    issueId: '20261022-one',
+    issueState: 'investigate',
+    reviewBasis: basis,
+    status: 'completed',
+    summary: 'The repair already exists. Update the issue record; no new worker is needed.',
+    result: {
+      summary: 'The repair already exists. Update the issue record; no new worker is needed.',
+      recommendations: [],
+      routes: [],
+    },
+  });
+  service.store.connected.delete(run.id);
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.progress.disabled, true, 'Progress must not start the same completed review again.');
+  assert.equal(issue.latestResult.runId, run.id);
+  assert.match(issue.latestResult.summary, /repair already exists/);
+  assert.throws(() => service.progressPreflight('20261022-one', 'investigate'), /already|result|review/i);
+});
+
+async function evaluatedIssue(t, result) {
+  const context = fixture(t),
+    { service } = context;
+  const calls = [];
+  service.codex = {
+    requests: new Map(),
+    start: async (...args) => {
+      calls.push(args);
+      return 'existing-review-chat';
+    },
+    turn: async () => JSON.stringify(result),
+    close() {},
+  };
+  const started = service.evaluate(service.snapshot().reviewBasis, '20261022-one');
+  const run = await settle(service, started.runId);
+  assert.equal(run.status, 'completed', run.summary);
+  return { ...context, run, calls };
+}
+test('Progress saves a valid review once, then offers its actual worker launch instead of repeating evaluation', async (t) => {
+  const proposal = {
+    kind: 'investigate',
+    title: 'Read the source',
+    scope: 'Read source only',
+    reason: 'Find the answer',
+    verification: 'Read source.js',
+    worker_prompt: 'Read source.js only',
+    merge: 'none',
+    issues: ['20261022-one'],
+    dependencies: [],
+  };
+  const { service, api, calls } = await evaluatedIssue(t, {
+    summary: 'Inspect the source next.',
+    next_step: 'Save this investigation, then explicitly start its worker.',
+    recommendations: [proposal],
+    routes: [],
+  });
+  assert.equal(service.snapshot().issues[0].progress.kind, 'save-review');
+  const confirm = service.progressPreflight('20261022-one', 'investigate');
+  service.progressStart(confirm.token);
+  assert.throws(() => service.progressStart(confirm.token), /expired/);
+  assert.equal(api.inspect().registry.actions.length, 1);
+  assert.equal(api.inspect().registry.actions[0].status, 'recommended');
+  assert.equal(service.snapshot().issues[0].progress.kind, 'launch');
+  assert.equal(service.snapshot().issues[0].latestResult.saved, true);
+  assert.equal(service.snapshot().issues[0].latestResult.fresh, true);
+  assert.match(service.snapshot().issues[0].latestResult.nextStep, /plan is saved.*start its worker/);
+  assert.equal(calls.length, 1);
+});
+test('saving a route-only review does not re-enable another identical planning review', async (t) => {
+  const { service, api } = await evaluatedIssue(t, {
+    summary: 'No worker needed. Final acceptance is still separate.',
+    recommendations: [],
+    routes: [
+      {
+        issueId: '20261022-one',
+        steps: [{ state: 'closed', decision: 'undecided', reason: 'Human acceptance is not recorded.' }],
+      },
+    ],
+  });
+  assert.equal(service.snapshot().issues[0].progress.kind, 'save-review');
+  service.progressStart(service.progressPreflight('20261022-one', 'investigate').token);
+  assert.equal(api.inspect().registry.actions.length, 0);
+  assert.equal(service.snapshot().issues[0].progress.disabled, true);
+});
+test('relevant changes allow a fresh review; readiness or unrelated work cannot reset a finished review', async (t) => {
+  const { service, root } = await evaluatedIssue(t, { summary: 'No worker needed.', recommendations: [], routes: [] });
+  assert.equal(service.snapshot().issues[0].progress.disabled, true);
+  const check = await checkNow(service);
+  assert.equal(check.readiness.status, 'blocked');
+  assert.equal(service.snapshot().issues[0].progress.disabled, true);
+  writeFileSync(
+    join(root, '.issues/20261022-two.md'),
+    '---\nid: 20261022-two\nstate: investigate\n---\nUnrelated issue\n'
+  );
+  assert.equal(service.snapshot().issues[0].progress.disabled, true);
+  writeFileSync(join(root, 'source.js'), 'export const answer=43;\n');
+  assert.equal(service.snapshot().issues[0].progress.kind, 'plan');
+});
+test('finishing an evaluation invalidates readiness and exposes its next-step instruction', async (t) => {
+  const { service, run } = await evaluatedIssue(t, {
+    summary: 'An existing repair needs its issue record updated.',
+    next_step: 'Review the existing repair and update the issue record in this chat.',
+    recommendations: [],
+    routes: [],
+  });
+  const view = service.snapshot().issues[0];
+  assert.equal(view.latestResult.runId, run.id);
+  assert.match(view.latestResult.nextStep, /update the issue record/);
+  assert.equal(view.readiness.status, 'blocked');
+  assert.equal(view.stageStates.investigate.status, 'blocked');
+});
+
+test('an invalid proposed route blocks repeat Progress and explains why saving cannot proceed', async (t) => {
+  const { service, api } = await evaluatedIssue(t, {
+    summary: 'No worker needed. Review the recorded work.',
+    recommendations: [],
+    routes: [{ issueId: '20261022-one', steps: [{ state: 'closed', decision: 'skip', reason: 'Already done.' }] }],
+  });
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.progress.disabled, true);
+  assert.match(issue.latestResult.saveProblem, /cannot skip explicit acceptance/);
+  assert.throws(() => service.progressPreflight('20261022-one', 'investigate'), /cannot skip explicit acceptance/);
+  assert.equal(api.inspect().registry.actions.length, 0);
+});

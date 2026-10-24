@@ -1,3 +1,4 @@
+import { reviewFollowup } from './review-followup.mjs';
 import { digest, requireThat } from './common.mjs';
 
 const kinds = {
@@ -26,7 +27,8 @@ export function nextProgress(queue, issue, runs) {
   if (stage.role === 'closed') return unavailable('This issue is closed.');
   const pending = runs.find((run) => isPending(run) && belongsToIssue(queue, issue, run));
   if (pending) return unavailable('The selected action is in progress. Its chat and results appear below.');
-  return chooseWork(queue, issue, stage, runs);
+  const choice = chooseWork(queue, issue, stage, runs);
+  return planFollowup(queue, issue, runs, choice);
 }
 function isPending(run) {
   if (run.kind === 'readiness') return run.connected;
@@ -83,4 +85,9 @@ function unavailable(reason) {
 
 function needsIntegration(action) {
   return action.status === 'completed' && ['implement', 'integrate'].includes(action.kind);
+}
+
+function planFollowup(queue, issue, runs, choice) {
+  if (choice.kind !== 'plan') return choice;
+  return reviewFollowup(queue, issue, runs) || choice;
 }

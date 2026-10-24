@@ -59,6 +59,7 @@ export function triggerProgress(service, token, humanApproved) {
   return dispatchProgress(service, queue, issue, choice, humanApproved);
 }
 function dispatchProgress(service, queue, issue, choice, humanApproved) {
+  if (choice.kind === 'save-review') return service.saveReview(choice.runId, progressBasis(queue));
   if (choice.kind === 'plan') return service.evaluate(progressBasis(queue), issue.id);
   if (choice.kind === 'review') return beginReview(service, queue, issue, choice.actionId);
   const preview = service.preflight(choice.actionId, choice.kind);

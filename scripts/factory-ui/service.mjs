@@ -12,6 +12,7 @@ import { git, requireThat, writeJson, digest } from './common.mjs';
 
 import { readinessView, checkReadiness, explainBlock } from './readiness.mjs';
 import { stageStates } from './stage-state.mjs';
+import { latestResult, reviewInput, savedReviewInput } from './review-followup.mjs';
 import { validateRoutes } from './lifecycle.mjs';
 import { nextProgress } from './next-action.mjs';
 import { prepareProgress, triggerProgress } from './progress.mjs';
@@ -56,11 +57,13 @@ export class FactoryUI {
   issueView(queue, issue) {
     const runs = this.store.list(this.codex.requests);
     const readiness = readinessView(queue, issue, runs);
+    const progress = nextProgress(queue, issue, runs);
     return {
       ...issue,
       readiness,
+      latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
-      progress: nextProgress(queue, issue, runs),
+      progress,
     };
   }
   checkReadiness(id, state) {
@@ -323,7 +326,7 @@ export class FactoryUI {
     const selected = issueId ? queue.issues.find((issue) => issue.id === issueId) : null;
     requireThat(!issueId || selected, 'This selected issue no longer exists.');
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
-    this.store.update(run, { reviewBasis: basis, checkout: this.root, issueId, issueState: selected?.state });
+    this.store.update(run, evaluationMetadata(queue, selected, basis));
     this.perform(run, async () => {
       const threadId = await this.codex.start(this.root, 'read-only');
       this.store.update(run, { threadId, status: 'running' });
@@ -361,7 +364,11 @@ export class FactoryUI {
         'The review proposed work outside the selected issue. Review its scope before saving.'
       );
     const actions = saveAssignments(this.api, run.result.recommendations);
-    this.store.update(run, { savedActions: actions.map((a) => a.id), savedRoutes: routes });
+    this.store.update(run, {
+      savedActions: actions.map((a) => a.id),
+      savedRoutes: routes,
+      savedReviewInput: savedReviewInput(queue, run, actions),
+    });
     return { savedActions: actions.map((a) => a.id) };
   }
   answer(runId, id, response) {
@@ -400,4 +407,11 @@ function saveAssignments(api, proposals) {
 }
 function hasSuggestions(result, routes) {
   return result.recommendations.length > 0 || routes.length > 0;
+}
+
+function evaluationMetadata(queue, selected, basis) {
+  const selection = selected
+    ? { issueId: selected.id, issueState: selected.state, reviewInput: reviewInput(queue, selected) }
+    : { issueId: null };
+  return { ...selection, reviewBasis: basis, checkout: queue.root };
 }

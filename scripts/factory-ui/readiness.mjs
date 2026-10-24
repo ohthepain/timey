@@ -5,7 +5,7 @@ import { nextProgress, progressIssue } from './next-action.mjs';
 import { inspectWorker } from './worker-history.mjs';
 import { digest, requireThat } from './common.mjs';
 
-const workKinds = ['worker', 'coordinator', 'integration'];
+const workKinds = ['worker', 'coordinator', 'integration', 'evaluation'];
 function readinessKey(queue, issue, runs) {
   return digest(
     JSON.stringify({
@@ -33,6 +33,11 @@ function relevantWork(queue, issue, run) {
   return queue.actions.some((a) => a.id === run.actionId && a.issues.includes(issue.id));
 }
 export function readinessView(queue, issue, runs) {
+  const followup = finishedReviewBlock(queue, issue, runs);
+  if (followup) return followup;
+  return recordedReadiness(queue, issue, runs);
+}
+function recordedReadiness(queue, issue, runs) {
   const checked = runs.findLast(
     (r) => r.kind === 'readiness' && r.issueId === issue.id && r.issueState === issue.state
   );
@@ -98,8 +103,8 @@ export function checkReadiness(service, id, state) {
 async function inspectReadiness(service, queue, issue, runs, run) {
   const choice = nextProgress(queue, issue, runs);
   requireThat(!choice.disabled, choice.summary);
-  if (choice.kind === 'plan')
-    return ready('The issue can be reviewed to recommend its next task. That review does not start work.');
+  const planning = planningReadiness(choice);
+  if (planning) return planning;
   if (choice.kind === 'review') return inspectReview(service, queue, issue, choice, run);
   const preview = service.preflight(choice.actionId, choice.kind);
   service.intents.delete(preview.token);
@@ -220,4 +225,20 @@ function linkedStage(action, stage, kind) {
   if (!action || !stage) return false;
   if (kind === 'integration') return action.status === 'completed';
   return actionRoles[action.kind] === stage.role;
+}
+
+function finishedReviewBlock(queue, issue, runs) {
+  const choice = nextProgress(queue, issue, runs);
+  if (choice.runId && choice.disabled) return { status: 'blocked', summary: choice.summary };
+  return null;
+}
+
+function planningReadiness(choice) {
+  if (choice.kind === 'plan')
+    return ready('The issue can be reviewed to recommend its next task. That review does not start work.');
+  if (choice.kind === 'save-review')
+    return ready(
+      'The review has a plan ready to save. Saving records the recommendation and route; it starts no work.'
+    );
+  return null;
 }

@@ -185,3 +185,36 @@ planned-skip future states. These fixtures do not establish live model reasoning
 quality; protocol fixtures separately exercise read-only semantic review and
 original-worker identity failures. The real blocked issue is inspected without
 running its check or changing its report, registry or history.
+
+## Finished review result and repeat-action repair
+
+Starting revision: `2c0603cac90ce9d43da2f5e92be1dcdc759dd410`.
+
+The compiler issue's explicit Progress action finished an issue-focused review
+that recommended no new worker, found an existing checked repair, and said its
+issue report was stale. Its conclusion was buried in history and the action
+selector offered the same planning review again. A retained readiness result also
+did not consider planning-review completion a change.
+
+A minimal disposable regression reproduces an enabled identical review after
+completion. Present the latest conclusion, concrete next step and actual suggested
+assignments above history. For unchanged input, offer an explicit save only when
+the proposed plan is valid; otherwise disable Progress with a reason and a link
+to the existing review chat. Do not silently accept an invalid required-stage skip
+or mutate the real report to make this UI demonstration appear complete.
+
+Track scoped review input so relevant source, issue, policy and dependency changes
+permit a fresh review. Preserve strict full-queue save confirmation. Planning
+completion invalidates old readiness. Existing worker launches and integration
+remain separate manual actions. Retain validation at
+`.issues/evidence/review-result-followup-validation.json`.
+
+The original deterministic reproduction failed on the unmodified selector and
+passes after the fix. Boundary fixtures also exercise valid saves, route-only
+saves, invalid required-stage skips, readiness invalidation and relevant versus
+unrelated input changes. Browser validation confirmed that Progress previews the
+actual suggested assignment, saves it without starting work, and then updates the
+next-step guidance. The real compiler issue now exposes its retained review and
+invalid route reason above history, with disabled Progress and its original chat
+link. No second real review or report/registry/run-history edit was used to make
+the UI demonstration pass. No diagnostic instrumentation was introduced.

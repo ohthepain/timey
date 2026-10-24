@@ -68,7 +68,7 @@ function validatePlannedSkip(queue, issue, state) {
   requireThat(stage?.role !== 'closed', 'The route cannot skip explicit acceptance.');
   requireThat(
     skipAllowed(queue, issue, state),
-    'This stage is required by project policy and cannot be planned as a skip.'
+    `${stage?.name || state} is required by project policy and cannot be planned as a skip. If its work already exists, record its completion instead.`
   );
 }
 export function savedRoute(issue, runs) {

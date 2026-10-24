@@ -178,3 +178,29 @@ and operation locks invalidate readiness when changed. Checks also expire after
 one minute because external native chat changes are not continuously polled.
 Disconnected records do not establish live activity. A stopped native worker is
 blocked; a confirmed active worker is green Working and can be checked again.
+
+## Finished review feedback
+
+An issue-focused review's conclusion, next-step instruction and suggested
+assignments appear above the current action controls. The proposed route remains
+inspectable, with any validation problem explained. The issue must not suggest
+that already completed required work was skipped. Existing old review output is
+preserved; missing next-step fields use a conservative prompt to read the
+conclusion and ask the coordinator to record needed decisions or issue updates; the read-only review chat retains supporting details.
+
+Progress consumes a completed unchanged review instead of offering the identical
+planning chat again. A valid unsaved proposal offers Save recommendations and
+route with a concrete preview. Saving starts no worker; after saving, applicable
+saved work offers the separate launch or integration action. A route-only save,
+no-action conclusion or invalid proposal disables Progress with a reason. Invalid
+routes require correction or evidence-backed issue bookkeeping by the coordinator, not silent acceptance or a duplicate worker. Full-queue save freshness and
+one-use confirmation checks still apply.
+
+New focused reviews retain a scoped input fingerprint (source, selected report,
+lifecycle, preferences and declared dependencies/actions). Relevant changes allow
+a fresh review. An unrelated report or another readiness check does not reset a
+completed review. Older records fall back to their existing whole-queue basis.
+Saving updates the fingerprint for its own newly saved actions only, so a valid
+save is shown as saved rather than stale. Planning completion also invalidates
+readiness. Review result display never changes the authoritative issue, registry,
+route or human acceptance on page load.
