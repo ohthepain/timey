@@ -355,8 +355,12 @@ it archived. The UI retries the read-only resume once using the installed
 thread/unarchive operation; it creates no replacement chat and does not unarchive
 unrelated workers or conversations.
 
-Saved implementation checklists remain visible in the current lifecycle stage after
-verification, including Commit, integration and final review. Advancing the issue
-does not hide the recorded plan steps or their passed and skipped outcomes.
-Earlier results retain their recorded status and are labeled as earlier results
-when their inputs need another check; they do not authorize new actions.
+Implementation checklists belong to Verify. After advancing, expand Verify to inspect
+the saved steps and results; later stages do not repeat the checklist or offer its
+editing controls. Earlier results retain their recorded status with explicit labels.
+
+Commit records the existing commit identified by the completed Verify stage and
+moves along the configured Next link. It opens no chat and does not repeat behavior
+checks. The current source must still match that verified revision and be clean;
+unrelated changes are never staged automatically. Required commit/advance human
+guards remain enforced. No new empty commit, integration or acceptance is implied.

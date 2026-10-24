@@ -951,6 +951,8 @@
       function stepExtra(i, step, actions) {
         if (step.role === 'ready-for-grilling')
           return i.grilling ? `<h3>Recorded discussion</h3><pre>${esc(JSON.stringify(i.grilling, null, 2))}</pre>` : '';
+        if (step.role === 'ready-to-verify' && i.implementation && step.state !== i.state)
+          return implementationChecklist({ ...i, implementation: { ...i.implementation, readOnly: true } });
         if (step.role === 'ready-for-commit')
           return actions
             .filter((a) => a.worker_revision)
@@ -976,10 +978,7 @@
         return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use the button in this step for its next action. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Actions are available on the current step.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
       }
       function currentStageContent(issue, step) {
-        if (
-          issue.implementation &&
-          (issue.implementation.record || ['ready-to-verify', 'ready-to-close'].includes(step.role))
-        )
+        if (issue.implementation && step.role === 'ready-to-verify')
           return implementationChecklist(issue) + reviewFileProblems(issue) + progressControls(issue);
         return latestReviewResult(issue) + reviewFileProblems(issue) + progressControls(issue);
       }
@@ -1021,7 +1020,7 @@
               `<section class="check-version"><h4>${esc(version)}</h4>${steps.map((step) => implementationStep(issue, step)).join('')}</section>`
           )
           .join('');
-        return `<section class="implementation-checklist"><h3>Implementation checks</h3><p>${esc(implementationSummary(view))}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar">${skipAllChecks(issue)}<button data-check-plan="${esc(issue.id)}" ${!view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Technical checks are work for Codex. You can skip checks you no longer require; they stay marked Skipped. Required human decisions remain separate.</p>${requiredPlanDecisions(issue)}</section>`;
+        return `<section class="implementation-checklist"><h3>Implementation checks</h3><p>${esc(implementationSummary(view))}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar">${skipAllChecks(issue)}<button data-check-plan="${esc(issue.id)}" ${view.readOnly || !view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Technical checks are work for Codex. You can skip checks you no longer require; they stay marked Skipped. Required human decisions remain separate.</p>${requiredPlanDecisions(issue)}</section>`;
       }
       function implementationSummary(view) {
         if (view.running) return 'Checking the plan and saved results.';
@@ -1064,10 +1063,11 @@
         return !criterion.human_check_id && !['passed', 'skipped'].includes(criterion.status);
       }
       function criterionSkip(issue, criterion, stepId, criterionIndex) {
-        if (!skippableCriterion(criterion)) return '';
+        if (issue.implementation.readOnly || !skippableCriterion(criterion)) return '';
         return `<button data-skip-check="${esc(issue.id)}" data-skip-step="${esc(stepId)}" data-skip-index="${criterionIndex}" ${!issue.implementation.fresh || issue.implementation.running ? 'disabled' : ''}>Skip</button>`;
       }
       function skipAllChecks(issue) {
+        if (issue.implementation.readOnly) return '';
         if (!issue.implementation.record?.steps.some((step) => step.criteria.some(skippableCriterion))) return '';
         return `<button data-skip-all="${esc(issue.id)}" ${!issue.implementation.fresh || issue.implementation.running ? 'disabled' : ''}>Skip all remaining checks</button>`;
       }
@@ -1094,6 +1094,7 @@
         $('confirm').showModal();
       }
       function requiredPlanDecisions(issue) {
+        if (issue.implementation.readOnly) return '';
         const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
         const checks = (issue.human_checks || []).filter((c) => c.status !== 'passed' || c.revision !== data.head);
         return checks
@@ -1287,6 +1288,7 @@
       function actionSummary(choice) {
         return (
           {
+            commit: 'Record the existing verified commit and continue. No new chat is needed.',
             review: 'Review the finished result and update this issue.',
             plan: 'Find the next task, or record work already finished.',
             reconcile: 'Check existing work and move through the steps already finished.',

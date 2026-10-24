@@ -30,6 +30,16 @@ export function nextProgress(queue, issue, runs) {
   if (pending) return unavailable('The selected action is in progress. Its chat and results appear below.');
   const stopped = stoppedReconciliation(queue, issue, runs);
   if (stopped) return stopped;
+  return stageWork(queue, issue, stage, runs);
+}
+function stageWork(queue, issue, stage, runs) {
+  if (stage.role === 'ready-for-commit')
+    return {
+      kind: 'commit',
+      title: 'Record commit',
+      summary:
+        'Record the existing verified commit and continue to the next step. No new chat or behavior review is needed.',
+    };
   const choice = chooseWork(queue, issue, stage, runs);
   return stageFollowup(queue, issue, stage, runs, choice);
 }

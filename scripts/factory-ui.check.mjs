@@ -1634,7 +1634,7 @@ test('the Codex transport unarchives exactly the selected thread through the sup
   assert.deepEqual(calls, [{ method: 'thread/unarchive', params: { threadId: 'existing-review' } }]);
 });
 
-test('saved implementation steps remain visible after verification advances to commit and later stages', () => {
+test('implementation checklist stays in Verify when the issue advances to Commit', () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const source = html.slice(
     html.indexOf('      function currentStageContent('),
@@ -1653,11 +1653,15 @@ test('saved implementation steps remain visible after verification advances to c
     () => '<result/>'
   );
   const issue = { implementation: { record: { steps: [{ name: 'Saved step' }] } } };
-  for (const role of ['ready-to-verify', 'ready-for-commit', 'integration', 'ready-to-close', 'closed']) {
-    const content = render(issue, { role });
-    assert.match(content, /<checklist>/, role);
-    assert.match(content, /<progress\/>/, role);
+  assert.match(render(issue, { role: 'ready-to-verify' }), /<checklist>/);
+  for (const role of ['ready-for-commit', 'integration', 'ready-to-close', 'closed']) {
+    assert.doesNotMatch(render(issue, { role }), /<checklist>/, role);
   }
+  const extraSource = html.slice(html.indexOf('      function stepExtra('), html.indexOf('      function issueStep('));
+  const extra = new Function('implementationChecklist', extraSource + ';return stepExtra;')((issue) =>
+    issue.implementation.readOnly ? '<checklist>Saved results</checklist>' : ''
+  );
+  assert.match(extra({ ...issue, state: 'commit' }, { role: 'ready-to-verify', state: 'verify' }, []), /<checklist>/);
   assert.doesNotMatch(render({ implementation: { record: null } }, { role: 'ready-for-repro' }), /<checklist>/);
   assert.match(render({ implementation: { record: null } }, { role: 'ready-to-verify' }), /<checklist>/);
 });
@@ -1751,4 +1755,64 @@ test('Progress can be attempted without a separate readiness check and stays dis
     }),
     /data-progress-id[^>]*disabled/
   );
+});
+
+function commitFixture(t) {
+  const f = fixture(t);
+  const revision = f.git('rev-parse', 'HEAD');
+  writeFileSync(
+    join(f.root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-to-verify | verify | commit |\n| ready-for-commit | commit | custom-check |\n| custom | custom-check | final |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  writeFileSync(
+    join(f.root, '.issues/20261022-one.md'),
+    `---\nid: 20261022-one\nstate: commit\ngrill_later: false\nlifecycle_history:\n  - state: verify\n    outcome: completed\n    revision: ${revision}\n    at: 2026-10-24T12:00:00Z\n    reason: Relevant checks passed.\n    evidence: [saved-checks.json]\n---\n# Verified issue\n`
+  );
+  f.service.guard = () => ({});
+  f.service.codex.start = async () => {
+    throw Error('Commit must not open a chat');
+  };
+  return { ...f, revision };
+}
+test('Commit records the verified existing commit directly without a chat or repeating Verify', async (t) => {
+  const { service, api, git, revision } = commitFixture(t);
+  assert.equal(service.snapshot().issues[0].progress.kind, 'commit');
+  const selected = service.progressPreflight('20261022-one', 'commit');
+  const run = await settle(service, service.progressStart(selected.token, false).runId);
+  assert.equal(run.status, 'completed', run.summary);
+  assert.equal(git('rev-parse', 'HEAD'), revision);
+  const report = api.inspect().reports[0].metadata;
+  assert.equal(report.state, 'custom-check');
+  assert.equal(report.lifecycle_history.at(-1).state, 'commit');
+  assert.equal(report.lifecycle_history.at(-1).revision, revision);
+  assert.equal(service.store.runs.length, 1);
+  assert.equal(run.threadId, undefined);
+});
+
+async function blockedCommit(service, api) {
+  const selected = service.progressPreflight('20261022-one', 'commit');
+  const run = await settle(service, service.progressStart(selected.token, false).runId);
+  assert.equal(run.status, 'blocked', run.summary);
+  assert.equal(api.inspect().reports[0].metadata.state, 'commit');
+  assert.equal(run.threadId, undefined);
+}
+test('Commit preserves uncommitted source instead of staging unrelated changes', async (t) => {
+  const { root, service, api } = commitFixture(t);
+  writeFileSync(join(root, 'source.js'), 'export const answer = 43;\n');
+  await blockedCommit(service, api);
+  assert.match(readFileSync(join(root, 'source.js'), 'utf8'), /43/);
+});
+test('Commit rejects a revision changed since Verify completed', async (t) => {
+  const { root, git, service, api } = commitFixture(t);
+  writeFileSync(join(root, 'extra.js'), 'export const extra = 1;\n');
+  git('add', 'extra.js');
+  git('commit', '-qm', 'Different source');
+  await blockedCommit(service, api);
+});
+test('Commit keeps operation-specific required human guards', async (t) => {
+  const { service, api } = commitFixture(t);
+  service.guard = () => {
+    throw Error('Required human answer missing');
+  };
+  await blockedCommit(service, api);
 });

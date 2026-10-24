@@ -9,6 +9,7 @@ import { reviewOperation } from './readiness.mjs';
 import { inspectWorker } from './worker-history.mjs';
 import { reviewSchema, reviewPrompt, reviewEvidence, appendReview, recordReviewResult } from './review-result.mjs';
 import { requireThat, writeJson, git } from './common.mjs';
+import { beginCommit } from './commit.mjs';
 import { beginReconciliation } from './reconcile.mjs';
 import { captureInstructions } from './review-instructions.mjs';
 import { reviewChat, reusableReview, reviewPermissions } from './review-recovery.mjs';
@@ -63,6 +64,7 @@ export function triggerProgress(service, token, humanApproved) {
 }
 function dispatchProgress(service, queue, issue, choice, humanApproved) {
   const handlers = {
+    commit: () => beginCommit(service, queue, issue),
     reconcile: () => beginReconciliation(service, queue, issue),
     'save-review': () => service.saveReview(choice.runId, progressBasis(queue)),
     plan: () =>

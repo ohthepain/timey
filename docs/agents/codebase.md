@@ -100,3 +100,6 @@ recording between read-only results and explicit user decisions.
 and exact approved supporting files. `review-recovery.mjs` reuses review chats and
 validates recording checkpoints. `review-file-access.mjs` records narrow explicit
 consent for an external supporting file and continues its original review.
+
+`scripts/factory-ui/commit.mjs` records the existing verified commit and advances
+only the Commit stage, without a model review or changes to source.
