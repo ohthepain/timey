@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, statSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
 import { digest, requireThat } from './common.mjs';
 import { selectPlan, implementationPlans } from './plan-outline.mjs';
 import { reviewEvidence } from './review-result.mjs';
@@ -50,9 +49,7 @@ function checklistFresh(queue, issue, plan, record, runs) {
   if (!matchingPlan(record, plan)) return false;
   const saved = runs.find((r) => r.id === record.run_id && r.status === 'completed');
   if (saved?.afterBasis !== checklistBasis(queue, issue, plan)) return false;
-  return record.evidence
-    .filter((e) => e.path !== join(queue.root, '.issues', issue.id + '.md'))
-    .every(evidenceUnchanged);
+  return record.evidence.every(evidenceUnchanged);
 }
 function matchingPlan(record, plan) {
   return record && record.plan_sha256 === plan.sha256;

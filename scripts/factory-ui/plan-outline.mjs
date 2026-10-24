@@ -6,7 +6,8 @@ export function implementationPlans(issue, actions) {
     '\n'
   );
   const paths = [...new Set(text.match(/docs\/plans\/[\w/-]+\.md/g) || [])];
-  return paths.toSorted((a, b) => planPriority(b) - planPriority(a));
+  const explicit = paths.filter((path) => planPriority(path));
+  return explicit.length ? explicit : paths;
 }
 function planPriority(path) {
   return Number(/implementation|implement/.test(path.split('/').pop()));

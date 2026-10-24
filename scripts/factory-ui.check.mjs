@@ -1357,3 +1357,17 @@ test('an incomplete implementation checklist blocks verification advancement, no
   );
   assert.equal(readQueue(service.root).issues[0].state, 'verify');
 });
+
+test('a reviewed issue is kept as an immutable supporting file before checklist bookkeeping changes it', async (t) => {
+  const { service, root, path, result } = implementationFixture(t);
+  const reportPath = join(root, '.issues/20261022-one.md'),
+    original = readFileSync(reportPath, 'utf8');
+  result.steps[0].criteria[0].evidence = [reportPath];
+  const run = await settle(service, checkPlan(service, path).runId);
+  assert.equal(run.status, 'completed', run.summary);
+  const issue = service.snapshot().issues[0],
+    archive = issue.plan_verification.steps[0].criteria[0].evidence[0];
+  assert.notEqual(archive, reportPath);
+  assert.equal(service.readChecklistEvidence(issue.id, archive).content, original);
+  assert.equal(issue.implementation.fresh, true);
+});

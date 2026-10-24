@@ -991,7 +991,15 @@
               `<section class="check-version"><h4>${esc(version)}</h4>${steps.map((step) => implementationStep(issue, step)).join('')}</section>`
           )
           .join('');
-        return `<section class="implementation-checklist"><h3>Implementation checks</h3><p>${esc(view.running ? 'Checking the plan and saved results. No worker is being started.' : view.summary || '')}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar"><button data-check-plan="${esc(issue.id)}" ${!view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Checks pass automatically when the evidence meets the criteria. Approval is requested only for a required human decision.</p>${requiredPlanDecisions(issue)}</section>`;
+        return `<section class="implementation-checklist"><h3>Implementation checks</h3><p>${esc(implementationSummary(view))}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar"><button data-check-plan="${esc(issue.id)}" ${!view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Checks pass automatically when the evidence meets the criteria. Approval is requested only for a required human decision.</p>${requiredPlanDecisions(issue)}</section>`;
+      }
+      function implementationSummary(view) {
+        if (view.running) return 'Checking the plan and saved results.';
+        if (!view.record) return 'Check the plan against the existing work and saved test results.';
+        if (!view.fresh) return 'The earlier results need another check.';
+        const criteria = view.record.steps.flatMap((step) => step.criteria);
+        const passed = criteria.filter((criterion) => criterion.status === 'passed').length;
+        return `${passed} of ${criteria.length} acceptance checks passed. Expand a step to see what remains.`;
       }
       function implementationStatus(criteria) {
         const statuses = criteria.map((c) => c.status);
@@ -1006,7 +1014,7 @@
         const status = view.running ? 'checking' : view.fresh ? implementationStatus(step.criteria) : 'not-checked';
         const key = issue.id + ':' + step.id;
         const open = expandedChecks.has(key) ? expandedChecks.get(key) : status === 'failed';
-        return `<details class="implementation-step" data-plan-step="${esc(key)}" ${open ? 'open' : ''}><summary>${checkCircle(status)}<strong>${esc(step.name)}</strong><span class="check-label">${esc(checkLabels[status])}</span></summary><div class="acceptance-list"><p class="muted">This step passes when:</p>${step.criteria.map((c) => implementationCriterion(issue, c)).join('')}<button data-open-plan="${esc(view.path)}">Read original requirements</button></div></details>`;
+        return `<details class="implementation-step" data-plan-step="${esc(key)}" ${open ? 'open' : ''}><summary>${checkCircle(status)}<strong>${esc(step.name)}</strong><span class="check-label">${view.fresh ? step.criteria.filter((c) => c.status === 'passed').length + '/' + step.criteria.length + ' passed · ' : ''}${esc(checkLabels[status])}</span></summary><div class="acceptance-list"><p class="muted">This step passes when:</p>${step.criteria.map((c) => implementationCriterion(issue, c)).join('')}<button data-open-plan="${esc(view.path)}">Read original requirements</button></div></details>`;
       }
       function implementationCriterion(issue, criterion) {
         const fresh = issue.implementation.fresh;
