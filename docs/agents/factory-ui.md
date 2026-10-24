@@ -175,8 +175,9 @@ blocked requirement with an explicit Review required approval action. Existing
 manual confirmation, freshness and execution checks still run before dispatch.
 
 Source, reports/configuration, saved actions, relevant UI worker/review statuses
-and operation locks invalidate readiness when changed. Checks also expire after
-one minute because external native chat changes are not continuously polled.
+and operation locks invalidate readiness when changed. Time alone does not expire
+a completed check. Dispatch independently rechecks the original chat and current
+operation requirements; readiness never establishes that a whole stage passed.
 Disconnected records do not establish live activity. A stopped native worker is
 blocked; a confirmed active worker is green Working and can be checked again.
 
@@ -254,3 +255,12 @@ chat link. Connection rechecks the displayed queue and assignment before using
 the existing ledger attach operation. It records neither work completion nor
 issue advancement and starts no conversation. Progress then reviews the existing
 result. Opening an issue remains read-only.
+
+Earlier stages without a recorded outcome also use the compact expandable shape;
+their neutral colour and help text retain the missing-history distinction. Current
+assignments and old reviews are grouped under Task details and earlier reviews,
+with a notice that old instructions may have been superseded. Final-only human
+checks stay collapsed until needed. Plan references in saved reports/assignments
+open a read-only document viewer restricted to project Markdown plans. The current
+step keeps Progress visible when a new readiness check is needed, and preserves
+successful checks while their inputs remain unchanged.

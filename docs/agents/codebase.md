@@ -79,3 +79,6 @@ reopening, with current report/evidence guards and preserved historical outcomes
 
 `factory-ui/worker-connection.mjs` restores missing task/chat connections using
 validated existing conversations and the original ledger attach operation.
+
+`factory-ui/plan-document.mjs` reads Markdown plans for the issue screen’s document
+viewer, restricted to canonical regular files under the selected project’s docs/plans.

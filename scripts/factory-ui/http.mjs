@@ -86,6 +86,9 @@ function page(response, token, port) {
   response.end(readFileSync(join(directory, 'index.html')));
 }
 function read(service, request, response) {
+  const url = new URL(request.url, 'http://127.0.0.1');
+  if (url.pathname === '/api/document')
+    return response.end(JSON.stringify(service.readPlan(url.searchParams.get('path'))));
   if (request.url === '/api/queue') return response.end(JSON.stringify(service.snapshot()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));

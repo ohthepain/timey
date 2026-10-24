@@ -536,6 +536,12 @@
       <div id="error" role="alert"></div>
       <div id="app"></div>
     </main>
+    <dialog id="plan">
+      <h2 id="plan-title">Implementation plan</h2>
+      <p id="plan-path" class="muted"></p>
+      <button id="close-plan">Close plan</button>
+      <pre id="plan-content" class="prose" style="white-space: pre-wrap; overflow-wrap: anywhere"></pre>
+    </dialog>
     <dialog id="confirm">
       <div id="selection"></div>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
@@ -575,6 +581,7 @@
             previous !== JSON.stringify(data) &&
             !busy &&
             !$('confirm').open &&
+            !$('plan').open &&
             !document.querySelector(':popover-open') &&
             !document.activeElement.matches('input,textarea,select')
           )
@@ -680,7 +687,7 @@
       }
       function inputStatus(i) {
         const count = (i.human_input?.requests || []).length;
-        const checks = (i.human_checks || []).filter((c) => c.status !== 'passed').length;
+        const checks = (i.human_checks || []).filter((c) => c.status !== 'passed' && checkDueNow(i, c)).length;
         const items = [];
         if (count) items.push(`${count} input requests`);
         if (checks) items.push(`${checks} checks need attention`);
@@ -690,7 +697,7 @@
       function defaultInput(issue) {
         return data.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-to-close')
           ? 'Accept the result or request changes.'
-          : 'No specific question recorded.';
+          : 'No current question recorded.';
       }
       function statusLabel(value) {
         return (
@@ -722,13 +729,23 @@
       function reportText(text) {
         return esc(text.replace(/^---[\s\S]*?---\s*/, '')).replace(/^## (.+)$/gm, '<h3>$1</h3>');
       }
+      function checkDueNow(issue, check) {
+        return (
+          check.blocks !== 'closure' ||
+          data.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-to-close')
+        );
+      }
       function humanChecks(i) {
         return (i.human_checks || [])
-          .map(
-            (c) =>
-              `<h3>${esc(c.kind === 'judgment' ? 'Your judgment' : 'Manual check')}</h3><p>${esc(c.instructions)}</p><span class="badge">${esc(c.status)}</span><p>${esc(c.result || 'No result recorded.')}</p>`
+          .map((check) =>
+            checkDueNow(i, check)
+              ? humanCheckText(check)
+              : `<details><summary>Final review — needed later</summary>${humanCheckText(check)}</details>`
           )
           .join('');
+      }
+      function humanCheckText(c) {
+        return `<h3>${esc(c.kind === 'judgment' ? 'Your judgment' : 'Manual check')}</h3><p>${esc(c.instructions)}</p><span class="badge">${esc(c.status)}</span><p>${esc(c.result || 'No result recorded.')}</p>`;
       }
       function relations(i) {
         const reverse = data.issues.filter((other) => other.links.depends.includes(i.id));
@@ -834,10 +851,28 @@
         const open = expandedSteps.has(key) ? expandedSteps.get(key) : current;
         const extra = stepExtra(i, step, allActions);
         const state = stepState(i, step, allActions);
-        const compact = ['completed', 'skipped', 'planned-skip'].includes(state.status);
+        const compact = ['completed', 'skipped', 'planned-skip', 'unknown'].includes(state.status);
         const helpId = 'step-help-' + index;
         const history = stageReviews(i, step, current);
-        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? latestReviewResult(i) + progressControls(i) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${stepWork(step, actions)}${history}${extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use the button in this step for its next action. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Actions are available on the current step.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? latestReviewResult(i) + progressControls(i) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use the button in this step for its next action. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Actions are available on the current step.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+      }
+      function currentDetails(issue, actions, content) {
+        const source = [issue.content, ...actions.map((a) => a.worker_prompt || '')].join('\n');
+        const plans = [...new Set(source.match(/docs\/plans\/[\w/-]+\.md/g) || [])];
+        const links = plans
+          .map(
+            (path) =>
+              `<button data-open-plan="${esc(path)}">${esc(path.includes('implementation') ? 'View implementation plan' : path.split('/').pop().replace(/\.md$/, '').replaceAll('-', ' '))}</button>`
+          )
+          .join(' ');
+        return `${links ? `<div class="toolbar">${links}</div>` : ''}<details><summary>Task details and earlier reviews</summary><p class="muted">These are saved records. Earlier instructions may describe work that has since finished.</p>${content}</details>`;
+      }
+      async function openPlan(path) {
+        const plan = await request('document?path=' + encodeURIComponent(path));
+        $('plan-title').textContent = plan.content.match(/^# (.+)/m)?.[1] || 'Project plan';
+        $('plan-path').textContent = plan.path;
+        $('plan-content').textContent = plan.content;
+        $('plan').showModal();
       }
       function stageEvidence(state) {
         if (!state.evidence?.length) return '';
@@ -965,13 +1000,27 @@
             (run.issueId === issue.id || data.actions.some((a) => a.id === run.actionId && a.issues.includes(issue.id)))
         );
         const title = progressTitle(issue, busy, ready, checkLabel);
-        const summary = choice.disabled
-          ? choice.summary
-          : busy
-            ? issue.stageStates[issue.state].summary
-            : r.summary || readinessExplanation(issue);
+        const summary = ready
+          ? actionSummary(choice)
+          : choice.disabled
+            ? choice.summary
+            : busy
+              ? issue.stageStates[issue.state].summary
+              : r.summary || readinessExplanation(issue);
         const finished = choice.disabled && issue.latestResult?.fresh;
-        return `<section class="next-action"><div><small>${finished ? 'No repeat action' : ready ? 'Ready for the next action' : 'What happens next'}</small><h3>${esc(title)}</h3><p>${esc(summary)}</p>${r.status === 'blocked' ? stepChatLinks(issue) : ''}${ready && !choice.disabled ? '<small>Requirements are checked again before starting.</small>' : ''}</div>${ready || r.approvalAvailable || finished ? `<button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled ? 'disabled' : ''}>${r.approvalAvailable ? 'Review required approval' : 'Progress →'}</button>` : ''}${!finished && choice.kind !== 'reconcile' ? `<button data-check-issue="${esc(issue.id)}" data-check-state="${esc(issue.state)}" ${busy ? 'disabled' : ''}>${busy ? 'Work in progress' : checkLabel}</button>` : ''}</section>`;
+        return `<section class="next-action"><div><small>${finished ? 'No repeat action' : ready ? 'Ready for the next action' : 'What happens next'}</small><h3>${esc(title)}</h3><p>${esc(summary)}</p>${r.status === 'blocked' ? stepChatLinks(issue) : ''}</div><button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled || !(ready || r.approvalAvailable) ? 'disabled' : ''}>${r.approvalAvailable ? 'Review required approval' : 'Progress →'}</button>${!finished && !ready && choice.kind !== 'reconcile' ? `<button data-check-issue="${esc(issue.id)}" data-check-state="${esc(issue.state)}" ${busy ? 'disabled' : ''}>${busy ? 'Work in progress' : checkLabel}</button>` : ''}</section>`;
+      }
+      function actionSummary(choice) {
+        return (
+          {
+            review: 'Review the finished result and update this issue.',
+            plan: 'Find the next task, or record work already finished.',
+            reconcile: 'Check existing work and move through the steps already finished.',
+            'save-review': 'Save the proposed work before starting it.',
+            launch: 'Start the saved task in a separate Codex chat.',
+            integrate: 'Review and bring the finished changes into the project.',
+          }[choice.kind] || choice.summary
+        );
       }
       function progressTitle(issue, busy, ready, checkLabel) {
         if (issue.progress.disabled) return issue.progress.title;
@@ -979,10 +1028,17 @@
         if (ready) return issue.progress.title;
         return issue.readiness?.status === 'blocked' ? 'Resolve the blocker' : checkLabel;
       }
+      function liveStepWork(issue, stage) {
+        return data.runs
+          .filter((run) => run.connected && belongsInStage(run, issue, stage, true))
+          .map((run) => progress(run, true))
+          .join('');
+      }
       function stageReviews(issue, stage, current) {
         return data.runs
           .filter(
             (run) =>
+              !(current && run.connected) &&
               !(current && run.id === issue.latestResult?.runId) &&
               (run.kind !== 'readiness' || run.connected) &&
               belongsInStage(run, issue, stage, current)
@@ -1062,6 +1118,9 @@
         $('confirm').showModal();
       }
       function bind() {
+        document.querySelectorAll('[data-open-plan]').forEach((button) => {
+          button.onclick = () => act(() => openPlan(button.dataset.openPlan));
+        });
         document.querySelectorAll('[data-find-worker]').forEach((button) => {
           button.onclick = () => act(() => findExistingWorker(button));
         });
@@ -1151,6 +1210,7 @@
         }
         await request('answer', { runId: button.dataset.run, requestId: button.dataset.answer, response });
       }
+      $('close-plan').onclick = () => $('plan').close();
       $('cancel').onclick = () => $('confirm').close();
       $('approve').onclick = () =>
         act(async () => {

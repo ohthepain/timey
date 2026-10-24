@@ -278,3 +278,21 @@ choice/link form when necessary. Reconnection saves only the existing chat link;
 it does not start work, record completion, advance or accept the issue. The real
 factory issue is reconnected to its confirmed original chat with final judgment
 pending. Retain validation at `.issues/evidence/worker-connection-validation.json`.
+
+## Compact history, stable readiness and visible plans
+
+Starting revision: `c19ec32dfe2e5e40e0f7133b9f9189c0e53ba158`.
+
+Compact previous stages even when their outcome was never recorded, preserving
+that uncertainty rather than inventing skipped history. Keep a successful
+readiness result while its source/report/action inputs are unchanged; remove the
+arbitrary minute timeout and independently revalidate on dispatch. Keep the
+current action visible while a genuine new check is needed.
+
+Put saved assignments and earlier reviews behind one expandable history section.
+Keep closure-only questions collapsed until final review. Link referenced project
+plans through an inert Markdown viewer, with canonical path checks preventing
+traversal or symlink access outside docs/plans. The old phrase about plan sections
+5–6 describes the original assignment; it does not establish a current blocker.
+The worker has returned a report that still needs review. Retain validation in
+`.issues/evidence/compact-issue-validation.json`.

@@ -56,8 +56,6 @@ function recordedReadiness(queue, issue, runs) {
   return checkedReadiness(queue, issue, runs, checked);
 }
 function checkedReadiness(queue, issue, runs, checked) {
-  if (Date.now() - Date.parse(checked.updated) > 60000)
-    return expired('This readiness check is more than a minute old. Check again before continuing.');
   if (checked.readinessKey !== readinessKey(queue, issue, runs))
     return expired('Something changed since the last check. Check readiness again before continuing.');
   return checked.readiness || { status: 'unchecked', summary: 'The check did not finish. Check readiness again.' };

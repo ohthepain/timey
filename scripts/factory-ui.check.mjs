@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { gitFixture } from './git-fixture.mjs';
@@ -1140,4 +1140,27 @@ test('connecting an unfinished chat does not offer a ready result review', async
   assert.equal(api.inspect().registry.actions[0].threadId, 'original-worker');
   assert.equal(service.store.runs.at(-1).workerPending, true);
   assert.equal(service.snapshot().issues[0].readiness.status, 'unchecked');
+});
+
+test('a successful readiness check stays ready as time passes, while source changes still invalidate it', async (t) => {
+  const { service, root } = pendingReview(t);
+  const check = await checkNow(service);
+  assert.equal(check.readiness.status, 'ready');
+  check.updated = new Date(Date.now() - 3600000).toISOString();
+  service.store.save();
+  assert.equal(service.snapshot().issues[0].readiness.status, 'ready');
+  writeFileSync(join(root, 'source.js'), 'export const answer=44;\n');
+  assert.equal(service.snapshot().issues[0].readiness.status, 'unchecked');
+});
+test('the plan viewer reads actual project plans without changing issue records', (t) => {
+  const { service, root } = fixture(t);
+  mkdirSync(join(root, 'docs/plans'), { recursive: true });
+  writeFileSync(join(root, 'docs/plans/example.md'), '# Project plan\n\n### 5. Review\nRead the result.\n');
+  const before = readFileSync(join(root, '.issues/20261022-one.md'), 'utf8');
+  assert.match(service.readPlan('docs/plans/example.md').content, /5. Review/);
+  writeFileSync(join(root, 'outside.md'), 'Outside plans');
+  assert.throws(() => service.readPlan('docs/plans/../../outside.md'), /inside this project/);
+  symlinkSync(join(root, 'outside.md'), join(root, 'docs/plans/link.md'));
+  assert.throws(() => service.readPlan('docs/plans/link.md'), /inside this project/);
+  assert.equal(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), before);
 });

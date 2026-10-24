@@ -14,6 +14,7 @@ import { readinessView, checkReadiness, explainBlock } from './readiness.mjs';
 import { stageStates } from './stage-state.mjs';
 import { latestResult, reviewInput, savedReviewInput } from './review-followup.mjs';
 import { validateRoutes } from './lifecycle.mjs';
+import { readPlan } from './plan-document.mjs';
 import { findConnection, connectWorker } from './worker-connection.mjs';
 import { decideIssue } from './issue-decision.mjs';
 import { nextProgress } from './next-action.mjs';
@@ -67,6 +68,9 @@ export class FactoryUI {
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
     };
+  }
+  readPlan(path) {
+    return readPlan(this.root, path);
   }
   findConnection(id, state, basis) {
     return findConnection(this, id, state, basis);
