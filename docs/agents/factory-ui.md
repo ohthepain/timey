@@ -383,3 +383,17 @@ Older issues already at Final review can be accepted without backfilling stage
 history when the registry records integration and both worker and checked
 integration commits are in the current branch. Original verification dates and
 limitations remain explicit. Close failures appear beside the Close issue button.
+
+## Finish record-only work
+
+A review can return a structured record_update when existing corrections only need
+to be recorded in the selected local issue. Progress finishes that update itself;
+it starts no additional worker or review chat. The server retains supporting record
+copies and measures that source, the registry and unrelated issue reports remain
+unchanged. It completes the record update and its preservation check, marks Commit
+skipped because the issue is excluded from Git, and stops at Final review. Custom
+stages, outstanding assignments and required human checks still apply.
+
+This path does not prove a self-healing exercise or any other unperformed test.
+Those limits remain in the result for final acceptance. It cannot change source,
+registry entries, other reports or human check outcomes, and never closes the issue.

@@ -1237,7 +1237,12 @@
       }
       function finalControls(issue, role) {
         const closed = role === 'closed';
-        return `<section class="next-action"><div><small>${closed ? 'Issue closed' : 'Your decision'}</small><h3>${closed ? 'This issue is closed' : 'Ready for final review'}</h3><p>${closed ? 'You can review the result or reopen the issue if more work is needed.' : 'The work is implemented, checked and committed. Close issue records your acceptance and closes it immediately. Review the result first, or reopen it if more work is needed.'}</p>${humanChecks(issue)}${decisionErrors.has(issue.id) ? `<p role="alert" class="decision-error">${esc(decisionErrors.get(issue.id))}</p>` : ''}<div class="toolbar">${closed ? '' : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Close issue</button>`}<button data-review-result="${esc(issue.id)}">Review result</button><button data-issue-decision="reopen" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Reopen issue</button></div></div></section>`;
+        const recordOnly =
+          issue.lifecycle_history?.findLast((event) => event.outcome === 'completed')?.work_kind === 'record-update';
+        const description = recordOnly
+          ? 'The issue record is updated. No new worker or code commit was needed. Review the result, then close the issue if you accept it.'
+          : 'The work is implemented, checked and committed. Close issue records your acceptance and closes it immediately. Review the result first, or reopen it if more work is needed.';
+        return `<section class="next-action"><div><small>${closed ? 'Issue closed' : 'Your decision'}</small><h3>${closed ? 'This issue is closed' : 'Ready for final review'}</h3><p>${closed ? 'You can review the result or reopen the issue if more work is needed.' : description}</p>${recordOnly ? `<p>${esc(issue.record_update.summary)}</p><ul>${issue.record_update.remaining.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${humanChecks(issue)}${decisionErrors.has(issue.id) ? `<p role="alert" class="decision-error">${esc(decisionErrors.get(issue.id))}</p>` : ''}<div class="toolbar">${closed ? '' : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Close issue</button>`}<button data-review-result="${esc(issue.id)}">Review result</button><button data-issue-decision="reopen" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Reopen issue</button></div></div></section>`;
       }
       const decisionErrors = new Map();
       let reviewOpenFor = null;

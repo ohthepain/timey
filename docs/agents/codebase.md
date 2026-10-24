@@ -112,3 +112,7 @@ administrative context during final acceptance, preserving its earlier hash.
 
 `scripts/factory-ui/closure-result.mjs` checks recorded modern completion or existing
 legacy integration records for explicit final acceptance, without inventing history.
+
+`scripts/factory-ui/record-update.mjs` applies reviewed updates to one local issue
+record and retains preservation receipts. `record-update-policy.mjs` limits that
+path to excluded records and configured ordinary stages, ending at Final review.

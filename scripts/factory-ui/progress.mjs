@@ -225,5 +225,9 @@ function releaseReviewLock(lock, id) {
 }
 
 function continueExistingWork(service, queue, issue, result) {
+  if (result.record_update) {
+    requireThat(!result.recommendations.length, 'A record-only update cannot include new assignments.');
+    return service.recordUpdate(issue.id, issue.state, progressBasis(queue), result.record_update);
+  }
   if (!result.recommendations.length) return beginReconciliation(service, queue, issue);
 }

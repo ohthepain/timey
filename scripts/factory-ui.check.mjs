@@ -2056,3 +2056,93 @@ function finishCodeFixture(api, actionId, revision, evidence) {
   api.attach(actionId, { threadId: 'existing-worker', hostId: 'local' });
   api.record(actionId, { status: 'completed', worker_revision: revision, evidence });
 }
+
+function recordOnlyFixture(t) {
+  const f = fixture(t);
+  writeFileSync(
+    join(f.root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-to-fix | implement | verify |\n| ready-to-verify | verify | commit |\n| ready-for-commit | commit | final |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  writeFileSync(join(f.root, '.issues/preferences.json'), '{"commit":true}');
+  writeFileSync(
+    join(f.root, '.issues/20261022-one.md'),
+    '---\nid: 20261022-one\nstate: implement\ngrill_later: false\n---\n# Update records\n\nThe corrections already exist. Preserve the unperformed self-healing test as a limitation.\n'
+  );
+  writeFileSync(
+    join(f.root, '.issues/20261022-other.md'),
+    '---\nid: 20261022-other\nstate: implement\ngrill_later: false\n---\n# Unrelated issue\n'
+  );
+  const update = {
+    issue_id: '20261022-one',
+    summary: 'The existing corrections are now recorded.',
+    notes: 'The reports and existing action identities agree with the retained result. No software change is needed.',
+    evidence: [join(f.root, 'source.js')],
+    remaining: ['The self-healing test was not performed. Final acceptance remains with the user.'],
+  };
+  return { ...f, update };
+}
+test('a record-only evaluation finishes the update and stops at Final review without another worker or commit', async (t) => {
+  const { root, git, service, update } = recordOnlyFixture(t);
+  const registry = readFileSync(join(root, '.issues/factory.json'), 'utf8');
+  const other = readFileSync(join(root, '.issues/20261022-other.md'), 'utf8');
+  const head = git('rev-parse', 'HEAD');
+  let chats = 0;
+  service.codex.start = async () => {
+    assert.equal(++chats, 1, 'No second chat needed');
+    return 'existing-review';
+  };
+  service.codex.turn = async () =>
+    JSON.stringify({
+      summary: 'Only the issue record remains to update.',
+      recommendations: [],
+      routes: [],
+      next_step: 'Record existing work.',
+      record_update: update,
+    });
+  const selected = service.progressPreflight('20261022-one', 'implement');
+  const run = await settle(service, service.progressStart(selected.token, false).runId);
+  assert.equal(run.status, 'completed', run.summary);
+  const issue = service.snapshot().issues.find((i) => i.id === '20261022-one');
+  assert.equal(issue.state, 'final');
+  assert.match(issue.content, /self-healing test was not performed/);
+  assert.match(issue.record_update.remaining.join(' '), /self-healing test was not performed/);
+  assert.equal(issue.lifecycle_history.find((e) => e.state === 'commit').outcome, 'skipped');
+  assert.equal(git('rev-parse', 'HEAD'), head);
+  assert.equal(readFileSync(join(root, '.issues/factory.json'), 'utf8'), registry);
+  assert.equal(readFileSync(join(root, '.issues/20261022-other.md'), 'utf8'), other);
+  assert.equal(chats, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 0);
+});
+
+test('record-only updates reject a different issue before changing records', (t) => {
+  const { root, update } = recordOnlyFixture(t);
+  const service = new FactoryUI(root);
+  t.after(() => service.close());
+  const snapshot = service.snapshot();
+  assert.throws(
+    () =>
+      service.recordUpdate('20261022-one', 'implement', snapshot.reviewBasis, {
+        ...update,
+        issue_id: '20261022-other',
+      }),
+    /must belong/
+  );
+  assert.equal(service.snapshot().issues.find((i) => i.id === '20261022-one').state, 'implement');
+  assert.equal(service.store.runs.length, 0);
+});
+test('record-only completion refuses a required custom stage', async (t) => {
+  const { root, service, update } = recordOnlyFixture(t);
+  const labels = join(root, '.issues/triage-labels.md');
+  writeFileSync(
+    labels,
+    readFileSync(labels, 'utf8').replace(
+      '| ready-for-commit | commit | final |',
+      '| ready-for-commit | commit | custom-review |\n| custom | custom-review | final |'
+    )
+  );
+  assert.throws(
+    () => service.recordUpdate('20261022-one', 'implement', service.snapshot().reviewBasis, update),
+    /custom step/
+  );
+  assert.equal(service.snapshot().issues.find((i) => i.id === '20261022-one').state, 'implement');
+});

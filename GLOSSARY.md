@@ -82,3 +82,8 @@ _Avoid_: Lifecycle stage, triage role
 The user's explicit decision that an implementation criterion is not required for
 this issue at the recorded plan and source revision. It preserves the earlier
 result and reason without claiming a pass or accepting the issue.
+
+**Record-only update**:
+A coordinator update to one local issue that records corrections already made.
+It checks preservation of other records and source, requires no code commit, and
+leaves unperformed demonstrations and final acceptance explicit.

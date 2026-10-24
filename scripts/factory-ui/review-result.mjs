@@ -155,7 +155,7 @@ function nonempty(value) {
 }
 
 function recordedBy(run) {
-  return ['decision', 'plan-decision', 'plan-skip', 'commit'].includes(run.kind)
+  return ['decision', 'plan-decision', 'plan-skip', 'commit', 'record-update'].includes(run.kind)
     ? 'Recorded from the issue screen by an explicit user action.'
     : `Reviewed by coordinator chat ${run.threadId}. Action ${run.actionId}.`;
 }
@@ -172,6 +172,8 @@ export function recordReviewResult(service, run, result) {
 }
 
 function recordChecklistMetadata(doc, issue, result) {
+  if (result.record_update)
+    doc.set('record_update', doc.createNode(result.record_update, { aliasDuplicateObjects: false }));
   if (result.plan_verification)
     doc.set('plan_verification', doc.createNode(result.plan_verification, { aliasDuplicateObjects: false }));
   if (result.human_check_update) {

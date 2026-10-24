@@ -1,3 +1,4 @@
+import { finishRecordUpdate } from './record-update.mjs';
 import { mkdirSync, existsSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -382,6 +383,9 @@ export class FactoryUI {
       if (afterReview) await afterReview(result, queue, selected);
     });
     return { runId: run.id };
+  }
+  recordUpdate(id, state, basis, update) {
+    return finishRecordUpdate(this, id, state, basis, update);
   }
   saveReview(runId, basis) {
     this.ownServer();
