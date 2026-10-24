@@ -73,3 +73,6 @@ boundaries are documented in [factory UI](factory-ui.md).
 `factory-ui/reconcile.mjs` reviews already finished work and validates a consecutive
 set of evidence-backed stage outcomes before updating a stale issue. It never
 launches workers, merges code or accepts issues.
+
+`factory-ui/issue-decision.mjs` owns explicit final-review acceptance/closure and
+reopening, with current report/evidence guards and preserved historical outcomes.

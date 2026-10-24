@@ -76,7 +76,8 @@ export function savedRoute(issue, runs) {
   return review?.savedRoutes.find((route) => route.issueId === issue.id)?.steps || [];
 }
 export function stageOutcome(issue, state) {
-  const events = Array.isArray(issue.lifecycle_history) ? issue.lifecycle_history : [];
+  const history = Array.isArray(issue.lifecycle_history) ? issue.lifecycle_history : [];
+  const events = history.slice(history.findLastIndex((e) => e.outcome === 'reopened') + 1);
   return events.findLast((e) => e.state === state && validOutcome(e)) || null;
 }
 function validOutcome(event) {
@@ -114,7 +115,7 @@ function recordSingle(doc, events, issue, target, result, run, evidence) {
       chat: run.threadId,
       evidence,
     });
-  doc.set('lifecycle_history', events);
+  doc.set('lifecycle_history', doc.createNode(events, { aliasDuplicateObjects: false }));
 }
 
 function historyFrom(doc) {
@@ -131,5 +132,5 @@ function recordMultiple(doc, events, result, run, evidence, target) {
       chat: run.threadId,
       evidence,
     });
-  doc.set('lifecycle_history', events);
+  doc.set('lifecycle_history', doc.createNode(events, { aliasDuplicateObjects: false }));
 }

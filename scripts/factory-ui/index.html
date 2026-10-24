@@ -919,12 +919,39 @@
         if (!result) return '';
         return `<section class="card latest-result" id="latest-review-result"><small>${result.fresh ? 'Result of your last review' : 'Earlier review — information has changed'}</small><h3>Review finished</h3><p><b>${result.recommendations.length ? `${result.recommendations.length} suggested assignment${result.recommendations.length === 1 ? '' : 's'}` : 'No new worker recommended'}</b></p>${reviewConclusion(result.summary)}${result.recommendations.map((a) => `<div class="suggestion"><h4>${esc(a.title)}</h4><p>${esc(a.scope)}</p><p><b>Why:</b> ${esc(a.reason)}</p></div>`).join('')}${routeDetails(result.routes, result.saved)}<h4>What to do next</h4><p>${esc(result.nextStep)}</p>${result.fresh && result.saveProblem ? `<p class="plan-problem"><b>The proposed route cannot be saved:</b> ${esc(result.saveProblem)} Use Progress to check existing work before planning another assignment. This read-only review has not changed the issue.</p>` : ''}${result.saved ? '<p>The recommendation and route were saved. Saving did not start a worker.</p>' : ''}${chatLink(result.threadId)}</section>`;
       }
+      function finalControls(issue, role) {
+        const closed = role === 'closed';
+        return `<section class="next-action"><div><small>${closed ? 'Issue closed' : 'Your decision'}</small><h3>${closed ? 'This issue is closed' : 'Ready for final review'}</h3><p>${closed ? 'You can review the result or reopen the issue if more work is needed.' : 'The work is implemented, checked and committed. Review the result, close the issue if you accept it, or reopen it if more work is needed.'}</p>${humanChecks(issue)}<div class="toolbar">${closed ? '' : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Close issue</button>`}<button data-review-result="${esc(issue.id)}">Review result</button><button data-issue-decision="reopen" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Reopen issue</button></div></div></section>`;
+      }
+      let reviewOpenFor = null;
+      function reviewRecordedResult(id) {
+        reviewOpenFor = id;
+        const result = $('recorded-result');
+        if (!result) return;
+        result.open = true;
+        result.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        result.querySelector('summary').focus();
+      }
+      function selectIssueDecision(button) {
+        const kind = button.dataset.issueDecision;
+        selection = {
+          decision: true,
+          issueId: button.dataset.issueId,
+          state: button.dataset.issueState,
+          kind,
+          basis: data.reviewBasis,
+        };
+        $('selection').innerHTML =
+          kind === 'close'
+            ? '<h2>Close this issue?</h2><p>This accepts the recorded result and closes the issue. You can reopen it later if more work is needed.</p>'
+            : '<h2>Reopen this issue?</h2><p>This returns the issue to investigation. The existing result, checks and commits are kept. No worker starts automatically.</p><label>What still needs work? (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>';
+        $('approve').textContent = kind === 'close' ? 'Accept and close issue' : 'Reopen issue';
+        $('approve').disabled = false;
+        $('confirm').showModal();
+      }
       function progressControls(issue) {
-        if (
-          issue.progress.disabled &&
-          data.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-to-close')
-        )
-          return `<section class="next-action"><div><small>Your decision</small><h3>Ready for final review</h3><p>The work is implemented, checked and committed. No new worker or integration is needed.</p><p>Review the recorded result. If it meets the request, say “I accept this fix; close the issue” in this chat. If something is wrong, describe it so we can address it.</p>${humanChecks(issue)}</div></section>`;
+        const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
+        if (['ready-to-close', 'closed'].includes(role) && issue.progress.disabled) return finalControls(issue, role);
         const choice = issue.progress;
         if (!choice) return '';
         const r = issue.readiness || { status: 'unchecked' };
@@ -990,13 +1017,22 @@
           };
         $('confirm').showModal();
       }
+      function recordedResultIndex(sections) {
+        const latest = sections.findLastIndex((s) => /^## (Issue progress review|Worker result review)/.test(s));
+        if (latest >= 0) return latest;
+        return Math.max(
+          0,
+          sections.findLastIndex((s) => /^## (Evidence and progress|Result|Verification)/.test(s))
+        );
+      }
       function issueNotes(i) {
         const text = i.content.replace(/^---[\s\S]*?---\s*/, '');
         const sections = text.split(/(?=^## )/m).filter((section) => section.trim());
+        const resultIndex = recordedResultIndex(sections);
         return `<section class="card"><h2>Recorded issue notes</h2><p class="muted">Notes are shown in the order they appear in the issue report.</p>${sections
-          .map((section) => {
+          .map((section, index) => {
             const match = section.match(/^## ([^\n]+)\n([\s\S]*)/);
-            return `<details><summary>${esc(match ? match[1] : 'Issue description')}</summary><div class="prose">${reportText(match ? match[2] : section)}</div></details>`;
+            return `<details ${index === resultIndex ? `id="recorded-result" ${reviewOpenFor === i.id ? 'open' : ''}` : ''}><summary tabindex="-1">${esc(match ? match[1] : 'Issue description')}</summary><div class="prose">${reportText(match ? match[2] : section)}</div></details>`;
           })
           .join('')}</section>`;
       }
@@ -1004,7 +1040,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use this chat to answer questions, report manual checks or accept the result. The issue stays open until you accept it.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the buttons in the current step to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       function render() {
         const route = location.hash.split('/');
@@ -1012,6 +1048,12 @@
         bind();
       }
       function bind() {
+        document.querySelectorAll('[data-review-result]').forEach((button) => {
+          button.onclick = () => reviewRecordedResult(button.dataset.reviewResult);
+        });
+        document.querySelectorAll('[data-issue-decision]').forEach((button) => {
+          button.onclick = () => selectIssueDecision(button);
+        });
         document.querySelectorAll('[data-check-issue]').forEach((button) => {
           button.onclick = () =>
             act(() =>
@@ -1095,7 +1137,9 @@
       $('cancel').onclick = () => $('confirm').close();
       $('approve').onclick = () =>
         act(async () => {
-          if (selection.progress)
+          if (selection.decision)
+            await request('issue-decision', { ...selection, reason: $('reopen-reason')?.value || '' });
+          else if (selection.progress)
             await request('progress-start', {
               token: selection.token,
               humanApproved: $('human-approval')?.checked === true,

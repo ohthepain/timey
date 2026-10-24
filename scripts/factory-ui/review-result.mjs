@@ -92,7 +92,7 @@ export function appendReview(root, issue, result, run, evidence, target) {
     doc.set('updated', new Date().toISOString());
     if (target) doc.set('state', target);
     recordStage(doc, issue, target, result, run, evidence);
-    const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\nReviewed by coordinator chat ${run.threadId}. Action ${run.actionId}.\n\nEvidence:\n${evidence.map((e) => '- ' + e.path + ' (sha256:' + e.sha256 + ')').join('\n')}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${target ? '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n' : ''}`;
+    const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${evidence.map((e) => '- ' + e.path + ' (sha256:' + e.sha256 + ')').join('\n')}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${target ? '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n' : ''}`;
     const next = '---\n' + doc.toString() + '---' + content.slice(match[0].length) + notes;
     const temp = join(dirname(path), '.review-' + randomUUID() + '.tmp');
     writeFileSync(temp, next, { mode: 0o600 });
@@ -119,7 +119,13 @@ function nonempty(value) {
   return typeof value === 'string' && value.trim();
 }
 
+function recordedBy(run) {
+  return run.kind === 'decision'
+    ? 'Recorded from the issue screen by an explicit user action.'
+    : `Reviewed by coordinator chat ${run.threadId}. Action ${run.actionId}.`;
+}
 function reviewHeading(result) {
+  if (result.user_decision) return 'Issue decision';
   return result.stage_records ? 'Issue progress review' : 'Worker result review';
 }
 export function recordReviewResult(service, run, result) {

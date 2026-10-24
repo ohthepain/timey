@@ -40,9 +40,10 @@ New lifecycle stages use the same step layout without requiring another screen.
 
 Even the saved `automatic` merge policy requires the explicit integration action
 in this UI. No worker completion, saved answer or refresh starts a follow-up action.
-Nothing in this interface accepts or closes issues. Handle human answers,
-hardware checks and acceptance in the coordinator chat using the installed
-human-input protocol. The UI invokes that protocol's operation-specific structural
+Final review offers explicit Review result, Close issue and Reopen issue buttons.
+Close records the user’s acceptance after current evidence and human-input guards
+pass; reopening preserves prior outcomes and returns to investigation. Human
+answers and hardware checks continue to use the installed human-input protocol. The UI invokes that protocol's operation-specific structural
 guards before dispatch and integration; those checks do not replace semantic
 review of the answers and candidate scope.
 
@@ -222,3 +223,18 @@ must be ancestors of the selected target. Structural human-input reads are fresh
 for each operation and transition; the reviewer assesses their meaning. The UI
 never infers human acceptance. A failed unchanged reconciliation stays disabled
 with the specific reason instead of offering repeated identical reviews.
+
+## Final review actions
+
+**Review result** opens and scrolls to the latest recorded issue/worker result in
+Recorded issue notes, retaining its original text. **Close issue** presents an
+explicit acceptance confirmation and then closes only the selected final-review
+issue. It rechecks the exact displayed queue, current source revision, recorded
+evidence, outstanding workers and manual requirements. Missing/stale evidence or
+required human checks leave the issue open. It never marks human checks passed.
+
+**Reopen issue** accepts an optional reason and returns a final-review or closed
+issue to the configured investigation stage. It preserves source, commits and
+all report history, records a human reopening event, and starts no worker. Prior
+completed stages remain in history but do not count as current outcomes after a
+reopening. Duplicate/stale submissions cannot close or reopen a different state.

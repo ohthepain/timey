@@ -21,9 +21,19 @@ function dependencyReports(queue, issue) {
   return queue.issues.filter((other) => issue.links.depends.includes(other.id)).map((other) => other.content);
 }
 function latestReview(issue, runs) {
-  return runs.findLast(
-    (r) => r.kind === 'evaluation' && r.issueId === issue.id && r.issueState === issue.state && r.status === 'completed'
+  return runs.findLast((r) => matchingReview(issue, r) && afterReopening(issue, r));
+}
+function matchingReview(issue, run) {
+  return (
+    run.kind === 'evaluation' &&
+    run.issueId === issue.id &&
+    run.issueState === issue.state &&
+    run.status === 'completed'
   );
+}
+function afterReopening(issue, run) {
+  const reopened = issue.lifecycle_history?.findLast((e) => e.outcome === 'reopened');
+  return !reopened || Date.parse(run.updated) > Date.parse(reopened.at);
 }
 function freshReview(queue, issue, run) {
   const key = run.savedReviewInput || run.reviewInput;

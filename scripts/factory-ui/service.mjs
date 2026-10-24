@@ -14,6 +14,7 @@ import { readinessView, checkReadiness, explainBlock } from './readiness.mjs';
 import { stageStates } from './stage-state.mjs';
 import { latestResult, reviewInput, savedReviewInput } from './review-followup.mjs';
 import { validateRoutes } from './lifecycle.mjs';
+import { decideIssue } from './issue-decision.mjs';
 import { nextProgress } from './next-action.mjs';
 import { prepareProgress, triggerProgress } from './progress.mjs';
 
@@ -65,6 +66,9 @@ export class FactoryUI {
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
     };
+  }
+  decideIssue(id, state, kind, basis, reason) {
+    return decideIssue(this, id, state, kind, basis, reason);
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);

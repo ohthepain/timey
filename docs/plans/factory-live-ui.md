@@ -247,3 +247,18 @@ this evidence review. Queue review remains advisory. The final review panel
 states the actual human decision and does not offer another readiness check.
 Live validation and retained summaries are indexed in
 `.issues/evidence/issue-reconciliation-validation.json`.
+
+## Final review controls
+
+Starting revision: `c99158953e09abf9454c31bf536fa770d38feea8`.
+
+Replace instructions to type in a nonexistent UI chat with Close issue, Review
+result and Reopen issue. Review opens the latest result directly without
+rewriting its content. Closing records actual acceptance only from the explicit
+confirmation, with fresh state/source/evidence and human-input checks. Reopening
+preserves the previous work and records why it needs investigation again; it
+never launches another worker. Validate closure, stale/duplicate submissions,
+manual blockers, evidence changes and reopened history with disposable reports.
+Inspect Review and both confirmation dialogs on the real compiler issue without
+accepting or reopening it. Retain validation in
+`.issues/evidence/final-review-buttons-validation.json`.

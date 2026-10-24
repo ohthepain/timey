@@ -1046,3 +1046,58 @@ test('a malformed evidence reference is corrected once in the same chat before a
   assert.deepEqual(run.rejectedResult.evidence, ['not-an-absolute-file']);
   assert.equal(service.snapshot().issues[0].state, 'final');
 });
+
+test('final-review buttons close with explicit acceptance and reopen without launching or losing history', async (t) => {
+  const { service, api, root } = completedWorkFixture(t);
+  assert.equal((await reconcileNow(service)).status, 'completed');
+  const before = readFileSync(join(root, '.issues/factory.json'), 'utf8');
+  const snapshot = service.snapshot();
+  assert.deepEqual(service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), { state: 'closed' });
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis),
+    /another stage|out of date/
+  );
+  const closed = service.snapshot();
+  assert.match(closed.issues[0].content, /user selected Close issue/);
+  assert.equal(closed.issues[0].state, 'closed');
+  assert.deepEqual(
+    service.decideIssue('20261022-one', 'closed', 'reopen', closed.reviewBasis, 'Still fails for my file.'),
+    { state: 'investigate' }
+  );
+  const reopened = service.snapshot().issues[0];
+  assert.match(reopened.content, /Still fails for my file/);
+  assert.match(reopened.content, /Existing checked commit/);
+  assert.equal(reopened.stageStates.implement.status, 'future');
+  assert.equal(reopened.progress.kind, 'plan', 'Reopening needs a new review, not the old no-worker conclusion.');
+  assert.equal(api.inspect().registry.actions.length, 0);
+  assert.equal(readFileSync(join(root, '.issues/factory.json'), 'utf8'), before);
+});
+test('closing refuses stale source, changed evidence and outstanding manual checks', async (t) => {
+  const { service, root, git } = completedWorkFixture(t);
+  await reconcileNow(service);
+  const snapshot = service.snapshot();
+  writeFileSync(join(root, 'source.js'), 'export const answer=99;\n');
+  assert.throws(() => service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), /out of date/);
+  git('checkout', '--', 'source.js');
+  const report = join(root, '.issues/20261022-one.md');
+  const original = readFileSync(report, 'utf8');
+  writeFileSync(
+    report,
+    original.replace(
+      'state: final',
+      'state: final\nhuman_checks:\n  - id: manual\n    kind: judgment\n    status: pending\n    instructions: Check the result\n    blocks: closure\n    revision: current\n    result: null'
+    )
+  );
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'final', 'close', service.snapshot().reviewBasis),
+    /manual check/
+  );
+  writeFileSync(report, original);
+  const log = join(root, '.issues/fallow.log');
+  writeFileSync(log, readFileSync(log, 'utf8') + 'Changed\n');
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'final', 'close', service.snapshot().reviewBasis),
+    /recorded result changed/
+  );
+  assert.equal(service.snapshot().issues[0].state, 'final');
+});
