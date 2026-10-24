@@ -1,3 +1,4 @@
+import { describeLaunch } from './data.mjs';
 import { chatConnectionProblem } from './worker-history.mjs';
 import { reviewFollowup } from './review-followup.mjs';
 import { digest, requireThat } from './common.mjs';
@@ -58,7 +59,7 @@ function chooseWork(queue, issue, stage, runs) {
   if (waiting) return existingWork(waiting, runs);
   const candidate = actions.find((a) => a.status === 'completed' && ['implement', 'integrate'].includes(a.kind));
   if (candidate) return integration(candidate);
-  const recommended = matching.find((a) => a.status === 'recommended');
+  const recommended = matching.find((a) => a.status === 'recommended' && !describeLaunch(queue, a));
   if (recommended)
     return { kind: 'launch', actionId: recommended.id, title: 'Start recommended work', summary: recommended.scope };
   return {

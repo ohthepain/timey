@@ -1011,7 +1011,7 @@
         const compact = ['completed', 'skipped', 'planned-skip', 'unknown'].includes(state.status);
         const helpId = 'step-help-' + index;
         const history = stageReviews(i, step, current);
-        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use the button in this step for its next action. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Actions are available on the current step.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use Progress above to continue through the approved plan. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Use Progress above to continue.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
       }
       function currentStageContent(issue, step) {
         if (issue.implementation && step.role === 'ready-to-verify')
@@ -1318,46 +1318,54 @@
         if (['ready-to-close', 'closed'].includes(role) && issue.progress.disabled) return finalControls(issue, role);
         if (/UI lost the link/.test(issue.readiness?.summary || ''))
           return `<section class="next-action"><div><h3>Find the existing work</h3><p>The UI lost the link to the Codex chat that worked on this task. It can look it up and restore the link so you can review the finished result.</p><button class="primary" data-find-worker="${esc(issue.id)}" data-worker-state="${esc(issue.state)}">Find existing chat</button></div></section>`;
-        const choice = issue.progress;
-        if (!choice) return '';
-        const r = issue.readiness || { status: 'unchecked' };
-        const ready = r.status === 'ready';
-        const busy = data.runs.some(
-          (run) =>
-            run.connected &&
-            (run.issueId === issue.id || data.actions.some((a) => a.id === run.actionId && a.issues.includes(issue.id)))
-        );
-        const title = progressTitle(issue, busy);
-        const summary = choice.disabled
-          ? choice.summary
-          : busy
-            ? issue.stageStates[issue.state].summary
-            : r.status === 'blocked'
-              ? r.summary
-              : actionSummary(choice);
-        const finished = choice.disabled && issue.latestResult?.fresh;
-        return `<section class="next-action"><div><small>${finished ? 'No repeat action' : ready ? 'Ready for the next action' : 'What happens next'}</small><h3>${esc(title)}</h3><p>${esc(summary)}</p>${r.status === 'blocked' ? stepChatLinks(issue) : ''}</div><button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled || busy ? 'disabled' : ''}>${r.approvalAvailable ? 'Review required approval' : 'Progress →'}</button></section>`;
+        return '';
       }
-      function actionSummary(choice) {
-        return (
-          {
-            commit: 'Record the existing verified commit and continue. No new chat is needed.',
-            review: 'Review the finished result and update this issue.',
-            plan: 'Find the next task, or record work already finished.',
-            reconcile: 'Check existing work and move through the steps already finished.',
-            'save-review': 'Save the proposed work before starting it.',
-            launch: 'Start the saved task in a separate Codex chat.',
-            integrate: 'Review and bring the finished changes into the project.',
-          }[choice.kind] || choice.summary
-        );
+      const lifecycleDrafts = new Map();
+      function lifecyclePanel(issue) {
+        const record = issue.lifecycle;
+        const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
+        if (role === 'closed') return '';
+        const active = ['running', 'answering'].includes(record?.status);
+        const child = data.runs.find((r) => r.id === record?.childRunId);
+        const summary =
+          record?.summary ||
+          'Continue through this issue’s approved plan. We’ll stop here if we need your input, then continue after you answer.';
+        const input = record?.input;
+        return `<section class="card lifecycle-progress" aria-live="polite"><h3>${active ? 'Working on this issue' : input ? 'Your input is needed' : role === 'ready-to-close' ? 'Ready for final review' : 'Move this issue forward'}</h3><p>${esc(child?.connected ? child.summary : summary)}</p>${!input && role !== 'ready-to-close' ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy ? 'disabled' : ''}>${active ? 'Progress in progress…' : record ? 'Resume progress →' : 'Progress →'}</button>` : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? lifecycleInput(issue, record) : ''}${child?.connected ? approvals(child) + lifecycleActivity(child) : ''}${
+          record?.events?.length
+            ? `<details><summary>What happened</summary><ol>${record.events
+                .slice(-20)
+                .map((e) => `<li>${esc(e.message)}</li>`)
+                .join('')}</ol></details>`
+            : ''
+        }</section>`;
       }
-      function progressTitle(issue, busy) {
-        if (busy) return 'Work in progress';
-        return issue.progress.title;
+      function lifecycleActivity(run) {
+        const message = run.events.findLast(
+          (e) => e.method === 'item/completed' && e.params?.item?.type === 'agentMessage'
+        )?.params.item.text;
+        return message ? `<details><summary>Latest update</summary><p class="prose">${esc(message)}</p></details>` : '';
+      }
+      function lifecycleInput(issue, record) {
+        const input = record.input;
+        const common = `data-lifecycle-answer="${esc(issue.id)}" data-lifecycle-updated="${esc(record.updated)}"`;
+        const textarea = `<label>Your answer<textarea id="lifecycle-answer-${esc(issue.id)}" rows="4">${esc(lifecycleDrafts.get(issue.id) || '')}</textarea></label>`;
+        const approve = `<button class="primary" ${common} data-decision="approve">${input.type === 'integration' ? 'Approve these changes and continue' : 'Approve plan and continue'}</button>`;
+        if (input.type === 'plan')
+          return `<p>${esc(input.plan.summary)}</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
+        if (input.type === 'integration')
+          return `<p>Candidate <code>${esc(input.candidate)}</code> will be added to revision <code>${esc(input.target)}</code>. This plan requires your review before integration.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
+        const question =
+          input.type === 'questions'
+            ? input.questions.map((q) => `<p>${esc(q.question)}</p>`).join('')
+            : `<p>${esc(input.request?.prompt || input.question)}</p>`;
+        return `${question}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">${input.type === 'retry' ? 'Try again and continue' : 'Send answer and continue'}</button>`;
       }
       function liveStepWork(issue, stage) {
         return data.runs
-          .filter((run) => run.connected && belongsInStage(run, issue, stage, true))
+          .filter(
+            (run) => run.connected && run.id !== issue.lifecycle?.childRunId && belongsInStage(run, issue, stage, true)
+          )
           .map((run) => progress(run, true))
           .join('');
       }
@@ -1384,24 +1392,6 @@
         const role = run.kind === 'integration' ? 'integration' : actionRoles[action.kind];
         return role === stage.role;
       }
-      function savePreview(choice) {
-        const run = data.runs.find((r) => r.id === choice.runId);
-        if (!run?.result) return '';
-        return `<p class="prose">${esc(run.result.summary)}</p><ul>${run.result.recommendations.map((a) => `<li><b>${esc(a.title)}</b>: ${esc(a.scope)}</li>`).join('')}</ul>${routePreview(run)}`;
-      }
-      async function selectProgress(id, state) {
-        selection = await request('progress-preflight', { issueId: id, state });
-        const a = selection.action;
-        $('selection').innerHTML =
-          `<h2>${esc(selection.choice.title)}</h2><p>${esc(selection.choice.summary)}</p><p>${selection.choice.kind === 'reconcile' ? 'This records steps that are already finished and stops at the first requirement still needing attention. It does not start workers, merge changes or close the issue.' : 'This performs one selected action. Further work needs another click.'}</p>${selection.choice.kind === 'save-review' ? savePreview(selection.choice) + '<p>This records the reviewed recommendation and planned route only. Worker launch, integration and issue acceptance remain separate actions.</p>' : ''}${selection.choice.kind === 'review' ? '<p>The existing review chat will check the finished work and supporting files, then update this issue. It can move the issue forward when that work is complete. It will not restart the worker or close the issue.</p>' : ''}${selection.choice.kind === 'plan' ? '<p>A separate chat will review this issue. If the work already exists, its completed steps will be recorded automatically. New assignments, worker launches and integration remain separate choices.</p>' : ''}${a ? `<h3>${esc(a.title)}</h3><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p>` : ''}${selection.diff !== undefined && selection.diff !== null ? `<details><summary>Candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details>` : ''}${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
-        $('approve').textContent = selection.choice.title;
-        $('approve').disabled = selection.requiresApproval === true;
-        if (selection.requiresApproval)
-          $('human-approval').onchange = () => {
-            $('approve').disabled = !$('human-approval').checked;
-          };
-        $('confirm').showModal();
-      }
       function recordedResultIndex(sections) {
         const latest = sections.findLastIndex((s) => /^## (Issue progress review|Worker result review)/.test(s));
         if (latest >= 0) return latest;
@@ -1425,7 +1415,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the buttons in the current step to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2>${lifecyclePanel(i)}<p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       function render() {
         const route = location.hash.split('/');
@@ -1504,13 +1494,33 @@
         document.querySelectorAll('[data-issue-decision]').forEach((button) => {
           button.onclick = () => selectIssueDecision(button);
         });
-        document
-          .querySelectorAll('[data-progress-id]')
-          .forEach(
-            (button) =>
-              (button.onclick = () =>
-                act(() => selectProgress(button.dataset.progressId, button.dataset.progressState)))
-          );
+        document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
+          button.onclick = () =>
+            act(() =>
+              request('lifecycle-start', {
+                issueId: button.dataset.lifecycleStart,
+                state: data.issues.find((i) => i.id === button.dataset.lifecycleStart).state,
+                basis: data.reviewBasis,
+              })
+            );
+        });
+        document.querySelectorAll('[id^=lifecycle-answer-]').forEach((field) => {
+          field.oninput = () => lifecycleDrafts.set(field.id.slice('lifecycle-answer-'.length), field.value);
+        });
+        document.querySelectorAll('[data-lifecycle-answer]').forEach((button) => {
+          button.onclick = () =>
+            act(() =>
+              request('lifecycle-answer', {
+                issueId: button.dataset.lifecycleAnswer,
+                updated: button.dataset.lifecycleUpdated,
+                decision: button.dataset.decision,
+                text: $('lifecycle-answer-' + button.dataset.lifecycleAnswer)?.value || '',
+              })
+            );
+        });
+        document.querySelectorAll('[data-lifecycle-pause]').forEach((button) => {
+          button.onclick = () => act(() => request('lifecycle-pause', { issueId: button.dataset.lifecyclePause }));
+        });
         document
           .querySelectorAll('[data-step-id]')
           .forEach((step) => (step.ontoggle = () => expandedSteps.set(step.dataset.stepId, step.open)));

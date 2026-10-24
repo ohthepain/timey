@@ -24,28 +24,42 @@ and report notes provide history where it exists; missing historical transitions
 are not reconstructed. Unmatched assignment kinds stay visible under Other work.
 New lifecycle stages use the same step layout without requiring another screen.
 
-## Separate manual actions
+## Lifecycle Progress
 
-1. **Review queue with Codex** starts one read-only coordinator chat. It proposes
-   work but does not change recommendations or launch workers.
-2. **Save these recommendations** saves the reviewed assignments using the existing
-   ledger helper. A changed queue or source revision requires another review.
-3. **Start worker** shows the saved scope, checks, integration policy, current
-   revision and human obligations. Confirmation reserves exactly that assignment,
-   creates an isolated Git checkout at its saved base, and starts one CLI chat.
-4. **Review integration** appears for completed code actions. Its separate
-   confirmation starts a coordinator chat for that exact candidate. Human-first
-   actions require explicit approval. The server independently reruns combined
-   verification and the strict saved-base audit before recording integration.
+The lifecycle header has one **Progress** button. Pressing it opts into continued
+work for this selected issue, bounded by its approved implementation plan. The
+server reads saved answers first and records completed clarification when the
+actual discussion supports it. Missing structured grilling metadata does not
+cause a repeated interview. Plan approval remains separate: an original human
+approval must cover the exact current plan, otherwise the plan is shown inline
+with **Approve plan and continue** and **Request changes**.
 
-Even the saved `automatic` merge policy requires the explicit integration action
-in this UI. No worker completion, saved answer or refresh starts a follow-up action.
-Final review offers explicit Review result, Close issue and Reopen issue buttons.
-Close records the user’s acceptance after current evidence and human-input guards
-pass; reopening preserves prior outcomes and returns to investigation. Human
-answers and hardware checks continue to use the installed human-input protocol. The UI invokes that protocol's operation-specific structural
-guards before dispatch and integration; those checks do not replace semantic
-review of the answers and candidate scope.
+After approval, Progress recommends and saves bounded work, starts or reconnects
+to its existing worker, waits for results, reviews evidence, checks implementation
+criteria, records verified commits and integrates when the approved plan and saved
+automatic merge policy permit. The scope of each saved assignment is reviewed
+against the plan before dispatch. It never includes another issue implicitly.
+Technical failures get one bounded same-worker correction when the approved plan
+and current permissions cover it. Missing evidence is never called a pass.
+
+Actual human questions and permission requests appear in the issue. Answers are
+retained with provenance, reviewed for coverage and routed to the original owner:
+shared human-input requests use the installed guarded helper, human checks update
+the existing check, and native CLI requests reply to their existing chat. Partial
+answers leave the obligation open. **Human-first integration** shows the exact
+diff and needs explicit candidate/target approval. Changed inputs invalidate that
+approval. Final review keeps **Review result**, **Close issue** and **Reopen issue**;
+Progress never accepts or closes an issue.
+
+The header shows the current activity and a short history. Pause takes effect
+after the current action. The durable controller record is
+`.issues/factory-ui/lifecycle.json`, separate from child chat runs. Duplicate
+Progress clicks do not duplicate work. Refreshes and server restarts never replay
+work; explicit Resume inspects saved runs and reconnects known workers. Unknown
+ownership or an unchanged action without progress stops with its retained result.
+A changed plan pauses before the next action. Old manual action endpoints remain
+available for queue-level operation and compatibility; their individual guards
+and exact-candidate checks remain enforced.
 
 ## CLI connection and recovery
 
@@ -147,7 +161,7 @@ precedence over an older completion record.
 Queue/issue reviews propose `routes`: issue ID and current/future steps with exact
 state, `take`/`skip`/`undecided` and a reason. `@integration` names the separate
 manual integration step. Routes are only persisted as `savedRoutes` in the review
-run after explicit Save recommendations and route. A route-only review can be
+run after saving recommendations and route, either manually or within approved lifecycle Progress. A route-only review can be
 saved without adding an assignment. Missing plans say Not decided; later saved
 plans replace earlier future plans, without changing historical outcomes.
 
@@ -159,19 +173,12 @@ guard. Required verification, custom stages, acceptance and closure are not
 bypassed. A planned integration skip is rejected if unintegrated code work exists
 or is being recommended. Skipped events need reviewed reasons and actual evidence.
 
-## Try the next action directly
+## Action checks
 
-The current stage offers Progress without a separate readiness review. Progress
-shows the selected action and its scope, then checks current inputs, ownership,
-permissions and required human decisions as part of execution. A failed attempt
-records or displays its specific reason; the user can retry after addressing it.
-Opening the page still starts no work. Active work and an unchanged completed
-review prevent duplicate attempts. Launches, integration and acceptance remain
-separate explicit actions with their existing checks and confirmations.
-
-The readiness endpoint remains available for read-only inspection and older
-clients. Its records do not enable or disable Progress. An unchecked or outdated
-readiness record is not a blocker and does not start an extra chat during Progress.
+Lifecycle Progress checks current inputs, ownership, permissions and human
+requirements as part of execution. There is no separate readiness step or
+per-stage Progress confirmation. The old readiness endpoint is a read-only
+inspection for compatibility; its timestamps do not enable or disable Progress.
 
 ## Finished review feedback
 
@@ -184,8 +191,8 @@ conclusion and ask the coordinator to record needed decisions or issue updates; 
 
 Progress consumes a completed unchanged review instead of offering the identical
 planning chat again. A valid unsaved proposal offers Save recommendations and
-route with a concrete preview. Saving starts no worker; after saving, applicable
-saved work offers the separate launch or integration action. A route-only save,
+route with a concrete preview. Manual saving starts no worker. An active approved lifecycle run continues to
+the applicable launch or integration action itself. A route-only save,
 no-action conclusion or invalid proposal disables Progress with a reason. Invalid
 routes require correction or evidence-backed issue bookkeeping by the coordinator, not silent acceptance or a duplicate worker. Full-queue save freshness and
 one-use confirmation checks still apply.
@@ -344,8 +351,7 @@ A historical blocked review without sufficient input receipts gets one fresh
 read-only turn in its existing chat. New reviews retain the queue/source basis,
 original worker turn, instruction receipts, completed response and checked evidence
 hashes before recording. An unchanged recording failure can retry saving without
-another model turn; changed inputs require a fresh turn in the same chat. Native
-worker assignments, launches, integrations and human acceptance remain separate.
+another model turn; changed inputs require a fresh turn in the same chat. Worker assignments retain separate run records; required human decisions remain explicit.
 Events for a resumed chat belong to its current connected run, preserving old run
 history. A file failure releases the operation lock and blocks only the affected
 review's completion; retained findings remain visible.

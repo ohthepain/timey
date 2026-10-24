@@ -116,3 +116,12 @@ legacy integration records for explicit final acceptance, without inventing hist
 `scripts/factory-ui/record-update.mjs` applies reviewed updates to one local issue
 record and retains preservation receipts. `record-update-policy.mjs` limits that
 path to excluded records and configured ordinary stages, ending at Final review.
+
+The issue-level Progress controller is `factory-ui/lifecycle-control.mjs` and
+`lifecycle-loop.mjs`; it composes existing operation handlers rather than replacing
+their guards. `lifecycle-store.mjs` owns its separate durable record.
+`lifecycle-assessment.mjs`, `lifecycle-authorization.mjs` and `lifecycle-review.mjs`
+review saved answers, original plan approval and assignment scope. Inline responses
+route through `lifecycle-input.mjs` and `lifecycle-human.mjs`; native shared requests
+retain guarded owner updates. `lifecycle-work.mjs` waits for child runs and reuses
+existing chats for bounded corrections. See the UI guide for consent boundaries.

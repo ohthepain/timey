@@ -87,3 +87,11 @@ result and reason without claiming a pass or accepting the issue.
 A coordinator update to one local issue that records corrections already made.
 It checks preservation of other records and source, requires no code commit, and
 leaves unperformed demonstrations and final acceptance explicit.
+
+## Lifecycle Progress
+
+An explicitly started run that continues one issue through work covered by its
+approved implementation plan. It composes individual factory actions, retains
+its activity and answers in the issue UI, and pauses for actual human input.
+It is separate from a single `/factory` decision iteration and never supplies
+human-first integration approval or final acceptance on the user’s behalf.

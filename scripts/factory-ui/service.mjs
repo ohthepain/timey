@@ -1,3 +1,5 @@
+import { loadLifecycles, lifecycleView, approvedLifecyclePlan } from './lifecycle-store.mjs';
+import { startLifecycle, answerLifecycle, pauseLifecycle, continueLifecycleAfter } from './lifecycle-control.mjs';
 import { finishRecordUpdate } from './record-update.mjs';
 import { mkdirSync, existsSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -42,6 +44,8 @@ export class FactoryUI {
     this.api = factory(this.root);
     this.store = new RunStore(this.root);
     this.intents = new Map();
+    this.lifecycleRuns = loadLifecycles(this.root);
+    this.lifecycleTasks = new Map();
     this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
     this.check = checkCandidate;
     this.guard = humanGuard;
@@ -70,6 +74,7 @@ export class FactoryUI {
     return {
       ...issue,
       readiness,
+      lifecycle: lifecycleView(this, issue),
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
@@ -86,13 +91,20 @@ export class FactoryUI {
     return checkImplementation(this, id, state, path, basis);
   }
   decidePlanCheck(id, state, checkId, status, basis, result) {
-    return decidePlanCheck(this, id, state, checkId, status, basis, result);
+    const recorded = decidePlanCheck(this, id, state, checkId, status, basis, result);
+    continueLifecycleAfter(this, id);
+    return recorded;
   }
   skipPlanChecks(input) {
-    return skipPlanChecks(this, input);
+    const result = skipPlanChecks(this, input);
+    continueLifecycleAfter(this, input.issueId);
+    return result;
   }
   approveReviewFile(input) {
-    return approveReviewFile(this, input);
+    const result = approveReviewFile(this, input);
+    const run = this.store.runs.find((r) => r.id === input.runId);
+    if (result.runId) continueLifecycleAfter(this, run.issueId);
+    return result;
   }
   findConnection(id, state, basis) {
     return findConnection(this, id, state, basis);
@@ -105,6 +117,15 @@ export class FactoryUI {
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);
+  }
+  startLifecycle(input) {
+    return startLifecycle(this, input);
+  }
+  answerLifecycle(input) {
+    return answerLifecycle(this, input);
+  }
+  pauseLifecycle(input) {
+    return pauseLifecycle(this, input);
   }
   progressPreflight(id, state) {
     return prepareProgress(this, id, state);
@@ -371,7 +392,11 @@ export class FactoryUI {
         await this.codex.turn(
           threadId,
           this.root,
-          evaluationPrompt({ ...queue, focus_issue_ids: issueId ? [issueId] : null }),
+          evaluationPrompt({
+            ...queue,
+            approved_lifecycle_plan: approvedLifecyclePlan(this, issueId),
+            focus_issue_ids: issueId ? [issueId] : null,
+          }),
           evaluationSchema
         )
       );

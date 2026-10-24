@@ -1691,64 +1691,33 @@ test('earlier checklist results keep their recorded status without enabling acti
   }
 });
 
-test('Progress can be attempted without a separate readiness check and stays disabled during work', () => {
+test('lifecycle Progress is direct, shows inline questions and disables duplicate clicks during work', () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const source = html.slice(
-    html.indexOf('      function progressControls('),
-    html.indexOf('      function actionSummary(')
+    html.indexOf('      const lifecycleDrafts ='),
+    html.indexOf('      function liveStepWork(')
   );
-  const screenData = { lifecycle: [], runs: [], actions: [] };
-  const render = new Function(
-    'data',
-    'esc',
-    'progressTitle',
-    'actionSummary',
-    'readinessExplanation',
-    'stepChatLinks',
-    'finalControls',
-    source + ';return progressControls;'
-  )(
-    screenData,
-    (value) => value,
-    (issue) => issue.progress.title,
-    (choice) => choice.summary,
-    () => 'Use Progress to attempt the action.',
-    () => '',
+  const screen = { lifecycle: [], runs: [] };
+  const render = new Function('data', 'esc', 'busy', 'approvals', source + ';return lifecyclePanel;')(
+    screen,
+    (value) => String(value || ''),
+    false,
     () => ''
   );
-  for (const readiness of [
-    { status: 'unchecked' },
-    { status: 'unchecked', expired: true },
-    { status: 'blocked', summary: 'Missing supporting file' },
-  ]) {
-    const content = render({
-      id: 'one',
-      state: 'commit',
-      progress: { kind: 'review', title: 'Record finished work', summary: 'Review the existing commit.' },
-      readiness,
-    });
-    assert.doesNotMatch(content, /data-progress-id[^>]*disabled/);
-    assert.doesNotMatch(content, /data-check-issue/);
-    if (readiness.status === 'blocked') assert.match(content, /Missing supporting file/);
-  }
-  assert.match(
-    render({
-      id: 'one',
-      state: 'commit',
-      progress: { disabled: true, title: 'Work in progress', summary: 'Wait for the action.' },
-    }),
-    /data-progress-id[^>]*disabled/
-  );
-  screenData.runs.push({ issueId: 'one', connected: true });
-  assert.match(
-    render({
-      id: 'one',
-      state: 'commit',
-      stageStates: { commit: { summary: 'Work in progress' } },
-      progress: { kind: 'review', title: 'Review', summary: 'Review saved work' },
-    }),
-    /data-progress-id[^>]*disabled/
-  );
+  const issue = { id: 'one', state: 'investigate' };
+  assert.match(render(issue), /data-lifecycle-start/);
+  assert.doesNotMatch(render(issue), /showModal|readiness|data-progress-id/);
+  issue.lifecycle = { status: 'running', summary: 'Reading source', events: [] };
+  assert.match(render(issue), /data-lifecycle-start[^>]*disabled/);
+  issue.lifecycle = {
+    status: 'waiting',
+    summary: 'Your input is needed',
+    updated: 'now',
+    input: { type: 'questions', questions: [{ question: 'Which behavior do you want?' }] },
+  };
+  assert.match(render(issue), /Which behavior do you want/);
+  assert.match(render(issue), /Send answer and continue/);
+  assert.doesNotMatch(render(issue), /data-lifecycle-start/);
 });
 
 function commitFixture(t) {
@@ -2145,4 +2114,267 @@ test('record-only completion refuses a required custom stage', async (t) => {
     /custom step/
   );
   assert.equal(service.snapshot().issues.find((i) => i.id === '20261022-one').state, 'implement');
+});
+
+function lifecycleFixture(t) {
+  const setup = fixture(t),
+    { root, git, service } = setup;
+  mkdirSync(join(root, 'docs/plans'), { recursive: true });
+  writeFileSync(
+    join(root, 'docs/plans/inspect.md'),
+    '# First version\n\nRead source.js and record what it exports. No code changes.\n'
+  );
+  git('add', 'docs');
+  git('commit', '-qm', 'saved plan');
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-for-grilling | clarify | investigate |\n| ready-for-repro | investigate | final |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  writeFileSync(
+    join(root, '.issues/20261022-one.md'),
+    '---\nid: 20261022-one\nstate: clarify\ngrill_later: false\n---\n# One issue\n\nPlan: docs/plans/inspect.md\n\n## Decisions\nAll questions answered: inspect the saved source; no changes.\n'
+  );
+  const calls = [],
+    threads = new Map();
+  service.codex = lifecycleTransport(root, calls, threads, setup.proposal);
+  return { ...setup, calls, threads };
+}
+function lifecycleTransport(root, calls, threads, proposal) {
+  return {
+    requests: new Map(),
+    ready: async () => {},
+    close() {},
+    resume: async (id) => calls.push({ resume: id }),
+    start: async (cwd, mode) => {
+      const id = 'chat-' + threads.size;
+      threads.set(id, { cwd, mode });
+      calls.push({ start: id, mode });
+      return id;
+    },
+    turn: async (id, cwd, prompt, schema) => {
+      calls.push({ turn: id, prompt });
+      return JSON.stringify(lifecycleResponse(root, schema, proposal));
+    },
+    call: async (method, params) => {
+      if (method === 'thread/read') return { thread: { id: params.threadId, cwd: threads.get(params.threadId).cwd } };
+      assert.equal(method, 'thread/turns/list');
+      return {
+        data: [
+          {
+            id: 'finished-turn',
+            status: 'completed',
+            items: [{ type: 'agentMessage', text: 'Read source.js: answer is 42.' }],
+          },
+        ],
+      };
+    },
+  };
+}
+function lifecycleResponse(root, schema, proposal) {
+  const props = schema.properties;
+  if (props.clarification_complete)
+    return {
+      clarification_complete: true,
+      summary: 'All saved answers are present.',
+      evidence: [join(root, '.issues/20261022-one.md')],
+      questions: [],
+      plan_path: 'docs/plans/inspect.md',
+      plan_summary: 'Read the source and record the result.',
+      proposed_plan: '',
+    };
+  if (props.within_plan)
+    return { within_plan: true, summary: 'Read-only assignment matches the approved plan.', question: '' };
+  if (props.recommendations)
+    return {
+      summary: 'Inspect the source.',
+      recommendations: [proposal],
+      routes: [],
+      next_step: 'Read the source.',
+      record_update: null,
+    };
+  return {
+    outcome: 'completed',
+    summary: 'Read the source: answer is 42.',
+    evidence: [join(root, 'source.js')],
+    notes: 'The original investigation is finished. No software changes were needed.',
+    remaining: [],
+    next_state: 'final',
+    skipped_steps: [],
+  };
+}
+async function finishLifecycle(service) {
+  await Promise.all([...service.lifecycleTasks.values()]);
+  return service.snapshot().issues[0].lifecycle;
+}
+function startIssueLifecycle(service) {
+  const snapshot = service.snapshot();
+  return service.startLifecycle({
+    issueId: '20261022-one',
+    state: snapshot.issues[0].state,
+    basis: snapshot.reviewBasis,
+  });
+}
+async function approveIssuePlan(service) {
+  const record = await finishLifecycle(service);
+  assert.equal(record.input.type, 'plan');
+  return service.answerLifecycle({ issueId: '20261022-one', updated: record.updated, decision: 'approve' });
+}
+
+test('lifecycle recovers saved clarification, displays the exact plan and starts no worker before approval', async (t) => {
+  const { service, calls, api } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  assert.equal(startIssueLifecycle(service).active, true);
+  const record = await finishLifecycle(service);
+  assert.equal(record.status, 'waiting');
+  assert.equal(record.input.type, 'plan');
+  assert.match(record.input.plan.content, /Read source.js/);
+  assert.equal(service.snapshot().issues[0].state, 'investigate');
+  assert.equal(api.inspect().registry.actions.length, 0);
+  assert.equal(calls.filter((c) => c.start).length, 1);
+  assert.equal(service.snapshot().issues[0].lifecycle.updated, record.updated);
+});
+
+test('one approved lifecycle run saves, launches, reviews and advances to explicit final acceptance', async (t) => {
+  const { service, calls, api } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  await approveIssuePlan(service);
+  const record = await finishLifecycle(service);
+  assert.equal(record.status, 'finished', record.summary);
+  assert.equal(service.snapshot().issues[0].state, 'final');
+  assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
+  assert.equal(calls.filter((c) => c.start && !c.mode).length, 1);
+  assert.match(readFileSync(join(service.root, '.issues/20261022-one.md'), 'utf8'), /Implementation plan approved/);
+  assert.equal(record.input, null);
+});
+
+test('lifecycle pauses at action boundaries and snapshot or restart never resumes it', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  service.pauseLifecycle({ issueId: '20261022-one' });
+  const record = await finishLifecycle(service);
+  assert.equal(record.status, 'paused');
+  const restarted = new FactoryUI(root);
+  t.after(() => restarted.close());
+  assert.equal(restarted.snapshot().issues[0].lifecycle.status, 'paused');
+  assert.equal(restarted.store.connected.size, 0);
+});
+
+test('changed plan and stale answer submissions cannot authorize work', async (t) => {
+  const { service, root, api } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  const record = await finishLifecycle(service);
+  await assert.rejects(
+    service.answerLifecycle({ issueId: '20261022-one', updated: 'old', decision: 'approve' }),
+    /changed/
+  );
+  writeFileSync(join(root, 'docs/plans/inspect.md'), 'Changed plan: modify the authentication system.');
+  await assert.rejects(
+    service.answerLifecycle({ issueId: '20261022-one', updated: record.updated, decision: 'approve' }),
+    /plan changed/
+  );
+  assert.equal(api.inspect().registry.actions.length, 0);
+});
+
+test('a real required decision is answered inside the issue and resolved through its original owner', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  const report = join(root, '.issues/20261022-one.md');
+  const human = {
+    version: 1,
+    scopes: [{ id: 'main', revision: 1, basis_refs: ['report.md#scope'] }],
+    requests: [
+      {
+        id: 'scope-choice',
+        kind: 'decision',
+        prompt: 'Which export should we inspect?',
+        expected: 'An export name.',
+        scope: { id: 'main', revision: 1 },
+        prerequisites: [],
+        blocks: [{ operation: 'advance', scope_ids: ['main'], target_state: 'investigate' }],
+        status: 'pending',
+        events: [],
+        outcome: null,
+      },
+    ],
+    overlays: [],
+  };
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace(
+      'grill_later: false',
+      'grill_later: false\nhuman_input: ' + JSON.stringify(human)
+    )
+  );
+  const turn = service.codex.turn;
+  service.codex.turn = async (...args) =>
+    args[3].properties.complete
+      ? JSON.stringify({
+          complete: true,
+          summary: 'The requested export was named.',
+          reason: 'The actual answer names answer, covering the current request in full.',
+        })
+      : turn(...args);
+  startIssueLifecycle(service);
+  const waiting = await finishLifecycle(service);
+  assert.equal(waiting.input.type, 'human', waiting.summary);
+  assert.equal(waiting.input.request.prompt, 'Which export should we inspect?');
+  await service.answerLifecycle({
+    issueId: '20261022-one',
+    updated: waiting.updated,
+    decision: 'answer',
+    text: 'Inspect the answer export.',
+  });
+  const resumed = await finishLifecycle(service);
+  assert.equal(resumed.input.type, 'plan', resumed.summary);
+  assert.equal(readQueue(root).issues[0].human_input.requests[0].status, 'resolved');
+  assert.equal(readQueue(root).issues[0].human_input.requests[0].outcome.actor, 'human');
+});
+
+test('human-first integration pauses inline and refuses approval after the candidate target changes', async (t) => {
+  const { service, api, proposal, git, root } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  const initial = await finishLifecycle(service);
+  const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'existing-code-worker', hostId: 'local' });
+  api.record(action.id, {
+    status: 'completed',
+    worker_revision: git('rev-parse', 'HEAD'),
+    evidence: 'Finished candidate.',
+  });
+  await service.answerLifecycle({ issueId: '20261022-one', updated: initial.updated, decision: 'approve' });
+  const waiting = await finishLifecycle(service);
+  assert.equal(waiting.input.type, 'integration', waiting.summary);
+  assert.equal(waiting.input.candidate, git('rev-parse', 'HEAD'));
+  writeFileSync(join(root, 'new-file'), 'later target');
+  git('add', 'new-file');
+  git('commit', '-qm', 'later target');
+  await assert.rejects(
+    service.answerLifecycle({ issueId: '20261022-one', updated: waiting.updated, decision: 'approve' }),
+    /candidate or target changed/
+  );
+  assert.equal(api.inspect().registry.actions[0].status, 'completed');
+});
+
+test('an original recorded approval of the current plan allows Progress to continue without asking again', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  const { digest } = await import('./factory-ui/common.mjs');
+  const report = join(root, '.issues/20261022-one.md');
+  const quote = 'Human decision: I approve docs/plans/inspect.md as written. Proceed with the source inspection.';
+  writeFileSync(report, readFileSync(report, 'utf8') + '\n\n' + quote + '\n');
+  const turn = service.codex.turn;
+  service.codex.turn = async (...args) => {
+    const response = JSON.parse(await turn(...args));
+    if (args[3].properties.clarification_complete)
+      response.prior_approval = {
+        file: report,
+        quote,
+        plan_sha256: digest(readFileSync(join(root, 'docs/plans/inspect.md'), 'utf8')),
+      };
+    return JSON.stringify(response);
+  };
+  startIssueLifecycle(service);
+  const record = await finishLifecycle(service);
+  assert.equal(record.status, 'finished', record.summary);
+  assert.equal(record.approval.origin, 'reviewed-saved-human-approval');
+  assert.equal(service.snapshot().issues[0].state, 'final');
 });

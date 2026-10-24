@@ -33,6 +33,9 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value) {
   const routes = {
+    '/api/lifecycle-start': () => service.startLifecycle(value),
+    '/api/lifecycle-answer': () => service.answerLifecycle(value),
+    '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
     '/api/skip-plan-checks': () => service.skipPlanChecks(value),
     '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),

@@ -91,6 +91,8 @@ The [local factory UI](factory-ui.md) is an alternative front door for the same
 queue and ledger. `npm run factory:ui -- --project /absolute/project` serves the
 queue and issue screens locally. This adapter uses the installed Codex CLI
 app-server transport instead of native chat creation. Scope, ownership, human
-gates and verification policy are unchanged. Reviewing, saving recommendations,
-starting each worker and integrating each candidate remain separate manual
-actions. Native chat commands continue to follow the factory skill.
+gates and verification policy remain enforced. The issue screen’s lifecycle
+Progress control continues within an approved issue plan, including workers and
+automatic-policy integration. Human-first integration and final acceptance still
+require explicit decisions. This opt-in UI workflow is described below; native
+chat commands continue to follow the factory skill’s one-iteration contract.

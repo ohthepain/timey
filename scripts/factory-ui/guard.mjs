@@ -18,7 +18,7 @@ const policy = {
   acceptance_role: 'ready-to-close',
   closed_role: 'closed',
 };
-export function humanGuard(root, action, operation, head, transition = {}) {
+export function inspectHumanInput(root, action, operation, head, transition = {}) {
   const helper = join(root, '.agents/skills/issues/scripts/human-input.mjs');
   const manifest = JSON.parse(
     readFileSync(join(root, '.agents/skills/issues/scripts/human-input-version.json'), 'utf8')
@@ -63,13 +63,7 @@ export function humanGuard(root, action, operation, head, transition = {}) {
         maxBuffer: 8 * 1024 * 1024,
       })
     );
-    validateHumanResult(result, action, operation);
-    return result.issues.map((issue) => ({
-      id: issue.id,
-      digest: issue.report_digest,
-      requests: issue.requests,
-      semanticReviewRequired: issue.semantic_review_required,
-    }));
+    return { helper, context, result };
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
@@ -87,4 +81,15 @@ function validateIssueGuard(issue, operation) {
     issue.structurally_eligible && !issue.diagnostics?.length,
     `Human input blocks ${operation} for ${issue.id}.`
   );
+}
+
+export function humanGuard(root, action, operation, head, transition = {}) {
+  const { result } = inspectHumanInput(root, action, operation, head, transition);
+  validateHumanResult(result, action, operation);
+  return result.issues.map((issue) => ({
+    id: issue.id,
+    digest: issue.report_digest,
+    requests: issue.requests,
+    semanticReviewRequired: issue.semantic_review_required,
+  }));
 }
