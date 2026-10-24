@@ -435,7 +435,22 @@ access for a turn or session; file changes can grant session approval for the sa
 files. Persistent options show their exact proposed command pattern or host.
 Buttons submit an option identity, and the server reconstructs the native reply
 from the pending request. Browser-supplied permission objects cannot broaden it.
-The UI shows the command, working folder, reason and requested paths/network.
+Workspace-write worker and integration chats enable the installed Codex native
+`request_permissions` tool through per-thread configuration, including when
+resuming an existing chat. Read-only reviewers retain their existing sandbox and
+configuration. Worker instructions group known file/network needs for related
+checks into one native request, then use ordinary commands within the granted
+access instead of asking again for each temporary script name.
+
+**Allow for this chat** on a native permission request grants exactly the listed
+access for related commands and later turns in that connected Codex session.
+It does not grant access to another chat or change permanent settings. Reconnection
+may require a fresh grant; the UI does not save and replay grants itself. Network
+grants cover network access, not only a host mentioned in the reason. The UI shows
+the command, working folder, reason, read/write paths and actual network scope.
+If the native tool is unavailable or cannot cover the operation, command approval
+still applies; the UI never invents unadvertised command choices or allows all
+Python scripts by interpreter prefix.
 Older Allow/Decline replies remain compatible with the advertised choices.
 
 ## Questions, failures and forward progress

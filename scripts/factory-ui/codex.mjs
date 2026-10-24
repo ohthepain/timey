@@ -125,13 +125,20 @@ export class CodexConnection {
       cwd,
       sandbox,
       approvalPolicy: 'on-request',
+      ...permissionToolConfig(sandbox),
       serviceName: 'timey-factory-ui',
     });
     return result.thread.id;
   }
   async resume(threadId, cwd, sandbox = 'workspace-write') {
     await this.ready();
-    await this.call('thread/resume', { threadId, cwd, sandbox, approvalPolicy: 'on-request' });
+    await this.call('thread/resume', {
+      threadId,
+      cwd,
+      sandbox,
+      approvalPolicy: 'on-request',
+      ...permissionToolConfig(sandbox),
+    });
   }
   async unarchive(threadId) {
     await this.ready();
@@ -180,4 +187,8 @@ function approvalResult(request, response) {
   if (request.method === 'item/tool/requestUserInput')
     return { answers: Object.fromEntries(request.params.questions.map((q) => questionAnswer(q, response))) };
   return approvalReply(request, response.decision);
+}
+
+function permissionToolConfig(sandbox) {
+  return sandbox === 'workspace-write' ? { config: { 'features.request_permissions_tool': true } } : {};
 }

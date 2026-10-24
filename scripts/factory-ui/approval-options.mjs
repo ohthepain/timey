@@ -48,7 +48,8 @@ function permissionOptions(request) {
     {
       id: 'session',
       label: 'Allow for this chat',
-      detail: 'Reuse the listed access for this Codex session.',
+      detail:
+        'Use the listed access for related commands and later turns in this connected chat. Other chats and permanent settings are unchanged.',
       response: { permissions, scope: 'session' },
     },
     {

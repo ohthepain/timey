@@ -814,7 +814,10 @@
       }
       function approvalDetails(request) {
         const params = request.params;
-        const paths = permissionPaths(params.permissions || params.additionalPermissions || params.changes || {});
+        const permissions = params.permissions || params.additionalPermissions;
+        const paths = permissions
+          ? scopedPermissionPaths(permissions.fileSystem)
+          : permissionPaths(params.changes || {});
         const network = params.permissions?.network || params.additionalPermissions?.network;
         const title =
           request.method === 'item/tool/requestUserInput'
@@ -822,7 +825,17 @@
             : params.command
               ? 'Permission to run a command'
               : 'Permission to access files or network';
-        return `<b>${title}</b>${params.reason ? `<p>${esc(params.reason)}</p>` : ''}${params.command ? `<pre class="prose">${esc(params.command)}</pre>` : ''}${params.cwd ? `<p>In: <code>${esc(params.cwd)}</code></p>` : ''}${paths.length ? `<p>Requested paths:</p><ul>${paths.map((path) => `<li><code>${esc(path)}</code></li>`).join('')}</ul>` : ''}${network?.enabled ? '<p>Network access is requested.</p>' : ''}${params.networkApprovalContext ? `<p>Network: ${esc(params.networkApprovalContext.host)}</p>` : ''}<details><summary>Request details</summary><pre>${esc(JSON.stringify(params, null, 2))}</pre></details>`;
+        return `<b>${title}</b>${params.reason ? `<p>${esc(params.reason)}</p>` : ''}${params.command ? `<pre class="prose">${esc(params.command)}</pre>` : ''}${params.cwd ? `<p>In: <code>${esc(params.cwd)}</code></p>` : ''}${paths.length ? `<p>Requested paths:</p><ul>${paths.map((path) => `<li><code>${esc(path)}</code></li>`).join('')}</ul>` : ''}${network?.enabled ? '<p>Allow network access. This is not limited to one host or local service.</p>' : ''}${params.networkApprovalContext ? `<p>Network: ${esc(params.networkApprovalContext.host)}</p>` : ''}<details><summary>Request details</summary><pre>${esc(JSON.stringify(params, null, 2))}</pre></details>`;
+      }
+      function scopedPermissionPaths(fileSystem = {}) {
+        const names = { read: 'Read', write: 'Read and write', deny: 'No access' };
+        const legacy = ['read', 'write'].flatMap((access) =>
+          permissionPaths(fileSystem?.[access]).map((path) => `${names[access]}: ${path}`)
+        );
+        const entries = (fileSystem?.entries || []).flatMap((entry) =>
+          permissionPaths(entry.path).map((path) => `${names[entry.access] || entry.access}: ${path}`)
+        );
+        return [...new Set([...legacy, ...entries])];
       }
       function permissionPaths(value) {
         if (typeof value === 'string') return value.startsWith('/') ? [value] : [];

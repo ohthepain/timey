@@ -1,3 +1,5 @@
+import { approvalOptions } from './factory-ui/approval-options.mjs';
+import { workerPrompt, integrationPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
 import { digest as digestReport } from './factory-ui/common.mjs';
 import { beginReconciliation } from './factory-ui/reconcile.mjs';
 import { test } from 'node:test';
@@ -246,12 +248,39 @@ test('restarting the UI does not replay work; explicit resume keeps the original
 test('installed transport client starts and resumes one chat without model overrides', async (t) => {
   const { service, root } = fixture(t);
   const cli = transport(t, service);
+  const calls = [];
+  const send = cli.send.bind(cli);
+  cli.send = (message) => {
+    calls.push(message);
+    send(message);
+  };
   const id = await cli.start(root, 'read-only');
   assert.equal(id, 'fixture-thread');
   const schema = { properties: {} };
   assert.equal(JSON.parse(await cli.turn(id, root, 'Read only', schema)).outcome, 'completed');
   await cli.resume(id, root);
   assert.equal(JSON.parse(await cli.turn(id, root, 'Continue', schema)).outcome, 'completed');
+  await cli.start(root);
+  await cli.resume(id, root, 'read-only');
+  const threads = calls.filter((call) => ['thread/start', 'thread/resume'].includes(call.method));
+  assert.deepEqual(
+    threads.map((call) => call.params.config),
+    [undefined, { 'features.request_permissions_tool': true }, { 'features.request_permissions_tool': true }, undefined]
+  );
+  for (const call of threads) {
+    assert.equal(call.params.approvalPolicy, 'on-request');
+    assert.equal(call.params.model, undefined);
+  }
+});
+
+test('worker and integration assignments explain grouped native permissions without granting them', () => {
+  const action = { id: 'action', basis: { head: 'base' }, worker_prompt: 'Implement', scope: 'Scoped change' };
+  for (const prompt of [workerPrompt(action, []), integrationPrompt(action, {})]) {
+    assert.ok(prompt.includes(workerPermissionGuidance));
+    assert.match(prompt, /request_permissions/);
+    assert.match(prompt, /do not force require_escalated for each script/);
+    assert.match(prompt, /Never infer permission from a script extension/);
+  }
 });
 
 test('pending human checks block affected operations without creating a chat', (t) => {
@@ -2461,6 +2490,8 @@ test('native file and network grants retain their session scope without acceptin
     method: 'item/permissions/requestApproval',
     params: { threadId: 'worker', permissions },
   });
+  assert.throws(() => connection.answer('92', 'other-chat', { decision: 'session' }), /no longer pending/);
+  assert.equal(sent.length, 0);
   connection.answer('92', 'worker', { decision: 'session', permissions: { fileSystem: { write: ['/'] } } });
   assert.deepEqual(sent[0].result, { permissions, scope: 'session' });
 });
@@ -2494,6 +2525,35 @@ async function activityScreen(t) {
   dom.window.screenTest.show(snapshot);
   return { window: dom.window, snapshot };
 }
+
+test('native permission screen explains chat scope and actual read, write and network access', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const request = {
+    id: 'permission',
+    method: 'item/permissions/requestApproval',
+    params: {
+      reason: 'Run related temporary checks.',
+      permissions: {
+        fileSystem: {
+          read: ['/tmp/input'],
+          entries: [{ access: 'write', path: { type: 'path', path: '/tmp/output' } }],
+        },
+        network: { enabled: true },
+      },
+    },
+  };
+  request.options = approvalOptions(request);
+  snapshot.runs.at(-1).approvals = [request];
+  window.screenTest.show(snapshot);
+  const card = window.document.querySelector('[data-view-id="permission-live-permission"]');
+  assert.match(card.textContent, /Read: \/tmp\/input/);
+  assert.match(card.textContent, /Read and write: \/tmp\/output/);
+  assert.match(card.textContent, /not limited to one host or local service/);
+  assert.match(card.textContent, /related commands and later turns in this connected chat/);
+  assert.equal(card.querySelector('[data-decision="session"]').textContent, 'Allow for this chat');
+  assert.ok(card.querySelector('[data-decision="once"]'));
+  assert.ok(card.querySelector('[data-decision="deny"]'));
+});
 
 test('activity screen shows the current step and preserves expanded details, native drafts and log reading position', async (t) => {
   const { window, snapshot } = await activityScreen(t),
@@ -2997,6 +3057,7 @@ test('automatic same-worker correction is recorded as plan continuation, not a h
   assert.doesNotMatch(recorded.evidence, /Human explicitly resumed/);
   await settle(service, run.id);
   assert.match(prompt, /approved plan/);
+  assert.ok(prompt.includes(workerPermissionGuidance));
   assert.doesNotMatch(prompt, /Human follow-up/);
   assert.equal(service.store.runs.find((r) => r.id === run.id).authorization.kind, 'approved-plan');
 });

@@ -12,7 +12,14 @@ import { humanGuard } from './guard.mjs';
 import { CodexConnection } from './codex.mjs';
 import { RunStore } from './runs.mjs';
 import { checkCandidate } from './checks.mjs';
-import { integrationPrompt, workerPrompt, workerResultSchema, evaluationPrompt, evaluationSchema } from './prompts.mjs';
+import {
+  integrationPrompt,
+  workerPrompt,
+  workerPermissionGuidance,
+  workerResultSchema,
+  evaluationPrompt,
+  evaluationSchema,
+} from './prompts.mjs';
 import { git, requireThat, writeJson, digest } from './common.mjs';
 
 import { readinessView, checkReadiness, explainBlock } from './readiness.mjs';
@@ -354,7 +361,7 @@ export class FactoryUI {
     this.perform(run, () =>
       this.runTurn(
         run,
-        `Continue only the original saved assignment. No new scope, other launches, pushes, closure or acceptance. Recorded base remains ${run.base}. ${describeAuthorization(run.authorization)} Follow-up: ${text}`
+        `Continue only the original saved assignment. No new scope, other launches, pushes, closure or acceptance. Recorded base remains ${run.base}. ${describeAuthorization(run.authorization)} ${workerPermissionGuidance} Follow-up: ${text}`
       )
     );
     return { runId: id };
