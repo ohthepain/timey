@@ -15,6 +15,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { decisionView, listIssues } from './factory-interface.mjs';
+import { recordStatusSummary, statusOutput } from './factory-status.mjs';
 
 const active = new Set(['reserved', 'setup', 'running', 'blocked', 'completed']);
 const kinds = new Set(['investigate', 'prototype', 'implement', 'verify', 'review', 'integrate', 'retro']);
@@ -305,6 +306,9 @@ export function factory(project) {
         instruction: 'Known claims restored; no chats were launched.',
       };
     },
+    status(args = []) {
+      return statusOutput(root, existsSync(ledger) ? readLedger() : null, args);
+    },
     inspect() {
       return {
         project: root,
@@ -403,6 +407,7 @@ export function factory(project) {
           'Record an evidence pointer or specific failure reason.'
         );
         validateResultStatus(action, update, git);
+        recordStatusSummary(action, update);
         Object.assign(action, { status: update.status, evidence: update.evidence, updated: new Date().toISOString() });
         if (update.status === 'integrated') action.verified_revision = update.verified_revision;
         return action;
@@ -423,6 +428,7 @@ function runCommand(project, argv) {
     ['init', () => api.init()],
     ['recover', () => api.recover(json(args[0]))],
     ['inspect', () => api.inspect()],
+    ['status', () => api.status(args)],
     ['recommend', () => api.recommend(json(args[0]))],
     ['reserve', () => api.reserve(args[0])],
     ['attach', () => api.attach(args[0], json(args[1]))],
@@ -433,7 +439,8 @@ function runCommand(project, argv) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    console.log(JSON.stringify(runCommand(process.cwd(), process.argv.slice(2)), null, 2));
+    const result = runCommand(process.cwd(), process.argv.slice(2));
+    console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

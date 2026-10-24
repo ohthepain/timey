@@ -4,17 +4,53 @@ Use `/factory` (or `$factory`) as the front door for coordinating the local issu
 queue. `/Factory` means the same skill. Evaluation and worker launches remain
 separate manual actions.
 
-| In chat           | Result                                                                                 |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| `/factory`        | Evaluate the queue, existing workers, grouping and priorities; offer the next choices. |
-| `/factory ID ID`  | Evaluate only the selected issues, checking dependencies and existing work.            |
-| `/factory issues` | Display the existing code-generated issue table, without an evaluation.                |
+| In chat           | Result                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------- |
+| `/factory`        | Evaluate the queue, existing workers, grouping and priorities; offer the next choices.             |
+| `/factory ID ID`  | Evaluate only the selected issues, checking dependencies and existing work.                        |
+| `/factory issues` | Display the existing code-generated issue table, without an evaluation.                            |
+| `/factory status` | Show compact last-recorded progress, results, remaining work and evidence links for factory tasks. |
 
 Issue selection accepts full IDs or unique prefixes. Ambiguous or missing IDs
 stop selection and show a useful diagnostic. Selecting issues authorizes planning
 and discussion of their required input; launching work requires another choice.
 Dependencies outside the selection are inspected and explained before proposing
 their inclusion. Existing workers are reused rather than duplicated.
+
+## Check progress
+
+`/factory status` displays a code-generated summary from the saved factory records.
+It reads no issue reports, evidence contents or chat histories, and changes nothing.
+Chat references are included in the JSON output so an agent can check a known chat
+without searching for it again. Status is a saved observation, not a live check or
+permission to launch, merge or accept an issue.
+
+```sh
+npm run factory -- status
+npm run factory -- status --json
+npm run factory -- status ACTION_ID --details
+```
+
+Add full action IDs or unique action-ID prefixes to narrow the summary. Full saved
+records, including worker prompts and unabridged evidence, require `--details` and
+exactly one selected action. A saved prompt may contain an old issue snapshot;
+read the current report before taking further action. Missing or damaged records
+are reported rather than initialized or repaired.
+
+Each row shows the task, saved progress, a short result, remaining work, and links
+to local evidence. Long legacy evidence is shortened; when no file link can be
+recovered, the link opens the saved factory records. Missing evidence files are
+identified. Remaining work uses a saved list when provided, otherwise a reminder
+based on the action's state; it does not assess the linked issue's requirements
+or acceptance. No result is invented for tasks still waiting for a response.
+
+When recording a reviewed result through `factory record`, keep the existing
+required `evidence` and optionally provide `summary` (a concise sentence),
+`remaining` (a list of next steps), and `evidence_links` (local file or directory
+paths, absolute or relative to the project). These are reporting fields only.
+A newer result clears older reporting fields unless they are explicitly supplied
+again, so a completed merge cannot keep showing an obsolete “merge next” message.
+Reading status never backfills old records or completes human obligations.
 
 ## Choose what happens next
 

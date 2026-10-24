@@ -16,7 +16,7 @@
     "export:realm": "sh ./scripts/export_realm.sh ./keycloak-theme/realm-export.json",
     "typecheck": "tsc --noEmit",
     "factory": "node scripts/factory.mjs",
-    "test:factory": "node --test scripts/factory.check.mjs scripts/factory-interface.check.mjs scripts/verify.check.mjs scripts/audit-result.check.mjs",
+    "test:factory": "node --test scripts/factory.check.mjs scripts/factory-interface.check.mjs scripts/factory-status.check.mjs scripts/verify.check.mjs scripts/audit-result.check.mjs",
     "verify": "node scripts/verify.mjs",
     "audit:diff": "node scripts/verify.mjs --audit-only",
     "audit:staged": "node scripts/verify.mjs --staged --audit-only",

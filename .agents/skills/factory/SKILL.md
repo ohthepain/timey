@@ -1,6 +1,6 @@
 ---
 name: factory
-description: Browse issues, evaluate the queue or selected issues, handle human input, and manually launch selected worker chats.
+description: Browse issues and saved progress, evaluate work, handle human input, and manually launch selected worker chats.
 ---
 
 # Factory
@@ -9,6 +9,16 @@ Follow the [factory interface](../../../docs/agents/factory.md) from the project
 root. Accept `/factory`, `/Factory`, and `$factory` as this skill's chat invocation.
 Route by arguments below; a decision iteration and action launch are separate
 manual actions. Preserve the existing explicit-only invocation policy.
+
+## Status: `$factory status [ACTION_ID ...]`
+
+Run `npm run --silent factory -- status` and display its generated Markdown
+directly. Pass `--json` only when JSON is requested or needed for coordination.
+Action IDs or unique prefixes narrow the output; `--details` requires exactly
+one action and returns its full saved record. Read full records/reports/evidence
+only when the next decision needs them. Status alone checks no live chats,
+reassesses no readiness, and writes nothing. Explain missing/damaged records
+without initializing or repairing them. Stop after displaying status.
 
 ## List: `$factory issues`
 
@@ -25,7 +35,14 @@ second listing implementation. Stop after displaying the result.
 Read `docs/agents/operating.md`, `issue-tracker.md`, and `verification.md` before
 coordinating work.
 
-1. Run `npm run factory --` with any selected issue IDs as arguments. Use the
+1. Start with `npm run --silent factory -- status --json` for saved results and
+   chat references. Use those references for compact worker snapshots rather
+   than rediscovering known chats. Load full action records only for changed or
+   relevant outcomes; status text alone is not evidence review.
+   Run `npm run factory --` with any selected issue IDs as arguments when queue
+   evaluation needs report content. Save the full inspection to a temporary JSON
+   file and extract the needed reports instead of printing all prompts/history.
+   Use the
    returned `focus_issue_ids` as the assignment; other reports remain dependency
    and existing-work context. Missing/ambiguous selections stop this iteration.
    Inspect outside blockers, explaining any proposed scope expansion for human
@@ -182,6 +199,12 @@ records: `{status,evidence}`. Completion never edits issue state. For `integrate
 also provide `verified_revision` equal to current HEAD and `checks_passed: true`
 only after reviewing actual integrated checks. This is an assertion requiring
 evidence, not a command that runs checks or performs a merge.
+
+For concise status reports, include optional `summary`, `remaining` and
+`evidence_links` as described in the interface guide. Record actual reviewed
+results and next steps, keeping detailed evidence available through links.
+Reporting fields grant no permission or human acceptance; reading status never
+adds or changes them.
 
 Completed code actions also need `worker_revision` naming the exact worker commit.
 Integration verifies that commit is an ancestor of the checked current HEAD.
