@@ -371,3 +371,6 @@ observations, override failed checks or waive technical work. Unchanged plan and
 evidence at the completed Verify revision can be retained across later bookkeeping
 changes. Confirmation failures appear inside the open dialog; successful decisions
 refresh the issue screen immediately.
+The live factory task log is administrative context. If completing a review changed
+it, final acceptance retains its current contents and earlier hash separately;
+unchanged source, plan, behavioral evidence and no outstanding work are still required.

@@ -1920,3 +1920,49 @@ test('changed supporting evidence cannot be approved by Accept and close', async
   assert.equal(service.snapshot().issues[0].state, 'review');
   assert.equal(service.snapshot().issues[0].human_checks[0].status, 'pending');
 });
+
+test('closing retains a changed administrative task log without changing test outcomes', async (t) => {
+  const f = implementationFixture(t);
+  f.result.steps[1].criteria[0].evidence = [join(f.root, '.issues/factory.json')];
+  Object.assign(f.result.steps[0].criteria[0], {
+    status: 'not-checked',
+    human_check_id: 'experience',
+    evidence: [],
+    explanation: 'Final judgment pending.',
+    next_action: 'Review result.',
+  });
+  await settle(f.service, checkPlan(f.service, f.path).runId);
+  const snapshot = f.service.snapshot(),
+    report = join(f.root, '.issues/20261022-one.md');
+  const event = {
+    state: 'verify',
+    next: 'review',
+    outcome: 'completed',
+    reason: 'Verified.',
+    revision: snapshot.head,
+    at: new Date().toISOString(),
+    evidence: [
+      {
+        path: join(f.root, 'source.js'),
+        sha256: snapshot.issues[0].plan_verification.evidence.find((e) => e.path.endsWith('source.js')).sha256,
+      },
+    ],
+  };
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace(
+      'state: verify',
+      'state: review\nlifecycle_history: ' + JSON.stringify([event])
+    )
+  );
+  const registry = join(f.root, '.issues/factory.json');
+  writeFileSync(registry, readFileSync(registry, 'utf8') + '\n');
+  assert.deepEqual(f.service.decideIssue('20261022-one', 'review', 'close', f.service.snapshot().reviewBasis), {
+    state: 'closed',
+  });
+  const closed = f.service.snapshot().issues[0];
+  const receipt = closed.plan_verification.evidence.find((e) => e.path.endsWith('-task-record.json'));
+  assert.ok(receipt);
+  assert.ok(JSON.parse(readFileSync(receipt.path, 'utf8')).earlier_sha256);
+  assert.equal(closed.plan_verification.steps[1].criteria[0].status, 'passed');
+});

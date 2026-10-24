@@ -106,3 +106,6 @@ only the Commit stage, without a model review or changes to source.
 
 `scripts/factory-ui/closure-approval.mjs` records final checklist judgments supplied
 by the explicit Accept and close action, retaining unchanged verification inputs.
+
+`scripts/factory-ui/closure-registry.mjs` retains the changing factory task log as
+administrative context during final acceptance, preserving its earlier hash.

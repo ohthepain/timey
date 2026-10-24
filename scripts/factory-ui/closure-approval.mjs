@@ -5,6 +5,7 @@ import { checklistBasis } from './plan-checks.mjs';
 import { selectPlan } from './plan-outline.mjs';
 import { stageOutcome } from './lifecycle.mjs';
 import { decidePlanCheck } from './plan-approval.mjs';
+import { currentRegistryEvidence, retainClosingRegistry } from './closure-registry.mjs';
 import { digest, requireThat } from './common.mjs';
 
 export function recordClosingApproval(service, queue, issue) {
@@ -12,6 +13,7 @@ export function recordClosingApproval(service, queue, issue) {
   const checks = closureChecks(issue, queue.head);
   if (!checks.length) return queue;
   retainCheckedPlan(service, queue, issue);
+  queue = retainClosingRegistry(service, queue, issue);
   for (const check of checks) {
     decidePlanCheck(
       service,
@@ -47,7 +49,7 @@ function retainCheckedPlan(service, queue, issue) {
     'The source changed since Verify. Check the changed work before closing.'
   );
   requireThat(
-    record.evidence.every((e) => digest(readFileSync(e.path)) === e.sha256),
+    record.evidence.every((e) => currentRegistryEvidence(queue, e) || digest(readFileSync(e.path)) === e.sha256),
     'Supporting evidence changed. Review the changed result before closing.'
   );
   const saved = service.store.runs.find((r) => r.id === record.run_id);
