@@ -14,6 +14,16 @@ stage, worker completion and code integration. Links use the report's Parent,
 Blocked by and Related sections; reverse links are computed from those explicit
 references. Reports are displayed as escaped text, never executable HTML.
 
+The issue screen shows every configured lifecycle stage as a numbered expandable
+step. The current stage opens by default. Saved assignments and worker results
+appear under their matching stage; worker commits and manual integration have
+separate steps. Opening a step does not advance the issue. Stage expansion is
+preserved while live results refresh. Earlier stages are not marked complete
+merely because the issue currently sits later in the lifecycle. Saved timestamps
+and report notes provide history where it exists; missing historical transitions
+are not reconstructed. Unmatched assignment kinds stay visible under Other work.
+New lifecycle stages use the same step layout without requiring another screen.
+
 ## Separate manual actions
 
 1. **Review queue with Codex** starts one read-only coordinator chat. It proposes

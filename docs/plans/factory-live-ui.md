@@ -48,3 +48,28 @@ remain owned by their original coordinator. Native desktop sidebar visibility,
 real task implementation quality and a successful live model-driven code merge
 remain unverified. Human answer editing remains in the coordinator chat; the UI
 shows recorded obligations and enforces structural operation guards.
+
+## Expandable issue lifecycle — follow-up
+
+Starting revision: `fd5293a3f77e879d507a80d5e8507b515e651b11`.
+
+The user preferred the earlier step-based issue view and asked to keep every step
+visible, expandable and able to carry issue history. Replace the compact stage
+rail with numbered stage cards driven by the configured lifecycle. Keep saved
+assignments, worker results, recorded commits, separate manual integration and
+report notes accessible within the issue. Display actual saved timestamps, not
+invented stage-transition history. Preserve open steps across live updates.
+No queue, CLI transport or dispatch behavior changes.
+
+Validation: browser-check the real issue view, stage expansion/collapse, recorded
+assignment history, issue notes and queue navigation; run the required strict
+saved-base checkpoint, aggregate verification and exact-index commit hook.
+
+Follow-up result: the real compiler issue displays all nine steps, including the
+separate integration action. Its saved investigation expands to the original
+assignment, actual saved/requested/updated timestamps, checks and recorded result.
+Expansion and collapse survive queue navigation. Browser inspection confirms
+future steps expose their empty state and no invented completion marks. All six
+aggregate checks passed against the recorded follow-up base; evidence is
+`.issues/evidence/2026-10-24T01-24-35.469Z-080535cd-c812-49bd-a7f7-6f64117b5226-summary.json`.
+The real queue and CLI action behavior remain unchanged.
