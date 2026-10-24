@@ -69,7 +69,7 @@ function knownBlock(queue, issue, runs) {
   return {
     status: 'unchecked',
     summary:
-      'Check whether the next action needs information, finished work or a repair. It may open a read-only chat, but will not start a worker or integrate changes.',
+      'Use Progress to try the recommended action. It checks what is needed and explains anything that prevents it from continuing.',
   };
 }
 export function checkReadiness(service, id, state) {

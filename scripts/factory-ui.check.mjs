@@ -1692,3 +1692,63 @@ test('earlier checklist results keep their recorded status without enabling acti
     assert.match(content, /Check again before relying on the earlier result/);
   }
 });
+
+test('Progress can be attempted without a separate readiness check and stays disabled during work', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function progressControls('),
+    html.indexOf('      function actionSummary(')
+  );
+  const screenData = { lifecycle: [], runs: [], actions: [] };
+  const render = new Function(
+    'data',
+    'esc',
+    'progressTitle',
+    'actionSummary',
+    'readinessExplanation',
+    'stepChatLinks',
+    'finalControls',
+    source + ';return progressControls;'
+  )(
+    screenData,
+    (value) => value,
+    (issue) => issue.progress.title,
+    (choice) => choice.summary,
+    () => 'Use Progress to attempt the action.',
+    () => '',
+    () => ''
+  );
+  for (const readiness of [
+    { status: 'unchecked' },
+    { status: 'unchecked', expired: true },
+    { status: 'blocked', summary: 'Missing supporting file' },
+  ]) {
+    const content = render({
+      id: 'one',
+      state: 'commit',
+      progress: { kind: 'review', title: 'Record finished work', summary: 'Review the existing commit.' },
+      readiness,
+    });
+    assert.doesNotMatch(content, /data-progress-id[^>]*disabled/);
+    assert.doesNotMatch(content, /data-check-issue/);
+    if (readiness.status === 'blocked') assert.match(content, /Missing supporting file/);
+  }
+  assert.match(
+    render({
+      id: 'one',
+      state: 'commit',
+      progress: { disabled: true, title: 'Work in progress', summary: 'Wait for the action.' },
+    }),
+    /data-progress-id[^>]*disabled/
+  );
+  screenData.runs.push({ issueId: 'one', connected: true });
+  assert.match(
+    render({
+      id: 'one',
+      state: 'commit',
+      stageStates: { commit: { summary: 'Work in progress' } },
+      progress: { kind: 'review', title: 'Review', summary: 'Review saved work' },
+    }),
+    /data-progress-id[^>]*disabled/
+  );
+});

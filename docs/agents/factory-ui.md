@@ -82,7 +82,7 @@ continuing.
 
 ## Progress on the current stage
 
-Only the issue's current stage has action buttons: **Check readiness**, then **Progress** when ready. Earlier and later steps
+Only the issue's current stage has a **Progress** action. A separate readiness check is not required. Earlier and later steps
 show history without dispatch controls. The panel names the recommended action;
 its confirmation shows the scope before doing one action. It can start an existing
 saved recommendation, review an existing worker's result in a separate coordinator
@@ -159,27 +159,19 @@ guard. Required verification, custom stages, acceptance and closure are not
 bypassed. A planned integration skip is rejected if unintegrated code work exists
 or is being recommended. Skipped events need reviewed reasons and actual evidence.
 
-## Explicit readiness checks
+## Try the next action directly
 
-An unchecked current step offers Check readiness with an explanation. The check
-reads the queue, operation-specific guards and original worker status where
-needed. Ambiguous worker identity stops before any chat creation or ledger edit.
-Required semantic review can open a separate read-only chat, with pending
-permission requests visible. The result concerns the next selected action, not
-completion of the whole stage. Final-only human checks do not block earlier work.
+The current stage offers Progress without a separate readiness review. Progress
+shows the selected action and its scope, then checks current inputs, ownership,
+permissions and required human decisions as part of execution. A failed attempt
+records or displays its specific reason; the user can retry after addressing it.
+Opening the page still starts no work. Active work and an unchanged completed
+review prevent duplicate attempts. Launches, integration and acceptance remain
+separate explicit actions with their existing checks and confirmations.
 
-Checks create durable UI readiness records; they reserve no assignments, record no
-worker completion, advance no report and start no worker or integration. A ready
-result enables Progress; required human-first integration approval remains a
-blocked requirement with an explicit Review required approval action. Existing
-manual confirmation, freshness and execution checks still run before dispatch.
-
-Source, reports/configuration, saved actions, relevant UI worker/review statuses
-and operation locks invalidate readiness when changed. Time alone does not expire
-a completed check. Dispatch independently rechecks the original chat and current
-operation requirements; readiness never establishes that a whole stage passed.
-Disconnected records do not establish live activity. A stopped native worker is
-blocked; a confirmed active worker is green Working and can be checked again.
+The readiness endpoint remains available for read-only inspection and older
+clients. Its records do not enable or disable Progress. An unchecked or outdated
+readiness record is not a blocker and does not start an extra chat during Progress.
 
 ## Finished review feedback
 
@@ -262,8 +254,8 @@ assignments and old reviews are grouped under Task details and earlier reviews,
 with a notice that old instructions may have been superseded. Final-only human
 checks stay collapsed until needed. Plan references in saved reports/assignments
 open a read-only document viewer restricted to project Markdown plans. The current
-step keeps Progress visible when a new readiness check is needed, and preserves
-successful checks while their inputs remain unchanged.
+step keeps Progress available without a separate readiness check. Saved
+implementation results remain visible as the issue advances.
 
 ## Implementation checklist
 

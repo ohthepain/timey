@@ -82,7 +82,7 @@ function readinessStage(readiness) {
   const labels = {
     ready: 'Ready to start',
     blocked: 'Blocked',
-    unchecked: 'Readiness not checked',
+    unchecked: 'Next action available',
     working: 'Work in progress',
     waiting: 'Waiting for worker',
     checking: 'Checking readiness',
@@ -93,7 +93,7 @@ function readinessStage(readiness) {
     ] || 'unchecked';
   return {
     status,
-    label: readiness.label || labels[readiness.status] || 'Readiness not checked',
+    label: readiness.label || labels[readiness.status] || 'Next action available',
     summary: explainBlock(readiness.summary),
   };
 }

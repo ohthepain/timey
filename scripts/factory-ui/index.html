@@ -1212,12 +1212,9 @@
         return `<p>${coordinator ? `<a href="codex://threads/${encodeURIComponent(coordinator.threadId)}">Open review chat ↗</a>` : ''}${coordinator && worker ? ' · ' : ''}${worker ? `<a href="codex://threads/${encodeURIComponent(worker.workerThreadId)}">Open original worker chat ↗</a>` : ''}</p>`;
       }
       function readinessExplanation(issue) {
-        const r = issue.readiness || { status: 'unchecked' };
-        if (r.status === 'ready')
-          return 'Ready means nothing currently blocks the recommended action. It does not mean this whole step is finished. Progress shows its scope before you start it.';
-        if (r.status === 'blocked')
-          return 'Address the named problem, then check readiness again. A pending final acceptance only blocks work that requires that acceptance.';
-        return 'Check readiness inspects required answers, saved work and the original worker where needed. It may open a read-only chat to review those requirements. It starts no worker, integrates no changes and advances no stage.';
+        if (issue.readiness?.status === 'blocked')
+          return issue.readiness.summary + ' Use Progress to try again after addressing the problem.';
+        return 'Use Progress to try the recommended action. It checks the current work and required permissions as part of that action, and explains anything that prevents it from continuing.';
       }
       function reviewConclusion(summary) {
         const full = summary.trim();
@@ -1271,22 +1268,21 @@
         if (!choice) return '';
         const r = issue.readiness || { status: 'unchecked' };
         const ready = r.status === 'ready';
-        const checkLabel = r.expired ? 'Check readiness again' : 'Check readiness';
         const busy = data.runs.some(
           (run) =>
             run.connected &&
             (run.issueId === issue.id || data.actions.some((a) => a.id === run.actionId && a.issues.includes(issue.id)))
         );
-        const title = progressTitle(issue, busy, ready, checkLabel);
-        const summary = ready
-          ? actionSummary(choice)
-          : choice.disabled
-            ? choice.summary
-            : busy
-              ? issue.stageStates[issue.state].summary
-              : r.summary || readinessExplanation(issue);
+        const title = progressTitle(issue, busy);
+        const summary = choice.disabled
+          ? choice.summary
+          : busy
+            ? issue.stageStates[issue.state].summary
+            : r.status === 'blocked'
+              ? r.summary
+              : actionSummary(choice);
         const finished = choice.disabled && issue.latestResult?.fresh;
-        return `<section class="next-action"><div><small>${finished ? 'No repeat action' : ready ? 'Ready for the next action' : 'What happens next'}</small><h3>${esc(title)}</h3><p>${esc(summary)}</p>${r.status === 'blocked' ? stepChatLinks(issue) : ''}</div><button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled || !(ready || r.approvalAvailable) ? 'disabled' : ''}>${r.approvalAvailable ? 'Review required approval' : 'Progress →'}</button>${!finished && !ready && choice.kind !== 'reconcile' ? `<button data-check-issue="${esc(issue.id)}" data-check-state="${esc(issue.state)}" ${busy ? 'disabled' : ''}>${busy ? 'Work in progress' : checkLabel}</button>` : ''}</section>`;
+        return `<section class="next-action"><div><small>${finished ? 'No repeat action' : ready ? 'Ready for the next action' : 'What happens next'}</small><h3>${esc(title)}</h3><p>${esc(summary)}</p>${r.status === 'blocked' ? stepChatLinks(issue) : ''}</div><button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled || busy ? 'disabled' : ''}>${r.approvalAvailable ? 'Review required approval' : 'Progress →'}</button></section>`;
       }
       function actionSummary(choice) {
         return (
@@ -1300,11 +1296,9 @@
           }[choice.kind] || choice.summary
         );
       }
-      function progressTitle(issue, busy, ready, checkLabel) {
-        if (issue.progress.disabled) return issue.progress.title;
+      function progressTitle(issue, busy) {
         if (busy) return 'Work in progress';
-        if (ready) return issue.progress.title;
-        return issue.readiness?.status === 'blocked' ? 'Resolve the blocker' : checkLabel;
+        return issue.progress.title;
       }
       function liveStepWork(issue, stage) {
         return data.runs
@@ -1454,12 +1448,6 @@
         });
         document.querySelectorAll('[data-issue-decision]').forEach((button) => {
           button.onclick = () => selectIssueDecision(button);
-        });
-        document.querySelectorAll('[data-check-issue]').forEach((button) => {
-          button.onclick = () =>
-            act(() =>
-              request('check-readiness', { issueId: button.dataset.checkIssue, state: button.dataset.checkState })
-            );
         });
         document
           .querySelectorAll('[data-progress-id]')
