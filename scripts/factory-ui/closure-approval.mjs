@@ -1,3 +1,4 @@
+import { readCheckReceipt, writeCheckReceipt } from '../factory-progress.mjs';
 import { readFileSync } from 'node:fs';
 import { readQueue } from './data.mjs';
 import { progressBasis } from './next-action.mjs';
@@ -52,9 +53,17 @@ function retainCheckedPlan(service, queue, issue) {
     record.evidence.every((e) => currentRegistryEvidence(queue, e) || digest(readFileSync(e.path)) === e.sha256),
     'Supporting evidence changed. Review the changed result before closing.'
   );
-  const saved = service.store.runs.find((r) => r.id === record.run_id);
+  retainCompletionReceipt(service, queue, issue, plan);
+}
+
+function retainCompletionReceipt(service, queue, issue, plan) {
+  const record = issue.plan_verification;
+  const uiRun = service.store.runs.find((r) => r.id === record.run_id);
+  const saved = readCheckReceipt(service.root, record.run_id) || uiRun;
   requireThat(saved?.base === queue.head, 'The checklist was recorded for a different source revision.');
-  service.store.update(saved, { previousAfterBasis: saved.afterBasis, afterBasis: checklistBasis(queue, issue, plan) });
+  const changes = { previousAfterBasis: saved.afterBasis, afterBasis: checklistBasis(queue, issue, plan) };
+  writeCheckReceipt(service.root, { ...saved, id: record.run_id, ...changes });
+  if (uiRun) service.store.update(uiRun, changes);
 }
 
 function closureChecks(issue, revision) {

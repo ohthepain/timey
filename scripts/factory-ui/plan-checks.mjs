@@ -1,3 +1,4 @@
+import { readCheckReceipt } from '../factory-progress.mjs';
 import { existsSync, readFileSync, statSync, realpathSync } from 'node:fs';
 import { digest, requireThat } from './common.mjs';
 import { selectPlan, implementationPlans } from './plan-outline.mjs';
@@ -48,10 +49,20 @@ function reviewProblem(run) {
 }
 function checklistFresh(queue, issue, plan, record, runs) {
   if (!matchingPlan(record, plan)) return false;
-  const saved = runs.find((r) => r.id === record.run_id && r.status === 'completed');
+  const saved = checklistReceipt(queue.root, record, runs);
   if (saved?.afterBasis !== checklistBasis(queue, issue, plan)) return false;
   return record.evidence.every(evidenceUnchanged);
 }
+function checklistReceipt(root, record, runs) {
+  const receipt = readCheckReceipt(root, record.run_id);
+  if (!receipt) return runs.find((r) => r.id === record.run_id && r.status === 'completed');
+  return matchingReceiptRecord(receipt, record) ? receipt : null;
+}
+
+function matchingReceiptRecord(receipt, record) {
+  return !receipt.record_sha256 || receipt.record_sha256 === digest(JSON.stringify(record));
+}
+
 function matchingPlan(record, plan) {
   return record && record.plan_sha256 === plan.sha256;
 }
@@ -153,6 +164,10 @@ function stepSource(plan, step) {
   return source.source;
 }
 function validateCriterion(issue, source, criterion, head) {
+  requireThat(
+    !Object.hasOwn(criterion, 'manual_skip'),
+    'A new review cannot invent a manual skip; applicable recorded user skips are retained separately.'
+  );
   requireThat(
     ['name', 'source', 'explanation'].every((key) => nonempty(criterion[key])),
     'Each criterion needs its requirement and result.'

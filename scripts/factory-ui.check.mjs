@@ -1,3 +1,4 @@
+import { digest as digestReport } from './factory-ui/common.mjs';
 import { beginReconciliation } from './factory-ui/reconcile.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -2827,3 +2828,211 @@ function unfinishedBookkeepingResult() {
     skipped_steps: [],
   };
 }
+
+test('native inspection sees the same waiting question and plan approval as the issue coordinator', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  const record = await finishLifecycle(service);
+  const { execFileSync } = await import('node:child_process');
+  const before = readFileSync(join(root, '.issues/factory-ui/lifecycle.json'), 'utf8');
+  const inspection = JSON.parse(
+    execFileSync(process.execPath, [resolve('scripts/factory.mjs'), '20261022-one'], { cwd: root, encoding: 'utf8' })
+  );
+  assert.equal(inspection.progress['20261022-one'].input.type, 'plan');
+  assert.equal(inspection.progress['20261022-one'].id, record.id);
+  assert.equal(readFileSync(join(root, '.issues/factory-ui/lifecycle.json'), 'utf8'), before);
+});
+
+test('progress writes preserve other issues saved by another coordinator instance', async (t) => {
+  const { root } = fixture(t);
+  const { writeProgress, readProgress } = await import('./factory-progress.mjs');
+  writeProgress(root, { issueId: 'one', status: 'waiting', input: { question: 'Which option?' } });
+  writeProgress(root, { issueId: 'two', status: 'paused' });
+  writeProgress(root, { issueId: 'one', status: 'finished' });
+  assert.equal(readProgress(root).two.status, 'paused');
+  assert.equal(readProgress(root).one.status, 'finished');
+});
+
+function nativeRecordInput(root) {
+  const queue = readQueue(root),
+    issue = queue.issues[0];
+  return {
+    issue_id: issue.id,
+    expected_state: issue.state,
+    revision: queue.head,
+    basis: factory(root).inspect().completion_basis,
+    report_sha256: digestReport(issue.content),
+    chat_id: 'native-coordinator',
+  };
+}
+
+test('native implementation checks are fresh in the UI without any UI chat or run history', async (t) => {
+  const { root, service, path, result } = implementationFixture(t);
+  const { recordPlanChecks } = await import('./factory-record.mjs');
+  recordPlanChecks(root, { ...nativeRecordInput(root), plan_path: path, result });
+  assert.equal(existsSync(service.store.path), false);
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.implementation.fresh, true);
+  assert.equal(issue.plan_verification.steps.length, 3);
+  assert.equal(issue.human_checks[0].status, 'pending');
+  const original = readFileSync(join(root, 'source.js'), 'utf8');
+  writeFileSync(join(root, 'source.js'), original + '\n// changed\n');
+  assert.equal(service.snapshot().issues[0].implementation.fresh, false);
+});
+
+test('native completion and UI completion write the same stage history and reject stale or invented acceptance', async (t) => {
+  const { root, service } = lifecycleFixture(t);
+  const { recordCompletion } = await import('./factory-record.mjs');
+  const input = {
+    ...nativeRecordInput(root),
+    result: {
+      outcome: 'completed',
+      summary: 'Clarification is complete.',
+      notes: 'Saved answers settle the request.',
+      evidence: [join(root, 'source.js')],
+      remaining: ['Investigate the source.'],
+      next_state: 'investigate',
+      skipped_steps: [],
+      stage_records: [{ state: 'clarify', outcome: 'completed', reason: 'The saved answers settle the scope.' }],
+      commit_revision: null,
+      verification_summary: null,
+      audit_summary: null,
+    },
+  };
+  const { execFileSync } = await import('node:child_process');
+  const payload = join(root, '.issues/native-completion.json');
+  writeFileSync(payload, JSON.stringify(input));
+  const recorded = JSON.parse(
+    execFileSync(process.execPath, [resolve('scripts/factory.mjs'), 'complete', payload], {
+      cwd: root,
+      encoding: 'utf8',
+    })
+  );
+  assert.equal(recorded.state, 'investigate');
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.state, 'investigate');
+  assert.equal(issue.lifecycle_history[0].outcome, 'completed');
+  assert.equal(issue.lifecycle_history[0].authorization.kind, 'coordinator');
+  assert.equal(issue.stageStates.clarify.status, 'completed');
+  assert.throws(() => recordCompletion(root, input), /issue moved/);
+  const fresh = { ...nativeRecordInput(root), result: { ...input.result, human_check_update: { status: 'passed' } } };
+  assert.throws(() => recordCompletion(root, fresh), /human decisions/);
+  assert.equal(service.snapshot().issues[0].state, 'investigate');
+});
+
+test('approved lifecycle actions retain plan authorization without claiming a new human click', async (t) => {
+  const { service, calls } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  await approveIssuePlan(service);
+  await finishLifecycle(service);
+  const worker = service.store.runs.find((r) => r.kind === 'worker');
+  assert.equal(worker.authorization.kind, 'approved-plan');
+  const action = service.api.inspect().registry.actions.find((a) => a.id === worker.actionId);
+  assert.equal(action.authorization.kind, 'approved-plan');
+  assert.equal(action.operations[0].authorization.plan_sha256, worker.authorization.plan_sha256);
+  assert.equal(worker.authorization.plan_sha256, service.lifecycleRuns['20261022-one'].approval.sha256);
+  const prompt = calls.find((c) => c.turn === worker.threadId).prompt;
+  assert.match(prompt, /under the approved plan/);
+  assert.doesNotMatch(prompt, /human explicitly chose Start worker/i);
+  const note = service.snapshot().issues[0].content;
+  assert.doesNotMatch(note, /Recorded from the issue screen by an explicit user action/);
+});
+
+test('native completion respects the shared active coordinator and unanswered UI request', async (t) => {
+  const { root } = fixture(t);
+  const { writeProgress } = await import('./factory-progress.mjs');
+  const { recordCompletion } = await import('./factory-record.mjs');
+  const input = nativeRecordInput(root);
+  writeProgress(root, { issueId: input.issue_id, status: 'running' });
+  assert.throws(() => recordCompletion(root, input), /coordinator is active/);
+  writeProgress(root, {
+    issueId: input.issue_id,
+    status: 'waiting',
+    input: { type: 'questions', questions: [{ question: 'Which scope?' }] },
+  });
+  assert.throws(() => recordCompletion(root, input), /original response control/);
+  assert.equal(readQueue(root).issues[0].state, 'investigate');
+});
+
+test('automatic same-worker correction is recorded as plan continuation, not a human follow-up', async (t) => {
+  const { service, api, proposal, root } = fixture(t);
+  const [action] = api.recommend([proposal]);
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'same-worker', hostId: 'codex-cli' });
+  api.record(action.id, { status: 'blocked', evidence: 'A technical correction is needed.' });
+  const run = service.store.add(action, 'worker', readQueue(root).head);
+  service.store.update(run, { threadId: 'same-worker', checkout: root, status: 'blocked' });
+  service.store.connected.delete(run.id);
+  let prompt;
+  service.codex = {
+    requests: new Map(),
+    close() {},
+    resume: async () => {},
+    turn: async (_id, _cwd, text) => {
+      prompt = text;
+      return JSON.stringify({
+        outcome: 'blocked',
+        summary: 'Need the next technical correction.',
+        evidence: 'Existing results.',
+        remaining: [],
+      });
+    },
+  };
+  const { planAuthorization } = await import('./factory-authorization.mjs');
+  const authorization = planAuthorization(
+    {
+      issueId: '20261022-one',
+      id: 'progress-one',
+      approval: { sha256: 'saved-plan-hash', receipt: '/tmp/approval.json' },
+    },
+    'resume'
+  );
+  await service.resume(run.id, 'Retry the bounded dependency operation.', authorization);
+  const recorded = api.inspect().registry.actions[0];
+  assert.match(recorded.evidence, /under the approved plan/);
+  assert.equal(
+    recorded.operations.findLast((o) => o.operation === 'record-running').authorization.kind,
+    'approved-plan'
+  );
+  assert.doesNotMatch(recorded.evidence, /Human explicitly resumed/);
+  await settle(service, run.id);
+  assert.match(prompt, /approved plan/);
+  assert.doesNotMatch(prompt, /Human follow-up/);
+  assert.equal(service.store.runs.find((r) => r.id === run.id).authorization.kind, 'approved-plan');
+});
+
+test('native check recording cannot invent the user waiver reserved for the Skip button', async (t) => {
+  const { root, path, result } = implementationFixture(t);
+  const { recordPlanChecks } = await import('./factory-record.mjs');
+  result.steps[0].criteria[0].manual_skip = { actor: 'human', reason: 'Invented' };
+  assert.throws(
+    () => recordPlanChecks(root, { ...nativeRecordInput(root), plan_path: path, result }),
+    /cannot invent a manual skip/
+  );
+  assert.equal(readQueue(root).issues[0].plan_verification, undefined);
+});
+
+test('native completion reuses legacy UI check receipts without starting a replacement review', async (t) => {
+  const { service, root, path } = implementationFixture(t);
+  const run = await settle(service, checkPlan(service, path).runId);
+  unlinkSync(join(root, '.issues/factory-progress', run.id + '.json'));
+  const { requireImplementationPasses } = await import('./factory-ui/plan-checks.mjs');
+  const queue = readQueue(root),
+    issue = queue.issues[0];
+  assert.doesNotThrow(() =>
+    requireImplementationPasses({ store: { list: () => [] }, codex: { requests: new Map() } }, queue, issue)
+  );
+  assert.equal(service.snapshot().issues[0].implementation.fresh, true);
+});
+
+test('native completion rejects an inspection whose dependencies or assignments changed', async (t) => {
+  const { root } = fixture(t);
+  const { recordCompletion } = await import('./factory-record.mjs');
+  const input = nativeRecordInput(root);
+  writeFileSync(
+    join(root, '.issues/20261022-other.md'),
+    '---\nid: 20261022-other\nstate: investigate\n---\nDependency changed.\n'
+  );
+  assert.throws(() => recordCompletion(root, input), /inspection changed/);
+  assert.equal(readQueue(root).issues[0].state, 'investigate');
+});

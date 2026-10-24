@@ -1,6 +1,6 @@
 import { captureInstructions } from './review-instructions.mjs';
 import { releaseReviewLock } from './review-lock.mjs';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { progressIssue, progressBasis } from './next-action.mjs';
@@ -82,7 +82,6 @@ async function reviewPlan(service, queue, issue, plan, run) {
   recordChecklist(service, issue, run, record);
 }
 function recordChecklist(service, issue, run, record) {
-  snapshotReport(service, issue, run, record);
   savePlanDecision(
     service,
     issue,
@@ -96,17 +95,4 @@ function recordChecklist(service, issue, run, record) {
     },
     record.evidence
   );
-}
-
-function snapshotReport(service, issue, run, record) {
-  const report = join(service.root, '.issues', issue.id + '.md');
-  const entry = record.evidence.find((e) => e.path === report);
-  if (!entry) return;
-  const directory = join(service.store.directory, run.id);
-  mkdirSync(directory, { recursive: true });
-  const archive = join(directory, 'reviewed-issue.md');
-  writeFileSync(archive, issue.content, { mode: 0o600, flag: 'wx' });
-  entry.path = archive;
-  for (const criterion of record.steps.flatMap((s) => s.criteria))
-    criterion.evidence = criterion.evidence.map((path) => (path === report ? archive : path));
 }

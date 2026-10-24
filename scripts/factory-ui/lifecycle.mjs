@@ -102,6 +102,7 @@ function recordSingle(doc, events, issue, target, result, run, evidence) {
     reason: result.summary,
     revision: run.base,
     chat: run.threadId,
+    authorization: run.authorization,
     evidence,
   });
   for (const step of result.skipped_steps || [])
@@ -113,6 +114,7 @@ function recordSingle(doc, events, issue, target, result, run, evidence) {
       reason: step.reason,
       revision: run.base,
       chat: run.threadId,
+      authorization: run.authorization,
       evidence,
     });
   doc.set('lifecycle_history', doc.createNode(events, { aliasDuplicateObjects: false }));
@@ -130,6 +132,7 @@ function recordMultiple(doc, events, result, run, evidence, target) {
       at: new Date().toISOString(),
       revision: run.base,
       chat: run.threadId,
+      authorization: run.authorization,
       evidence,
     });
   doc.set('lifecycle_history', doc.createNode(events, { aliasDuplicateObjects: false }));

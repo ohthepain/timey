@@ -119,7 +119,7 @@ path to excluded records and configured ordinary stages, ending at Final review.
 
 The issue-level Progress controller is `factory-ui/lifecycle-control.mjs` and
 `lifecycle-loop.mjs`; it composes existing operation handlers rather than replacing
-their guards. `lifecycle-store.mjs` owns its separate durable record.
+their guards. `lifecycle-store.mjs` adapts the shared durable progress store.
 `lifecycle-assessment.mjs`, `lifecycle-authorization.mjs` and `lifecycle-review.mjs`
 review saved answers, original plan approval and assignment scope. Inline responses
 route through `lifecycle-input.mjs` and `lifecycle-human.mjs`; native shared requests
@@ -132,3 +132,13 @@ requests. `lifecycle-planning.mjs` separates actual human questions from unfinis
 work and stopped operations. `lifecycle-stop.mjs` owns the meaningful-work fingerprint
 and bounded planning recovery, so administrative notes cannot reset a failed review.
 The browser retains keyed expansion, draft and scroll state around live refreshes.
+
+`scripts/factory-ledger.mjs` owns assignment inspection and guarded ledger
+transitions; `factory.mjs` is its command entry point. `factory-progress.mjs` owns
+the shared issue progress ledger and implementation-check receipts.
+`factory-completion.mjs` atomically records issue notes, criteria and stage history
+for both front doors. `factory-checks.mjs` retains reviewed report copies and
+freshness receipts. `factory-record.mjs` exposes native coordinator completion and
+check recording using the same validation as the UI. `factory-authorization.mjs`
+describes actual user actions, approved-plan continuation and coordinator work;
+it grants no new authority. See [shared records](factory-records.md).

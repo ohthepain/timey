@@ -201,17 +201,22 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
   );
   const target = reviewedTransition(service, queue, issue, action, result);
   service.guard(service.root, action, reviewOperation(queue, issue), queue.head);
-  recordWorker(service, action, worker, result, evidence, candidate);
+  recordWorker(service, action, worker, result, evidence, candidate, run.authorization);
   appendReview(service.root, issue, result, run, evidence, target);
 }
-function recordWorker(service, action, worker, result, evidence, candidate) {
+function recordWorker(service, action, worker, result, evidence, candidate, authorization) {
   const note = `Coordinator evidence review: ${result.summary}. ${JSON.stringify(evidence)}. Remaining: ${JSON.stringify(result.remaining)}`;
   if (!action.threadId) service.api.attach(action.id, { threadId: worker.threadId, hostId: 'local' });
   const current = currentAction(service.root, action.id).action;
   if (current.status !== 'completed')
-    service.api.record(action.id, { status: 'completed', evidence: note, ...candidateUpdate(candidate) });
+    service.api.record(action.id, {
+      status: 'completed',
+      evidence: note,
+      authorization,
+      ...candidateUpdate(candidate),
+    });
   if (candidate) return;
-  service.api.record(action.id, { status: 'reconciled', evidence: note });
+  service.api.record(action.id, { status: 'reconciled', evidence: note, authorization });
 }
 function candidateUpdate(candidate) {
   return candidate ? { worker_revision: candidate.head } : {};

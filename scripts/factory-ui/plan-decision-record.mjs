@@ -1,9 +1,6 @@
+import { saveChecklistRecord } from '../factory-checks.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { readQueue } from './data.mjs';
-import { checklistBasis } from './plan-checks.mjs';
-import { selectPlan } from './plan-outline.mjs';
-import { appendReview } from './review-result.mjs';
 import { requireThat } from './common.mjs';
 
 export function requireIdlePlanDecision(service) {
@@ -28,16 +25,14 @@ export function savePlanDecision(service, issue, run, result, evidence = []) {
   }
 }
 function recordPlanResult(service, issue, run, result, evidence) {
-  appendReview(service.root, issue, result, run, evidence, null);
-  const queue = readQueue(service.root),
-    saved = queue.issues.find((i) => i.id === issue.id);
+  const receipt = saveChecklistRecord(service.root, issue, run, result, evidence);
   service.store.update(run, {
     issueId: issue.id,
     issueState: issue.state,
     status: 'completed',
     summary: result.summary,
     result: result.plan_verification,
-    afterBasis: checklistBasis(queue, saved, selectPlan(queue, saved, result.plan_verification.path)),
+    afterBasis: receipt.afterBasis,
   });
 }
 

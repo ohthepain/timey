@@ -1,3 +1,4 @@
+import { runAuthorization, describeAuthorization } from '../factory-authorization.mjs';
 import { canResumeLifecycle } from './lifecycle-stop.mjs';
 import { loadLifecycles, lifecycleView, approvedLifecyclePlan } from './lifecycle-store.mjs';
 import { startLifecycle, answerLifecycle, pauseLifecycle, continueLifecycleAfter } from './lifecycle-control.mjs';
@@ -5,7 +6,7 @@ import { finishRecordUpdate } from './record-update.mjs';
 import { mkdirSync, existsSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { factory } from '../factory.mjs';
+import { factory } from '../factory-ledger.mjs';
 import { actionFingerprint, currentAction, describeLaunch, readQueue } from './data.mjs';
 import { humanGuard } from './guard.mjs';
 import { CodexConnection } from './codex.mjs';
@@ -43,7 +44,7 @@ export class FactoryUI {
   constructor(project) {
     this.root = git(project, 'rev-parse', '--show-toplevel');
     this.api = factory(this.root);
-    this.store = new RunStore(this.root);
+    this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
     this.intents = new Map();
     this.lifecycleRuns = loadLifecycles(this.root);
     this.lifecycleTasks = new Map();
@@ -199,7 +200,7 @@ export class FactoryUI {
     return selection.kind === 'launch' ? this.launch(selection) : this.integrate(selection);
   }
   launch({ queue, action }) {
-    this.api.reserve(action.id);
+    this.api.reserve(action.id, runAuthorization(this, action, 'worker'));
     const run = this.store.add(action, 'worker', action.basis.head);
     this.api.attach(action.id, { clientThreadId: `factory-ui:${run.id}` });
     this.perform(run, () => this.prepareWorker(run, action, queue));
@@ -218,7 +219,8 @@ export class FactoryUI {
       run,
       workerPrompt(
         action,
-        queue.issues.filter((r) => action.issues.includes(r.id))
+        queue.issues.filter((r) => action.issues.includes(r.id)),
+        run.authorization
       )
     );
   }
@@ -258,10 +260,14 @@ export class FactoryUI {
   unfinished(run, result) {
     this.store.update(run, { status: result.outcome, summary: result.summary, result });
     if (run.kind === 'worker')
-      this.api.record(run.actionId, { status: result.outcome, evidence: JSON.stringify(result) });
+      this.api.record(run.actionId, {
+        status: result.outcome,
+        evidence: JSON.stringify(result),
+        authorization: run.authorization,
+      });
   }
   async finishWorker(run, action, result) {
-    const update = { status: 'completed', evidence: JSON.stringify(result) };
+    const update = { status: 'completed', evidence: JSON.stringify(result), authorization: run.authorization };
     if (codeAction(action)) {
       const folder = join(this.store.directory, run.id);
       const checked = await this.check(run.checkout, run.base, folder);
@@ -286,6 +292,7 @@ export class FactoryUI {
       verified_revision: checked.head,
       checks_passed: true,
       human_approved: run.humanApproved,
+      authorization: run.authorization,
       evidence: `UI manual integration. Candidate ${run.candidate}; target start ${run.base}. Coordinator review: ${JSON.stringify(result)}. Independent combined checks: ${JSON.stringify(checked)}.`,
     });
     this.store.update(run, { status: 'completed', summary: result.summary, result, verifiedRevision: checked.head });
@@ -333,7 +340,7 @@ export class FactoryUI {
     this.serverLock = lock;
     this.store.reload();
   }
-  async resume(id, text) {
+  async resume(id, text, authorization = { kind: 'direct-user', operation: 'resume' }) {
     this.ownServer();
     const run = this.store.runs.find((r) => r.id === id);
     this.validateResume(run, id, text);
@@ -341,12 +348,13 @@ export class FactoryUI {
     this.guard(this.root, action, run.kind === 'worker' ? operation(action) : 'merge', queue.head);
     if (run.kind === 'integration') this.requireLock(run);
     await this.codex.resume(run.threadId, run.checkout);
+    this.store.update(run, { authorization });
     this.recordResumed(run, action);
     this.store.connected.add(id);
     this.perform(run, () =>
       this.runTurn(
         run,
-        `Continue only the original saved assignment. No new scope, other launches, pushes, closure or acceptance. Recorded base remains ${run.base}. Human follow-up: ${text}`
+        `Continue only the original saved assignment. No new scope, other launches, pushes, closure or acceptance. Recorded base remains ${run.base}. ${describeAuthorization(run.authorization)} Follow-up: ${text}`
       )
     );
     return { runId: id };
@@ -366,7 +374,8 @@ export class FactoryUI {
     if (run.kind === 'worker' && action.status === 'blocked')
       this.api.record(action.id, {
         status: 'running',
-        evidence: `Human explicitly resumed UI run ${run.id} within its original scope.`,
+        authorization: run.authorization,
+        evidence: `Resumed UI run ${run.id} within its original scope. ${describeAuthorization(run.authorization)}`,
       });
   }
   requireLock(run) {

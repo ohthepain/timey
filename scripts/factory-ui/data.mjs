@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { factory } from '../factory.mjs';
+import { factory } from '../factory-ledger.mjs';
 import { digest, git, requireThat } from './common.mjs';
 
 const names = {

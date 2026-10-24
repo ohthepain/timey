@@ -1,0 +1,71 @@
+import { readFileSync, mkdirSync, rmSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { parseDocument } from 'yaml';
+import { recordStage } from './factory-ui/lifecycle.mjs';
+import { requireThat } from './factory-ui/common.mjs';
+import { describeAuthorization } from './factory-authorization.mjs';
+export function appendCompletion(root, issue, result, run, evidence, target) {
+  const path = join(root, '.issues', issue.id + '.md'),
+    lock = join(root, '.issues/factory.lock');
+  mkdirSync(lock);
+  try {
+    const content = readFileSync(path, 'utf8');
+    requireThat(
+      content === issue.content,
+      'The issue changed before its result could be recorded. Refresh and review again.'
+    );
+    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    requireThat(match, 'The report frontmatter is missing.');
+    const doc = parseDocument(match[1]);
+    requireThat(!doc.errors.length, 'The report frontmatter is invalid.');
+    doc.set('updated', new Date().toISOString());
+    recordChecklistMetadata(doc, issue, result);
+    if (target) doc.set('state', target);
+    recordStage(doc, issue, target, result, run, evidence);
+    const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${formatReviewEvidence(evidence)}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${target ? '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n' : ''}`;
+    const next = '---\n' + doc.toString() + '---' + content.slice(match[0].length) + notes;
+    const temp = join(dirname(path), '.review-' + randomUUID() + '.tmp');
+    writeFileSync(temp, next, { mode: 0o600 });
+    renameSync(temp, path);
+  } finally {
+    rmSync(lock, { recursive: true });
+  }
+}
+
+function recordedBy(run) {
+  return (
+    describeAuthorization(run.authorization) +
+    (run.threadId ? ` Coordinator chat ${run.threadId}.` : '') +
+    (run.actionId ? ` Assignment ${run.actionId}.` : '')
+  );
+}
+function reviewHeading(result) {
+  if (result.plan_verification) return 'Implementation checklist';
+  if (result.user_decision) return 'Issue decision';
+  return result.stage_records ? 'Issue progress review' : 'Worker result review';
+}
+function recordChecklistMetadata(doc, issue, result) {
+  if (result.record_update)
+    doc.set('record_update', doc.createNode(result.record_update, { aliasDuplicateObjects: false }));
+  if (result.plan_verification)
+    doc.set('plan_verification', doc.createNode(result.plan_verification, { aliasDuplicateObjects: false }));
+  if (result.human_check_update) {
+    const index = issue.human_checks.findIndex((check) => check.id === result.human_check_update.id);
+    doc.setIn(['human_checks', index], doc.createNode(result.human_check_update, { aliasDuplicateObjects: false }));
+  }
+}
+
+function formatReviewEvidence(evidence) {
+  const proof = evidence.filter((entry) => entry.kind !== 'instruction');
+  const instructions = evidence.filter((entry) => entry.kind === 'instruction');
+  return (
+    proof.map((entry) => '- ' + entry.path + ' (sha256:' + entry.sha256 + ')').join('\n') +
+    (instructions.length
+      ? '\n\nInstructions read (retained copies, not test results):\n' +
+        instructions
+          .map((entry) => '- ' + entry.source + ' → ' + entry.path + ' (sha256:' + entry.sha256 + ')')
+          .join('\n')
+      : '')
+  );
+}

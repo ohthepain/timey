@@ -456,3 +456,6 @@ Stale no-work evaluations and older failed bookkeeping reviews do not override a
 such as dependency investigation can run during Implement without moving the issue
 back to Investigate. Worker reuse, fresh dispatch guards, exact integration approval
 and explicit final acceptance remain enforced.
+
+The issue and chat coordinators share [progress and completion records](factory-records.md),
+including check receipts independent of UI chat history. Their control loops remain separate.

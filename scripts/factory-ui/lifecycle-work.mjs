@@ -1,3 +1,4 @@
+import { planAuthorization } from '../factory-authorization.mjs';
 import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
 import { saveLifecycle, lifecycleEvent } from './lifecycle-store.mjs';
 import { lifecycleReview } from './lifecycle-review.mjs';
@@ -35,7 +36,8 @@ async function reconnectLifecycleWork(service, record, interrupted) {
   if (['worker', 'integration'].includes(interrupted.kind) && interrupted.threadId) {
     await service.resume(
       interrupted.id,
-      'Recover the latest result in this same chat. Continue unfinished work within the original assignment and approved plan; do not repeat completed work.'
+      'Recover the latest result in this same chat. Continue unfinished work within the original assignment and approved plan; do not repeat completed work.',
+      planAuthorization(record, 'resume')
     );
     saveLifecycle(service, record, { childRunId: interrupted.id, summary: 'Reconnected to the existing work.' });
     return true;
@@ -75,7 +77,7 @@ async function continueFailedWork(service, record, run) {
   );
   if (result.can_continue && result.instruction.trim()) {
     record.retriedRuns.push(run.id);
-    await service.resume(run.id, result.instruction);
+    await service.resume(run.id, result.instruction, planAuthorization(record, 'resume'));
     saveLifecycle(service, record, { childRunId: run.id, summary: result.summary });
     return true;
   }

@@ -6,7 +6,8 @@ import { randomUUID } from 'node:crypto';
 import { readJson, writeJson } from './common.mjs';
 
 export class RunStore {
-  constructor(root) {
+  constructor(root, authorization = () => null) {
+    this.authorization = authorization;
     this.directory = join(root, '.issues/factory-ui');
     this.path = join(this.directory, 'runs.json');
     this.reload();
@@ -26,6 +27,7 @@ export class RunStore {
     const run = {
       id: randomUUID(),
       actionId: action.id,
+      authorization: this.authorization(action, kind),
       kind,
       base,
       candidate: action.worker_revision || null,
@@ -40,6 +42,11 @@ export class RunStore {
     return run;
   }
   update(run, values) {
+    if (values.issueId)
+      values.authorization =
+        run.authorization?.kind === 'approved-plan'
+          ? run.authorization
+          : this.authorization({ ...run, ...values }, run.kind);
     Object.assign(run, values, { updated: new Date().toISOString() });
     this.save();
   }
