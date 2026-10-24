@@ -68,10 +68,10 @@ function reviewChoice(actionId, previous) {
   return {
     kind: 'review',
     actionId,
-    title: retry ? 'Review result again' : 'Review worker results',
+    title: 'Review finished work',
     summary: retry
-      ? `The previous review stopped: ${previous.summary} A new read-only review will check the existing worker’s latest evidence and try to record its outcome. It will not repeat the worker’s assignment.`
-      : 'Find the existing worker, review its test results, and record the outcome. If the worker is still running, leave it running. Do not launch it again.',
+      ? 'Continue the existing review of the finished work. Saved findings are kept; any file problem will name the file and explain what is needed.'
+      : 'Review the existing worker’s result and supporting files, then record what is finished.',
   };
 }
 function integration(action) {

@@ -327,3 +327,38 @@ A subsequent evidence review retains matching user overrides for the same plan
 and source context. Changed plan requirements or source require a new decision;
 old overrides remain in the saved issue/review history. Bulk skipping does not
 silently approve the final result or waive a human observation.
+
+## Review file handling and recovery
+
+Progress captures the project's agent guides and installed skill instructions
+before reviewing work. Installed skill links may point to the shared skills
+checkout: exact SKILL.md and reference Markdown files inside the resolved installed
+skill directory are recognized without granting access to the whole checkout.
+Each receipt records the project path, resolved target, hash and retained copy.
+Escaping references are excluded, and changed instruction links/content invalidate
+the input. Instruction copies are recorded separately from work and test evidence.
+The same handling is used by implementation-checklist and reconciliation reviews.
+
+A supporting-file failure keeps the complete structured review and all other
+inspected file receipts. The issue screen names each unavailable file, explains
+why it was cited, and distinguishes an internal recording restriction from a real
+Codex permission request. A genuinely new external supporting file requires an
+explicit exact-file decision for this review; it grants no folder-wide access.
+Approval retains a verified copy and refreshes the same review chat. Actual Codex
+permission requests show the requested paths and reason, with technical details
+collapsed. Missing evidence never becomes a pass.
+
+A historical blocked review without sufficient input receipts gets one fresh
+read-only turn in its existing chat. New reviews retain the queue/source basis,
+original worker turn, instruction receipts, completed response and checked evidence
+hashes before recording. An unchanged recording failure can retry saving without
+another model turn; changed inputs require a fresh turn in the same chat. Native
+worker assignments, launches, integrations and human acceptance remain separate.
+Events for a resumed chat belong to its current connected run, preserving old run
+history. A file failure releases the operation lock and blocks only the affected
+review's completion; retained findings remain visible.
+
+Explicitly continuing a saved review also reopens that exact chat if Codex reports
+it archived. The UI retries the read-only resume once using the installed
+thread/unarchive operation; it creates no replacement chat and does not unarchive
+unrelated workers or conversations.

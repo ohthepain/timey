@@ -1,3 +1,4 @@
+import { captureInstructions } from './review-instructions.mjs';
 import { releaseReviewLock } from './review-lock.mjs';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -49,6 +50,8 @@ function requireIdle(service) {
   requireThat(service.store.connected.size === 0, 'Wait for the current action to finish before checking the plan.');
 }
 async function reviewPlan(service, queue, issue, plan, run) {
+  const instructions = captureInstructions(service.root, join(service.store.directory, run.id));
+  service.store.update(run, { instructions });
   const previous = service.store.runs.findLast((r) => r.kind === 'plan-check' && r.issueId === issue.id && r.threadId);
   let threadId;
   if (previous) {
@@ -57,10 +60,15 @@ async function reviewPlan(service, queue, issue, plan, run) {
   } else threadId = await service.codex.start(service.root, 'read-only');
   service.store.update(run, { threadId, status: 'running' });
   const result = JSON.parse(
-    await service.codex.turn(threadId, service.root, planCheckPrompt(queue, issue, plan), planCheckSchema)
+    await service.codex.turn(
+      threadId,
+      service.root,
+      planCheckPrompt(queue, issue, plan) + '\nServer-captured instruction copies: ' + JSON.stringify(instructions),
+      planCheckSchema
+    )
   );
   const record = {
-    ...checkedPlanResult(queue, issue, plan, result),
+    ...checkedPlanResult(queue, issue, plan, result, instructions),
     run_id: run.id,
     checked_at: new Date().toISOString(),
   };

@@ -95,3 +95,8 @@ ordinary implementation criteria; `plan-overrides.mjs` retains applicable skips
 when the same plan and source are reviewed again.
 `factory-ui/plan-decision-record.mjs` shares idle checks and atomic checklist
 recording between read-only results and explicit user decisions.
+
+`factory-ui/review-instructions.mjs` snapshots known installed instruction inputs
+and exact approved supporting files. `review-recovery.mjs` reuses review chats and
+validates recording checkpoints. `review-file-access.mjs` records narrow explicit
+consent for an external supporting file and continues its original review.

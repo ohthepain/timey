@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { gitFixture } from './git-fixture.mjs';
@@ -513,8 +513,8 @@ test('a failed recording retains the model response and offers an explicit fresh
   assert.equal(service.store.runs.length, 1);
   const retry = service.progressPreflight('20261022-one', 'investigate');
   assert.equal(retry.choice.kind, 'review');
-  assert.equal(retry.choice.title, 'Review result again');
-  assert.match(retry.choice.summary, /will not repeat/);
+  assert.equal(retry.choice.title, 'Review finished work');
+  assert.match(retry.choice.summary, /existing review/);
   assert.equal(service.store.runs.length, 1);
   writeFileSync(evidence, content);
   const second = await settle(service, service.progressStart(retry.token).runId);
@@ -524,11 +524,9 @@ test('a failed recording retains the model response and offers an explicit fresh
   assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
   assert.equal(api.inspect().reports[0].metadata.state, 'investigate');
   assert.equal(service.progressPreflight('20261022-one', 'investigate').choice.kind, 'plan');
-  assert.equal(reviewCalls(root).filter((call) => call.method === 'thread/start').length, 2);
-  assert.equal(
-    reviewCalls(root).some((call) => call.method === 'thread/resume'),
-    false
-  );
+  assert.equal(reviewCalls(root).filter((call) => call.method === 'thread/start').length, 1);
+  assert.equal(reviewCalls(root).filter((call) => call.method === 'thread/resume').length, 1);
+  assert.equal(second.threadId, first.threadId);
 });
 
 async function checkNow(service, state = 'investigate') {
@@ -1464,4 +1462,174 @@ test('skip rejects blank reasons, stale results, passed items, and concurrent ac
   service.store.connected.delete('other-action');
   writeFileSync(join(root, 'source.js'), 'changed\n');
   assert.throws(() => service.skipPlanChecks(skipInput(service, { all: true })), /Refresh the implementation/);
+});
+
+async function runReview(service) {
+  const preview = service.progressPreflight('20261022-one', 'investigate');
+  return settle(service, service.progressStart(preview.token).runId);
+}
+
+test('installed shared instructions are captured separately and reject changed links and escaping references', async (t) => {
+  const { root } = fixture(t);
+  const { captureInstructions } = await import('./factory-ui/review-instructions.mjs');
+  const { reviewEvidence } = await import('./factory-ui/review-result.mjs');
+  const shared = join(root, '.issues/shared-skill');
+  mkdirSync(join(shared, 'references'), { recursive: true });
+  writeFileSync(join(shared, 'SKILL.md'), '# Shared skill\n');
+  writeFileSync(join(shared, 'references/human-input.md'), 'Human decisions stay explicit.\n');
+  symlinkSync('/etc/hosts', join(shared, 'references/escape.md'));
+  symlinkSync(shared, join(root, '.agents/skills/shared'));
+  const directory = join(root, '.issues/recording');
+  const inputs = captureInstructions(root, directory);
+  assert.equal(inputs.length, 2);
+  const path = join(root, '.agents/skills/shared/references/human-input.md');
+  const result = {
+    outcome: 'completed',
+    summary: 'Read actual work and instructions.',
+    notes: 'Their roles are separate.',
+    remaining: [],
+    next_state: null,
+    evidence: [join(root, 'source.js'), path],
+  };
+  const files = reviewEvidence(root, { cwd: root }, result, inputs);
+  assert.equal(files[1].kind, 'instruction');
+  assert.equal(files[1].source, path);
+  assert.equal(readFileSync(files[1].path, 'utf8'), 'Human decisions stay explicit.\n');
+  unlinkSync(join(root, '.agents/skills/shared'));
+  const other = join(root, '.issues/other-skill');
+  mkdirSync(join(other, 'references'), { recursive: true });
+  writeFileSync(join(other, 'references/human-input.md'), 'Different instructions.\n');
+  symlinkSync(other, join(root, '.agents/skills/shared'));
+  assert.throws(() => reviewEvidence(root, { cwd: root }, result, inputs), /instruction link changed/);
+});
+
+test('refreshing a historical blocked result resumes its existing review chat without repeating the worker', async (t) => {
+  const { root, service, action } = pendingReview(t);
+  const old = service.store.add(action, 'coordinator', service.snapshot().head);
+  service.store.update(old, {
+    issueId: '20261022-one',
+    issueState: 'investigate',
+    threadId: 'historical-review',
+    status: 'blocked',
+    summary: 'Could not record an installed instruction.',
+  });
+  service.store.connected.delete(old.id);
+  const result = await runReview(service);
+  assert.equal(result.status, 'completed', result.summary);
+  assert.equal(result.threadId, 'historical-review');
+  const calls = reviewCalls(root);
+  assert.equal(calls.filter((c) => c.method === 'thread/start').length, 0);
+  assert.equal(calls.find((c) => c.method === 'thread/resume').params.threadId, 'historical-review');
+  assert.equal(calls.filter((c) => c.method === 'turn/start').length, 1);
+  assert.ok(result.events.some((e) => e.method === 'item/completed'));
+  assert.equal(old.events.length, 0);
+});
+
+test('an unchanged completed review retries recording without another model turn', async (t) => {
+  const { root, service } = pendingReview(t);
+  mkdirSync(join(root, '.issues/factory.lock'));
+  const first = await runReview(service);
+  assert.equal(first.status, 'blocked');
+  assert.ok(first.checkpoint.evidence.length);
+  rmSync(join(root, '.issues/factory.lock'), { recursive: true });
+  const second = await runReview(service);
+  assert.equal(second.status, 'completed', second.summary);
+  assert.equal(second.threadId, first.threadId);
+  assert.equal(second.previousRunId, first.id);
+  assert.equal(reviewCalls(root).filter((c) => c.method === 'turn/start').length, 1);
+});
+
+test('changed supporting files require a fresh bounded review in the same chat', async (t) => {
+  const { root, service, evidence } = pendingReview(t);
+  mkdirSync(join(root, '.issues/factory.lock'));
+  const first = await runReview(service);
+  assert.equal(first.status, 'blocked');
+  rmSync(join(root, '.issues/factory.lock'), { recursive: true });
+  writeFileSync(evidence, JSON.stringify({ fixture: true, changed: true }));
+  const second = await runReview(service);
+  assert.equal(second.status, 'completed', second.summary);
+  assert.equal(second.threadId, first.threadId);
+  const calls = reviewCalls(root);
+  assert.equal(calls.filter((c) => c.method === 'thread/start').length, 1);
+  assert.equal(calls.filter((c) => c.method === 'thread/resume').length, 1);
+  assert.equal(calls.filter((c) => c.method === 'turn/start').length, 2);
+});
+
+test('an unrelated external file requires exact consent while retaining the other reviewed files', async (t) => {
+  const { root, service } = pendingReview(t, {
+    sourceEvidence: true,
+    result: {
+      outcome: 'completed',
+      summary: 'Existing work reviewed.',
+      notes: 'A named outside supporting file is cited.',
+      evidence: ['/etc/hosts'],
+      remaining: [],
+      next_state: null,
+    },
+  });
+  const first = await runReview(service);
+  assert.equal(first.status, 'blocked');
+  assert.equal(first.fileProblems.length, 1);
+  assert.equal(first.fileProblems[0].path, '/etc/hosts');
+  assert.equal(first.reviewedEvidence.length, 2);
+  assert.equal(first.result.outcome, 'completed');
+  assert.throws(
+    () => service.approveReviewFile({ runId: first.id, path: '/etc/passwd', basis: service.snapshot().reviewBasis }),
+    /exact supporting file/
+  );
+  const next = service.approveReviewFile({
+    runId: first.id,
+    path: '/etc/hosts',
+    basis: service.snapshot().reviewBasis,
+  });
+  const result = await settle(service, next.runId);
+  assert.equal(result.status, 'completed', result.summary);
+  assert.equal(result.threadId, first.threadId);
+  assert.equal(result.approvedFiles.length, 1);
+  assert.equal(result.approvedFiles[0].scope, 'this review');
+  assert.ok(result.evidence.some((e) => e.kind === 'supporting-file'));
+  assert.equal(reviewCalls(root).filter((c) => c.method === 'thread/start').length, 1);
+});
+
+test('an explicitly resumed archived review reopens only its own saved chat', async () => {
+  const { resumeReviewThread } = await import('./factory-ui/review-recovery.mjs');
+  const calls = [],
+    run = {},
+    previous = { id: 'prior', threadId: 'saved-review' };
+  let archived = true;
+  const service = {
+    root: '/project',
+    store: { update: (_run, value) => Object.assign(run, value) },
+    codex: {
+      resume: async (id, root, sandbox) => {
+        calls.push(['resume', id, root, sandbox]);
+        if (archived) throw Error('session saved-review is archived.');
+      },
+      unarchive: async (id) => {
+        calls.push(['unarchive', id]);
+        archived = false;
+      },
+      start: async () => {
+        throw Error('Must not create another chat.');
+      },
+    },
+  };
+  assert.equal(await resumeReviewThread(service, run, previous), 'saved-review');
+  assert.deepEqual(calls, [
+    ['resume', 'saved-review', '/project', 'read-only'],
+    ['unarchive', 'saved-review'],
+    ['resume', 'saved-review', '/project', 'read-only'],
+  ]);
+  assert.equal(run.previousRunId, 'prior');
+});
+
+test('the Codex transport unarchives exactly the selected thread through the supported RPC', async () => {
+  const connection = new CodexConnection(),
+    calls = [];
+  connection.ready = async () => {};
+  connection.call = async (method, params) => {
+    calls.push({ method, params });
+  };
+  await connection.unarchive('existing-review');
+  assert.deepEqual(calls, [{ method: 'thread/unarchive', params: { threadId: 'existing-review' } }]);
 });

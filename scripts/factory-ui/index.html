@@ -724,9 +724,27 @@
         return run.approvals
           .map(
             (p) =>
-              `<div class="card"><b>Codex needs your input</b><pre>${esc(JSON.stringify(p.params, null, 2))}</pre>${p.method === 'item/tool/requestUserInput' ? p.params.questions.map((q) => `<label>${esc(q.question)}<textarea data-question="${esc(q.id)}" data-request="${esc(p.id)}"></textarea></label>`).join('') + `<button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="answers">Send answers</button>` : `<button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="allow">Allow this request</button> <button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="decline">Decline</button>`}</div>`
+              `<div class="card">${approvalDetails(p)}${p.method === 'item/tool/requestUserInput' ? p.params.questions.map((q) => `<label>${esc(q.question)}<textarea data-question="${esc(q.id)}" data-request="${esc(p.id)}"></textarea></label>`).join('') + `<button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="answers">Send answers</button>` : `<button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="allow">Allow this request</button> <button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="decline">Decline</button>`}</div>`
           )
           .join('');
+      }
+      function approvalDetails(request) {
+        const paths = permissionPaths(request.params.permissions || {});
+        const title =
+          request.method === 'item/permissions/requestApproval' ? 'Codex needs file access' : 'Codex needs your input';
+        return `<b>${title}</b>${request.params.reason ? `<p>${esc(request.params.reason)}</p>` : ''}${paths.length ? `<p>Files or folders requested:</p><ul>${paths.map((path) => `<li><code>${esc(path)}</code></li>`).join('')}</ul>` : ''}<details><summary>Request details</summary><pre>${esc(JSON.stringify(request.params, null, 2))}</pre></details>`;
+      }
+      function permissionPaths(value) {
+        if (typeof value === 'string') return value.startsWith('/') ? [value] : [];
+        if (!value || typeof value !== 'object') return [];
+        return [...new Set(Object.values(value).flatMap(permissionPaths))];
+      }
+      function reviewFileProblems(issue) {
+        const run = data.runs.findLast(
+          (r) => r.kind === 'coordinator' && r.issueId === issue.id && r.issueState === issue.state
+        );
+        if (run?.status !== 'blocked' || !run.fileProblems?.length) return '';
+        return `<section class="card"><h3>Couldn’t save the review</h3><p>The completed findings and ${run.reviewedEvidence?.length || 0} inspected files have been kept. The work has not been repeated.</p>${run.fileProblems.map((problem) => `<div><p><b>File:</b> <code>${esc(problem.path)}</code></p><p>${esc(problem.reason)}</p><p>${esc(problem.purpose)}</p>${problem.code === 'REVIEW_FILE_SCOPE' ? `<button data-review-file="${esc(problem.path)}" data-file-run="${esc(run.id)}">Use this file and continue review</button><p class="muted">Allows this exact supporting file for this review only.</p>` : '<p>Continue in the same review chat after the named file is available. Codex will request access if it needs it.</p>'}</div>`).join('')}</section>`;
       }
       function chatLink(id) {
         return id ? `<small><a href="codex://threads/${encodeURIComponent(id)}">Open chat in Codex ↗</a></small>` : '';
@@ -959,8 +977,8 @@
       }
       function currentStageContent(issue, step) {
         if (['ready-to-verify', 'ready-to-close'].includes(step.role) && issue.implementation)
-          return implementationChecklist(issue) + progressControls(issue);
-        return latestReviewResult(issue) + progressControls(issue);
+          return implementationChecklist(issue) + reviewFileProblems(issue) + progressControls(issue);
+        return latestReviewResult(issue) + reviewFileProblems(issue) + progressControls(issue);
       }
       const expandedChecks = new Map();
       const checkLabels = {
@@ -1323,7 +1341,7 @@
         selection = await request('progress-preflight', { issueId: id, state });
         const a = selection.action;
         $('selection').innerHTML =
-          `<h2>${esc(selection.choice.title)}</h2><p>${esc(selection.choice.summary)}</p><p>${selection.choice.kind === 'reconcile' ? 'This records steps that are already finished and stops at the first requirement still needing attention. It does not start workers, merge changes or close the issue.' : 'This performs one selected action. Further work needs another click.'}</p>${selection.choice.kind === 'save-review' ? savePreview(selection.choice) + '<p>This records the reviewed recommendation and planned route only. Worker launch, integration and issue acceptance remain separate actions.</p>' : ''}${selection.choice.kind === 'review' ? '<p>A Codex review chat will read the existing result and supporting files, then update this issue. It can move the issue forward when that work is complete. It will not restart the worker or close the issue.</p>' : ''}${selection.choice.kind === 'plan' ? '<p>A separate chat will review this issue. If the work already exists, its completed steps will be recorded automatically. New assignments, worker launches and integration remain separate choices.</p>' : ''}${a ? `<h3>${esc(a.title)}</h3><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p>` : ''}${selection.diff !== undefined && selection.diff !== null ? `<details><summary>Candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details>` : ''}${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
+          `<h2>${esc(selection.choice.title)}</h2><p>${esc(selection.choice.summary)}</p><p>${selection.choice.kind === 'reconcile' ? 'This records steps that are already finished and stops at the first requirement still needing attention. It does not start workers, merge changes or close the issue.' : 'This performs one selected action. Further work needs another click.'}</p>${selection.choice.kind === 'save-review' ? savePreview(selection.choice) + '<p>This records the reviewed recommendation and planned route only. Worker launch, integration and issue acceptance remain separate actions.</p>' : ''}${selection.choice.kind === 'review' ? '<p>The existing review chat will check the finished work and supporting files, then update this issue. It can move the issue forward when that work is complete. It will not restart the worker or close the issue.</p>' : ''}${selection.choice.kind === 'plan' ? '<p>A separate chat will review this issue. If the work already exists, its completed steps will be recorded automatically. New assignments, worker launches and integration remain separate choices.</p>' : ''}${a ? `<h3>${esc(a.title)}</h3><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p>` : ''}${selection.diff !== undefined && selection.diff !== null ? `<details><summary>Candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details>` : ''}${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
         $('approve').textContent = selection.choice.title;
         $('approve').disabled = selection.requiresApproval === true;
         if (selection.requiresApproval)
@@ -1375,6 +1393,17 @@
         $('confirm').showModal();
       }
       function bind() {
+        document.querySelectorAll('[data-review-file]').forEach(
+          (button) =>
+            (button.onclick = () =>
+              act(() =>
+                request('approve-review-file', {
+                  runId: button.dataset.fileRun,
+                  path: button.dataset.reviewFile,
+                  basis: data.reviewBasis,
+                })
+              ))
+        );
         document
           .querySelectorAll('[data-skip-check]')
           .forEach((button) => (button.onclick = () => selectCheckSkip(button, false)));

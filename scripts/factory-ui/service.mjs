@@ -23,6 +23,7 @@ import { checklistView, readChecklistEvidence } from './plan-checks.mjs';
 import { checkImplementation } from './plan-review.mjs';
 import { decidePlanCheck } from './plan-approval.mjs';
 import { skipPlanChecks } from './plan-skips.mjs';
+import { approveReviewFile } from './review-file-access.mjs';
 
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
@@ -88,6 +89,9 @@ export class FactoryUI {
   }
   skipPlanChecks(input) {
     return skipPlanChecks(this, input);
+  }
+  approveReviewFile(input) {
+    return approveReviewFile(this, input);
   }
   findConnection(id, state, basis) {
     return findConnection(this, id, state, basis);
@@ -268,7 +272,7 @@ export class FactoryUI {
     Promise.resolve()
       .then(task)
       .catch((error) => {
-        this.store.update(run, { status: 'blocked', summary: error.message });
+        this.store.update(run, { status: 'blocked', summary: error.message, ...fileFailure(error) });
         if (run.kind === 'worker') {
           const { action } = currentAction(this.root, run.actionId);
           if (['running', 'setup', 'reserved'].includes(action.status)) {
@@ -447,4 +451,9 @@ function evaluationMetadata(queue, selected, basis) {
     ? { issueId: selected.id, issueState: selected.state, reviewInput: reviewInput(queue, selected) }
     : { issueId: null };
   return { ...selection, reviewBasis: basis, checkout: queue.root };
+}
+
+function fileFailure(error) {
+  if (!error.fileProblems) return {};
+  return { fileProblems: error.fileProblems, reviewedEvidence: error.reviewedEvidence || [] };
 }

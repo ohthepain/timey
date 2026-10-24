@@ -10,6 +10,8 @@ import { inspectWorker } from './worker-history.mjs';
 import { reviewSchema, reviewPrompt, reviewEvidence, appendReview, recordReviewResult } from './review-result.mjs';
 import { requireThat, writeJson, git } from './common.mjs';
 import { beginReconciliation } from './reconcile.mjs';
+import { captureInstructions } from './review-instructions.mjs';
+import { reviewChat, reusableReview, reviewPermissions } from './review-recovery.mjs';
 
 export function prepareProgress(service, id, state) {
   const queue = readQueue(service.root),
@@ -111,17 +113,39 @@ async function reviewWorker(service, queue, issue, run) {
     });
     return;
   }
-  const threadId = await service.codex.start(service.root, 'read-only');
+  const reusable = reusableReview(service, queue, worker, run);
+  if (reusable) return applySavedReview(service, queue, issue, action, worker, run, reusable);
+  return freshWorkerReview(service, run, { queue, issue, action, worker, guards });
+}
+async function freshWorkerReview(service, run, { queue, issue, action, worker, guards }) {
+  const approvedFiles = reviewPermissions(service, queue, run);
+  const instructions = captureInstructions(service.root, join(service.store.directory, run.id));
+  const threadId = await reviewChat(service, run);
   service.store.update(run, {
     threadId,
     workerThreadId: worker.threadId,
+    workerTurnId: worker.turnId,
+    reviewBasis: progressBasis(queue),
+    instructions,
+    approvedFiles,
     summary: 'Reviewing the existing result and its actual evidence.',
   });
   const result = JSON.parse(
     await service.codex.turn(
       threadId,
       service.root,
-      reviewPrompt({ ...queue, planned_route: savedRoute(issue, service.store.runs) }, issue, action, worker, guards),
+      reviewPrompt(
+        {
+          ...queue,
+          file_permissions: approvedFiles,
+          instruction_inputs: instructions,
+          planned_route: savedRoute(issue, service.store.runs),
+        },
+        issue,
+        action,
+        worker,
+        guards
+      ),
       reviewSchema
     )
   );
@@ -131,8 +155,36 @@ async function reviewWorker(service, queue, issue, run) {
     latest.turnId === worker.turnId,
     'The worker changed during review. Review its latest result before recording.'
   );
-  const evidence = reviewEvidence(service.root, worker, result);
+  const evidence = checkedReviewFiles(service, run, worker, result);
+  service.store.update(run, { checkpoint: { basis: progressBasis(queue), evidence } });
   service.store.update(run, { status: 'checking', summary: 'Checking freshness and recording the reviewed outcome.' });
+  await applyReview(service, queue, issue, action, worker, run, result, evidence);
+  service.store.update(run, { status: 'completed', summary: result.summary, evidence });
+}
+function checkedReviewFiles(service, run, worker, result) {
+  try {
+    return reviewEvidence(service.root, worker, result, run.instructions, run.approvedFiles);
+  } catch (error) {
+    service.store.update(run, {
+      fileProblems: error.fileProblems || [],
+      reviewedEvidence: error.reviewedEvidence || [],
+    });
+    throw error;
+  }
+}
+async function applySavedReview(service, queue, issue, action, worker, run, previous) {
+  const { evidence } = previous.checkpoint;
+  const result = previous.result;
+  service.store.update(run, {
+    threadId: previous.threadId,
+    previousRunId: previous.id,
+    workerThreadId: worker.threadId,
+    workerTurnId: worker.turnId,
+    instructions: previous.instructions,
+    result,
+    checkpoint: previous.checkpoint,
+    summary: 'Saving the completed review. Its inputs and supporting files are unchanged.',
+  });
   await applyReview(service, queue, issue, action, worker, run, result, evidence);
   service.store.update(run, { status: 'completed', summary: result.summary, evidence });
 }

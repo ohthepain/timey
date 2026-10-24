@@ -132,6 +132,10 @@ export class CodexConnection {
     await this.ready();
     await this.call('thread/resume', { threadId, cwd, sandbox, approvalPolicy: 'on-request' });
   }
+  async unarchive(threadId) {
+    await this.ready();
+    await this.call('thread/unarchive', { threadId });
+  }
   async turn(threadId, cwd, prompt, outputSchema) {
     requireThat(!this.turns.has(threadId), 'This conversation already has running work.');
     let resolve, reject;

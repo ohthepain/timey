@@ -1,3 +1,5 @@
+import { resumeReviewThread } from './review-recovery.mjs';
+import { captureInstructions } from './review-instructions.mjs';
 import { releaseReviewLock } from './review-lock.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -73,6 +75,7 @@ export function beginReconciliation(service, queue, issue) {
   return { runId: run.id };
 }
 async function reconcile(service, queue, issue, run) {
+  service.store.update(run, { instructions: captureInstructions(service.root, join(service.store.directory, run.id)) });
   const threadId = await reviewThread(service, issue, run);
   service.store.update(run, {
     threadId,
@@ -190,18 +193,18 @@ async function reviewThread(service, issue, run) {
   const previous = service.store.runs.findLast(
     (r) => r.kind === 'reconciliation' && r.id !== run.id && r.issueId === issue.id && r.threadId
   );
-  if (!previous) return service.codex.start(service.root, 'read-only');
-  await service.codex.resume(previous.threadId, service.root, 'read-only');
-  service.store.update(run, { previousRunId: previous.id });
-  return previous.threadId;
+  return resumeReviewThread(service, run, previous);
 }
 
 async function checkedReview(service, queue, issue, run, threadId) {
-  const prompt = reconciliationPrompt(queue, issue, guardReadings(service, queue, issue));
+  const prompt =
+    reconciliationPrompt(queue, issue, guardReadings(service, queue, issue)) +
+    '\nServer-captured instruction copies: ' +
+    JSON.stringify(run.instructions);
   const result = await readReview(service, run, threadId, prompt);
   if (!result) return {};
   try {
-    return checkedResult(service, queue, issue, result);
+    return checkedResult(service, queue, issue, result, run.instructions);
   } catch (error) {
     return correctReview(service, queue, issue, run, threadId, result, error);
   }
@@ -210,8 +213,8 @@ async function readReview(service, run, threadId, prompt) {
   const result = JSON.parse(await service.codex.turn(threadId, service.root, prompt, reconciliationSchema));
   return recordReviewResult(service, run, result) ? result : null;
 }
-function checkedResult(service, queue, issue, result) {
-  const evidence = reviewEvidence(service.root, { cwd: service.root }, result);
+function checkedResult(service, queue, issue, result, instructions) {
+  const evidence = reviewEvidence(service.root, { cwd: service.root }, result, instructions);
   validateReconciliation(service, queue, issue, result);
   return { result, evidence };
 }
@@ -219,5 +222,5 @@ async function correctReview(service, queue, issue, run, threadId, result, error
   service.store.update(run, { rejectedResult: result, summary: 'Correcting the review record before saving it.' });
   const prompt = `Your result has NOT been applied. Correct this record in this same read-only chat: ${error.message}. Do not repeat the assignment or perform mutations. Return the complete corrected structured result. Evidence entries must be actual absolute file paths within ${service.root} or system temporary directories only. Exclude raw Codex sessions and other worktrees; retained project authorization and integration records can establish the same facts. Summary fields must name actual JSON files, not explanations. Recheck your claims and retain real blockers; never invent a pass to fix a record. Current source and issue remain those supplied above.`;
   const corrected = await readReview(service, run, threadId, prompt);
-  return corrected ? checkedResult(service, queue, issue, corrected) : {};
+  return corrected ? checkedResult(service, queue, issue, corrected, run.instructions) : {};
 }

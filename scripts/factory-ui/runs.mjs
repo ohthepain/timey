@@ -42,7 +42,7 @@ export class RunStore {
     this.save();
   }
   event(message) {
-    const run = this.runs.find((r) => r.threadId === message.params?.threadId);
+    const run = this.runs.findLast((r) => r.threadId === message.params?.threadId && this.connected.has(r.id));
     if (!run) return;
     const events = [
       'item/agentMessage/delta',

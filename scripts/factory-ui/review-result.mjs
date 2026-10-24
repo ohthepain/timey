@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { parseDocument } from 'yaml';
 import { recordStage } from './lifecycle.mjs';
 import { digest, requireThat } from './common.mjs';
+import { instructionEvidence, approvedEvidence } from './review-instructions.mjs';
 
 export const reviewSchema = {
   type: 'object',
@@ -43,6 +44,10 @@ Read AGENTS.md, factory, operating, issue-tracker, verification and human-input 
 Before claiming current-project checks are missing, inspect saved verification summaries in ${join(queue.root, '.issues/evidence')}. Compare their revision and snapshot_tree with the actual current checkout, read their raw logs, and assess the required scope and starting base. An older worker revision alone does not invalidate separately saved current-project checks. Reuse valid existing evidence; do not rerun tests in this read-only review.
 Decide whether this selected assignment has enough actual evidence to be recorded complete. Distinguish its completion from the broader issue, current source verification, untested behavior and human acceptance. Missing/invalid/stale evidence means blocked. Return absolute paths of the actual files you reviewed, a plain-language summary, factual issue notes, and remaining gaps. Do not return invented pointers. A supplied result claiming success is not sufficient.
 You may propose next_state only if the current stage's documented exit condition is actually met at the current revision and its relevant checks are established. Follow the configured Next state links and retain custom stages. You may propose passing an optional stage only if planned_route records a saved skip, project policy explicitly permits it, and its skip reason remains valid. List those intermediate stages in order in skipped_steps with their factual reasons; otherwise return an empty array. Required work, human checks and closure can never be skipped. Never propose the closed state. Otherwise return null, explain the specific remaining work, and leave human judgment pending. Write for an engineer: state what passed, whether the issue can advance, and concrete next actions. Distinguish work required before the next stage from limitations and final human review. Avoid vague gate/provenance/reconstruction jargon. The server checks a fresh advance guard separately. Use no other issue's authority.
+Instruction inputs were captured by the server before this review. Installed shared instructions are accepted as instruction inputs, separately from work/test evidence; do not omit a necessary policy file because its installed link points outside this checkout. If a file really cannot be read, request only the specific access needed and explain its name and purpose. An internal evidence-recording restriction is not an OS permission denial.
+Instruction input receipts and copies: ${JSON.stringify(queue.instruction_inputs || [])}
+Exact supporting files explicitly approved for this review: ${JSON.stringify(queue.file_permissions || [])}
+The issue may contain explicit manual_skip decisions for individual implementation criteria. Respect applicable human waivers at the recorded plan and source; do not reimpose them as missing tasks. A skip is not a passed test or human acceptance. Current project verification and final human judgment remain separate requirements.
 Saved planned route (not historical completion or permission to bypass guards): ${JSON.stringify(queue.planned_route || [])}
 Current project revision: ${queue.head}
 Lifecycle: ${JSON.stringify(queue.lifecycle)}
@@ -51,20 +56,49 @@ Selected issue: ${JSON.stringify(issue)}
 Saved action: ${JSON.stringify(action)}
 Original worker and latest completed result: ${JSON.stringify(worker)}`;
 }
-export function reviewEvidence(root, worker, result) {
+export function reviewEvidence(root, worker, result, instructions = [], permissions = []) {
   validateReview(result);
   const roots = [root, worker.cwd, tmpdir(), '/private/tmp', '/tmp']
     .filter(existsSync)
     .map((path) => realpathSync(path));
-  return result.evidence.map((path) => evidenceFile(path, roots));
+  const evidence = [],
+    problems = [];
+  for (const path of result.evidence) collectFile(path, roots, instructions, permissions, evidence, problems);
+  if (problems.length)
+    throw Object.assign(Error(`Couldn’t save the review: ${problems[0].path}. ${problems[0].reason}`), {
+      fileProblems: problems,
+      reviewedEvidence: evidence,
+    });
+  return evidence;
+}
+function collectFile(path, roots, instructions, permissions, evidence, problems) {
+  try {
+    evidence.push(
+      instructionEvidence(path, instructions) || approvedEvidence(path, permissions) || evidenceFile(path, roots)
+    );
+  } catch (error) {
+    problems.push(fileProblem(path, error));
+  }
+}
+function fileProblem(path, error) {
+  return {
+    path,
+    reason: error.message,
+    code: error.code || 'REVIEW_FILE_UNAVAILABLE',
+    resolved: error.canonical || null,
+    purpose: 'This file was cited to support the review. Other inspected files and the review response have been kept.',
+  };
 }
 function evidenceFile(path, roots) {
   requireThat(typeof path === 'string' && isAbsolute(path), 'Evidence must name absolute files.');
   const canonical = realpathSync(path);
-  requireThat(
-    roots.some((root) => inside(root, canonical)),
-    'The evidence file is outside the project, worker and temporary directories.'
-  );
+  if (!roots.some((root) => inside(root, canonical)))
+    throw Object.assign(
+      Error(
+        'This supporting file is outside the project and its known work folders. Permission is needed to use this exact file in the review.'
+      ),
+      { code: 'REVIEW_FILE_SCOPE', canonical }
+    );
   requireThat(
     statSync(canonical).isFile() && statSync(canonical).size < 16777216,
     'Evidence must be a regular file smaller than 16 MB.'
@@ -93,7 +127,7 @@ export function appendReview(root, issue, result, run, evidence, target) {
     recordChecklistMetadata(doc, issue, result);
     if (target) doc.set('state', target);
     recordStage(doc, issue, target, result, run, evidence);
-    const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${evidence.map((e) => '- ' + e.path + ' (sha256:' + e.sha256 + ')').join('\n')}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${target ? '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n' : ''}`;
+    const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${formatReviewEvidence(evidence)}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${target ? '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n' : ''}`;
     const next = '---\n' + doc.toString() + '---' + content.slice(match[0].length) + notes;
     const temp = join(dirname(path), '.review-' + randomUUID() + '.tmp');
     writeFileSync(temp, next, { mode: 0o600 });
@@ -144,4 +178,18 @@ function recordChecklistMetadata(doc, issue, result) {
     const index = issue.human_checks.findIndex((check) => check.id === result.human_check_update.id);
     doc.setIn(['human_checks', index], doc.createNode(result.human_check_update, { aliasDuplicateObjects: false }));
   }
+}
+
+function formatReviewEvidence(evidence) {
+  const proof = evidence.filter((entry) => entry.kind !== 'instruction');
+  const instructions = evidence.filter((entry) => entry.kind === 'instruction');
+  return (
+    proof.map((entry) => '- ' + entry.path + ' (sha256:' + entry.sha256 + ')').join('\n') +
+    (instructions.length
+      ? '\n\nInstructions read (retained copies, not test results):\n' +
+        instructions
+          .map((entry) => '- ' + entry.source + ' → ' + entry.path + ' (sha256:' + entry.sha256 + ')')
+          .join('\n')
+      : '')
+  );
 }

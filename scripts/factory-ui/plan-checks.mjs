@@ -73,7 +73,7 @@ function criterionSatisfied(issue, criterion, includeHuman) {
   return issue.human_checks?.some((c) => c.id === criterion.human_check_id && c.blocks === 'closure');
 }
 
-export function checkedPlanResult(queue, issue, plan, result) {
+export function checkedPlanResult(queue, issue, plan, result, instructions = []) {
   requireThat(nonempty(result.summary), 'The checklist needs a short conclusion.');
   requireThat(boundedItems(result.steps, 101), 'The review must return the plan’s work items.');
   const ids = result.steps.map((step) => step.id);
@@ -85,7 +85,7 @@ export function checkedPlanResult(queue, issue, plan, result) {
     );
   for (const step of result.steps) validateStep(issue, plan, step, queue.head);
   const files = [...new Set(result.steps.flatMap((s) => s.criteria.flatMap((c) => c.evidence)))];
-  const evidence = checklistEvidence(queue, result, files);
+  const evidence = checklistEvidence(queue, result, files, instructions);
   return {
     ...retainPlanSkips(queue, issue, plan, normalizeEvidence(result, files, evidence)),
     path: plan.path,
@@ -102,7 +102,7 @@ function normalizeEvidence(result, files, evidence) {
   return normalized;
 }
 
-function checklistEvidence(queue, result, files) {
+function checklistEvidence(queue, result, files, instructions) {
   return files.length
     ? reviewEvidence(
         queue.root,
@@ -114,7 +114,8 @@ function checklistEvidence(queue, result, files) {
           evidence: files,
           remaining: [],
           next_state: null,
-        }
+        },
+        instructions
       )
     : [];
 }
