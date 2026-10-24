@@ -118,3 +118,11 @@ standards cover genuine judgment. Larger repairs can proceed after notification
 of problem, scope, and verification plan, within approved authority. Weakening
 checks, expanding authority, or changing product expectations requires agreement.
 Verify the repair's effect rather than accumulating generic instructions.
+
+## Local UI transport
+
+The [factory UI adapter](factory-ui.md) may use the installed Codex CLI instead
+of native chat tools. It must retain exact saved action IDs, isolated worker
+checkouts, durable conversation references and separate manual integration.
+The adapter never grants unattended iteration or issue acceptance. Its independent
+combined checks and operation-specific human guards supplement coordinator review.

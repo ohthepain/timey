@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Factory · Issue queue</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        background: #f4f3ed;
+        color: #203b35;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        font:
+          500 clamp(30px, 4vw, 43px) / 1.15 Georgia,
+          serif;
+        letter-spacing: -0.7px;
+      }
+      h2 {
+        font:
+          500 25px/1.2 Georgia,
+          serif;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      a {
+        text-underline-offset: 3px;
+      }
+      button:hover:not(:disabled) {
+        filter: brightness(0.95);
+      }
+    </style>
+    <style>
+      body {
+        margin: 0;
+      }
+      main {
+        max-width: 1200px;
+        margin: 32px auto;
+        padding: 0 24px;
+      }
+      header {
+        padding: 18px 28px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        gap: 24px;
+        align-items: center;
+      }
+      a {
+        color: #285747;
+      }
+      button {
+        cursor: pointer;
+        padding: 9px 14px;
+        border: 1px solid #bbc9bf;
+        border-radius: 6px;
+        background: #edf3ed;
+        color: #244d3e;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      input,
+      select,
+      textarea {
+        padding: 9px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        max-width: 100%;
+        font: inherit;
+      }
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      td,
+      th {
+        text-align: left;
+        padding: 14px 10px;
+        border-bottom: 1px solid #ddd;
+        vertical-align: top;
+      }
+      small,
+      .muted {
+        color: #657169;
+      }
+      .card {
+        background: #fffef9;
+        border: 1px solid #deded1;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 16px 0;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 2.5fr) minmax(230px, 1fr);
+        gap: 24px;
+      }
+      .rail {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 24px 0;
+      }
+      .rail span {
+        padding: 6px 10px;
+        border-radius: 16px;
+        background: #eceee6;
+      }
+      .rail .current {
+        background: #2c5848;
+        color: white;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          13px/1.6 ui-monospace,
+          monospace;
+      }
+      details {
+        margin: 12px 0;
+      }
+      summary {
+        cursor: pointer;
+      }
+      dialog {
+        max-width: 650px;
+        width: calc(100% - 64px);
+        border: 1px solid #aaa;
+        border-radius: 12px;
+        padding: 26px;
+      }
+      dialog::backdrop {
+        background: #142a2266;
+      }
+      #error {
+        color: #92352e;
+      }
+      #error:empty {
+        display: none;
+      }
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .badge {
+        font-size: 12px;
+        background: #eeeede;
+        padding: 4px 8px;
+        border-radius: 12px;
+      }
+      h1 {
+        margin-bottom: 8px;
+      }
+      h2 {
+        font-size: 24px;
+      }
+      h3 {
+        font-size: 18px;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 16px;
+      }
+      .prose {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .tablewrap {
+        overflow: auto;
+      }
+      #notice {
+        padding: 0 24px;
+        color: #657169;
+      }
+      @media (max-width: 700px) {
+        .layout {
+          display: block;
+        }
+        main {
+          padding: 0 16px;
+          margin-top: 20px;
+        }
+        header {
+          padding: 14px 16px;
+        }
+        td,
+        th {
+          padding: 10px 7px;
+        }
+        .card {
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="#/queue"><b>Factory</b></a
+      ><span>Issue queue</span><small id="connection">Connecting…</small>
+    </header>
+    <main>
+      <div id="error" role="alert"></div>
+      <div id="app"></div>
+    </main>
+    <dialog id="confirm">
+      <div id="selection"></div>
+      <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
+    </dialog>
+    <script>
+      let data,
+        busy = false,
+        selection;
+      const $ = (id) => document.getElementById(id);
+      const esc = (value) =>
+        String(value ?? '').replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+      const link = (id) =>
+        `<a href="#/issue/${encodeURIComponent(id)}">${esc(data.issues.find((i) => i.id === id)?.title || id)}</a>`;
+      async function request(path, value) {
+        const options =
+          value === undefined
+            ? {}
+            : {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
+                body: JSON.stringify(value),
+              };
+        const response = await fetch('/api/' + path, options);
+        const result = await response.json();
+        if (!response.ok) throw Error(result.error);
+        return result;
+      }
+      async function refresh() {
+        try {
+          const previous = JSON.stringify(data);
+          data = await request('queue');
+          $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
+          if (
+            previous !== JSON.stringify(data) &&
+            !busy &&
+            !$('confirm').open &&
+            !document.activeElement.matches('input,textarea,select')
+          )
+            render();
+        } catch (e) {
+          $('error').textContent = e.message;
+          $('connection').textContent = 'Connection needs attention';
+        }
+      }
+      async function act(task) {
+        busy = true;
+        $('error').textContent = '';
+        try {
+          await task();
+          await refresh();
+        } catch (e) {
+          $('error').textContent = e.message;
+        } finally {
+          busy = false;
+          if (data) render();
+        }
+      }
+      function actionCard(a) {
+        const integrate = a.status === 'completed' && ['implement', 'integrate'].includes(a.kind) && a.merge !== 'none';
+        return `<section class="card"><span class="badge">${esc(statusLabel(a.status))}</span><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p class="muted">${esc(a.reason)}</p><details><summary>Assignment and checks</summary><p>${esc(a.worker_prompt)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p><p>${a.issues.map(link).join(' · ')}</p><p>Worker result: ${esc(a.evidence || 'No result recorded yet.')}</p></details>${a.status === 'recommended' ? `<button data-select="${esc(a.id)}" data-kind="launch" ${a.launchBlocked ? 'disabled' : ''}>Start worker</button>${a.launchBlocked ? `<p class="muted">${esc(a.launchBlocked)}</p>` : ''}` : ''}${integrate ? `<button data-select="${esc(a.id)}" data-kind="integrate" ${a.integrationBlocked ? 'disabled' : ''}>Review integration</button>${a.integrationBlocked ? `<p>${esc(a.integrationBlocked)}</p>` : ''}<p class="muted">The worker finished. Integration is a separate decision.</p>` : ''}</section>`;
+      }
+      function approvals(run) {
+        return run.approvals
+          .map(
+            (p) =>
+              `<div class="card"><b>Codex needs your input</b><pre>${esc(JSON.stringify(p.params, null, 2))}</pre>${p.method === 'item/tool/requestUserInput' ? p.params.questions.map((q) => `<label>${esc(q.question)}<textarea data-question="${esc(q.id)}" data-request="${esc(p.id)}"></textarea></label>`).join('') + `<button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="answers">Send answers</button>` : `<button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="allow">Allow this request</button> <button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="decline">Decline</button>`}</div>`
+          )
+          .join('');
+      }
+      function progress(run) {
+        const messages = run.events
+          .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
+          .map((e) => e.params.item.text);
+        return `<section class="card"><span class="badge">${esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.summary)}</p>${run.threadId ? `<small>Chat: ${esc(run.threadId)}</small>` : ''}${approvals(run)}<details><summary>Progress and result</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${!run.connected && run.threadId && run.kind !== 'evaluation' && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && run.result.recommendations.length ? `<button data-save="${esc(run.id)}">Save these recommendations</button><p class="muted">Saving does not start workers.</p>` : ''}</section>`;
+      }
+      function queue() {
+        const counts = data.lifecycle
+          .map((s) => `<span>${esc(s.name)} <b>${data.issues.filter((i) => i.state === s.state).length}</b></span>`)
+          .join(' · ');
+        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}">${esc(s.name)}</option>`).join('')}</select><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Stage</th><th>Your input</th></tr></thead><tbody id="issues">${rows(data.issues)}</tbody></table></div><h2>Suggested work</h2>${
+          data.actions
+            .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
+            .map(actionCard)
+            .join('') || '<p>No saved recommendations. Review the queue to suggest work.</p>'
+        }<h2>Queue reviews</h2>${
+          data.runs
+            .filter((r) => r.kind === 'evaluation')
+            .slice()
+            .reverse()
+            .map(progress)
+            .join('') || '<p>No reviews started here yet.</p>'
+        }`;
+      }
+      function rows(issues) {
+        return issues
+          .map(
+            (i) =>
+              `<tr><td>${link(i.id)}<br><small>${esc(i.id)}</small></td><td>${esc(i.stage)}</td><td>${inputStatus(i)}</td></tr>`
+          )
+          .join('');
+      }
+      function inputStatus(i) {
+        const count = (i.human_input?.requests || []).length;
+        const checks = (i.human_checks || []).filter((c) => c.status !== 'passed').length;
+        const items = [];
+        if (count) items.push(`${count} input requests`);
+        if (checks) items.push(`${checks} checks need attention`);
+        if (i.grill_later) items.push('Discussion needed');
+        return esc(items.join(' · ') || 'See issue report');
+      }
+      function statusLabel(value) {
+        return (
+          {
+            recommended: 'Ready to start',
+            reserved: 'Starting',
+            setup: 'Starting',
+            preparing: 'Starting',
+            running: 'Working',
+            checking: 'Running checks',
+            completed: 'Finished',
+            blocked: 'Needs attention',
+            integrated: 'Integrated',
+            reconciled: 'Reviewed',
+            failed: 'Failed',
+            cancelled: 'Cancelled',
+          }[value] || value
+        );
+      }
+      function mergeLabel(policy) {
+        return (
+          {
+            automatic: 'Checks and coordinator review',
+            'human-first': 'Your approval before integration',
+            none: 'No code integration',
+          }[policy] || policy
+        );
+      }
+      function reportText(text) {
+        return esc(text.replace(/^---[\s\S]*?---\s*/, '')).replace(/^## (.+)$/gm, '<h3>$1</h3>');
+      }
+      function humanChecks(i) {
+        return (i.human_checks || [])
+          .map(
+            (c) =>
+              `<h3>${esc(c.kind === 'judgment' ? 'Your judgment' : 'Manual check')}</h3><p>${esc(c.instructions)}</p><span class="badge">${esc(c.status)}</span><p>${esc(c.result || 'No result recorded.')}</p>`
+          )
+          .join('');
+      }
+      function relations(i) {
+        const reverse = data.issues.filter((other) => other.links.depends.includes(i.id));
+        const children = data.issues.filter((other) => other.links.parent.includes(i.id));
+        return (
+          [
+            ['Parent', i.links.parent],
+            ['Depends on', i.links.depends],
+            ['Unblocks', reverse.map((x) => x.id)],
+            ['Children', children.map((x) => x.id)],
+            ['Related', i.links.related],
+          ]
+            .filter(([, ids]) => ids.length)
+            .map(([label, ids]) => `<h3>${label}</h3><p>${ids.map(link).join('<br>')}</p>`)
+            .join('') || '<p>No links recorded.</p>'
+        );
+      }
+      function issue(id) {
+        const i = data.issues.find((x) => x.id === id);
+        if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
+        const actions = data.actions.filter((a) => a.issues.includes(id));
+        const runs = data.runs.filter((r) => actions.some((a) => a.id === r.actionId));
+        return `<a href="#/queue">← Issue queue</a><h1>${esc(i.title || i.id)}</h1><p class="muted">${esc(i.id)}</p><div class="rail">${data.lifecycle.map((s) => `<span class="${s.state === i.state ? 'current' : ''}">${esc(s.name)}</span>`).join('')}</div><p>The stage comes from the issue report. Finishing a worker or integrating code does not accept or close the issue.</p><div class="layout"><div><section class="card"><h2>Issue report</h2><p class="prose">${esc(
+          i.content
+            .replace(/^---[\s\S]*?---\s*/, '')
+            .split(/\n## /)[0]
+            .replace(/^## [^\n]*\n/, '')
+            .trim()
+        )}</p><details><summary>Full issue report</summary><div class="prose">${reportText(i.content)}</div></details></section><h2>Work and integration</h2>${actions.map(actionCard).join('') || '<p>No saved assignments for this issue.</p>'}${runs.slice().reverse().map(progress).join('')}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Handle answers, hardware checks and acceptance in the coordinator chat. This page does not mark them complete.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+      }
+      function render() {
+        const route = location.hash.split('/');
+        $('app').innerHTML = route[1] === 'issue' ? issue(decodeURIComponent(route.slice(2).join('/'))) : queue();
+        bind();
+      }
+      function bind() {
+        document
+          .querySelectorAll('[data-select]')
+          .forEach((b) => (b.onclick = () => act(() => select(b.dataset.select, b.dataset.kind))));
+        document
+          .querySelectorAll('[data-save]')
+          .forEach(
+            (b) =>
+              (b.onclick = () => act(() => request('save-review', { runId: b.dataset.save, basis: data.reviewBasis })))
+          );
+        document
+          .querySelectorAll('[data-resume]')
+          .forEach(
+            (b) =>
+              (b.onclick = () =>
+                act(() => request('resume', { runId: b.dataset.resume, text: $('resume-' + b.dataset.resume).value })))
+          );
+        document.querySelectorAll('[data-answer]').forEach((b) => (b.onclick = () => act(() => answer(b))));
+        if ($('review'))
+          $('review').onclick = () =>
+            act(async () => {
+              selection = { review: true, basis: data.reviewBasis };
+              $('selection').innerHTML =
+                '<h2>Review the queue?</h2><p>Codex will read the issues and suggest assignments. This starts a read-only chat. It does not save recommendations, start workers or integrate changes.</p>';
+              $('approve').textContent = 'Start queue review';
+              $('approve').disabled = false;
+              $('confirm').showModal();
+            });
+        if ($('search')) {
+          const filter = () => {
+            $('issues').innerHTML = rows(
+              data.issues.filter(
+                (i) =>
+                  (!$('stage').value || i.state === $('stage').value) &&
+                  JSON.stringify(i).toLowerCase().includes($('search').value.toLowerCase())
+              )
+            );
+          };
+          $('search').oninput = filter;
+          $('stage').onchange = filter;
+        }
+      }
+      async function select(actionId, kind) {
+        selection = await request('preflight', { actionId, kind });
+        const a = selection.action;
+        $('selection').innerHTML =
+          `<h2>${kind === 'launch' ? 'Start this worker?' : 'Integrate these changes?'}</h2><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration policy: ${esc(mergeLabel(a.merge))}</p><p>Target: ${esc(data.root)}</p><p>Current revision: ${esc(selection.head)}</p>${kind === 'integrate' ? `<p>Candidate: ${esc(a.worker_revision)}</p><details><summary>Review candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details><p>A separate coordinator chat will integrate this candidate and run the required checks. A failed check stops completion and keeps the result for review.</p>` : '<p>Codex starts one chat in a separate checkout. No other workers or integrations start automatically.</p>'}<details><summary>Human input reviewed for this action</summary><pre>${esc(JSON.stringify(selection.guards, null, 2))}</pre></details>${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
+        $('approve').textContent = kind === 'launch' ? 'Start worker' : 'Start integration';
+        $('approve').disabled = selection.requiresApproval;
+        if (selection.requiresApproval)
+          $('human-approval').onchange = () => {
+            $('approve').disabled = !$('human-approval').checked;
+          };
+        $('confirm').showModal();
+      }
+      async function answer(button) {
+        const response = { decision: button.dataset.decision };
+        if (response.decision === 'answers') {
+          response.answers = {};
+          document.querySelectorAll('[data-question]').forEach((q) => {
+            if (q.dataset.request === button.dataset.answer) response.answers[q.dataset.question] = q.value;
+          });
+        }
+        await request('answer', { runId: button.dataset.run, requestId: button.dataset.answer, response });
+      }
+      $('cancel').onclick = () => $('confirm').close();
+      $('approve').onclick = () =>
+        act(async () => {
+          if (selection.review) await request('evaluate', { basis: selection.basis });
+          else await request('start', { token: selection.token, humanApproved: $('human-approval')?.checked === true });
+          $('confirm').close();
+        });
+      window.onhashchange = () => {
+        if (data) render();
+        window.scrollTo(0, 0);
+      };
+      refresh();
+      setInterval(refresh, 4000);
+    </script>
+  </body>
+</html>

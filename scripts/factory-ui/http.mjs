@@ -1,0 +1,90 @@
+import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
+import { requireThat } from './common.mjs';
+
+const directory = dirname(fileURLToPath(import.meta.url));
+async function body(request) {
+  let text = '';
+  for await (const chunk of request) {
+    text += chunk;
+    requireThat(Buffer.byteLength(text) < 65536, 'Request too large.');
+  }
+  return JSON.parse(text || '{}');
+}
+function authenticated(request, token, port) {
+  return (request.headers.cookie || '').split(';').some((value) => value.trim() === `timey_factory_${port}=${token}`);
+}
+function authorize(request, token, port) {
+  requireThat(request.headers.host === `127.0.0.1:${port}`, 'Use the local URL printed by this server.');
+  requireThat(authenticated(request, token, port), 'Open the factory page before requesting its data.');
+  if (request.method === 'POST') {
+    requireThat(
+      request.headers.origin === `http://127.0.0.1:${port}`,
+      'This operation must come from the local factory page.'
+    );
+    requireThat(
+      request.headers['x-factory-action'] === 'manual' && request.headers['content-type'] === 'application/json',
+      'Explicit JSON actions are required.'
+    );
+  }
+}
+async function mutation(service, path, value) {
+  const routes = {
+    '/api/evaluate': () => service.evaluate(value.basis),
+    '/api/save-review': () => service.saveReview(value.runId, value.basis),
+    '/api/preflight': () => service.preflight(value.actionId, value.kind),
+    '/api/start': () => service.start(value.token, value.humanApproved),
+    '/api/resume': () => service.resume(value.runId, value.text),
+    '/api/answer': () => service.answer(value.runId, value.requestId, value.response),
+  };
+  if (Object.hasOwn(routes, path)) return routes[path]();
+  throw Error('Unknown operation. No action was taken.');
+}
+export function createFactoryServer(service) {
+  const token = randomBytes(32).toString('hex');
+  const server = createServer(async (request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    );
+    try {
+      requireThat(request.headers.host === `127.0.0.1:${server.address().port}`, 'Use the local factory address.');
+      await respond(service, request, response, token, server.address().port);
+    } catch (error) {
+      response.statusCode = 400;
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify({ error: error.message }));
+    }
+  });
+  return server;
+}
+
+async function respond(service, request, response, token, port) {
+  if (isPage(request)) return page(response, token, port);
+  authorize(request, token, port);
+  response.setHeader('Content-Type', 'application/json');
+  if (request.method === 'GET') return read(service, request, response);
+  if (request.method === 'POST')
+    return response.end(JSON.stringify(await mutation(service, request.url, await body(request))));
+  response.statusCode = 405;
+  response.end(JSON.stringify({ error: 'Unsupported method' }));
+}
+function page(response, token, port) {
+  response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
+  response.setHeader('Content-Type', 'text/html; charset=utf-8');
+  response.end(readFileSync(join(directory, 'index.html')));
+}
+function read(service, request, response) {
+  if (request.url === '/api/queue') return response.end(JSON.stringify(service.snapshot()));
+  response.statusCode = 404;
+  response.end(JSON.stringify({ error: 'Not found' }));
+}
+
+function isPage(request) {
+  return request.method === 'GET' && request.url === '/';
+}

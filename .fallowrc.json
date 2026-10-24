@@ -14,7 +14,7 @@
       "toolingDependencies": ["fallow", "yaml"],
       "detection": {
         "type": "fileExists",
-        "pattern": "scripts/*.mjs"
+        "pattern": "scripts/**/*.mjs"
       }
     }
   ]

@@ -84,3 +84,13 @@ Groups are not atomic and never imply automatic retries or subsequent batches.
 Read [operating rules](operating.md) for ownership, launch and integration policy,
 [verification](verification.md) for evidence and human gates, and the
 [factory skill](../../.agents/skills/factory/SKILL.md) for execution steps.
+
+## Local UI adapter
+
+The [local factory UI](factory-ui.md) is an alternative front door for the same
+queue and ledger. `npm run factory:ui -- --project /absolute/project` serves the
+queue and issue screens locally. This adapter uses the installed Codex CLI
+app-server transport instead of native chat creation. Scope, ownership, human
+gates and verification policy are unchanged. Reviewing, saving recommendations,
+starting each worker and integrating each candidate remain separate manual
+actions. Native chat commands continue to follow the factory skill.

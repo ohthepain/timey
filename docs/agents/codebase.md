@@ -54,3 +54,8 @@ Read [verification](verification.md) before exercising behavior and
 [operating rules](operating.md) before coordinating work. Domain meanings belong
 in `GLOSSARY.md`; architecture rationale belongs in relevant `docs/adr/` records.
 Update this map when responsibilities, boundaries, or starting points change.
+
+The local queue/issue interface is `scripts/factory-ui.mjs`; its HTTP, CLI,
+human-input and result-checking modules are in `scripts/factory-ui/`. See
+[its operating guide](factory-ui.md). `scripts/factory-ui.check.mjs` exercises
+disposable queues, chat protocol fixtures and manual action boundaries.
