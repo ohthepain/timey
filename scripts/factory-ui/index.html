@@ -288,6 +288,33 @@
       .step-body > .card:last-child {
         margin-bottom: 0;
       }
+      .next-action {
+        background: #edf3eb;
+        border: 1px solid #c8d9c8;
+        border-radius: 8px;
+        padding: 18px;
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .next-action > div {
+        flex: 1;
+        min-width: 0;
+      }
+      .next-action h3 {
+        margin: 5px 0 8px;
+      }
+      .next-action p {
+        margin: 0;
+        font-size: 14px;
+      }
+      button.primary {
+        background: #23604d;
+        border-color: #23604d;
+        color: white;
+        white-space: nowrap;
+      }
       .action-history {
         font-size: 13px;
       }
@@ -305,6 +332,10 @@
         outline-offset: -3px;
       }
       @media (max-width: 700px) {
+        .next-action {
+          flex-direction: column;
+          align-items: stretch;
+        }
         .issue-step > summary {
           gap: 10px;
           padding: 16px;
@@ -413,10 +444,11 @@
       function actionCard(a, mode = 'all') {
         const integrate =
           mode !== 'work' &&
+          mode !== 'history' &&
           a.status === 'completed' &&
           ['implement', 'integrate'].includes(a.kind) &&
           a.merge !== 'none';
-        return `<section class="card"><span class="badge">${esc(statusLabel(a.status))}</span><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p class="muted">${esc(a.reason)}</p><details><summary>Assignment, history and checks</summary>${actionHistory(a)}<p>${esc(a.worker_prompt)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p><p>${a.issues.map(link).join(' · ')}</p><p>Worker result: ${esc(a.evidence || 'No result recorded yet.')}</p></details>${a.status === 'recommended' && mode !== 'integration' ? `<button data-select="${esc(a.id)}" data-kind="launch" ${a.launchBlocked ? 'disabled' : ''}>Start worker</button>${a.launchBlocked ? `<p class="muted">${esc(a.launchBlocked)}</p>` : ''}` : ''}${integrate ? `<button data-select="${esc(a.id)}" data-kind="integrate" ${a.integrationBlocked ? 'disabled' : ''}>Review integration</button>${a.integrationBlocked ? `<p>${esc(a.integrationBlocked)}</p>` : ''}<p class="muted">The worker finished. Integration is a separate decision.</p>` : ''}</section>`;
+        return `<section class="card"><span class="badge">${esc(statusLabel(a.status))}</span><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p class="muted">${esc(a.reason)}</p><details><summary>Assignment, history and checks</summary>${actionHistory(a)}<p>${esc(a.worker_prompt)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p><p>${a.issues.map(link).join(' · ')}</p><p>Worker result: ${esc(a.evidence || 'No result recorded yet.')}</p></details>${a.status === 'recommended' && mode !== 'integration' && mode !== 'history' ? `<button data-select="${esc(a.id)}" data-kind="launch" ${a.launchBlocked ? 'disabled' : ''}>Start worker</button>${a.launchBlocked ? `<p class="muted">${esc(a.launchBlocked)}</p>` : ''}` : ''}${integrate ? `<button data-select="${esc(a.id)}" data-kind="integrate" ${a.integrationBlocked ? 'disabled' : ''}>Review integration</button>${a.integrationBlocked ? `<p>${esc(a.integrationBlocked)}</p>` : ''}<p class="muted">The worker finished. Integration is a separate decision.</p>` : ''}</section>`;
       }
       function recordedDate(value) {
         return value ? esc(new Date(value).toLocaleString()) : 'Not recorded';
@@ -432,11 +464,11 @@
           )
           .join('');
       }
-      function progress(run) {
+      function progress(run, interactive = true) {
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card"><span class="badge">${esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${run.threadId ? `<small>Chat: ${esc(run.threadId)}</small>` : ''}${approvals(run)}<details><summary>Progress and result</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${!run.connected && run.threadId && run.kind !== 'evaluation' && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && run.result.recommendations.length ? `<button data-save="${esc(run.id)}">Save these recommendations</button><p class="muted">Saving does not start workers.</p>` : ''}</section>`;
+        return `<section class="card"><span class="badge">${esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${run.threadId ? `<small>Chat: ${esc(run.threadId)}</small>` : ''}${interactive ? approvals(run) : ''}<details><summary>Progress and result</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && run.result.recommendations.length ? `<button data-save="${esc(run.id)}">Save these recommendations</button><p class="muted">Saving does not start workers.</p>` : ''}</section>`;
       }
       function queue() {
         const counts = data.lifecycle
@@ -452,7 +484,7 @@
             .filter((r) => r.kind === 'evaluation')
             .slice()
             .reverse()
-            .map(progress)
+            .map((run) => progress(run))
             .join('') || '<p>No reviews started here yet.</p>'
         }`;
       }
@@ -552,7 +584,7 @@
           ...stage,
           description: stepDescriptions[stage.role] || 'Work recorded for this stage.',
         }));
-        const reviewIndex = steps.findIndex((step) => step.role === 'ready-to-close');
+        const reviewIndex = steps.findIndex((step) => ['ready-to-close', 'closed'].includes(step.role));
         steps.splice(reviewIndex < 0 ? steps.length : reviewIndex, 0, {
           role: 'integration',
           name: 'Integrate',
@@ -576,12 +608,7 @@
         return actions.filter((a) => actionRoles[a.kind] === step.role);
       }
       function stepWork(step, actions) {
-        const runs = data.runs.filter(
-          (run) =>
-            actions.some((a) => a.id === run.actionId) && (run.kind === 'integration') === (step.role === 'integration')
-        );
-        const mode = step.role === 'integration' ? 'integration' : 'work';
-        return actions.map((a) => actionCard(a, mode)).join('') + runs.slice().reverse().map(progress).join('');
+        return actions.map((action) => actionCard(action, 'history')).join('');
       }
       function stepExtra(i, step, actions) {
         if (step.role === 'ready-for-grilling')
@@ -610,7 +637,42 @@
             ? 'Recorded details'
             : 'No work recorded';
         const label = current ? 'Current stage' : step.role === 'integration' ? 'Manual action' : count;
-        return `<details class="issue-step ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${esc(label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? `<p class="muted">${esc(count)}</p>` : ''}${stepWork(step, actions)}${extra}${!actions.length && !extra ? '<p class="muted">No assignment or result is recorded for this step yet.</p>' : ''}</div></details>`;
+        return `<details class="issue-step ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${esc(label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? progressControls(i) : ''}${current ? `<p class="muted">${esc(count)}</p>` : ''}${stepWork(step, actions)}${stageReviews(i, step, current)}${extra}${!actions.length && !extra ? '<p class="muted">No assignment or result is recorded for this step yet.</p>' : ''}</div></details>`;
+      }
+      function progressControls(issue) {
+        const choice = issue.progress;
+        if (!choice) return '';
+        return `<section class="next-action"><div><small>Recommended next action</small><h3>${esc(choice.title)}</h3><p>${esc(choice.summary)}</p></div><button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled ? 'disabled' : ''}>Progress →</button></section>`;
+      }
+      function stageReviews(issue, stage, current) {
+        return data.runs
+          .filter((run) => belongsInStage(run, issue, stage, current))
+          .slice()
+          .reverse()
+          .map((run) => progress(run, current))
+          .join('');
+      }
+      function belongsInStage(run, issue, stage, current) {
+        const action = data.actions.find((action) => action.id === run.actionId);
+        const belongs = run.issueId === issue.id || action?.issues.includes(issue.id);
+        if (!belongs) return false;
+        if (run.connected) return current;
+        if (run.issueId) return run.issueState === stage.state;
+        const role = run.kind === 'integration' ? 'integration' : actionRoles[action.kind];
+        return role === stage.role;
+      }
+      async function selectProgress(id, state) {
+        selection = await request('progress-preflight', { issueId: id, state });
+        const a = selection.action;
+        $('selection').innerHTML =
+          `<h2>${esc(selection.choice.title)}</h2><p>${esc(selection.choice.summary)}</p><p>This performs one selected action. Further work needs another click.</p>${selection.choice.kind === 'review' ? '<p>A separate coordinator chat will inspect the existing worker’s evidence and record the result. It can advance to the configured next stage only when its requirements are met. Human acceptance and closure remain separate.</p>' : ''}${selection.choice.kind === 'plan' ? '<p>A separate read-only chat will recommend work for this issue. Saving and launching remain separate choices.</p>' : ''}${a ? `<h3>${esc(a.title)}</h3><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p>` : ''}${selection.diff !== undefined && selection.diff !== null ? `<details><summary>Candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details>` : ''}${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
+        $('approve').textContent = selection.choice.title;
+        $('approve').disabled = selection.requiresApproval === true;
+        if (selection.requiresApproval)
+          $('human-approval').onchange = () => {
+            $('approve').disabled = !$('human-approval').checked;
+          };
+        $('confirm').showModal();
       }
       function issueNotes(i) {
         const text = i.content.replace(/^---[\s\S]*?---\s*/, '');
@@ -634,6 +696,13 @@
         bind();
       }
       function bind() {
+        document
+          .querySelectorAll('[data-progress-id]')
+          .forEach(
+            (button) =>
+              (button.onclick = () =>
+                act(() => selectProgress(button.dataset.progressId, button.dataset.progressState)))
+          );
         document
           .querySelectorAll('[data-step-id]')
           .forEach((step) => (step.ontoggle = () => expandedSteps.set(step.dataset.stepId, step.open)));
@@ -704,7 +773,12 @@
       $('cancel').onclick = () => $('confirm').close();
       $('approve').onclick = () =>
         act(async () => {
-          if (selection.review) await request('evaluate', { basis: selection.basis });
+          if (selection.progress)
+            await request('progress-start', {
+              token: selection.token,
+              humanApproved: $('human-approval')?.checked === true,
+            });
+          else if (selection.review) await request('evaluate', { basis: selection.basis });
           else await request('start', { token: selection.token, humanApproved: $('human-approval')?.checked === true });
           $('confirm').close();
         });

@@ -55,7 +55,7 @@ schemas. The app-server interface is marked experimental by that CLI; retest thi
 adapter after upgrades. See the [official app-server protocol](https://learn.chatgpt.com/docs/app-server).
 CLI-created chats have durable IDs; their appearance in the desktop sidebar is
 not established by this adapter. Chat-tool launches continue to use the existing
-native transport. The UI does not take over unknown native chats.
+native transport. The UI does not resume unknown native chats. Progress can discover and review an existing worker result using its exact saved action identity, as described below.
 
 Permission requests from a connected chat are shown for an explicit allow or
 decline decision, scoped to the pending request. Unsupported requests fail closed.
@@ -78,3 +78,38 @@ session cookie and explicit JSON action headers, and exposes a fixed set of
 operations. It has no arbitrary command endpoint or cross-origin API. Keep it
 local. Closing the server disconnects CLI work; inspect retained history before
 continuing.
+
+## Progress on the current stage
+
+Only the issue's current stage has a **Progress** button. Earlier and later steps
+show history without dispatch controls. The panel names the recommended action;
+its confirmation shows the scope before doing one action. It can start an existing
+saved recommendation, review an existing worker's result in a separate coordinator
+chat, select a completed code candidate for the separate integration action, or
+start an issue-focused read-only recommendation chat. Recommendations still need
+a separate save and worker launch. There is no automatic next iteration.
+
+The server derives the action from the current report, lifecycle and ledger. It
+rejects an unexpected stage, changed queue/source/action, reused confirmation or
+concurrent review. Active work stays visible in the current stage. Progress
+checks an unfinished worker without starting a replacement. Ambiguous or missing
+original chat references stop with a reconciliation explanation.
+
+For result review, the installed CLI reads the original chat by its saved ready
+ID, or discovers one exact original action UUID in the initial chat preview. The
+worker checkout must share the project's Git repository. The newest completed
+turn is read and checked again after review. The coordinator gets a read-only chat
+and reviews actual reports and raw logs; it cannot perform the original assignment
+or edit the authoritative queue. The server validates evidence files and freshness,
+rechecks operation-specific human-input guards, attaches the discovered original
+worker reference if needed, and records only the warranted completion/reconciliation.
+Code results additionally need the existing independent saved-base checks.
+
+Reviewed notes append to the selected report, preserving existing prose and human
+obligations. A proposed stage advance must follow the configured Next state, have
+its exit condition reviewed, pass a fresh target-specific human-input guard, and
+leave a clean source checkout. Progress cannot accept or close an issue. Failed or
+uncertain reviews retain their history and explain what needs coordinator attention.
+The `.issues/factory-progress.lock` serializes these reviews and excludes target
+integration while records are being reviewed. A dead/uncertain lock requires
+inspection rather than automatic deletion.

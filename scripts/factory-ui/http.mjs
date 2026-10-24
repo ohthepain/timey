@@ -33,6 +33,8 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value) {
   const routes = {
+    '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),
+    '/api/progress-start': () => service.progressStart(value.token, value.humanApproved),
     '/api/evaluate': () => service.evaluate(value.basis),
     '/api/save-review': () => service.saveReview(value.runId, value.basis),
     '/api/preflight': () => service.preflight(value.actionId, value.kind),

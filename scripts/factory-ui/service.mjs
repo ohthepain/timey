@@ -10,6 +10,9 @@ import { checkCandidate } from './checks.mjs';
 import { integrationPrompt, workerPrompt, workerResultSchema, evaluationPrompt, evaluationSchema } from './prompts.mjs';
 import { git, requireThat, writeJson, digest } from './common.mjs';
 
+import { nextProgress } from './next-action.mjs';
+import { prepareProgress, triggerProgress } from './progress.mjs';
+
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
   codeAction(action)
@@ -36,6 +39,10 @@ export class FactoryUI {
     return {
       ...queue,
       reviewBasis: digest(JSON.stringify(queue)),
+      issues: queue.issues.map((issue) => ({
+        ...issue,
+        progress: nextProgress(queue, issue, this.store.list(this.codex.requests)),
+      })),
       runs: this.store.list(this.codex.requests),
       actions: queue.actions.map((a) => ({
         ...a,
@@ -45,6 +52,12 @@ export class FactoryUI {
           : null,
       })),
     };
+  }
+  progressPreflight(id, state) {
+    return prepareProgress(this, id, state);
+  }
+  progressStart(token, humanApproved = false) {
+    return triggerProgress(this, token, humanApproved);
   }
   preflight(id, kind) {
     requireThat(['launch', 'integrate'].includes(kind), 'Unknown operation.');
@@ -75,6 +88,10 @@ export class FactoryUI {
         'This action has no integration candidate.'
       );
       requireThat(queue.sourceClean, 'The target checkout is dirty. Preserve its changes before integration.');
+      requireThat(
+        !existsSync(join(this.root, '.issues/factory-progress.lock')),
+        'A coordinator review is recording results. Finish it before integration.'
+      );
       requireThat(
         !existsSync(join(this.root, '.issues/factory-integration.lock')),
         'Another integration needs reconciliation.'
@@ -256,7 +273,10 @@ export class FactoryUI {
   }
   validateResume(run, id, text) {
     requireThat(run, 'This run does not exist.');
-    requireThat(run.kind !== 'evaluation', 'Run a new queue review instead.');
+    requireThat(
+      ['worker', 'integration'].includes(run.kind),
+      'Review this coordinator result in its chat; do not resume it as a worker.'
+    );
     requireThat(run.threadId, 'No conversation is known. Reconcile uncertain setup first.');
     requireThat(!this.store.connected.has(id), 'This run is still active.');
     requireThat(['blocked', 'running', 'checking'].includes(run.status), 'This run is finished.');
@@ -283,16 +303,25 @@ export class FactoryUI {
       writeJson(join(this.root, '.issues/factory-integration.lock/owner.json'), { ...owner, pid: process.pid });
     }
   }
-  evaluate(basis) {
+  evaluate(basis, issueId = null) {
     this.ownServer();
     const queue = readQueue(this.root);
     requireThat(digest(JSON.stringify(queue)) === basis, 'The queue changed. Refresh before reviewing it.');
+    const selected = issueId ? queue.issues.find((issue) => issue.id === issueId) : null;
+    requireThat(!issueId || selected, 'This selected issue no longer exists.');
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
-    this.store.update(run, { reviewBasis: basis, checkout: this.root });
+    this.store.update(run, { reviewBasis: basis, checkout: this.root, issueId, issueState: selected?.state });
     this.perform(run, async () => {
       const threadId = await this.codex.start(this.root, 'read-only');
       this.store.update(run, { threadId, status: 'running' });
-      const result = JSON.parse(await this.codex.turn(threadId, this.root, evaluationPrompt(queue), evaluationSchema));
+      const result = JSON.parse(
+        await this.codex.turn(
+          threadId,
+          this.root,
+          evaluationPrompt({ ...queue, focus_issue_ids: issueId ? [issueId] : null }),
+          evaluationSchema
+        )
+      );
       requireThat(
         Array.isArray(result.recommendations) && typeof result.summary === 'string',
         'Invalid queue review result.'
@@ -312,6 +341,11 @@ export class FactoryUI {
       'The review is stale. Review the current queue again.'
     );
     requireThat(run.result.recommendations.length > 0, 'There is no suggested work to save.');
+    if (run.issueId)
+      requireThat(
+        run.result.recommendations.every((action) => action.issues.every((id) => id === run.issueId)),
+        'The review proposed work outside the selected issue. Review its scope before saving.'
+      );
     const actions = this.api.recommend(run.result.recommendations);
     this.store.update(run, { savedActions: actions.map((a) => a.id) });
     return { savedActions: actions.map((a) => a.id) };

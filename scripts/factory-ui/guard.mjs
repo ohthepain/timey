@@ -18,7 +18,7 @@ const policy = {
   acceptance_role: 'ready-to-close',
   closed_role: 'closed',
 };
-export function humanGuard(root, action, operation, head) {
+export function humanGuard(root, action, operation, head, transition = {}) {
   const helper = join(root, '.agents/skills/issues/scripts/human-input.mjs');
   const manifest = JSON.parse(
     readFileSync(join(root, '.agents/skills/issues/scripts/human-input-version.json'), 'utf8')
@@ -40,6 +40,7 @@ export function humanGuard(root, action, operation, head) {
     const context = {
       protocol: manifest.protocol,
       operation,
+      ...transition,
       issue_ids: action.issues,
       scope_ids: ['*'],
       policy,

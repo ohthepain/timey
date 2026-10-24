@@ -18,7 +18,7 @@ function lifecycle(root) {
     .split('\n')
     .map((line) => line.split('|').map((x) => x.replaceAll('`', '').trim()))
     .filter((c) => names[c[1]] || c[1] === 'custom')
-    .map((c) => ({ role: c[1], state: c[2], next: c[3], name: names[c[1]] || c[2] }));
+    .map((c) => ({ role: c[1], state: c[2], next: c[3], exit: c[4], name: names[c[1]] || c[2] }));
 }
 function references(content, heading, ids) {
   const section = content.match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'))?.[1] || '';

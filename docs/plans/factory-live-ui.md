@@ -73,3 +73,38 @@ future steps expose their empty state and no invented completion marks. All six
 aggregate checks passed against the recorded follow-up base; evidence is
 `.issues/evidence/2026-10-24T01-24-35.469Z-080535cd-c812-49bd-a7f7-6f64117b5226-summary.json`.
 The real queue and CLI action behavior remain unchanged.
+
+## Current-stage Progress action
+
+Starting revision: `c033a15` (the expandable issue view). The user requested a
+Progress button only on the current stage, executing its recommended action in
+a separate chat when needed. This includes reviewing already finished work and
+recording its outcome rather than launching the original assignment again.
+
+Add issue-focused action selection and guarded one-use confirmations. Reuse the
+existing worker launch and manual integration paths. Review existing results in
+a read-only coordinator chat, using the installed CLI to find the original chat
+by exact action identity and verify its project. Validate freshness and evidence
+files before using the ledger helper and appending selected report notes. Permit
+only a reviewed configured next-stage transition with fresh target-specific human
+guards; never acceptance or closure. Keep pending human obligations untouched.
+
+Validation covers stale/current-stage guards, duplicate requests, original-worker
+discovery, read-only coordinator dispatch, outcome recording, unfinished workers,
+ambiguous references, exact integration approval and human-blocked advances in
+disposable repositories. Native CLI inspection of the existing factory verification
+chat succeeded without creating/resuming any real chat or updating its records.
+The real Progress action remains for the user to select after implementation.
+
+Progress validation result: all six aggregate checks passed against `c033a15`: 42
+factory tests (including 19 UI/transport/Progress tests), 19 app tests, TypeScript,
+production build, formatting and strict Fallow. Evidence:
+`.issues/evidence/2026-10-24T01-49-31.317Z-4d94ab5b-a562-42ec-8ac4-8b6ec5f0cacf-summary.json`.
+Browser checks established one Progress button on the real current stage, none
+on other stages, and the exact Review worker results confirmation (cancelled).
+A disposable browser fixture completed worker launch and separate coordinator
+review, preserved the original worker ID, recorded a reconciled result and
+appended issue notes without accepting or closing the issue. This fixture used a
+protocol stub; real CLI native-worker discovery was independently verified.
+No real Progress run, worker launch, result reconciliation or report update was
+performed during development. The real issue remains pending user selection.

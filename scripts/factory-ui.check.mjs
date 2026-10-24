@@ -263,3 +263,220 @@ test('pending human checks block affected operations without creating a chat', (
   assert.equal(service.codex.child, undefined);
   assert.equal(api.inspect().registry.actions[0].status, 'recommended');
 });
+
+function pendingReview(t, options = {}) {
+  const context = fixture(t),
+    { root, api, proposal, service } = context;
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-for-repro | investigate | implement |\n| ready-to-fix | implement | verify |\n| ready-to-verify | verify | final |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  if (options.report) writeFileSync(join(root, '.issues/20261022-one.md'), options.report);
+  const [action] = api.recommend([proposal]);
+  api.reserve(action.id);
+  api.attach(action.id, { clientThreadId: 'original-pending-chat' });
+  mkdirSync(join(root, '.issues/evidence'));
+  const evidence = join(root, '.issues/evidence/reviewed-log.json');
+  writeFileSync(evidence, JSON.stringify({ fixture: true, exit: 0 }));
+  const config = {
+    root,
+    actionId: action.id,
+    status: 'completed',
+    duplicates: false,
+    result: {
+      outcome: 'completed',
+      summary: 'Reviewed the existing worker result.',
+      notes: 'The saved result covers this assignment. Broader acceptance stays pending.',
+      evidence: [evidence],
+      remaining: ['Human acceptance'],
+      next_state: null,
+    },
+    ...options,
+  };
+  config.result.next_state = options.nextState ?? null;
+  const path = join(root, '.issues/review-cli.mjs');
+  writeFileSync(
+    path,
+    `import{createInterface}from'node:readline';import{appendFileSync}from'node:fs';const c=${JSON.stringify(config)};const send=m=>process.stdout.write(JSON.stringify(m)+'\\n');createInterface({input:process.stdin}).on('line',l=>{const m=JSON.parse(l);if(m.id===undefined)return;appendFileSync(c.root+'/.issues/rpc.jsonl',JSON.stringify(m)+'\\n');let result;
+    if(m.method==='initialize')result={userAgent:'fixture'};
+    if(m.method==='thread/list'){const t={id:'original-worker',cwd:c.root,preview:'Factory action '+c.actionId};result={data:c.duplicates?[t,{...t,id:'ambiguous'}]:[t],nextCursor:null};}
+    if(m.method==='thread/read')result={thread:{id:'original-worker',cwd:c.root}};
+    if(m.method==='thread/turns/list')result={data:[{id:'original-turn',status:c.status,items:[{type:'agentMessage',text:'Evidence report: '+c.result.evidence[0]}]}]};
+    if(m.method==='thread/start')result={thread:{id:'review-coordinator'}};
+    if(m.method==='turn/start'){if(c.changeReport)appendFileSync(c.root+'/.issues/20261022-one.md','\\nConcurrent report edit\\n');send({id:m.id,result:{turn:{id:'review-turn'}}});send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(c.result)}}});send({method:'turn/completed',params:{threadId:m.params.threadId,turn:{status:'completed'}}});return;}
+    send({id:m.id,result});});`
+  );
+  service.codex = new CodexConnection({
+    command: process.execPath,
+    args: [path],
+    onEvent: (m) => service.store.event(m),
+  });
+  return { ...context, action, evidence };
+}
+function reviewCalls(root) {
+  return readFileSync(join(root, '.issues/rpc.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+}
+
+test('Progress reviews an existing finished worker in a distinct read-only chat and records only its outcome', async (t) => {
+  const { root, api, service, action } = pendingReview(t);
+  assert.equal(service.codex.child, undefined);
+  const before = readFileSync(join(root, 'source.js'), 'utf8');
+  const selection = service.progressPreflight('20261022-one', 'investigate');
+  assert.equal(selection.choice.kind, 'review');
+  assert.equal(service.codex.child, undefined);
+  const { runId } = service.progressStart(selection.token);
+  assert.throws(() => service.progressStart(selection.token), /expired/);
+  const run = await settle(service, runId);
+  assert.equal(run.status, 'completed');
+  assert.equal(run.threadId, 'review-coordinator');
+  const saved = api.inspect().registry.actions.find((a) => a.id === action.id);
+  assert.equal(saved.status, 'reconciled');
+  assert.equal(saved.threadId, 'original-worker');
+  assert.equal(api.inspect().reports[0].metadata.state, 'investigate');
+  assert.match(api.inspect().reports[0].content, /Worker result review/);
+  assert.equal(readFileSync(join(root, 'source.js'), 'utf8'), before);
+  const calls = reviewCalls(root);
+  assert.equal(calls.filter((c) => c.method === 'thread/start').length, 1);
+  assert.equal(calls.find((c) => c.method === 'thread/start').params.sandbox, 'read-only');
+  assert.equal(
+    calls.some((c) => c.method === 'thread/resume'),
+    false
+  );
+  assert.equal(existsSync(join(root, '.issues/factory-progress.lock')), false);
+});
+
+test('Progress refuses another stage, stale confirmations and a second concurrent action', async (t) => {
+  const { root, service } = pendingReview(t);
+  assert.throws(() => service.progressPreflight('20261022-one', 'implement'), /another stage/);
+  const stale = service.progressPreflight('20261022-one', 'investigate');
+  const path = join(root, '.issues/20261022-one.md');
+  writeFileSync(path, readFileSync(path, 'utf8') + '\nUpdated scope\n');
+  assert.throws(() => service.progressStart(stale.token), /changed/);
+  const first = service.progressPreflight('20261022-one', 'investigate'),
+    second = service.progressPreflight('20261022-one', 'investigate');
+  const { runId } = service.progressStart(first.token);
+  assert.throws(() => service.progressStart(second.token), /recommended action changed/);
+  assert.equal((await settle(service, runId)).status, 'completed');
+  assert.equal(service.store.runs.length, 1);
+});
+
+test('checking an unfinished worker starts no replacement worker or coordinator chat', async (t) => {
+  const { root, service, api } = pendingReview(t, { status: 'inProgress' });
+  const run = await reviewNow(service);
+  assert.equal(run.status, 'completed');
+  assert.match(run.summary, /not finished/);
+  assert.equal(
+    reviewCalls(root).some((c) => c.method === 'thread/start'),
+    false
+  );
+  assert.equal(api.inspect().registry.actions[0].status, 'setup');
+  assert.equal(service.snapshot().issues[0].progress.disabled, undefined);
+});
+
+test('ambiguous existing chats stop Progress without any new chat or queue writes', async (t) => {
+  const { root, service, api } = pendingReview(t, { duplicates: true });
+  const report = api.inspect().reports[0].content;
+  const { runId } = service.progressStart(service.progressPreflight('20261022-one', 'investigate').token);
+  assert.equal((await settle(service, runId)).status, 'blocked');
+  assert.equal(
+    reviewCalls(root).some((c) => c.method === 'thread/start'),
+    false
+  );
+  assertReviewNotApplied(api, report);
+});
+
+test('Progress follows only a configured guarded next stage and never closes an issue', async (t) => {
+  const { service, api, evidence } = pendingReview(t, { nextState: 'implement' });
+  const run = await reviewNow(service);
+  assert.equal(run.status, 'completed', run.summary);
+  assert.equal(api.inspect().reports[0].metadata.state, 'implement');
+  assert.ok(existsSync(evidence));
+});
+
+test('a review that tries to close the issue records neither completion nor acceptance', async (t) => {
+  const { service, api } = pendingReview(t, { nextState: 'closed' });
+  const before = api.inspect().reports[0].content;
+  const run = await reviewNow(service);
+  assert.equal(run.status, 'blocked');
+  assert.match(run.summary, /cannot accept or close/);
+  assertReviewNotApplied(api, before);
+});
+
+test('Progress launches exactly the selected saved recommendation and integration still needs separate approval', async (t) => {
+  const { api, proposal, service, git } = fixture(t);
+  transport(t, service);
+  const [action] = api.recommend([proposal]);
+  const selection = service.progressPreflight('20261022-one', 'investigate');
+  assert.equal(selection.choice.actionId, action.id);
+  const { runId } = service.progressStart(selection.token);
+  assert.equal((await settle(service, runId)).status, 'completed');
+  assert.equal(service.store.runs.length, 1);
+  assert.equal(api.inspect().registry.actions[0].status, 'completed');
+  api.record(action.id, { status: 'reconciled', evidence: 'Investigation reviewed independently.' });
+  const [code] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
+  api.reserve(code.id);
+  api.attach(code.id, { threadId: 'code-worker', hostId: 'local' });
+  api.record(code.id, {
+    status: 'completed',
+    worker_revision: git('rev-parse', 'HEAD'),
+    evidence: 'Recorded code candidate',
+  });
+  const integration = service.progressPreflight('20261022-one', 'investigate');
+  assert.equal(integration.choice.kind, 'integrate');
+  assert.equal(integration.requiresApproval, true);
+  assert.throws(() => service.progressStart(integration.token, false), /Explicit approval/);
+  assert.equal(api.inspect().registry.actions.find((a) => a.id === code.id).status, 'completed');
+  assert.equal(service.store.runs.length, 1);
+});
+
+test('a pending human decision blocks the proposed stage advance even when the model reports success', async (t) => {
+  const human = {
+    version: 1,
+    scopes: [{ id: 'main', revision: 1, basis_refs: ['report.md#scope'] }],
+    requests: [
+      {
+        id: 'scope-choice',
+        kind: 'decision',
+        prompt: 'Choose the scope',
+        expected: 'A concrete scope',
+        scope: { id: 'main', revision: 1 },
+        prerequisites: [],
+        blocks: [{ operation: 'advance', scope_ids: ['main'], target_state: 'implement' }],
+        status: 'pending',
+        events: [],
+        outcome: null,
+      },
+    ],
+    overlays: [],
+  };
+  const report =
+    '---\nid: 20261022-one\nstate: investigate\ngrill_later: false\nhuman_input: ' +
+    JSON.stringify(human) +
+    '\n---\nOriginal report\n';
+  const { service, api } = pendingReview(t, { report, nextState: 'implement' });
+  const run = await reviewNow(service);
+  assert.equal(run.status, 'blocked');
+  assert.match(run.summary, /Human input blocks advance/);
+  assertReviewNotApplied(api, report);
+});
+
+async function reviewNow(service) {
+  const selected = service.progressPreflight('20261022-one', 'investigate');
+  return settle(service, service.progressStart(selected.token).runId);
+}
+function assertReviewNotApplied(api, content) {
+  assert.equal(api.inspect().reports[0].content, content);
+  assert.equal(api.inspect().registry.actions[0].status, 'setup');
+}
+
+test('a report edited during result review is preserved and no stale outcome is recorded', async (t) => {
+  const { service, api } = pendingReview(t, { changeReport: true });
+  const outcome = await reviewNow(service);
+  assert.equal(outcome.status, 'blocked');
+  assert.match(outcome.summary, /changed during review/);
+  assert.match(api.inspect().reports[0].content, /Concurrent report edit/);
+  assert.equal(api.inspect().registry.actions[0].status, 'setup');
+});
