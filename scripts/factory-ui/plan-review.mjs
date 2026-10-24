@@ -7,7 +7,7 @@ import { requireThat, writeJson } from './common.mjs';
 import { selectPlan } from './plan-outline.mjs';
 import { checklistBasis, checklistView, checkedPlanResult } from './plan-checks.mjs';
 import { planCheckPrompt, planCheckSchema } from './plan-check-schema.mjs';
-import { appendReview } from './review-result.mjs';
+import { savePlanDecision, remainingPlanChecks } from './plan-decision-record.mjs';
 
 export function checkImplementation(service, id, state, path, basis) {
   service.ownServer();
@@ -75,31 +75,21 @@ async function reviewPlan(service, queue, issue, plan, run) {
 }
 function recordChecklist(service, issue, run, record) {
   snapshotReport(service, issue, run, record);
-  appendReview(
-    service.root,
+  savePlanDecision(
+    service,
     issue,
+    run,
     {
       summary: record.summary,
       notes:
         'Implementation steps were checked against the linked plan and inspected evidence. This records findings only; required human decisions remain separate.',
-      remaining: record.steps.flatMap((s) =>
-        s.criteria.filter((c) => c.status !== 'passed').map((c) => c.next_action || c.explanation)
-      ),
+      remaining: remainingPlanChecks(record),
       plan_verification: record,
     },
-    run,
-    record.evidence,
-    null
+    record.evidence
   );
-  const queue = readQueue(service.root),
-    saved = queue.issues.find((i) => i.id === issue.id);
-  service.store.update(run, {
-    status: 'completed',
-    summary: record.summary,
-    result: record,
-    afterBasis: checklistBasis(queue, saved, selectPlan(queue, saved, record.path)),
-  });
 }
+
 function snapshotReport(service, issue, run, record) {
   const report = join(service.root, '.issues', issue.id + '.md');
   const entry = record.evidence.find((e) => e.path === report);

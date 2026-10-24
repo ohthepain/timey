@@ -306,3 +306,24 @@ after the non-human implementation criteria pass. A decision records the person'
 actual result for the current revision without closing the issue. It cannot invent
 new obligations, silently pass a human check, or stand in for explicit acceptance.
 Final closure also rejects an existing stale or incomplete checklist.
+
+## User overrides for implementation checks
+
+Technical criteria describe work Codex can do; they are not instructions for the
+user to reproduce internal test procedures. **Skip** on an unfinished ordinary
+criterion and **Skip all remaining checks** let the user explicitly decide those
+checks are no longer required. The confirmation shows the exact selection and a
+short editable reason. Passed checks and separate human requirements are excluded.
+
+The server checks the displayed report, current checklist and idle operation
+locks before recording a skip. Each skipped criterion retains the previous
+result, reason, human actor, time, plan hash and exact source context. A skip is
+never counted as a pass. Mixed steps say Finished with skips. Overrides remove
+those criteria's checklist completion requirement but do not run tests, advance
+stages, change human checks, integrate or close the issue. Independent project
+verification and final acceptance rules remain in force.
+
+A subsequent evidence review retains matching user overrides for the same plan
+and source context. Changed plan requirements or source require a new decision;
+old overrides remain in the saved issue/review history. Bulk skipping does not
+silently approve the final result or waive a human observation.

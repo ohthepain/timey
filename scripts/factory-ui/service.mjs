@@ -22,6 +22,7 @@ import { prepareProgress, triggerProgress } from './progress.mjs';
 import { checklistView, readChecklistEvidence } from './plan-checks.mjs';
 import { checkImplementation } from './plan-review.mjs';
 import { decidePlanCheck } from './plan-approval.mjs';
+import { skipPlanChecks } from './plan-skips.mjs';
 
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
@@ -84,6 +85,9 @@ export class FactoryUI {
   }
   decidePlanCheck(id, state, checkId, status, basis, result) {
     return decidePlanCheck(this, id, state, checkId, status, basis, result);
+  }
+  skipPlanChecks(input) {
+    return skipPlanChecks(this, input);
   }
   findConnection(id, state, basis) {
     return findConnection(this, id, state, basis);

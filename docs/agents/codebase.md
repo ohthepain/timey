@@ -89,3 +89,9 @@ read-only review; `plan-review.mjs` records its guarded findings. `plan-checks.m
 validates checklist criteria, evidence and freshness, while `plan-approval.mjs`
 records only explicit existing human-check decisions. These records do not advance
 the lifecycle or authorize worker launches/integrations.
+
+`factory-ui/plan-skips.mjs` records explicit individual/bulk user overrides for
+ordinary implementation criteria; `plan-overrides.mjs` retains applicable skips
+when the same plan and source are reviewed again.
+`factory-ui/plan-decision-record.mjs` shares idle checks and atomic checklist
+recording between read-only results and explicit user decisions.

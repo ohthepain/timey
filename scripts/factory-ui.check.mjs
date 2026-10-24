@@ -1371,3 +1371,97 @@ test('a reviewed issue is kept as an immutable supporting file before checklist 
   assert.equal(service.readChecklistEvidence(issue.id, archive).content, original);
   assert.equal(issue.implementation.fresh, true);
 });
+
+function skipInput(service, extra = {}) {
+  const view = service.snapshot(),
+    issue = view.issues[0];
+  return {
+    issueId: issue.id,
+    state: issue.state,
+    basis: view.reviewBasis,
+    reason: 'These checks are not needed for this issue.',
+    ...extra,
+  };
+}
+function pendingCriterion(criterion) {
+  Object.assign(criterion, {
+    status: 'not-checked',
+    explanation: 'No retained result was found.',
+    evidence: [],
+    next_action: 'Codex can run this check if it is still needed.',
+  });
+}
+
+test('a manual skip records the user override without passing the check or changing issue state', async (t) => {
+  const { service, path, result } = implementationFixture(t);
+  pendingCriterion(result.steps[0].criteria[0]);
+  await settle(service, checkPlan(service, path).runId);
+  const input = skipInput(service, { stepId: 'line-5', criterionIndex: 0 });
+  assert.deepEqual(service.skipPlanChecks(input), { skipped: 1 });
+  const issue = service.snapshot().issues[0],
+    criterion = issue.plan_verification.steps[0].criteria[0];
+  assert.equal(criterion.status, 'skipped');
+  assert.equal(criterion.manual_skip.actor, 'human');
+  assert.equal(criterion.manual_skip.previous.status, 'not-checked');
+  assert.equal(issue.implementation.fresh, true);
+  assert.equal(issue.state, 'verify');
+  assert.equal(issue.human_checks[0].status, 'pending');
+  assert.throws(() => service.skipPlanChecks(input), /changed/);
+  const { requireImplementationPasses } = await import('./factory-ui/plan-checks.mjs');
+  assert.doesNotThrow(() => requireImplementationPasses(service, readQueue(service.root), issue));
+});
+
+test('skip all overrides unfinished ordinary checks, retains passes and leaves human decisions pending', async (t) => {
+  const { service, path, result } = implementationFixture(t);
+  pendingCriterion(result.steps[0].criteria[0]);
+  pendingCriterion(result.steps[2].criteria[0]);
+  result.steps[2].criteria[0].human_check_id = 'experience';
+  await settle(service, checkPlan(service, path).runId);
+  assert.deepEqual(service.skipPlanChecks(skipInput(service, { all: true })), { skipped: 1 });
+  const issue = service.snapshot().issues[0];
+  assert.deepEqual(
+    issue.plan_verification.steps.map((s) => s.criteria[0].status),
+    ['skipped', 'passed', 'not-checked']
+  );
+  assert.equal(issue.human_checks[0].status, 'pending');
+  assert.throws(() => service.skipPlanChecks(skipInput(service, { all: true })), /no remaining/);
+  assert.throws(
+    () => service.skipPlanChecks(skipInput(service, { stepId: 'line-15', criterionIndex: 0 })),
+    /human decision/
+  );
+  const { requireImplementationPasses } = await import('./factory-ui/plan-checks.mjs');
+  assert.doesNotThrow(() => requireImplementationPasses(service, readQueue(service.root), issue));
+  assert.throws(() => requireImplementationPasses(service, readQueue(service.root), issue, true), /outstanding/);
+});
+
+test('user skips survive evidence review but do not carry over to changed source', async (t) => {
+  const { root, service, path, result, git } = implementationFixture(t);
+  pendingCriterion(result.steps[0].criteria[0]);
+  await settle(service, checkPlan(service, path).runId);
+  service.skipPlanChecks(skipInput(service, { all: true }));
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8') + '\nNew supporting information is available.\n');
+  await settle(service, checkPlan(service, path).runId);
+  assert.equal(service.snapshot().issues[0].plan_verification.steps[0].criteria[0].status, 'skipped');
+  writeFileSync(join(root, 'source.js'), 'export const answer = 43;\n');
+  git('add', 'source.js');
+  git('commit', '-qm', 'changed source');
+  await settle(service, checkPlan(service, path).runId);
+  assert.equal(service.snapshot().issues[0].plan_verification.steps[0].criteria[0].status, 'not-checked');
+});
+
+test('skip rejects blank reasons, stale results, passed items, and concurrent actions', async (t) => {
+  const { root, service, path, result } = implementationFixture(t);
+  pendingCriterion(result.steps[0].criteria[0]);
+  await settle(service, checkPlan(service, path).runId);
+  assert.throws(() => service.skipPlanChecks(skipInput(service, { all: true, reason: ' ' })), /short reason/);
+  assert.throws(
+    () => service.skipPlanChecks(skipInput(service, { stepId: 'line-9', criterionIndex: 0 })),
+    /has passed/
+  );
+  service.store.connected.add('other-action');
+  assert.throws(() => service.skipPlanChecks(skipInput(service, { all: true })), /current action/);
+  service.store.connected.delete('other-action');
+  writeFileSync(join(root, 'source.js'), 'changed\n');
+  assert.throws(() => service.skipPlanChecks(skipInput(service, { all: true })), /Refresh the implementation/);
+});

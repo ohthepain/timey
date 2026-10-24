@@ -391,6 +391,7 @@
         border-color: #7a858c;
         color: #65717a;
       }
+      .check-reviewed,
       .check-skipped {
         border-color: #b2b8bb;
         color: #7a858c;
@@ -968,13 +969,21 @@
         todo: 'To do',
         'not-checked': 'Not checked',
         skipped: 'Skipped',
+        reviewed: 'Finished with skips',
         checking: 'Checking',
         'in-progress': 'In progress',
       };
       function checkCircle(status) {
         const symbol =
-          { passed: '✓', failed: '×', skipped: '–', 'in-progress': '…', 'not-checked': '?', checking: '…' }[status] ||
-          '';
+          {
+            passed: '✓',
+            failed: '×',
+            skipped: '–',
+            reviewed: '–',
+            'in-progress': '…',
+            'not-checked': '?',
+            checking: '…',
+          }[status] || '';
         return `<span class="check-circle check-${esc(status)}" aria-hidden="true">${symbol}</span>`;
       }
       function implementationChecklist(issue) {
@@ -991,7 +1000,7 @@
               `<section class="check-version"><h4>${esc(version)}</h4>${steps.map((step) => implementationStep(issue, step)).join('')}</section>`
           )
           .join('');
-        return `<section class="implementation-checklist"><h3>Implementation checks</h3><p>${esc(implementationSummary(view))}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar"><button data-check-plan="${esc(issue.id)}" ${!view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Checks pass automatically when the evidence meets the criteria. Approval is requested only for a required human decision.</p>${requiredPlanDecisions(issue)}</section>`;
+        return `<section class="implementation-checklist"><h3>Implementation checks</h3><p>${esc(implementationSummary(view))}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar">${skipAllChecks(issue)}<button data-check-plan="${esc(issue.id)}" ${!view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Technical checks are work for Codex. You can skip checks you no longer require; they stay marked Skipped. Required human decisions remain separate.</p>${requiredPlanDecisions(issue)}</section>`;
       }
       function implementationSummary(view) {
         if (view.running) return 'Checking the plan and saved results.';
@@ -999,7 +1008,9 @@
         if (!view.fresh) return 'The earlier results need another check.';
         const criteria = view.record.steps.flatMap((step) => step.criteria);
         const passed = criteria.filter((criterion) => criterion.status === 'passed').length;
-        return `${passed} of ${criteria.length} acceptance checks passed. Expand a step to see what remains.`;
+        const skipped = criteria.filter((criterion) => criterion.status === 'skipped').length;
+        const remaining = criteria.length - passed - skipped;
+        return `${passed} passed · ${skipped} skipped · ${remaining} remaining. ${remaining ? 'Expand a step to see what remains.' : 'Implementation checks are finished. Use Progress to continue.'}`;
       }
       function implementationStatus(criteria) {
         const statuses = criteria.map((c) => c.status);
@@ -1007,16 +1018,17 @@
         if (statuses.includes('not-checked')) return 'not-checked';
         if (statuses.includes('in-progress')) return 'in-progress';
         if (statuses.includes('todo')) return 'todo';
-        return statuses.every((s) => s === 'skipped') ? 'skipped' : 'passed';
+        if (statuses.every((s) => s === 'skipped')) return 'skipped';
+        return statuses.includes('skipped') ? 'reviewed' : 'passed';
       }
       function implementationStep(issue, step) {
         const view = issue.implementation;
         const status = view.running ? 'checking' : view.fresh ? implementationStatus(step.criteria) : 'not-checked';
         const key = issue.id + ':' + step.id;
         const open = expandedChecks.has(key) ? expandedChecks.get(key) : status === 'failed';
-        return `<details class="implementation-step" data-plan-step="${esc(key)}" ${open ? 'open' : ''}><summary>${checkCircle(status)}<strong>${esc(step.name)}</strong><span class="check-label">${view.fresh ? step.criteria.filter((c) => c.status === 'passed').length + '/' + step.criteria.length + ' passed · ' : ''}${esc(checkLabels[status])}</span></summary><div class="acceptance-list"><p class="muted">This step passes when:</p>${step.criteria.map((c) => implementationCriterion(issue, c)).join('')}<button data-open-plan="${esc(view.path)}">Read original requirements</button></div></details>`;
+        return `<details class="implementation-step" data-plan-step="${esc(key)}" ${open ? 'open' : ''}><summary>${checkCircle(status)}<strong>${esc(step.name)}</strong><span class="check-label">${view.fresh ? step.criteria.filter((c) => c.status === 'passed').length + '/' + step.criteria.length + ' passed · ' : ''}${esc(checkLabels[status])}</span></summary><div class="acceptance-list"><p class="muted">This step passes when:</p>${step.criteria.map((c, index) => implementationCriterion(issue, c, step.id, index)).join('')}<button data-open-plan="${esc(view.path)}">Read original requirements</button></div></details>`;
       }
-      function implementationCriterion(issue, criterion) {
+      function implementationCriterion(issue, criterion, stepId, criterionIndex) {
         const fresh = issue.implementation.fresh;
         const status = fresh ? criterion.status : 'not-checked';
         const evidence = criterion.evidence
@@ -1025,7 +1037,40 @@
               `<button class="evidence-button" data-check-evidence="${esc(path)}" data-evidence-issue="${esc(issue.id)}">${esc(path.split('/').pop())}</button>`
           )
           .join(' ');
-        return `<div class="acceptance-item">${checkCircle(status)}<div><b>${esc(criterion.name)}</b><span class="check-label">${esc(checkLabels[status])}</span>${fresh ? `<p>${esc(criterion.explanation)}</p>${criterion.next_action ? `<p><b>Next:</b> ${esc(criterion.next_action)}</p>` : ''}` : '<p>Check again before relying on the earlier result.</p>'}<details><summary>Supporting details</summary><blockquote>${esc(criterion.source)}</blockquote>${evidence || '<p>No supporting file recorded yet.</p>'}</details></div></div>`;
+        return `<div class="acceptance-item">${checkCircle(status)}<div><b>${esc(criterion.name)}</b><span class="check-label">${esc(checkLabels[status])}</span>${fresh ? `<p>${esc(criterion.explanation)}</p>${criterion.next_action ? `<p><b>Next:</b> ${esc(criterion.next_action)}</p>` : ''}` : '<p>Check again before relying on the earlier result.</p>'}<details><summary>Supporting details</summary><blockquote>${esc(criterion.source)}</blockquote>${evidence || '<p>No supporting file recorded yet.</p>'}</details>${criterionSkip(issue, criterion, stepId, criterionIndex)}</div></div>`;
+      }
+      function skippableCriterion(criterion) {
+        return !criterion.human_check_id && !['passed', 'skipped'].includes(criterion.status);
+      }
+      function criterionSkip(issue, criterion, stepId, criterionIndex) {
+        if (!skippableCriterion(criterion)) return '';
+        return `<button data-skip-check="${esc(issue.id)}" data-skip-step="${esc(stepId)}" data-skip-index="${criterionIndex}" ${!issue.implementation.fresh || issue.implementation.running ? 'disabled' : ''}>Skip</button>`;
+      }
+      function skipAllChecks(issue) {
+        if (!issue.implementation.record?.steps.some((step) => step.criteria.some(skippableCriterion))) return '';
+        return `<button data-skip-all="${esc(issue.id)}" ${!issue.implementation.fresh || issue.implementation.running ? 'disabled' : ''}>Skip all remaining checks</button>`;
+      }
+      function selectCheckSkip(button, all) {
+        const issue = data.issues.find((i) => i.id === (all ? button.dataset.skipAll : button.dataset.skipCheck));
+        const step = issue.implementation.record.steps.find((s) => s.id === button.dataset.skipStep);
+        const criterionIndex = Number(button.dataset.skipIndex);
+        const criteria = all
+          ? issue.implementation.record.steps.flatMap((s) => s.criteria).filter(skippableCriterion)
+          : [step.criteria[criterionIndex]];
+        selection = {
+          planSkip: true,
+          issueId: issue.id,
+          state: issue.state,
+          basis: data.reviewBasis,
+          all,
+          stepId: step?.id,
+          criterionIndex,
+        };
+        $('selection').innerHTML =
+          `<h2>${all ? 'Skip all remaining implementation checks?' : 'Skip this check?'}</h2><p>${criteria.length} check${criteria.length === 1 ? '' : 's'} will be marked Skipped, not Passed. They will stop blocking checklist completion. Human approval, worker launches and integration remain separate.</p><details ${all ? '' : 'open'}><summary>Checks to skip</summary><ul>${criteria.map((c) => `<li>${esc(c.name)}</li>`).join('')}</ul></details><label>Reason<textarea id="skip-check-reason" maxlength="4000">These checks are no longer required for this issue.</textarea></label>`;
+        $('approve').textContent = all ? 'Skip these checks' : 'Skip check';
+        $('approve').disabled = false;
+        $('confirm').showModal();
       }
       function requiredPlanDecisions(issue) {
         const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
@@ -1330,6 +1375,12 @@
         $('confirm').showModal();
       }
       function bind() {
+        document
+          .querySelectorAll('[data-skip-check]')
+          .forEach((button) => (button.onclick = () => selectCheckSkip(button, false)));
+        document
+          .querySelectorAll('[data-skip-all]')
+          .forEach((button) => (button.onclick = () => selectCheckSkip(button, true)));
         if ($('implementation-plan'))
           $('implementation-plan').onchange = () => {
             const issue = data.issues.find(
@@ -1456,7 +1507,9 @@
       $('cancel').onclick = () => $('confirm').close();
       $('approve').onclick = () =>
         act(async () => {
-          if (selection.planDecision)
+          if (selection.planSkip)
+            await request('skip-plan-checks', { ...selection, reason: $('skip-check-reason').value });
+          else if (selection.planDecision)
             await request('plan-decision', { ...selection, result: $('plan-decision-result').value });
           else if (selection.connection)
             await request('connect-worker', {

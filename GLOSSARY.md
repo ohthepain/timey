@@ -77,3 +77,8 @@ Work items from one issue's implementation plan, grouped by its work versions an
 checked against explicit acceptance criteria. A passing criterion has supporting
 evidence; it does not imply human approval, integration or issue acceptance.
 _Avoid_: Lifecycle stage, triage role
+
+**Manual checklist skip**:
+The user's explicit decision that an implementation criterion is not required for
+this issue at the recorded plan and source revision. It preserves the earlier
+result and reason without claiming a pass or accepting the issue.

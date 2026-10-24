@@ -33,6 +33,7 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value) {
   const routes = {
+    '/api/skip-plan-checks': () => service.skipPlanChecks(value),
     '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),
     '/api/plan-decision': () =>
       service.decidePlanCheck(value.issueId, value.state, value.checkId, value.status, value.basis, value.result),

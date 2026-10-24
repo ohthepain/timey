@@ -121,7 +121,7 @@ function nonempty(value) {
 }
 
 function recordedBy(run) {
-  return ['decision', 'plan-decision'].includes(run.kind)
+  return ['decision', 'plan-decision', 'plan-skip'].includes(run.kind)
     ? 'Recorded from the issue screen by an explicit user action.'
     : `Reviewed by coordinator chat ${run.threadId}. Action ${run.actionId}.`;
 }

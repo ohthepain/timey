@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync, realpathSync } from 'node:fs';
 import { digest, requireThat } from './common.mjs';
 import { selectPlan, implementationPlans } from './plan-outline.mjs';
 import { reviewEvidence } from './review-result.mjs';
+import { retainPlanSkips } from './plan-overrides.mjs';
 
 export function checklistBasis(queue, issue, plan) {
   return digest(
@@ -86,7 +87,7 @@ export function checkedPlanResult(queue, issue, plan, result) {
   const files = [...new Set(result.steps.flatMap((s) => s.criteria.flatMap((c) => c.evidence)))];
   const evidence = checklistEvidence(queue, result, files);
   return {
-    ...normalizeEvidence(result, files, evidence),
+    ...retainPlanSkips(queue, issue, plan, normalizeEvidence(result, files, evidence)),
     path: plan.path,
     plan_sha256: plan.sha256,
     revision: queue.head,
