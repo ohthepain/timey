@@ -4,6 +4,7 @@ import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
 import { appendReview } from './review-result.mjs';
 import { digest, requireThat } from './common.mjs';
+import { closingEvidence } from './closure-result.mjs';
 import { recordClosingApproval } from './closure-approval.mjs';
 import { requireImplementationPasses } from './plan-checks.mjs';
 
@@ -78,16 +79,12 @@ function decisionTarget(queue, role, kind) {
 }
 function checkClosure(service, queue, issue, action) {
   requireThat(queue.sourceClean, 'Preserve the current source changes before accepting the result.');
-  const last = issue.lifecycle_history?.findLast((s) => s.outcome === 'completed' && s.next === issue.state);
-  requireThat(
-    last?.revision === queue.head,
-    'The source changed or the finished work has not been recorded. Use Progress to review it before closing.'
-  );
+  const evidence = closingEvidence(queue, issue);
   checkManualResults(queue, issue);
   requireImplementationPasses(service, queue, issue, true);
   service.guard(service.root, action, 'accept', queue.head);
   service.guard(service.root, action, 'close', queue.head);
-  checkRecordedEvidence(queue, issue, last.evidence || []);
+  checkRecordedEvidence(queue, issue, evidence);
 }
 function checkManualResults(queue, issue) {
   for (const check of issue.human_checks || [])
@@ -113,7 +110,7 @@ function decisionResult(issue, target, kind, summary, reason) {
         state: issue.state,
         outcome: 'completed',
         notes:
-          'The user selected Close issue on the final review screen. This records their acceptance of the finished result.',
+          'The user selected Close issue on the final review screen. This records their acceptance of the finished result. Original verification dates and limitations remain in the report; this decision does not claim new tests or invent earlier stage history.',
       }
     : {
         state: target,

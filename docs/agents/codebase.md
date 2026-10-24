@@ -109,3 +109,6 @@ by the explicit Accept and close action, retaining unchanged verification inputs
 
 `scripts/factory-ui/closure-registry.mjs` retains the changing factory task log as
 administrative context during final acceptance, preserving its earlier hash.
+
+`scripts/factory-ui/closure-result.mjs` checks recorded modern completion or existing
+legacy integration records for explicit final acceptance, without inventing history.

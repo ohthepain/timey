@@ -378,3 +378,8 @@ unchanged source, plan, behavioral evidence and no outstanding work are still re
 Close issue records explicit acceptance and closes in one tap, without a
 confirmation dialog. The button disables during the request and the screen refreshes
 after success. Reopen keeps its confirmation and optional reason.
+
+Older issues already at Final review can be accepted without backfilling stage
+history when the registry records integration and both worker and checked
+integration commits are in the current branch. Original verification dates and
+limitations remain explicit. Close failures appear beside the Close issue button.

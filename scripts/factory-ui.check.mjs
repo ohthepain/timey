@@ -716,13 +716,7 @@ test('an old blocked review does not mark a later stage blocked', async (t) => {
 test('integration approval is shown as a current requirement; checking never integrates or creates a chat', async (t) => {
   const { service, api, proposal, git } = fixture(t);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
-  api.reserve(action.id);
-  api.attach(action.id, { threadId: 'existing-worker', hostId: 'local' });
-  api.record(action.id, {
-    status: 'completed',
-    worker_revision: git('rev-parse', 'HEAD'),
-    evidence: 'Fixture code candidate',
-  });
+  finishCodeFixture(api, action.id, git('rev-parse', 'HEAD'), 'Fixture code candidate');
   const result = await checkNow(service);
   assert.equal(result.readiness.status, 'blocked');
   assert.equal(result.readiness.approvalAvailable, true);
@@ -1983,20 +1977,25 @@ test('Close issue submits acceptance in one tap without opening a confirmation d
     },
   };
   const sent = [];
+  const errors = new Map();
+  let failRequest = false;
   const selectDecision = new Function(
     '$',
     'data',
     'act',
     'request',
+    'decisionErrors',
     'let selection;' + source + ';return selectIssueDecision;'
   )(
     (id) => elements[id],
     { reviewBasis: 'current-page' },
     async (task) => task(),
     async (endpoint, body) => {
+      if (failRequest) throw Error('The recorded result is missing.');
       sent.push({ endpoint, body });
       return { state: 'closed' };
-    }
+    },
+    errors
   );
   const button = { dataset: { issueDecision: 'close', issueId: 'one', issueState: 'final' } };
   await selectDecision(button);
@@ -2005,4 +2004,55 @@ test('Close issue submits acceptance in one tap without opening a confirmation d
   assert.equal(sent[0].body.kind, 'close');
   assert.equal(sent[0].body.basis, 'current-page');
   assert.equal(button.disabled, true);
+  failRequest = true;
+  await assert.rejects(() => selectDecision(button), /recorded result is missing/);
+  assert.equal(errors.get('one'), 'The recorded result is missing.');
+  const controls = html.slice(
+    html.indexOf('      function finalControls('),
+    html.indexOf('      const decisionErrors')
+  );
+  const render = new Function('humanChecks', 'esc', 'decisionErrors', controls + ';return finalControls;')(
+    () => '',
+    (value) => value,
+    errors
+  );
+  assert.match(
+    render({ id: 'one', state: 'final' }, 'ready-to-close'),
+    /role="alert"[^>]*>The recorded result is missing/
+  );
 });
+
+test('older final-review issue with an integrated commit can be accepted without fabricated stage history', (t) => {
+  const { root, git, api, service, proposal } = fixture(t);
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-for-repro | investigate | final |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(
+    report,
+    '---\nid: 20261022-one\nstate: final\ngrill_later: false\n---\n# Integrated fix\n\nThe older coordinator recorded integration and verification here.\n'
+  );
+  const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'automatic' }]);
+  finishCodeFixture(api, action.id, git('rev-parse', 'HEAD'), 'Existing checked fix.');
+  api.record(action.id, {
+    status: 'integrated',
+    checks_passed: true,
+    verified_revision: git('rev-parse', 'HEAD'),
+    evidence: 'Integrated and checked before this UI existed.',
+  });
+  const snapshot = service.snapshot();
+  assert.equal(snapshot.issues[0].lifecycle_history, undefined);
+  assert.deepEqual(service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), { state: 'closed' });
+  const closed = service.snapshot().issues[0];
+  assert.equal(closed.state, 'closed');
+  assert.equal(closed.lifecycle_history.length, 1);
+  assert.equal(closed.lifecycle_history[0].actor, 'human');
+  assert.match(closed.content, /Original verification dates and limitations/);
+});
+
+function finishCodeFixture(api, actionId, revision, evidence) {
+  api.reserve(actionId);
+  api.attach(actionId, { threadId: 'existing-worker', hostId: 'local' });
+  api.record(actionId, { status: 'completed', worker_revision: revision, evidence });
+}
