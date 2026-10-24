@@ -69,7 +69,8 @@ function recordLifecycleAnswers(service, record, input) {
     record,
     'Answers\n\n' + record.input.questions.map((q) => q.question).join('\n\n') + '\n\n' + text
   );
-  saveLifecycle(service, record, { assessed: false, attempts: [] });
+  const assessed = record.input.origin === 'next-action';
+  saveLifecycle(service, record, { assessed, replan: assessed, attempts: [], recoveryContexts: [] });
 }
 function approveLifecycleIntegration(service, record, input) {
   requireThat(input.decision === 'approve', 'These changes will not be integrated without your approval.');
@@ -87,9 +88,10 @@ function approveLifecycleIntegration(service, record, input) {
   });
   saveLifecycle(service, record, { childRunId: started.runId });
 }
-function retryLifecycle(service, record, input) {
-  if (input.text?.trim()) appendAnswer(service, record, 'Progress follow-up\n\n' + input.text.trim());
-  saveLifecycle(service, record, { attempts: [] });
+function retryLifecycle() {
+  throw Error(
+    'This stopped action is not a question. No answer or repeated review was recorded. Use Progress to find the next unfinished task.'
+  );
 }
 function appendAnswer(service, record, text) {
   requireThat(!service.store.connected.size, 'Wait for the current work before recording an answer.');

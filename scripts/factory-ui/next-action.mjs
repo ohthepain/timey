@@ -3,14 +3,6 @@ import { chatConnectionProblem } from './worker-history.mjs';
 import { reviewFollowup } from './review-followup.mjs';
 import { digest, requireThat } from './common.mjs';
 
-const kinds = {
-  'ready-for-repro': ['investigate'],
-  'ready-to-prototype': ['prototype'],
-  'ready-to-fix': ['implement', 'integrate'],
-  'ready-to-verify': ['verify'],
-  'ready-for-commit': ['review'],
-  'ready-to-close': ['review'],
-};
 export const progressBasis = (queue) => digest(JSON.stringify(queue));
 export function progressIssue(queue, id, state) {
   requireThat(typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id), 'Use the full saved issue ID.');
@@ -41,7 +33,7 @@ function stageWork(queue, issue, stage, runs) {
       summary:
         'Record the existing verified commit and continue to the next step. No new chat or behavior review is needed.',
     };
-  const choice = chooseWork(queue, issue, stage, runs);
+  const choice = chooseWork(queue, issue, runs);
   return stageFollowup(queue, issue, stage, runs, choice);
 }
 function isPending(run) {
@@ -52,14 +44,11 @@ function belongsToIssue(queue, issue, run) {
   if (run.issueId === issue.id) return run.issueState === issue.state;
   return queue.actions.some((action) => action.id === run.actionId && action.issues.includes(issue.id));
 }
-function chooseWork(queue, issue, stage, runs) {
+function chooseWork(queue, issue, runs) {
   const actions = queue.actions.filter((a) => a.issues.includes(issue.id));
-  const matching = actions.filter((a) => (kinds[stage.role] || []).includes(a.kind));
-  const waiting = matching.find((a) => ['reserved', 'setup', 'running', 'blocked', 'completed'].includes(a.status));
+  const waiting = actions.find((a) => ['reserved', 'setup', 'running', 'blocked', 'completed'].includes(a.status));
   if (waiting) return existingWork(waiting, runs);
-  const candidate = actions.find((a) => a.status === 'completed' && ['implement', 'integrate'].includes(a.kind));
-  if (candidate) return integration(candidate);
-  const recommended = matching.find((a) => a.status === 'recommended' && !describeLaunch(queue, a));
+  const recommended = actions.find((a) => a.status === 'recommended' && !describeLaunch(queue, a));
   if (recommended)
     return { kind: 'launch', actionId: recommended.id, title: 'Start recommended work', summary: recommended.scope };
   return {

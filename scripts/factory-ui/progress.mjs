@@ -1,3 +1,4 @@
+import { applyLifecyclePlanning } from './lifecycle-planning.mjs';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -67,8 +68,7 @@ function dispatchProgress(service, queue, issue, choice, humanApproved) {
     commit: () => beginCommit(service, queue, issue),
     reconcile: () => beginReconciliation(service, queue, issue),
     'save-review': () => service.saveReview(choice.runId, progressBasis(queue)),
-    plan: () =>
-      service.evaluate(progressBasis(queue), issue.id, (result) => continueExistingWork(service, queue, issue, result)),
+    plan: () => planProgress(service, queue, issue),
     review: () => beginReview(service, queue, issue, choice.actionId),
   };
   const handler = handlers[choice.kind];
@@ -225,9 +225,16 @@ function releaseReviewLock(lock, id) {
 }
 
 function continueExistingWork(service, queue, issue, result) {
+  if (applyLifecyclePlanning(service, issue, result)) return;
   if (result.record_update) {
     requireThat(!result.recommendations.length, 'A record-only update cannot include new assignments.');
     return service.recordUpdate(issue.id, issue.state, progressBasis(queue), result.record_update);
   }
   if (!result.recommendations.length) return beginReconciliation(service, queue, issue);
+}
+
+export function planProgress(service, queue, issue) {
+  return service.evaluate(progressBasis(queue), issue.id, (result) =>
+    continueExistingWork(service, queue, issue, result)
+  );
 }

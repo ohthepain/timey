@@ -1,3 +1,4 @@
+import { lifecycleWorkBasis } from './lifecycle-stop.mjs';
 import { loadLifecycles, lifecycleView, approvedLifecyclePlan } from './lifecycle-store.mjs';
 import { startLifecycle, answerLifecycle, pauseLifecycle, continueLifecycleAfter } from './lifecycle-control.mjs';
 import { finishRecordUpdate } from './record-update.mjs';
@@ -53,11 +54,12 @@ export class FactoryUI {
   snapshot() {
     if (!this.serverLock) this.store.reload();
     const queue = readQueue(this.root);
+    const runs = this.store.list(this.codex.requests);
     return {
       ...queue,
       reviewBasis: digest(JSON.stringify(queue)),
-      issues: queue.issues.map((issue) => this.issueView(queue, issue)),
-      runs: this.store.list(this.codex.requests).map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
+      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs)),
+      runs: runs.map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
       actions: queue.actions.map((a) => ({
         ...a,
         launchBlocked: describeLaunch(queue, a),
@@ -67,19 +69,23 @@ export class FactoryUI {
       })),
     };
   }
-  issueView(queue, issue) {
-    const runs = this.store.list(this.codex.requests);
+  issueView(queue, issue, runs) {
     const readiness = readinessView(queue, issue, runs);
     const progress = nextProgress(queue, issue, runs);
     return {
       ...issue,
       readiness,
-      lifecycle: lifecycleView(this, issue),
+      lifecycle: this.lifecycleStatus(queue, issue),
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
       implementation: checklistView(queue, issue, runs),
     };
+  }
+  lifecycleStatus(queue, issue) {
+    const record = lifecycleView(this, issue);
+    if (!record) return null;
+    return { ...record, canResume: record.stopBasis !== lifecycleWorkBasis(queue, issue, record) };
   }
   readPlan(path) {
     return readPlan(this.root, path);
@@ -395,6 +401,7 @@ export class FactoryUI {
           evaluationPrompt({
             ...queue,
             approved_lifecycle_plan: approvedLifecyclePlan(this, issueId),
+            lifecycle_followup: lifecycleFollowup(this, issueId),
             focus_issue_ids: issueId ? [issueId] : null,
           }),
           evaluationSchema
@@ -485,4 +492,8 @@ function evaluationMetadata(queue, selected, basis) {
 function fileFailure(error) {
   if (!error.fileProblems) return {};
   return { fileProblems: error.fileProblems, reviewedEvidence: error.reviewedEvidence || [] };
+}
+
+function lifecycleFollowup(service, issueId) {
+  return service.lifecycleRuns[issueId]?.lastFailure || null;
 }

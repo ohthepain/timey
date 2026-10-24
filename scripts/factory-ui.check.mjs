@@ -1,3 +1,4 @@
+import { beginReconciliation } from './factory-ui/reconcile.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
@@ -926,7 +927,8 @@ function completedWorkFixture(t) {
   return { ...context, result };
 }
 async function reconcileNow(service) {
-  return settle(service, service.progressStart(service.progressPreflight('20261022-one', 'investigate').token).runId);
+  const queue = readQueue(service.root);
+  return settle(service, beginReconciliation(service, queue, queue.issues[0]).runId);
 }
 test('Progress records already completed steps together, skips only the optional experiment, and stops at acceptance', async (t) => {
   const { service, api, root } = completedWorkFixture(t);
@@ -982,7 +984,7 @@ test('one Progress action continues from a no-worker recommendation through exis
           }
         : result
     );
-  const first = await reconcileNow(service);
+  const first = await reviewNow(service);
   assert.equal(first.kind, 'evaluation');
   const update = service.store.runs.find((r) => r.kind === 'reconciliation');
   assert.ok(update, 'Progress should continue without handing routine bookkeeping to the user');
@@ -1632,7 +1634,7 @@ test('implementation checklist stays in Verify when the issue advances to Commit
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const source = html.slice(
     html.indexOf('      function currentStageContent('),
-    html.indexOf('      const expandedChecks')
+    html.indexOf('      const checkLabels')
   );
   const render = new Function(
     'implementationChecklist',
@@ -2377,4 +2379,359 @@ test('an original recorded approval of the current plan allows Progress to conti
   assert.equal(record.status, 'finished', record.summary);
   assert.equal(record.approval.origin, 'reviewed-saved-human-approval');
   assert.equal(service.snapshot().issues[0].state, 'final');
+});
+
+test('a stale no-work review cannot send a later implementation back into reconciliation', async (t) => {
+  const { service, root } = await evaluatedIssue(t, {
+    summary: 'Implementation is still needed.',
+    recommendations: [],
+    routes: [],
+    next_step: 'Implement the approved plan.',
+  });
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8') + '\nUser follow-up: continue approved implementation.\n');
+  assert.equal(service.snapshot().issues[0].progress.kind, 'plan');
+});
+
+test('permission replies preserve the advertised reusable choice and reject unoffered session grants', () => {
+  const connection = new CodexConnection(),
+    sent = [];
+  connection.send = (value) => sent.push(value);
+  const rule = { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['npm', 'ci'] } };
+  connection.request({
+    id: 91,
+    method: 'item/commandExecution/requestApproval',
+    params: { threadId: 'worker', availableDecisions: ['accept', rule, 'cancel'] },
+  });
+  assert.throws(() => connection.answer('91', 'worker', { decision: 'acceptForSession' }), /offered/);
+  connection.answer('91', 'worker', { decision: 'option:1' });
+  assert.deepEqual(sent[0].result, { decision: rule });
+});
+
+test('technical retry cannot record a fake human answer or clear the no-progress guard', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  await finishLifecycle(service);
+  const record = service.lifecycleRuns['20261022-one'];
+  record.input = { type: 'retry', question: 'Implementation is unfinished.' };
+  const before = readFileSync(join(root, '.issues/20261022-one.md'), 'utf8');
+  await assert.rejects(
+    service.answerLifecycle({ issueId: record.issueId, updated: record.updated, text: 'just continue' }),
+    /not a question/
+  );
+  assert.equal(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), before);
+});
+
+test('live activity keeps command output and combines streamed messages without duplicating completion', async (t) => {
+  const { service } = fixture(t),
+    run = service.store.add({ id: 'output' }, 'worker', 'base');
+  service.store.update(run, { threadId: 'output-chat' });
+  const event = (method, params) => service.store.event({ method, params: { threadId: 'output-chat', ...params } });
+  event('item/started', { item: { id: 'cmd', type: 'commandExecution', command: 'npm test', status: 'inProgress' } });
+  event('item/commandExecution/outputDelta', { itemId: 'cmd', delta: 'Tests passed\n' });
+  event('item/agentMessage/delta', { itemId: 'msg', delta: 'Checking ' });
+  event('item/agentMessage/delta', { itemId: 'msg', delta: 'the result.' });
+  event('item/completed', { item: { id: 'msg', type: 'agentMessage', text: 'Checking the result.' } });
+  event('item/completed', {
+    item: {
+      id: 'cmd',
+      type: 'commandExecution',
+      command: 'npm test',
+      aggregatedOutput: 'Tests passed\n',
+      exitCode: 0,
+      status: 'completed',
+    },
+  });
+  const output = service.store.list(new Map())[0].output;
+  assert.equal(output.length, 2);
+  assert.equal(output[0].text, 'Tests passed\n');
+  assert.equal(output[0].exitCode, 0);
+  assert.equal(output[1].text, 'Checking the result.');
+  assert.match(readFileSync(join(service.store.directory, run.id + '.jsonl'), 'utf8'), /outputDelta/);
+});
+
+test('native file and network grants retain their session scope without accepting browser-supplied permissions', () => {
+  const connection = new CodexConnection(),
+    sent = [];
+  connection.send = (value) => sent.push(value);
+  const permissions = { fileSystem: { read: ['/tmp/report.md'] }, network: { enabled: true } };
+  connection.request({
+    id: 92,
+    method: 'item/permissions/requestApproval',
+    params: { threadId: 'worker', permissions },
+  });
+  connection.answer('92', 'worker', { decision: 'session', permissions: { fileSystem: { write: ['/'] } } });
+  assert.deepEqual(sent[0].result, { permissions, scope: 'session' });
+});
+
+async function activityScreen(t) {
+  const { JSDOM } = await import('jsdom');
+  const { service } = lifecycleFixture(t);
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const dom = new JSDOM(html, { url: 'http://127.0.0.1/#/issue/20261022-one', runScripts: 'outside-only' });
+  t.after(() => dom.window.close());
+  dom.window.scrollTo = () => {};
+  const script = html
+    .match(/<script>([\s\S]*?)<\/script>/)[1]
+    .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
+  dom.window.eval(
+    script +
+      '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'
+  );
+  const snapshot = service.snapshot();
+  snapshot.issues[0].lifecycle = { status: 'running', summary: 'Reading source', childRunId: 'live', events: [] };
+  snapshot.runs.push({
+    id: 'live',
+    issueId: '20261022-one',
+    connected: true,
+    status: 'running',
+    kind: 'worker',
+    output: [{ text: 'Starting tests', at: '2026-10-24T12:00:00Z' }],
+    events: [],
+    approvals: [],
+  });
+  dom.window.screenTest.show(snapshot);
+  return { window: dom.window, snapshot };
+}
+
+test('activity screen shows the current step and preserves expanded details, native drafts and log reading position', async (t) => {
+  const { window, snapshot } = await activityScreen(t),
+    document = window.document;
+  assert.match(document.querySelector('.lifecycle-progress').textContent, /Current step: Clarify/);
+  assert.match(document.querySelector('[data-lifecycle-start]').textContent, /Working…/);
+  assert.doesNotMatch(document.body.textContent, /Progress in progress/);
+  const notes = [...document.querySelectorAll('details')].find(
+    (element) => element.querySelector('summary')?.textContent === 'Decisions'
+  );
+  notes.querySelector('summary').click();
+  const output = document.getElementById('live-output');
+  Object.defineProperties(output, { scrollHeight: { value: 1000 }, clientHeight: { value: 200 } });
+  output.scrollTop = 350;
+  output.onscroll();
+  snapshot.runs.at(-1).output.push({ text: 'Tests passed', at: '2026-10-24T12:01:00Z' });
+  window.screenTest.show(snapshot);
+  assert.equal(
+    [...document.querySelectorAll('details')].find(
+      (element) => element.querySelector('summary')?.textContent === 'Decisions'
+    ).open,
+    true
+  );
+  assert.equal(document.getElementById('live-output').scrollTop, 350);
+  assert.match(document.getElementById('live-output').textContent, /Tests passed/);
+  const saved = JSON.parse(window.localStorage.getItem('factory-expanded-v2'));
+  assert.ok(Object.values(saved).includes(true));
+});
+
+test('a stopped technical review has no answer box and does not repeat its explanation', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const summary = 'Implementation is unfinished; no completed step can be recorded.';
+  snapshot.issues[0].lifecycle = {
+    status: 'blocked',
+    summary,
+    input: { type: 'retry', question: summary },
+    canResume: false,
+    events: [],
+  };
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.equal(panel.querySelector('textarea'), null);
+  assert.equal(panel.textContent.split(summary).length, 2);
+  assert.match(panel.textContent, /Progress stopped/);
+  assert.equal(panel.querySelector('[data-lifecycle-start]').disabled, true);
+});
+
+test('an implementation-stage prerequisite is launched and reviewed without sending the issue back to Investigate', async (t) => {
+  const { service, root, api, proposal } = fixture(t);
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-to-fix | implement | verify |\n| ready-to-verify | verify | final |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state: investigate', 'state: implement'));
+  const [action] = api.recommend([proposal]);
+  assert.equal(service.snapshot().issues[0].progress.kind, 'launch');
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'prerequisite', hostId: 'local' });
+  api.record(action.id, { status: 'completed', evidence: 'Dependency compatibility established.' });
+  assert.equal(service.snapshot().issues[0].progress.kind, 'review');
+  assert.equal(service.snapshot().issues[0].state, 'implement');
+});
+
+test('a real planning question explains the missing decision and resumes planning after the actual answer', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  await finishLifecycle(service);
+  const original = service.codex.turn;
+  service.codex.turn = async (...args) =>
+    args[3].properties.recommendations
+      ? JSON.stringify({
+          summary: 'A scope choice is needed.',
+          recommendations: [],
+          routes: [],
+          next_step: 'Choose how to handle the related admin work.',
+          record_update: null,
+          next_action: 'question',
+          human_question: {
+            question: 'Should we handle the admin work separately?',
+            why: 'The saved batch includes a second issue outside this selection.',
+            expected: 'Choose separate work or revise the approved batch.',
+          },
+        })
+      : original(...args);
+  await approveIssuePlan(service);
+  const record = await finishLifecycle(service);
+  assert.equal(record.status, 'waiting');
+  assert.equal(record.input.type, 'questions');
+  assert.equal(record.input.origin, 'next-action');
+  assert.match(record.input.questions[0].question, /admin work separately\?/);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'reconciliation').length, 0);
+  assert.equal(readQueue(root).issues[0].state, 'investigate');
+});
+
+test('blocked review finds the unfinished task once instead of looping or inventing an answer request', async (t) => {
+  const { service } = lifecycleFixture(t);
+  const original = service.codex.turn;
+  let evaluations = 0;
+  service.codex.turn = async (...args) => {
+    const schema = args[3].properties;
+    if (schema.recommendations && ++evaluations > 1)
+      return JSON.stringify({
+        summary: 'A scope decision is needed.',
+        recommendations: [],
+        routes: [],
+        next_step: 'Choose the implementation scope.',
+        next_action: 'question',
+        human_question: {
+          question: 'Should the admin changes be a separate task?',
+          why: 'The original batch spans a second issue.',
+          expected: 'Choose separate work or revise the batch.',
+        },
+        record_update: null,
+      });
+    if (schema.next_state)
+      return JSON.stringify({
+        outcome: 'blocked',
+        summary: 'The larger implementation is unfinished.',
+        notes: 'The investigation is not the application implementation.',
+        evidence: [],
+        remaining: ['Implement the approved plan.'],
+        next_state: null,
+        skipped_steps: [],
+      });
+    return original(...args);
+  };
+  startIssueLifecycle(service);
+  await approveIssuePlan(service);
+  const record = await finishLifecycle(service);
+  assert.equal(record.input.type, 'questions', record.summary);
+  assert.equal(evaluations, 2);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'coordinator').length, 1);
+});
+
+test('native question drafts survive live refreshes but do not leak into a later lifecycle question', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const run = snapshot.runs.at(-1);
+  run.approvals = [
+    {
+      id: 'decision',
+      method: 'item/tool/requestUserInput',
+      params: { questions: [{ id: 'scope', question: 'Which scope?' }] },
+    },
+  ];
+  window.screenTest.show(snapshot);
+  window.document.querySelector('[data-question]').value = 'Auth only';
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelector('[data-question]').value, 'Auth only');
+  const record = {
+    status: 'waiting',
+    events: [],
+    updated: 'first',
+    input: { type: 'questions', reportHash: 'one', questions: [{ question: 'First question?' }] },
+  };
+  snapshot.issues[0].lifecycle = record;
+  window.screenTest.show(snapshot);
+  window.document.getElementById('lifecycle-answer-20261022-one').value = 'First answer';
+  record.input = { type: 'questions', reportHash: 'two', questions: [{ question: 'Different question?' }] };
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.getElementById('lifecycle-answer-20261022-one').value, '');
+});
+
+test('administrative notes cannot re-enable the same stopped review', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  const original = service.codex.turn;
+  service.codex.turn = async (...args) =>
+    args[3].properties.recommendations
+      ? JSON.stringify({
+          summary: 'No valid assignment was established.',
+          recommendations: [],
+          routes: [],
+          next_step: 'The saved batch needs a scope decision before work can be assigned.',
+          next_action: 'blocked',
+          human_question: null,
+          record_update: null,
+        })
+      : original(...args);
+  startIssueLifecycle(service);
+  await approveIssuePlan(service);
+  const stopped = await finishLifecycle(service),
+    count = service.store.runs.length;
+  assert.equal(stopped.status, 'blocked');
+  assert.equal(stopped.input, null);
+  assert.equal(stopped.canResume, false);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8') + '\nAdministrative note: just continue.\n');
+  assert.equal(service.snapshot().issues[0].lifecycle.canResume, false);
+  assert.throws(() => startIssueLifecycle(service), /nothing relevant has changed/);
+  assert.equal(service.store.runs.length, count);
+});
+
+test('live output redacts known credentials before storing or displaying events', async (t) => {
+  const { service } = fixture(t),
+    run = service.store.add({ id: 'redaction' }, 'worker', 'base');
+  service.store.update(run, { threadId: 'private-output' });
+  const previous = process.env.FACTORY_ACTIVITY_TEST_SECRET;
+  process.env.FACTORY_ACTIVITY_TEST_SECRET = 'fixture-private-value-012345';
+  t.after(() => {
+    if (previous === undefined) delete process.env.FACTORY_ACTIVITY_TEST_SECRET;
+    else process.env.FACTORY_ACTIVITY_TEST_SECRET = previous;
+  });
+  service.store.event({
+    method: 'item/commandExecution/outputDelta',
+    params: { threadId: 'private-output', itemId: 'cmd', delta: 'token=' + process.env.FACTORY_ACTIVITY_TEST_SECRET },
+  });
+  const saved = JSON.stringify(service.store.list(new Map()));
+  assert.doesNotMatch(saved, /fixture-private-value/);
+  assert.match(saved, /redacted/);
+  assert.doesNotMatch(readFileSync(join(service.store.directory, run.id + '.jsonl'), 'utf8'), /fixture-private-value/);
+});
+
+test('an explicit file or checklist decision resumes a stopped lifecycle without treating a status as an answer', async (t) => {
+  const { continueLifecycleAfter } = await import('./factory-ui/lifecycle-control.mjs');
+  const { service } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  await approveIssuePlan(service);
+  await finishLifecycle(service);
+  const record = service.lifecycleRuns['20261022-one'];
+  record.status = 'blocked';
+  record.input = null;
+  record.attempts = ['old-action'];
+  continueLifecycleAfter(service, record.issueId);
+  assert.equal(record.status, 'running');
+  const finished = await finishLifecycle(service);
+  assert.equal(finished.status, 'finished');
+  assert.equal(service.snapshot().issues[0].state, 'final');
+});
+
+test('automatic stage expansion follows the current step while explicit user expansion stays open', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const stage = (name) => window.document.querySelector('[data-step-id="20261022-one:' + name + '"]');
+  const oldKey = 'ready-for-grilling:clarify',
+    nextKey = 'ready-for-repro:investigate';
+  assert.equal(stage(oldKey).open, true);
+  assert.equal(stage(nextKey).open, false);
+  snapshot.issues[0].state = 'investigate';
+  window.screenTest.show(snapshot);
+  assert.equal(stage(oldKey).open, false);
+  assert.equal(stage(nextKey).open, true);
 });

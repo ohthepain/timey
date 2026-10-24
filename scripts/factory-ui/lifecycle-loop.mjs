@@ -1,3 +1,5 @@
+import { planProgress } from './progress.mjs';
+import { lifecycleWorkBasis, stopLifecycle } from './lifecycle-stop.mjs';
 import { digest, requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { progressBasis, nextProgress } from './next-action.mjs';
@@ -40,24 +42,12 @@ function pauseRequested(service, record) {
 }
 async function chooseAndExecute(service, record, queue, issue) {
   if (record.status !== 'running') return false;
-  const selected = selectLifecycleWork(service, queue, issue);
+  const selected = selectLifecycleWork(service, queue, issue, record);
   if (selected.disabled) {
-    saveLifecycle(service, record, {
-      status: 'waiting',
-      summary: selected.summary,
-      input: { type: 'retry', question: selected.summary },
-    });
+    stopLifecycle(service, record, selected.summary);
     return false;
   }
-  const fingerprint = digest(
-    JSON.stringify({
-      state: issue.state,
-      head: queue.head,
-      choice: selected,
-      actions: queue.actions,
-      report: issue.content,
-    })
-  );
+  const fingerprint = lifecycleWorkBasis(queue, issue, record) + ':' + selected.kind;
   requireThat(
     !record.attempts.includes(fingerprint),
     'The last action did not advance this issue. Its result is shown below; no duplicate work was started.'
@@ -87,7 +77,8 @@ function stopAtFinal(service, record, role) {
       : 'The work is ready for your final review. Review the result, then close the issue or request changes.',
   });
 }
-function selectLifecycleWork(service, queue, issue) {
+function selectLifecycleWork(service, queue, issue, record) {
+  if (record.replan) return { kind: 'replan', title: 'Finding the next unfinished task.' };
   const checklist = checklistView(queue, issue, service.store.list(service.codex.requests));
   if (needsPlanCheck(queue, issue, checklist))
     return { kind: 'check-plan', path: checklist.path, title: 'Checking the implementation steps.' };
@@ -132,25 +123,34 @@ function lifecycleActionNeedsHuman(service, record, choice, action) {
 function startLifecycleWork(service, record, queue, issue, choice) {
   if (choice.kind === 'check-plan')
     return service.checkImplementation(issue.id, issue.state, choice.path, progressBasis(queue));
-  if (choice.kind === 'integrate') {
-    const preview = service.preflight(choice.actionId, 'integrate');
-    if (preview.requiresApproval) {
-      service.intents.delete(preview.token);
-      saveLifecycle(service, record, {
-        status: 'waiting',
-        summary: 'Review the finished changes before they are added to the project.',
-        input: {
-          type: 'integration',
-          actionId: choice.actionId,
-          candidate: preview.action.worker_revision,
-          target: preview.head,
-          diff: preview.diff,
-        },
-      });
-      return {};
-    }
-    return service.start(preview.token);
+  if (choice.kind === 'integrate') return startLifecycleIntegration(service, record, choice);
+  const handler = { replan: () => restartPlanning(service, record, queue, issue) }[choice.kind];
+  return handler ? handler() : startSelectedProgress(service, issue);
+}
+function startLifecycleIntegration(service, record, choice) {
+  const preview = service.preflight(choice.actionId, 'integrate');
+  if (preview.requiresApproval) {
+    service.intents.delete(preview.token);
+    saveLifecycle(service, record, {
+      status: 'waiting',
+      summary: 'Review the finished changes before they are added to the project.',
+      input: {
+        type: 'integration',
+        actionId: choice.actionId,
+        candidate: preview.action.worker_revision,
+        target: preview.head,
+        diff: preview.diff,
+      },
+    });
+    return {};
   }
+  return service.start(preview.token);
+}
+function restartPlanning(service, record, queue, issue) {
+  saveLifecycle(service, record, { replan: false });
+  return planProgress(service, queue, issue);
+}
+function startSelectedProgress(service, issue) {
   const prepared = service.progressPreflight(issue.id, issue.state);
   return service.progressStart(prepared.token);
 }

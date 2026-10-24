@@ -44,6 +44,41 @@
       button:hover:not(:disabled) {
         filter: brightness(0.95);
       }
+      .live-output {
+        background: #17211e;
+        color: #e5eee9;
+        border-radius: 8px;
+        padding: 12px;
+        height: 300px;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          12px/1.5 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        text-align: left;
+      }
+      .activity-toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 12px 0 6px;
+      }
+      .activity-toolbar strong {
+        margin-right: auto;
+      }
+      .permission-choice {
+        margin-top: 10px;
+      }
+      .permission-choice code {
+        display: block;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        margin: 6px 0;
+      }
     </style>
     <style>
       body {
@@ -626,6 +661,41 @@
           padding: 16px;
         }
       }
+      .live-output {
+        background: #17211e;
+        color: #e5eee9;
+        border-radius: 8px;
+        padding: 12px;
+        height: 300px;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          12px/1.5 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        text-align: left;
+      }
+      .activity-toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 12px 0 6px;
+      }
+      .activity-toolbar strong {
+        margin-right: auto;
+      }
+      .permission-choice {
+        margin-top: 10px;
+      }
+      .permission-choice code {
+        display: block;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        margin: 6px 0;
+      }
     </style>
   </head>
   <body>
@@ -679,6 +749,7 @@
           const previous = JSON.stringify(data);
           data = await request('queue');
           $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
+          updateLiveOutput();
           if (
             previous !== JSON.stringify(data) &&
             !busy &&
@@ -717,7 +788,7 @@
           a.status === 'completed' &&
           ['implement', 'integrate'].includes(a.kind) &&
           a.merge !== 'none';
-        return `<section class="card"><span class="badge">${esc(statusLabel(a.status))}</span><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p class="muted">${esc(a.reason)}</p><details><summary>Assignment, history and checks</summary>${actionHistory(a)}<p>${esc(a.worker_prompt)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p><p>${a.issues.map(link).join(' · ')}</p><p>Worker result: ${esc(a.evidence || 'No result recorded yet.')}</p></details>${a.status === 'recommended' && mode !== 'integration' && mode !== 'history' ? `<button data-select="${esc(a.id)}" data-kind="launch" ${a.launchBlocked ? 'disabled' : ''}>Start worker</button>${a.launchBlocked ? `<p class="muted">${esc(a.launchBlocked)}</p>` : ''}` : ''}${integrate ? `<button data-select="${esc(a.id)}" data-kind="integrate" ${a.integrationBlocked ? 'disabled' : ''}>Review integration</button>${a.integrationBlocked ? `<p>${esc(a.integrationBlocked)}</p>` : ''}<p class="muted">The worker finished. Integration is a separate decision.</p>` : ''}</section>`;
+        return `<section class="card" data-view-id="action-${esc(a.id)}"><span class="badge">${esc(statusLabel(a.status))}</span><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p class="muted">${esc(a.reason)}</p><details><summary>Assignment, history and checks</summary>${actionHistory(a)}<p>${esc(a.worker_prompt)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p><p>${a.issues.map(link).join(' · ')}</p><p>Worker result: ${esc(a.evidence || 'No result recorded yet.')}</p></details>${a.status === 'recommended' && mode !== 'integration' && mode !== 'history' ? `<button data-select="${esc(a.id)}" data-kind="launch" ${a.launchBlocked ? 'disabled' : ''}>Start worker</button>${a.launchBlocked ? `<p class="muted">${esc(a.launchBlocked)}</p>` : ''}` : ''}${integrate ? `<button data-select="${esc(a.id)}" data-kind="integrate" ${a.integrationBlocked ? 'disabled' : ''}>Review integration</button>${a.integrationBlocked ? `<p>${esc(a.integrationBlocked)}</p>` : ''}<p class="muted">The worker finished. Integration is a separate decision.</p>` : ''}</section>`;
       }
       function recordedDate(value) {
         return value ? esc(new Date(value).toLocaleString()) : 'Not recorded';
@@ -726,22 +797,48 @@
         return `<dl class="action-history"><dt>Recommendation saved</dt><dd>${recordedDate(action.created)}</dd>${action.reserved ? `<dt>Worker requested</dt><dd>${recordedDate(action.reserved)}</dd>` : ''}${action.updated ? `<dt>Last recorded update</dt><dd>${recordedDate(action.updated)}</dd>` : ''}</dl>`;
       }
       function approvals(run) {
-        return run.approvals
+        return (run.approvals || [])
           .map(
-            (p) =>
-              `<div class="card">${approvalDetails(p)}${p.method === 'item/tool/requestUserInput' ? p.params.questions.map((q) => `<label>${esc(q.question)}<textarea data-question="${esc(q.id)}" data-request="${esc(p.id)}"></textarea></label>`).join('') + `<button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="answers">Send answers</button>` : `<button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="allow">Allow this request</button> <button data-answer="${esc(p.id)}" data-run="${esc(run.id)}" data-decision="decline">Decline</button>`}</div>`
+            (request) =>
+              `<div class="card" data-view-id="permission-${esc(run.id)}-${esc(request.id)}">${approvalDetails(request)}${request.method === 'item/tool/requestUserInput' ? request.params.questions.map((q) => `<label>${esc(q.question)}<textarea id="answer-${esc(run.id)}-${esc(request.id)}-${esc(q.id)}" data-question="${esc(q.id)}" data-request="${esc(request.id)}"></textarea></label>`).join('') + `<button data-answer="${esc(request.id)}" data-run="${esc(run.id)}" data-decision="answers">Send answers</button>` : permissionButtons(run, request)}</div>`
+          )
+          .join('');
+      }
+      function permissionButtons(run, request) {
+        return (request.options || [])
+          .map(
+            (option) =>
+              `<div class="permission-choice">${option.detail ? `<code>${esc(option.detail)}</code>` : ''}<button data-answer="${esc(request.id)}" data-run="${esc(run.id)}" data-decision="${esc(option.id)}">${esc(option.label)}</button></div>`
           )
           .join('');
       }
       function approvalDetails(request) {
-        const paths = permissionPaths(request.params.permissions || {});
+        const params = request.params;
+        const paths = permissionPaths(params.permissions || params.additionalPermissions || params.changes || {});
+        const network = params.permissions?.network || params.additionalPermissions?.network;
         const title =
-          request.method === 'item/permissions/requestApproval' ? 'Codex needs file access' : 'Codex needs your input';
-        return `<b>${title}</b>${request.params.reason ? `<p>${esc(request.params.reason)}</p>` : ''}${paths.length ? `<p>Files or folders requested:</p><ul>${paths.map((path) => `<li><code>${esc(path)}</code></li>`).join('')}</ul>` : ''}<details><summary>Request details</summary><pre>${esc(JSON.stringify(request.params, null, 2))}</pre></details>`;
+          request.method === 'item/tool/requestUserInput'
+            ? 'Codex has a question'
+            : params.command
+              ? 'Permission to run a command'
+              : 'Permission to access files or network';
+        return `<b>${title}</b>${params.reason ? `<p>${esc(params.reason)}</p>` : ''}${params.command ? `<pre class="prose">${esc(params.command)}</pre>` : ''}${params.cwd ? `<p>In: <code>${esc(params.cwd)}</code></p>` : ''}${paths.length ? `<p>Requested paths:</p><ul>${paths.map((path) => `<li><code>${esc(path)}</code></li>`).join('')}</ul>` : ''}${network?.enabled ? '<p>Network access is requested.</p>' : ''}${params.networkApprovalContext ? `<p>Network: ${esc(params.networkApprovalContext.host)}</p>` : ''}<details><summary>Request details</summary><pre>${esc(JSON.stringify(params, null, 2))}</pre></details>`;
       }
       function permissionPaths(value) {
         if (typeof value === 'string') return value.startsWith('/') ? [value] : [];
         if (!value || typeof value !== 'object') return [];
+        if (value.type === 'special')
+          return [
+            {
+              root: 'All files on this computer',
+              project_roots: 'Project folders',
+              tmpdir: 'Temporary folders',
+              slash_tmp: 'Temporary folders',
+            }[value.value?.kind] ||
+              value.value?.kind ||
+              'Special path',
+          ];
+        if (value.type === 'glob_pattern') return ['Matching paths: ' + value.pattern];
         return [...new Set(Object.values(value).flatMap(permissionPaths))];
       }
       function reviewFileProblems(issue) {
@@ -781,7 +878,7 @@
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
+        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
       const queueFilters = { search: '', stage: '', showClosed: false };
       function closedIssueState(state) {
@@ -952,7 +1049,6 @@
         verify: 'ready-to-verify',
         review: 'ready-to-close',
       };
-      const expandedSteps = new Map();
       function issueSteps(i, actions) {
         const steps = data.lifecycle.map((stage) => ({
           ...stage,
@@ -1005,7 +1101,7 @@
         const actions = stepActions(step, allActions),
           current = step.state !== undefined && step.state === i.state;
         const key = i.id + ':' + step.role + ':' + (step.state || '');
-        const open = expandedSteps.has(key) ? expandedSteps.get(key) : current;
+        const open = current;
         const extra = stepExtra(i, step, allActions);
         const state = stepState(i, step, allActions);
         const compact = ['completed', 'skipped', 'planned-skip', 'unknown'].includes(state.status);
@@ -1018,7 +1114,6 @@
           return implementationChecklist(issue) + reviewFileProblems(issue) + progressControls(issue);
         return latestReviewResult(issue) + reviewFileProblems(issue) + progressControls(issue);
       }
-      const expandedChecks = new Map();
       const checkLabels = {
         passed: 'Passed',
         failed: 'Failed',
@@ -1081,7 +1176,7 @@
         const view = issue.implementation;
         const status = view.running ? 'checking' : implementationStatus(step.criteria);
         const key = issue.id + ':' + step.id;
-        const open = expandedChecks.has(key) ? expandedChecks.get(key) : status === 'failed';
+        const open = status === 'failed';
         return `<details class="implementation-step" data-plan-step="${esc(key)}" ${open ? 'open' : ''}><summary>${checkCircle(status)}<strong>${esc(step.name)}</strong><span class="check-label">${view.fresh ? '' : 'Earlier result · '}${step.criteria.filter((c) => c.status === 'passed').length}/${step.criteria.length} passed · ${esc(checkLabels[status])}</span></summary><div class="acceptance-list"><p class="muted">This step passes when:</p>${step.criteria.map((c, index) => implementationCriterion(issue, c, step.id, index)).join('')}<button data-open-plan="${esc(view.path)}">Read original requirements</button></div></details>`;
       }
       function implementationCriterion(issue, criterion, stepId, criterionIndex) {
@@ -1093,7 +1188,7 @@
               `<button class="evidence-button" data-check-evidence="${esc(path)}" data-evidence-issue="${esc(issue.id)}">${esc(path.split('/').pop())}</button>`
           )
           .join(' ');
-        return `<div class="acceptance-item">${checkCircle(status)}<div><b>${esc(criterion.name)}</b><span class="check-label">${fresh ? '' : 'Earlier result · '}${esc(checkLabels[status])}</span>${fresh ? `<p>${esc(criterion.explanation)}</p>${criterion.next_action ? `<p><b>Next:</b> ${esc(criterion.next_action)}</p>` : ''}` : '<p>Check again before relying on the earlier result.</p>'}<details><summary>Supporting details</summary><blockquote>${esc(criterion.source)}</blockquote>${evidence || '<p>No supporting file recorded yet.</p>'}</details>${criterionSkip(issue, criterion, stepId, criterionIndex)}</div></div>`;
+        return `<div class="acceptance-item" data-view-id="criterion-${esc(issue.id)}-${esc(stepId)}-${criterionIndex}">${checkCircle(status)}<div><b>${esc(criterion.name)}</b><span class="check-label">${fresh ? '' : 'Earlier result · '}${esc(checkLabels[status])}</span>${fresh ? `<p>${esc(criterion.explanation)}</p>${criterion.next_action ? `<p><b>Next:</b> ${esc(criterion.next_action)}</p>` : ''}` : '<p>Check again before relying on the earlier result.</p>'}<details><summary>Supporting details</summary><blockquote>${esc(criterion.source)}</blockquote>${evidence || '<p>No supporting file recorded yet.</p>'}</details>${criterionSkip(issue, criterion, stepId, criterionIndex)}</div></div>`;
       }
       function skippableCriterion(criterion) {
         return !criterion.human_check_id && !['passed', 'skipped'].includes(criterion.status);
@@ -1323,43 +1418,82 @@
       const lifecycleDrafts = new Map();
       function lifecyclePanel(issue) {
         const record = issue.lifecycle;
-        const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
-        if (role === 'closed') return '';
+        const stage = data.lifecycle.find((s) => s.state === issue.state);
+        if (stage?.role === 'closed') return '';
         const active = ['running', 'answering'].includes(record?.status);
         const child = data.runs.find((r) => r.id === record?.childRunId);
+        const input = record?.input?.type === 'retry' ? null : record?.input;
+        const stopped = record?.status === 'blocked' || record?.legacyRetry || record?.input?.type === 'retry';
+        const title = active
+          ? 'Working on this issue'
+          : input
+            ? 'Your input is needed'
+            : stopped
+              ? 'Progress stopped'
+              : stage?.role === 'ready-to-close'
+                ? 'Ready for final review'
+                : 'Move this issue forward';
         const summary =
-          record?.summary ||
-          'Continue through this issue’s approved plan. We’ll stop here if we need your input, then continue after you answer.';
-        const input = record?.input;
-        return `<section class="card lifecycle-progress" aria-live="polite"><h3>${active ? 'Working on this issue' : input ? 'Your input is needed' : role === 'ready-to-close' ? 'Ready for final review' : 'Move this issue forward'}</h3><p>${esc(child?.connected ? child.summary : summary)}</p>${!input && role !== 'ready-to-close' ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy ? 'disabled' : ''}>${active ? 'Progress in progress…' : record ? 'Resume progress →' : 'Progress →'}</button>` : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? lifecycleInput(issue, record) : ''}${child?.connected ? approvals(child) + lifecycleActivity(child) : ''}${
+          record?.summary || 'Continue through this issue’s approved plan. We’ll stop here if we need your input.';
+        const canStart = !input && stage?.role !== 'ready-to-close';
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Current step: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(child?.connected ? child.summary : summary)}</p>${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Find next task →' : record ? 'Resume progress →' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? lifecycleInput(issue, record) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
-                .slice(-20)
-                .map((e) => `<li>${esc(e.message)}</li>`)
+                .slice(-30)
+                .map((event) => `<li>${esc(event.message)}</li>`)
                 .join('')}</ol></details>`
             : ''
         }</section>`;
       }
-      function lifecycleActivity(run) {
-        const message = run.events.findLast(
-          (e) => e.method === 'item/completed' && e.params?.item?.type === 'agentMessage'
-        )?.params.item.text;
-        return message ? `<details><summary>Latest update</summary><p class="prose">${esc(message)}</p></details>` : '';
+      function activityText(issue) {
+        return data.runs
+          .filter(
+            (run) =>
+              run.issueId === issue.id ||
+              data.actions.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+          )
+          .flatMap((run) =>
+            (run.output || []).map((line) => {
+              const time = line.at ? new Date(line.at).toLocaleTimeString() : '';
+              const command = line.command ? '$ ' + line.command + '\n' : '';
+              const outcome = line.exitCode !== undefined ? '\nExit ' + line.exitCode : '';
+              const status = line.status === 'inProgress' ? 'running' : line.status;
+              return '[' + time + '] ' + (status ? '[' + status + '] ' : '') + command + line.text + outcome;
+            })
+          )
+          .join('\n\n');
+      }
+      function lifecycleActivity(issue) {
+        return `<div class="activity-toolbar"><strong>Live output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${esc(activityText(issue) || 'No output recorded yet.')}</pre><p class="muted">Recent output is kept for each chat. Scroll up to read; Follow latest returns to new output.</p>`;
       }
       function lifecycleInput(issue, record) {
         const input = record.input;
         const common = `data-lifecycle-answer="${esc(issue.id)}" data-lifecycle-updated="${esc(record.updated)}"`;
-        const textarea = `<label>Your answer<textarea id="lifecycle-answer-${esc(issue.id)}" rows="4">${esc(lifecycleDrafts.get(issue.id) || '')}</textarea></label>`;
+        const draftKey =
+          issue.id +
+          ':' +
+          input.type +
+          ':' +
+          (input.reportHash || input.plan?.sha256 || input.question || input.request?.source_key || 'answer');
+        const textarea = `<label>Your answer<textarea id="lifecycle-answer-${esc(issue.id)}" data-draft-key="${esc(draftKey)}" rows="4">${esc(lifecycleDrafts.get(draftKey) || '')}</textarea></label>`;
         const approve = `<button class="primary" ${common} data-decision="approve">${input.type === 'integration' ? 'Approve these changes and continue' : 'Approve plan and continue'}</button>`;
         if (input.type === 'plan')
           return `<p>${esc(input.plan.summary)}</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
         if (input.type === 'integration')
           return `<p>Candidate <code>${esc(input.candidate)}</code> will be added to revision <code>${esc(input.target)}</code>. This plan requires your review before integration.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
+        if (!['questions', 'worker', 'human', 'scope'].includes(input.type)) return '';
         const question =
           input.type === 'questions'
-            ? input.questions.map((q) => `<p>${esc(q.question)}</p>`).join('')
-            : `<p>${esc(input.request?.prompt || input.question)}</p>`;
-        return `${question}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">${input.type === 'retry' ? 'Try again and continue' : 'Send answer and continue'}</button>`;
+            ? input.questions
+                .map(
+                  (q) =>
+                    `<p><strong>${esc(q.question)}</strong></p>${q.why && q.why !== record.summary ? `<p>${esc(q.why)}</p>` : ''}${q.expected ? `<p>${esc(q.expected)}</p>` : ''}`
+                )
+                .join('')
+            : input.request?.prompt === record.summary || input.question === record.summary
+              ? ''
+              : `<p>${esc(input.request?.prompt || input.question)}</p>`;
+        return `${question}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
       }
       function liveStepWork(issue, stage) {
         return data.runs
@@ -1417,10 +1551,129 @@
         const actions = data.actions.filter((a) => a.issues.includes(id));
         return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2>${lifecyclePanel(i)}<p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
+      const viewMemory = {
+        route: null,
+        expanded: loadExpanded(),
+        fields: new Map(),
+        positions: new Map(),
+        logs: new Map(),
+        focus: null,
+      };
+      function loadExpanded() {
+        try {
+          return JSON.parse(localStorage.getItem('factory-expanded-v2') || '{}');
+        } catch {
+          return {};
+        }
+      }
+      function detailKey(element) {
+        const owner = element.closest('[data-view-id],[data-step-id],[data-plan-step]');
+        const names = [];
+        for (let node = element; node && node !== owner; node = node.parentElement) {
+          if (node.tagName === 'DETAILS')
+            names.unshift(node.querySelector(':scope > summary')?.textContent.trim() || 'Details');
+        }
+        const group =
+          owner?.dataset.viewId ||
+          owner?.dataset.stepId ||
+          owner?.dataset.planStep ||
+          element.closest('section')?.querySelector('h2,h3')?.textContent ||
+          'page';
+        return location.hash + '|' + group + '|' + names.join('|');
+      }
+      function rememberView() {
+        if (!viewMemory.route) return;
+        document.querySelectorAll('#app details').forEach((element) => {
+          if (element.dataset.viewTouched === 'true') viewMemory.expanded[element.dataset.viewKey] = element.open;
+        });
+        document.querySelectorAll('#app textarea,#app input').forEach((field) => {
+          if (field.id && !['checkbox', 'radio'].includes(field.type))
+            viewMemory.fields.set(viewMemory.route + '|' + (field.dataset.draftKey || field.id), field.value);
+        });
+        viewMemory.positions.set(viewMemory.route, window.scrollY);
+        const focused = document.activeElement;
+        viewMemory.focus = focused?.id
+          ? { route: viewMemory.route, id: focused.id, start: focused.selectionStart, end: focused.selectionEnd }
+          : null;
+        rememberOutput();
+        try {
+          localStorage.setItem('factory-expanded-v2', JSON.stringify(viewMemory.expanded));
+        } catch {}
+      }
+      function restoreView() {
+        viewMemory.route = location.hash;
+        document.querySelectorAll('#app details').forEach((element) => {
+          const key = detailKey(element);
+          element.dataset.viewKey = key;
+          if (Object.hasOwn(viewMemory.expanded, key)) element.open = viewMemory.expanded[key];
+          element.dataset.viewTouched = Object.hasOwn(viewMemory.expanded, key) ? 'true' : 'false';
+          element.querySelector(':scope > summary')?.addEventListener('click', () => {
+            element.dataset.viewTouched = 'true';
+          });
+          element.addEventListener('toggle', () => {
+            if (element.dataset.viewTouched !== 'true') return;
+            viewMemory.expanded[key] = element.open;
+            try {
+              localStorage.setItem('factory-expanded-v2', JSON.stringify(viewMemory.expanded));
+            } catch {}
+          });
+        });
+        document.querySelectorAll('#app textarea,#app input').forEach((field) => {
+          const saved = viewMemory.fields.get(location.hash + '|' + (field.dataset.draftKey || field.id));
+          if (saved !== undefined) field.value = saved;
+        });
+        const focus = viewMemory.focus;
+        if (focus?.route === location.hash && $(focus.id)) {
+          $(focus.id).focus({ preventScroll: true });
+          if (focus.start !== null) $(focus.id).setSelectionRange(focus.start, focus.end);
+        }
+        window.scrollTo(0, viewMemory.positions.get(location.hash) || 0);
+        bindOutput();
+      }
+      function rememberOutput() {
+        const output = $('live-output');
+        if (output)
+          viewMemory.logs.set(viewMemory.route, {
+            top: output.scrollTop,
+            follow: output.scrollHeight - output.scrollTop - output.clientHeight < 32,
+          });
+      }
+      function bindOutput() {
+        const output = $('live-output');
+        if (!output) return;
+        const saved = viewMemory.logs.get(location.hash) || { follow: true, top: 0 };
+        output.scrollTop = saved.follow ? output.scrollHeight : saved.top;
+        output.onscroll = rememberOutput;
+        document.querySelector('[data-follow-output]').onclick = () => {
+          output.scrollTop = output.scrollHeight;
+          viewMemory.logs.set(location.hash, { top: output.scrollTop, follow: true });
+        };
+        document.querySelector('[data-copy-output]').onclick = async (event) => {
+          try {
+            await navigator.clipboard.writeText(output.textContent);
+            event.target.textContent = 'Copied';
+          } catch {
+            event.target.textContent = 'Select output to copy';
+          }
+        };
+      }
+      function updateLiveOutput() {
+        const output = $('live-output'),
+          issueId = location.hash.split('/').slice(2).join('/');
+        const issue = data?.issues.find((item) => item.id === issueId);
+        if (!output || !issue) return;
+        rememberOutput();
+        const saved = viewMemory.logs.get(location.hash);
+        const text = activityText(issue) || 'No output recorded yet.';
+        if (output.textContent !== text) output.textContent = text;
+        output.scrollTop = saved?.follow ? output.scrollHeight : saved?.top || 0;
+      }
       function render() {
+        rememberView();
         const route = location.hash.split('/');
         $('app').innerHTML = route[1] === 'issue' ? issue(decodeURIComponent(route.slice(2).join('/'))) : queue();
         bind();
+        restoreView();
       }
       async function findExistingWorker(button) {
         const issueId = button.dataset.findWorker,
@@ -1474,9 +1727,6 @@
             });
         });
         document
-          .querySelectorAll('[data-plan-step]')
-          .forEach((step) => (step.ontoggle = () => expandedChecks.set(step.dataset.planStep, step.open)));
-        document
           .querySelectorAll('[data-check-evidence]')
           .forEach((button) => (button.onclick = () => act(() => openCheckEvidence(button))));
         document
@@ -1505,7 +1755,7 @@
             );
         });
         document.querySelectorAll('[id^=lifecycle-answer-]').forEach((field) => {
-          field.oninput = () => lifecycleDrafts.set(field.id.slice('lifecycle-answer-'.length), field.value);
+          field.oninput = () => lifecycleDrafts.set(field.dataset.draftKey, field.value);
         });
         document.querySelectorAll('[data-lifecycle-answer]').forEach((button) => {
           button.onclick = () =>
@@ -1521,9 +1771,6 @@
         document.querySelectorAll('[data-lifecycle-pause]').forEach((button) => {
           button.onclick = () => act(() => request('lifecycle-pause', { issueId: button.dataset.lifecyclePause }));
         });
-        document
-          .querySelectorAll('[data-step-id]')
-          .forEach((step) => (step.ontoggle = () => expandedSteps.set(step.dataset.stepId, step.open)));
         document
           .querySelectorAll('[data-select]')
           .forEach((b) => (b.onclick = () => act(() => select(b.dataset.select, b.dataset.kind))));
@@ -1605,7 +1852,6 @@
         });
       window.onhashchange = () => {
         if (data) render();
-        window.scrollTo(0, 0);
       };
       refresh();
       setInterval(refresh, 4000);

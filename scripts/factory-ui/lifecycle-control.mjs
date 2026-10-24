@@ -1,3 +1,4 @@
+import { lifecycleWorkBasis, stopLifecycle } from './lifecycle-stop.mjs';
 import { randomUUID } from 'node:crypto';
 import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
@@ -15,7 +16,8 @@ export function startLifecycle(service, input) {
   if (service.lifecycleTasks.has(input.issueId)) return { issueId: input.issueId, active: true };
   service.lifecycleRuns = loadLifecycles(service.root);
   let record = service.lifecycleRuns[input.issueId];
-  requireThat(!record?.input, 'Answer the question shown in this issue before continuing.');
+  prepareLegacyResume(record);
+  requireResumeChange(record, queue);
   if (!record)
     record = {
       id: randomUUID(),
@@ -80,15 +82,30 @@ function stopLifecycleError(service, record, error) {
   } catch (inspectionError) {
     error = Error(error.message + ' Input check: ' + inspectionError.message);
   }
-  saveLifecycle(service, record, {
-    status: 'waiting',
-    summary: error.message,
-    input: { type: 'retry', question: error.message },
-  });
+  stopLifecycle(service, record, error.message);
 }
 export function continueLifecycleAfter(service, issueId) {
   const record = service.lifecycleRuns[issueId];
-  if (record?.status !== 'waiting') return;
+  if (!['waiting', 'blocked'].includes(record?.status)) return;
   if (service.lifecycleTasks.has(issueId)) return;
+  record.attempts = [];
+  record.recoveryContexts = [];
   launchLifecycle(service, record);
+}
+
+function requireResumeChange(record, queue) {
+  if (!record?.stopBasis) return;
+  const issue = queue.issues.find((i) => i.id === record.issueId);
+  requireThat(
+    record.stopBasis !== lifecycleWorkBasis(queue, issue, record),
+    'This action is stopped because nothing relevant has changed. Its result is shown; repeating the review would not advance the issue.'
+  );
+}
+
+function prepareLegacyResume(record) {
+  if (record?.input?.type === 'retry') {
+    record.input = null;
+    record.replan = true;
+  }
+  requireThat(!record?.input, 'Answer the question shown in this issue before continuing.');
 }

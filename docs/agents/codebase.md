@@ -125,3 +125,10 @@ review saved answers, original plan approval and assignment scope. Inline respon
 route through `lifecycle-input.mjs` and `lifecycle-human.mjs`; native shared requests
 retain guarded owner updates. `lifecycle-work.mjs` waits for child runs and reuses
 existing chats for bounded corrections. See the UI guide for consent boundaries.
+
+`factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
+`approval-options.mjs` exposes native approval choices and binds replies to pending
+requests. `lifecycle-planning.mjs` separates actual human questions from unfinished
+work and stopped operations. `lifecycle-stop.mjs` owns the meaningful-work fingerprint
+and bounded planning recovery, so administrative notes cannot reset a failed review.
+The browser retains keyed expansion, draft and scroll state around live refreshes.

@@ -1,3 +1,4 @@
+import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
 import { saveLifecycle, lifecycleEvent } from './lifecycle-store.mjs';
 import { lifecycleReview } from './lifecycle-review.mjs';
 import { blockedHumanInput } from './lifecycle-human.mjs';
@@ -61,12 +62,8 @@ export async function handleLifecycleFailure(service, record, run) {
   if (blockedHumanInput(service, record)) return false;
   const eligible = canContinueFailedWork(record, run);
   if (eligible) return continueFailedWork(service, record, run);
-  saveLifecycle(service, record, {
-    status: 'waiting',
-    childRunId: run.id,
-    summary: run.summary,
-    input: { type: 'retry', runId: run.id, question: run.summary },
-  });
+  if (recoverReviewFailure(service, record, run)) return true;
+  stopLifecycle(service, record, run.summary);
   return false;
 }
 async function continueFailedWork(service, record, run) {
@@ -82,11 +79,15 @@ async function continueFailedWork(service, record, run) {
     saveLifecycle(service, record, { childRunId: run.id, summary: result.summary });
     return true;
   }
+  if (!hasQuestion(result)) {
+    stopLifecycle(service, record, result.summary);
+    return false;
+  }
   saveLifecycle(service, record, {
     status: 'waiting',
     childRunId: run.id,
     summary: result.summary,
-    input: { type: 'worker', runId: run.id, question: result.question || result.summary },
+    input: { type: 'worker', runId: run.id, question: result.question },
   });
   return false;
 }
@@ -107,4 +108,8 @@ function stoppedResult(run) {
 
 function canContinueFailedWork(record, run) {
   return ['worker', 'integration'].includes(run.kind) && !!run.threadId && !record.retriedRuns.includes(run.id);
+}
+
+function hasQuestion(result) {
+  return result.question.trim().endsWith('?');
 }

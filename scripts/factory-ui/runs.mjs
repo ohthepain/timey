@@ -1,3 +1,5 @@
+import { recordActivity, activityForRun, redactValue } from './activity.mjs';
+import { approvalOptions } from './approval-options.mjs';
 import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -46,6 +48,8 @@ export class RunStore {
     if (!run) return;
     const events = [
       'item/agentMessage/delta',
+      'item/commandExecution/outputDelta',
+      'item/started',
       'item/completed',
       'turn/started',
       'turn/completed',
@@ -53,7 +57,8 @@ export class RunStore {
       'ui/unsupportedRequest',
     ];
     if (!events.includes(message.method)) return;
-    const item = { at: new Date().toISOString(), ...message };
+    const item = { at: new Date().toISOString(), ...redactValue(message) };
+    recordActivity(run, item);
     appendFileSync(join(this.directory, `${run.id}.jsonl`), JSON.stringify(item) + '\n', { mode: 0o600 });
     run.events.push(item);
     if (run.events.length > 150) run.events.shift();
@@ -62,10 +67,20 @@ export class RunStore {
   list(approvals) {
     return this.runs.map((run) => ({
       ...run,
+      output: activityForRun(run),
+      events: redactValue(run.events),
       connected: this.connected.has(run.id),
       approvals: [...approvals.values()]
         .filter((r) => r.params.threadId === run.threadId)
-        .map((r) => ({ id: String(r.id), method: r.method, params: r.params })),
+        .map((r) => ({
+          id: String(r.id),
+          method: r.method,
+          params: redactValue(r.params),
+          options:
+            r.method === 'item/tool/requestUserInput'
+              ? []
+              : approvalOptions(r).map(({ id, label, detail }) => ({ id, label, detail: redactValue(detail) })),
+        })),
     }));
   }
 }

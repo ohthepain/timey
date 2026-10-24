@@ -23,6 +23,11 @@ export function lifecycleEvent(service, record, message, values = {}) {
 export function lifecycleView(service, issue) {
   const record = service.lifecycleRuns[issue.id];
   if (!record) return null;
+  const legacy = legacyStoppedView(record);
+  if (legacy) return legacy;
+  return interruptedView(service, issue, record);
+}
+function interruptedView(service, issue, record) {
   if (record.status === 'running' && !service.lifecycleTasks.has(issue.id))
     return {
       ...record,
@@ -44,4 +49,9 @@ function validLifecycleLedger(ledger) {
 export function approvedLifecyclePlan(service, issueId) {
   const record = service.lifecycleRuns[issueId];
   return record?.approval ? record.plan : null;
+}
+
+function legacyStoppedView(record) {
+  if (record.input?.type !== 'retry') return null;
+  return { ...record, status: 'blocked', input: null, legacyRetry: true };
 }

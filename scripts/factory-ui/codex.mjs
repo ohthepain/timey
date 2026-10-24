@@ -1,3 +1,4 @@
+import { approvalReply } from './approval-options.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { cleanEnvironment, requireThat } from './common.mjs';
@@ -178,11 +179,5 @@ function questionAnswer(question, response) {
 function approvalResult(request, response) {
   if (request.method === 'item/tool/requestUserInput')
     return { answers: Object.fromEntries(request.params.questions.map((q) => questionAnswer(q, response))) };
-  requireThat(['allow', 'decline'].includes(response.decision), 'Choose allow or decline.');
-  if (request.method === 'item/permissions/requestApproval') return permissionResult(request, response);
-  return { decision: response.decision === 'allow' ? 'accept' : 'decline' };
-}
-
-function permissionResult(request, response) {
-  return { permissions: response.decision === 'allow' ? request.params.permissions : {}, scope: 'turn' };
+  return approvalReply(request, response.decision);
 }

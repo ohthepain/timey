@@ -80,8 +80,8 @@ function hasSuggestions(run) {
 export function reviewFollowup(queue, issue, runs) {
   const run = latestReview(issue, runs);
   if (!run) return null;
-  if (!run.result.recommendations.length) return reconciliationChoice();
   if (!freshReview(queue, issue, run)) return null;
+  if (!run.result.recommendations.length) return noWorkFollowup(run);
   return finishedOrSave(queue, run);
 }
 function finishedOrSave(queue, run) {
@@ -153,4 +153,12 @@ function reconciliationChoice() {
     summary:
       'Check the existing repair, tests and commits, then update every step already finished. Stop at work that is still needed or your final review. No worker or integration starts.',
   };
+}
+
+function noWorkFollowup(run) {
+  if (!run.result.next_action || run.result.next_action === 'reconcile') return reconciliationChoice();
+  return { ...finished(run), summary: noWorkSummary(run) };
+}
+function noWorkSummary(run) {
+  return run.result.human_question?.question || run.result.next_step || run.summary;
 }

@@ -1,3 +1,4 @@
+import { stopLifecycle } from './lifecycle-stop.mjs';
 import { readQueue } from './data.mjs';
 import { join } from 'node:path';
 import { writeJson, requireThat } from './common.mjs';
@@ -56,6 +57,10 @@ export async function checkLifecycleScope(service, record, action) {
     coverageSchema
   );
   if (result.within_plan) return true;
+  if (!result.question.trim().endsWith('?')) {
+    stopLifecycle(service, record, result.summary);
+    return false;
+  }
   saveLifecycle(service, record, {
     status: 'waiting',
     summary: result.summary,

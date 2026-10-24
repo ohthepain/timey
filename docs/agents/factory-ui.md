@@ -408,3 +408,51 @@ The queue hides the configured Closed stage by default. Show closed issues inclu
 those records, and choosing Closed in the stage filter enables that option.
 Search, stage and visibility choices survive live refreshes while the page is open.
 Filtering is read-only; issue links and saved reports remain available.
+
+## Live activity and reusable permissions
+
+The issue’s activity header names the current configured step and uses Working
+while an action is active. A scrolling Live output panel shows assistant updates,
+command starts/output/completion, file changes and exit codes across that issue’s
+chats. Stream deltas are combined by item ID; the final item replaces its streamed
+text rather than duplicating it. The recent window is bounded per chat, and the
+sanitized event log remains on disk. Known credential values and common credential
+formats are redacted before new events are retained or displayed. Internal reasoning
+notifications are not part of the activity stream.
+
+Output follows the tail until the person scrolls up. Follow latest resumes that
+behavior; Copy output copies the visible recent output. Live updates continue in
+the console while an answer field has focus. Expansion keys include the issue,
+run, request or plan criterion and persist in this browser’s local storage.
+Refreshes preserve reading positions and answer drafts in memory; a different
+question gets a separate draft. Opening another issue does not collapse the saved
+view of this one.
+
+Approval buttons are projected from the exact current Codex request. Command
+availableDecisions is authoritative: offer session approval or a persistent
+command/host rule only when advertised. Native permissions can grant the requested
+access for a turn or session; file changes can grant session approval for the same
+files. Persistent options show their exact proposed command pattern or host.
+Buttons submit an option identity, and the server reconstructs the native reply
+from the pending request. Browser-supplied permission objects cannot broaden it.
+The UI shows the command, working folder, reason and requested paths/network.
+Older Allow/Decline replies remain compatible with the advertised choices.
+
+## Questions, failures and forward progress
+
+Focused planning distinguishes unfinished work, completed-work bookkeeping, an
+actual human question and a stopped technical operation. No recommendations is
+not evidence that implementation exists. An actual question states the question,
+why the answer is needed and what to supply. Technical failures have no answer
+field, and unchanged stopped actions cannot be retried by appending “continue” to
+the report. Old generic retry records are displayed as stopped actions; one
+explicit Find next task can recover them without recording a fictional answer.
+
+A failed completion review may trigger one bounded planning recovery to identify
+the unfinished task or precise human decision. It does not repeat that review.
+The repeat guard uses the current step, source, plan and actual assignment state;
+administrative notes do not reset it. Real answers can authorize new planning.
+Stale no-work evaluations do not override later state. A fresh approved prerequisite
+such as dependency investigation can run during Implement without moving the issue
+back to Investigate. Worker reuse, fresh dispatch guards, exact integration approval
+and explicit final acceptance remain enforced.
