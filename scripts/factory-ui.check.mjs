@@ -1966,3 +1966,43 @@ test('closing retains a changed administrative task log without changing test ou
   assert.ok(JSON.parse(readFileSync(receipt.path, 'utf8')).earlier_sha256);
   assert.equal(closed.plan_verification.steps[1].criteria[0].status, 'passed');
 });
+
+test('Close issue submits acceptance in one tap without opening a confirmation dialog', async () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function selectIssueDecision('),
+    html.indexOf('      function progressControls(')
+  );
+  const elements = {
+    selection: {},
+    approve: {},
+    confirm: {
+      showModal() {
+        throw Error('Close must not open a confirmation');
+      },
+    },
+  };
+  const sent = [];
+  const selectDecision = new Function(
+    '$',
+    'data',
+    'act',
+    'request',
+    'let selection;' + source + ';return selectIssueDecision;'
+  )(
+    (id) => elements[id],
+    { reviewBasis: 'current-page' },
+    async (task) => task(),
+    async (endpoint, body) => {
+      sent.push({ endpoint, body });
+      return { state: 'closed' };
+    }
+  );
+  const button = { dataset: { issueDecision: 'close', issueId: 'one', issueState: 'final' } };
+  await selectDecision(button);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].endpoint, 'issue-decision');
+  assert.equal(sent[0].body.kind, 'close');
+  assert.equal(sent[0].body.basis, 'current-page');
+  assert.equal(button.disabled, true);
+});

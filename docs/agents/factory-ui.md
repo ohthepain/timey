@@ -374,3 +374,7 @@ refresh the issue screen immediately.
 The live factory task log is administrative context. If completing a review changed
 it, final acceptance retains its current contents and earlier hash separately;
 unchanged source, plan, behavioral evidence and no outstanding work are still required.
+
+Close issue records explicit acceptance and closes in one tap, without a
+confirmation dialog. The button disables during the request and the screen refreshes
+after success. Reopen keeps its confirmation and optional reason.
