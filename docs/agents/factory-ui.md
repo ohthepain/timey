@@ -264,3 +264,45 @@ checks stay collapsed until needed. Plan references in saved reports/assignments
 open a read-only document viewer restricted to project Markdown plans. The current
 step keeps Progress visible when a new readiness check is needed, and preserves
 successful checks while their inputs remain unchanged.
+
+## Implementation checklist
+
+Verify displays work items from the selected issue's linked implementation plan,
+not another copy of the issue lifecycle. A plan may have any number of items;
+version headings such as First version group a work increment. Numbered plan
+headings retain their source lines and version groups. A read-only review
+translates their requirements into plain-language names and acceptance criteria,
+including required deliverables and constraints. Each criterion retains an exact
+original requirement and inspected supporting file pointers.
+
+**Check implementation steps** starts one bounded read-only Codex review of the
+actual plan, existing work and saved raw results. It runs no assignments or tests,
+launches no worker, merges nothing and does not advance or close the issue. Passed
+means inspected evidence supports a criterion; failed means a check found an
+actual problem. Missing or stale evidence is Not checked, and known unfinished
+work is To do. Skipped requires a recorded applicable scope decision. The review
+provides a concrete next action for incomplete checks. An unchanged completed
+review is disabled; relevant changes allow another check, using the existing
+review chat where available. Opening/refreshing an issue creates no review.
+
+The issue report owns structured `plan_verification` findings and retains appended
+review notes. UI runs retain the reviewed input fingerprint. Plan content, source,
+report, lifecycle, related actions and supporting file content must still match
+before a result is shown as current. A changed or missing input makes previous
+results Not checked. Checklist findings are evidence, not lifecycle completion,
+integration, or human acceptance. Existing Progress keeps its independent guards.
+
+Blue checked circles mean Passed, red X circles Failed and empty green circles To
+do. Grey question circles mean Not checked, grey minus circles Skipped and a green
+ellipsis means Checking. Every state also has a visible text label. Expand an item
+for acceptance criteria, result, exact requirement and supporting files. Those
+files open as inert text after matching the reviewed hash; arbitrary paths cannot
+be read through the viewer.
+
+Ordinary criteria pass without per-item approval. Only existing human checks get
+Approve result / Needs changes controls; evidence checks instead ask for the
+person's actual observation. Closure-only judgment is requested at Final review,
+after the non-human implementation criteria pass. A decision records the person's
+actual result for the current revision without closing the issue. It cannot invent
+new obligations, silently pass a human check, or stand in for explicit acceptance.
+Final closure also rejects an existing stale or incomplete checklist.

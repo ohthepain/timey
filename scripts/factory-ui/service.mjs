@@ -19,6 +19,9 @@ import { findConnection, connectWorker } from './worker-connection.mjs';
 import { decideIssue } from './issue-decision.mjs';
 import { nextProgress } from './next-action.mjs';
 import { prepareProgress, triggerProgress } from './progress.mjs';
+import { checklistView, readChecklistEvidence } from './plan-checks.mjs';
+import { checkImplementation } from './plan-review.mjs';
+import { decidePlanCheck } from './plan-approval.mjs';
 
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
@@ -67,10 +70,20 @@ export class FactoryUI {
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
+      implementation: checklistView(queue, issue, runs),
     };
   }
   readPlan(path) {
     return readPlan(this.root, path);
+  }
+  readChecklistEvidence(id, path) {
+    return readChecklistEvidence(readQueue(this.root), id, path);
+  }
+  checkImplementation(id, state, path, basis) {
+    return checkImplementation(this, id, state, path, basis);
+  }
+  decidePlanCheck(id, state, checkId, status, basis, result) {
+    return decidePlanCheck(this, id, state, checkId, status, basis, result);
   }
   findConnection(id, state, basis) {
     return findConnection(this, id, state, basis);

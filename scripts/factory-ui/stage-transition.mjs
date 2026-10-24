@@ -1,6 +1,7 @@
 import { skipAllowed } from './skip-policy.mjs';
 import { requireThat } from './common.mjs';
 import { savedRoute } from './lifecycle.mjs';
+import { requireImplementationPasses } from './plan-checks.mjs';
 
 export function reviewedTransition(service, queue, issue, action, result) {
   const skipped = result.skipped_steps || [];
@@ -9,11 +10,16 @@ export function reviewedTransition(service, queue, issue, action, result) {
     return null;
   }
   requireThat(queue.sourceClean, 'Preserve uncommitted source changes before advancing the issue.');
+  checkImplementationExit(service, queue, issue);
   const path = transitionPath(queue, issue, skipped, result.next_state);
   validateSkips(queue, issue, skipped, savedRoute(issue, service.store.runs));
   for (const target of path)
     service.guard(service.root, { ...action, issues: [issue.id] }, 'advance', queue.head, { target_state: target });
   return result.next_state;
+}
+function checkImplementationExit(service, queue, issue) {
+  if (queue.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-to-verify'))
+    requireImplementationPasses(service, queue, issue);
 }
 function transitionPath(queue, issue, skipped, target) {
   requireThat(Array.isArray(skipped), 'The skipped-step review is invalid.');

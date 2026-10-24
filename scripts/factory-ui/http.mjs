@@ -33,6 +33,9 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value) {
   const routes = {
+    '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),
+    '/api/plan-decision': () =>
+      service.decidePlanCheck(value.issueId, value.state, value.checkId, value.status, value.basis, value.result),
     '/api/find-worker': () => service.findConnection(value.issueId, value.state, value.basis),
     '/api/connect-worker': () => service.connectWorker(value.issueId, value.state, value.basis, value.link),
     '/api/issue-decision': () => service.decideIssue(value.issueId, value.state, value.kind, value.basis, value.reason),
@@ -89,6 +92,10 @@ function read(service, request, response) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (url.pathname === '/api/document')
     return response.end(JSON.stringify(service.readPlan(url.searchParams.get('path'))));
+  if (url.pathname === '/api/check-evidence')
+    return response.end(
+      JSON.stringify(service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')))
+    );
   if (request.url === '/api/queue') return response.end(JSON.stringify(service.snapshot()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));

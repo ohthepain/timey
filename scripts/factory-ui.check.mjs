@@ -1164,3 +1164,196 @@ test('the plan viewer reads actual project plans without changing issue records'
   assert.throws(() => service.readPlan('docs/plans/link.md'), /inside this project/);
   assert.equal(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), before);
 });
+
+function implementationFixture(t) {
+  const setup = fixture(t),
+    { root, git, service } = setup;
+  mkdirSync(join(root, 'docs/plans'), { recursive: true });
+  writeFileSync(
+    join(root, 'docs/plans/feature-implementation.md'),
+    '# Feature\n\n## First version\n\n### 1. Keep outputs separate\n\nAcceptance: Each run uses its own output folder.\n\n### 2. Check cleanup\n\nAcceptance: Temporary files are removed after failure.\n\n## Second version\n\n### 3. Support parallel work\n\nAcceptance: Two independent runs can finish together.\n'
+  );
+  git('add', '.');
+  git('commit', '-qm', 'plan fixture');
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-to-verify | verify | review | Check the work |\n| ready-to-close | review | closed | Human acceptance |\n| closed | closed | — |\n'
+  );
+  writeFileSync(
+    join(root, '.issues/20261022-one.md'),
+    `---\nid: 20261022-one\nstate: verify\ngrill_later: false\nhuman_checks:\n  - id: experience\n    kind: judgment\n    instructions: Review the delivered experience.\n    status: pending\n    blocks: closure\n    revision: '${git('rev-parse', 'HEAD')}'\n    result: null\n---\n# One issue\n\nPlan: docs/plans/feature-implementation.md\n`
+  );
+  const sources = [
+    'Each run uses its own output folder.',
+    'Temporary files are removed after failure.',
+    'Two independent runs can finish together.',
+  ];
+  const result = {
+    summary: 'The three planned behaviors have supporting results. Final approval remains separate.',
+    steps: sources.map((source, index) => ({
+      id: ['line-5', 'line-9', 'line-15'][index],
+      name: ['Keep each run’s files separate', 'Clean up after failure', 'Run two jobs at once'][index],
+      version: index === 2 ? 'Second version' : 'First version',
+      criteria: [
+        {
+          name: source,
+          source,
+          status: 'passed',
+          explanation: 'The saved output confirms this behavior.',
+          next_action: '',
+          evidence: [join(root, 'source.js')],
+          human_check_id: null,
+        },
+      ],
+    })),
+  };
+  service.codex = {
+    requests: new Map(),
+    start: async (_root, mode) => {
+      assert.equal(mode, 'read-only');
+      return 'checklist-fixture';
+    },
+    turn: async () => JSON.stringify(result),
+    resume: async () => {},
+    close() {},
+  };
+  return { ...setup, result, path: 'docs/plans/feature-implementation.md' };
+}
+function checkPlan(service, path) {
+  const view = service.snapshot();
+  return service.checkImplementation('20261022-one', view.issues[0].state, path, view.reviewBasis);
+}
+
+test('implementation checklist follows actual plan versions, records evidence and preserves manual boundaries', async (t) => {
+  const { service, path, root, api } = implementationFixture(t);
+  const registry = readFileSync(join(root, '.issues/factory.json'), 'utf8');
+  assert.equal(service.snapshot().issues[0].implementation.record, undefined);
+  assert.equal(existsSync(service.store.path), false);
+  const { runId } = checkPlan(service, path);
+  assert.throws(() => checkPlan(service, path), /running/);
+  const run = await settle(service, runId);
+  assert.equal(run.status, 'completed', run.summary);
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.implementation.fresh, true);
+  assert.equal(issue.implementation.canCheck, false);
+  assert.deepEqual(
+    issue.plan_verification.steps.map((s) => s.version),
+    ['First version', 'First version', 'Second version']
+  );
+  assert.equal(issue.state, 'verify');
+  assert.equal(issue.human_checks[0].status, 'pending');
+  assert.equal(readFileSync(join(root, '.issues/factory.json'), 'utf8'), registry);
+  assert.equal(api.inspect().reports[0].metadata.plan_verification.steps.length, 3);
+  assert.throws(() => checkPlan(service, path), /already checked/);
+  assert.throws(() => service.readChecklistEvidence(issue.id, '/etc/passwd'), /Choose a supporting file/);
+  assert.match(service.readChecklistEvidence(issue.id, join(root, 'source.js')).content, /42/);
+});
+
+test('changed evidence, plan, report and source invalidate saved implementation passes', async (t) => {
+  const { root, service, path } = implementationFixture(t);
+  await settle(service, checkPlan(service, path).runId);
+  const evidence = join(root, 'source.js'),
+    original = readFileSync(evidence, 'utf8');
+  writeFileSync(evidence, original + '// changed\n');
+  assert.equal(service.snapshot().issues[0].implementation.fresh, false);
+  assert.throws(() => service.readChecklistEvidence('20261022-one', evidence), /changed/);
+  writeFileSync(evidence, original);
+  assert.equal(service.snapshot().issues[0].implementation.fresh, true);
+  const planPath = join(root, path),
+    plan = readFileSync(planPath, 'utf8');
+  writeFileSync(planPath, plan + '\nNew scope.\n');
+  assert.equal(service.snapshot().issues[0].implementation.fresh, false);
+  writeFileSync(planPath, plan);
+  const reportPath = join(root, '.issues/20261022-one.md');
+  writeFileSync(reportPath, readFileSync(reportPath, 'utf8') + '\nNew requirement.\n');
+  assert.equal(service.snapshot().issues[0].implementation.fresh, false);
+});
+
+test('checklist rejects unsupported passes and missing plan items without changing the issue', async (t) => {
+  const { root, service, path, result } = implementationFixture(t);
+  const reportPath = join(root, '.issues/20261022-one.md'),
+    original = readFileSync(reportPath, 'utf8');
+  result.steps[0].criteria[0].evidence = [];
+  const rejected = await settle(service, checkPlan(service, path).runId);
+  assert.equal(rejected.status, 'blocked');
+  assert.match(rejected.summary, /supporting files/);
+  assert.equal(readFileSync(reportPath, 'utf8'), original);
+  assert.equal(existsSync(join(root, '.issues/factory-progress.lock')), false);
+  result.steps.shift();
+  const missing = await settle(service, checkPlan(service, path).runId);
+  assert.match(missing.summary, /every plan step/);
+  assert.equal(readFileSync(reportPath, 'utf8'), original);
+});
+
+test('checklist cannot manufacture human approval or use an unrelated plan', async (t) => {
+  const { root, service, path, result } = implementationFixture(t);
+  writeFileSync(join(root, 'docs/plans/unrelated-implementation.md'), '# Different task');
+  const view = service.snapshot();
+  assert.throws(
+    () =>
+      service.checkImplementation('20261022-one', 'verify', 'docs/plans/unrelated-implementation.md', view.reviewBasis),
+    /linked to this issue/
+  );
+  result.steps[0].criteria[0].human_check_id = 'experience';
+  const rejected = await settle(service, checkPlan(service, path).runId);
+  assert.match(rejected.summary, /cannot approve a human check/);
+  assert.equal(service.snapshot().issues[0].human_checks[0].status, 'pending');
+});
+
+test('human approval is explicit, only at the needed stage, fresh, and does not close the issue', async (t) => {
+  const { root, service, path } = implementationFixture(t);
+  await settle(service, checkPlan(service, path).runId);
+  let view = service.snapshot();
+  assert.throws(
+    () => service.decidePlanCheck('20261022-one', 'verify', 'experience', 'passed', view.reviewBasis, 'I reviewed it.'),
+    /Final review/
+  );
+  const reportPath = join(root, '.issues/20261022-one.md');
+  writeFileSync(reportPath, readFileSync(reportPath, 'utf8').replace('state: verify', 'state: review'));
+  view = service.snapshot();
+  assert.throws(
+    () => service.decidePlanCheck('20261022-one', 'review', 'experience', 'passed', view.reviewBasis, 'I reviewed it.'),
+    /Check the implementation/
+  );
+  await settle(service, checkPlan(service, path).runId);
+  view = service.snapshot();
+  service.decidePlanCheck(
+    '20261022-one',
+    'review',
+    'experience',
+    'passed',
+    view.reviewBasis,
+    'I reviewed the actual result and approve it.'
+  );
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.human_checks[0].status, 'passed');
+  assert.equal(issue.human_checks[0].revision, view.head);
+  assert.equal(issue.implementation.fresh, true);
+  assert.equal(issue.state, 'review');
+  assert.throws(
+    () => service.decidePlanCheck('20261022-one', 'review', 'experience', 'failed', view.reviewBasis, 'Old page'),
+    /changed/
+  );
+});
+
+test('an incomplete implementation checklist blocks verification advancement, not only issue closure', async (t) => {
+  const { service, path, result } = implementationFixture(t);
+  result.steps[1].criteria[0] = {
+    ...result.steps[1].criteria[0],
+    status: 'not-checked',
+    evidence: [],
+    explanation: 'No cleanup result was recorded.',
+    next_action: 'Run the cleanup failure scenario and save its result.',
+  };
+  await settle(service, checkPlan(service, path).runId);
+  const queue = readQueue(service.root),
+    issue = queue.issues[0];
+  const { reviewedTransition } = await import('./factory-ui/stage-transition.mjs');
+  service.guard = () => [];
+  assert.throws(
+    () =>
+      reviewedTransition(service, queue, issue, { issues: [issue.id] }, { next_state: 'review', skipped_steps: [] }),
+    /outstanding implementation checks/
+  );
+  assert.equal(readQueue(service.root).issues[0].state, 'verify');
+});

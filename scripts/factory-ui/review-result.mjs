@@ -90,6 +90,7 @@ export function appendReview(root, issue, result, run, evidence, target) {
     const doc = parseDocument(match[1]);
     requireThat(!doc.errors.length, 'The report frontmatter is invalid.');
     doc.set('updated', new Date().toISOString());
+    recordChecklistMetadata(doc, issue, result);
     if (target) doc.set('state', target);
     recordStage(doc, issue, target, result, run, evidence);
     const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${evidence.map((e) => '- ' + e.path + ' (sha256:' + e.sha256 + ')').join('\n')}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${target ? '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n' : ''}`;
@@ -120,11 +121,12 @@ function nonempty(value) {
 }
 
 function recordedBy(run) {
-  return run.kind === 'decision'
+  return ['decision', 'plan-decision'].includes(run.kind)
     ? 'Recorded from the issue screen by an explicit user action.'
     : `Reviewed by coordinator chat ${run.threadId}. Action ${run.actionId}.`;
 }
 function reviewHeading(result) {
+  if (result.plan_verification) return 'Implementation checklist';
   if (result.user_decision) return 'Issue decision';
   return result.stage_records ? 'Issue progress review' : 'Worker result review';
 }
@@ -133,4 +135,13 @@ export function recordReviewResult(service, run, result) {
   if (result.outcome === 'completed') return true;
   service.store.update(run, { status: 'blocked', summary: result.summary });
   return false;
+}
+
+function recordChecklistMetadata(doc, issue, result) {
+  if (result.plan_verification)
+    doc.set('plan_verification', doc.createNode(result.plan_verification, { aliasDuplicateObjects: false }));
+  if (result.human_check_update) {
+    const index = issue.human_checks.findIndex((check) => check.id === result.human_check_update.id);
+    doc.setIn(['human_checks', index], doc.createNode(result.human_check_update, { aliasDuplicateObjects: false }));
+  }
 }

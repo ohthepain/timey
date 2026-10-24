@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { releaseReviewLock } from './review-lock.mjs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { progressBasis } from './next-action.mjs';
@@ -6,6 +7,7 @@ import { requireThat, git, writeJson } from './common.mjs';
 import { appendReview, reviewEvidence, reviewSchema, recordReviewResult } from './review-result.mjs';
 import { skipAllowed } from './skip-policy.mjs';
 import { validateSummary } from './checks.mjs';
+import { requireImplementationPasses } from './plan-checks.mjs';
 
 const stepSchema = {
   type: 'object',
@@ -65,11 +67,7 @@ export function beginReconciliation(service, queue, issue) {
     try {
       await reconcile(service, queue, issue, run);
     } finally {
-      requireThat(
-        JSON.parse(readFileSync(join(lock, 'owner.json'), 'utf8')).runId === run.id,
-        'Review lock ownership changed.'
-      );
-      rmSync(lock, { recursive: true });
+      releaseReviewLock(lock, run);
     }
   });
   return { runId: run.id };
@@ -108,7 +106,7 @@ function validateReconciliation(service, queue, issue, result) {
     }[stage.role];
     if (operation && step.outcome === 'completed')
       service.guard(service.root, { issues: [issue.id] }, operation, queue.head);
-    checkStageEvidence(queue, stage, result);
+    checkStageEvidence(service, queue, issue, stage, result);
     state = stage.next;
     service.guard(service.root, { issues: [issue.id] }, 'advance', queue.head, { target_state: state });
   }
@@ -132,9 +130,12 @@ function validateStep(queue, issue, stage, step) {
   if (step.outcome === 'skipped')
     requireThat(skipAllowed(queue, issue, step.state), 'Required work must be completed, not skipped.');
 }
-function checkStageEvidence(queue, stage, result) {
+function checkStageEvidence(service, queue, issue, stage, result) {
   if (['ready-to-fix', 'ready-for-commit'].includes(stage.role)) checkCommit(queue, result);
-  if (stage.role === 'ready-to-verify') checkVerification(queue, result);
+  if (stage.role === 'ready-to-verify') {
+    requireImplementationPasses(service, queue, issue);
+    checkVerification(queue, result);
+  }
 }
 function checkCommit(queue, result) {
   requireThat(/^[0-9a-f]{40}$/.test(result.commit_revision), 'Identify the existing implementation commit.');

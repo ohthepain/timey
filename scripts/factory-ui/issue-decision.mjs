@@ -4,6 +4,7 @@ import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
 import { appendReview } from './review-result.mjs';
 import { digest, requireThat } from './common.mjs';
+import { requireImplementationPasses } from './plan-checks.mjs';
 
 export function decideIssue(service, id, state, kind, basis, reason = '') {
   service.ownServer();
@@ -78,6 +79,7 @@ function checkClosure(service, queue, issue, action) {
     'The source changed or the finished work has not been recorded. Use Progress to review it before closing.'
   );
   checkManualResults(queue, issue);
+  requireImplementationPasses(service, queue, issue, true);
   service.guard(service.root, action, 'accept', queue.head);
   service.guard(service.root, action, 'close', queue.head);
   checkRecordedEvidence(queue, issue, last.evidence || []);

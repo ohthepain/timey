@@ -82,3 +82,10 @@ validated existing conversations and the original ledger attach operation.
 
 `factory-ui/plan-document.mjs` reads Markdown plans for the issue screen’s document
 viewer, restricted to canonical regular files under the selected project’s docs/plans.
+
+`factory-ui/plan-outline.mjs` locates issue-linked implementation plans and original
+work sections/version groups. `plan-check-schema.mjs` describes the bounded
+read-only review; `plan-review.mjs` records its guarded findings. `plan-checks.mjs`
+validates checklist criteria, evidence and freshness, while `plan-approval.mjs`
+records only explicit existing human-check decisions. These records do not advance
+the lifecycle or authorize worker launches/integrations.
