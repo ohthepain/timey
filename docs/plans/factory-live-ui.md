@@ -148,3 +148,40 @@ before claiming checks are missing, and separating next-stage work from remainin
 limitations or final human review. The retained validation manifest names the
 actual current-project evidence for the next review; it is not itself a stage
 advance or a replacement for that review.
+
+## Stage state and route clarity
+
+Starting revision: `2281290ae3cc11c15f77e7db5a04072c82486f88`.
+
+The user approved a grilling interview's design: blue completed, grey skipped or
+planned skip, white future/not checked, green ready/working, red blocked. Labels
+make each state distinct. Completed/skipped steps compact to centred names and
+expand to full views on tap; the current stage is larger. Centre connector lines
+and per-stage information panels explain actual requirements in ordinary language.
+Past missing history stays unknown and empty history sections are omitted.
+
+Implement explicit read-only readiness checking on the current stage, with
+expiry on source/issue/work/input changes and no worker or integration dispatch.
+Record future routes only on explicit recommendation save. Record stage outcomes
+when reviewed guarded advancement occurs, including policy-allowed planned skips.
+Preserve independent human input and final acceptance. Do not reconcile the real
+issue's worker reference, backfill outcomes, start a real check/chat or mutate
+real reports as part of UI testing.
+
+Validate isolated readiness, native result inspection, semantic review, state
+invalidation, plan-only saves, original identity failures, honest completion and
+optional skip enforcement in disposable repositories. Browser-check all colours,
+compact expansion, popover click/keyboard/hover affordances, current-stage actions,
+and the real blocked issue without starting its actions. Retain final verification
+and browser observations in `.issues/evidence/stage-state-validation.json`.
+
+Browser observations: compact completed and skipped nodes expand into the full
+step, preserve expansion across refresh, and retain available evidence. The
+information panel opens without expanding the step and dismisses with Escape.
+A disposable issue changed from unchecked to green Ready and exposed one current
+Progress action after a deterministic read-only check. A simulated active review
+showed green Working with dispatch disabled. Synthetic routes showed planned and
+planned-skip future states. These fixtures do not establish live model reasoning
+quality; protocol fixtures separately exercise read-only semantic review and
+original-worker identity failures. The real blocked issue is inspected without
+running its check or changing its report, registry or history.

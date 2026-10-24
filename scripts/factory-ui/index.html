@@ -331,6 +331,145 @@
         outline: 2px solid #176d5a;
         outline-offset: -3px;
       }
+
+      .step-shell {
+        position: relative;
+        margin: 0 auto 24px;
+      }
+      .step-shell:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        height: 24px;
+        width: 2px;
+        background: #bfc8c4;
+        left: 50%;
+        top: 100%;
+      }
+      .issue-step {
+        margin: 0;
+        overflow: visible;
+        background: #fff;
+      }
+      .step-shell.is-compact:has(> details:not([open])) {
+        width: min(100%, 320px);
+      }
+      .is-compact > details:not([open]) > summary {
+        min-height: 56px;
+        justify-content: center;
+        padding: 12px 42px;
+        text-align: center;
+      }
+      .is-compact > details:not([open]) .step-heading {
+        flex: initial;
+      }
+      .is-compact > details:not([open]) .step-heading strong {
+        font:
+          500 19px Georgia,
+          serif;
+        margin: 0;
+      }
+      .is-compact > details:not([open]) :is(.step-number, .step-description, .step-label, .step-chevron) {
+        display: none;
+      }
+      .issue-step > summary {
+        padding-right: 58px;
+      }
+      .issue-step.state-completed {
+        background: #e3edff;
+        border-color: #7da5d8;
+      }
+      .issue-step:is(.state-skipped, .state-planned-skip) {
+        background: #e7e8e6;
+        border-color: #babebb;
+      }
+      .issue-step:is(.state-ready, .state-working) {
+        background: #e4f2e8;
+        border-color: #6caa85;
+      }
+      .issue-step.state-blocked {
+        background: #fbe8e5;
+        border-color: #d18c84;
+      }
+      .issue-step.is-current {
+        border-width: 2px;
+        box-shadow: 0 3px 12px #203b3512;
+      }
+      .is-current.state-blocked .step-label {
+        color: #8b3029;
+      }
+      .state-blocked .next-action {
+        background: #fff6f4;
+        border-color: #ddb3ad;
+      }
+      .state-unchecked .next-action {
+        background: #f7f8f5;
+      }
+      .is-current.state-blocked .step-number {
+        color: #9c3d34;
+      }
+      .is-current > summary {
+        padding-top: 26px;
+        padding-bottom: 26px;
+      }
+      .step-info-button {
+        position: absolute;
+        right: 13px;
+        top: 14px;
+        background: transparent;
+        border: 0;
+        padding: 3px 6px;
+        font-size: 21px;
+        line-height: 1;
+        color: #465d55;
+        border-radius: 50%;
+      }
+      .step-help {
+        inset: auto;
+        top: clamp(8px, anchor(bottom), 20vh);
+        right: anchor(right);
+        width: min(360px, calc(100vw - 32px));
+        max-height: 75vh;
+        overflow: auto;
+        margin: 8px 0;
+        border: 1px solid #aebcb5;
+        border-radius: 10px;
+        padding: 20px;
+        color: #203b35;
+        background: #fffefa;
+        box-shadow: 0 8px 35px #203b3533;
+      }
+      .step-help::backdrop {
+        background: transparent;
+      }
+      .stage-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .stage-legend span {
+        padding: 4px 8px;
+        border: 1px solid #d7ded4;
+        border-radius: 5px;
+        background: #fff;
+      }
+      .stage-legend .legend-completed {
+        background: #e3edff;
+      }
+      .stage-legend .legend-skipped {
+        background: #e7e8e6;
+      }
+      .stage-legend .legend-ready {
+        background: #e4f2e8;
+      }
+      .stage-legend .legend-blocked {
+        background: #fbe8e5;
+      }
+      button:focus-visible {
+        outline: 2px solid #285747;
+        outline-offset: 3px;
+      }
+
       @media (max-width: 700px) {
         .next-action {
           flex-direction: column;
@@ -420,6 +559,7 @@
             previous !== JSON.stringify(data) &&
             !busy &&
             !$('confirm').open &&
+            !document.querySelector(':popover-open') &&
             !document.activeElement.matches('input,textarea,select')
           )
             render();
@@ -482,11 +622,15 @@
           : 'Use Progress to review the existing result again; the worker assignment will not be repeated.';
         return `<h3>${heading}</h3><p>${esc(result.summary)}</p><p>${esc(stage)}</p>${interactive && !result.next_state ? `<p>${next}</p>` : ''}${result.remaining?.length ? `<h4>What still needs work</h4><ul>${result.remaining.map((text) => `<li>${esc(text)}</li>`).join('')}</ul>` : ''}<details><summary>Reviewer’s explanation</summary><p class="prose">${esc(result.notes)}</p></details>`;
       }
+      function routePreview(run) {
+        if (run.kind !== 'evaluation' || !run.result?.routes?.length) return '';
+        return `<details><summary>${run.savedRoutes ? 'Saved route' : 'Proposed route — not saved yet'}</summary>${run.result.routes.map((route) => `<h3>${link(route.issueId)}</h3><ul>${route.steps.map((step) => `<li><b>${esc(data.lifecycle.find((s) => s.state === step.state)?.name || 'Integrate')}</b>: ${esc({ take: 'Planned', skip: 'Planned to skip', undecided: 'Not decided' }[step.decision])}. ${esc(step.reason)}</li>`).join('')}</ul>`).join('')}</details>`;
+      }
       function progress(run, interactive = true) {
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${interactive ? approvals(run) : ''}<details><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && run.result.recommendations.length ? `<button data-save="${esc(run.id)}">Save these recommendations</button><p class="muted">Saving does not start workers.</p>` : ''}</section>`;
+        return `<section class="card"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
       function queue() {
         const counts = data.lifecycle
@@ -581,12 +725,27 @@
         'ready-for-grilling': 'Agree on the problem, expected behavior and scope.',
         'ready-for-repro': 'Reproduce the problem and understand its cause.',
         'ready-to-prototype': 'Try an approach when the design still needs testing.',
-        'ready-to-fix': 'Make the change in a worker chat with a bounded assignment.',
+        'ready-to-fix': 'Make the agreed change in a worker chat.',
         'ready-to-verify': 'Check the behavior and review the evidence.',
         'ready-for-commit': 'Preserve the checked changes in a commit.',
         'ready-to-close': 'Review the result and resolve any remaining human checks.',
         closed: 'Close the issue after explicit acceptance.',
         integration: 'Bring a finished worker’s changes into the project. This is a separate manual action.',
+      };
+      const stepFinish = {
+        'ready-for-grilling': 'Agree on the problem, expected behaviour and scope. Record the answers needed to begin.',
+        'ready-for-repro': 'Establish what is going wrong and agree on a specific change to make.',
+        'ready-to-prototype':
+          'Try the approach and resolve the design questions. If an experiment is unnecessary, record why this step can be skipped.',
+        'ready-to-fix': 'Make the agreed change and preserve the worker’s result for review.',
+        'ready-to-verify':
+          'Review the evidence and pass the automated checks relevant to the change. Record human checks separately; only those required now block this step.',
+        'ready-for-commit':
+          'Save the checked changes in a commit, or record the explicit decision not to make a commit.',
+        'ready-to-close': 'Review the finished result, address required manual checks and ask for explicit acceptance.',
+        closed: 'Record the user’s explicit acceptance before closing the issue.',
+        integration:
+          'Review the finished changes, approve them when required, then integrate and check the combined project. This needs its own manual action.',
       };
       const actionRoles = {
         investigate: 'ready-for-repro',
@@ -649,22 +808,94 @@
         const key = i.id + ':' + step.role + ':' + (step.state || '');
         const open = expandedSteps.has(key) ? expandedSteps.get(key) : current;
         const extra = stepExtra(i, step, allActions);
-        const count = actions.length
-          ? `${actions.length} recorded assignment${actions.length === 1 ? '' : 's'}`
-          : extra
-            ? 'Recorded details'
-            : 'No work recorded';
-        const label = current ? 'Current stage' : step.role === 'integration' ? 'Manual action' : count;
-        return `<details class="issue-step ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${esc(label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? progressControls(i) : ''}${current ? `<p class="muted">${esc(count)}</p>` : ''}${stepWork(step, actions)}${stageReviews(i, step, current)}${extra}${!actions.length && !extra ? '<p class="muted">No assignment or result is recorded for this step yet.</p>' : ''}</div></details>`;
+        const state = stepState(i, step, allActions);
+        const compact = ['completed', 'skipped', 'planned-skip'].includes(state.status);
+        const helpId = 'step-help-' + index;
+        const history = stageReviews(i, step, current);
+        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? progressControls(i) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${stepWork(step, actions)}${history}${extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use the button in this step for its next action. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Actions are available on the current step.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+      }
+      function stageEvidence(state) {
+        if (!state.evidence?.length) return '';
+        return `<details><summary>Recorded evidence</summary><ul>${state.evidence.map((item) => `<li><code>${esc(item.path || item)}</code></li>`).join('')}</ul>${chatLink(state.chat)}</details>`;
+      }
+      function stepRequirement(step, state) {
+        if (state.status === 'skipped')
+          return '<p>This step was passed with a recorded reason. Expanding it shows any retained details.</p>';
+        if (state.status === 'planned-skip')
+          return '<p>The saved plan does not require this step. That can change if new requirements make it necessary.</p>';
+        return `<p><b>${state.status === 'completed' ? 'What this step required' : 'To finish this step'}:</b> ${esc(stepFinish[step.role] || step.exit || step.description)}</p>`;
+      }
+      function stepState(issue, step, actions) {
+        if (step.state)
+          return (
+            issue.stageStates?.[step.state] || {
+              status: 'unknown',
+              label: 'No outcome recorded',
+              summary: 'No outcome has been recorded for this step.',
+            }
+          );
+        if (step.role === 'integration') {
+          const integrated = actions.filter((a) => ['implement', 'integrate'].includes(a.kind));
+          if (integrated.length && integrated.every((a) => a.status === 'integrated'))
+            return {
+              status: 'completed',
+              label: 'Completed',
+              summary: 'The recorded code changes were integrated after their required checks.',
+            };
+          const planned = [...data.runs]
+            .reverse()
+            .flatMap((r) => r.savedRoutes || [])
+            .find((r) => r.issueId === issue.id)
+            ?.steps.find((s) => s.state === '@integration');
+          if (planned)
+            return {
+              status: planned.decision === 'skip' ? 'planned-skip' : 'future',
+              label: planned.decision === 'skip' ? 'Planned to skip' : 'Planned',
+              summary: planned.reason,
+            };
+          return {
+            status: 'future',
+            label: 'Separate manual action',
+            summary:
+              'Code changes need a separate integration action after the worker finishes. This does not accept or close the issue.',
+          };
+        }
+        return {
+          status: 'unknown',
+          label: 'Recorded work',
+          summary: 'These assignments do not belong to a configured lifecycle step.',
+        };
+      }
+      function stepChatLinks(issue) {
+        const relevant = data.runs.filter((r) => r.actionId === issue.progress?.actionId);
+        const coordinator = [...relevant].reverse().find((r) => r.kind === 'coordinator' && r.threadId);
+        const worker = [...relevant].reverse().find((r) => r.workerThreadId);
+        return `<p>${coordinator ? `<a href="codex://threads/${encodeURIComponent(coordinator.threadId)}">Open review chat ↗</a>` : ''}${coordinator && worker ? ' · ' : ''}${worker ? `<a href="codex://threads/${encodeURIComponent(worker.workerThreadId)}">Open original worker chat ↗</a>` : ''}</p>`;
+      }
+      function readinessExplanation(issue) {
+        const r = issue.readiness || { status: 'unchecked' };
+        if (r.status === 'ready')
+          return 'Ready means nothing currently blocks the recommended action. It does not mean this whole step is finished. Progress shows its scope before you start it.';
+        if (r.status === 'blocked')
+          return 'Address the named problem, then check readiness again. A pending final acceptance only blocks work that requires that acceptance.';
+        return 'Check readiness inspects required answers, saved work and the original worker where needed. It may open a read-only chat to review those requirements. It starts no worker, integrates no changes and advances no stage.';
       }
       function progressControls(issue) {
         const choice = issue.progress;
         if (!choice) return '';
-        return `<section class="next-action"><div><small>Recommended next action</small><h3>${esc(choice.title)}</h3><p>${esc(choice.summary)}</p></div><button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled ? 'disabled' : ''}>Progress →</button></section>`;
+        const r = issue.readiness || { status: 'unchecked' };
+        const ready = r.status === 'ready';
+        const checkLabel = r.expired ? 'Check readiness again' : 'Check readiness';
+        const busy = data.runs.some(
+          (run) =>
+            run.connected &&
+            (run.issueId === issue.id || data.actions.some((a) => a.id === run.actionId && a.issues.includes(issue.id)))
+        );
+        return `<section class="next-action"><div><small>${ready ? 'Ready for the next action' : 'What happens next'}</small><h3>${esc(busy ? 'Work in progress' : ready ? choice.title : r.status === 'blocked' ? 'Resolve the blocker' : checkLabel)}</h3><p>${esc(busy ? issue.stageStates[issue.state].summary : r.summary || readinessExplanation(issue))}${r.status === 'blocked' ? stepChatLinks(issue) : ''}</p>${ready ? `<small>Checked recently. We check the requirements again before starting.</small>` : ''}</div>${ready || r.approvalAvailable ? `<button class="primary" data-progress-id="${esc(issue.id)}" data-progress-state="${esc(issue.state)}" ${choice.disabled ? 'disabled' : ''}>${r.approvalAvailable ? 'Review required approval' : 'Progress →'}</button>` : ''}<button data-check-issue="${esc(issue.id)}" data-check-state="${esc(issue.state)}" ${busy ? 'disabled' : ''}>${busy ? 'Work in progress' : checkLabel}</button></section>`;
       }
       function stageReviews(issue, stage, current) {
         return data.runs
-          .filter((run) => belongsInStage(run, issue, stage, current))
+          .filter((run) => (run.kind !== 'readiness' || run.connected) && belongsInStage(run, issue, stage, current))
           .slice()
           .reverse()
           .map((run) => progress(run, current))
@@ -706,7 +937,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current stage comes from the issue report.</p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Handle answers, hardware checks and acceptance in the coordinator chat. Finishing or integrating work does not close the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Handle answers, hardware checks and acceptance in the coordinator chat. Finishing or integrating work does not close the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       function render() {
         const route = location.hash.split('/');
@@ -714,6 +945,12 @@
         bind();
       }
       function bind() {
+        document.querySelectorAll('[data-check-issue]').forEach((button) => {
+          button.onclick = () =>
+            act(() =>
+              request('check-readiness', { issueId: button.dataset.checkIssue, state: button.dataset.checkState })
+            );
+        });
         document
           .querySelectorAll('[data-progress-id]')
           .forEach(

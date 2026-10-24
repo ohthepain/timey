@@ -54,3 +54,15 @@ _Avoid_: Automated verification
 **Acceptance**:
 The user’s explicit decision that an issue is complete.
 _Avoid_: Worker completion, integration
+
+**Stage outcome**:
+A recorded decision that a lifecycle stage completed or was skipped, with its
+reason and evidence. A finished worker is evidence for review, not this decision.
+
+**Planned route**:
+The saved expectation of which future issue stages will be taken, skipped or
+remain undecided. It can change and does not authorize bypassing required checks.
+
+**Readiness**:
+Whether anything currently blocks the next selected action. It must be checked,
+can expire, and is distinct from completing the whole stage.

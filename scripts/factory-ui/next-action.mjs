@@ -5,6 +5,7 @@ const kinds = {
   'ready-to-prototype': ['prototype'],
   'ready-to-fix': ['implement', 'integrate'],
   'ready-to-verify': ['verify'],
+  'ready-for-commit': ['review'],
   'ready-to-close': ['review'],
 };
 export const progressBasis = (queue) => digest(JSON.stringify(queue));
@@ -28,6 +29,7 @@ export function nextProgress(queue, issue, runs) {
   return chooseWork(queue, issue, stage, runs);
 }
 function isPending(run) {
+  if (run.kind === 'readiness') return run.connected;
   return ['preparing', 'running', 'checking'].includes(run.status);
 }
 function belongsToIssue(queue, issue, run) {

@@ -33,6 +33,7 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value) {
   const routes = {
+    '/api/check-readiness': () => service.checkReadiness(value.issueId, value.state),
     '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),
     '/api/progress-start': () => service.progressStart(value.token, value.humanApproved),
     '/api/evaluate': () => service.evaluate(value.basis),

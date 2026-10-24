@@ -10,6 +10,9 @@ import { checkCandidate } from './checks.mjs';
 import { integrationPrompt, workerPrompt, workerResultSchema, evaluationPrompt, evaluationSchema } from './prompts.mjs';
 import { git, requireThat, writeJson, digest } from './common.mjs';
 
+import { readinessView, checkReadiness, explainBlock } from './readiness.mjs';
+import { stageStates } from './stage-state.mjs';
+import { validateRoutes } from './lifecycle.mjs';
 import { nextProgress } from './next-action.mjs';
 import { prepareProgress, triggerProgress } from './progress.mjs';
 
@@ -39,11 +42,8 @@ export class FactoryUI {
     return {
       ...queue,
       reviewBasis: digest(JSON.stringify(queue)),
-      issues: queue.issues.map((issue) => ({
-        ...issue,
-        progress: nextProgress(queue, issue, this.store.list(this.codex.requests)),
-      })),
-      runs: this.store.list(this.codex.requests),
+      issues: queue.issues.map((issue) => this.issueView(queue, issue)),
+      runs: this.store.list(this.codex.requests).map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
       actions: queue.actions.map((a) => ({
         ...a,
         launchBlocked: describeLaunch(queue, a),
@@ -52,6 +52,19 @@ export class FactoryUI {
           : null,
       })),
     };
+  }
+  issueView(queue, issue) {
+    const runs = this.store.list(this.codex.requests);
+    const readiness = readinessView(queue, issue, runs);
+    return {
+      ...issue,
+      readiness,
+      stageStates: stageStates(queue, issue, runs, readiness),
+      progress: nextProgress(queue, issue, runs),
+    };
+  }
+  checkReadiness(id, state) {
+    return checkReadiness(this, id, state);
   }
   progressPreflight(id, state) {
     return prepareProgress(this, id, state);
@@ -340,14 +353,15 @@ export class FactoryUI {
       current === basis && current === run.reviewBasis,
       'The review is stale. Review the current queue again.'
     );
-    requireThat(run.result.recommendations.length > 0, 'There is no suggested work to save.');
+    const routes = routesForReview(queue, run);
+    requireThat(hasSuggestions(run.result, routes), 'There is no suggested work or route to save.');
     if (run.issueId)
       requireThat(
         run.result.recommendations.every((action) => action.issues.every((id) => id === run.issueId)),
         'The review proposed work outside the selected issue. Review its scope before saving.'
       );
-    const actions = this.api.recommend(run.result.recommendations);
-    this.store.update(run, { savedActions: actions.map((a) => a.id) });
+    const actions = saveAssignments(this.api, run.result.recommendations);
+    this.store.update(run, { savedActions: actions.map((a) => a.id), savedRoutes: routes });
     return { savedActions: actions.map((a) => a.id) };
   }
   answer(runId, id, response) {
@@ -372,4 +386,18 @@ function needsApproval(action, kind) {
 function reviewReady(run) {
   if (!run) return false;
   return run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions;
+}
+
+function routesForReview(queue, run) {
+  return validateRoutes(
+    { ...queue, actions: [...queue.actions, ...run.result.recommendations] },
+    run.result.routes || [],
+    run.issueId
+  );
+}
+function saveAssignments(api, proposals) {
+  return proposals.length ? api.recommend(proposals) : [];
+}
+function hasSuggestions(result, routes) {
+  return result.recommendations.length > 0 || routes.length > 0;
 }

@@ -63,3 +63,9 @@ disposable queues, chat protocol fixtures and manual action boundaries.
 Current-stage recommendations and dispatch are in `scripts/factory-ui/next-action.mjs`
 and `progress.mjs`. `worker-history.mjs` reads the original worker through CLI RPC;
 `review-result.mjs` defines the bounded read-only review and guarded report update.
+
+Factory lifecycle presentation uses `scripts/factory-ui/stage-state.mjs` for
+recorded/future/current states, `readiness.mjs` for explicit action readiness,
+`lifecycle.mjs` for routes and stage records, and `stage-transition.mjs` with
+`skip-policy.mjs` for guarded optional skips. The workflow contract and storage
+boundaries are documented in [factory UI](factory-ui.md).

@@ -3,6 +3,9 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readQueue, currentAction } from './data.mjs';
 import { progressBasis, progressIssue, nextProgress } from './next-action.mjs';
+import { reviewedTransition } from './stage-transition.mjs';
+import { savedRoute } from './lifecycle.mjs';
+import { reviewOperation } from './readiness.mjs';
 import { inspectWorker } from './worker-history.mjs';
 import { reviewSchema, reviewPrompt, reviewEvidence, appendReview } from './review-result.mjs';
 import { requireThat, writeJson, git } from './common.mjs';
@@ -104,7 +107,12 @@ async function reviewWorker(service, queue, issue, run) {
     summary: 'Reviewing the existing result and its actual evidence.',
   });
   const result = JSON.parse(
-    await service.codex.turn(threadId, service.root, reviewPrompt(queue, issue, action, worker, guards), reviewSchema)
+    await service.codex.turn(
+      threadId,
+      service.root,
+      reviewPrompt({ ...queue, planned_route: savedRoute(issue, service.store.runs) }, issue, action, worker, guards),
+      reviewSchema
+    )
   );
   service.store.update(run, { result });
   if (result.outcome !== 'completed') {
@@ -121,12 +129,6 @@ async function reviewWorker(service, queue, issue, run) {
   await applyReview(service, queue, issue, action, worker, run, result, evidence);
   service.store.update(run, { status: 'completed', summary: result.summary, evidence });
 }
-function reviewOperation(queue, issue) {
-  const role = queue.lifecycle.find((s) => s.state === issue.state).role;
-  return (
-    { 'ready-for-commit': 'commit', 'ready-to-fix': 'implement', 'ready-to-prototype': 'prototype' }[role] || 'verify'
-  );
-}
 async function applyReview(service, queue, issue, action, worker, run, result, evidence) {
   let candidate = null;
   if (['implement', 'integrate'].includes(action.kind))
@@ -136,24 +138,10 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
     progressBasis(readQueue(service.root)) === progressBasis(queue),
     'The project or saved work changed during review. No reviewed result was applied; refresh and reconcile.'
   );
-  const target = reviewTransition(service, queue, issue, action, result);
+  const target = reviewedTransition(service, queue, issue, action, result);
   service.guard(service.root, action, reviewOperation(queue, issue), queue.head);
   recordWorker(service, action, worker, result, evidence, candidate);
   appendReview(service.root, issue, result, run, evidence, target);
-}
-function reviewTransition(service, queue, issue, action, result) {
-  if (result.next_state === null) return null;
-  requireThat(queue.sourceClean, 'Preserve uncommitted source changes before advancing the issue.');
-  requireThat(
-    queue.lifecycle.filter((stage) => stage.state === result.next_state).length === 1,
-    'The next stage is missing or ambiguous.'
-  );
-  const stage = queue.lifecycle.find((s) => s.state === issue.state),
-    target = queue.lifecycle.find((s) => s.state === result.next_state);
-  requireThat(target && target.role !== 'closed', 'Progress cannot accept or close an issue.');
-  requireThat(stage.next === target.state, 'The review must follow the configured next stage.');
-  service.guard(service.root, { ...action, issues: [issue.id] }, 'advance', queue.head, { target_state: target.state });
-  return target.state;
 }
 function recordWorker(service, action, worker, result, evidence, candidate) {
   const note = `Coordinator evidence review: ${result.summary}. ${JSON.stringify(evidence)}. Remaining: ${JSON.stringify(result.remaining)}`;

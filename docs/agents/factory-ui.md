@@ -81,7 +81,7 @@ continuing.
 
 ## Progress on the current stage
 
-Only the issue's current stage has a **Progress** button. Earlier and later steps
+Only the issue's current stage has action buttons: **Check readiness**, then **Progress** when ready. Earlier and later steps
 show history without dispatch controls. The panel names the recommended action;
 its confirmation shows the scope before doing one action. It can start an existing
 saved recommendation, review an existing worker's result in a separate coordinator
@@ -123,3 +123,58 @@ original worker, never an automatic retry or repeated worker assignment. A recor
 assignment can leave the issue at its current stage; the next Progress action can
 recommend the remaining work. Chat links use `codex://threads/<id>`, the local
 desktop app's copied chat-link format; opening depends on that app being installed.
+
+## Recorded stage states and planned routes
+
+Blue means a recorded stage completion, grey means a recorded skip or planned
+future skip, green means ready or working, red means blocked, and white means
+future or not checked. Labels distinguish every state without relying on colour.
+The current step is larger and opens by default. Completed and skipped steps are
+small centred nodes; tapping one expands the complete view. Short centre lines
+connect the steps. Every step has a keyboard/touch accessible information panel,
+with a hover explanation, the actual reason and what must happen next. Opening
+steps or explanations performs no action. Empty historical sections are omitted.
+
+Past outcomes use explicit `lifecycle_history` report metadata, with state,
+outcome (`completed` or `skipped`), next state, time, reason, revision, chat and
+evidence. Guarded UI advancement appends these records while preserving report
+content and human input. Old assignments and worker completion do not invent
+stage completion. Manual integration retains its independent verified ledger
+record as the outcome for that separate step. A reopened current stage takes
+precedence over an older completion record.
+
+Queue/issue reviews propose `routes`: issue ID and current/future steps with exact
+state, `take`/`skip`/`undecided` and a reason. `@integration` names the separate
+manual integration step. Routes are only persisted as `savedRoutes` in the review
+run after explicit Save recommendations and route. A route-only review can be
+saved without adding an assignment. Missing plans say Not decided; later saved
+plans replace earlier future plans, without changing historical outcomes.
+
+A saved route is not authority to skip required work. Reviewed advancement follows
+every configured Next link and may record a saved planned skip only when policy
+permits it: optional prototype, investigation for an enhancement, or commit when
+commits are explicitly disabled. Every target gets its own fresh human advance
+guard. Required verification, custom stages, acceptance and closure are not
+bypassed. A planned integration skip is rejected if unintegrated code work exists
+or is being recommended. Skipped events need reviewed reasons and actual evidence.
+
+## Explicit readiness checks
+
+An unchecked current step offers Check readiness with an explanation. The check
+reads the queue, operation-specific guards and original worker status where
+needed. Ambiguous worker identity stops before any chat creation or ledger edit.
+Required semantic review can open a separate read-only chat, with pending
+permission requests visible. The result concerns the next selected action, not
+completion of the whole stage. Final-only human checks do not block earlier work.
+
+Checks create durable UI readiness records; they reserve no assignments, record no
+worker completion, advance no report and start no worker or integration. A ready
+result enables Progress; required human-first integration approval remains a
+blocked requirement with an explicit Review required approval action. Existing
+manual confirmation, freshness and execution checks still run before dispatch.
+
+Source, reports/configuration, saved actions, relevant UI worker/review statuses
+and operation locks invalidate readiness when changed. Checks also expire after
+one minute because external native chat changes are not continuously polled.
+Disconnected records do not establish live activity. A stopped native worker is
+blocked; a confirmed active worker is green Working and can be checked again.
