@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { gitFixture } from './git-fixture.mjs';
@@ -294,6 +294,11 @@ function pendingReview(t, options = {}) {
     ...options,
   };
   config.result.next_state = options.nextState ?? null;
+  if (options.sourceEvidence) {
+    const probe = join(root, '.issues/evidence/probe.py');
+    writeFileSync(probe, 'print("fixture evidence")\n');
+    config.result.evidence.push(join(root, 'source.js'), probe);
+  }
   const path = join(root, '.issues/review-cli.mjs');
   writeFileSync(
     path,
@@ -479,4 +484,43 @@ test('a report edited during result review is preserved and no stale outcome is 
   assert.match(outcome.summary, /changed during review/);
   assert.match(api.inspect().reports[0].content, /Concurrent report edit/);
   assert.equal(api.inspect().registry.actions[0].status, 'setup');
+});
+
+test('review evidence includes actual source and probe files, not only reports', async (t) => {
+  const { service, api } = pendingReview(t, { sourceEvidence: true });
+  const run = await reviewNow(service);
+  assert.equal(run.status, 'completed', run.summary);
+  assert.equal(run.evidence.length, 3);
+  assert.match(run.evidence.find((file) => file.path.endsWith('probe.py')).sha256, /^[0-9a-f]{64}$/);
+  assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
+  assert.equal(api.inspect().reports[0].metadata.state, 'investigate');
+});
+
+test('a failed recording retains the model response and offers an explicit fresh review of the same worker', async (t) => {
+  const { service, api, root, evidence } = pendingReview(t);
+  const content = readFileSync(evidence);
+  rmSync(evidence);
+  const first = await reviewNow(service);
+  assert.equal(first.status, 'blocked');
+  assert.equal(first.result.outcome, 'completed');
+  assert.equal(api.inspect().registry.actions[0].status, 'setup');
+  assert.equal(service.store.runs.length, 1);
+  const retry = service.progressPreflight('20261022-one', 'investigate');
+  assert.equal(retry.choice.kind, 'review');
+  assert.equal(retry.choice.title, 'Review result again');
+  assert.match(retry.choice.summary, /will not repeat/);
+  assert.equal(service.store.runs.length, 1);
+  writeFileSync(evidence, content);
+  const second = await settle(service, service.progressStart(retry.token).runId);
+  assert.equal(second.status, 'completed', second.summary);
+  assert.equal(second.workerThreadId, first.workerThreadId);
+  assert.equal(first.status, 'blocked');
+  assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
+  assert.equal(api.inspect().reports[0].metadata.state, 'investigate');
+  assert.equal(service.progressPreflight('20261022-one', 'investigate').choice.kind, 'plan');
+  assert.equal(reviewCalls(root).filter((call) => call.method === 'thread/start').length, 2);
+  assert.equal(
+    reviewCalls(root).some((call) => call.method === 'thread/resume'),
+    false
+  );
 });

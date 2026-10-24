@@ -108,3 +108,43 @@ appended issue notes without accepting or closing the issue. This fixture used a
 protocol stub; real CLI native-worker discovery was independently verified.
 No real Progress run, worker launch, result reconciliation or report update was
 performed during development. The real issue remains pending user selection.
+
+## Clear review results and recovery
+
+Starting revision: `c9c36c64761178903d583d37c147053210d45b5b`.
+
+The first real result review accepted a saved verification package but proposed
+no stage advance. Recording failed because legitimate probe and project source
+files were rejected by a report-only evidence extension filter. The UI exposed
+the model's completed response without clearly distinguishing the blocked server
+operation or offering another Progress action.
+
+Allow regular evidence files within the canonical project, original worker and
+temporary directories, retaining file size and hash checks. Explicit Progress can
+perform a fresh read-only result review after a blocked review, with all existing
+freshness, original-worker and stage guards. Never replay retained model output
+without review. Display the recording outcome, remaining work and next action
+above collapsed transcript/technical details. Chat references use the installed
+desktop app's own copied-link format, `codex://threads/<id>`.
+
+Validate legitimate source evidence and explicit retry with disposable fixtures,
+retain stale-review and human-guard coverage, inspect the real blocked result in
+the browser without executing it, and run aggregate and saved-base step checks.
+
+Recovery validation and browser observations are retained in
+`.issues/evidence/review-recovery-validation.json`. The live issue displays the
+blocked recording separately from the reviewer's completion claim, with remaining
+work and an enabled fresh-review confirmation. The confirmation was inspected and
+cancelled; no real review or worker was dispatched. The desktop link format was
+verified in the installed app's link builder and URL handler. Automated browser
+navigation to the custom scheme was blocked, so end-to-end opening still needs a
+manual click. Existing real run/report/ledger history was preserved.
+
+A further inspection found existing passing aggregate and step summaries for the
+current authoritative revision and exact source tree. The worker's older starting
+revision did not establish absence of these results. Result-review instructions
+now explicitly require inspecting current-project summary files and raw logs
+before claiming checks are missing, and separating next-stage work from remaining
+limitations or final human review. The retained validation manifest names the
+actual current-project evidence for the next review; it is not itself a stage
+advance or a replacement for that review.

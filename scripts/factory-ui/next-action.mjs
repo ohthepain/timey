@@ -54,16 +54,17 @@ function chooseWork(queue, issue, stage, runs) {
 function existingWork(action, runs) {
   if (needsIntegration(action)) return integration(action);
   const previous = runs.findLast((r) => r.actionId === action.id && r.kind === 'coordinator');
-  if (previous?.status === 'blocked')
-    return unavailable(
-      'The result review needs attention. Read its explanation below before continuing in the coordinator chat.'
-    );
+  return reviewChoice(action.id, previous);
+}
+function reviewChoice(actionId, previous) {
+  const retry = previous?.status === 'blocked';
   return {
     kind: 'review',
-    actionId: action.id,
-    title: 'Review worker results',
-    summary:
-      'Find the existing worker, review its test results, and record the outcome. If the worker is still running, leave it running. Do not launch it again.',
+    actionId,
+    title: retry ? 'Review result again' : 'Review worker results',
+    summary: retry
+      ? `The previous review stopped: ${previous.summary} A new read-only review will check the existing worker’s latest evidence and try to record its outcome. It will not repeat the worker’s assignment.`
+      : 'Find the existing worker, review its test results, and record the outcome. If the worker is still running, leave it running. Do not launch it again.',
   };
 }
 function integration(action) {

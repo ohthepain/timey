@@ -464,11 +464,29 @@
           )
           .join('');
       }
+      function chatLink(id) {
+        return id ? `<small><a href="codex://threads/${encodeURIComponent(id)}">Open chat in Codex ↗</a></small>` : '';
+      }
+      function reviewResult(run, interactive) {
+        if (run.kind !== 'coordinator' || !run.result || !['completed', 'blocked'].includes(run.status)) return '';
+        const recorded = run.status === 'completed';
+        const result = run.result;
+        const heading = recorded ? 'Worker result recorded' : 'Review result not recorded';
+        const stage = recorded
+          ? result.next_state
+            ? 'The issue advanced to the next stage after its requirements were checked.'
+            : 'This review did not advance the issue. The remaining work below still needs to be addressed.'
+          : 'The review stopped before recording finished. A completed review response does not mean this stage passed.';
+        const next = recorded
+          ? 'Use Progress to recommend the next task.'
+          : 'Use Progress to review the existing result again; the worker assignment will not be repeated.';
+        return `<h3>${heading}</h3><p>${esc(result.summary)}</p><p>${esc(stage)}</p>${interactive && !result.next_state ? `<p>${next}</p>` : ''}${result.remaining?.length ? `<h4>What still needs work</h4><ul>${result.remaining.map((text) => `<li>${esc(text)}</li>`).join('')}</ul>` : ''}<details><summary>Reviewer’s explanation</summary><p class="prose">${esc(result.notes)}</p></details>`;
+      }
       function progress(run, interactive = true) {
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card"><span class="badge">${esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${run.threadId ? `<small>Chat: ${esc(run.threadId)}</small>` : ''}${interactive ? approvals(run) : ''}<details><summary>Progress and result</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && run.result.recommendations.length ? `<button data-save="${esc(run.id)}">Save these recommendations</button><p class="muted">Saving does not start workers.</p>` : ''}</section>`;
+        return `<section class="card"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${interactive ? approvals(run) : ''}<details><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && run.result.recommendations.length ? `<button data-save="${esc(run.id)}">Save these recommendations</button><p class="muted">Saving does not start workers.</p>` : ''}</section>`;
       }
       function queue() {
         const counts = data.lifecycle

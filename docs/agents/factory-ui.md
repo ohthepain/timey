@@ -113,3 +113,13 @@ uncertain reviews retain their history and explain what needs coordinator attent
 The `.issues/factory-progress.lock` serializes these reviews and excludes target
 integration while records are being reviewed. A dead/uncertain lock requires
 inspection rather than automatic deletion.
+
+Review cards distinguish the server's recorded outcome from a model's completion
+claim. Remaining work stays visible; transcripts and structured data are collapsed
+under technical details. Evidence may include actual project or worker source and
+temporary artifacts, with canonical directory, regular-file, size and hash checks.
+After a blocked review, Progress explicitly offers a fresh read-only review of the
+original worker, never an automatic retry or repeated worker assignment. A recorded
+assignment can leave the issue at its current stage; the next Progress action can
+recommend the remaining work. Chat links use `codex://threads/<id>`, the local
+desktop app's copied chat-link format; opening depends on that app being installed.
