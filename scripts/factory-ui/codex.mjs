@@ -128,9 +128,9 @@ export class CodexConnection {
     });
     return result.thread.id;
   }
-  async resume(threadId, cwd) {
+  async resume(threadId, cwd, sandbox = 'workspace-write') {
     await this.ready();
-    await this.call('thread/resume', { threadId, cwd, sandbox: 'workspace-write', approvalPolicy: 'on-request' });
+    await this.call('thread/resume', { threadId, cwd, sandbox, approvalPolicy: 'on-request' });
   }
   async turn(threadId, cwd, prompt, outputSchema) {
     requireThat(!this.turns.has(threadId), 'This conversation already has running work.');

@@ -218,3 +218,32 @@ next-step guidance. The real compiler issue now exposes its retained review and
 invalid route reason above history, with disabled Progress and its original chat
 link. No second real review or report/registry/run-history edit was used to make
 the UI demonstration pass. No diagnostic instrumentation was introduced.
+
+## Bring already finished issues up to date
+
+Starting revision: `accbdb4838f1b9771166d97df68c96c58d0e2d37`.
+
+The compiler repair was integrated and checked, but its report still said to do.
+The previous UI surfaced a read-only conclusion and then asked the user to ask a
+coordinator to do routine bookkeeping. Progress now offers a bounded evidence
+review that records the contiguous completed stages together, with optional
+stages skipped only for an established reason. It follows configured links and
+stops at unmet requirements or final acceptance. Existing implementation and
+integration are completed outcomes, not skipped future work. The original
+investigation action and its merge policy remain untouched.
+
+The server independently checks existing commit ancestry and exact current-tree
+full and step verification summaries, including raw strict-audit results. The
+reviewer checks original repair scope, bases, logs, dependencies and actual human
+requirements. Each transition and affected operation has a fresh human-input
+read. Source/report changes reject the operation. No new worker, merge or closure
+is authorized by bookkeeping. Unchanged failed reconciliation cannot loop on the
+same Progress action. Deterministic fixtures cover multiple completed stages,
+optional prototype skip, no ledger mutation, missing verification, concurrency
+and refusal of inferred acceptance.
+
+Issue-focused Progress continues directly from a no-worker recommendation into
+this evidence review. Queue review remains advisory. The final review panel
+states the actual human decision and does not offer another readiness check.
+Live validation and retained summaries are indexed in
+`.issues/evidence/issue-reconciliation-validation.json`.

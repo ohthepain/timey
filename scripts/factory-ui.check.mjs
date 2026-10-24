@@ -751,10 +751,10 @@ test('finished issue review is shown and cannot repeat against unchanged input',
   });
   service.store.connected.delete(run.id);
   const issue = service.snapshot().issues[0];
-  assert.equal(issue.progress.disabled, true, 'Progress must not start the same completed review again.');
+  assert.equal(issue.progress.kind, 'reconcile', 'Progress must record existing work rather than repeat planning.');
   assert.equal(issue.latestResult.runId, run.id);
   assert.match(issue.latestResult.summary, /repair already exists/);
-  assert.throws(() => service.progressPreflight('20261022-one', 'investigate'), /already|result|review/i);
+  assert.equal(service.progressPreflight('20261022-one', 'investigate').choice.kind, 'reconcile');
 });
 
 async function evaluatedIssue(t, result) {
@@ -805,35 +805,17 @@ test('Progress saves a valid review once, then offers its actual worker launch i
   assert.match(service.snapshot().issues[0].latestResult.nextStep, /plan is saved.*start its worker/);
   assert.equal(calls.length, 1);
 });
-test('saving a route-only review does not re-enable another identical planning review', async (t) => {
+test('a no-worker review offers evidence reconciliation despite an invalid old route', async (t) => {
   const { service, api } = await evaluatedIssue(t, {
-    summary: 'No worker needed. Final acceptance is still separate.',
+    summary: 'Repair exists.',
     recommendations: [],
     routes: [
-      {
-        issueId: '20261022-one',
-        steps: [{ state: 'closed', decision: 'undecided', reason: 'Human acceptance is not recorded.' }],
-      },
+      { issueId: '20261022-one', steps: [{ state: 'closed', decision: 'skip', reason: 'Bad old suggestion.' }] },
     ],
   });
-  assert.equal(service.snapshot().issues[0].progress.kind, 'save-review');
-  service.progressStart(service.progressPreflight('20261022-one', 'investigate').token);
+  assert.equal(service.snapshot().issues[0].progress.kind, 'reconcile');
+  assert.equal(service.snapshot().issues[0].latestResult.saveProblem, null);
   assert.equal(api.inspect().registry.actions.length, 0);
-  assert.equal(service.snapshot().issues[0].progress.disabled, true);
-});
-test('relevant changes allow a fresh review; readiness or unrelated work cannot reset a finished review', async (t) => {
-  const { service, root } = await evaluatedIssue(t, { summary: 'No worker needed.', recommendations: [], routes: [] });
-  assert.equal(service.snapshot().issues[0].progress.disabled, true);
-  const check = await checkNow(service);
-  assert.equal(check.readiness.status, 'blocked');
-  assert.equal(service.snapshot().issues[0].progress.disabled, true);
-  writeFileSync(
-    join(root, '.issues/20261022-two.md'),
-    '---\nid: 20261022-two\nstate: investigate\n---\nUnrelated issue\n'
-  );
-  assert.equal(service.snapshot().issues[0].progress.disabled, true);
-  writeFileSync(join(root, 'source.js'), 'export const answer=43;\n');
-  assert.equal(service.snapshot().issues[0].progress.kind, 'plan');
 });
 test('finishing an evaluation invalidates readiness and exposes its next-step instruction', async (t) => {
   const { service, run } = await evaluatedIssue(t, {
@@ -844,20 +826,223 @@ test('finishing an evaluation invalidates readiness and exposes its next-step in
   });
   const view = service.snapshot().issues[0];
   assert.equal(view.latestResult.runId, run.id);
-  assert.match(view.latestResult.nextStep, /update the issue record/);
-  assert.equal(view.readiness.status, 'blocked');
-  assert.equal(view.stageStates.investigate.status, 'blocked');
+  assert.match(view.latestResult.nextStep, /update this issue/);
+  assert.equal(view.readiness.status, 'ready');
+  assert.equal(view.stageStates.investigate.status, 'ready');
 });
 
-test('an invalid proposed route blocks repeat Progress and explains why saving cannot proceed', async (t) => {
-  const { service, api } = await evaluatedIssue(t, {
-    summary: 'No worker needed. Review the recorded work.',
-    recommendations: [],
-    routes: [{ issueId: '20261022-one', steps: [{ state: 'closed', decision: 'skip', reason: 'Already done.' }] }],
+test('a proposed skip never closes the issue through reconciliation', async (t) => {
+  const { service, root } = await evaluatedIssue(t, { summary: 'Repair exists.', recommendations: [], routes: [] });
+  service.codex.turn = async () =>
+    JSON.stringify({
+      outcome: 'completed',
+      summary: 'Close it',
+      notes: 'Not accepted',
+      evidence: [join(root, 'source.js')],
+      remaining: [],
+      next_state: 'closed',
+      skipped_steps: [],
+      stage_records: [{ state: 'investigate', outcome: 'completed', reason: 'Read source' }],
+      commit_revision: null,
+      verification_summary: null,
+      audit_summary: null,
+    });
+  const run = await settle(
+    service,
+    service.progressStart(service.progressPreflight('20261022-one', 'investigate').token).runId
+  );
+  assert.equal(run.status, 'blocked');
+  assert.equal(service.snapshot().issues[0].state, 'investigate');
+});
+
+function completedWorkFixture(t) {
+  const context = fixture(t),
+    { root, git, service } = context;
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-for-repro | investigate | prototype |\n| ready-to-prototype | prototype | implement |\n| ready-to-fix | implement | verify |\n| ready-to-verify | verify | commit |\n| ready-for-commit | commit | final |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  writeFileSync(join(root, '.issues/preferences.json'), '{"commit":true}');
+  const log = join(root, '.issues/fallow.log');
+  writeFileSync(
+    log,
+    JSON.stringify({
+      kind: 'audit',
+      schema_version: 13,
+      version: '3.35.0',
+      verdict: 'pass',
+      attribution: { gate: 'all' },
+      summary: { dead_code_issues: 0, complexity_findings: 0, duplication_clone_groups: 0 },
+      dead_code: { workspace_diagnostics: [] },
+    }) + '\n'
+  );
+  const summaries = ['verification', 'step'].map((checkpoint) => {
+    const path = join(root, '.issues', checkpoint + '.json');
+    const checks = (checkpoint === 'step' ? ['fallow'] : ['fallow', 'factory', 'typecheck', 'tests', 'build']).map(
+      (name) => ({ name, passed: true, exit: 0, log })
+    );
+    writeFileSync(
+      path,
+      JSON.stringify({
+        checkpoint,
+        base: git('rev-parse', 'HEAD'),
+        snapshot_tree: git('rev-parse', 'HEAD^{tree}'),
+        passed: true,
+        changed_files: [],
+        checks,
+      })
+    );
+    return path;
   });
+  const result = {
+    outcome: 'completed',
+    summary: 'The repair is finished. Only your acceptance remains.',
+    notes: 'Reviewed existing implementation and checks. No work repeated.',
+    remaining: ['Review and accept the compiler repair.'],
+    evidence: [join(root, 'source.js'), log, ...summaries],
+    next_state: 'final',
+    skipped_steps: [],
+    commit_revision: git('rev-parse', 'HEAD'),
+    verification_summary: summaries[0],
+    audit_summary: summaries[1],
+    stage_records: [
+      { state: 'investigate', outcome: 'completed', reason: 'Cause established.' },
+      { state: 'prototype', outcome: 'skipped', reason: 'No design experiment needed.' },
+      ...['implement', 'verify', 'commit', '@integration'].map((state) => ({
+        state,
+        outcome: 'completed',
+        reason: 'Existing checked commit is in the target history.',
+      })),
+    ],
+  };
+  service.ownServer();
+  const old = service.store.add({ id: 'queue-review' }, 'evaluation', git('rev-parse', 'HEAD'));
+  service.store.update(old, {
+    status: 'completed',
+    issueId: '20261022-one',
+    issueState: 'investigate',
+    result: { recommendations: [], routes: [] },
+    summary: 'Existing work.',
+  });
+  service.store.connected.delete(old.id);
+  service.codex = {
+    requests: new Map(),
+    start: async () => 'review-existing-work',
+    turn: async () => JSON.stringify(result),
+    close() {},
+  };
+  return { ...context, result };
+}
+async function reconcileNow(service) {
+  return settle(service, service.progressStart(service.progressPreflight('20261022-one', 'investigate').token).runId);
+}
+test('Progress records already completed steps together, skips only the optional experiment, and stops at acceptance', async (t) => {
+  const { service, api, root } = completedWorkFixture(t);
+  const ledger = readFileSync(join(root, '.issues/factory.json'), 'utf8');
+  const run = await reconcileNow(service);
+  assert.equal(run.status, 'completed', run.summary);
   const issue = service.snapshot().issues[0];
+  assert.equal(issue.state, 'final');
+  assert.equal(issue.stageStates.implement.status, 'completed');
+  assert.equal(issue.stageStates.prototype.status, 'skipped');
+  assert.equal(issue.stageStates['@integration'].status, 'completed');
+  assert.match(issue.progress.summary, /accept/);
   assert.equal(issue.progress.disabled, true);
-  assert.match(issue.latestResult.saveProblem, /cannot skip explicit acceptance/);
-  assert.throws(() => service.progressPreflight('20261022-one', 'investigate'), /cannot skip explicit acceptance/);
+  assert.equal(readFileSync(join(root, '.issues/factory.json'), 'utf8'), ledger);
   assert.equal(api.inspect().registry.actions.length, 0);
+  assert.match(issue.content, /# One issue/);
+});
+test('missing current verification prevents false completion and disables an unchanged repeat', async (t) => {
+  const { service, result } = completedWorkFixture(t);
+  const summary = JSON.parse(readFileSync(result.verification_summary, 'utf8'));
+  writeFileSync(result.verification_summary, JSON.stringify({ ...summary, snapshot_tree: '0'.repeat(40) }));
+  const run = await reconcileNow(service);
+  assert.equal(run.status, 'blocked');
+  assert.match(run.summary, /exact candidate tree/);
+  assert.equal(service.snapshot().issues[0].state, 'investigate');
+  assert.equal(service.snapshot().issues[0].progress.disabled, true);
+});
+test('reconciliation preserves human requirements and rejects a report changed during review', async (t) => {
+  const { service, root, result } = completedWorkFixture(t);
+  service.codex.turn = async () => {
+    const path = join(root, '.issues/20261022-one.md');
+    writeFileSync(path, readFileSync(path, 'utf8') + '\nConcurrent note\n');
+    return JSON.stringify(result);
+  };
+  assert.equal((await reconcileNow(service)).status, 'blocked');
+  assert.match(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), /Concurrent note/);
+  assert.equal(service.snapshot().issues[0].state, 'investigate');
+});
+
+test('one Progress action continues from a no-worker recommendation through existing-work bookkeeping', async (t) => {
+  const { service, result, root } = completedWorkFixture(t);
+  service.store.runs = [];
+  service.store.save();
+  let turns = 0;
+  service.codex.turn = async () =>
+    JSON.stringify(
+      ++turns === 1
+        ? {
+            summary: 'Existing repair needs recording.',
+            next_step: 'Record existing work.',
+            recommendations: [],
+            routes: [],
+          }
+        : result
+    );
+  const first = await reconcileNow(service);
+  assert.equal(first.kind, 'evaluation');
+  const update = service.store.runs.find((r) => r.kind === 'reconciliation');
+  assert.ok(update, 'Progress should continue without handing routine bookkeeping to the user');
+  const finished = await settle(service, update.id);
+  assert.equal(finished.status, 'completed', finished.summary);
+  assert.equal(service.snapshot().issues[0].state, 'final');
+  assert.equal(turns, 2);
+  assert.equal(existsSync(join(root, '.issues/factory-progress.lock')), false);
+});
+test('an unresolved human requirement prevents recording dependent completed work', async (t) => {
+  const { service, root } = completedWorkFixture(t);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, checkReport('dependent-work'));
+  const stopped = await reconcileNow(service);
+  const unchanged = service.snapshot().issues[0];
+  assert.equal(unchanged.lifecycle_history, undefined);
+  assert.equal(unchanged.state, 'investigate');
+  assert.equal(stopped.status, 'blocked');
+  assert.match(stopped.summary, /Human input blocks/);
+});
+
+test('correcting a result reuses its existing review chat with read-only access', async (t) => {
+  const { service, root, result } = completedWorkFixture(t);
+  service.codex.turn = async () =>
+    JSON.stringify({ ...result, outcome: 'blocked', summary: 'Waiting for retained evidence.' });
+  const first = await reconcileNow(service);
+  assert.equal(first.status, 'blocked');
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8') + '\nEvidence is now available.\n');
+  let resumed = false;
+  service.codex.resume = async (...args) => {
+    assert.deepEqual(args, ['review-existing-work', service.root, 'read-only']);
+    resumed = true;
+  };
+  service.codex.turn = async () => JSON.stringify(result);
+  service.codex.start = async () => {
+    throw Error('Do not create another chat');
+  };
+  const next = await reconcileNow(service);
+  assert.equal(next.status, 'completed', next.summary);
+  assert.equal(resumed, true);
+  assert.equal(next.threadId, first.threadId);
+});
+
+test('a malformed evidence reference is corrected once in the same chat before any issue update', async (t) => {
+  const { service, result } = completedWorkFixture(t);
+  let turns = 0;
+  service.codex.turn = async () =>
+    JSON.stringify(++turns === 1 ? { ...result, evidence: ['not-an-absolute-file'] } : result);
+  const run = await reconcileNow(service);
+  assert.equal(run.status, 'completed', run.summary);
+  assert.equal(turns, 2);
+  assert.deepEqual(run.rejectedResult.evidence, ['not-an-absolute-file']);
+  assert.equal(service.snapshot().issues[0].state, 'final');
 });

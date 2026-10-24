@@ -23,12 +23,14 @@ export function progressIssue(queue, id, state) {
 }
 export function nextProgress(queue, issue, runs) {
   const stage = queue.lifecycle.find((s) => s.state === issue.state);
-  if (!stage) return unavailable('The issue needs a valid lifecycle stage.');
-  if (stage.role === 'closed') return unavailable('This issue is closed.');
+  const invalid = invalidStage(stage);
+  if (invalid) return invalid;
   const pending = runs.find((run) => isPending(run) && belongsToIssue(queue, issue, run));
   if (pending) return unavailable('The selected action is in progress. Its chat and results appear below.');
+  const stopped = stoppedReconciliation(queue, issue, runs);
+  if (stopped) return stopped;
   const choice = chooseWork(queue, issue, stage, runs);
-  return planFollowup(queue, issue, runs, choice);
+  return stageFollowup(queue, issue, stage, runs, choice);
 }
 function isPending(run) {
   if (run.kind === 'readiness') return run.connected;
@@ -52,7 +54,7 @@ function chooseWork(queue, issue, stage, runs) {
     kind: 'plan',
     title: 'Recommend the next action',
     summary:
-      'Review this issue and suggest the next bounded task. Saving a recommendation and starting its worker stay separate.',
+      'Review this issue, record steps already finished, and stop at the next task or decision. Starting a worker or integrating changes remains a separate choice.',
   };
 }
 function existingWork(action, runs) {
@@ -90,4 +92,25 @@ function needsIntegration(action) {
 function planFollowup(queue, issue, runs, choice) {
   if (choice.kind !== 'plan') return choice;
   return reviewFollowup(queue, issue, runs) || choice;
+}
+
+function stoppedReconciliation(queue, issue, runs) {
+  const recorded = runs.findLast(
+    (r) => r.kind === 'reconciliation' && r.issueId === issue.id && r.issueState === issue.state
+  );
+  if (recorded?.reviewBasis !== progressBasis(queue)) return null;
+  return recorded.status === 'blocked' ? unavailable(recorded.summary) : null;
+}
+function stageFollowup(queue, issue, stage, runs, choice) {
+  if (choice.kind !== 'plan') return choice;
+  if (stage.role === 'ready-to-close')
+    return unavailable(
+      'The repair, checks and commit are complete. Review the result and tell us whether you accept it. No more worker work is needed.'
+    );
+  return planFollowup(queue, issue, runs, choice);
+}
+
+function invalidStage(stage) {
+  if (!stage) return unavailable('The issue needs a valid lifecycle stage.');
+  return stage.role === 'closed' ? unavailable('This issue is closed.') : null;
 }

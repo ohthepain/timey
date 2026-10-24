@@ -5,7 +5,7 @@ import { nextProgress, progressIssue } from './next-action.mjs';
 import { inspectWorker } from './worker-history.mjs';
 import { digest, requireThat } from './common.mjs';
 
-const workKinds = ['worker', 'coordinator', 'integration', 'evaluation'];
+const workKinds = ['worker', 'coordinator', 'integration', 'evaluation', 'reconciliation'];
 function readinessKey(queue, issue, runs) {
   return digest(
     JSON.stringify({
@@ -35,6 +35,10 @@ function relevantWork(queue, issue, run) {
 export function readinessView(queue, issue, runs) {
   const followup = finishedReviewBlock(queue, issue, runs);
   if (followup) return followup;
+  const choice = nextProgress(queue, issue, runs);
+  if (choice.kind === 'reconcile') return { status: 'ready', summary: choice.summary };
+  if (queue.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-to-close'))
+    return { status: 'blocked', label: 'Waiting for your decision', summary: choice.summary };
   return recordedReadiness(queue, issue, runs);
 }
 function recordedReadiness(queue, issue, runs) {
@@ -234,6 +238,8 @@ function finishedReviewBlock(queue, issue, runs) {
 }
 
 function planningReadiness(choice) {
+  if (choice.kind === 'reconcile')
+    return ready('Progress will check existing evidence and record the steps already finished. No new work starts.');
   if (choice.kind === 'plan')
     return ready('The issue can be reviewed to recommend its next task. That review does not start work.');
   if (choice.kind === 'save-review')

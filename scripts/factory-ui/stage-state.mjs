@@ -3,9 +3,10 @@ import { explainBlock, sameStage } from './readiness.mjs';
 
 export function stageStates(queue, issue, runs, readiness) {
   const route = savedRoute(issue, runs);
-  return Object.fromEntries(
-    queue.lifecycle.map((stage) => [stage.state, describeStage(stage, queue, issue, runs, route, readiness)])
-  );
+  return Object.fromEntries([
+    ...queue.lifecycle.map((stage) => [stage.state, describeStage(stage, queue, issue, runs, route, readiness)]),
+    ['@integration', stageOutcome(issue, '@integration') ? recordedOutcome(stageOutcome(issue, '@integration')) : null],
+  ]);
 }
 function describeStage(stage, queue, issue, runs, route, readiness) {
   if (stage.state === issue.state) return currentStage(queue, issue, runs, readiness);
@@ -92,7 +93,7 @@ function readinessStage(readiness) {
     ] || 'unchecked';
   return {
     status,
-    label: labels[readiness.status] || 'Readiness not checked',
+    label: readiness.label || labels[readiness.status] || 'Readiness not checked',
     summary: explainBlock(readiness.summary),
   };
 }

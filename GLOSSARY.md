@@ -66,3 +66,8 @@ remain undecided. It can change and does not authorize bypassing required checks
 **Readiness**:
 Whether anything currently blocks the next selected action. It must be checked,
 can expire, and is distinct from completing the whole stage.
+
+**Issue reconciliation**:
+Bringing an issue report up to date with work already completed and checked.
+It records evidence-backed stage outcomes without repeating implementation,
+integration or human acceptance.

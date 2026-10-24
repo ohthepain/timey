@@ -7,8 +7,9 @@ import { reviewedTransition } from './stage-transition.mjs';
 import { savedRoute } from './lifecycle.mjs';
 import { reviewOperation } from './readiness.mjs';
 import { inspectWorker } from './worker-history.mjs';
-import { reviewSchema, reviewPrompt, reviewEvidence, appendReview } from './review-result.mjs';
+import { reviewSchema, reviewPrompt, reviewEvidence, appendReview, recordReviewResult } from './review-result.mjs';
 import { requireThat, writeJson, git } from './common.mjs';
+import { beginReconciliation } from './reconcile.mjs';
 
 export function prepareProgress(service, id, state) {
   const queue = readQueue(service.root),
@@ -59,9 +60,18 @@ export function triggerProgress(service, token, humanApproved) {
   return dispatchProgress(service, queue, issue, choice, humanApproved);
 }
 function dispatchProgress(service, queue, issue, choice, humanApproved) {
-  if (choice.kind === 'save-review') return service.saveReview(choice.runId, progressBasis(queue));
-  if (choice.kind === 'plan') return service.evaluate(progressBasis(queue), issue.id);
-  if (choice.kind === 'review') return beginReview(service, queue, issue, choice.actionId);
+  const handlers = {
+    reconcile: () => beginReconciliation(service, queue, issue),
+    'save-review': () => service.saveReview(choice.runId, progressBasis(queue)),
+    plan: () =>
+      service.evaluate(progressBasis(queue), issue.id, (result) => continueExistingWork(service, queue, issue, result)),
+    review: () => beginReview(service, queue, issue, choice.actionId),
+  };
+  const handler = handlers[choice.kind];
+  return handler ? handler() : dispatchWork(service, issue, choice, humanApproved);
+}
+
+function dispatchWork(service, issue, choice, humanApproved) {
   const preview = service.preflight(choice.actionId, choice.kind);
   const started = service.start(preview.token, humanApproved);
   const run = service.store.runs.find((item) => item.id === started.runId);
@@ -115,11 +125,7 @@ async function reviewWorker(service, queue, issue, run) {
       reviewSchema
     )
   );
-  service.store.update(run, { result });
-  if (result.outcome !== 'completed') {
-    service.store.update(run, { status: 'blocked', summary: result.summary });
-    return;
-  }
+  if (!recordReviewResult(service, run, result)) return;
   const latest = await inspectWorker(service.codex, service.root, { ...action, threadId: worker.threadId });
   requireThat(
     latest.turnId === worker.turnId,
@@ -162,4 +168,8 @@ function releaseReviewLock(lock, id) {
     'The coordinator review lock changed ownership. Reconcile it.'
   );
   rmSync(lock, { recursive: true });
+}
+
+function continueExistingWork(service, queue, issue, result) {
+  if (!result.recommendations.length) return beginReconciliation(service, queue, issue);
 }

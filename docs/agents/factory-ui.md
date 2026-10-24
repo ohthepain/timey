@@ -204,3 +204,21 @@ Saving updates the fingerprint for its own newly saved actions only, so a valid
 save is shown as saved rather than stale. Planning completion also invalidates
 readiness. Review result display never changes the authoritative issue, registry,
 route or human acceptance on page load.
+
+## Updating a stale issue
+
+When a focused review finds no new worker needed, Progress offers **Record finished
+work and continue**. A separate read-only coordinator review inspects the actual
+repair, current source, original and current checks, commit history and human
+requirements. The server records the consecutive steps already satisfied in one
+report update, stopping at missing work or final review. It can record existing
+integration without performing another merge or changing an old investigation's
+merge policy. Completed work is recorded as completed; only genuinely optional
+work is skipped. Required custom stages remain in the configured path.
+
+Existing verification must match the exact current tree and include full and
+step checkpoints with passing raw audit results. Existing implementation commits
+must be ancestors of the selected target. Structural human-input reads are fresh
+for each operation and transition; the reviewer assesses their meaning. The UI
+never infers human acceptance. A failed unchanged reconciliation stays disabled
+with the specific reason instead of offering repeated identical reviews.

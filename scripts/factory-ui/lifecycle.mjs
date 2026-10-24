@@ -89,6 +89,10 @@ export function recordStage(doc, issue, target, result, run, evidence) {
   if (!target) return;
   const events = historyFrom(doc);
   requireThat(Array.isArray(events), 'The stage history is invalid. Preserve and reconcile it before advancing.');
+  if (result.stage_records) return recordMultiple(doc, events, result, run, evidence, target);
+  recordSingle(doc, events, issue, target, result, run, evidence);
+}
+function recordSingle(doc, events, issue, target, result, run, evidence) {
   events.push({
     state: issue.state,
     outcome: 'completed',
@@ -115,4 +119,17 @@ export function recordStage(doc, issue, target, result, run, evidence) {
 
 function historyFrom(doc) {
   return doc.get('lifecycle_history')?.toJSON() || [];
+}
+
+function recordMultiple(doc, events, result, run, evidence, target) {
+  for (const step of result.stage_records)
+    events.push({
+      ...step,
+      next: target,
+      at: new Date().toISOString(),
+      revision: run.base,
+      chat: run.threadId,
+      evidence,
+    });
+  doc.set('lifecycle_history', events);
 }

@@ -69,3 +69,7 @@ recorded/future/current states, `readiness.mjs` for explicit action readiness,
 `lifecycle.mjs` for routes and stage records, and `stage-transition.mjs` with
 `skip-policy.mjs` for guarded optional skips. The workflow contract and storage
 boundaries are documented in [factory UI](factory-ui.md).
+
+`factory-ui/reconcile.mjs` reviews already finished work and validates a consecutive
+set of evidence-backed stage outcomes before updating a stale issue. It never
+launches workers, merges code or accepts issues.

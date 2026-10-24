@@ -44,13 +44,13 @@ export function latestResult(queue, issue, runs, choice) {
     routes: run.result.routes || [],
     saved: Boolean(run.savedActions),
     fresh: freshReview(queue, issue, run),
-    saveProblem: saveProblem(queue, run),
+    saveProblem: suggestions.length ? saveProblem(queue, run) : null,
   };
 }
 function fallbackStep(suggestions) {
   if (suggestions.length)
     return 'Review the suggested work below. Save it before starting a worker; saving does not start work.';
-  return 'No new worker was recommended. Read the conclusion, then ask the coordinator to record any needed decision or issue update. The review chat contains the supporting details.';
+  return 'Use Progress to check the finished work and update this issue. Steps that already meet their requirements will be recorded together; you only need to act when something requires your decision.';
 }
 function saveProblem(queue, run) {
   try {
@@ -70,6 +70,7 @@ function hasSuggestions(run) {
 export function reviewFollowup(queue, issue, runs) {
   const run = latestReview(issue, runs);
   if (!run) return null;
+  if (!run.result.recommendations.length) return reconciliationChoice();
   if (!freshReview(queue, issue, run)) return null;
   return finishedOrSave(queue, run);
 }
@@ -123,6 +124,7 @@ export function savedReviewInput(queue, run, actions) {
 }
 
 function nextInstruction(run, suggestions, choice) {
+  if (choice.kind === 'reconcile') return fallbackStep([]);
   if (run.savedActions) return savedNextInstruction(choice);
   return run.result.next_step || fallbackStep(suggestions);
 }
@@ -132,4 +134,13 @@ function savedNextInstruction(choice) {
   if (choice.kind === 'integrate')
     return 'The plan is saved. Review the exact completed changes before choosing the separate integration action.';
   return 'The plan is saved. Follow the current action panel for any remaining work or continue in the review chat. Saving did not complete or accept the issue.';
+}
+
+function reconciliationChoice() {
+  return {
+    kind: 'reconcile',
+    title: 'Record finished work and continue',
+    summary:
+      'Check the existing repair, tests and commits, then update every step already finished. Stop at work that is still needed or your final review. No worker or integration starts.',
+  };
 }

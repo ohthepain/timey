@@ -29,7 +29,7 @@ export async function checkCandidate(root, base, folder) {
   for (const { value } of summaries) validateSummary(value, base, tree);
   return { head, tree, summaries: summaries.map((s) => s.path) };
 }
-function validateSummary(summary, base, tree) {
+export function validateSummary(summary, base, tree) {
   requireThat(
     matchesSummary(summary, base, tree),
     'Evidence does not match the exact candidate tree and recorded base.'

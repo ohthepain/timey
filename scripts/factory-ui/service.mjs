@@ -319,7 +319,7 @@ export class FactoryUI {
       writeJson(join(this.root, '.issues/factory-integration.lock/owner.json'), { ...owner, pid: process.pid });
     }
   }
-  evaluate(basis, issueId = null) {
+  evaluate(basis, issueId = null, afterReview = null) {
     this.ownServer();
     const queue = readQueue(this.root);
     requireThat(digest(JSON.stringify(queue)) === basis, 'The queue changed. Refresh before reviewing it.');
@@ -343,6 +343,7 @@ export class FactoryUI {
         'Invalid queue review result.'
       );
       this.store.update(run, { status: 'completed', summary: result.summary, result });
+      if (afterReview) await afterReview(result, queue, selected);
     });
     return { runId: run.id };
   }
