@@ -96,10 +96,8 @@ function planFollowup(queue, issue, runs, choice) {
 }
 
 function stoppedReconciliation(queue, issue, runs) {
-  const recorded = runs.findLast(
-    (r) => r.kind === 'reconciliation' && r.issueId === issue.id && r.issueState === issue.state
-  );
-  if (recorded?.reviewBasis !== progressBasis(queue)) return null;
+  const recorded = latestStageReview(issue, runs);
+  if (!currentReconciliation(queue, recorded)) return null;
   return recorded.status === 'blocked' ? unavailable(recorded.summary) : null;
 }
 function stageFollowup(queue, issue, stage, runs, choice) {
@@ -126,4 +124,14 @@ function restoredReview(action, previous) {
     summary:
       'The existing Codex chat is connected. Review its result and supporting files, then record what is finished and what still needs work. This does not repeat the assignment.',
   };
+}
+
+function latestStageReview(issue, runs) {
+  return runs.findLast(
+    (r) => ['reconciliation', 'evaluation'].includes(r.kind) && r.issueId === issue.id && r.issueState === issue.state
+  );
+}
+
+function currentReconciliation(queue, run) {
+  return run?.kind === 'reconciliation' && run.reviewBasis === progressBasis(queue);
 }

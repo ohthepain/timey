@@ -1,4 +1,4 @@
-import { lifecycleWorkBasis } from './lifecycle-stop.mjs';
+import { canResumeLifecycle } from './lifecycle-stop.mjs';
 import { loadLifecycles, lifecycleView, approvedLifecyclePlan } from './lifecycle-store.mjs';
 import { startLifecycle, answerLifecycle, pauseLifecycle, continueLifecycleAfter } from './lifecycle-control.mjs';
 import { finishRecordUpdate } from './record-update.mjs';
@@ -85,7 +85,7 @@ export class FactoryUI {
   lifecycleStatus(queue, issue) {
     const record = lifecycleView(this, issue);
     if (!record) return null;
-    return { ...record, canResume: record.stopBasis !== lifecycleWorkBasis(queue, issue, record) };
+    return { ...record, canResume: canResumeLifecycle(this, record, queue, issue) };
   }
   readPlan(path) {
     return readPlan(this.root, path);

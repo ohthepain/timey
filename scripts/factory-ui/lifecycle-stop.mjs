@@ -1,3 +1,4 @@
+import { nextProgress } from './next-action.mjs';
 import { readQueue } from './data.mjs';
 import { digest } from './common.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
@@ -44,4 +45,11 @@ export function recoverReviewFailure(service, record, run) {
 
 function remainingWork(run) {
   return run.result?.remaining || [];
+}
+
+export function canResumeLifecycle(service, record, queue, issue) {
+  const basis = lifecycleWorkBasis(queue, issue, record);
+  if (record.stopBasis !== basis) return true;
+  const choice = nextProgress(queue, issue, service.store.list(service.codex.requests));
+  return choice.kind === 'save-review' && !record.attempts.includes(basis + ':save-review');
 }

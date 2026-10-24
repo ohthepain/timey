@@ -1,4 +1,4 @@
-import { lifecycleWorkBasis, stopLifecycle } from './lifecycle-stop.mjs';
+import { canResumeLifecycle, stopLifecycle } from './lifecycle-stop.mjs';
 import { randomUUID } from 'node:crypto';
 import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
@@ -17,7 +17,7 @@ export function startLifecycle(service, input) {
   service.lifecycleRuns = loadLifecycles(service.root);
   let record = service.lifecycleRuns[input.issueId];
   prepareLegacyResume(record);
-  requireResumeChange(record, queue);
+  requireResumeChange(service, record, queue);
   if (!record)
     record = {
       id: randomUUID(),
@@ -93,11 +93,11 @@ export function continueLifecycleAfter(service, issueId) {
   launchLifecycle(service, record);
 }
 
-function requireResumeChange(record, queue) {
+function requireResumeChange(service, record, queue) {
   if (!record?.stopBasis) return;
   const issue = queue.issues.find((i) => i.id === record.issueId);
   requireThat(
-    record.stopBasis !== lifecycleWorkBasis(queue, issue, record),
+    canResumeLifecycle(service, record, queue, issue),
     'This action is stopped because nothing relevant has changed. Its result is shown; repeating the review would not advance the issue.'
   );
 }

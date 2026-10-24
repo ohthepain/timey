@@ -2537,6 +2537,7 @@ test('a stopped technical review has no answer box and does not repeat its expla
   assert.equal(panel.querySelector('textarea'), null);
   assert.equal(panel.textContent.split(summary).length, 2);
   assert.match(panel.textContent, /Progress stopped/);
+  assert.equal(panel.querySelector('[data-lifecycle-start]').textContent, 'Continue…');
   assert.equal(panel.querySelector('[data-lifecycle-start]').disabled, true);
 });
 
@@ -2735,3 +2736,94 @@ test('automatic stage expansion follows the current step while explicit user exp
   assert.equal(stage(oldKey).open, false);
   assert.equal(stage(nextKey).open, true);
 });
+
+test('a newer task recommendation supersedes an older stopped reconciliation', async (t) => {
+  const { service, proposal } = fixture(t);
+  const queue = service.snapshot();
+  service.store.runs.push({
+    id: 'old-bookkeeping',
+    events: [],
+    kind: 'reconciliation',
+    issueId: '20261022-one',
+    issueState: 'investigate',
+    reviewBasis: queue.reviewBasis,
+    status: 'blocked',
+    summary: 'Implementation remains unfinished.',
+    updated: '2026-10-24T01:00:00Z',
+  });
+  service.store.save();
+  service.codex = {
+    requests: new Map(),
+    start: async () => 'next-task-chat',
+    close() {},
+    turn: async () =>
+      JSON.stringify({
+        summary: 'Run the unfinished prerequisite.',
+        next_action: 'work',
+        next_step: 'Ask the coordinator to execute the prerequisite.',
+        recommendations: [proposal],
+        routes: [],
+      }),
+  };
+  const started = service.evaluate(service.snapshot().reviewBasis, '20261022-one');
+  await settle(service, started.runId);
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.progress.kind, 'save-review');
+  assert.doesNotMatch(issue.latestResult.nextStep, /Ask the coordinator/);
+  const { lifecycleWorkBasis } = await import('./factory-ui/lifecycle-stop.mjs');
+  const record = { issueId: issue.id, status: 'blocked', events: [], attempts: [] };
+  record.stopBasis = lifecycleWorkBasis(readQueue(service.root), issue, record);
+  service.lifecycleRuns[issue.id] = record;
+  assert.equal(service.snapshot().issues[0].lifecycle.canResume, true);
+  service.progressStart(service.progressPreflight(issue.id, issue.state).token);
+  assert.equal(service.snapshot().issues[0].progress.kind, 'launch');
+});
+
+test('approved progress saves and launches the new task after an unsuccessful bookkeeping review', async (t) => {
+  const { service, proposal } = lifecycleFixture(t);
+  const original = service.codex.turn;
+  let evaluations = 0;
+  service.codex.turn = async (...args) => {
+    if (args[3].properties.recommendations && ++evaluations === 1)
+      return JSON.stringify({
+        summary: 'Check existing work.',
+        recommendations: [],
+        routes: [],
+        next_action: 'reconcile',
+      });
+    if (unfinishedBookkeeping(args, service)) return JSON.stringify(unfinishedBookkeepingResult());
+    return original(...args);
+  };
+  startIssueLifecycle(service);
+  await approveIssuePlan(service);
+  const record = await finishLifecycle(service);
+  assert.equal(
+    record.status,
+    'finished',
+    JSON.stringify({
+      summary: record.summary,
+      events: record.events,
+      runs: service.store.runs.map((r) => ({ kind: r.kind, status: r.status, summary: r.summary })),
+    })
+  );
+  assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 2);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
+  assert.equal(service.snapshot().issues[0].state, 'final');
+  assert.equal(service.store.runs.findLast((r) => r.kind === 'evaluation').savedActions.length, 1);
+  assert.equal(proposal.merge, 'none');
+});
+
+function unfinishedBookkeeping(args, service) {
+  return args[3].properties.next_state && !service.store.runs.some((r) => r.kind === 'worker');
+}
+function unfinishedBookkeepingResult() {
+  return {
+    outcome: 'blocked',
+    summary: 'The task is unfinished.',
+    notes: 'Work is needed.',
+    evidence: [],
+    remaining: ['Read source.js'],
+    next_state: null,
+    skipped_steps: [],
+  };
+}

@@ -446,13 +446,13 @@ not evidence that implementation exists. An actual question states the question,
 why the answer is needed and what to supply. Technical failures have no answer
 field, and unchanged stopped actions cannot be retried by appending “continue” to
 the report. Old generic retry records are displayed as stopped actions; one
-explicit Find next task can recover them without recording a fictional answer.
+explicit Continue can recover them without recording a fictional answer.
 
 A failed completion review may trigger one bounded planning recovery to identify
 the unfinished task or precise human decision. It does not repeat that review.
 The repeat guard uses the current step, source, plan and actual assignment state;
 administrative notes do not reset it. Real answers can authorize new planning.
-Stale no-work evaluations do not override later state. A fresh approved prerequisite
+Stale no-work evaluations and older failed bookkeeping reviews do not override a newer task recommendation. Continue saves the fresh task and route, then starts its worker within the approved plan; saving is not another human approval. A new actionable recommendation can resume stopped progress, while the same attempted action remains guarded against repetition. A fresh approved prerequisite
 such as dependency investigation can run during Implement without moving the issue
 back to Investigate. Worker reuse, fresh dispatch guards, exact integration approval
 and explicit final acceptance remain enforced.

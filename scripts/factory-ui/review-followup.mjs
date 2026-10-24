@@ -134,16 +134,20 @@ export function savedReviewInput(queue, run, actions) {
 }
 
 function nextInstruction(run, suggestions, choice) {
+  if (choice.kind === 'save-review')
+    return 'Continue will save this task and start the work within the approved plan. You do not need to open another chat.';
+  return otherNextInstruction(run, suggestions, choice);
+}
+function otherNextInstruction(run, suggestions, choice) {
   if (choice.kind === 'reconcile') return fallbackStep([]);
   if (run.savedActions) return savedNextInstruction(choice);
   return run.result.next_step || fallbackStep(suggestions);
 }
 function savedNextInstruction(choice) {
-  if (choice.kind === 'launch')
-    return 'The plan is saved. Check readiness for the saved assignment, then use Progress to start its worker. Saving did not start it.';
+  if (choice.kind === 'launch') return 'The plan is saved. Continue will start its worker within the approved plan.';
   if (choice.kind === 'integrate')
     return 'The plan is saved. Review the exact completed changes before choosing the separate integration action.';
-  return 'The plan is saved. Follow the current action panel for any remaining work or continue in the review chat. Saving did not complete or accept the issue.';
+  return 'The task and route are saved. The activity panel above shows what is happening and anything needed from you.';
 }
 
 function reconciliationChoice() {
