@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
-import { requireThat } from './common.mjs';
+import { digest, writeJson, requireThat } from './common.mjs';
 import { checklistView } from './plan-checks.mjs';
 import { requireIdlePlanDecision, savePlanDecision, remainingPlanChecks } from './plan-decision-record.mjs';
 
@@ -52,14 +54,22 @@ function recordDecision(service, queue, issue, run, check, status, result) {
     criterion.explanation = result;
     criterion.next_action = status === 'passed' ? '' : 'Address the changes requested in this review.';
   }
+  const receipt = join(service.store.directory, run.id + '-approval.json');
+  writeJson(receipt, { actor: 'human', issue: issue.id, check: check.id, status, revision: queue.head, result });
   const summary = status === 'passed' ? 'User approval recorded.' : 'User requested changes.';
-  savePlanDecision(service, issue, run, {
-    summary,
-    notes: result,
-    remaining: remainingPlanChecks(record),
-    plan_verification: record,
-    human_check_update: { ...check, status, revision: queue.head, result },
-  });
+  savePlanDecision(
+    service,
+    issue,
+    run,
+    {
+      summary,
+      notes: result,
+      remaining: remainingPlanChecks(record),
+      plan_verification: record,
+      human_check_update: { ...check, status, revision: queue.head, result, evidence_refs: [receipt] },
+    },
+    [{ path: receipt, sha256: digest(readFileSync(receipt)) }]
+  );
 }
 
 function alreadyApproved(check, head) {

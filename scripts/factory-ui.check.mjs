@@ -1816,3 +1816,107 @@ test('Commit keeps operation-specific required human guards', async (t) => {
   };
   await blockedCommit(service, api);
 });
+
+async function finalChecklist(t) {
+  const f = implementationFixture(t);
+  Object.assign(f.result.steps[0].criteria[0], {
+    status: 'not-checked',
+    human_check_id: 'experience',
+    evidence: [],
+    explanation: 'Final judgment is pending.',
+    next_action: 'Review the result.',
+  });
+  const proof = join(f.root, '.issues/acceptance-proof.txt');
+  writeFileSync(proof, 'Saved check result.\n');
+  f.result.steps[1].criteria[0].evidence = [proof];
+  await settle(f.service, checkPlan(f.service, f.path).runId);
+  const snapshot = f.service.snapshot(),
+    issue = snapshot.issues[0];
+  const history = [
+    {
+      state: 'verify',
+      outcome: 'completed',
+      next: 'review',
+      reason: 'All required automated checks passed.',
+      revision: snapshot.head,
+      at: new Date().toISOString(),
+      evidence: issue.plan_verification.evidence,
+    },
+  ];
+  const report = join(f.root, '.issues/20261022-one.md');
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace(
+      'state: verify',
+      'state: review\nlifecycle_history: ' + JSON.stringify(history)
+    )
+  );
+  return f;
+}
+test('Accept and close records the final checklist judgment and closes after bookkeeping-only changes', async (t) => {
+  const { service } = await finalChecklist(t);
+  const snapshot = service.snapshot();
+  assert.equal(snapshot.issues[0].implementation.fresh, false);
+  assert.deepEqual(service.decideIssue('20261022-one', 'review', 'close', snapshot.reviewBasis), { state: 'closed' });
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.state, 'closed');
+  assert.equal(issue.human_checks[0].status, 'passed');
+  assert.equal(issue.human_checks[0].revision, snapshot.head);
+  assert.equal(issue.plan_verification.steps[0].criteria[0].status, 'passed');
+  assert.match(issue.content, /Accepted and closed by the user/);
+});
+test('Accept and close cannot invent an observation or approve changed evidence', async (t) => {
+  const observation = await finalChecklist(t);
+  const report = join(observation.root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('kind: judgment', 'kind: evidence'));
+  assert.throws(
+    () =>
+      observation.service.decideIssue('20261022-one', 'review', 'close', observation.service.snapshot().reviewBasis),
+    /manual check/
+  );
+  assert.equal(observation.service.snapshot().issues[0].human_checks[0].status, 'pending');
+  const changed = await finalChecklist(t);
+  writeFileSync(join(changed.root, 'source.js'), 'export const answer = 99;\n');
+  assert.throws(
+    () => changed.service.decideIssue('20261022-one', 'review', 'close', changed.service.snapshot().reviewBasis),
+    /source changes/
+  );
+  assert.equal(changed.service.snapshot().issues[0].state, 'review');
+});
+test('confirmation failure is visible inside the dialog and successful actions refresh the screen', async () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(html.indexOf('      async function act('), html.indexOf('      function actionCard('));
+  const elements = { error: {}, 'confirmation-error': {}, approve: {}, confirm: { open: true } };
+  let refreshed = 0,
+    rendered = 0;
+  const act = new Function('$', 'refresh', 'render', 'let busy=false,data={};' + source + ';return act;')(
+    (id) => elements[id],
+    async () => {
+      refreshed++;
+    },
+    () => {
+      rendered++;
+    }
+  );
+  await act(async () => {
+    throw Error('An observation is still required.');
+  });
+  assert.equal(elements['confirmation-error'].textContent, 'An observation is still required.');
+  assert.equal(elements.approve.disabled, false);
+  await act(async () => {
+    elements.confirm.open = false;
+  });
+  assert.equal(refreshed, 1);
+  assert.equal(rendered, 2);
+});
+
+test('changed supporting evidence cannot be approved by Accept and close', async (t) => {
+  const { service, root } = await finalChecklist(t);
+  writeFileSync(join(root, '.issues/acceptance-proof.txt'), 'Changed check result.\n');
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'review', 'close', service.snapshot().reviewBasis),
+    /Supporting evidence changed/
+  );
+  assert.equal(service.snapshot().issues[0].state, 'review');
+  assert.equal(service.snapshot().issues[0].human_checks[0].status, 'pending');
+});

@@ -364,3 +364,10 @@ moves along the configured Next link. It opens no chat and does not repeat behav
 checks. The current source must still match that verified revision and be clean;
 unrelated changes are never staged automatically. Required commit/advance human
 guards remain enforced. No new empty commit, integration or acceptance is implied.
+
+Accept and close records the user’s explicit final judgment for pending closure-only
+judgments linked to the checklist, then closes the issue. It does not invent
+observations, override failed checks or waive technical work. Unchanged plan and
+evidence at the completed Verify revision can be retained across later bookkeeping
+changes. Confirmation failures appear inside the open dialog; successful decisions
+refresh the issue screen immediately.

@@ -645,6 +645,7 @@
     </dialog>
     <dialog id="confirm">
       <div id="selection"></div>
+      <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
     <script>
@@ -694,13 +695,17 @@
       }
       async function act(task) {
         busy = true;
+        $('confirmation-error').textContent = '';
+        if ($('confirm').open) $('approve').disabled = true;
         $('error').textContent = '';
         try {
           await task();
           await refresh();
         } catch (e) {
           $('error').textContent = e.message;
+          if ($('confirm').open) $('confirmation-error').textContent = e.message;
         } finally {
+          if ($('confirm').open) $('approve').disabled = false;
           busy = false;
           if (data) render();
         }
@@ -1254,7 +1259,7 @@
         };
         $('selection').innerHTML =
           kind === 'close'
-            ? '<h2>Close this issue?</h2><p>This accepts the recorded result and closes the issue. You can reopen it later if more work is needed.</p>'
+            ? '<h2>Close this issue?</h2><p>This records your final approval of the result and closes the issue. Checks that need an observation or test result must already be complete. You can reopen the issue later if more work is needed.</p>'
             : '<h2>Reopen this issue?</h2><p>This returns the issue to investigation. The existing result, checks and commits are kept. No worker starts automatically.</p><label>What still needs work? (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>';
         $('approve').textContent = kind === 'close' ? 'Accept and close issue' : 'Reopen issue';
         $('approve').disabled = false;
@@ -1527,6 +1532,9 @@
       }
       $('close-plan').onclick = () => $('plan').close();
       $('cancel').onclick = () => $('confirm').close();
+      $('confirm').onclose = () => {
+        $('confirmation-error').textContent = '';
+      };
       $('approve').onclick = () =>
         act(async () => {
           if (selection.planSkip)

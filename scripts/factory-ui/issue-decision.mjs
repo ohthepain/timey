@@ -4,11 +4,12 @@ import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
 import { appendReview } from './review-result.mjs';
 import { digest, requireThat } from './common.mjs';
+import { recordClosingApproval } from './closure-approval.mjs';
 import { requireImplementationPasses } from './plan-checks.mjs';
 
 export function decideIssue(service, id, state, kind, basis, reason = '') {
   service.ownServer();
-  const queue = readQueue(service.root),
+  let queue = readQueue(service.root),
     issue = progressIssue(queue, id, state);
   requireThat(progressBasis(queue) === basis, 'This page is out of date. Refresh before making a decision.');
   requireThat(['close', 'reopen'].includes(kind), 'Choose Close issue or Reopen issue.');
@@ -17,8 +18,12 @@ export function decideIssue(service, id, state, kind, basis, reason = '') {
   checkIdle(service, queue, issue);
   const target = decisionTarget(queue, role, kind);
   const action = { issues: [id] };
-  if (kind === 'close') checkClosure(service, queue, issue, action);
-  else service.guard(service.root, action, 'advance', queue.head, { target_state: target });
+  if (kind === 'close') {
+    queue = recordClosingApproval(service, queue, issue);
+    issue = progressIssue(queue, id, state);
+    basis = progressBasis(queue);
+    checkClosure(service, queue, issue, action);
+  } else service.guard(service.root, action, 'advance', queue.head, { target_state: target });
   const summary = kind === 'close' ? 'Accepted and closed by the user.' : 'Reopened by the user for investigation.';
   requireThat(typeof reason === 'string' && reason.length <= 4000, 'Keep the reason under 4,000 characters.');
   const run = service.store.add({ id }, 'decision', queue.head);

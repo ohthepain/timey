@@ -103,3 +103,6 @@ consent for an external supporting file and continues its original review.
 
 `scripts/factory-ui/commit.mjs` records the existing verified commit and advances
 only the Commit stage, without a model review or changes to source.
+
+`scripts/factory-ui/closure-approval.mjs` records final checklist judgments supplied
+by the explicit Accept and close action, retaining unchanged verification inputs.
