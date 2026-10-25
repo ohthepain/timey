@@ -76,9 +76,4 @@ export const moduleRepository = {
     );
     return new Module(row);
   },
-
-  async deleteModule(id: string): Promise<Module> {
-    const data = await safeQuery((prisma) => prisma.module.delete({ where: { id } }));
-    return new Module(data);
-  },
 };

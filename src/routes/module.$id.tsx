@@ -46,6 +46,7 @@ function ModulePage() {
 
 function useModulePractice(moduleId: string) {
   const practiceUserId = useNavigationStore((state) => state.practiceUserId);
+  const practiceGeneration = useNavigationStore((state) => state.practiceGeneration);
   const [beatProgress, setBeatProgress] = useState<BeatProgressView[]>([]);
   const [progressOwner, setProgressOwner] = useState<string | null>(null);
   useEffect(() => {
@@ -67,7 +68,7 @@ function useModulePractice(moduleId: string) {
     return () => {
       active = false;
     };
-  }, [moduleId, practiceUserId]);
+  }, [moduleId, practiceUserId, practiceGeneration]);
   return practiceUserId && progressOwner === practiceUserId ? beatProgress : [];
 }
 

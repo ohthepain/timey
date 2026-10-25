@@ -1,3 +1,5 @@
+import { deleteContent } from '~/repositories/contentDeletion';
+import { deleteContentInput } from '~/types/contentDeletion';
 import { createServerFn } from '@tanstack/react-start';
 import { beatRepository } from '~/repositories/beatRepository';
 import { z } from 'zod';
@@ -7,14 +9,10 @@ import { requireDomainUser } from '~/server/domain-session';
 import { createBeatInput, copyBeatInput, editBeatInput } from '~/types/beatWrites';
 
 export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
+  .validator(deleteContentInput)
   .handler(async (ctx) => {
-    const beat: Beat | null = await beatRepository.deleteBeat(ctx.data.id);
-    if (beat) {
-      return { success: true };
-    } else {
-      return { success: false };
-    }
+    const { userId } = await requireDomainUser();
+    return deleteContent('beat', ctx.data.id, userId);
   });
 
 export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data' })

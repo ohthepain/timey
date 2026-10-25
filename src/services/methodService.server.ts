@@ -1,3 +1,5 @@
+import { deleteContent } from '~/repositories/contentDeletion';
+import { deleteContentInput } from '~/types/contentDeletion';
 import { createServerFn } from '@tanstack/react-start';
 import { methodRepository } from '~/repositories/methodRepository';
 import { z } from 'zod';
@@ -40,14 +42,9 @@ export const updateMethodServerFn = createServerFn({ method: 'POST', response: '
     return new Method(method).toJSON();
   });
 
-const deleteMethodServerFnArgs = z.object({
-  id: z.string(),
-  token: z.string().optional(),
-});
-
 export const deleteMethodServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator((data: unknown) => deleteMethodServerFnArgs.parse(data))
+  .validator(deleteContentInput)
   .handler(async (ctx) => {
-    const method = await methodRepository.deleteMethod(ctx.data.id);
-    return new Method(method).toJSON();
+    const { userId } = await requireDomainUser();
+    return deleteContent('method', ctx.data.id, userId);
   });

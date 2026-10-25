@@ -70,7 +70,7 @@ function MethodPage() {
       <p className="mb-2">Index: {method.index}</p>
       <p className="mb-2">Author ID: {method.authorId}</p>
       <div className="mb-4">
-        <ModuleList method={method} />
+        <ModuleList method={method} onDeleted={() => setRevision((value) => value + 1)} />
       </div>
       <div className="mb-4">
         <AddModule method={method} onCreated={() => setRevision((value) => value + 1)} />

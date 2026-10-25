@@ -15,7 +15,7 @@ to existing callers. See [setup and boundary behavior](../../AUTH_SETUP.md).
 
 Private-practice progress/performance operations now use this boundary. Browser
 session state controls persistence affordances and cache lifetime; only the
-validated server session/profile chooses the owner. Method/module creation and editing use it too; beat creation/copy also use it; deletion operations remain on the legacy boundary until their coordinated cutover. Recording replacement stays
+validated server session/profile chooses the owner. Method/module creation and editing use it too; beat creation/copy also use it; ordinary-author deletion now uses the same validated session boundary. Recording replacement stays
 inside a domain Prisma transaction; auth/profile provisioning still has the
 separate recoverable boundary described above.
 
@@ -36,5 +36,13 @@ changed destination module before checking ownership. It preserves authorship,
 progress and performances, replacing only content notes without performance
 ownership. Ordinary author editing is independent of the client Admin toggle;
 identity changes reset editing drafts. The designated-admin non-owner exception
-remains unimplemented and must be added in the coordinated Admin slice. Deletion
-and retirement remain separate. See [edit inventory and proof](../../AUTH_SETUP.md#existing-beat-editing-verification).
+remains unimplemented and must be added in the coordinated Admin slice. Retirement remains separate. See [edit inventory and proof](../../AUTH_SETUP.md#existing-beat-editing-verification).
+
+Ordinary-author deletion checks the selected item's author and cleans the complete
+descendant/history set within one Prisma transaction. Coarse domain table locks
+protect against phantom descendants and new history from concurrent insertion or
+moves; this intentionally trades write concurrency for a bounded reliable cleanup.
+Auth identities, sessions and both migration histories are outside this write set.
+Performance-owned notes follow their performance even when also linked to content;
+surviving history is detached from removed content. See the
+[deletion semantics and proof](../../AUTH_SETUP.md#ordinary-author-deletion-verification).

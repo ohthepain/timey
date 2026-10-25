@@ -212,3 +212,16 @@ unrelated content must survive. Browser/import failures fail this proof.
 See [inventory and limits](../../AUTH_SETUP.md#existing-beat-editing-verification).
 The missing designated-admin exception, deletion, retirement, integration and
 final human judgment remain separate obligations.
+
+## Ordinary-author deletion verification
+
+Run `npm run test:auth -- --delete-content`, followed by `--edit-beats`, `--beats`,
+`--content` and `--practice`. Retain the printed absolute directory's
+`deletion-assertions.json`, `deletion-commands.json`, SQL logs, application logs and
+`output/playwright/`. The proof uses two users, actual compiled server-function/API
+requests and rendered confirmation/cancellation, refresh and account-switch paths.
+It covers strict ownership/session fields, both users' history, descendants,
+reference clearing, preserved auth/unrelated records, concurrent changes and
+rollback. Browser/import failures fail the check and never count as rejections.
+See [deletion semantics and lock tradeoff](../../AUTH_SETUP.md#ordinary-author-deletion-verification).
+Designated-admin enforcement, retirement, integration and human judgment remain separate.
