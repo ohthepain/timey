@@ -4,8 +4,7 @@ import { z } from 'zod';
 import { requirePracticeUser } from '~/server/practice-session';
 import { Beat } from '~/types/Beat';
 import { requireDomainUser } from '~/server/domain-session';
-import { createBeatInput, copyBeatInput } from '~/types/beatWrites';
-import { withAuth } from '~/utils/authenticatedServerFn';
+import { createBeatInput, copyBeatInput, editBeatInput } from '~/types/beatWrites';
 
 export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
@@ -18,29 +17,12 @@ export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'da
     }
   });
 
-const saveBeatServerFnArgs = z.object({
-  id: z.string().min(1),
-  index: z.number().optional(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  moduleId: z.string(),
-  beatNotes: z.array(z.any()),
-  token: z.string(),
-});
-
 export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator(saveBeatServerFnArgs)
-  .handler(
-    withAuth(async (ctx, userId) => {
-      const data = {
-        ...ctx.data,
-        index: ctx.data.index || 0,
-        description: ctx.data.description || null,
-        authorId: userId,
-      };
-      return beatRepository.updateBeat(ctx.data.id, data);
-    })
-  );
+  .validator(editBeatInput)
+  .handler(async (ctx) => {
+    const { userId } = await requireDomainUser();
+    return beatRepository.updateBeat(ctx.data.id, ctx.data, userId);
+  });
 
 export const createBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
   .validator(createBeatInput)

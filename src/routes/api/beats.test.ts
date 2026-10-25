@@ -33,9 +33,10 @@ it('creation propagates invalid session and ownership responses', async () => {
   mocks.create.mockRejectedValueOnce(new Response('Destination denied', { status: 403 }));
   expect((await put(input)).status).toBe(403);
 });
-it('existing editing retains its legacy boundary', async () => {
+it('existing editing uses only the validated session and rejects forged claims', async () => {
   mocks.update.mockResolvedValue({ id: 'existing' });
   expect((await put({ ...input, id: 'existing' })).status).toBe(200);
-  expect(mocks.legacy).toHaveBeenCalled();
-  expect(mocks.domain).not.toHaveBeenCalled();
+  expect(mocks.legacy).not.toHaveBeenCalled();
+  expect(mocks.update.mock.calls[0][2]).toBe('trusted');
+  expect((await put({ ...input, id: 'existing', authorId: 'forged' })).status).toBe(400);
 });

@@ -21,7 +21,7 @@ export const moduleRepository = {
         include: {
           beats: {
             include: {
-              beatNotes: true,
+              beatNotes: { where: { performanceId: null } },
             },
           },
           method: true,

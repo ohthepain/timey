@@ -12,6 +12,7 @@ export interface ModuleProps {
 }
 
 export const ModuleViewer = ({ module, beatProgress, onCreated }: ModuleProps) => {
+  const userId = useNavigationStore((state) => state.practiceUserId);
   const beatProgressMap = new Map(beatProgress.map((progress) => [progress.beatId, progress]));
 
   // Sort beats by index
@@ -34,7 +35,13 @@ export const ModuleViewer = ({ module, beatProgress, onCreated }: ModuleProps) =
           {sortedBeats.length > 0 ? (
             <div className="space-y-4">
               {sortedBeats.map((beat) => (
-                <BeatViewer key={beat.id} beat={beat} module={module} beatProgress={beatProgressMap.get(beat.id!)} />
+                <BeatViewer
+                  key={`${beat.id}:${userId}`}
+                  beat={beat}
+                  module={module}
+                  beatProgress={beatProgressMap.get(beat.id!)}
+                  onSaved={onCreated}
+                />
               ))}
             </div>
           ) : (

@@ -82,7 +82,9 @@ def rejected(label, calls, status, session='a'):
       }
       return results;
     '''.replace('CALLS', json.dumps(calls)), session)
-    requests = [r for r in CHECKS[label]['network'] if '/_server/' in r['url']]
+    # Background public refreshes stay in evidence but are not mutation denials.
+    requests = [r for r in CHECKS[label]['network']
+                if any('--'+name+'_createServerFn' in r['url'] for name, _ in calls)]
     assert len(requests) == len(calls) and all(r['status'] == status for r in requests), requests
     return result
 
@@ -250,8 +252,9 @@ try:
     denied_matrix('revoked-session',401,'b')
     # Reuse A's browser with a new identity whose profile is not yet provisioned.
     evaluate('clear-for-retry', '''await fetch('/api/auth/sign-out',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});return true;''')
-    retry=evaluate('retry-signup', '''const name='contentretry';const r=await fetch('/api/auth/sign-up/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:name,name,email:name+'@example.test',password:'Content-fixture-password-123!'})});if(!r.ok)throw new Error('signup');return (await r.json()).user.id;''')
+    # Install failure before signup: the live session observer may provision immediately.
     sql('fail-profile', '''CREATE FUNCTION domain.content_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'disposable provisioning failure'; END $$; CREATE TRIGGER content_fail BEFORE INSERT ON domain."User" FOR EACH ROW EXECUTE FUNCTION domain.content_fail();''')
+    retry=evaluate('retry-signup', '''const name='contentretry';const r=await fetch('/api/auth/sign-up/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:name,name,email:name+'@example.test',password:'Content-fixture-password-123!'})});if(!r.ok)throw new Error('signup');return (await r.json()).user.id;''')
     before=state('before-profile-failure')
     denied_matrix('profile-failure',503)
     assert state('after-profile-failure')==before

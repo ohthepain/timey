@@ -8,7 +8,7 @@ import { createBeatSourceFromBeat, ParseBeatSource, ParseBeatString } from '~/li
 import { ScoreView } from '~/components/ScoreView';
 import { useRouter } from '@tanstack/react-router';
 import { musicalNote } from '~/types/beatWrites';
-import { useKeycloak } from '~/contexts/KeycloakContext';
+import { useNavigationStore } from '~/state/NavigationStore';
 
 interface BeatEditorProps {
   beat: Beat | null;
@@ -31,9 +31,19 @@ const makeTempBeat = (moduleId: string): Beat => {
 };
 
 export const BeatEditor = (props: BeatEditorProps) => {
+  const userId = useNavigationStore((state) => state.practiceUserId);
+  if (!userId)
+    return (
+      <a href={`/auth/login?returnTo=${encodeURIComponent('/module/' + props.module.id)}`}>Sign in to edit beats</a>
+    );
+  const ownerId = props.beat ? props.beat.authorId : props.module.authorId;
+  if (ownerId !== userId) return <p role="alert">Only the beat author can edit it.</p>;
+  return <BeatEditorForm key={userId} {...props} />;
+};
+
+const BeatEditorForm = (props: BeatEditorProps) => {
   const module = props.module;
   const beat = props.beat || makeTempBeat(module.id);
-  const { keycloak } = useKeycloak();
 
   const [name, setName] = useState(beat.name);
   const [index, setIndex] = useState(beat.index);
@@ -63,7 +73,7 @@ export const BeatEditor = (props: BeatEditorProps) => {
 
     try {
       const fields = { moduleId: module.id, name: chosenName, index, beatNotes: tempBeat.beatNotes.map(musicalNote) };
-      await persistBeat(props.beat, fields, () => keycloak?.token);
+      await persistBeat(props.beat, fields);
 
       setName('');
       setIndex(0);
@@ -73,7 +83,7 @@ export const BeatEditor = (props: BeatEditorProps) => {
       props.onSave?.();
     } catch (err) {
       console.error('Error adding beat:', err);
-      setError('Unable to save beat. Sign in and check that you own the destination module, then retry.');
+      setError('Unable to save beat. Sign in as its author and check that you own any move destination, then retry.');
     }
   };
 
@@ -125,7 +135,11 @@ export const BeatEditor = (props: BeatEditorProps) => {
 
   return (
     <div>
-      {error && <p className="text-red-500 mb-2">{error}</p>}
+      {error && (
+        <p role="alert" className="text-red-500 mb-2">
+          {error}
+        </p>
+      )}
       <div className="bar-def-editors flex items-center">
         {beatSource.bars.map((barSource, index) => (
           <div className="inline-flex bg-pink-100 m-2" key={index}>
@@ -213,11 +227,7 @@ export const BeatEditor = (props: BeatEditorProps) => {
   );
 };
 
-async function persistBeat(
-  beat: Beat | null,
-  fields: Parameters<typeof createBeatServerFn>[0]['data'],
-  token: () => string | undefined
-) {
-  if (beat?.id) return saveBeatServerFn({ data: { ...fields, id: beat.id, token: token() ?? '' } });
+async function persistBeat(beat: Beat | null, fields: Parameters<typeof createBeatServerFn>[0]['data']) {
+  if (beat?.id) return saveBeatServerFn({ data: { ...fields, id: beat.id } });
   return createBeatServerFn({ data: fields });
 }

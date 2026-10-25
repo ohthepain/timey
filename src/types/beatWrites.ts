@@ -21,6 +21,8 @@ const fields = {
 };
 export const createBeatInput = z.strictObject({ ...fields, beatNotes: z.array(musicalNoteInput) });
 export const createBeatApiInput = z.strictObject({ ...fields, beatString: z.string().min(1) });
+export const editBeatInput = createBeatInput.extend({ id: z.string().min(1) });
+export const editBeatApiInput = createBeatApiInput.extend({ id: z.string().min(1) });
 export const copyBeatInput = z.strictObject({ id: z.string().min(1), moduleId: z.string().min(1) });
 export type NewBeat = z.infer<typeof createBeatInput>;
 
