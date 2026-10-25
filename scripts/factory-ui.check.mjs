@@ -1,3 +1,4 @@
+import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
 import { workerPrompt, integrationPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
 import { digest as digestReport } from './factory-ui/common.mjs';
@@ -160,14 +161,7 @@ test('a claimed successful integration cannot bypass independent verification', 
   writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node -e "process.exit(1)"' } }));
   git('add', '.');
   git('commit', '-qm', 'failing independent check');
-  const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
-  api.reserve(action.id);
-  api.attach(action.id, { threadId: 'worker', hostId: 'native' });
-  api.record(action.id, {
-    status: 'completed',
-    worker_revision: git('rev-parse', 'HEAD'),
-    evidence: 'claimed success',
-  });
+  const action = completedIntegrationFixture(api, proposal, git, 'claimed success');
   const { runId } = service.start(service.preflight(action.id, 'integrate').token, true);
   const run = await settle(service, runId);
   assert.equal(run.status, 'blocked');
@@ -2439,7 +2433,7 @@ test('one approved lifecycle run saves, launches, reviews and advances to explic
   assert.equal(record.status, 'finished', record.summary);
   assert.equal(service.snapshot().issues[0].state, 'final');
   assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
-  assert.equal(calls.filter((c) => c.start && !c.mode).length, 1);
+  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
   assert.match(readFileSync(join(service.root, '.issues/20261022-one.md'), 'utf8'), /Implementation plan approved/);
   assert.equal(record.input, null);
 });
@@ -3643,3 +3637,145 @@ test('native completion rejects an inspection whose dependencies or assignments 
   assert.throws(() => recordCompletion(root, input), /inspection changed/);
   assert.equal(readQueue(root).issues[0].state, 'investigate');
 });
+
+for (const sandbox of ['workspace-write', 'read-only']) {
+  test(`slow ${sandbox} chat startup retains the exact request and dispatches once`, async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const connection = new CodexConnection();
+    const sent = [],
+      receipts = [];
+    connection.ready = async () => {};
+    connection.send = (message) => sent.push(message);
+    const run = { id: 'run', kind: sandbox === 'read-only' ? 'lifecycle-review' : 'integration' };
+    const service = {
+      codex: connection,
+      store: {
+        runs: [run],
+        update: (r, value) => {
+          Object.assign(r, value);
+          receipts.push(value);
+        },
+      },
+    };
+    const first = startChat(service, run, '/project', sandbox);
+    const repeated = startChat(service, run, '/project', sandbox);
+    assert.equal(first, repeated);
+    await Promise.resolve();
+    assert.equal(sent.length, 1);
+    t.mock.timers.tick(30001);
+    assert.equal(run.startup.status, 'waiting');
+    assert.match(run.summary, /original request/);
+    assert.equal(connection.pending.size, 1);
+    assert.equal(sent.length, 1);
+    connection.reply({ id: sent[0].id, result: { thread: { id: 'original-chat' } } });
+    assert.equal(await first, 'original-chat');
+    assert.equal(await repeated, 'original-chat');
+    assert.equal(run.threadId, 'original-chat');
+    assert.equal(run.startup.status, 'ready');
+    assert.equal(receipts.at(-1).threadId, 'original-chat');
+    assert.equal(sent.filter((m) => m.method === 'thread/start').length, 1);
+    assert.equal(connection.approvalReviewers.get('original-chat'), sandbox === 'read-only' ? 'user' : 'auto_review');
+  });
+}
+
+test('disconnected uncertain startup blocks replacement creation, including after reload', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const connection = new CodexConnection();
+  connection.ready = async () => {};
+  connection.send = () => {};
+  const run = { id: 'old', kind: 'lifecycle-review', issueId: 'issue', actionId: 'assessment' };
+  const service = { codex: connection, store: { runs: [run], update: Object.assign } };
+  const started = startChat(service, run, '/project', 'read-only');
+  await Promise.resolve();
+  t.mock.timers.tick(30001);
+  const rejected = assert.rejects(started, /disconnected/);
+  connection.fail(Error('Codex disconnected'));
+  await rejected;
+  const replacement = { ...run, id: 'new', startup: undefined };
+  let creates = 0;
+  const restarted = {
+    codex: {
+      start: () => {
+        creates++;
+      },
+    },
+    store: { runs: JSON.parse(JSON.stringify([run, replacement])) },
+  };
+  await assert.rejects(
+    startChat(restarted, replacement, '/project', 'read-only'),
+    /earlier chat startup is unresolved/
+  );
+  assert.equal(creates, 0);
+});
+
+test('known idle startup resumes its exact chat after restart; active or used chats never redispatch', async () => {
+  const threads = [
+    { cwd: '/project', status: { type: 'idle' }, preview: '', turns: [] },
+    { cwd: '/project', status: { type: 'active' }, preview: '', turns: [] },
+    { cwd: '/project', status: { type: 'idle' }, preview: 'existing assignment', turns: [] },
+    { cwd: '/other', status: { type: 'idle' }, preview: '', turns: [] },
+  ];
+  for (const thread of threads) {
+    const run = { id: 'run', threadId: 'exact-chat', startup: { status: 'ready' } },
+      calls = [];
+    const service = {
+      store: { runs: [run] },
+      codex: {
+        resume: async (...args) => calls.push(args),
+        call: async () => ({ thread }),
+        start: () => assert.fail('must not create a chat'),
+      },
+    };
+    const result = startChat(service, run, '/project', 'read-only');
+    if (thread === threads[0]) assert.equal(await result, 'exact-chat');
+    else await assert.rejects(result, /already has work/);
+    assert.deepEqual(calls[0], ['exact-chat', '/project', 'read-only']);
+  }
+});
+
+for (const change of ['none', 'dirty', 'candidate']) {
+  test(`delayed integration startup rechecks approved inputs (${change}) before dispatch`, async (t) => {
+    const { api, proposal, service, git, root } = fixture(t);
+    const action = completedIntegrationFixture(api, proposal, git, 'fixture');
+    let opened;
+    service.codex.start = () =>
+      new Promise((resolve) => {
+        opened = resolve;
+      });
+    let dispatches = 0;
+    service.runTurn = async () => {
+      dispatches++;
+    };
+    const { runId } = service.start(service.preflight(action.id, 'integrate').token, true);
+    await Promise.resolve();
+    assert.equal(dispatches, 0);
+    changeIntegrationFixture(change, root, action);
+    opened('original-integration-chat');
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    const run = service.store.runs.find((r) => r.id === runId);
+    assert.equal(run.threadId, 'original-integration-chat');
+    assert.equal(dispatches, change === 'none' ? 1 : 0);
+    if (change !== 'none') {
+      assert.equal(run.status, 'blocked');
+      assert.match(run.summary, /inputs changed/);
+    }
+    assert.equal(service.store.runs.length, 1);
+  });
+}
+
+function changeIntegrationFixture(change, root, action) {
+  if (change === 'dirty') writeFileSync(join(root, 'source.js'), 'changed source');
+  if (change !== 'candidate') return;
+  const path = join(root, '.issues/factory.json');
+  const registry = JSON.parse(readFileSync(path, 'utf8'));
+  registry.actions.find((a) => a.id === action.id).worker_revision = 'a'.repeat(40);
+  writeFileSync(path, JSON.stringify(registry));
+}
+
+function completedIntegrationFixture(api, proposal, git, evidence) {
+  const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'worker', hostId: 'native' });
+  api.record(action.id, { status: 'completed', worker_revision: git('rev-parse', 'HEAD'), evidence });
+  return action;
+}

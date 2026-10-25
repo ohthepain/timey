@@ -37,10 +37,14 @@ export class CodexConnection {
   send(value) {
     this.child.stdin.write(JSON.stringify(value) + '\n');
   }
-  call(method, params) {
+  call(method, params, onSlow = null) {
     return new Promise((resolve, reject) => {
       const id = ++this.serial;
       const timer = setTimeout(() => {
+        if (onSlow) {
+          onSlow();
+          return; // Creation is uncertain: retain the exact request until its reply or disconnect.
+        }
         this.pending.delete(id);
         reject(Error(`${method} did not respond. Do not retry a creation without reconciliation.`));
       }, 30000);
@@ -120,16 +124,27 @@ export class CodexConnection {
   clearRequests(threadId) {
     for (const [id, request] of this.requests) if (request.params.threadId === threadId) this.requests.delete(id);
   }
-  async start(cwd, sandbox = 'workspace-write') {
+  async start(cwd, sandbox = 'workspace-write', onStartup = () => {}) {
     await this.ready();
-    const result = await this.call('thread/start', {
-      cwd,
-      sandbox,
-      approvalPolicy: 'on-request',
-      approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
-      ...permissionToolConfig(sandbox),
-      serviceName: 'timey-factory-ui',
-    });
+    onStartup({ status: 'starting' });
+    const result = await this.call(
+      'thread/start',
+      {
+        cwd,
+        sandbox,
+        approvalPolicy: 'on-request',
+        approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
+        ...permissionToolConfig(sandbox),
+        serviceName: 'timey-factory-ui',
+      },
+      () =>
+        onStartup({
+          status: 'waiting',
+          summary:
+            'Codex is taking longer to open this chat. Waiting for the original request; no duplicate chat will be created.',
+        })
+    );
+    onStartup({ status: 'ready', threadId: result.thread.id });
     this.approvalReviewers.set(result.thread.id, sandbox === 'workspace-write' ? 'auto_review' : 'user');
     return result.thread.id;
   }
@@ -142,6 +157,7 @@ export class CodexConnection {
       approvalPolicy: 'on-request',
       approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
       ...permissionToolConfig(sandbox),
+      excludeTurns: true,
     });
     this.approvalReviewers.set(threadId, sandbox === 'workspace-write' ? 'auto_review' : 'user');
   }

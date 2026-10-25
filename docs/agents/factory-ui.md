@@ -583,3 +583,23 @@ stale approval from being submitted twice. Failed requests show the error and
 restore the control for retry. Negative replies and answers use Sending…/Sent…
 instead of claiming approval. This feedback changes no permission or acceptance
 rules.
+
+## Slow chat startup
+
+Chat creation has a soft 30-second deadline. After it expires, the run says that
+Codex is taking longer and is waiting for the original request. The connection
+retains that exact RPC instead of discarding its response or creating another
+chat. A late response records the exact chat ID durably before the original
+assignment continues. Integration rechecks the candidate, approved target,
+cleanliness, lock and human guards after startup; stale inputs stop the merge.
+Read-only assessments, evidence reviews, readiness and plan reviews use the same
+startup handling, retaining their read-only sandbox.
+
+Run records retain startup progress and identity. Repeated starts for one run
+share its pending request. An uncertain disconnected startup blocks replacement
+creation for the same operation; it never guesses identity from a nearby timestamp.
+A saved ready, empty, idle chat can be reconnected by its exact ID; a chat with
+existing work must have its result reconciled rather than receive another assignment.
+A restart before the creation response is retained remains uncertain and requires
+reconciliation. Keep the owning server running while startup is pending. This
+recovery changes neither integration approval nor acceptance policy.

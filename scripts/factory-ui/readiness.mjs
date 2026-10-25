@@ -1,3 +1,4 @@
+import { startChat } from './chat-start.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
@@ -182,7 +183,7 @@ const readinessSchema = {
   additionalProperties: false,
 };
 async function semanticReview(service, queue, issue, action, run, guards, worker = null) {
-  const threadId = await service.codex.start(service.root, 'read-only');
+  const threadId = await startChat(service, run, service.root, 'read-only');
   service.store.update(run, {
     threadId,
     summary: 'Reviewing whether anything blocks the next action. No work will start.',

@@ -1,3 +1,4 @@
+import { startChat } from './chat-start.mjs';
 import { readFileSync } from 'node:fs';
 import { progressBasis } from './next-action.mjs';
 import { digest } from './common.mjs';
@@ -23,7 +24,7 @@ export async function reviewChat(service, run) {
   return resumeReviewThread(service, run, previousReview(service, run));
 }
 export async function resumeReviewThread(service, run, previous) {
-  if (!previous) return service.codex.start(service.root, 'read-only');
+  if (!previous) return startChat(service, run, service.root, 'read-only');
   await resumeSavedChat(service, previous.threadId);
   service.store.update(run, { previousRunId: previous.id });
   return previous.threadId;

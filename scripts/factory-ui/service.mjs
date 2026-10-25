@@ -1,3 +1,4 @@
+import { startChat } from './chat-start.mjs';
 import { issueContext } from '../factory-inputs.mjs';
 import { installWorkerHealth } from './worker-health.mjs';
 import { runAuthorization, describeAuthorization } from '../factory-authorization.mjs';
@@ -223,7 +224,7 @@ export class FactoryUI {
     requireThat(!existsSync(checkout), 'Worker checkout already exists. Reconcile it instead of recreating it.');
     this.store.update(run, { checkout });
     git(this.root, 'worktree', 'add', '-b', `codex/factory-${action.id}`, checkout, action.basis.head);
-    const threadId = await this.codex.start(checkout);
+    const threadId = await startChat(this, run, checkout);
     this.store.update(run, { threadId });
     this.api.attach(action.id, { threadId, hostId: 'codex-cli' });
     await this.runTurn(
@@ -248,9 +249,18 @@ export class FactoryUI {
       base: run.base,
     });
     this.perform(run, async () => {
-      const threadId = await this.codex.start(this.root);
+      const threadId = await startChat(this, run, this.root);
       this.store.update(run, { threadId });
-      await this.runTurn(run, integrationPrompt(action, run));
+      const current = currentAction(this.root, action.id);
+      const actual = [current.queue.head, current.queue.sourceClean, current.action];
+      const expected = [run.base, true, action];
+      requireThat(
+        JSON.stringify(actual) === JSON.stringify(expected),
+        'The approved integration inputs changed while the chat opened. Review the current candidate and target.'
+      );
+      this.requireLock(run);
+      this.guard(this.root, current.action, 'merge', current.queue.head);
+      await this.runTurn(run, integrationPrompt(current.action, run));
     });
     return { runId: run.id };
   }
@@ -412,7 +422,7 @@ export class FactoryUI {
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
     this.store.update(run, evaluationMetadata(queue, selected, basis));
     this.perform(run, async () => {
-      const threadId = await this.codex.start(this.root, 'read-only');
+      const threadId = await startChat(this, run, this.root, 'read-only');
       this.store.update(run, { threadId, status: 'running' });
       const result = JSON.parse(
         await this.codex.turn(

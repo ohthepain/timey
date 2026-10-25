@@ -1,3 +1,4 @@
+import { startChat } from './chat-start.mjs';
 import { captureInstructions } from './review-instructions.mjs';
 import { releaseReviewLock } from './review-lock.mjs';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -57,7 +58,7 @@ async function reviewPlan(service, queue, issue, plan, run) {
   if (previous) {
     await service.codex.resume(previous.threadId, service.root, 'read-only');
     threadId = previous.threadId;
-  } else threadId = await service.codex.start(service.root, 'read-only');
+  } else threadId = await startChat(service, run, service.root, 'read-only');
   service.store.update(run, { threadId, status: 'running' });
   const result = JSON.parse(
     await service.codex.turn(
