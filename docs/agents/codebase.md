@@ -3,20 +3,20 @@
 Timey is a MIDI rhythm-practice app. Read the code for current signatures and
 configuration; this map explains responsibilities and the useful starting points.
 
-| Area                     | Start reading                                                                                                       | Responsibility                                                                                                                                                                                             |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`                                                                           | Shared UI, authentication context, route restoration                                                                                                                                                       |
-| Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                  | Display the beat and control practice                                                                                                                                                                      |
-| Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                  | Clock pulses, MIDI input/output, metronome                                                                                                                                                                 |
-| Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                 | Turn performed notes into timing/velocity feedback                                                                                                                                                         |
-| Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                   | Capture/replay clock and note events; CSV import/export                                                                                                                                                    |
-| Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                      | Practice hierarchy and recorded performance                                                                                                                                                                |
-| Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                                        | Repository calls, server operations, relational storage                                                                                                                                                    |
-| Authentication           | `src/contexts/KeycloakContext.tsx`, `src/config/keycloak.ts`, `src/utils/authenticatedServerFn.ts`                  | Browser identity and protected server access                                                                                                                                                               |
-| Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                           | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/admin/delete pending |
-| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`              | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy; deferred content paths retain Keycloak                                                              |
-| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                            | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                          |
-| Factory controls         | `scripts/factory.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, [interface guide](factory.md) | Issue focus/listing, saved progress, manual decisions and guarded worker dispatch                                                                                                                          |
+| Area                     | Start reading                                                                                                       | Responsibility                                                                                                                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`                                                                           | Shared UI, authentication context, route restoration                                                                                                                                                                       |
+| Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                  | Display the beat and control practice                                                                                                                                                                                      |
+| Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                  | Clock pulses, MIDI input/output, metronome                                                                                                                                                                                 |
+| Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                 | Turn performed notes into timing/velocity feedback                                                                                                                                                                         |
+| Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                   | Capture/replay clock and note events; CSV import/export                                                                                                                                                                    |
+| Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                      | Practice hierarchy and recorded performance                                                                                                                                                                                |
+| Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                                        | Repository calls, server operations, relational storage                                                                                                                                                                    |
+| Authentication           | `src/contexts/KeycloakContext.tsx`, `src/config/keycloak.ts`, `src/utils/authenticatedServerFn.ts`                  | Browser identity and protected server access                                                                                                                                                                               |
+| Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                           | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin/delete pending |
+| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`              | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit; deferred content paths retain Keycloak                                                                         |
+| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                            | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                          |
+| Factory controls         | `scripts/factory.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, [interface guide](factory.md) | Issue focus/listing, saved progress, manual decisions and guarded worker dispatch                                                                                                                                          |
 
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
 timestamp semantics. Replay uses these same services; test their interaction, not
@@ -59,8 +59,7 @@ Update this map when responsibilities, boundaries, or starting points change.
 
 The [authentication foundation](../../AUTH_SETUP.md) owns `/api/auth/$` and
 `/api/session`; private progress/performance functions use `requireDomainUser`,
-and method/module create/edit plus beat create/copy operations use `requireDomainUser`; deferred beat editing,
-delete and user paths retain legacy helpers until their coordinated cutover. Profile creation uses the trusted auth primary key and blocks
+and method/module create/edit plus beat create/copy/edit operations use `requireDomainUser`; deferred delete and user paths retain legacy helpers until their coordinated cutover. Profile creation uses the trusted auth primary key and blocks
 dependent domain work on failure. Auth and Prisma clients have no shared transaction.
 The [ownership decision](../adr/0002-auth-domain-ownership.md) records migration boundaries.
 
@@ -91,7 +90,18 @@ function and API directly. See [write inventory and remaining legacy paths](../.
 
 Beat creation/copy contracts live in `src/types/beatWrites.ts`; repositories lock
 and authorize the destination module through the nested insert transaction.
-`createBeatServerFn` is separate from legacy existing-beat `saveBeatServerFn`.
+`createBeatServerFn` and existing-beat `saveBeatServerFn` use the same validated domain session boundary.
 `CopyBeat` owns public-source destination selection and account-keyed state;
 `ModuleViewer` gates new drafts by validated session/profile and module ownership.
 See [inventory and proof](../../AUTH_SETUP.md#beat-creation-and-copy-verification).
+
+Existing-beat editing shares strict `beatWrites.ts` contracts between the server
+function and `/api/beats` PUT. `BeatRepository.updateBeat` locks the beat and any
+move destination before author/parent checks and content replacement in one
+transaction. It never updates authorship or practice history; performance-owned
+notes are excluded from replacement and public content loading, including the
+module route and copy sources. `BeatViewer` exposes editing to the ordinary
+author independently of Admin mode; identity-keyed viewers/editors clear drafts. Save callbacks refresh the public
+module data through the existing creation refresh path.
+The designated-admin exception remains missing and explicitly deferred, along
+with deletion and retirement. See [inventory and proof](../../AUTH_SETUP.md#existing-beat-editing-verification).

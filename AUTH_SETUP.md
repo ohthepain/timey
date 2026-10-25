@@ -4,7 +4,7 @@ This is a partial application cutover in the coordinated authentication/admin mi
 Private progress and recorded performances use validated Better Auth sessions.
 Method/module creation and editing also use validated Better Auth sessions.
 Beat creation and public-beat copying now also use validated Better Auth sessions.
-Existing-beat editing, content deletion and the legacy login/menu still use legacy paths. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
+Existing-beat editing and moves now use validated Better Auth sessions. Content deletion and the legacy login/menu still use legacy paths. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
 `/auth/reset-password` and `/auth/session` screens exercise Better Auth directly.
 Use [the approved plan](docs/plans/auth-and-persistence-migration.md)
 for the remaining coordinated cutover, permissions, deletion and retirement work.
@@ -237,10 +237,10 @@ profile provisioning and retry, concurrent ownership changes, public reads,
 rendered create/edit controls, permission errors and account switching.
 
 This is not complete content authorization. Method/module deletion server functions
-and `/api/modules` DELETE retain their existing semantics. Existing-beat editing
-server functions and `/api/beats` PUT with an existing ID, legacy user APIs and
-`ensureKeycloakUser`/`withAuth` remain for later work. Beat creation/copy is now
-covered by the separate slice below. Do not use those paths as evidence of Better Auth enforcement.
+and `/api/modules` DELETE retain their existing semantics. Legacy user APIs and
+`ensureKeycloakUser`/`withAuth` remain for later work. Beat creation/copy and
+existing-beat edits/moves are covered by the separate slices below. Deferred
+paths do not establish Better Auth enforcement.
 The browser Admin toggle still grants no trusted method/module authority; trusted
 admin designation and beat exceptions remain unimplemented. Public browsing and
 anonymous local practice stay available. Keycloak retirement, transactional content
@@ -259,9 +259,8 @@ Run `--content` and `--practice` separately for the integrated slices' regressio
 
 Creation inventory: `ModuleViewer` mounts the owner-only, account-keyed new
 `BeatEditor`, which calls `createBeatServerFn`; `/api/beats` PUT without an existing
-ID is the equivalent API entry. `saveBeatServerFn` now requires an existing ID and
-retains legacy editing authentication/policy. PUT with an existing ID retains that
-same deferred policy. `BeatViewer` exposes `CopyBeat` independently of the persisted
+ID is the equivalent API entry. `saveBeatServerFn` and PUT with an existing ID
+use the ordinary-author editing boundary described below. `BeatViewer` exposes `CopyBeat` independently of the persisted
 Admin toggle; `copyBeatServerFn` requires an explicit owned destination module.
 No other application creation/copy callers were found in the source inventory.
 
@@ -277,6 +276,49 @@ The picker lists the signed-in user's modules, offers existing method/module
 creation controls when none exist, and can refresh destinations after returning.
 Account changes unmount creation drafts and copy selections through the existing
 validated session observer. Anonymous public reading and local practice remain.
-Legacy edit/move/delete helpers, designated Admin enforcement, remaining Prisma
+Legacy delete helpers, designated Admin enforcement, remaining Prisma
 replacement and Keycloak retirement are deferred; this is not complete beat
 mutation authorization. No existing database or volume is reset by these checks.
+
+## Existing-beat editing verification
+
+Run `npm run test:auth -- --edit-beats`, then the separate `--beats`, `--content`
+and `--practice` regressions. The editing proof uses actual compiled
+`saveBeatServerFn` requests, the existing-ID `/api/beats` PUT branch and rendered
+`BeatViewer`/`BeatEditor` controls with two users in a uniquely disposable
+PostgreSQL cluster. Retain the printed directory's `beat-edit-commands.json`,
+`beat-edit-assertions.json`, SQL before/after logs, application logs and
+`output/playwright/` screenshots, console and network output. Browser/import
+failures fail the check; real request statuses establish denials.
+
+The complete existing-edit inventory is `saveBeatServerFn`, the existing-ID PUT
+branch, `BeatRepository.updateBeat` and `BeatEditor` called from `BeatViewer`.
+`ModuleViewer` also calls `BeatEditor` for integrated creation. Shared strict
+schemas accept only explicit content fields and reject browser author/user/role,
+token and note-identity claims. `requireDomainUser` validates the live session
+and provisions its profile before domain work. A domain transaction locks the
+selected beat, requires its author and, on a move, locks and requires ownership
+of the destination module. These locks, checks, content-note replacement and
+beat update share one transaction. Same-module edits need the beat author;
+they do not acquire new parent ownership. Authorship is never written on edits.
+Saved progress/best tempo, performances and performance-owned notes are preserved,
+including notes with both beat/performance relations. Public beat/module content
+reads, copy sources and edit responses exclude performance-owned notes so they
+cannot enter editable musical content or public responses. No historical regrading
+or versioning is added.
+
+The existing editor uses the validated browser session/profile observer already
+used by creation/copy. Owners can edit with Admin mode off. Account changes reset
+editing state and drafts; successful edits refresh the module through its existing
+creation refresh callback, and anonymous controls link to the existing sign-in route.
+The editor reports a failed save with sign-in/author/destination recovery guidance.
+Move inputs remain available through the server function and API; the existing
+rendered editor continues to edit within its current module.
+
+This is ordinary-author enforcement only. The agreed designated-admin exception
+is **not implemented**: non-owner admins cannot edit through these paths yet.
+Trusted roles, restricted toggle visibility, transactional deletion and Keycloak
+retirement remain coordinated follow-ups. This slice does not complete beat
+authorization, the approved plan, integration, human UX judgment or acceptance.
+Dependency audit failures, build warnings and migration limitations documented
+above remain unresolved and are not waived by this proof.

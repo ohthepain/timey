@@ -195,3 +195,20 @@ nested-write rollback and source/history preservation. Retain the printed direct
 Expected HTTP rejections must be real requests; browser/import failures fail the check.
 See [partial cutover inventory](../../AUTH_SETUP.md#beat-creation-and-copy-verification).
 Existing-beat editing, deletion, Admin enforcement, retirement and human judgment remain separate.
+
+## Existing-beat editing slice
+
+Run `npm run test:auth -- --edit-beats` for real server-function/API and rendered
+editing checks in uniquely disposable PostgreSQL with two users. Run `--beats`,
+`--content` and `--practice` separately as regressions. Retain the printed absolute
+directory's `beat-edit-commands.json`, `beat-edit-assertions.json`, SQL logs,
+application logs and `output/playwright/`. The fixture checks author edits/moves,
+non-owner/unowned-destination denials, immutable authorship, strict forged-field
+rejection, missing/expired/revoked/forged sessions, profile failure/retry, rendered
+errors and account-switch draft clearing. Concurrent author, destination-owner
+and current-parent changes must not bypass checks. Deliberate note-write failure
+must roll back the beat update and note replacement. Both users' history and
+unrelated content must survive. Browser/import failures fail this proof.
+See [inventory and limits](../../AUTH_SETUP.md#existing-beat-editing-verification).
+The missing designated-admin exception, deletion, retirement, integration and
+final human judgment remain separate obligations.

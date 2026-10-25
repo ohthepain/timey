@@ -19,9 +19,10 @@ interface BeatViewerProps {
   beat: Beat;
   module: Module;
   beatProgress: BeatProgressView | undefined;
+  onSaved: () => void;
 }
 
-export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
+export function BeatViewer({ beat, module, beatProgress, onSaved }: BeatViewerProps) {
   const { currentBeat } = useNavigationStore();
   const { practiceError, selectBeat, passTempo } = useBeatPractice(beat);
 
@@ -45,6 +46,7 @@ export function BeatViewer({ beat, module, beatProgress }: BeatViewerProps) {
           module={module}
           onSave={() => {
             editing.setIsEditing(false);
+            onSaved();
           }}
         />
       )}
@@ -90,7 +92,7 @@ function useBeatEditing(beat: Beat) {
 function BeatHeading({ beat, editing }: { beat: Beat; editing: ReturnType<typeof useBeatEditing> }) {
   const { currentBeat } = useNavigationStore();
   const { enableAdmin } = usePersistedStore();
-  const { isEditing, handleEditBeat, handleDeleteBeat, router } = editing;
+  const { handleDeleteBeat, router } = editing;
   return (
     <div className="flex flex-row w-full">
       <div className="flex-col items-center w-full">
@@ -98,15 +100,9 @@ function BeatHeading({ beat, editing }: { beat: Beat; editing: ReturnType<typeof
           <div className="font-semibold text-3xl mx-4 ">{beat.name}</div>
           {currentBeat === beat && <Transport />}
           <CopyBeat beat={beat} />
+          <BeatEditControl beat={beat} editing={editing} />
           {enableAdmin && (
             <div className="flex justify-end space-between">
-              <button
-                onClick={handleEditBeat}
-                className="text-green-700 px-2 mx-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
-                title="Edit"
-              >
-                {isEditing ? 'Cancel' : 'Edit'}
-              </button>
               <button
                 onClick={async () => {
                   handleDeleteBeat(beat.id!);
@@ -122,5 +118,21 @@ function BeatHeading({ beat, editing }: { beat: Beat; editing: ReturnType<typeof
         </div>
       </div>
     </div>
+  );
+}
+
+function BeatEditControl({ beat, editing }: { beat: Beat; editing: ReturnType<typeof useBeatEditing> }) {
+  const userId = useNavigationStore((state) => state.practiceUserId);
+  if (!userId)
+    return <a href={`/auth/login?returnTo=${encodeURIComponent('/module/' + beat.moduleId)}`}>Sign in to edit</a>;
+  if (userId !== beat.authorId) return null;
+  return (
+    <button
+      onClick={editing.handleEditBeat}
+      className="text-green-700 px-2 mx-1 rounded hover:bg-green-200 border-green-600 border-2 rounded-e-md text-sm"
+      title="Edit"
+    >
+      {editing.isEditing ? 'Cancel' : 'Edit'}
+    </button>
   );
 }
