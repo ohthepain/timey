@@ -42,6 +42,7 @@ def port():
 
 PG_PORT = port()
 APP_PORT = port()
+SMTP_PORT = port()
 BASE = f"http://127.0.0.1:{APP_PORT}"
 ADMIN_URL = f"postgresql://fixture@127.0.0.1:{PG_PORT}/"
 
@@ -237,6 +238,7 @@ def stop_application(process):
 
 
 app = None
+mail = None
 started = False
 print(f"Authentication fixture evidence: {OUT}", flush=True)
 try:
@@ -247,8 +249,19 @@ try:
     sql("fixture-roles", "CREATE ROLE auth_owner LOGIN; CREATE ROLE domain_owner LOGIN;", "postgres")
     check_migrations()
     run("prisma-generate", ["npm", "exec", "--no", "--", "prisma", "generate"])
+    mail_log = (OUT / "smtp.log").open("w")
+    mail = subprocess.Popen(["node", "scripts/auth-mail-capture.mjs", str(SMTP_PORT), str(OUT)],
+                            cwd=ROOT, stdout=mail_log, stderr=subprocess.STDOUT, start_new_session=True)
+    COMMANDS.append({"command": ["node", "scripts/auth-mail-capture.mjs", str(SMTP_PORT), str(OUT)],
+                     "pid": mail.pid, "log": str(OUT / "smtp.log")})
     env = {**os.environ, **owner_env("foundation"), "BETTER_AUTH_URL": BASE,
+           "SMTP_HOST": "127.0.0.1", "SMTP_PORT": str(SMTP_PORT),
+           "SMTP_FROM": "timey@example.test", "SMTP_SECURE": "false",
            "BETTER_AUTH_SECRET": "unique-disposable-foundation-secret-" + OUT.name, "HOST": "127.0.0.1"}
+    # Capture is unauthenticated loopback; never inherit deployment credentials.
+    env.pop("SMTP_USER", None)
+    env.pop("SMTP_PASSWORD", None)
+    (OUT / "browser-target.json").write_text(json.dumps({"base": BASE, "database": ADMIN_URL + "foundation"}))
     app_log = (OUT / "application.log").open("w")
     app = subprocess.Popen(["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", str(APP_PORT)],
                            cwd=ROOT, env=env, stdout=app_log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -284,6 +297,8 @@ try:
     else:
         raise RuntimeError("Restarted application not ready")
     print(f"PASS: {len(ASSERTIONS)} assertions; evidence: {OUT}", flush=True)
+    if '--browser' in sys.argv:
+        run("browser", ["python3", "scripts/auth-browser.py", str(OUT)])
     if '--pause-for-browser' in sys.argv:
         input(f"Browser fixture ready at {BASE}; press Enter to stop its processes: ")
 finally:
@@ -292,3 +307,6 @@ finally:
         app_log.close()
     if started:
         run("pg-stop", ["pg_ctl", "-D", str(OUT / "pgdata"), "-m", "fast", "-w", "stop"])
+    if mail:
+        stop_application(mail)
+        mail_log.close()

@@ -109,7 +109,17 @@ proof; see [setup and coverage](../../AUTH_SETUP.md). This creates its own clust
 owners and databases under a unique temporary evidence directory and retains
 commands, assertions and dumps. Existing Compose databases are not targets.
 Database-session acceptance and profile recovery are exercised independently of
-the still-pending application authorization/screens/admin cutover.
+the still-pending application authorization/admin cutover.
+
+Run `npm run test:auth -- --browser` for the separate app-native `/auth/` screen
+slice against that uniquely isolated PostgreSQL cluster and local SMTP capture.
+This uses actual signup/login/reset forms in two browser sessions, validates
+remember-me/reload/logout cookies and password-reset delivery, expiry, reuse,
+old-password rejection and all-session revocation. It retains screenshots,
+console/network output, assertions and command exits under the fixture directory.
+See [setup](../../AUTH_SETUP.md) for browser prerequisites and partial-rollout
+limits. Screen success does not establish domain authorization, coordinated admin
+work, deletion behavior, Keycloak retirement, human UX approval or live SES delivery.
 
 The verifier links each declared workspace's installed dependency directory into
 the exported snapshot, preserving workspace dependency resolution without changing source

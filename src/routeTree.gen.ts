@@ -20,6 +20,7 @@ import { Route as SequenceIndexImport } from './routes/sequence.index'
 import { Route as UsersUserIdImport } from './routes/users.$userId'
 import { Route as ModuleIdImport } from './routes/module.$id'
 import { Route as MethodIdImport } from './routes/method.$id'
+import { Route as AuthScreenImport } from './routes/auth.$screen'
 
 // Create/Update Routes
 
@@ -77,6 +78,12 @@ const MethodIdRoute = MethodIdImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AuthScreenRoute = AuthScreenImport.update({
+  id: '/auth/$screen',
+  path: '/auth/$screen',
+  getParentRoute: () => rootRoute,
+} as any)
+
 // Populate the FileRoutesByPath interface
 
 declare module '@tanstack/react-router' {
@@ -107,6 +114,13 @@ declare module '@tanstack/react-router' {
       path: '/redirect'
       fullPath: '/redirect'
       preLoaderRoute: typeof RedirectImport
+      parentRoute: typeof rootRoute
+    }
+    '/auth/$screen': {
+      id: '/auth/$screen'
+      path: '/auth/$screen'
+      fullPath: '/auth/$screen'
+      preLoaderRoute: typeof AuthScreenImport
       parentRoute: typeof rootRoute
     }
     '/method/$id': {
@@ -168,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/users': typeof UsersRouteRouteWithChildren
   '/methods': typeof MethodsRoute
   '/redirect': typeof RedirectRoute
+  '/auth/$screen': typeof AuthScreenRoute
   '/method/$id': typeof MethodIdRoute
   '/module/$id': typeof ModuleIdRoute
   '/users/$userId': typeof UsersUserIdRoute
@@ -179,6 +194,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/methods': typeof MethodsRoute
   '/redirect': typeof RedirectRoute
+  '/auth/$screen': typeof AuthScreenRoute
   '/method/$id': typeof MethodIdRoute
   '/module/$id': typeof ModuleIdRoute
   '/users/$userId': typeof UsersUserIdRoute
@@ -192,6 +208,7 @@ export interface FileRoutesById {
   '/users': typeof UsersRouteRouteWithChildren
   '/methods': typeof MethodsRoute
   '/redirect': typeof RedirectRoute
+  '/auth/$screen': typeof AuthScreenRoute
   '/method/$id': typeof MethodIdRoute
   '/module/$id': typeof ModuleIdRoute
   '/users/$userId': typeof UsersUserIdRoute
@@ -206,6 +223,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/methods'
     | '/redirect'
+    | '/auth/$screen'
     | '/method/$id'
     | '/module/$id'
     | '/users/$userId'
@@ -216,6 +234,7 @@ export interface FileRouteTypes {
     | '/'
     | '/methods'
     | '/redirect'
+    | '/auth/$screen'
     | '/method/$id'
     | '/module/$id'
     | '/users/$userId'
@@ -227,6 +246,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/methods'
     | '/redirect'
+    | '/auth/$screen'
     | '/method/$id'
     | '/module/$id'
     | '/users/$userId'
@@ -240,6 +260,7 @@ export interface RootRouteChildren {
   UsersRouteRoute: typeof UsersRouteRouteWithChildren
   MethodsRoute: typeof MethodsRoute
   RedirectRoute: typeof RedirectRoute
+  AuthScreenRoute: typeof AuthScreenRoute
   MethodIdRoute: typeof MethodIdRoute
   ModuleIdRoute: typeof ModuleIdRoute
   SequenceIndexRoute: typeof SequenceIndexRoute
@@ -250,6 +271,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsersRouteRoute: UsersRouteRouteWithChildren,
   MethodsRoute: MethodsRoute,
   RedirectRoute: RedirectRoute,
+  AuthScreenRoute: AuthScreenRoute,
   MethodIdRoute: MethodIdRoute,
   ModuleIdRoute: ModuleIdRoute,
   SequenceIndexRoute: SequenceIndexRoute,
@@ -269,6 +291,7 @@ export const routeTree = rootRoute
         "/users",
         "/methods",
         "/redirect",
+        "/auth/$screen",
         "/method/$id",
         "/module/$id",
         "/sequence/"
@@ -289,6 +312,9 @@ export const routeTree = rootRoute
     },
     "/redirect": {
       "filePath": "redirect.tsx"
+    },
+    "/auth/$screen": {
+      "filePath": "auth.$screen.tsx"
     },
     "/method/$id": {
       "filePath": "method.$id.tsx"

@@ -14,6 +14,7 @@ configuration; this map explains responsibilities and the useful starting points
 | Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                                        | Repository calls, server operations, relational storage                                                                    |
 | Authentication           | `src/contexts/KeycloakContext.tsx`, `src/config/keycloak.ts`, `src/utils/authenticatedServerFn.ts`                  | Browser identity and protected server access                                                                               |
 | Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                           | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; application cutover pending |
+| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`              | Separate Better Auth account preview, forms and browser cookie interaction; existing Keycloak callers remain in place      |
 | Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                            | Isolated staged/working snapshots, strict audit and step evidence                                                          |
 | Factory controls         | `scripts/factory.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, [interface guide](factory.md) | Issue focus/listing, saved progress, manual decisions and guarded worker dispatch                                          |
 
@@ -61,3 +62,11 @@ The [authentication foundation](../../AUTH_SETUP.md) owns `/api/auth/$` and
 permissions work. Profile creation uses the trusted auth primary key and blocks
 dependent domain work on failure. Auth and Prisma clients have no shared transaction.
 The [ownership decision](../adr/0002-auth-domain-ownership.md) records migration boundaries.
+
+The `/auth/$screen` routes use the browser-only `auth-runtime/client.ts`; they do
+not import auth configuration, PostgreSQL or SMTP. `auth-runtime/mail.ts` supplies
+server-owned SMTP reset delivery. `authDestination` constrains browser return
+paths and `urlPersistence` leaves explicit auth navigation alone. These screens
+do not grant permission to domain operations or replace the app-wide Keycloak
+context. `scripts/auth-fixture.py --browser` runs the existing foundation checks
+plus rendered interactions through `auth-browser.py` and loopback SMTP capture.

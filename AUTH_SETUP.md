@@ -1,8 +1,11 @@
 # Authentication foundation
 
 This is the server foundation for the coordinated authentication/admin migration.
-Existing UI and application callers still use Keycloak. Use [the approved plan](docs/plans/auth-and-persistence-migration.md)
-for the remaining cutover, screens, mail, permissions, deletion and retirement work.
+Existing application callers and the app-wide context still use Keycloak. The
+separate `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
+`/auth/reset-password` and `/auth/session` screens exercise Better Auth directly.
+Use [the approved plan](docs/plans/auth-and-persistence-migration.md)
+for the remaining coordinated cutover, permissions, deletion and retirement work.
 Do not point existing callers at the new boundary until their authorization is implemented.
 
 ## Install and configure
@@ -26,6 +29,19 @@ local environment file. None are `VITE_` variables:
 - `BETTER_AUTH_URL`: public application origin, HTTPS except for loopback development.
 - `BETTER_AUTH_SECRET`: a generated secret of at least 32 characters, stable across
   application instances/restarts. Do not use the disposable fixture value.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` (a sender email address), `SMTP_SECURE`
+  (`true` for implicit TLS, `false` for STARTTLS or loopback capture): required
+  server-only reset-mail transport settings. Non-loopback SMTP requires TLS.
+- `SMTP_USER` and `SMTP_PASSWORD`: optional, supplied together for authenticated
+  SMTP. Never prefix mail credentials with `VITE_` or commit them.
+
+The retained mail investigation did not establish straightforward SES readiness.
+Use the approved local SMTP-capture fallback for local/CI verification. The fixture
+starts its own loopback capture server and never forwards messages. A deployment
+can supply authenticated SMTP (including separately configured SES SMTP), but sender
+verification, credentials and live delivery are separate deployment work. This
+slice provisions no AWS resources and sends no external email. Missing/invalid
+SMTP configuration fails server initialization rather than silently dropping resets.
 
 Deployers provision schema owners and credentials separately. On an already
 verified target, connect as the auth migration owner and run:
@@ -58,8 +74,19 @@ Configuration loads lazily behind the installed framework's `serverOnly` boundar
 secrets and PostgreSQL drivers belong exclusively on the server. Database sessions
 use Better Auth's default lifetimes, cookie caching disabled, email/password and
 username login, current-session logout and reset-session revocation configuration.
-Password-reset delivery and the app-native client/screens are pending; this slice
-configures no mail callback and claims no working reset-email flow.
+The server-owned Nodemailer callback delivers library-generated reset links. The
+browser client uses Better Auth's signup, username/email sign-in, remember-me,
+sign-out, reset-request and reset-password facilities. Password confirmation is
+checked in the forms; username is the initial display name and email is never
+shown on the account screen. Return destinations must be local application paths;
+unsafe values fall back to `/auth/session`. Auth routes bypass saved-route
+restoration and are not saved, so reset URLs/tokens are not retained there.
+
+This is an explicit partial rollout: the header's existing login/menu and protected
+domain callers remain on Keycloak. Open the `/auth/` routes directly to review
+the new screens. The preview notice describes that boundary. A Better Auth account
+screen session is not domain authorization and does not replace `requireDomainUser`
+or its provisioning/failure/retry behavior. No admin authority is added.
 
 `GET /api/session` returns only the validated user's domain `userId`, with no-store
 caching. `requireDomainUser` is also usable inside later server functions: its default
@@ -87,6 +114,8 @@ Install local PostgreSQL tools (`initdb`, `pg_ctl`, `psql`, `pg_dump`), then run
 
 ```sh
 npm run test:auth
+# Same fixture plus actual rendered screen/cookie/mail checks:
+npm run test:auth -- --browser
 ```
 
 For a browser or compiled-server-function check against the same disposable data,
@@ -111,9 +140,20 @@ The proof covers fresh/repeated migration replay and owner isolation, Prisma sha
 replay preservation, real signup cookies and persisted sessions, invalid/expired/
 revoked/logout and foreign-origin rejection, persistence across an app restart,
 stable IDs, concurrent provisioning, injected database
-failure, same-cookie recovery and legacy-email collision rejection. Browser UX,
-reset email, admin permissions, deletion, production deployment and live SES are
-later checks. It does not claim those paths are verified.
+failure, same-cookie recovery and legacy-email collision rejection.
+Admin permissions, deletion, production deployment and live SES remain later checks.
+The optional `--browser` check requires the Playwright CLI skill wrapper (override
+its path with `PWCLI` if needed), installed Chrome and local process/IPC permission.
+It uses two isolated browser sessions and the actual forms, not mocked auth or
+API-only login/reset. Evidence includes field validation, private account display,
+username/email login, persistent/session cookie attributes and reload, logout,
+captured SMTP reset links, expired/reused link and submitted-token rejection,
+old-password rejection, new-password login and all prior session revocation.
+Database assertions and same-cookie profile failure/recovery supplement those
+screen interactions. Console/network logs and desktop/mobile screenshots are
+retained under `output/playwright/` in the fixture directory. Expected rejection
+responses and legacy Keycloak/MIDI diagnostics must be reported separately from
+new-screen failures. Capture is not live SES evidence.
 
 The approved prerelease conversion limitation remains: historical v0 journals keep
 millisecond timestamps when upgraded; fresh v1 replay derives second precision from
