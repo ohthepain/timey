@@ -168,3 +168,18 @@ statuses, legacy Keycloak/MIDI diagnostics and unexpected errors separately.
 See [partial cutover boundaries](../../AUTH_SETUP.md#private-practice-verification).
 Content authorization, designated Admin behavior, content deletion, Keycloak
 retirement, hardware timing and final human judgment remain separate obligations.
+
+## Method/module write slice
+
+Run `npm run test:auth -- --content` for real server-function/API requests and
+rendered existing creation/edit controls with two users in uniquely disposable
+PostgreSQL. Retain `content-commands.json`, `content-assertions.json`, SQL logs,
+application logs and `output/playwright/` in the printed directory. The fixture
+asserts actual rejection response statuses and unchanged rows, trusted authors,
+owner edits/moves, destination-owner checks, forged fields/cookies, expired and
+revoked sessions, profile failure/retry, concurrent ownership changes, public reads,
+rendered permission errors and account switching. Browser/import failures fail the
+proof. Run the separate `--practice` regression; completed foundation/screen
+investigations need not repeat. See [setup and explicit legacy boundaries](../../AUTH_SETUP.md#methodmodule-write-verification).
+Deletion, beat/admin permissions, retirement, integration, human UX judgment and
+acceptance remain outside this slice.

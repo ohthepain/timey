@@ -2,7 +2,8 @@
 
 This is a partial application cutover in the coordinated authentication/admin migration.
 Private progress and recorded performances use validated Better Auth sessions.
-Content operations and the legacy login/menu still use Keycloak. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
+Method/module creation and editing also use validated Better Auth sessions.
+Beat operations, content deletion and the legacy login/menu still use legacy paths. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
 `/auth/reset-password` and `/auth/session` screens exercise Better Auth directly.
 Use [the approved plan](docs/plans/auth-and-persistence-migration.md)
 for the remaining coordinated cutover, permissions, deletion and retirement work.
@@ -83,7 +84,8 @@ unsafe values fall back to `/auth/session`. Auth routes bypass saved-route
 restoration and are not saved, so reset URLs/tokens are not retained there.
 
 This is an explicit partial rollout: the header's Practice account/sign-in link opens
-the Better Auth screens; its legacy Login/menu still belongs to content operations.
+the Better Auth screens and supplies the validated session state for method/module
+creation/edit controls; the legacy Login/menu remains for deferred content paths.
 Private progress and performance server functions call `requireDomainUser` before
 accessing records. Strict request schemas reject supplied ownership/token fields.
 Browser state gates controls only; it never authorizes a server operation. No admin
@@ -195,3 +197,52 @@ evidence owns the signup/login/reset screen matrix. Browser evidence does not
 establish hardware MIDI timing, content/admin permissions, integration or acceptance.
 The retained dependency audit has 44 vulnerabilities, including five critical;
 this slice changes no dependency pins and grants no risk acceptance.
+
+## Method/module write verification
+
+Run `npm run test:auth -- --content` for the bounded method/module slice. This
+creates one unique PostgreSQL database, runs the actual app and drives
+`scripts/content-browser.py` through the Playwright CLI. It skips completed
+foundation/screens investigations. Run `--practice` separately for the private
+practice regression. The browser imports `scripts/content-browser-client.mjs`
+through Vite to exercise actual compiled server functions, including the module
+update operation without adding a module-edit UI.
+
+The write inventory is `createMethodServerFn`, `updateMethodServerFn`,
+`createModuleServerFn`, `updateModuleServerFn`, and `POST`/`PUT /api/modules`.
+There is no method API write route; `/api/modules/$id` is read-only. All these
+writes validate strict field lists, require `requireDomainUser`, derive creation
+authors from its stable ID and preserve authors on update. Repository writes
+explicitly select editable fields. Module updates receive the selected ID and
+persist the explicit destination `methodId`. Original authors alone edit methods
+and modules; creating/moving a module also requires destination-method ownership.
+An Admin toggle, role field, bearer token or claimed author cannot override this.
+
+Method updates lock the selected row before checking its author. Module updates
+lock their selected row; module creation and explicit moves lock the destination
+method. Each permission check and dependent write shares one Prisma transaction,
+so concurrent moves/ownership changes cannot pass a stale authorization check.
+Profile provisioning remains a separate recoverable boundary before that transaction.
+The existing session observer validates `/api/session`; identity changes remount
+method/module forms, clear drafts/errors and refresh public state. Module creation
+refreshes its method's list. Server rejection remains authoritative when UI state
+is stale, with a visible sign-in/permission retry explanation.
+
+Evidence is retained in `content-assertions.json`, `content-commands.json`,
+`application.log`, SQL assertion logs and `output/playwright/` under the printed
+fixture directory. It covers two authors, owner edits/moves, destination ownership,
+forged ownership/token/role fields, missing/expired/revoked/forged cookies, failed
+profile provisioning and retry, concurrent ownership changes, public reads,
+rendered create/edit controls, permission errors and account switching.
+
+This is not complete content authorization. Method/module deletion server functions
+and `/api/modules` DELETE retain their existing semantics; beat server functions
+and `/api/beats` writes/copy, legacy user APIs and `ensureKeycloakUser`/`withAuth`
+remain for later work. Do not use those paths as evidence of Better Auth enforcement.
+The browser Admin toggle still grants no trusted method/module authority; trusted
+admin designation and beat exceptions remain unimplemented. Public browsing and
+anonymous local practice stay available. Keycloak retirement, transactional content
+history deletion, remaining ORM replacement, exact-candidate integration approval,
+combined verification, human UX judgment and acceptance are separate obligations.
+Dependency pins, 44 reported vulnerabilities, build warnings and the migration
+precision limitation above are unchanged.
