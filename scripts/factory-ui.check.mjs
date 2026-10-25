@@ -2888,6 +2888,69 @@ async function activityScreen(t) {
   return { window: dom.window, snapshot };
 }
 
+async function approvalScreen(t) {
+  const view = await activityScreen(t);
+  view.snapshot.runs.find((r) => r.id === 'live').approvals = [
+    {
+      id: 'permission-feedback',
+      method: 'item/permissions/requestApproval',
+      params: { reason: 'Run the authorized local checks.', permissions: {} },
+      options: [{ id: 'session', label: 'Allow for this chat', detail: '' }],
+    },
+  ];
+  view.window.screenTest.show(view.snapshot);
+  return view;
+}
+
+test('approval feedback is immediate, survives rendering, and prevents duplicate submission while the queue refreshes', async (t) => {
+  const { window, snapshot } = await approvalScreen(t);
+  let accept,
+    refresh,
+    posts = 0;
+  window.fetch = (path) => {
+    if (path.endsWith('/answer')) {
+      posts++;
+      return new Promise((resolve) => {
+        accept = resolve;
+      });
+    }
+    return new Promise((resolve) => {
+      refresh = resolve;
+    });
+  };
+  const button = window.document.querySelector('[data-answer]');
+  window.eval('busy = true'); // An earlier preflight refresh must not swallow this click.
+  button.click();
+  button.click();
+  assert.equal(posts, 1);
+  assert.equal(button.disabled, true);
+  assert.equal(button.textContent, 'Approving…');
+  accept({ ok: true, json: async () => ({ answered: true }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(button.textContent, 'Approved. Continuing…');
+  window.screenTest.show(snapshot);
+  const replacement = window.document.querySelector('[data-answer]');
+  assert.equal(replacement.disabled, true);
+  assert.equal(replacement.textContent, 'Approved. Continuing…');
+  replacement.click();
+  assert.equal(posts, 1);
+  snapshot.runs.find((r) => r.id === 'live').approvals = [];
+  refresh({ ok: true, json: async () => snapshot });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.querySelector('[data-answer]'), null);
+});
+
+test('failed approval shows the error and restores an enabled button for retry', async (t) => {
+  const { window } = await approvalScreen(t);
+  window.fetch = async () => ({ ok: false, json: async () => ({ error: 'Approval could not be saved.' }) });
+  window.document.querySelector('[data-answer]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const button = window.document.querySelector('[data-answer]');
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, 'Allow for this chat');
+  assert.match(window.document.getElementById('error').textContent, /Approval could not be saved/);
+});
+
 test('native permission screen explains chat scope and actual read, write and network access', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   const request = {

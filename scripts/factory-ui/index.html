@@ -722,6 +722,7 @@
       let data,
         busy = false,
         selection;
+      const approvalStates = new Map();
       const $ = (id) => document.getElementById(id);
       const esc = (value) =>
         String(value ?? '').replace(
@@ -779,6 +780,51 @@
           if ($('confirm').open) $('approve').disabled = false;
           busy = false;
           if (data) render();
+        }
+      }
+      function approvalKey(button) {
+        if (button.id === 'approve') return 'dialog';
+        return [
+          button.dataset.run,
+          button.dataset.answer,
+          button.dataset.lifecycleAnswer,
+          button.dataset.lifecycleUpdated,
+          button.dataset.decision,
+        ].join(':');
+      }
+      function applyApprovalFeedback() {
+        document.querySelectorAll('[data-answer], [data-lifecycle-answer], #approve').forEach((button) => {
+          const state = approvalStates.get(approvalKey(button));
+          if (!state) return;
+          button.disabled = true;
+          button.textContent = state.text;
+          button.setAttribute('aria-busy', String(!state.accepted));
+        });
+      }
+      async function submitApproval(button, task) {
+        if (button.disabled) return;
+        const key = approvalKey(button),
+          original = button.textContent;
+        const approval = /^(Approve|Allow|Accept)/i.test(original.trim());
+        const state = { text: approval ? 'Approving…' : 'Sending…', accepted: false };
+        approvalStates.set(key, state);
+        applyApprovalFeedback();
+        await act(async () => {
+          try {
+            await task();
+            state.accepted = true;
+            state.text = approval ? 'Approved. Continuing…' : 'Sent. Continuing…';
+            applyApprovalFeedback();
+          } catch (error) {
+            approvalStates.delete(key);
+            button.textContent = original;
+            button.removeAttribute('aria-busy');
+            throw error;
+          }
+        });
+        if (key === 'dialog') {
+          approvalStates.delete(key);
+          button.textContent = original;
         }
       }
       function actionCard(a, mode = 'all') {
@@ -1701,6 +1747,7 @@
         const route = location.hash.split('/');
         $('app').innerHTML = route[1] === 'issue' ? issue(decodeURIComponent(route.slice(2).join('/'))) : queue();
         bind();
+        applyApprovalFeedback();
         restoreView();
       }
       async function findExistingWorker(button) {
@@ -1788,7 +1835,7 @@
         });
         document.querySelectorAll('[data-lifecycle-answer]').forEach((button) => {
           button.onclick = () =>
-            act(() =>
+            submitApproval(button, () =>
               request('lifecycle-answer', {
                 issueId: button.dataset.lifecycleAnswer,
                 updated: button.dataset.lifecycleUpdated,
@@ -1816,7 +1863,9 @@
               (b.onclick = () =>
                 act(() => request('resume', { runId: b.dataset.resume, text: $('resume-' + b.dataset.resume).value })))
           );
-        document.querySelectorAll('[data-answer]').forEach((b) => (b.onclick = () => act(() => answer(b))));
+        document
+          .querySelectorAll('[data-answer]')
+          .forEach((b) => (b.onclick = () => submitApproval(b, () => answer(b))));
         if ($('review'))
           $('review').onclick = () =>
             act(async () => {
@@ -1858,7 +1907,7 @@
         $('confirmation-error').textContent = '';
       };
       $('approve').onclick = () =>
-        act(async () => {
+        submitApproval($('approve'), async () => {
           if (selection.planSkip)
             await request('skip-plan-checks', { ...selection, reason: $('skip-check-reason').value });
           else if (selection.planDecision)

@@ -564,3 +564,12 @@ no old decision is silently grandfathered. Queue-wide evaluations still require
 whole-queue freshness before saving grouping and priority decisions. Completed
 work, test receipts and human acceptance remain separate and are never reset by
 an unrelated issue capture.
+
+Approval buttons acknowledge a click immediately: the clicked control is disabled
+and shows Approving… while the request is sent. Approved. Continuing… appears only
+after the server accepts the request, while the updated queue is loading. Stable
+request/issue-answer keys preserve that feedback across redraws, preventing a
+stale approval from being submitted twice. Failed requests show the error and
+restore the control for retry. Negative replies and answers use Sending…/Sent…
+instead of claiming approval. This feedback changes no permission or acceptance
+rules.
