@@ -269,8 +269,13 @@ test('installed transport client starts and resumes one chat without model overr
   );
   for (const call of threads) {
     assert.equal(call.params.approvalPolicy, 'on-request');
+    assert.equal(call.params.approvalsReviewer, call.params.sandbox === 'workspace-write' ? 'auto_review' : 'user');
     assert.equal(call.params.model, undefined);
   }
+  assert.deepEqual(
+    calls.filter((call) => call.method === 'turn/start').map((call) => call.params.approvalsReviewer),
+    ['user', 'auto_review']
+  );
 });
 
 test('worker and integration assignments explain grouped native permissions without granting them', () => {
@@ -2675,6 +2680,31 @@ test('live activity keeps command output and combines streamed messages without 
   assert.equal(output[0].exitCode, 0);
   assert.equal(output[1].text, 'Checking the result.');
   assert.match(readFileSync(join(service.store.directory, run.id + '.jsonl'), 'utf8'), /outputDelta/);
+});
+
+test('automatic permission review updates live output and retains refusals without exposing private reasoning', (t) => {
+  const { service } = fixture(t),
+    run = service.store.add({ id: 'automatic-approval' }, 'worker', 'base');
+  service.store.update(run, { threadId: 'approval-chat' });
+  const event = (status) =>
+    service.store.event({
+      method: `item/autoApprovalReview/${status === 'inProgress' ? 'started' : 'completed'}`,
+      params: {
+        threadId: 'approval-chat',
+        reviewId: 'review',
+        review: { status, rationale: 'The command needs additional authorization.', privateReasoning: 'hidden' },
+      },
+    });
+  event('inProgress');
+  assert.match(service.store.list(new Map())[0].output[0].text, /Checking permission automatically/);
+  for (const status of ['approved', 'denied', 'timedOut', 'aborted', 'unknown']) {
+    event(status);
+    const output = service.store.list(new Map())[0].output;
+    assert.equal(output.length, 1);
+    assert.equal(output[0].status, status === 'approved' ? 'completed' : 'blocked');
+    assert.doesNotMatch(output[0].text, /hidden/);
+  }
+  assert.equal(run.approvals, undefined);
 });
 
 test('native file and network grants retain their session scope without accepting browser-supplied permissions', () => {

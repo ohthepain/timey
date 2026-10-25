@@ -12,6 +12,7 @@ export class CodexConnection {
     this.pending = new Map();
     this.requests = new Map();
     this.turns = new Map();
+    this.approvalReviewers = new Map();
     this.serial = 0;
   }
   async ready() {
@@ -125,9 +126,11 @@ export class CodexConnection {
       cwd,
       sandbox,
       approvalPolicy: 'on-request',
+      approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
       ...permissionToolConfig(sandbox),
       serviceName: 'timey-factory-ui',
     });
+    this.approvalReviewers.set(result.thread.id, sandbox === 'workspace-write' ? 'auto_review' : 'user');
     return result.thread.id;
   }
   async resume(threadId, cwd, sandbox = 'workspace-write') {
@@ -137,8 +140,10 @@ export class CodexConnection {
       cwd,
       sandbox,
       approvalPolicy: 'on-request',
+      approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
       ...permissionToolConfig(sandbox),
     });
+    this.approvalReviewers.set(threadId, sandbox === 'workspace-write' ? 'auto_review' : 'user');
   }
   async unarchive(threadId) {
     await this.ready();
@@ -159,6 +164,7 @@ export class CodexConnection {
       const started = await this.call('turn/start', {
         threadId,
         cwd,
+        approvalsReviewer: this.approvalReviewers.get(threadId),
         input: [{ type: 'text', text: prompt }],
         outputSchema,
       });

@@ -1,3 +1,5 @@
+import { approvalActivity } from './approval-activity.mjs';
+
 const maxText = 100000;
 const sensitiveName = /(?:secret|password|token|credential|private_key|access_key)/i;
 function environmentSecrets() {
@@ -34,6 +36,8 @@ export function activityForRun(run) {
 export function recordActivity(run, event) {
   initializeActivity(run);
   const params = eventParams(event);
+  const approval = approvalActivity(event);
+  if (approval) recordItem(run, approval, event.at, event.method);
   if (['item/started', 'item/completed'].includes(event.method)) recordItem(run, params.item, event.at, event.method);
   const deltas = { 'item/agentMessage/delta': 'message', 'item/commandExecution/outputDelta': 'command' };
   if (deltas[event.method]) appendDelta(run, params, deltas[event.method], event.at);

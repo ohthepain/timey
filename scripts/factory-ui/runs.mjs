@@ -62,6 +62,8 @@ export class RunStore {
       'turn/completed',
       'ui/approval',
       'ui/unsupportedRequest',
+      'item/autoApprovalReview/started',
+      'item/autoApprovalReview/completed',
     ];
     if (!events.includes(message.method)) return;
     const item = { at: new Date().toISOString(), ...redactValue(message) };

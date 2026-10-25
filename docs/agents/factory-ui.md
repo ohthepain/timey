@@ -470,6 +470,24 @@ configuration. Worker instructions group known file/network needs for related
 checks into one native request, then use ordinary commands within the granted
 access instead of asking again for each temporary script name.
 
+Workspace-write chats route execution permission requests through Codex's native
+automatic approval reviewer (`approvalsReviewer: auto_review`). The workspace
+sandbox and on-request approval policy remain enabled. The reviewer evaluates
+the actual command and the chat's authorized assignment; a command is not trusted
+merely because it runs npm, Python or Playwright. This covers eligible local
+database/browser tests that need process or shared-memory access beyond native
+file/network grants. Read-only chats explicitly retain human approval review.
+No global settings, blanket shell rules or automatic acceptance are installed.
+New and resumed worker chats use this setting; an already active turn must finish
+or be explicitly interrupted before changing it. Never restart a running backend
+or create a replacement worker to apply the setting.
+
+Automatic approval review status and the public reason appear in live output.
+Refusal, timeout or an aborted review means the action did not run; it is not
+silently approved or retried with weaker restrictions. Approval is permission to
+execute, not evidence that a test passed. Human scope decisions, integration
+candidate approval and final acceptance remain separate UI actions.
+
 **Allow for this chat** on a native permission request grants exactly the listed
 access for related commands and later turns in that connected Codex session.
 It does not grant access to another chat or change permanent settings. Reconnection

@@ -153,3 +153,6 @@ reviewing an unfinished result.
 `factory-ui/worker-health.mjs` checks tracked turns through their owning Codex
 connection and provides activity/status timestamps. It reconciles only confirmed
 terminal turns, preserving pending input, newer activity and unknown state.
+`factory-ui/codex.mjs` selects native automatic approval review for workspace-write
+chats while keeping the sandbox. `approval-activity.mjs` projects public automatic
+approval results into live output; it never grants access or reports test success.
