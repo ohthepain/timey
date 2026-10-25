@@ -1,12 +1,12 @@
 # Authentication foundation
 
-This is the server foundation for the coordinated authentication/admin migration.
-Existing application callers and the app-wide context still use Keycloak. The
-separate `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
+This is a partial application cutover in the coordinated authentication/admin migration.
+Private progress and recorded performances use validated Better Auth sessions.
+Content operations and the legacy login/menu still use Keycloak. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
 `/auth/reset-password` and `/auth/session` screens exercise Better Auth directly.
 Use [the approved plan](docs/plans/auth-and-persistence-migration.md)
 for the remaining coordinated cutover, permissions, deletion and retirement work.
-Do not point existing callers at the new boundary until their authorization is implemented.
+Keep unrelated content callers on their existing authentication path until their coordinated authorization cutover.
 
 ## Install and configure
 
@@ -82,11 +82,29 @@ shown on the account screen. Return destinations must be local application paths
 unsafe values fall back to `/auth/session`. Auth routes bypass saved-route
 restoration and are not saved, so reset URLs/tokens are not retained there.
 
-This is an explicit partial rollout: the header's existing login/menu and protected
-domain callers remain on Keycloak. Open the `/auth/` routes directly to review
-the new screens. The preview notice describes that boundary. A Better Auth account
-screen session is not domain authorization and does not replace `requireDomainUser`
-or its provisioning/failure/retry behavior. No admin authority is added.
+This is an explicit partial rollout: the header's Practice account/sign-in link opens
+the Better Auth screens; its legacy Login/menu still belongs to content operations.
+Private progress and performance server functions call `requireDomainUser` before
+accessing records. Strict request schemas reject supplied ownership/token fields.
+Browser state gates controls only; it never authorizes a server operation. No admin
+authority is added. Public content and anonymous playback/recording remain available.
+
+The practice session control observes Better Auth browser session changes and checks
+`/api/session` every five seconds and on window focus outside the auth screens.
+Auth screens retain lazy domain-profile provisioning until domain work is requested. Session changes, loss and
+profile failures clear cached performances and selected private data. Each browser
+private operation also validates identity before and after its request and discards
+late results across session generations. Module progress is scoped to the current
+identity and replaced when the account changes. A failed persistence operation
+leaves local practice available and provides a sign-in/retry message.
+
+Performance replacement retains one saved recording per beat/user, its index and
+played-note values. Replacement and explicit recording deletion use one Prisma
+transaction, serialized with a transaction advisory lock per beat/user. Cleanup
+removes only performance-owned notes without a content beat link, retaining unrelated
+recordings and content notes. There is no historical regrading or tempo snapshot.
+Existing best-tempo read/compare/upsert concurrency and the two-write start-beat
+operation remain separate integrity follow-up; this slice does not redesign them.
 
 `GET /api/session` returns only the validated user's domain `userId`, with no-store
 caching. `requireDomainUser` is also usable inside later server functions: its default
@@ -161,3 +179,19 @@ directory names. This fresh checked-in v1 history needs no conversion. Preserve
 existing rows if converting historical evidence later; do not assert byte equality
 of fresh/upgraded timestamps. The inherited full dependency audit remains failed;
 this candidate's prerelease approval does not waive those advisories.
+
+## Private practice verification
+
+Run `npm run test:auth -- --practice` for this slice. It reuses fixture setup,
+creates one uniquely isolated PostgreSQL database and runs `scripts/practice-browser.py`
+through the actual application's browser modules and compiled server functions.
+It skips the completed foundation/migration and auth-screen investigations.
+Evidence includes two-user reads/writes, strict forged-field rejection, all private
+endpoints without valid sessions, provisioning failure/retry, note preservation,
+replacement rollback and concurrent replacement, real rendered transport/save controls,
+account switching/cache clearing and anonymous local playback/recording.
+The fixture uses browser API signup to prepare accounts; the existing `--browser`
+evidence owns the signup/login/reset screen matrix. Browser evidence does not
+establish hardware MIDI timing, content/admin permissions, integration or acceptance.
+The retained dependency audit has 44 vulnerabilities, including five critical;
+this slice changes no dependency pins and grants no risk acceptance.

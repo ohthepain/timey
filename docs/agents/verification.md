@@ -153,3 +153,18 @@ Record the human's actual result and relevant revision. A code change invalidate
 affected evidence. Check scope before declaring older evidence still applicable.
 Pending checks can coexist with commits, but block dependent work or closure as
 specified. Final acceptance is separate, explicit, and as late as possible.
+
+## Private practice slice
+
+Run `npm run test:auth -- --practice` for real server-function and rendered
+transport checks with two users in uniquely disposable PostgreSQL. It reuses the
+foundation fixture infrastructure without rerunning the completed foundation and
+screen investigations. Inspect `practice-assertions.json`, `practice-commands.json`,
+application logs and `output/playwright/` in the printed absolute directory.
+Rejections must correspond to real server requests; JavaScript/import failures
+are test failures, not proof of authentication rejection. Retain SQL before/after
+snapshots for rollback and unrelated-history checks. Report expected rejection
+statuses, legacy Keycloak/MIDI diagnostics and unexpected errors separately.
+See [partial cutover boundaries](../../AUTH_SETUP.md#private-practice-verification).
+Content authorization, designated Admin behavior, content deletion, Keycloak
+retirement, hardware timing and final human judgment remain separate obligations.

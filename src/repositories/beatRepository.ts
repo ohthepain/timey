@@ -1,5 +1,6 @@
 import { safeQuery } from '../config/db';
 import { Beat } from '~/types/Beat';
+import { Performance } from '~/types/Performance';
 import { Method } from '~/types/Method';
 import { Module } from '~/types/Module';
 
@@ -42,6 +43,7 @@ class BeatRepository {
               method: true,
             },
           },
+          beatNotes: true,
           performances: {
             where: { userId: userId },
             orderBy: { createdAt: 'desc' },
@@ -51,7 +53,12 @@ class BeatRepository {
         },
       })
     );
-    return data ? new Beat(data) : null;
+    return data
+      ? {
+          ...new Beat(data).toJSON(),
+          performances: data.performances.map((performance) => new Performance(performance).toJSON()),
+        }
+      : null;
   }
 
   async getBeatsByUser(userId: string) {

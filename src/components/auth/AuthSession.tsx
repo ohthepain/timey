@@ -1,3 +1,4 @@
+import { setPracticeUser } from '~/state/privatePractice';
 import { useState } from 'react';
 import { authClient } from '~/server/auth-runtime/client';
 import { AuthFeedback } from './AuthFeedback';
@@ -7,6 +8,7 @@ export function AuthSession({ loginLink }: { loginLink: string }) {
   const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState(false);
   async function logout() {
+    setPracticeUser(null);
     setBusy(true);
     try {
       const result = await authClient.signOut();

@@ -34,7 +34,7 @@ describe('Transport controls with shared state', () => {
     vi.useFakeTimers();
     usePersistedStore.setState({ midiSlave: false, devMode: false });
     const beat = createTestBeat();
-    useNavigationStore.setState({ currentBeat: beat, performancesByBeatId: {} });
+    useNavigationStore.setState({ currentBeat: beat, performancesByBeatId: {}, practiceUserId: 'transport-fixture' });
     tempo = TempoService.getInstance();
     BeatRecorder.getInstance().setBeat(beat);
     events = EventRecorderService.getInstance();
@@ -79,6 +79,18 @@ describe('Transport controls with shared state', () => {
     expect(tempo.isRecording).toBe(true);
     act(() => tempo.stop());
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+  });
+
+  it('allows anonymous recording and playback while linking persistence to sign-in', () => {
+    useNavigationStore.setState({ practiceUserId: null });
+    render(<Transport />);
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sign in to save recordings' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    expect(tempo.isPlaying).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+    expect(tempo.isRecording).toBe(true);
   });
 
   it('reads current state on mount and releases its subscription on unmount', () => {

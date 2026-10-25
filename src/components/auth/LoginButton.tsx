@@ -1,12 +1,21 @@
 import React from 'react';
+import { PracticeSession } from './PracticeSession';
 import { useKeycloak } from '~/contexts/KeycloakContext';
 
 interface LoginButtonProps {
-  className?: string;
   children?: React.ReactNode;
 }
 
-export function LoginButton({ className = '', children = 'Login' }: LoginButtonProps) {
+export function LoginButton(props: LoginButtonProps) {
+  return (
+    <>
+      <PracticeSession />
+      <LegacyLoginButton {...props} />
+    </>
+  );
+}
+
+function LegacyLoginButton({ children = 'Login' }: LoginButtonProps) {
   const { login, authenticated, loading } = useKeycloak();
 
   if (loading) {

@@ -247,7 +247,13 @@ try:
                      "-o", f"-h 127.0.0.1 -p {PG_PORT} -k {OUT}", "-w", "start"])
     started = True
     sql("fixture-roles", "CREATE ROLE auth_owner LOGIN; CREATE ROLE domain_owner LOGIN;", "postgres")
-    check_migrations()
+    if '--practice' in sys.argv:
+        sql('create-practice', 'CREATE DATABASE foundation', 'postgres')
+        sql('practice-schemas', 'CREATE SCHEMA auth AUTHORIZATION auth_owner; CREATE SCHEMA auth_migrations AUTHORIZATION auth_owner; CREATE SCHEMA domain AUTHORIZATION domain_owner; GRANT CREATE ON DATABASE foundation TO auth_owner, domain_owner;')
+        run('practice-auth-migrate', ['npm', 'run', 'auth:migrate'], owner_env('foundation'))
+        run('practice-domain-migrate', ['npm', 'exec', '--no', '--', 'prisma', 'migrate', 'deploy'], owner_env('foundation'))
+    else:
+        check_migrations()
     run("prisma-generate", ["npm", "exec", "--no", "--", "prisma", "generate"])
     mail_log = (OUT / "smtp.log").open("w")
     mail = subprocess.Popen(["node", "scripts/auth-mail-capture.mjs", str(SMTP_PORT), str(OUT)],
@@ -278,25 +284,28 @@ try:
         time.sleep(1)
     else:
         raise RuntimeError("Application not ready; inspect application.log")
-    retry_id, retry_cookie = check_http()
-    stop_application(app)
-    app = subprocess.Popen(["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", str(APP_PORT)],
-                           cwd=ROOT, env=env, stdout=app_log, stderr=subprocess.STDOUT, start_new_session=True)
-    COMMANDS.append({"operation": "restart application", "pid": app.pid, "log": str(OUT / "application.log")})
-    for attempt in range(90):
-        if app.poll() is not None:
-            raise RuntimeError("Restarted application stopped; inspect application.log")
-        try:
-            response = http("GET", "/api/session", retry_cookie)
-            if response[0] == 200:
-                expect("persisted session after app restart", response[1]["userId"], retry_id)
-                break
-        except (OSError, TimeoutError):
-            pass
-        time.sleep(1)
+    if '--practice' in sys.argv:
+        run('practice-browser', ['python3', 'scripts/practice-browser.py', str(OUT)])
     else:
-        raise RuntimeError("Restarted application not ready")
-    print(f"PASS: {len(ASSERTIONS)} assertions; evidence: {OUT}", flush=True)
+        retry_id, retry_cookie = check_http()
+        stop_application(app)
+        app = subprocess.Popen(["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", str(APP_PORT)],
+                               cwd=ROOT, env=env, stdout=app_log, stderr=subprocess.STDOUT, start_new_session=True)
+        COMMANDS.append({"operation": "restart application", "pid": app.pid, "log": str(OUT / "application.log")})
+        for attempt in range(90):
+            if app.poll() is not None:
+                raise RuntimeError("Restarted application stopped; inspect application.log")
+            try:
+                response = http("GET", "/api/session", retry_cookie)
+                if response[0] == 200:
+                    expect("persisted session after app restart", response[1]["userId"], retry_id)
+                    break
+            except (OSError, TimeoutError):
+                pass
+            time.sleep(1)
+        else:
+            raise RuntimeError("Restarted application not ready")
+        print(f"PASS: {len(ASSERTIONS)} assertions; evidence: {OUT}", flush=True)
     if '--browser' in sys.argv:
         run("browser", ["python3", "scripts/auth-browser.py", str(OUT)])
     if '--pause-for-browser' in sys.argv:

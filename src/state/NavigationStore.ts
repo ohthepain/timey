@@ -3,6 +3,8 @@ import { Beat } from '~/types/Beat';
 import { Performance } from '~/types/Performance';
 
 interface NavigationState {
+  practiceUserId: string | null;
+  practiceGeneration: number;
   currentBeat: Beat | null;
   currentPerformance: Performance | null;
   performancesByBeatId: Record<string, Performance[]>;
@@ -20,6 +22,8 @@ interface NavigationState {
 }
 
 export const useNavigationStore = create<NavigationState>((set) => ({
+  practiceUserId: null,
+  practiceGeneration: 0,
   currentBeat: null,
   currentPerformance: null,
   performancesByBeatId: {},

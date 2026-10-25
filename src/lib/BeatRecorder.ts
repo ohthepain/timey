@@ -4,7 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
-import { savePerformanceServerFn } from '~/services/performanceService.server';
+import { privatePractice } from '~/state/privatePractice';
+import { fetchUserPerformancesForBeatServerFn, savePerformanceServerFn } from '~/services/performanceService.server';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
 import { TempoService } from '~/lib/TempoService';
@@ -90,10 +91,19 @@ export class BeatRecorder extends EventEmitter {
       return;
     }
 
-    useNavigationStore.getState().clearPerformancesForBeatId(this.performance.beatId);
-    useNavigationStore.getState().cachePerformance(this.performance);
-    await savePerformanceServerFn({ data: { performance: this.performance } });
-    console.log('Performance saved:', this.performance);
+    const recording = {
+      beatId: this.performance.beatId,
+      index: this.performance.index,
+      notes: this.performance.notes.map((note) => note.toJSON()),
+    };
+    const saved = await privatePractice(async () => {
+      await savePerformanceServerFn({ data: { performance: recording } });
+      return fetchUserPerformancesForBeatServerFn({ data: { beatId: recording.beatId } });
+    });
+    if (saved) {
+      useNavigationStore.getState().clearPerformancesForBeatId(recording.beatId);
+      saved.forEach((performance) => useNavigationStore.getState().cachePerformance(new Performance(performance)));
+    }
   }
 
   replay() {

@@ -6,7 +6,8 @@ import { getBeatProgressForModuleServerFn, BeatProgressView } from '~/services/u
 import { getModuleByIdServerFn } from '~/services/moduleService.server';
 import { Module } from '~/types/Module';
 import { useState, useEffect } from 'react';
-import { useKeycloak } from '~/contexts/KeycloakContext';
+import { useNavigationStore } from '~/state/NavigationStore';
+import { privatePractice } from '~/state/privatePractice';
 
 export const Route = createFileRoute('/module/$id')({
   errorComponent: UserErrorComponent,
@@ -18,11 +19,61 @@ export const Route = createFileRoute('/module/$id')({
 
 function ModulePage() {
   const params = Route.useParams();
-  const [module, setModule] = useState<Module | null>(null);
+  const { module, loading, error } = usePublicModule(params.id);
+  const beatProgress = useModulePractice(params.id);
+  if (loading) {
+    return <ModuleLoading />;
+  }
+
+  if (error || !module) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-red-600 mb-4">Error</h2>
+          <p className="text-gray-600">{moduleError(error)}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8">
+      <ModuleViewer module={module} beatProgress={beatProgress} />
+    </div>
+  );
+}
+
+function useModulePractice(moduleId: string) {
+  const practiceUserId = useNavigationStore((state) => state.practiceUserId);
   const [beatProgress, setBeatProgress] = useState<BeatProgressView[]>([]);
+  const [progressOwner, setProgressOwner] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    setBeatProgress([]);
+    setProgressOwner(null);
+    if (practiceUserId) {
+      privatePractice(() => getBeatProgressForModuleServerFn({ data: { id: moduleId } }))
+        .then((progress) => {
+          if (active && progress) {
+            setBeatProgress(progress);
+            setProgressOwner(practiceUserId);
+          }
+        })
+        .catch(() => {
+          if (active) setBeatProgress([]);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [moduleId, practiceUserId]);
+  return practiceUserId && progressOwner === practiceUserId ? beatProgress : [];
+}
+
+function usePublicModule(moduleId: string) {
+  const [module, setModule] = useState<Module | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { keycloak } = useKeycloak();
 
   useEffect(() => {
     const loadModule = async () => {
@@ -30,7 +81,6 @@ function ModulePage() {
         setLoading(true);
         setError(null);
 
-        const moduleId = params.id;
         if (!moduleId) {
           setError('Module ID is required');
           return;
@@ -44,14 +94,6 @@ function ModulePage() {
           return;
         }
         setModule(new Module(moduleJson));
-
-        // Requires authentication
-        const token = keycloak?.token;
-        if (token) {
-          const progress = await getBeatProgressForModuleServerFn({ data: { id: moduleId, token } });
-          console.log('Beat progress:', progress);
-          setBeatProgress(progress);
-        }
       } catch (err) {
         console.error('Error loading module:', err);
         setError('Failed to load module');
@@ -61,33 +103,22 @@ function ModulePage() {
     };
 
     loadModule();
-  }, [params.id]);
+  }, [moduleId]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading module...</p>
-        </div>
-      </div>
-    );
-  }
+  return { module, loading, error };
+}
 
-  if (error || !module) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-bold text-red-600 mb-4">Error</h2>
-          <p className="text-gray-600">{error || 'Module not found'}</p>
-        </div>
-      </div>
-    );
-  }
-
+function ModuleLoading() {
   return (
-    <div className="p-8">
-      <ModuleViewer module={module} beatProgress={beatProgress} />
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Loading module...</p>
+      </div>
     </div>
   );
+}
+
+function moduleError(error: string | null) {
+  return error || 'Module not found';
 }

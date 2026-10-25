@@ -52,7 +52,7 @@ export function AuthScreen({
         </nav>
       </section>
       <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-        Account preview: practice and editing still use the existing sign-in during the transition.
+        Practice uses this account. Content editing still uses the existing sign-in during the transition.
       </p>
     </main>
   );

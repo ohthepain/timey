@@ -1,80 +1,47 @@
 import { safeQuery } from '../config/db';
-import { Performance as PrismaPerformance } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { Performance } from '~/types/Performance';
 
+type Recording = Pick<Performance, 'beatId' | 'index'> & { notes: Prisma.BeatNoteCreateWithoutPerformanceInput[] };
+
+async function removeRecordings(tx: Prisma.TransactionClient, beatId: string, userId: string) {
+  // Notes with a beatId belong to content, even if legacy data also links a performance.
+  await tx.beatNote.deleteMany({ where: { beatId: null, Performance: { beatId, userId } } });
+  return tx.performance.deleteMany({ where: { beatId, userId } });
+}
+
 export const performanceRepository = {
-  async createPerformance(data: Omit<Performance, 'userId' | 'id' | 'createdAt' | 'modifiedAt'>, userId: string) {
+  async replacePerformance(data: Recording, userId: string) {
     const created = await safeQuery((prisma) =>
-      prisma.performance.create({
-        data: {
-          beatId: data.beatId,
-          index: data.index,
-          userId,
-          notes: {
-            create: data.notes.map((note) => ({
-              ...note,
-              // Remove any fields not in the DB schema if needed
-            })),
-          },
-        },
-        include: { notes: true },
+      prisma.$transaction(async (tx) => {
+        // Serialize replacement for this owner/beat, including the first save.
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([userId, data.beatId])}, 0))::text`;
+        await removeRecordings(tx, data.beatId, userId);
+        return tx.performance.create({
+          data: { beatId: data.beatId, index: data.index, userId, notes: { create: data.notes } },
+          include: { notes: true },
+        });
       })
     );
     return new Performance(created);
   },
 
-  async getPerformanceById(id: string) {
-    const prismaPerformance = await safeQuery((prisma) =>
-      prisma.performance.findUnique({
-        where: { id },
-        include: { notes: true },
-      })
-    );
-    return new Performance(prismaPerformance);
-  },
-
-  async getPerformancesByBeatId(beatId: string) {
-    const prismaPerformance = await safeQuery((prisma) =>
-      prisma.performance.findMany({
-        where: { beatId },
-        include: { notes: true },
-      })
-    );
-    return new Performance(prismaPerformance);
-  },
-
-  async getPerformancesByUserId(userId: string) {
-    const prismaPerformances = await safeQuery((prisma) =>
-      prisma.performance.findMany({
-        where: { userId },
-        include: { notes: true },
-      })
-    );
-    return prismaPerformances.map((perf: PrismaPerformance) => new Performance(perf));
-  },
-
   async fetchPerformancesByBeatIdAndUserId(beatId: string, userId: string) {
-    const prismaPerformances = await safeQuery((prisma) =>
+    const rows = await safeQuery((prisma) =>
       prisma.performance.findMany({
         where: { beatId, userId },
         include: { notes: true },
+        orderBy: { createdAt: 'desc' },
       })
     );
-    return prismaPerformances.map((perf: PrismaPerformance) => new Performance(perf));
-  },
-
-  async deletePerformance(id: string) {
-    return await safeQuery((prisma) =>
-      prisma.performance.delete({
-        where: { id },
-      })
-    );
+    return rows.map((row) => new Performance(row));
   },
 
   async deletePerformancesByBeatIdAndUserId(beatId: string, userId: string) {
-    return await safeQuery((prisma) =>
-      prisma.performance.deleteMany({
-        where: { beatId, userId },
+    return safeQuery((prisma) =>
+      prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([userId, beatId])}, 0))::text`;
+        return removeRecordings(tx, beatId, userId);
       })
     );
   },

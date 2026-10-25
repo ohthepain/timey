@@ -12,3 +12,10 @@ transaction, so profile provisioning is idempotent, fails closed and permits ret
 after auth signup has committed. Email never links identities. The nullable legacy
 Keycloak mapping supports the coordinated cutover without granting new authority
 to existing callers. See [setup and boundary behavior](../../AUTH_SETUP.md).
+
+Private-practice progress/performance operations now use this boundary. Browser
+session state controls persistence affordances and cache lifetime; only the
+validated server session/profile chooses the owner. Content operations remain on
+the legacy boundary until their coordinated cutover. Recording replacement stays
+inside a domain Prisma transaction; auth/profile provisioning still has the
+separate recoverable boundary described above.
