@@ -809,6 +809,23 @@ test('recording a current skip retains human advance guards and records no outco
   assert.equal(readFileSync(report, 'utf8'), before);
 });
 
+test('an explicitly required prototype cannot be skipped by an old route recommendation', (t) => {
+  const { root, service } = fixture(t);
+  prototypePath(root);
+  writeFileSync(
+    join(root, '.issues/20261022-one.md'),
+    '---\nid: 20261022-one\nstate: experiment\ngrill_later: false\nprototype_required: true\n---\nPrototype review required.\n'
+  );
+  assert.throws(
+    () =>
+      saveRouteFixture(service, root, [
+        { state: 'experiment', decision: 'skip', reason: 'The old plan called the design settled.' },
+      ]),
+    /required by project policy/
+  );
+  assert.equal(service.snapshot().issues[0].state, 'experiment');
+});
+
 test('invalid routes are rejected before saving any assignments', (t) => {
   const { root, service, api } = pendingReview(t);
   assert.throws(
@@ -2008,6 +2025,13 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   assert.match(waiting, /No work is running for this issue/);
   assert.match(waiting, /does not mean a prototype is being built or is ready to view/);
   assert.doesNotMatch(waiting, /Wait for the current work/);
+  issue.prototype_preview = { url: 'http://127.0.0.1:52996/?variant=A' };
+  assert.match(render(issue), /href="http:\/\/127.0.0.1:52996\/\?variant=A"[^>]*>Open prototype/);
+  assert.doesNotMatch(render(issue), /does not mean a prototype/);
+  issue.prototype_preview.url = 'javascript:alert(1)';
+  assert.doesNotMatch(render(issue), /href="javascript/);
+  delete issue.prototype_preview;
+
   screen.runs.push({ id: 'other', issueId: 'different-issue', connected: true, summary: 'Other work' });
   assert.match(render(issue), /No work is running for this issue/);
   screen.runs.push({ id: 'own', issueId: issue.id, connected: true, summary: 'Inspecting the panel' });

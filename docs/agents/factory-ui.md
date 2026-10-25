@@ -71,7 +71,10 @@ A changed plan pauses before the next action. Old manual action endpoints remain
 available for queue-level operation and compatibility; their individual guards
 and exact-candidate checks remain enforced.
 
-An optional stage can be planned as a skip while it is the current stage.
+An optional stage can be planned as a skip while it is the current stage. An issue
+with `prototype_required: true` must complete Prototype and cannot plan a skip.
+A saved `prototype_preview.url` supplies an **Open prototype** link in the activity
+header; only HTTP(S) preview links are rendered.
 Saving that route does not advance the issue or claim the stage was completed.
 Progress records the saved reason as **Skipped**, checks the configured next stage
 and human advance requirements, then continues. Existing unfinished work takes
