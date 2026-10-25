@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { saveBeatServerFn } from '~/services/beatService.server';
+import { createBeatServerFn, saveBeatServerFn } from '~/services/beatService.server';
 import { Beat } from '~/types/Beat';
 import { Module } from '~/types/Module';
 import { BarDefEditor } from '~/components/BarDefEditor';
@@ -7,6 +7,7 @@ import { BeatSource, BarSource } from '~/types/BarSource';
 import { createBeatSourceFromBeat, ParseBeatSource, ParseBeatString } from '~/lib/ParseBeat';
 import { ScoreView } from '~/components/ScoreView';
 import { useRouter } from '@tanstack/react-router';
+import { musicalNote } from '~/types/beatWrites';
 import { useKeycloak } from '~/contexts/KeycloakContext';
 
 interface BeatEditorProps {
@@ -18,7 +19,7 @@ interface BeatEditorProps {
 const makeTempBeat = (moduleId: string): Beat => {
   return new Beat({
     id: undefined,
-    name: 'temp',
+    name: 'New Beat',
     index: 0,
     authorId: '',
     createdAt: new Date(),
@@ -37,7 +38,7 @@ export const BeatEditor = (props: BeatEditorProps) => {
   const [name, setName] = useState(beat.name);
   const [index, setIndex] = useState(beat.index);
   const [beatSource, setBeatSource] = useState<BeatSource>(() => createBeatSourceFromBeat(beat));
-  const [tempBeat, setTempBeat] = useState<Beat>(beat || makeTempBeat(module.id));
+  const [tempBeat, setTempBeat] = useState<Beat>(beat);
   const [error, setError] = useState<string | null>(null);
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [tempName, setTempName] = useState('');
@@ -49,8 +50,8 @@ export const BeatEditor = (props: BeatEditorProps) => {
   const snareStr = ',,s,,,,s,';
   const accentStr = 'a,,a,,a,,a,';
 
-  const handleSave = async () => {
-    if (!name.trim()) {
+  const handleSave = async (chosenName = name) => {
+    if (!chosenName.trim()) {
       setTempName('');
       setShowNameDialog(true);
       return;
@@ -61,22 +62,18 @@ export const BeatEditor = (props: BeatEditorProps) => {
     console.log('tempBeat:', tempBeat);
 
     try {
-      const token = keycloak?.token;
-      await saveBeatServerFn({
-        data: { ...tempBeat, moduleId: module.id, name, index, token },
-      });
+      const fields = { moduleId: module.id, name: chosenName, index, beatNotes: tempBeat.beatNotes.map(musicalNote) };
+      await persistBeat(props.beat, fields, () => keycloak?.token);
 
       setName('');
       setIndex(0);
       setError(null);
       setBeatSource(new BeatSource([]));
       router.invalidate();
-      if (props.onSave) {
-        props.onSave();
-      }
+      props.onSave?.();
     } catch (err) {
       console.error('Error adding beat:', err);
-      setError('Failed to add beat');
+      setError('Unable to save beat. Sign in and check that you own the destination module, then retry.');
     }
   };
 
@@ -84,7 +81,7 @@ export const BeatEditor = (props: BeatEditorProps) => {
     if (tempName.trim()) {
       setName(tempName);
       setShowNameDialog(false);
-      handleSave();
+      handleSave(tempName);
     }
   };
 
@@ -173,7 +170,7 @@ export const BeatEditor = (props: BeatEditorProps) => {
             Copy Bar
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => handleSave()}
             className="btn btn-create bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded m-2"
           >
             Save
@@ -215,3 +212,12 @@ export const BeatEditor = (props: BeatEditorProps) => {
     </div>
   );
 };
+
+async function persistBeat(
+  beat: Beat | null,
+  fields: Parameters<typeof createBeatServerFn>[0]['data'],
+  token: () => string | undefined
+) {
+  if (beat?.id) return saveBeatServerFn({ data: { ...fields, id: beat.id, token: token() ?? '' } });
+  return createBeatServerFn({ data: fields });
+}

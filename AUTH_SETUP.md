@@ -3,7 +3,8 @@
 This is a partial application cutover in the coordinated authentication/admin migration.
 Private progress and recorded performances use validated Better Auth sessions.
 Method/module creation and editing also use validated Better Auth sessions.
-Beat operations, content deletion and the legacy login/menu still use legacy paths. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
+Beat creation and public-beat copying now also use validated Better Auth sessions.
+Existing-beat editing, content deletion and the legacy login/menu still use legacy paths. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
 `/auth/reset-password` and `/auth/session` screens exercise Better Auth directly.
 Use [the approved plan](docs/plans/auth-and-persistence-migration.md)
 for the remaining coordinated cutover, permissions, deletion and retirement work.
@@ -85,7 +86,7 @@ restoration and are not saved, so reset URLs/tokens are not retained there.
 
 This is an explicit partial rollout: the header's Practice account/sign-in link opens
 the Better Auth screens and supplies the validated session state for method/module
-creation/edit controls; the legacy Login/menu remains for deferred content paths.
+creation/edit and beat creation/copy controls; the legacy Login/menu remains for deferred content paths.
 Private progress and performance server functions call `requireDomainUser` before
 accessing records. Strict request schemas reject supplied ownership/token fields.
 Browser state gates controls only; it never authorizes a server operation. No admin
@@ -236,9 +237,10 @@ profile provisioning and retry, concurrent ownership changes, public reads,
 rendered create/edit controls, permission errors and account switching.
 
 This is not complete content authorization. Method/module deletion server functions
-and `/api/modules` DELETE retain their existing semantics; beat server functions
-and `/api/beats` writes/copy, legacy user APIs and `ensureKeycloakUser`/`withAuth`
-remain for later work. Do not use those paths as evidence of Better Auth enforcement.
+and `/api/modules` DELETE retain their existing semantics. Existing-beat editing
+server functions and `/api/beats` PUT with an existing ID, legacy user APIs and
+`ensureKeycloakUser`/`withAuth` remain for later work. Beat creation/copy is now
+covered by the separate slice below. Do not use those paths as evidence of Better Auth enforcement.
 The browser Admin toggle still grants no trusted method/module authority; trusted
 admin designation and beat exceptions remain unimplemented. Public browsing and
 anonymous local practice stay available. Keycloak retirement, transactional content
@@ -246,3 +248,35 @@ history deletion, remaining ORM replacement, exact-candidate integration approva
 combined verification, human UX judgment and acceptance are separate obligations.
 Dependency pins, 44 reported vulnerabilities, build warnings and the migration
 precision limitation above are unchanged.
+
+## Beat creation and copy verification
+
+Run `npm run test:auth -- --beats` for actual server-function and `/api/beats` PUT
+creation requests, rendered creation/copy controls and disposable two-user PostgreSQL.
+Inspect the printed absolute directory's `beat-assertions.json`, `beat-commands.json`,
+SQL logs, application log and `output/playwright/` browser console/network results.
+Run `--content` and `--practice` separately for the integrated slices' regressions.
+
+Creation inventory: `ModuleViewer` mounts the owner-only, account-keyed new
+`BeatEditor`, which calls `createBeatServerFn`; `/api/beats` PUT without an existing
+ID is the equivalent API entry. `saveBeatServerFn` now requires an existing ID and
+retains legacy editing authentication/policy. PUT with an existing ID retains that
+same deferred policy. `BeatViewer` exposes `CopyBeat` independently of the persisted
+Admin toggle; `copyBeatServerFn` requires an explicit owned destination module.
+No other application creation/copy callers were found in the source inventory.
+
+Both new operations use `requireDomainUser`. Strict schemas reject author, role,
+token and relational note claims. The repository locks the destination module row
+before checking its author, and holds that lock through nested beat/note insertion.
+Copy reads only public source content and projects musical fields into fresh IDs;
+it preserves the description and existing increment-or-prefix naming convention.
+It never reads/copies private progress or performances. Source content and history
+remain intact. Auth profile provisioning retains its separate retry boundary.
+
+The picker lists the signed-in user's modules, offers existing method/module
+creation controls when none exist, and can refresh destinations after returning.
+Account changes unmount creation drafts and copy selections through the existing
+validated session observer. Anonymous public reading and local practice remain.
+Legacy edit/move/delete helpers, designated Admin enforcement, remaining Prisma
+replacement and Keycloak retirement are deferred; this is not complete beat
+mutation authorization. No existing database or volume is reset by these checks.

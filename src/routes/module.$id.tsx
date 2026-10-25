@@ -19,7 +19,8 @@ export const Route = createFileRoute('/module/$id')({
 
 function ModulePage() {
   const params = Route.useParams();
-  const { module, loading, error } = usePublicModule(params.id);
+  const [revision, setRevision] = useState(0);
+  const { module, loading, error } = usePublicModule(params.id, revision);
   const beatProgress = useModulePractice(params.id);
   if (loading) {
     return <ModuleLoading />;
@@ -38,7 +39,7 @@ function ModulePage() {
 
   return (
     <div className="p-8">
-      <ModuleViewer module={module} beatProgress={beatProgress} />
+      <ModuleViewer module={module} beatProgress={beatProgress} onCreated={() => setRevision((value) => value + 1)} />
     </div>
   );
 }
@@ -70,7 +71,7 @@ function useModulePractice(moduleId: string) {
   return practiceUserId && progressOwner === practiceUserId ? beatProgress : [];
 }
 
-function usePublicModule(moduleId: string) {
+function usePublicModule(moduleId: string, revision: number) {
   const [module, setModule] = useState<Module | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +104,7 @@ function usePublicModule(moduleId: string) {
     };
 
     loadModule();
-  }, [moduleId]);
+  }, [moduleId, revision]);
 
   return { module, loading, error };
 }

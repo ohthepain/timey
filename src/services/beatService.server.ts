@@ -3,6 +3,8 @@ import { beatRepository } from '~/repositories/beatRepository';
 import { z } from 'zod';
 import { requirePracticeUser } from '~/server/practice-session';
 import { Beat } from '~/types/Beat';
+import { requireDomainUser } from '~/server/domain-session';
+import { createBeatInput, copyBeatInput } from '~/types/beatWrites';
 import { withAuth } from '~/utils/authenticatedServerFn';
 
 export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
@@ -17,7 +19,7 @@ export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'da
   });
 
 const saveBeatServerFnArgs = z.object({
-  id: z.string().optional(),
+  id: z.string().min(1),
   index: z.number().optional(),
   name: z.string(),
   description: z.string().nullable().optional(),
@@ -36,57 +38,23 @@ export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data
         description: ctx.data.description || null,
         authorId: userId,
       };
-      if (ctx.data.id) {
-        console.log('Updating beat with ID:', ctx.data.id);
-        return beatRepository.updateBeat(ctx.data.id, data);
-      } else {
-        console.log('Creating new beat with beat notes:', ctx.data.beatNotes);
-        return beatRepository.createBeat(data);
-      }
+      return beatRepository.updateBeat(ctx.data.id, data);
     })
   );
 
-const copyBeatServerFnArgs = z.object({
-  id: z.string(),
-});
+export const createBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
+  .validator(createBeatInput)
+  .handler(async (ctx) => {
+    const { userId } = await requireDomainUser();
+    return beatRepository.createBeat(ctx.data, userId);
+  });
 
 export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator((data: unknown) => copyBeatServerFnArgs.parse(data))
-  .handler(
-    withAuth(async (ctx, userId) => {
-      // Fetch the original beat
-      const original = await beatRepository.getBeatById(ctx.data.id);
-      if (!original) throw new Error('Beat not found');
-
-      // Generate new name based on the original name
-      let newName: string;
-      const match = original.name.match(/(.*?)(\d+)$/);
-      if (match) {
-        // If name ends with a number, increment it
-        const baseName = match[1];
-        const number = parseInt(match[2], 10);
-        newName = `${baseName}${number + 1}`;
-      } else {
-        // Otherwise, prepend "Copy of "
-        newName = `Copy of ${original.name}`;
-      }
-
-      // Prepare new beat data
-      const newBeatData = {
-        name: newName,
-        index: original.index + 1,
-        authorId: userId,
-        moduleId: original.moduleId,
-        beatNotes: original.beatNotes.map(({ id, ...note }) => ({
-          ...note,
-        })),
-      };
-
-      // Create the new beat
-      const newBeat = await beatRepository.createBeat(newBeatData);
-      return newBeat;
-    })
-  );
+  .validator(copyBeatInput)
+  .handler(async (ctx) => {
+    const { userId } = await requireDomainUser();
+    return beatRepository.copyBeat(ctx.data.id, ctx.data.moduleId, userId);
+  });
 
 const getBeatWithPerformancesServerFnArgs = z.strictObject({
   beatId: z.string(),
