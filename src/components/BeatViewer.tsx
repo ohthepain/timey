@@ -5,7 +5,8 @@ import { Module } from '~/types/Module';
 import { BeatEditor } from './BeatEditor';
 import { BeatProgressView } from '~/services/userProgressServerService.server';
 import { useRouter } from '@tanstack/react-router';
-import { copyBeatServerFn, deleteBeatServerFn } from '~/services/beatService.server';
+import { CopyBeat } from './CopyBeat';
+import { deleteBeatServerFn } from '~/services/beatService.server';
 import { ScoreView } from '~/components/ScoreView';
 import { Transport } from './Transport';
 import { useNavigationStore } from '~/state/NavigationStore';
@@ -69,21 +70,6 @@ function useBeatEditing(beat: Beat) {
     }
   };
 
-  const handleCopyBeat = async () => {
-    try {
-      const newBeat = await copyBeatServerFn({ data: { id: beat.id } });
-      if (newBeat) {
-        // Update the current beat with the new one
-        useNavigationStore.getState().setCurrentBeat(new Beat(newBeat));
-        // Refresh the router to update the UI
-        router.invalidate();
-      }
-    } catch (error) {
-      console.error('Error copying beat:', error);
-      alert('Failed to copy beat');
-    }
-  };
-
   const handleEditBeat = async () => {
     setIsEditing(!isEditing);
 
@@ -98,19 +84,20 @@ function useBeatEditing(beat: Beat) {
     }
   };
 
-  return { isEditing, setIsEditing, handleDeleteBeat, handleCopyBeat, handleEditBeat, router };
+  return { isEditing, setIsEditing, handleDeleteBeat, handleEditBeat, router };
 }
 
 function BeatHeading({ beat, editing }: { beat: Beat; editing: ReturnType<typeof useBeatEditing> }) {
   const { currentBeat } = useNavigationStore();
   const { enableAdmin } = usePersistedStore();
-  const { isEditing, handleEditBeat, handleCopyBeat, handleDeleteBeat, router } = editing;
+  const { isEditing, handleEditBeat, handleDeleteBeat, router } = editing;
   return (
     <div className="flex flex-row w-full">
       <div className="flex-col items-center w-full">
         <div className="flex flex-row items-center ">
           <div className="font-semibold text-3xl mx-4 ">{beat.name}</div>
           {currentBeat === beat && <Transport />}
+          <CopyBeat beat={beat} />
           {enableAdmin && (
             <div className="flex justify-end space-between">
               <button
@@ -119,13 +106,6 @@ function BeatHeading({ beat, editing }: { beat: Beat; editing: ReturnType<typeof
                 title="Edit"
               >
                 {isEditing ? 'Cancel' : 'Edit'}
-              </button>
-              <button
-                onClick={handleCopyBeat}
-                className="text-blue-700 px-2 mx-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
-                title="Copy"
-              >
-                Copy
               </button>
               <button
                 onClick={async () => {

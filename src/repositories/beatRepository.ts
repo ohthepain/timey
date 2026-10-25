@@ -1,3 +1,5 @@
+import type { Module as ModuleRow, Prisma } from '@prisma/client';
+import { type NewBeat, musicalNote, copiedBeatName } from '~/types/beatWrites';
 import { safeQuery } from '../config/db';
 import { Beat } from '~/types/Beat';
 import { Performance } from '~/types/Performance';
@@ -76,23 +78,33 @@ class BeatRepository {
     return data ? new Beat(data) : null;
   }
 
-  async createBeat(data: any) {
-    if (data.index === undefined || data.index === null) {
-      throw new Error('Index is required and cannot be null or undefined');
-    }
-    return await safeQuery((prisma) =>
-      prisma.beat.create({
-        data: {
-          name: data.name,
-          description: data.description,
-          index: data.index,
-          authorId: data.authorId,
-          moduleId: data.moduleId,
-          beatNotes: {
-            create: data.beatNotes,
+  async createBeat(data: NewBeat, userId: string) {
+    return safeQuery((prisma) =>
+      prisma.$transaction(async (tx) => {
+        await lockDestination(tx, data.moduleId, userId);
+        return insertBeat(tx, data, userId);
+      })
+    );
+  }
+
+  async copyBeat(id: string, moduleId: string, userId: string) {
+    return safeQuery((prisma) =>
+      prisma.$transaction(async (tx) => {
+        await lockDestination(tx, moduleId, userId);
+        // Public content only. Never load performances or progress into the copy.
+        const source = await tx.beat.findUnique({ where: { id }, include: { beatNotes: true } });
+        if (!source) throw new Response('Beat not found', { status: 404 });
+        return insertBeat(
+          tx,
+          {
+            name: copiedBeatName(source.name),
+            description: source.description,
+            index: source.index + 1,
+            moduleId,
+            beatNotes: source.beatNotes.map(musicalNote),
           },
-        },
-        include: { beatNotes: true },
+          userId
+        );
       })
     );
   }
@@ -120,6 +132,25 @@ class BeatRepository {
     const data = await safeQuery((prisma) => prisma.beat.delete({ where: { id } }));
     return data ? new Beat(data) : null;
   }
+}
+
+async function lockDestination(tx: Prisma.TransactionClient, moduleId: string, userId: string) {
+  const rows = await tx.$queryRaw<ModuleRow[]>`SELECT * FROM "Module" WHERE id = ${moduleId} FOR UPDATE`;
+  if (rows[0]?.authorId !== userId) throw new Response('You must own the destination module', { status: 403 });
+}
+
+function insertBeat(tx: Prisma.TransactionClient, data: NewBeat, userId: string) {
+  return tx.beat.create({
+    data: {
+      name: data.name,
+      description: data.description,
+      index: data.index,
+      moduleId: data.moduleId,
+      authorId: userId,
+      beatNotes: { create: data.beatNotes.map(musicalNote) },
+    },
+    include: { beatNotes: true },
+  });
 }
 
 export const beatRepository = new BeatRepository();

@@ -183,3 +183,15 @@ proof. Run the separate `--practice` regression; completed foundation/screen
 investigations need not repeat. See [setup and explicit legacy boundaries](../../AUTH_SETUP.md#methodmodule-write-verification).
 Deletion, beat/admin permissions, retirement, integration, human UX judgment and
 acceptance remain outside this slice.
+
+## Beat creation/copy slice
+
+Run `npm run test:auth -- --beats`, then the separate `--content` and `--practice`
+regressions. The new proof covers owner creation, public-source copy into an owned
+module, no-destination recovery, forged fields and sessions, expired/revoked sessions,
+profile failure/retry, account switching, concurrent destination ownership changes,
+nested-write rollback and source/history preservation. Retain the printed directory's
+`beat-commands.json`, `beat-assertions.json`, SQL logs and `output/playwright/`.
+Expected HTTP rejections must be real requests; browser/import failures fail the check.
+See [partial cutover inventory](../../AUTH_SETUP.md#beat-creation-and-copy-verification).
+Existing-beat editing, deletion, Admin enforcement, retirement and human judgment remain separate.

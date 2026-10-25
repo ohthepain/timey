@@ -1,16 +1,17 @@
 import { Module } from '~/types/Module';
 import { BeatProgressView } from '~/services/userProgressServerService.server';
 import { BeatViewer } from './BeatViewer';
-import { Beat } from '~/types/Beat';
+import { useNavigationStore } from '~/state/NavigationStore';
 import { BeatEditor } from './BeatEditor';
 import { Link } from '@tanstack/react-router';
 
 export interface ModuleProps {
   module: Module;
   beatProgress: BeatProgressView[];
+  onCreated: () => void;
 }
 
-export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
+export const ModuleViewer = ({ module, beatProgress, onCreated }: ModuleProps) => {
   const beatProgressMap = new Map(beatProgress.map((progress) => [progress.beatId, progress]));
 
   // Sort beats by index
@@ -42,8 +43,27 @@ export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
         </div>
       </div>
       <div className="bg-gray-400 w-full h-1 m-8" />
-      New Beat:
-      <BeatEditor beat={new Beat({ name: 'New Beat', moduleId: module.id })} module={module} />
+      <BeatCreation module={module} onCreated={onCreated} />
     </div>
   );
 };
+
+function BeatCreation({ module, onCreated }: { module: Module; onCreated: () => void }) {
+  const userId = useNavigationStore((state) => state.practiceUserId);
+  if (!userId)
+    return (
+      <a
+        className="text-indigo-600 underline"
+        href={`/auth/login?returnTo=${encodeURIComponent('/module/' + module.id)}`}
+      >
+        Sign in to create beats
+      </a>
+    );
+  if (module.authorId !== userId) return <p>Only the module author can create beats here.</p>;
+  return (
+    <section aria-label="New beat">
+      <h2>New Beat</h2>
+      <BeatEditor key={`${module.id}:${userId}`} beat={null} module={module} onSave={onCreated} />
+    </section>
+  );
+}
