@@ -10,7 +10,7 @@ import { deleteBeatServerFn } from '~/services/beatService.server';
 import { ScoreView } from '~/components/ScoreView';
 import { Transport } from './Transport';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { usePersistedStore } from '~/state/PersistedStore';
+import { confirmContentDeletion } from './deleteContent';
 import { Ladder } from './Ladder';
 import { useBeatPractice } from './useBeatPractice';
 import { PracticeFeedback } from './PracticeFeedback';
@@ -26,7 +26,7 @@ export function BeatViewer({ beat, module, beatProgress, onSaved }: BeatViewerPr
   const { currentBeat } = useNavigationStore();
   const { practiceError, selectBeat, passTempo } = useBeatPractice(beat);
 
-  const editing = useBeatEditing(beat);
+  const editing = useBeatEditing(beat, onSaved);
   return (
     <div>
       {practiceError && <p role="alert">{practiceError}</p>}
@@ -58,14 +58,16 @@ function bestTempo(progress: BeatProgressView | undefined) {
   return progress?.bestTempo || 0;
 }
 
-function useBeatEditing(beat: Beat) {
+function useBeatEditing(beat: Beat, onSaved: () => void) {
   const [isEditing, setIsEditing] = useState(false);
   const router = useRouter();
 
   const handleDeleteBeat = async (beatId: string) => {
     try {
-      await deleteBeatServerFn({ data: { id: beatId } });
-      // Optionally, refresh the module or remove the beat from the UI
+      if (await confirmContentDeletion('beat', () => deleteBeatServerFn({ data: { id: beatId } }))) {
+        onSaved();
+        await router.invalidate();
+      }
     } catch (error) {
       console.error('Error deleting beat:', error);
       alert('Failed to delete beat');
@@ -91,8 +93,8 @@ function useBeatEditing(beat: Beat) {
 
 function BeatHeading({ beat, editing }: { beat: Beat; editing: ReturnType<typeof useBeatEditing> }) {
   const { currentBeat } = useNavigationStore();
-  const { enableAdmin } = usePersistedStore();
-  const { handleDeleteBeat, router } = editing;
+  const userId = useNavigationStore((state) => state.practiceUserId);
+  const { handleDeleteBeat } = editing;
   return (
     <div className="flex flex-row w-full">
       <div className="flex-col items-center w-full">
@@ -101,12 +103,11 @@ function BeatHeading({ beat, editing }: { beat: Beat; editing: ReturnType<typeof
           {currentBeat === beat && <Transport />}
           <CopyBeat beat={beat} />
           <BeatEditControl beat={beat} editing={editing} />
-          {enableAdmin && (
+          {userId && userId === beat.authorId && (
             <div className="flex justify-end space-between">
               <button
                 onClick={async () => {
-                  handleDeleteBeat(beat.id!);
-                  router.invalidate();
+                  await handleDeleteBeat(beat.id!);
                 }}
                 className="text-red-700 px-2 mx-1 rounded hover:bg-red-200 border-red-600 border-2 rounded-e-md text-sm"
                 title="Delete"

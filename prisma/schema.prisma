@@ -120,10 +120,10 @@ model MethodProgress {
 // maintaining a connection to the method they are working on,
 // and to track progress across multiple modules that are part of the same method.
 
-// The `currentModuleId` field in the MethodProgress model is a foreign key to a Module record.
+// User.currentModuleId is a foreign key to Module.
 
-// The `currentMethodId` field in the ModuleProgress model is a foreign key to a MethodProgress record.
-// This links the user's progress in this module to their progress in a specific method (via MethodProgress).
+// ModuleProgress.currentMethodId stores Method.id as a nullable string (no foreign key).
+// setCurrentMethodForModule writes the method ID directly.
 // It allows us to know which MethodProgress (and thus which method) the user is currently working on within the module.
 
 // The `targetLevel` field in the MethodProgress model sets the user's goal for the method.

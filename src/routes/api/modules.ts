@@ -1,3 +1,5 @@
+import { deleteContent } from '~/repositories/contentDeletion';
+import { deleteContentInput } from '~/types/contentDeletion';
 import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { moduleRepository } from '~/repositories/moduleRepository';
@@ -36,18 +38,13 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
     }
   },
   DELETE: async ({ request }) => {
-    console.log(`/api/modules DELETE request`);
     try {
-      const { id } = await request.json();
-      if (!id) {
-        return json({ error: 'ID is required' }, { status: 400 });
-      }
-
-      const deletedMethod = await moduleRepository.deleteModule(id);
-      return json(deletedMethod, { status: 200 });
+      const { userId } = await requireDomainUser(request);
+      const parsed = deleteContentInput.safeParse(await request.json());
+      if (!parsed.success) return json({ error: 'Invalid deletion fields' }, { status: 400 });
+      return json(await deleteContent('module', parsed.data.id, userId));
     } catch (error) {
-      console.error('Error deleting method:', error);
-      return json({ error: 'Failed to delete method' }, { status: 500 });
+      return moduleWriteError(error);
     }
   },
 });

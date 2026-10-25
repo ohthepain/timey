@@ -2,27 +2,28 @@ import { Method } from '~/types/Method';
 import { Link } from '@tanstack/react-router';
 import { useRouter } from '@tanstack/react-router';
 import { deleteModuleServerFn } from '~/services/moduleService.server';
-import { useKeycloak } from '~/contexts/KeycloakContext';
+import { useNavigationStore } from '~/state/NavigationStore';
+import { confirmContentDeletion } from './deleteContent';
 
 interface ModuleListProps {
   method: Method;
+  onDeleted: () => void;
 }
 
-export const ModuleList = ({ method }: ModuleListProps) => {
+export const ModuleList = ({ method, onDeleted }: ModuleListProps) => {
   const modules = method.modules || [];
   const sortedModules = modules.sort((a, b) => a.index - b.index);
   const router = useRouter();
-  const { keycloak } = useKeycloak();
+  const userId = useNavigationStore((state) => state.practiceUserId);
 
   const handleDeleteModule = async (moduleId: string) => {
-    if (confirm('Are you sure you want to delete this module?')) {
-      try {
-        const token = keycloak?.token;
-        await deleteModuleServerFn({ data: { id: moduleId, token: token } });
-        router.invalidate();
-      } catch (error) {
-        alert('Failed to delete module');
+    try {
+      if (await confirmContentDeletion('module', () => deleteModuleServerFn({ data: { id: moduleId } }))) {
+        onDeleted();
+        await router.invalidate();
       }
+    } catch {
+      alert('Unable to delete module. Sign in as its author and retry.');
     }
   };
 
@@ -41,6 +42,7 @@ export const ModuleList = ({ method }: ModuleListProps) => {
             </Link>
             <p className="text-sm text-gray-500">Index: {module.index}</p>
             <button
+              disabled={!userId || userId !== module.authorId}
               onClick={() => handleDeleteModule(module.id)}
               className="text-red-500 hover:text-red-700 text-xs border border-red-300 rounded px-2 py-1 ml-2"
             >

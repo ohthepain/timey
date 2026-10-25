@@ -29,7 +29,7 @@ def command(label, args, cwd=ROOT):
 
 
 def cli(label, *args, session='a'):
-    return command(label, [CLI, '--session', 'beat-edit-3bced6-' + session, *args], ARTIFACTS)
+    return command(label, [CLI, '--session', OUT.name + '-' + session, *args], ARTIFACTS)
 
 
 def code(label, body, session='a'):
@@ -145,147 +145,148 @@ def concurrent(label, statement, operation):
     assert exit_code==0
 
 
-try:
-    for session in ['a','b']:
-        cli('open-'+session,'open',BASE+'/methods',session=session)
-        cli('initial-'+session,'snapshot',session=session)
-    note={'index':0,'duration':8,'noteString':'kick','barNum':0,'beatNum':0,'divisionNum':0,'subDivisionNum':0,'numSubDivisions':1,'velocity':100,'microtiming':2}
-    notes=[{**note,'index':n,'beatNum':n//2,'divisionNum':n%2} for n in range(8)]
-    edit={'id':'absent','name':'Edited beat','moduleId':'absent','index':4,'beatNotes':notes}
-    api_input={'id':'absent','name':'API edited beat','moduleId':'absent','index':5,'beatString':'\n'.join(f'note,{n},8,[kick],0,{n//2},{n%2},0,1' for n in range(8))}
-    def denied(label,status,session='a'):
-        rejected(label,[['saveBeatServerFn',edit]],status,session)
-        api(label+'-api','PUT',api_input,status,session)
-    denied('missing-session',401)
-    a=signup('a');b=signup('b')
-    ma=sf('method-a','createMethodServerFn',{'title':'Editing A'})
-    mod=sf('module-a','createModuleServerFn',{'title':'Source module','methodId':ma['id']})
-    dest=sf('destination-a','createModuleServerFn',{'title':'Owned destination','methodId':ma['id']})
-    mb=sf('method-b','createMethodServerFn',{'title':'Editing B'},'b')
-    foreign=sf('module-b','createModuleServerFn',{'title':'Unowned destination','methodId':mb['id']},'b')
-    source=sf('source','createBeatServerFn',{'name':'Source beat','moduleId':mod['id'],'index':1,'beatNotes':notes})
-    other=sf('unrelated','createBeatServerFn',{'name':'Unrelated beat','moduleId':foreign['id'],'index':1,'beatNotes':notes},'b')
-    edit.update(id=source['id'],moduleId=mod['id']);api_input.update(id=source['id'],moduleId=mod['id'])
-    for owner in [a,b]:
-        sql('parent-history-'+owner,f'''INSERT INTO domain."MethodProgress" (id,"userId","methodId","updatedAt","targetLevel") VALUES ('method-{owner}','{owner}','{ma['id']}',now(),140);
-          INSERT INTO domain."ModuleProgress" (id,"userId","moduleId","updatedAt") VALUES ('module-{owner}','{owner}','{mod['id']}',now());''')
-        for target in [source['id'],other['id']]:
-            key=owner+'-'+target
-            sql('history-'+key,f'''INSERT INTO domain."BeatProgress" (id,"userId","beatId","bestTempo","updatedAt") VALUES ('progress-{key}','{owner}','{target}',123,now());
-              INSERT INTO domain."Performance" (id,"userId","beatId",index,"modifiedAt") VALUES ('performance-{key}','{owner}','{target}',0,now());
-              INSERT INTO domain."BeatNote" (id,index,duration,"noteString","barNum","beatNum","divisionNum","subDivisionNum","numSubDivisions",velocity,"performanceId") VALUES ('played-{key}',0,8,'kick',0,0,0,0,1,80,'performance-{key}');''')
-    # Also preserve performance-owned notes when both nullable relations are populated.
-    sql('dual-note',f'''UPDATE domain."BeatNote" SET "beatId"='{source['id']}' WHERE id='played-{a}-{source['id']}';''')
-    baseline_history=history('history-before')
-    unrelated=sql('unrelated-before',f'''SELECT row_to_json(b)::text FROM domain."Beat" b WHERE id='{other['id']}';''')
-    unrelated_notes=sql('unrelated-notes-before',f'''SELECT row_to_json(b)::text FROM domain."BeatNote" b WHERE "beatId"='{other['id']}' ORDER BY id;''')
-    changed=sf('owner-edit','saveBeatServerFn',edit)
-    assert changed['authorId']==a and changed['name']==edit['name'] and len(changed['beatNotes'])==8
-    assert all(n['performanceId'] is None for n in changed['beatNotes'])
-    api('owner-api-edit','PUT',api_input,200)
-    moved=sf('owner-move','saveBeatServerFn',{**edit,'moduleId':dest['id']})
-    assert moved['moduleId']==dest['id'] and moved['authorId']==a
-    api('owner-api-move','PUT',api_input,200)
-    assert history('history-after-edits')==baseline_history
-    before=state('before-denials')
-    denied('another-user',403,'b')
-    rejected('unowned-move',[['saveBeatServerFn',{**edit,'moduleId':foreign['id']}]],403)
-    api('unowned-api-move','PUT',{**api_input,'moduleId':foreign['id']},403)
-    rejected('absent-beat',[['saveBeatServerFn',{**edit,'id':'absent'}]],404)
-    api('absent-beat-api','PUT',{**api_input,'id':'absent'},404)
-    attempts=[]
-    for field,value in {'authorId':b,'userId':b,'role':'admin','token':'forged','enableAdmin':True}.items():
-        attempts.append(['saveBeatServerFn',{**edit,field:value}])
-        api('forged-api-'+field,'PUT',{**api_input,field:value},400)
-    for field in ['id','authorId','performanceId','beatId']:
-        attempts.append(['saveBeatServerFn',{**edit,'beatNotes':[{**note,field:'forged'}]}])
-    attempts.extend([['saveBeatServerFn',{**edit,'index':1.5}],['saveBeatServerFn',{**edit,'beatNotes':[{'index':0}]}]])
-    rejected('strict-inputs',attempts,500)
-    assert state('after-denials')==before
-    # Note replacement must roll back the beat update and deletion of old content notes.
-    sql('fail-note', '''CREATE FUNCTION domain.fail_edit_note() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'disposable edit note failure'; END $$; CREATE TRIGGER fail_edit_note BEFORE INSERT ON domain."BeatNote" FOR EACH ROW EXECUTE FUNCTION domain.fail_edit_note();''')
-    rejected('rollback',[['saveBeatServerFn',edit]],500)
-    api('rollback-api','PUT',api_input,500)
-    assert state('after-rollback')==before and history('rollback-history')==baseline_history
-    sql('repair-note','DROP TRIGGER fail_edit_note ON domain."BeatNote"; DROP FUNCTION domain.fail_edit_note();')
-    for transport in ['sf','api']:
-        concurrent('destination-'+transport,f'''UPDATE domain."Module" SET "authorId"='{b}' WHERE id='{dest['id']}';''',
-          lambda: rejected('concurrent-destination-sf',[['saveBeatServerFn',{**edit,'moduleId':dest['id']}]],403) if transport=='sf' else api('concurrent-destination-api','PUT',{**api_input,'moduleId':dest['id']},403))
-        sql('restore-destination-'+transport,f'''UPDATE domain."Module" SET "authorId"='{a}' WHERE id='{dest['id']}';''')
-        concurrent('author-'+transport,f'''UPDATE domain."Beat" SET "authorId"='{b}' WHERE id='{source['id']}';''',
-          lambda: denied('concurrent-author-'+transport,403))
-        sql('restore-author-'+transport,f'''UPDATE domain."Beat" SET "authorId"='{a}' WHERE id='{source['id']}';''')
-    # If another writer moved the beat while waiting, the old parent becomes a destination.
-    sql('old-parent-not-owned',f'''UPDATE domain."Module" SET "authorId"='{b}' WHERE id='{mod['id']}';''')
-    concurrent('current-parent-change',f'''UPDATE domain."Beat" SET "moduleId"='{dest['id']}' WHERE id='{source['id']}';''',lambda: denied('concurrent-parent',403))
-    sql('restore-parent',f'''UPDATE domain."Module" SET "authorId"='{a}' WHERE id='{mod['id']}'; UPDATE domain."Beat" SET "moduleId"='{mod['id']}' WHERE id='{source['id']}';''')
-    assert state('after-concurrency')==before
-    code('rendered-owner-edit', '''
-      await page.goto(base+'/module/MODULE');
-      const edit=page.getByRole('button',{name:'Edit',exact:true});await edit.waitFor();await edit.click();
-      await page.getByPlaceholder('Enter beat name').first().fill('Rendered edit');
-      await page.locator('.btn-create').first().click();
-      await page.getByText('Rendered edit',{exact:true}).waitFor();
-      check(await page.getByTitle('Edit',{exact:true}).textContent()==='Edit','editor closed');return true;
-    '''.replace('MODULE',mod['id']))
-    assert sql('rendered-edit-row',f'''SELECT count(*) FROM domain."Beat" WHERE id='{source['id']}' AND name='Rendered edit' AND "authorId"='{a}';''')=='1'
-    cli('owner-edit','screenshot','--filename',str(ARTIFACTS/'owner-edit.png'))
-    code('rendered-non-owner', '''
-      await page.goto(base+'/module/MODULE');await page.getByRole('link',{name:'Practice account',exact:true}).waitFor();
-      check(await page.getByRole('button',{name:'Edit',exact:true}).count()===0,'other user has no editor');return true;
-    '''.replace('MODULE',mod['id']),'b')
-    # Rendered stale authorization shows useful errors from an actual denied request.
-    code('open-before-permission-change', '''await page.getByRole('button',{name:'Edit',exact:true}).click();return true;''')
-    sql('permission-change',f'''UPDATE domain."Beat" SET "authorId"='{b}' WHERE id='{source['id']}';''')
-    code('rendered-permission-error', '''
-      await page.getByPlaceholder('Enter beat name').first().fill('Denied edit');await page.locator('.btn-create').first().click();
-      await page.getByRole('alert').filter({hasText:'Sign in as its author'}).waitFor();return true;
-    ''')
-    assert any(r['status']==403 and '/_server/' in r['url'] for r in CHECKS['rendered-permission-error']['network'])
-    sql('permission-restored',f'''UPDATE domain."Beat" SET "authorId"='{a}' WHERE id='{source['id']}';''')
-    code('switch-clears-editor', '''
-      await page.getByPlaceholder('Enter beat name').first().fill('Stale edit draft');
-      await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
-      await page.getByText('Only the module author can create beats here.',{exact:true}).waitFor();
-      check(await page.getByPlaceholder('Enter beat name').count()===0,'editor cleared');return true;
-    ''')
-    code('switch-back-clean-editor', '''
-      await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contenta',password:'Content-fixture-password-123!'});});
-      const edit=page.getByRole('button',{name:'Edit',exact:true});await edit.waitFor();await edit.click();
-      check(await page.getByPlaceholder('Enter beat name').first().inputValue()==='Rendered edit','stale edit draft removed');return true;
-    ''')
-    sql('expire-a',f"UPDATE auth.session SET expires_at=now()-interval '1 day' WHERE user_id='{a}'")
-    denied('expired-session',401)
-    sql('revoke-b',f"DELETE FROM auth.session WHERE user_id='{b}'")
-    denied('revoked-session',401,'b')
-    evaluate('clear-retry', '''await fetch('/api/auth/sign-out',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});return true;''')
-    # Install failure before signup: the live session observer may provision immediately.
-    sql('fail-profile', '''CREATE FUNCTION domain.edit_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'disposable profile failure'; END $$; CREATE TRIGGER edit_fail BEFORE INSERT ON domain."User" FOR EACH ROW EXECUTE FUNCTION domain.edit_fail();''')
-    retry=evaluate('retry-signup', '''const name='editretry';const r=await fetch('/api/auth/sign-up/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:name,name,email:name+'@example.test',password:'Content-fixture-password-123!'})});if(!r.ok)throw new Error('signup');return (await r.json()).user.id;''')
-    before_profile=state('before-profile-failure');denied('profile-failure',503)
-    assert state('after-profile-failure')==before_profile
-    sql('repair-profile','DROP TRIGGER edit_fail ON domain."User"; DROP FUNCTION domain.edit_fail();')
-    # Retry provisions the profile, then correctly denies access to another author's beat.
-    denied('profile-retry-denied',403)
-    assert sql('profile-recovered',f'''SELECT count(*) FROM domain."User" WHERE id='{retry}';''')=='1'
-    mr=sf('retry-method','createMethodServerFn',{'title':'Retry method'})
-    modr=sf('retry-module','createModuleServerFn',{'title':'Retry module','methodId':mr['id']})
-    br=sf('retry-beat','createBeatServerFn',{'name':'Retry beat','moduleId':modr['id'],'beatNotes':notes})
-    result=sf('retry-edit','saveBeatServerFn',{**edit,'id':br['id'],'moduleId':modr['id']})
-    assert result['authorId']==retry
-    code('forged-cookie', '''await page.context().clearCookies();await page.context().addCookies([{name:'better-auth.session_token',value:'forged',url:base}]);return true;''')
-    denied('forged-session',401)
-    code('public-browsing-signin', '''
-      await page.goto(base+'/module/MODULE');await page.getByText('Rendered edit',{exact:true}).waitFor();
-      await page.getByRole('link',{name:'Sign in to edit',exact:true}).click();
-      await page.getByRole('heading',{name:'Sign in',exact:true}).waitFor();return true;
-    '''.replace('MODULE',mod['id']))
-    assert history('history-final')==baseline_history
-    assert sql('unrelated-final',f'''SELECT row_to_json(b)::text FROM domain."Beat" b WHERE id='{other['id']}';''')==unrelated
-    assert sql('unrelated-notes-final',f'''SELECT row_to_json(b)::text FROM domain."BeatNote" b WHERE "beatId"='{other['id']}' ORDER BY id;''')==unrelated_notes
-    for session in ['a','b']:
-        cli('console-'+session,'console',session=session);cli('requests-'+session,'requests',session=session)
-    print(f'PASS existing beat editing: {OUT / "beat-edit-assertions.json"}',flush=True)
-finally:
-    for session in ['a','b']:
-        cli('close-'+session,'close',session=session)
+if __name__ == '__main__':
+    try:
+        for session in ['a','b']:
+            cli('open-'+session,'open',BASE+'/methods',session=session)
+            cli('initial-'+session,'snapshot',session=session)
+        note={'index':0,'duration':8,'noteString':'kick','barNum':0,'beatNum':0,'divisionNum':0,'subDivisionNum':0,'numSubDivisions':1,'velocity':100,'microtiming':2}
+        notes=[{**note,'index':n,'beatNum':n//2,'divisionNum':n%2} for n in range(8)]
+        edit={'id':'absent','name':'Edited beat','moduleId':'absent','index':4,'beatNotes':notes}
+        api_input={'id':'absent','name':'API edited beat','moduleId':'absent','index':5,'beatString':'\n'.join(f'note,{n},8,[kick],0,{n//2},{n%2},0,1' for n in range(8))}
+        def denied(label,status,session='a'):
+            rejected(label,[['saveBeatServerFn',edit]],status,session)
+            api(label+'-api','PUT',api_input,status,session)
+        denied('missing-session',401)
+        a=signup('a');b=signup('b')
+        ma=sf('method-a','createMethodServerFn',{'title':'Editing A'})
+        mod=sf('module-a','createModuleServerFn',{'title':'Source module','methodId':ma['id']})
+        dest=sf('destination-a','createModuleServerFn',{'title':'Owned destination','methodId':ma['id']})
+        mb=sf('method-b','createMethodServerFn',{'title':'Editing B'},'b')
+        foreign=sf('module-b','createModuleServerFn',{'title':'Unowned destination','methodId':mb['id']},'b')
+        source=sf('source','createBeatServerFn',{'name':'Source beat','moduleId':mod['id'],'index':1,'beatNotes':notes})
+        other=sf('unrelated','createBeatServerFn',{'name':'Unrelated beat','moduleId':foreign['id'],'index':1,'beatNotes':notes},'b')
+        edit.update(id=source['id'],moduleId=mod['id']);api_input.update(id=source['id'],moduleId=mod['id'])
+        for owner in [a,b]:
+            sql('parent-history-'+owner,f'''INSERT INTO domain."MethodProgress" (id,"userId","methodId","updatedAt","targetLevel") VALUES ('method-{owner}','{owner}','{ma['id']}',now(),140);
+              INSERT INTO domain."ModuleProgress" (id,"userId","moduleId","updatedAt") VALUES ('module-{owner}','{owner}','{mod['id']}',now());''')
+            for target in [source['id'],other['id']]:
+                key=owner+'-'+target
+                sql('history-'+key,f'''INSERT INTO domain."BeatProgress" (id,"userId","beatId","bestTempo","updatedAt") VALUES ('progress-{key}','{owner}','{target}',123,now());
+                  INSERT INTO domain."Performance" (id,"userId","beatId",index,"modifiedAt") VALUES ('performance-{key}','{owner}','{target}',0,now());
+                  INSERT INTO domain."BeatNote" (id,index,duration,"noteString","barNum","beatNum","divisionNum","subDivisionNum","numSubDivisions",velocity,"performanceId") VALUES ('played-{key}',0,8,'kick',0,0,0,0,1,80,'performance-{key}');''')
+        # Also preserve performance-owned notes when both nullable relations are populated.
+        sql('dual-note',f'''UPDATE domain."BeatNote" SET "beatId"='{source['id']}' WHERE id='played-{a}-{source['id']}';''')
+        baseline_history=history('history-before')
+        unrelated=sql('unrelated-before',f'''SELECT row_to_json(b)::text FROM domain."Beat" b WHERE id='{other['id']}';''')
+        unrelated_notes=sql('unrelated-notes-before',f'''SELECT row_to_json(b)::text FROM domain."BeatNote" b WHERE "beatId"='{other['id']}' ORDER BY id;''')
+        changed=sf('owner-edit','saveBeatServerFn',edit)
+        assert changed['authorId']==a and changed['name']==edit['name'] and len(changed['beatNotes'])==8
+        assert all(n['performanceId'] is None for n in changed['beatNotes'])
+        api('owner-api-edit','PUT',api_input,200)
+        moved=sf('owner-move','saveBeatServerFn',{**edit,'moduleId':dest['id']})
+        assert moved['moduleId']==dest['id'] and moved['authorId']==a
+        api('owner-api-move','PUT',api_input,200)
+        assert history('history-after-edits')==baseline_history
+        before=state('before-denials')
+        denied('another-user',403,'b')
+        rejected('unowned-move',[['saveBeatServerFn',{**edit,'moduleId':foreign['id']}]],403)
+        api('unowned-api-move','PUT',{**api_input,'moduleId':foreign['id']},403)
+        rejected('absent-beat',[['saveBeatServerFn',{**edit,'id':'absent'}]],404)
+        api('absent-beat-api','PUT',{**api_input,'id':'absent'},404)
+        attempts=[]
+        for field,value in {'authorId':b,'userId':b,'role':'admin','token':'forged','enableAdmin':True}.items():
+            attempts.append(['saveBeatServerFn',{**edit,field:value}])
+            api('forged-api-'+field,'PUT',{**api_input,field:value},400)
+        for field in ['id','authorId','performanceId','beatId']:
+            attempts.append(['saveBeatServerFn',{**edit,'beatNotes':[{**note,field:'forged'}]}])
+        attempts.extend([['saveBeatServerFn',{**edit,'index':1.5}],['saveBeatServerFn',{**edit,'beatNotes':[{'index':0}]}]])
+        rejected('strict-inputs',attempts,500)
+        assert state('after-denials')==before
+        # Note replacement must roll back the beat update and deletion of old content notes.
+        sql('fail-note', '''CREATE FUNCTION domain.fail_edit_note() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'disposable edit note failure'; END $$; CREATE TRIGGER fail_edit_note BEFORE INSERT ON domain."BeatNote" FOR EACH ROW EXECUTE FUNCTION domain.fail_edit_note();''')
+        rejected('rollback',[['saveBeatServerFn',edit]],500)
+        api('rollback-api','PUT',api_input,500)
+        assert state('after-rollback')==before and history('rollback-history')==baseline_history
+        sql('repair-note','DROP TRIGGER fail_edit_note ON domain."BeatNote"; DROP FUNCTION domain.fail_edit_note();')
+        for transport in ['sf','api']:
+            concurrent('destination-'+transport,f'''UPDATE domain."Module" SET "authorId"='{b}' WHERE id='{dest['id']}';''',
+              lambda: rejected('concurrent-destination-sf',[['saveBeatServerFn',{**edit,'moduleId':dest['id']}]],403) if transport=='sf' else api('concurrent-destination-api','PUT',{**api_input,'moduleId':dest['id']},403))
+            sql('restore-destination-'+transport,f'''UPDATE domain."Module" SET "authorId"='{a}' WHERE id='{dest['id']}';''')
+            concurrent('author-'+transport,f'''UPDATE domain."Beat" SET "authorId"='{b}' WHERE id='{source['id']}';''',
+              lambda: denied('concurrent-author-'+transport,403))
+            sql('restore-author-'+transport,f'''UPDATE domain."Beat" SET "authorId"='{a}' WHERE id='{source['id']}';''')
+        # If another writer moved the beat while waiting, the old parent becomes a destination.
+        sql('old-parent-not-owned',f'''UPDATE domain."Module" SET "authorId"='{b}' WHERE id='{mod['id']}';''')
+        concurrent('current-parent-change',f'''UPDATE domain."Beat" SET "moduleId"='{dest['id']}' WHERE id='{source['id']}';''',lambda: denied('concurrent-parent',403))
+        sql('restore-parent',f'''UPDATE domain."Module" SET "authorId"='{a}' WHERE id='{mod['id']}'; UPDATE domain."Beat" SET "moduleId"='{mod['id']}' WHERE id='{source['id']}';''')
+        assert state('after-concurrency')==before
+        code('rendered-owner-edit', '''
+          await page.goto(base+'/module/MODULE');
+          const edit=page.getByRole('button',{name:'Edit',exact:true});await edit.waitFor();await edit.click();
+          await page.getByPlaceholder('Enter beat name').first().fill('Rendered edit');
+          await page.locator('.btn-create').first().click();
+          await page.getByText('Rendered edit',{exact:true}).waitFor();
+          check(await page.getByTitle('Edit',{exact:true}).textContent()==='Edit','editor closed');return true;
+        '''.replace('MODULE',mod['id']))
+        assert sql('rendered-edit-row',f'''SELECT count(*) FROM domain."Beat" WHERE id='{source['id']}' AND name='Rendered edit' AND "authorId"='{a}';''')=='1'
+        cli('owner-edit','screenshot','--filename',str(ARTIFACTS/'owner-edit.png'))
+        code('rendered-non-owner', '''
+          await page.goto(base+'/module/MODULE');await page.getByRole('link',{name:'Practice account',exact:true}).waitFor();
+          check(await page.getByRole('button',{name:'Edit',exact:true}).count()===0,'other user has no editor');return true;
+        '''.replace('MODULE',mod['id']),'b')
+        # Rendered stale authorization shows useful errors from an actual denied request.
+        code('open-before-permission-change', '''await page.getByRole('button',{name:'Edit',exact:true}).click();return true;''')
+        sql('permission-change',f'''UPDATE domain."Beat" SET "authorId"='{b}' WHERE id='{source['id']}';''')
+        code('rendered-permission-error', '''
+          await page.getByPlaceholder('Enter beat name').first().fill('Denied edit');await page.locator('.btn-create').first().click();
+          await page.getByRole('alert').filter({hasText:'Sign in as its author'}).waitFor();return true;
+        ''')
+        assert any(r['status']==403 and '/_server/' in r['url'] for r in CHECKS['rendered-permission-error']['network'])
+        sql('permission-restored',f'''UPDATE domain."Beat" SET "authorId"='{a}' WHERE id='{source['id']}';''')
+        code('switch-clears-editor', '''
+          await page.getByPlaceholder('Enter beat name').first().fill('Stale edit draft');
+          await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
+          await page.getByText('Only the module author can create beats here.',{exact:true}).waitFor();
+          check(await page.getByPlaceholder('Enter beat name').count()===0,'editor cleared');return true;
+        ''')
+        code('switch-back-clean-editor', '''
+          await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contenta',password:'Content-fixture-password-123!'});});
+          const edit=page.getByRole('button',{name:'Edit',exact:true});await edit.waitFor();await edit.click();
+          check(await page.getByPlaceholder('Enter beat name').first().inputValue()==='Rendered edit','stale edit draft removed');return true;
+        ''')
+        sql('expire-a',f"UPDATE auth.session SET expires_at=now()-interval '1 day' WHERE user_id='{a}'")
+        denied('expired-session',401)
+        sql('revoke-b',f"DELETE FROM auth.session WHERE user_id='{b}'")
+        denied('revoked-session',401,'b')
+        evaluate('clear-retry', '''await fetch('/api/auth/sign-out',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});return true;''')
+        # Install failure before signup: the live session observer may provision immediately.
+        sql('fail-profile', '''CREATE FUNCTION domain.edit_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'disposable profile failure'; END $$; CREATE TRIGGER edit_fail BEFORE INSERT ON domain."User" FOR EACH ROW EXECUTE FUNCTION domain.edit_fail();''')
+        retry=evaluate('retry-signup', '''const name='editretry';const r=await fetch('/api/auth/sign-up/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:name,name,email:name+'@example.test',password:'Content-fixture-password-123!'})});if(!r.ok)throw new Error('signup');return (await r.json()).user.id;''')
+        before_profile=state('before-profile-failure');denied('profile-failure',503)
+        assert state('after-profile-failure')==before_profile
+        sql('repair-profile','DROP TRIGGER edit_fail ON domain."User"; DROP FUNCTION domain.edit_fail();')
+        # Retry provisions the profile, then correctly denies access to another author's beat.
+        denied('profile-retry-denied',403)
+        assert sql('profile-recovered',f'''SELECT count(*) FROM domain."User" WHERE id='{retry}';''')=='1'
+        mr=sf('retry-method','createMethodServerFn',{'title':'Retry method'})
+        modr=sf('retry-module','createModuleServerFn',{'title':'Retry module','methodId':mr['id']})
+        br=sf('retry-beat','createBeatServerFn',{'name':'Retry beat','moduleId':modr['id'],'beatNotes':notes})
+        result=sf('retry-edit','saveBeatServerFn',{**edit,'id':br['id'],'moduleId':modr['id']})
+        assert result['authorId']==retry
+        code('forged-cookie', '''await page.context().clearCookies();await page.context().addCookies([{name:'better-auth.session_token',value:'forged',url:base}]);return true;''')
+        denied('forged-session',401)
+        code('public-browsing-signin', '''
+          await page.goto(base+'/module/MODULE');await page.getByText('Rendered edit',{exact:true}).waitFor();
+          await page.getByRole('link',{name:'Sign in to edit',exact:true}).click();
+          await page.getByRole('heading',{name:'Sign in',exact:true}).waitFor();return true;
+        '''.replace('MODULE',mod['id']))
+        assert history('history-final')==baseline_history
+        assert sql('unrelated-final',f'''SELECT row_to_json(b)::text FROM domain."Beat" b WHERE id='{other['id']}';''')==unrelated
+        assert sql('unrelated-notes-final',f'''SELECT row_to_json(b)::text FROM domain."BeatNote" b WHERE "beatId"='{other['id']}' ORDER BY id;''')==unrelated_notes
+        for session in ['a','b']:
+            cli('console-'+session,'console',session=session);cli('requests-'+session,'requests',session=session)
+        print(f'PASS existing beat editing: {OUT / "beat-edit-assertions.json"}',flush=True)
+    finally:
+        for session in ['a','b']:
+            cli('close-'+session,'close',session=session)

@@ -6,7 +6,8 @@ import {
   deleteMethodServerFn,
 } from '~/services/methodService.server';
 import { Link } from '@tanstack/react-router';
-import { useKeycloak } from '~/contexts/KeycloakContext';
+import { confirmContentDeletion } from './deleteContent';
+import { useRouter } from '@tanstack/react-router';
 import { useNavigationStore } from '~/state/NavigationStore';
 
 export const MethodsAdminPage = () => {
@@ -19,7 +20,7 @@ const MethodsEditor = ({ userId }: { userId: string | null }) => {
   const [error, setError] = useState('');
   const [newMethodName, setNewMethodName] = useState('');
   const [selectedMethod, setSelectedMethod] = useState<any | null>(null);
-  const { keycloak } = useKeycloak();
+  const router = useRouter();
 
   useEffect(() => {
     fetchMethods();
@@ -71,16 +72,13 @@ const MethodsEditor = ({ userId }: { userId: string | null }) => {
 
   const handleDelete = async (id: string) => {
     try {
-      const token = keycloak?.token;
-      await deleteMethodServerFn({
-        data: {
-          id,
-          token: token,
-        },
-      });
-      setMethods((prev) => prev.filter((m) => m.id !== id));
+      setError('');
+      if (!(await confirmContentDeletion('method', () => deleteMethodServerFn({ data: { id } })))) return;
+      setSelectedMethod(null);
+      await fetchMethods();
+      await router.invalidate();
     } catch (error) {
-      console.error('Error deleting method:', error);
+      setError('Unable to delete method. Sign in as its author and retry.');
     }
   };
 
@@ -155,6 +153,7 @@ const MethodsEditor = ({ userId }: { userId: string | null }) => {
                 )}
 
                 <button
+                  disabled={!canEdit}
                   onClick={() => handleDelete(method.id)}
                   className="btn btn-delete bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
                 >

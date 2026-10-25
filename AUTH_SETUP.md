@@ -4,10 +4,10 @@ This is a partial application cutover in the coordinated authentication/admin mi
 Private progress and recorded performances use validated Better Auth sessions.
 Method/module creation and editing also use validated Better Auth sessions.
 Beat creation and public-beat copying now also use validated Better Auth sessions.
-Existing-beat editing and moves now use validated Better Auth sessions. Content deletion and the legacy login/menu still use legacy paths. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
+Existing-beat editing and moves now use validated Better Auth sessions. Ordinary-author deletion now uses the same boundary; the legacy login/menu remains. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
 `/auth/reset-password` and `/auth/session` screens exercise Better Auth directly.
 Use [the approved plan](docs/plans/auth-and-persistence-migration.md)
-for the remaining coordinated cutover, permissions, deletion and retirement work.
+for the remaining coordinated permissions and retirement work.
 Keep unrelated content callers on their existing authentication path until their coordinated authorization cutover.
 
 ## Install and configure
@@ -162,7 +162,7 @@ replay preservation, real signup cookies and persisted sessions, invalid/expired
 revoked/logout and foreign-origin rejection, persistence across an app restart,
 stable IDs, concurrent provisioning, injected database
 failure, same-cookie recovery and legacy-email collision rejection.
-Admin permissions, deletion, production deployment and live SES remain later checks.
+Admin permissions, production deployment and live SES remain later checks; deletion has a separate proof below.
 The optional `--browser` check requires the Playwright CLI skill wrapper (override
 its path with `PWCLI` if needed), installed Chrome and local process/IPC permission.
 It uses two isolated browser sessions and the actual forms, not mocked auth or
@@ -236,15 +236,13 @@ forged ownership/token/role fields, missing/expired/revoked/forged cookies, fail
 profile provisioning and retry, concurrent ownership changes, public reads,
 rendered create/edit controls, permission errors and account switching.
 
-This is not complete content authorization. Method/module deletion server functions
-and `/api/modules` DELETE retain their existing semantics. Legacy user APIs and
+Method/module deletion is covered by the separate deletion slice below. Legacy user APIs and
 `ensureKeycloakUser`/`withAuth` remain for later work. Beat creation/copy and
 existing-beat edits/moves are covered by the separate slices below. Deferred
 paths do not establish Better Auth enforcement.
 The browser Admin toggle still grants no trusted method/module authority; trusted
 admin designation and beat exceptions remain unimplemented. Public browsing and
-anonymous local practice stay available. Keycloak retirement, transactional content
-history deletion, remaining ORM replacement, exact-candidate integration approval,
+anonymous local practice stay available. Keycloak retirement, remaining ORM replacement, exact-candidate integration approval,
 combined verification, human UX judgment and acceptance are separate obligations.
 Dependency pins, 44 reported vulnerabilities, build warnings and the migration
 precision limitation above are unchanged.
@@ -276,7 +274,7 @@ The picker lists the signed-in user's modules, offers existing method/module
 creation controls when none exist, and can refresh destinations after returning.
 Account changes unmount creation drafts and copy selections through the existing
 validated session observer. Anonymous public reading and local practice remain.
-Legacy delete helpers, designated Admin enforcement, remaining Prisma
+Ordinary-author deletion has a separate proof below. Designated Admin enforcement, remaining Prisma
 replacement and Keycloak retirement are deferred; this is not complete beat
 mutation authorization. No existing database or volume is reset by these checks.
 
@@ -317,8 +315,41 @@ rendered editor continues to edit within its current module.
 
 This is ordinary-author enforcement only. The agreed designated-admin exception
 is **not implemented**: non-owner admins cannot edit through these paths yet.
-Trusted roles, restricted toggle visibility, transactional deletion and Keycloak
+Trusted roles, restricted toggle visibility and Keycloak
 retirement remain coordinated follow-ups. This slice does not complete beat
 authorization, the approved plan, integration, human UX judgment or acceptance.
 Dependency audit failures, build warnings and migration limitations documented
 above remain unresolved and are not waived by this proof.
+
+## Ordinary-author deletion verification
+
+Run `npm run test:auth -- --delete-content`, then `--edit-beats`, `--beats`,
+`--content` and `--practice` separately. Each uses uniquely disposable PostgreSQL,
+two browser accounts and actual compiled server functions/API requests. Retain
+`deletion-assertions.json`, `deletion-commands.json`, SQL logs, application logs and
+`output/playwright/` under the printed absolute directory. Browser/import failures
+fail the proof; only actual request statuses establish denials.
+
+The three deletion server functions and DELETE `/api/modules` and `/api/beats/$id`
+share `contentDeletion.ts` and strict ID-only contracts. They call `requireDomainUser`;
+only the selected item's author may delete. No client role, token, ownership claim
+or persisted Admin toggle grants permission. The Methods page, ModuleList and
+BeatViewer use one native confirmation explaining descendants and all users'
+associated history loss; cancellation sends no mutation. Identity-keyed method
+selection and a generation check discard stale confirmation state. Success clears
+practice/navigation caches and refreshes the content route.
+
+The domain transaction takes SHARE ROW EXCLUSIVE locks on the content, history
+and User tables before selecting descendants and checking ownership. This bounded,
+coarse approach serializes deletion with all domain writers, including inserts and
+moves; it can briefly block unrelated writes. Lock contention/deadlocks fail the
+whole transaction for retry. Auth tables and migration history are never locked or
+written. It removes descendant content, every user's associated progress and
+performances, and notes owned by removed performances. A dual-linked note belonging
+to surviving history is detached from deleted content and retained. User.currentModuleId
+is cleared for removed modules; ModuleProgress.currentMethodId stores a Method ID,
+so surviving rows pointing at a removed method are cleared. Parent/sibling progress
+survives deletion of a child. Responses contain only success, never private history.
+
+Designated-admin authorization, Keycloak retirement, combined verification,
+integration, human UX judgment and acceptance remain separate.

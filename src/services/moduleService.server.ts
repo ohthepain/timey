@@ -1,3 +1,5 @@
+import { deleteContent } from '~/repositories/contentDeletion';
+import { deleteContentInput } from '~/types/contentDeletion';
 import { createServerFn } from '@tanstack/react-start';
 import { moduleRepository } from '~/repositories/moduleRepository';
 import { z } from 'zod';
@@ -49,8 +51,8 @@ export const updateModuleServerFn = createServerFn({ method: 'POST', response: '
   });
 
 export const deleteModuleServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator((data: unknown) => z.object({ id: z.string(), token: z.string().optional() }).parse(data))
+  .validator(deleteContentInput)
   .handler(async (ctx) => {
-    const result = await moduleRepository.deleteModule(ctx.data.id);
-    return new Module(result).toJSON();
+    const { userId } = await requireDomainUser();
+    return deleteContent('module', ctx.data.id, userId);
   });

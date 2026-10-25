@@ -140,11 +140,6 @@ class BeatRepository {
       })
     );
   }
-
-  async deleteBeat(id: string) {
-    const data = await safeQuery((prisma) => prisma.beat.delete({ where: { id } }));
-    return data ? new Beat(data) : null;
-  }
 }
 
 async function lockDestination(tx: Prisma.TransactionClient, moduleId: string, userId: string) {

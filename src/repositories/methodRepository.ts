@@ -47,13 +47,5 @@ export const methodRepository = {
     );
   },
 
-  async deleteMethod(id: string): Promise<Method> {
-    return await safeQuery((prisma) =>
-      prisma.method.delete({
-        where: { id },
-      })
-    );
-  },
-
   getModuleProgress: moduleProgressRepository.getModuleProgress,
 };

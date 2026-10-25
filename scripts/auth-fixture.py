@@ -247,7 +247,7 @@ try:
                      "-o", f"-h 127.0.0.1 -p {PG_PORT} -k {OUT}", "-w", "start"])
     started = True
     sql("fixture-roles", "CREATE ROLE auth_owner LOGIN; CREATE ROLE domain_owner LOGIN;", "postgres")
-    if any(flag in sys.argv for flag in ['--practice', '--content', '--beats', '--edit-beats']):
+    if any(flag in sys.argv for flag in ['--practice', '--content', '--beats', '--edit-beats', '--delete-content']):
         sql('create-practice', 'CREATE DATABASE foundation', 'postgres')
         sql('practice-schemas', 'CREATE SCHEMA auth AUTHORIZATION auth_owner; CREATE SCHEMA auth_migrations AUTHORIZATION auth_owner; CREATE SCHEMA domain AUTHORIZATION domain_owner; GRANT CREATE ON DATABASE foundation TO auth_owner, domain_owner;')
         run('practice-auth-migrate', ['npm', 'run', 'auth:migrate'], owner_env('foundation'))
@@ -284,7 +284,9 @@ try:
         time.sleep(1)
     else:
         raise RuntimeError("Application not ready; inspect application.log")
-    if '--edit-beats' in sys.argv:
+    if '--delete-content' in sys.argv:
+        run('deletion-browser', ['python3', 'scripts/deletion-browser.py', str(OUT)], expected=0)
+    elif '--edit-beats' in sys.argv:
         run('beat-edit-browser', ['python3', 'scripts/beat-edit-browser.py', str(OUT)])
     elif '--beats' in sys.argv:
         run('beat-browser', ['python3', 'scripts/beat-browser.py', str(OUT)])
