@@ -2693,6 +2693,84 @@ test('native file and network grants retain their session scope without acceptin
   assert.deepEqual(sent[0].result, { permissions, scope: 'session' });
 });
 
+async function healthFixture(t, thread) {
+  const { installWorkerHealth } = await import('./factory-ui/worker-health.mjs');
+  const events = [],
+    ended = [];
+  const connection = new CodexConnection({ onEvent: (e) => events.push(e) });
+  connection.turns.set('live-chat', {
+    id: 'live-turn',
+    text: '',
+    resolve: (text) => ended.push({ text }),
+    reject: (error) => ended.push({ error: error.message }),
+  });
+  connection.call = async (method, params) => {
+    assert.equal(method, 'thread/read');
+    assert.equal(params.threadId, 'live-chat');
+    return { thread };
+  };
+  const service = {
+    codex: connection,
+    snapshot: () => ({ runs: [{ id: 'run', threadId: 'live-chat', status: 'running', connected: true, events: [] }] }),
+    close: () => connection.close(),
+  };
+  const monitor = installWorkerHealth(service);
+  t.after(() => service.close());
+  return { service, connection, monitor, events, ended };
+}
+
+test('live worker health trusts its owning active connection over interrupted saved history', async (t) => {
+  const { service, connection, monitor, ended } = await healthFixture(t, {
+    status: { type: 'active' },
+    turns: [{ id: 'live-turn', status: 'interrupted', items: [] }],
+  });
+  await monitor.check();
+  assert.equal(service.snapshot().runs[0].health.state, 'active');
+  assert.equal(connection.turns.has('live-chat'), true);
+  assert.equal(ended.length, 0);
+});
+
+test('an idle owning connection reconciles a missed terminal event only for the exact tracked turn', async (t) => {
+  const { connection, monitor, ended } = await healthFixture(t, {
+    status: { type: 'idle' },
+    turns: [{ id: 'live-turn', status: 'interrupted', items: [] }],
+  });
+  await monitor.check();
+  assert.equal(connection.turns.has('live-chat'), false);
+  assert.match(ended[0].error, /interrupted/);
+});
+
+test('missed completion retains the returned result while unknown or newer work is left alone', async (t) => {
+  const payload = JSON.stringify({ outcome: 'completed' });
+  const { connection, monitor, ended } = await healthFixture(t, {
+    status: { type: 'idle' },
+    turns: [{ id: 'live-turn', status: 'completed', items: [{ type: 'agentMessage', text: payload }] }],
+  });
+  await monitor.check();
+  assert.equal(ended[0].text, payload);
+  connection.turns.set('live-chat', { id: 'new-turn' });
+  await monitor.check();
+  assert.equal(connection.turns.has('live-chat'), true);
+  assert.equal(ended.length, 1);
+});
+
+test('a status read cannot end a newer turn or infer interruption from an unloaded chat', async (t) => {
+  const { service, connection, monitor, ended } = await healthFixture(t, {
+    status: { type: 'notLoaded' },
+    turns: [{ id: 'live-turn', status: 'interrupted' }],
+  });
+  await monitor.check();
+  assert.equal(service.snapshot().runs[0].health.state, 'unconfirmed');
+  assert.equal(ended.length, 0);
+  connection.call = async () => {
+    connection.turns.set('live-chat', { id: 'new-turn' });
+    return { thread: { status: { type: 'idle' }, turns: [{ id: 'live-turn', status: 'interrupted' }] } };
+  };
+  await monitor.check();
+  assert.equal(connection.turns.get('live-chat').id, 'new-turn');
+  assert.equal(ended.length, 0);
+});
+
 async function activityScreen(t) {
   const { JSDOM } = await import('jsdom');
   const { service } = lifecycleFixture(t);
@@ -2750,6 +2828,28 @@ test('native permission screen explains chat scope and actual read, write and ne
   assert.equal(card.querySelector('[data-decision="session"]').textContent, 'Allow for this chat');
   assert.ok(card.querySelector('[data-decision="once"]'));
   assert.ok(card.querySelector('[data-decision="deny"]'));
+});
+
+test('activity header shows live confirmation, last activity and result checks without exposing private reasoning', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const run = snapshot.runs.at(-1);
+  run.health = { state: 'active', checkedAt: '2026-10-25T12:00:00Z', lastActivityAt: '2026-10-25T11:59:55Z' };
+  run.events = [
+    {
+      method: 'item/completed',
+      at: '2026-10-25T11:59:55Z',
+      params: { item: { type: 'reasoning', text: 'private reasoning content' } },
+    },
+  ];
+  window.screenTest.show(snapshot);
+  const header = window.document.querySelector('[data-live-health="live"]');
+  assert.match(header.textContent, /Codex confirmed this chat is active/);
+  assert.match(header.textContent, /Last live update/);
+  assert.doesNotMatch(window.document.body.textContent, /private reasoning content/);
+  run.status = 'checking';
+  run.health.state = 'unconfirmed';
+  window.screenTest.update(snapshot);
+  assert.match(window.document.querySelector('[data-live-health="live"]').textContent, /Checking the returned result/);
 });
 
 test('activity screen shows the current step and preserves expanded details, native drafts and log reading position', async (t) => {

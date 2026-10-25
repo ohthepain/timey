@@ -153,9 +153,16 @@ export class CodexConnection {
     });
     completion.catch(() => {}); // The RPC may fail before its completion is awaited.
     // Observe before the RPC reply, including very short turns.
-    this.turns.set(threadId, { resolve, reject, text: '' });
+    const turn = { resolve, reject, text: '', id: null };
+    this.turns.set(threadId, turn);
     try {
-      await this.call('turn/start', { threadId, cwd, input: [{ type: 'text', text: prompt }], outputSchema });
+      const started = await this.call('turn/start', {
+        threadId,
+        cwd,
+        input: [{ type: 'text', text: prompt }],
+        outputSchema,
+      });
+      if (this.turns.get(threadId) === turn) turn.id = started.turn.id;
     } catch (error) {
       this.turns.delete(threadId);
       reject(error);

@@ -149,3 +149,7 @@ it grants no new authority. See [shared records](factory-records.md).
 continuations from issue planning. It checks current scope/answers and freshness,
 then uses the existing resume transport; the lifecycle loop prioritizes it over
 reviewing an unfinished result.
+
+`factory-ui/worker-health.mjs` checks tracked turns through their owning Codex
+connection and provides activity/status timestamps. It reconciles only confirmed
+terminal turns, preserving pending input, newer activity and unknown state.

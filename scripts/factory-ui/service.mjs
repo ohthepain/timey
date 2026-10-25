@@ -1,3 +1,4 @@
+import { installWorkerHealth } from './worker-health.mjs';
 import { runAuthorization, describeAuthorization } from '../factory-authorization.mjs';
 import { canResumeLifecycle } from './lifecycle-stop.mjs';
 import { loadLifecycles, lifecycleView, approvedLifecyclePlan } from './lifecycle-store.mjs';
@@ -58,6 +59,7 @@ export class FactoryUI {
     this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
     this.check = checkCandidate;
     this.guard = humanGuard;
+    installWorkerHealth(this);
   }
   snapshot() {
     if (!this.serverLock) this.store.reload();

@@ -420,6 +420,23 @@ those records, and choosing Closed in the stage filter enables that option.
 Search, stage and visibility choices survive live refreshes while the page is open.
 Filtering is read-only; issue links and saved reports remain available.
 
+## Live worker status
+
+The activity header shows the last live update and the time of the latest status
+check. Status checks use the same Codex app-server connection that owns the turn.
+A separate connection can return unloaded or stale saved history and is not a
+reliable health check for another connection's active work. Quiet command output
+alone does not establish that a worker stopped; non-content event timestamps also
+count as activity without exposing private reasoning.
+
+The server checks tracked turns every 30 seconds, without starting or resuming
+work. An active owning connection wins over contradictory saved history. Only an
+idle owner with a terminal result for the exact tracked turn, no pending input and
+no newer activity can recover a missed completion notification. Normal result
+validation and checks still follow; unknown status or query errors never infer
+failure or trigger duplicate work. The header distinguishes result checking from
+worker activity and preserves its last update while answer fields have focus.
+
 ## Live activity and reusable permissions
 
 The issue’s activity header names the current configured step and uses Working

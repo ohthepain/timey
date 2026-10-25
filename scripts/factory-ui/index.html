@@ -1449,7 +1449,7 @@
         const summary =
           record?.summary || 'Continue through this issue’s approved plan. We’ll stop here if we need your input.';
         const canStart = !input && stage?.role !== 'ready-to-close';
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Current step: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(child?.connected ? child.summary : summary)}</p>${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? lifecycleInput(issue, record) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Current step: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(child?.connected ? child.summary : summary)}</p>${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -1457,6 +1457,17 @@
                 .join('')}</ol></details>`
             : ''
         }</section>`;
+      }
+      function liveHealth(run) {
+        if (!run) return '';
+        const at = run.health?.lastActivityAt || run.events?.at(-1)?.at;
+        const activity = at ? `Last live update: ${recordedDate(at)}.` : 'No live update received yet.';
+        const labels = { waiting: 'Waiting for your input.', active: 'Codex confirmed this chat is active.' };
+        const status = run.connected
+          ? labels[run.health?.state] || 'Connected; live status not yet confirmed.'
+          : 'Chat is not connected here.';
+        const phase = run.status === 'checking' ? 'Checking the returned result. ' : '';
+        return `<p class="muted" data-live-health="${esc(run.id)}">${esc(phase + status + ' ' + activity)}${run.health?.checkedAt ? ' Status checked: ' + recordedDate(run.health.checkedAt) + '.' : ''}</p>`;
       }
       function activityText(issue) {
         return data.runs
@@ -1675,6 +1686,10 @@
           issueId = location.hash.split('/').slice(2).join('/');
         const issue = data?.issues.find((item) => item.id === issueId);
         if (!output || !issue) return;
+        for (const element of document.querySelectorAll('[data-live-health]')) {
+          const run = data.runs.find((r) => r.id === element.dataset.liveHealth);
+          element.outerHTML = liveHealth(run);
+        }
         rememberOutput();
         const saved = viewMemory.logs.get(location.hash);
         const text = activityText(issue) || 'No output recorded yet.';
