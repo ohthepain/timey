@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import signal
 import socket
+import sys
 import subprocess
 import tempfile
 import time
@@ -283,6 +284,8 @@ try:
     else:
         raise RuntimeError("Restarted application not ready")
     print(f"PASS: {len(ASSERTIONS)} assertions; evidence: {OUT}", flush=True)
+    if '--pause-for-browser' in sys.argv:
+        input(f"Browser fixture ready at {BASE}; press Enter to stop its processes: ")
 finally:
     if app:
         stop_application(app)

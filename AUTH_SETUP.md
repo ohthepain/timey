@@ -8,8 +8,10 @@ Do not point existing callers at the new boundary until their authorization is i
 ## Install and configure
 
 Use the Node version in `.nvmrc`, `npm ci`, then `npm exec --no -- prisma generate`.
-The auth npm workspace isolates Better Auth's Zod 4 dependency from application Zod 3.
-The approved toolchain pins are in the manifests/lock; do not use force, overrides,
+Application and auth now use Zod 4.6.7 under the explicit follow-up approval.
+The auth workspace retains the server runtime boundary. Older framework packages
+keep their own required Zod 3 dependencies; these are separate, unresolved audit findings.
+The approved dependency pins are in the manifests/lock; do not use force, overrides,
 or legacy peer resolution to substitute a different combination.
 
 Supply server environment variables through the process environment or an untracked
@@ -86,6 +88,11 @@ Install local PostgreSQL tools (`initdb`, `pg_ctl`, `psql`, `pg_dump`), then run
 ```sh
 npm run test:auth
 ```
+
+For a browser or compiled-server-function check against the same disposable data,
+run `npm run test:auth -- --pause-for-browser`. After the HTTP/provisioning assertions,
+the runner prints the loopback URL and waits for Enter before stopping its processes.
+Use the printed target; do not point writes at an existing database.
 
 The runner creates a unique `/private/tmp/timey-auth-foundation-*` cluster and selects
 free loopback ports. It creates fixture-only owners and three fresh databases;

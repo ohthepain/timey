@@ -112,8 +112,9 @@ Database-session acceptance and profile recovery are exercised independently of
 the still-pending application authorization/screens/admin cutover.
 
 The verifier links each declared workspace's installed dependency directory into
-the exported snapshot, preserving workspace Zod isolation without changing source
-or audit gates. Use matching `npm ci` dependencies before verification.
+the exported snapshot, preserving workspace dependency resolution without changing source
+or audit gates. Both application and auth use the approved Zod 4 pin; older framework
+packages retain their declared nested dependencies. Use matching `npm ci` dependencies before verification.
 
 ## Human checks
 
