@@ -5,6 +5,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { z } from 'zod';
 import * as schema from '../../../auth/schema';
+import { passwordResetDelivery } from './mail';
 
 let instance: ReturnType<typeof createAuth> | undefined;
 
@@ -27,6 +28,7 @@ function createAuth() {
       enabled: true,
       requireEmailVerification: false,
       revokeSessionsOnPasswordReset: true,
+      sendResetPassword: passwordResetDelivery(),
     },
     session: { cookieCache: { enabled: false } },
     plugins: [username()],
