@@ -1,3 +1,4 @@
+import { readWorkerReview } from './worker-review.mjs';
 import { applyLifecyclePlanning } from './lifecycle-planning.mjs';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,7 +9,7 @@ import { reviewedTransition } from './stage-transition.mjs';
 import { savedRoute } from './lifecycle.mjs';
 import { reviewOperation } from './readiness.mjs';
 import { inspectWorker } from './worker-history.mjs';
-import { reviewSchema, reviewPrompt, reviewEvidence, appendReview, recordReviewResult } from './review-result.mjs';
+import { reviewEvidence, appendReview, recordReviewResult } from './review-result.mjs';
 import { requireThat, writeJson, git } from './common.mjs';
 import { beginCommit } from './commit.mjs';
 import { beginReconciliation } from './reconcile.mjs';
@@ -132,24 +133,19 @@ async function freshWorkerReview(service, run, { queue, issue, action, worker, g
     approvedFiles,
     summary: 'Reviewing the existing result and its actual evidence.',
   });
-  const result = JSON.parse(
-    await service.codex.turn(
-      threadId,
-      service.root,
-      reviewPrompt(
-        {
-          ...queue,
-          file_permissions: approvedFiles,
-          instruction_inputs: instructions,
-          planned_route: savedRoute(issue, service.store.runs),
-        },
-        issue,
-        action,
-        worker,
-        guards
-      ),
-      reviewSchema
-    )
+  const result = await readWorkerReview(
+    service,
+    run,
+    {
+      ...queue,
+      file_permissions: approvedFiles,
+      instruction_inputs: instructions,
+      planned_route: savedRoute(issue, service.store.runs),
+    },
+    issue,
+    action,
+    worker,
+    guards
   );
   if (!recordReviewResult(service, run, result)) return;
   const latest = await inspectWorker(service.codex, service.root, { ...action, threadId: worker.threadId });

@@ -98,7 +98,9 @@ recording between read-only results and explicit user decisions.
 
 `factory-ui/review-instructions.mjs` snapshots known installed instruction inputs
 and exact approved supporting files. `review-recovery.mjs` reuses review chats and
-validates recording checkpoints. `review-file-access.mjs` records narrow explicit
+validates recording checkpoints. `worker-review.mjs` retains the selected worker
+result and corrects accidental raw-session citations in the same review chat.
+`review-file-access.mjs` records narrow explicit
 consent for an external supporting file and continues its original review.
 
 `scripts/factory-ui/commit.mjs` records the existing verified commit and advances

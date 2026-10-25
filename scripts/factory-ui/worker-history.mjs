@@ -23,7 +23,14 @@ export async function inspectWorker(cli, root, action, runs = []) {
   if (turn.status !== 'completed') return { pending: true, threadId: thread.id, status: turn.status };
   const messages = turn.items.filter((item) => item.type === 'agentMessage').map((item) => item.text);
   requireThat(messages.length > 0, 'The completed turn has no result message. Reconcile the existing chat.');
-  return { threadId: thread.id, cwd: thread.cwd, turnId: turn.id, status: turn.status, messages };
+  return {
+    threadId: thread.id,
+    cwd: thread.cwd,
+    turnId: turn.id,
+    status: turn.status,
+    messages,
+    transcriptPath: thread.path,
+  };
 }
 async function findWorker(cli, root, action, runs) {
   const ids = [

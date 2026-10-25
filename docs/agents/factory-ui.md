@@ -338,6 +338,17 @@ Escaping references are excluded, and changed instruction links/content invalida
 the input. Instruction copies are recorded separately from work and test evidence.
 The same handling is used by implementation-checklist and reconciliation reviews.
 
+Worker reviews retain the selected chat ID, completed turn and result from the
+Codex API as a redacted project-local `worker-result.json`. Reviewers cite that
+receipt for the worker result, and actual reports/logs for technical evidence.
+It does not establish a test pass or human approval. The UI does not copy or
+request access to the raw Codex session log. If a reviewer cites the selected
+worker's session path returned by Codex, it gets one correction turn in the same
+review chat using the retained result and existing project evidence. A repeated
+bad citation stops with an explanation, not a misleading file-permission request.
+No worker assignment is repeated, no missing evidence is silently discarded, and
+unrelated external supporting files still need an exact-file decision.
+
 A supporting-file failure keeps the complete structured review and all other
 inspected file receipts. The issue screen names each unavailable file, explains
 why it was cited, and distinguishes an internal recording restriction from a real
