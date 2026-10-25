@@ -144,3 +144,8 @@ freshness receipts. `factory-record.mjs` exposes native coordinator completion a
 check recording using the same validation as the UI. `factory-authorization.mjs`
 describes actual user actions, approved-plan continuation and coordinator work;
 it grants no new authority. See [shared records](factory-records.md).
+
+`factory-ui/lifecycle-continuation.mjs` validates and executes structured same-worker
+continuations from issue planning. It checks current scope/answers and freshness,
+then uses the existing resume transport; the lifecycle loop prioritizes it over
+reviewing an unfinished result.

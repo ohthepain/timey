@@ -2349,6 +2349,133 @@ test('one approved lifecycle run saves, launches, reviews and advances to explic
   assert.equal(record.input, null);
 });
 
+async function blockedContinuationFixture(t) {
+  const setup = lifecycleFixture(t),
+    { service, api, root, threads, proposal } = setup;
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace('state: clarify', 'state: investigate') +
+      '\nHuman answer: yes, apply the bounded correction.\n'
+  );
+  const [action] = api.recommend([proposal]);
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'existing-worker', hostId: 'codex-cli' });
+  api.record(action.id, { status: 'blocked', evidence: 'Correction needed approval.' });
+  const worker = service.store.add(action, 'worker', readQueue(root).head);
+  service.store.update(worker, { threadId: 'existing-worker', checkout: root, status: 'blocked' });
+  service.store.connected.delete(worker.id);
+  threads.set('existing-worker', { cwd: root, mode: 'workspace-write' });
+  const content = readFileSync(join(root, 'docs/plans/inspect.md'), 'utf8');
+  const record = {
+    id: 'progress-existing',
+    issueId: '20261022-one',
+    startHead: readQueue(root).head,
+    events: [],
+    attempts: [],
+    retriedRuns: [worker.id],
+    assessed: true,
+    replan: true,
+    status: 'blocked',
+    plan: { path: 'docs/plans/inspect.md', content, sha256: digestReport(content) },
+    approval: { sha256: digestReport(content), receipt: join(root, '.issues/answer.json') },
+  };
+  const { saveLifecycle } = await import('./factory-ui/lifecycle-store.mjs');
+  saveLifecycle(service, record);
+  return { ...setup, action, worker, record };
+}
+
+test('approved continuation resumes the same worker before reviewing its new result and creates no duplicate assignment', async (t) => {
+  const { service, api, calls, action, worker } = await blockedContinuationFixture(t);
+  const turn = service.codex.turn;
+  service.codex.turn = async (id, cwd, prompt, schema) => {
+    if (schema.properties.recommendations) {
+      calls.push({ turn: id, prompt });
+      return JSON.stringify({
+        next_action: 'work',
+        summary: 'Apply the answered correction.',
+        continuation: {
+          action_id: action.id,
+          instruction: 'Apply the bounded correction already approved in the issue.',
+          reason: 'The human answered the blocker.',
+        },
+        recommendations: [],
+        routes: [],
+        record_update: null,
+        human_question: null,
+        next_step: 'Continue the existing worker.',
+      });
+    }
+    return turn(id, cwd, prompt, schema);
+  };
+  startIssueLifecycle(service);
+  const result = await finishLifecycle(service);
+  assert.equal(result.status, 'finished', result.summary);
+  assert.equal(api.inspect().registry.actions.length, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
+  assert.equal(worker.threadId, 'existing-worker');
+  assert.equal(service.store.runs.find((r) => r.id === worker.id).authorization.kind, 'approved-plan');
+  const work = calls.findIndex((c) => c.turn === 'existing-worker');
+  const review = calls.findIndex((c) => c.prompt?.includes('Perform one coordinator evidence review'));
+  assert.ok(work >= 0 && review > work);
+  assert.match(calls[work].prompt, /bounded correction already approved/);
+  assert.ok(calls.some((c) => c.resume === 'existing-worker'));
+  assert.ok(!calls.some((c) => c.start && c.mode === 'workspace-write'));
+});
+
+test('continuations reject unknown assignments, active workers and changed inputs before resuming', async (t) => {
+  const { service, record, action, worker, root } = await blockedContinuationFixture(t);
+  const { saveContinuation, resumeContinuation, continuationChoice } = await import(
+    './factory-ui/lifecycle-continuation.mjs'
+  );
+  service.lifecycleTasks.set(record.issueId, Promise.resolve());
+  const result = {
+    next_action: 'work',
+    recommendations: [],
+    record_update: null,
+    continuation: { action_id: 'unknown', instruction: 'Correction', reason: 'Answered' },
+  };
+  assert.throws(() => saveContinuation(service, record, result), /existing blocked assignment/);
+  result.continuation.action_id = action.id;
+  service.store.connected.add(worker.id);
+  assert.throws(() => saveContinuation(service, record, result), /still running/);
+  service.store.connected.delete(worker.id);
+  saveContinuation(service, record, result);
+  writeFileSync(
+    join(root, '.issues/20261022-one.md'),
+    readFileSync(join(root, '.issues/20261022-one.md'), 'utf8') + '\nChanged answer.\n'
+  );
+  await assert.rejects(resumeContinuation(service, record), /changed since/);
+  assert.equal(continuationChoice(service, record, readQueue(root)), null);
+  assert.equal(record.pendingContinuation, null);
+  assert.equal(record.replan, true);
+  assert.equal(worker.status, 'blocked');
+  service.lifecycleTasks.delete(record.issueId);
+});
+
+test('a continuation missing actual scope approval asks a concrete question without resuming', async (t) => {
+  const { service, record, action, worker } = await blockedContinuationFixture(t);
+  const { saveContinuation, checkContinuation } = await import('./factory-ui/lifecycle-continuation.mjs');
+  service.lifecycleTasks.set(record.issueId, Promise.resolve());
+  saveContinuation(service, record, {
+    next_action: 'work',
+    recommendations: [],
+    record_update: null,
+    continuation: { action_id: action.id, instruction: 'Change the dependency pin.', reason: 'Proposed correction' },
+  });
+  service.codex.turn = async () =>
+    JSON.stringify({
+      within_plan: false,
+      summary: 'This change lacks a recorded approval.',
+      question: 'May the existing worker change this dependency pin?',
+    });
+  assert.equal(await checkContinuation(service, record), false);
+  assert.equal(record.status, 'waiting');
+  assert.match(record.input.question, /dependency pin\?/);
+  assert.equal(service.store.runs.find((r) => r.id === worker.id).status, 'blocked');
+  service.lifecycleTasks.delete(record.issueId);
+});
+
 test('lifecycle pauses at action boundaries and snapshot or restart never resumes it', async (t) => {
   const { service, root } = lifecycleFixture(t);
   startIssueLifecycle(service);
@@ -2816,6 +2943,12 @@ test('administrative notes cannot re-enable the same stopped review', async (t) 
   assert.equal(service.snapshot().issues[0].lifecycle.canResume, false);
   assert.throws(() => startIssueLifecycle(service), /nothing relevant has changed/);
   assert.equal(service.store.runs.length, count);
+  const { retainAnswer } = await import('./factory-ui/lifecycle-store.mjs');
+  retainAnswer(service, service.lifecycleRuns['20261022-one'], {
+    type: 'clarification',
+    answer: 'Use the bounded selected scope.',
+  });
+  assert.equal(service.snapshot().issues[0].lifecycle.canResume, true);
 });
 
 test('live output redacts known credentials before storing or displaying events', async (t) => {
@@ -3056,7 +3189,7 @@ test('approved lifecycle actions retain plan authorization without claiming a ne
   await approveIssuePlan(service);
   await finishLifecycle(service);
   const worker = service.store.runs.find((r) => r.kind === 'worker');
-  assert.equal(worker.authorization.kind, 'approved-plan');
+  assert.equal(service.store.runs.find((r) => r.id === worker.id).authorization.kind, 'approved-plan');
   const action = service.api.inspect().registry.actions.find((a) => a.id === worker.actionId);
   assert.equal(action.authorization.kind, 'approved-plan');
   assert.equal(action.operations[0].authorization.plan_sha256, worker.authorization.plan_sha256);

@@ -1,7 +1,8 @@
 import { readProgress, writeProgress } from '../factory-progress.mjs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { writeJson } from './common.mjs';
+import { writeJson, digest } from './common.mjs';
+import { readFileSync } from 'node:fs';
 
 export const loadLifecycles = readProgress;
 export function saveLifecycle(service, record, changes = {}) {
@@ -33,6 +34,7 @@ function interruptedView(service, issue, record) {
 export function retainAnswer(service, record, value) {
   const path = join(service.store.directory, `answer-${randomUUID()}.json`);
   writeJson(path, { issueId: record.issueId, actor: 'human', at: new Date().toISOString(), ...value });
+  saveLifecycle(service, record, { latestAnswer: { path, sha256: digest(readFileSync(path)) } });
   return path;
 }
 

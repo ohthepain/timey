@@ -464,6 +464,30 @@ still applies; the UI never invents unadvertised command choices or allows all
 Python scripts by interpreter prefix.
 Older Allow/Decline replies remain compatible with the advertised choices.
 
+## Continuing an existing worker
+
+A planning review can return a structured continuation with the existing action ID,
+a bounded instruction and its reason, instead of recommending a duplicate worker.
+Within active lifecycle Progress, the server selects that continuation ahead of
+reviewing the old unfinished result. It requires the selected issue's blocked
+assignment and the same disconnected worker, checks the approved plan and latest
+actual answer receipts, and rechecks queue and worker freshness before resuming.
+Later explicit answers can authorize bounded changes to an earlier constraint;
+old blocker text does not override those answers. Human checks and tool permissions
+still apply. An unauthorised continuation asks the precise missing decision.
+
+The existing chat, original comparison base, merge policy and authorization history
+are preserved. After the worker returns a new result, normal verification, review
+and any required human-first integration follow. A continuation records no completed
+step or acceptance by itself. A stale proposal is replanned, not replayed. Loop
+fingerprints include the latest recorded human-answer receipt and the concrete
+continuation so new answers can unblock work without blindly repeating the same
+correction. Administrative notes do not reset the stopped-work guard. The new
+continuation protocol allows older stopped records one fresh planning attempt
+with this dispatcher capability; it grants no scope or completion by itself.
+Queue reviews remain read-only; continuation execution belongs to the approved
+issue lifecycle loop, separately from the native factory command loop.
+
 ## Questions, failures and forward progress
 
 Focused planning distinguishes unfinished work, completed-work bookkeeping, an

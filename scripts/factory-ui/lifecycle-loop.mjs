@@ -1,3 +1,4 @@
+import { continuationChoice, checkContinuation, resumeContinuation } from './lifecycle-continuation.mjs';
 import { planProgress } from './progress.mjs';
 import { lifecycleWorkBasis, stopLifecycle } from './lifecycle-stop.mjs';
 import { digest, requireThat } from './common.mjs';
@@ -47,7 +48,8 @@ async function chooseAndExecute(service, record, queue, issue) {
     stopLifecycle(service, record, selected.summary);
     return false;
   }
-  const fingerprint = lifecycleWorkBasis(queue, issue, record) + ':' + selected.kind;
+  const fingerprint =
+    lifecycleWorkBasis(queue, issue, record) + ':' + selected.kind + (selected.key ? ':' + selected.key : '');
   requireThat(
     !record.attempts.includes(fingerprint),
     'The last action did not advance this issue. Its result is shown below; no duplicate work was started.'
@@ -78,6 +80,8 @@ function stopAtFinal(service, record, role) {
   });
 }
 function selectLifecycleWork(service, queue, issue, record) {
+  const continuation = continuationChoice(service, record, queue);
+  if (continuation) return continuation;
   if (record.replan) return { kind: 'replan', title: 'Finding the next unfinished task.' };
   const checklist = checklistView(queue, issue, service.store.list(service.codex.requests));
   if (needsPlanCheck(queue, issue, checklist))
@@ -97,7 +101,7 @@ async function executeLifecycleWork(service, record, queue, issue, choice) {
     'The issue changed while the next assignment was being checked. Resume to use the current record.'
   );
   lifecycleEvent(service, record, choice.title, { stage: issue.state, kind: choice.kind });
-  const started = startLifecycleWork(service, record, queue, issue, choice);
+  const started = await startLifecycleWork(service, record, queue, issue, choice);
   if (record.status !== 'running') return false;
   saveLifecycle(service, record, { childRunId: started.runId || null });
   return finishLifecycleAction(service, record, started);
@@ -110,9 +114,13 @@ async function finishLifecycleAction(service, record, started) {
 }
 async function coveredLifecycleAction(service, record, queue, choice) {
   const action = queue.actions.find((a) => a.id === choice.actionId);
-  if (action && !(await checkLifecycleScope(service, record, action))) return false;
+  if (!(await checkSelectedScope(service, record, action, choice))) return false;
   if (!approvedPlan(service, record)) return false;
   return !lifecycleActionNeedsHuman(service, record, choice, action);
+}
+function checkSelectedScope(service, record, action, choice) {
+  if (choice.kind === 'resume') return checkContinuation(service, record);
+  return action ? checkLifecycleScope(service, record, action) : true;
 }
 function lifecycleActionNeedsHuman(service, record, choice, action) {
   if (!action) return false;
@@ -124,7 +132,10 @@ function startLifecycleWork(service, record, queue, issue, choice) {
   if (choice.kind === 'check-plan')
     return service.checkImplementation(issue.id, issue.state, choice.path, progressBasis(queue));
   if (choice.kind === 'integrate') return startLifecycleIntegration(service, record, choice);
-  const handler = { replan: () => restartPlanning(service, record, queue, issue) }[choice.kind];
+  const handler = {
+    resume: () => resumeContinuation(service, record),
+    replan: () => restartPlanning(service, record, queue, issue),
+  }[choice.kind];
   return handler ? handler() : startSelectedProgress(service, issue);
 }
 function startLifecycleIntegration(service, record, choice) {

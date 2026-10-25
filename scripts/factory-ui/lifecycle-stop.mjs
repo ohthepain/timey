@@ -12,6 +12,8 @@ export function lifecycleWorkBasis(queue, issue, record) {
       head: queue.head,
       source: queue.snapshot.worktree,
       state: issue.state,
+      continuation_protocol: 1,
+      input: record.latestAnswer?.sha256,
       plan: record.plan?.sha256,
       actions,
     })

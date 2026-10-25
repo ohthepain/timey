@@ -239,7 +239,11 @@ function reconcileWithoutAssignment(service, queue, issue, result) {
 }
 
 export function planProgress(service, queue, issue) {
-  return service.evaluate(progressBasis(queue), issue.id, (result) =>
-    continueExistingWork(service, queue, issue, result)
-  );
+  return service.evaluate(progressBasis(queue), issue.id, (result) => {
+    requireThat(
+      progressBasis(readQueue(service.root)) === progressBasis(queue),
+      'The issue changed during planning. No continuation was dispatched.'
+    );
+    return continueExistingWork(service, queue, issue, result);
+  });
 }
