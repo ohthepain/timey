@@ -1,3 +1,4 @@
+import { lifecycleWorkBasis } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
 import { workerPrompt, integrationPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
@@ -619,14 +620,15 @@ test('a failed recording retains the model response and offers an explicit fresh
 async function checkNow(service, state = 'investigate') {
   return settle(service, service.checkReadiness('20261022-one', state).runId);
 }
-function saveRouteFixture(service, root, steps) {
+function saveRouteFixture(service, root, steps, recommendations = []) {
   service.ownServer();
   const run = service.store.add({ id: 'queue-review' }, 'evaluation', readQueue(root).head);
   const reviewBasis = service.snapshot().reviewBasis;
   service.store.update(run, {
     status: 'completed',
     reviewBasis,
-    result: { summary: 'Planned route', recommendations: [], routes: [{ issueId: '20261022-one', steps }] },
+    ...(recommendations.length ? { issueId: '20261022-one', issueState: readQueue(root).issues[0].state } : {}),
+    result: { summary: 'Planned route', recommendations, routes: [{ issueId: '20261022-one', steps }] },
   });
   service.store.connected.delete(run.id);
   service.saveReview(run.id, reviewBasis);
@@ -703,6 +705,108 @@ test('routes save separately from execution, survive restart, and do not invent 
   assert.equal(api.inspect().registry.actions.length, 1);
   assert.equal(api.inspect().registry.actions[0].status, 'setup');
   assert.equal(api.inspect().reports[0].metadata.lifecycle_history, undefined);
+});
+
+test('a current optional stage can be planned and skipped before implementation without a worker', async (t) => {
+  const { root, service, api, proposal } = fixture(t);
+  prototypePath(root);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state: investigate', 'state: experiment'));
+  const before = readFileSync(report, 'utf8');
+  const run = saveRouteFixture(
+    service,
+    root,
+    [{ state: 'experiment', decision: 'skip', reason: 'The investigation settled the design.' }],
+    [{ ...proposal, kind: 'implement', merge: 'human-first' }]
+  );
+  assert.equal(
+    api.inspect().registry.actions.length,
+    0,
+    'recommendations wait for the new stage before taking their basis'
+  );
+  assert.equal(readFileSync(report, 'utf8'), before, 'saving a route must not advance the issue');
+  assert.equal(service.snapshot().issues[0].progress.kind, 'skip-stage');
+  service.codex.start = async () => {
+    throw Error('Skipping needs no model or worker');
+  };
+  service.guard = () => ({});
+  const preview = service.progressPreflight('20261022-one', 'experiment');
+  const result = await settle(service, service.progressStart(preview.token).runId);
+  assert.equal(result.status, 'completed', result.summary);
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.state, 'implement');
+  assert.equal(issue.lifecycle_history.length, 1);
+  assert.equal(issue.lifecycle_history[0].outcome, 'skipped');
+  assert.equal(issue.lifecycle_history[0].state, 'experiment');
+  assert.match(issue.lifecycle_history[0].reason, /investigation settled/);
+  assert.equal(api.inspect().registry.actions.length, 1);
+  const action = api.inspect().registry.actions[0];
+  assert.equal(action.kind, 'implement');
+  assert.equal(service.snapshot().actions[0].launchBlocked, null);
+  assert.equal(issue.progress.kind, 'launch');
+  assert.ok(run.savedRoutes);
+  assert.throws(() => service.progressStart(preview.token), /expired/);
+});
+
+test('a stopped current-skip review can resume by saving its existing result without replanning', (t) => {
+  const { root, service, proposal } = fixture(t);
+  prototypePath(root);
+  const path = join(root, '.issues/20261022-one.md');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('state: investigate', 'state: experiment'));
+  service.ownServer();
+  const queue = readQueue(root),
+    issue = queue.issues[0];
+  const run = service.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
+  service.store.update(run, {
+    issueId: issue.id,
+    issueState: issue.state,
+    status: 'completed',
+    reviewBasis: service.snapshot().reviewBasis,
+    result: {
+      summary: 'Implementation is next',
+      recommendations: [{ ...proposal, kind: 'implement', merge: 'human-first' }],
+      routes: [
+        { issueId: issue.id, steps: [{ state: issue.state, decision: 'skip', reason: 'The design is settled.' }] },
+      ],
+    },
+  });
+  service.store.connected.delete(run.id);
+  const record = {
+    id: 'existing-progress',
+    issueId: issue.id,
+    status: 'blocked',
+    input: null,
+    summary: 'The current stage cannot be marked as a future skip.',
+    attempts: [],
+  };
+  record.stopBasis = lifecycleWorkBasis(queue, issue, record);
+  record.attempts.push(record.stopBasis + ':replan');
+  service.lifecycleRuns[issue.id] = record;
+  const view = service.snapshot().issues[0];
+  assert.equal(view.lifecycle.canResume, true);
+  assert.equal(view.progress.kind, 'save-review');
+  const preview = service.progressPreflight(issue.id, issue.state);
+  service.progressStart(preview.token);
+  assert.equal(service.snapshot().issues[0].progress.kind, 'skip-stage');
+  assert.equal(service.store.runs.filter((item) => item.kind === 'evaluation').length, 1);
+});
+
+test('recording a current skip retains human advance guards and records no outcome on rejection', async (t) => {
+  const { root, service } = fixture(t);
+  prototypePath(root);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state: investigate', 'state: experiment'));
+  saveRouteFixture(service, root, [{ state: 'experiment', decision: 'skip', reason: 'Settled design.' }]);
+  const before = readFileSync(report, 'utf8');
+  service.guard = (root, action, operation) => {
+    assert.equal(operation, 'advance');
+    throw Error('A real human decision is still needed.');
+  };
+  const preview = service.progressPreflight('20261022-one', 'experiment');
+  const result = await settle(service, service.progressStart(preview.token).runId);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /human decision/);
+  assert.equal(readFileSync(report, 'utf8'), before);
 });
 
 test('invalid routes are rejected before saving any assignments', (t) => {

@@ -70,6 +70,11 @@ recorded/future/current states, `readiness.mjs` for explicit action readiness,
 `skip-policy.mjs` for guarded optional skips. The workflow contract and storage
 boundaries are documented in [factory UI](factory-ui.md).
 
+`factory-ui/stage-skip.mjs` records a saved optional current-stage skip through the
+shared completion policy and human advance guards, then saves any deferred
+issue-focused recommendations against the resulting stage. Route planning alone
+records no outcome and launches no work.
+
 `factory-ui/reconcile.mjs` reviews already finished work and validates a consecutive
 set of evidence-backed stage outcomes before updating a stale issue. It never
 launches workers, merges code or accepts issues.

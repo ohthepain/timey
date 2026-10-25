@@ -1,3 +1,4 @@
+import { beginPlannedSkip } from './stage-skip.mjs';
 import { readWorkerReview } from './worker-review.mjs';
 import { applyLifecyclePlanning } from './lifecycle-planning.mjs';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -66,6 +67,7 @@ export function triggerProgress(service, token, humanApproved) {
 }
 function dispatchProgress(service, queue, issue, choice, humanApproved) {
   const handlers = {
+    'skip-stage': () => beginPlannedSkip(service, queue, issue),
     commit: () => beginCommit(service, queue, issue),
     reconcile: () => beginReconciliation(service, queue, issue),
     'save-review': () => service.saveReview(choice.runId, progressBasis(queue)),

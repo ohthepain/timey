@@ -71,6 +71,15 @@ A changed plan pauses before the next action. Old manual action endpoints remain
 available for queue-level operation and compatibility; their individual guards
 and exact-candidate checks remain enforced.
 
+An optional stage can be planned as a skip while it is the current stage.
+Saving that route does not advance the issue or claim the stage was completed.
+Progress records the saved reason as **Skipped**, checks the configured next stage
+and human advance requirements, then continues. Existing unfinished work takes
+precedence over a skip. An issue-focused implementation recommendation following
+that skip is saved after the transition so its freshness checks use the new stage.
+A stopped review rejected by the former current-stage skip restriction can reuse
+its still-current result through Continue without repeating the investigation.
+
 ## CLI connection and recovery
 
 The adapter uses the installed `codex app-server --listen stdio://`, its existing

@@ -462,10 +462,12 @@ export class FactoryUI {
         run.result.recommendations.every((action) => action.issues.every((id) => id === run.issueId)),
         'The review proposed work outside the selected issue. Review its scope before saving.'
       );
-    const actions = saveAssignments(this.api, run.result.recommendations);
+    const skipsCurrent = defersForStageSkip(queue, run, routes);
+    const actions = saveAssignments(this.api, skipsCurrent ? [] : run.result.recommendations);
     this.store.update(run, {
       savedActions: actions.map((a) => a.id),
       savedRoutes: routes,
+      deferredRecommendations: skipsCurrent ? run.result.recommendations : null,
       savedReviewInput: savedReviewInput(queue, run, actions),
     });
     return { savedActions: actions.map((a) => a.id) };
@@ -522,4 +524,17 @@ function fileFailure(error) {
 
 function lifecycleFollowup(service, issueId) {
   return service.lifecycleRuns[issueId]?.lastFailure || null;
+}
+
+function defersForStageSkip(queue, run, routes) {
+  return (
+    Boolean(run.issueId) &&
+    routes.some((route) =>
+      queue.issues.some(
+        (issue) =>
+          issue.id === route.issueId &&
+          route.steps.some((step) => step.state === issue.state && step.decision === 'skip')
+      )
+    )
+  );
 }

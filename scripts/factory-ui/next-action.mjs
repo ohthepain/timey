@@ -1,3 +1,5 @@
+import { savedRoute } from './lifecycle.mjs';
+import { skipAllowed } from './skip-policy.mjs';
 import { describeLaunch } from './data.mjs';
 import { chatConnectionProblem } from './worker-history.mjs';
 import { reviewFollowup, reviewInput } from './review-followup.mjs';
@@ -37,7 +39,18 @@ function stageWork(queue, issue, stage, runs) {
         'Record the existing verified commit and continue to the next step. No new chat or behavior review is needed.',
     };
   const choice = chooseWork(queue, issue, runs);
-  return stageFollowup(queue, issue, stage, runs, choice);
+  return plannedSkipChoice(queue, issue, stage, runs, choice) || stageFollowup(queue, issue, stage, runs, choice);
+}
+function plannedSkipChoice(queue, issue, stage, runs, choice) {
+  if (!['plan', 'launch'].includes(choice.kind)) return null;
+  if (!skipAllowed(queue, issue, issue.state)) return null;
+  const skip = savedRoute(issue, runs).find((step) => step.state === issue.state && step.decision === 'skip');
+  if (!skip) return null;
+  return {
+    kind: 'skip-stage',
+    title: `Record ${stage.name} as skipped`,
+    summary: `Record the saved reason and continue to the next workflow stage. ${skip.reason}`,
+  };
 }
 function isPending(run) {
   if (run.kind === 'readiness') return run.connected;
