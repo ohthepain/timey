@@ -7,6 +7,7 @@ import { saveLifecycle, lifecycleEvent, retainAnswer } from './lifecycle-store.m
 import { answerHumanRequirement } from './lifecycle-human.mjs';
 
 export async function respondLifecycle(service, record, input) {
+  if (['plan', 'questions', 'scope'].includes(record.input.type)) requireAnswerIdle(service, record);
   const handlers = {
     plan: () => approveLifecyclePlan(service, record, input),
     questions: () => recordLifecycleAnswers(service, record, input),
@@ -94,7 +95,6 @@ function retryLifecycle() {
   );
 }
 function appendAnswer(service, record, text) {
-  requireThat(!service.store.connected.size, 'Wait for the current work before recording an answer.');
   const issue = readQueue(service.root).issues.find((i) => i.id === record.issueId);
   const receipt = retainAnswer(service, record, { type: 'issue-input', answer: text });
   const result = {
@@ -121,4 +121,18 @@ function answerText(input) {
   requireThat(typeof input.text === 'string' && input.text.trim(), 'Enter your answer before continuing.');
   requireThat(input.text.length <= 20000, 'Keep this answer below 20,000 characters.');
   return input.text.trim();
+}
+
+function requireAnswerIdle(service, record) {
+  const queue = readQueue(service.root);
+  const active = service.store.runs.find(
+    (run) =>
+      service.store.connected.has(run.id) &&
+      (run.issueId === record.issueId ||
+        queue.actions.some((action) => action.id === run.actionId && action.issues.includes(record.issueId)))
+  );
+  requireThat(
+    !active,
+    `Work on this issue is still running${active?.title ? ': ' + active.title : ''}. Follow its live output below, then send your answer when it finishes. Your answer has not been recorded.`
+  );
 }

@@ -1000,6 +1000,9 @@
         const count = (i.human_input?.requests || []).length;
         const checks = (i.human_checks || []).filter((c) => c.status !== 'passed' && checkDueNow(i, c)).length;
         const items = [];
+        if (i.lifecycle?.status === 'waiting' && i.lifecycle.input && i.lifecycle.input.type !== 'retry')
+          items.push('Your response is needed in the request above');
+        if (i.lifecycle?.status === 'answering') items.push('Saving your response');
         if (count) items.push(`${count} input requests`);
         if (checks) items.push(`${checks} checks need attention`);
         if (i.grill_later) items.push('Discussion needed');
@@ -1483,19 +1486,39 @@
         const child = data.runs.find((r) => r.id === record?.childRunId);
         const input = record?.input?.type === 'retry' ? null : record?.input;
         const stopped = record?.status === 'blocked' || record?.legacyRetry || record?.input?.type === 'retry';
-        const title = active
-          ? 'Working on this issue'
-          : input
-            ? 'Your input is needed'
-            : stopped
-              ? 'Progress stopped'
-              : stage?.role === 'ready-to-close'
-                ? 'Ready for final review'
-                : 'Move this issue forward';
+        const issueWork = data.runs.find(
+          (run) =>
+            run.connected &&
+            (run.issueId === issue.id ||
+              data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+        );
+        const title =
+          record?.status === 'answering'
+            ? 'Saving your answer'
+            : active
+              ? 'Working on this issue'
+              : input
+                ? 'Your input is needed'
+                : stopped
+                  ? 'Progress stopped'
+                  : stage?.role === 'ready-to-close'
+                    ? 'Ready for final review'
+                    : 'Move this issue forward';
         const summary =
-          record?.summary || 'Continue through this issue’s approved plan. We’ll stop here if we need your input.';
+          record?.status === 'answering'
+            ? 'Saving your response before continuing this issue.'
+            : input
+              ? issueWork
+                ? `Work on this issue is still connected. ${issueWork.summary || 'Follow its live output below.'}`
+                : 'Waiting for your answer. No work is running for this issue.'
+              : record?.summary ||
+                'Continue through this issue’s approved plan. We’ll stop here if we need your input.';
+        const stageNote =
+          stage?.role === 'ready-to-prototype' && input
+            ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
+            : '';
         const canStart = !input && stage?.role !== 'ready-to-close';
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Current step: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(child?.connected ? child.summary : summary)}</p>${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)

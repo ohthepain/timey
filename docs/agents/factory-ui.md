@@ -42,6 +42,16 @@ against the plan before dispatch. It never includes another issue implicitly.
 Technical failures get one bounded same-worker correction when the approved plan
 and current permissions cover it. Missing evidence is never called a pass.
 
+The header separates the workflow stage from live work and pending input. A
+Prototype stage label does not establish that a prototype exists or is being built.
+When a response is pending, the header shows whether work on this issue is still
+connected and puts the requested decision under **Waiting for you**. Answer errors
+appear separately from the activity summary. Saving plan, scope and question answers
+checks connected work for this issue, including grouped assignments, before retaining
+any answer or approval. Work on other issues does not block saving the response.
+Report and question freshness checks still apply; native worker requests keep their
+existing reply path.
+
 Actual human questions and permission requests appear in the issue. Answers are
 retained with provenance, reviewed for coverage and routed to the original owner:
 shared human-input requests use the installed guarded helper, human checks update

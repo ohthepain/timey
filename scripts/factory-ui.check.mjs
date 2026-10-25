@@ -1855,13 +1855,31 @@ test('earlier checklist results keep their recorded status without enabling acti
   }
 });
 
+test('input summary includes pending lifecycle questions and approvals', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(html.indexOf('      function inputStatus('), html.indexOf('      function statusLabel('));
+  const render = new Function('data', 'esc', 'checkDueNow', source + ';return inputStatus;')(
+    { lifecycle: [] },
+    (value) => value,
+    () => false
+  );
+  for (const type of ['questions', 'plan', 'integration', 'worker', 'human', 'scope']) {
+    assert.match(render({ lifecycle: { status: 'waiting', input: { type } } }), /Your response is needed/);
+  }
+  assert.match(render({ lifecycle: { status: 'answering' } }), /Saving your response/);
+  assert.doesNotMatch(
+    render({ lifecycle: { status: 'blocked', input: { type: 'retry' } } }),
+    /Your response is needed/
+  );
+});
+
 test('lifecycle Progress is direct, shows inline questions and disables duplicate clicks during work', () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const source = html.slice(
     html.indexOf('      const lifecycleDrafts ='),
     html.indexOf('      function liveStepWork(')
   );
-  const screen = { lifecycle: [], runs: [] };
+  const screen = { lifecycle: [], runs: [], actions: [] };
   const render = new Function('data', 'esc', 'busy', 'approvals', source + ';return lifecyclePanel;')(
     screen,
     (value) => String(value || ''),
@@ -1882,6 +1900,21 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   assert.match(render(issue), /Which behavior do you want/);
   assert.match(render(issue), /Send answer and continue/);
   assert.doesNotMatch(render(issue), /data-lifecycle-start/);
+  screen.lifecycle = [{ state: 'prototype', role: 'ready-to-prototype', name: 'Prototype' }];
+  issue.state = 'prototype';
+  issue.lifecycle.summary = 'Wait for the current work before recording an answer.';
+  issue.lifecycle.input.origin = 'next-action';
+  const waiting = render(issue);
+  assert.match(waiting, /Workflow stage: Prototype/);
+  assert.match(waiting, /Waiting for your answer/);
+  assert.match(waiting, /No work is running for this issue/);
+  assert.match(waiting, /does not mean a prototype is being built or is ready to view/);
+  assert.doesNotMatch(waiting, /Wait for the current work/);
+  screen.runs.push({ id: 'other', issueId: 'different-issue', connected: true, summary: 'Other work' });
+  assert.match(render(issue), /No work is running for this issue/);
+  screen.runs.push({ id: 'own', issueId: issue.id, connected: true, summary: 'Inspecting the panel' });
+  assert.match(render(issue), /Inspecting the panel/);
+  assert.doesNotMatch(render(issue), /No work is running for this issue/);
 });
 
 function commitFixture(t) {
@@ -2550,6 +2583,66 @@ test('lifecycle pauses at action boundaries and snapshot or restart never resume
   assert.equal(restarted.store.connected.size, 0);
 });
 
+test('answers save while another issue is connected without changing its report or run', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  await finishLifecycle(service);
+  const record = service.lifecycleRuns['20261022-one'];
+  const report = join(root, '.issues/20261022-one.md');
+  record.input = {
+    type: 'questions',
+    origin: 'next-action',
+    reportHash: digestReport(readFileSync(report, 'utf8')),
+    questions: [{ question: 'Approve the implementation boundary?' }],
+  };
+  const otherReport = join(root, '.issues/20261022-two.md');
+  writeFileSync(otherReport, '---\nid: 20261022-two\nstate: investigate\ngrill_later: false\n---\n# Other issue\n');
+  const other = { id: 'other-work', issueId: '20261022-two', status: 'running', events: [] };
+  service.store.runs.push(other);
+  service.store.connected.add(other.id);
+  const before = readFileSync(otherReport, 'utf8');
+  await service.answerLifecycle({
+    issueId: record.issueId,
+    updated: record.updated,
+    text: 'Use the isolated checkout.',
+  });
+  assert.match(readFileSync(report, 'utf8'), /Use the isolated checkout/);
+  assert.equal(readFileSync(otherReport, 'utf8'), before);
+  assert.equal(other.status, 'running');
+  assert.equal(service.store.connected.has(other.id), true);
+  service.store.connected.delete(other.id);
+  await finishLifecycle(service);
+});
+
+test('same-issue and grouped work block answers before retaining input or approval', async (t) => {
+  const { service, root, api, proposal } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  await finishLifecycle(service);
+  const record = service.lifecycleRuns['20261022-one'];
+  const report = join(root, '.issues/20261022-one.md');
+  const before = readFileSync(report, 'utf8');
+  const [action] = api.recommend([proposal]);
+  for (const run of [
+    { id: 'own-work', issueId: record.issueId, title: 'Inspect source' },
+    { id: 'group-work', actionId: action.id, title: 'Grouped inspection' },
+  ]) {
+    service.store.runs.push(run);
+    service.store.connected.add(run.id);
+    const previousAnswer = record.latestAnswer;
+    const previousSummary = record.summary;
+    await assert.rejects(
+      service.answerLifecycle({ issueId: record.issueId, updated: record.updated, decision: 'approve' }),
+      /Work on this issue is still running/
+    );
+    assert.deepEqual(record.latestAnswer, previousAnswer);
+    assert.equal(record.summary, previousSummary);
+    assert.match(record.answerError, /Work on this issue is still running/);
+    assert.equal(record.approval, undefined);
+    assert.equal(readFileSync(report, 'utf8'), before);
+    service.store.connected.delete(run.id);
+  }
+});
+
 test('changed plan and stale answer submissions cannot authorize work', async (t) => {
   const { service, root, api } = lifecycleFixture(t);
   startIssueLifecycle(service);
@@ -3005,7 +3098,7 @@ test('activity header shows live confirmation, last activity and result checks w
 test('activity screen shows the current step and preserves expanded details, native drafts and log reading position', async (t) => {
   const { window, snapshot } = await activityScreen(t),
     document = window.document;
-  assert.match(document.querySelector('.lifecycle-progress').textContent, /Current step: Clarify/);
+  assert.match(document.querySelector('.lifecycle-progress').textContent, /Workflow stage: Clarify/);
   assert.match(document.querySelector('[data-lifecycle-start]').textContent, /Working…/);
   assert.doesNotMatch(document.body.textContent, /Progress in progress/);
   const notes = [...document.querySelectorAll('details')].find(

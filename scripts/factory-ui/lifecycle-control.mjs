@@ -41,6 +41,7 @@ function launchLifecycle(service, record) {
     input: null,
     pauseRequested: false,
     summary: 'Continuing this issue within the approved plan.',
+    answerError: null,
   });
   const task = Promise.resolve()
     .then(() => runLifecycle(service, record))
@@ -58,13 +59,13 @@ export async function answerLifecycle(service, input) {
     'The previous action is still finishing. Try again shortly.'
   );
   const question = record.input;
-  saveLifecycle(service, record, { status: 'answering' });
+  saveLifecycle(service, record, { status: 'answering', answerError: null });
   try {
     await respondLifecycle(service, record, input);
     launchLifecycle(service, record);
     return { issueId: record.issueId };
   } catch (error) {
-    saveLifecycle(service, record, { status: 'waiting', input: record.input || question, summary: error.message });
+    saveLifecycle(service, record, { status: 'waiting', input: record.input || question, answerError: error.message });
     throw error;
   }
 }
