@@ -1,3 +1,4 @@
+import { issueContext } from '../factory-inputs.mjs';
 import { installWorkerHealth } from './worker-health.mjs';
 import { runAuthorization, describeAuthorization } from '../factory-authorization.mjs';
 import { canResumeLifecycle } from './lifecycle-stop.mjs';
@@ -25,7 +26,7 @@ import { git, requireThat, writeJson, digest } from './common.mjs';
 
 import { readinessView, checkReadiness, explainBlock } from './readiness.mjs';
 import { stageStates } from './stage-state.mjs';
-import { latestResult, reviewInput, savedReviewInput } from './review-followup.mjs';
+import { latestResult, reviewInput, savedReviewInput, reviewSaveCurrent } from './review-followup.mjs';
 import { validateRoutes } from './lifecycle.mjs';
 import { readPlan } from './plan-document.mjs';
 import { findConnection, connectWorker } from './worker-connection.mjs';
@@ -85,6 +86,7 @@ export class FactoryUI {
     return {
       ...issue,
       readiness,
+      progressBasis: reviewInput(queue, issue),
       lifecycle: this.lifecycleStatus(queue, issue),
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
@@ -417,7 +419,7 @@ export class FactoryUI {
           threadId,
           this.root,
           evaluationPrompt({
-            ...queue,
+            ...issueContext(queue, issueId),
             approved_lifecycle_plan: approvedLifecyclePlan(this, issueId),
             lifecycle_followup: lifecycleFollowup(this, issueId),
             focus_issue_ids: issueId ? [issueId] : null,
@@ -441,12 +443,8 @@ export class FactoryUI {
     this.ownServer();
     const run = this.store.runs.find((r) => r.id === runId);
     requireThat(reviewReady(run), 'This review is not ready or has already been saved.');
-    const queue = readQueue(this.root),
-      current = digest(JSON.stringify(queue));
-    requireThat(
-      current === basis && current === run.reviewBasis,
-      'The review is stale. Review the current queue again.'
-    );
+    const queue = readQueue(this.root);
+    requireThat(reviewSaveCurrent(queue, run, basis), 'The review is stale. Review the current queue again.');
     const routes = routesForReview(queue, run);
     requireThat(hasSuggestions(run.result, routes), 'There is no suggested work or route to save.');
     if (run.issueId)

@@ -156,3 +156,7 @@ terminal turns, preserving pending input, newer activity and unknown state.
 `factory-ui/codex.mjs` selects native automatic approval review for workspace-write
 chats while keeping the sandbox. `approval-activity.mjs` projects public automatic
 approval results into live output; it never grants access or reports test success.
+
+`factory-inputs.mjs` defines selected decision inputs shared by issue planning and
+ledger reservations. It follows report/action dependencies and linked plans while
+excluding unrelated queue entries; full-queue grouping keeps its original guard.

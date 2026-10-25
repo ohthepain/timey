@@ -26,7 +26,7 @@ export function saveContinuation(service, record, result) {
       runId: run.id,
       threadId: run.threadId,
       workerUpdated: run.updated,
-      basis: progressBasis(queue),
+      basis: progressBasis(queue, record.issueId),
       key: digest(JSON.stringify({ action_id: proposed.action_id, instruction: proposed.instruction })),
     },
     replan: false,
@@ -35,7 +35,7 @@ export function saveContinuation(service, record, result) {
 }
 export function continuationChoice(service, record, queue) {
   const pending = record.pendingContinuation;
-  if (pending && pending.basis !== progressBasis(queue)) {
+  if (pending && pending.basis !== progressBasis(queue, record.issueId)) {
     saveLifecycle(service, record, { pendingContinuation: null, replan: true, lastContinuation: pending });
     return null;
   }
@@ -104,7 +104,7 @@ function currentContinuation(service, record) {
   const pending = record.pendingContinuation;
   requireThat(pending, 'No continuation is pending.');
   requireThat(
-    progressBasis(readQueue(service.root)) === pending.basis,
+    progressBasis(readQueue(service.root), record.issueId) === pending.basis,
     'The issue or assignment changed since this continuation was proposed. Refresh its plan.'
   );
   const run = service.store.runs.find((r) => r.id === pending.runId);

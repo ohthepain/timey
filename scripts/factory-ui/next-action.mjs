@@ -1,9 +1,12 @@
 import { describeLaunch } from './data.mjs';
 import { chatConnectionProblem } from './worker-history.mjs';
-import { reviewFollowup } from './review-followup.mjs';
+import { reviewFollowup, reviewInput } from './review-followup.mjs';
 import { digest, requireThat } from './common.mjs';
 
-export const progressBasis = (queue) => digest(JSON.stringify(queue));
+export const progressBasis = (queue, id = null) =>
+  id
+    ? reviewInput(queue, progressIssue(queue, id, queue.issues.find((i) => i.id === id)?.state))
+    : digest(JSON.stringify(queue));
 export function progressIssue(queue, id, state) {
   requireThat(typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id), 'Use the full saved issue ID.');
   const issue = queue.issues.find((i) => i.id === id);

@@ -71,7 +71,7 @@ function applyRecordUpdate(service, queue, issue, run, stages, update) {
   const proof = retainBefore(service, queue, issue, run, evidence);
   evidence.push({ path: proof, sha256: digest(readFileSync(proof)) });
   requireThat(
-    progressBasis(readQueue(service.root)) === progressBasis(queue),
+    progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The project changed before the record update. Nothing was saved.'
   );
   appendReview(service.root, issue, result, run, evidence, target);

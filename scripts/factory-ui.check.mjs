@@ -209,6 +209,63 @@ test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => 
   assert.equal(existsSync(service.store.directory), false);
 });
 
+test('issue planning, saving and dispatch survive unrelated queue edits without repeating completed work', async (t) => {
+  const { root, service, api } = fixture(t);
+  transport(t, service);
+  const other = join(root, '.issues/20261022-other.md');
+  const changeOther = (note) =>
+    writeFileSync(other, '---\nid: 20261022-other\nstate: investigate\ngrill_later: false\n---\n' + note);
+  const turn = service.codex.turn.bind(service.codex);
+  service.codex.turn = async (...args) => {
+    const result = await turn(...args);
+    changeOther('Captured while another issue was planning');
+    return result;
+  };
+  const selection = service.progressPreflight('20261022-one', 'investigate');
+  changeOther('Captured after the issue action was shown');
+  const started = service.progressStart(selection.token);
+  const review = await settle(service, started.runId);
+  assert.equal(review.status, 'completed', review.summary);
+  changeOther('Unrelated priority changed before saving');
+  const save = service.progressPreflight('20261022-one', 'investigate');
+  assert.equal(save.choice.kind, 'save-review');
+  service.progressStart(save.token);
+  changeOther('Another change after saving');
+  const action = api.inspect().registry.actions[0];
+  const worker = service.start(service.preflight(action.id, 'launch').token);
+  assert.equal((await settle(service, worker.runId)).status, 'completed');
+  assert.equal(review.status, 'completed');
+  assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 1);
+});
+
+test('changed selected requirements reject planning but preserve its result and existing records', async (t) => {
+  const { root, service, api } = fixture(t);
+  transport(t, service);
+  const turn = service.codex.turn.bind(service.codex);
+  service.codex.turn = async (...args) => {
+    const result = await turn(...args);
+    const path = join(root, '.issues/20261022-one.md');
+    writeFileSync(path, readFileSync(path, 'utf8') + '\nChanged acceptance criteria');
+    return result;
+  };
+  const started = service.progressStart(service.progressPreflight('20261022-one', 'investigate').token);
+  const run = await settle(service, started.runId);
+  assert.equal(run.status, 'blocked');
+  assert.match(run.summary, /changed during planning/);
+  assert.ok(run.result.recommendations.length);
+  assert.equal(api.inspect().registry.actions.length, 0);
+});
+
+test('queue-wide review still reconsiders grouping after an unrelated issue changes', async (t) => {
+  const { root, service } = fixture(t);
+  transport(t, service);
+  const before = service.snapshot().reviewBasis;
+  const { runId } = service.evaluate(before);
+  await settle(service, runId);
+  writeFileSync(join(root, '.issues/20261022-other.md'), '---\nid: 20261022-other\nstate: investigate\n---\nNew work');
+  assert.throws(() => service.saveReview(runId, service.snapshot().reviewBasis), /stale/);
+});
+
 test('queue review, saving and launching are separate explicit operations', async (t) => {
   const { service, api } = fixture(t);
   transport(t, service);

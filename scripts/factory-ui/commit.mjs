@@ -53,7 +53,7 @@ function recordCommit(service, queue, issue, run) {
   };
   const evidence = reviewEvidence(service.root, { cwd: service.root }, result);
   requireThat(
-    progressBasis(readQueue(service.root)) === progressBasis(queue),
+    progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The project changed while recording the commit. Refresh and try again.'
   );
   appendReview(service.root, issue, result, run, evidence, stage.next);

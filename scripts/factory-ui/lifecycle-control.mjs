@@ -12,7 +12,10 @@ export function startLifecycle(service, input) {
   service.ownServer();
   const queue = readQueue(service.root);
   progressIssue(queue, input.issueId, input.state);
-  requireThat(progressBasis(queue) === input.basis, 'The issue changed. Refresh before continuing.');
+  requireThat(
+    input.issueBasis ? progressBasis(queue, input.issueId) === input.issueBasis : progressBasis(queue) === input.basis,
+    'The issue changed. Refresh before continuing.'
+  );
   if (service.lifecycleTasks.has(input.issueId)) return { issueId: input.issueId, active: true };
   service.lifecycleRuns = loadLifecycles(service.root);
   let record = service.lifecycleRuns[input.issueId];

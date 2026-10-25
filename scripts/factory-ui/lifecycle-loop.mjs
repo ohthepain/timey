@@ -97,7 +97,7 @@ async function executeLifecycleWork(service, record, queue, issue, choice) {
   if (!(await coveredLifecycleAction(service, record, queue, choice))) return false;
   const fresh = readQueue(service.root);
   requireThat(
-    progressBasis(fresh) === progressBasis(queue),
+    progressBasis(fresh, issue.id) === progressBasis(queue, issue.id),
     'The issue changed while the next assignment was being checked. Resume to use the current record.'
   );
   lifecycleEvent(service, record, choice.title, { stage: issue.state, kind: choice.kind });

@@ -1777,6 +1777,7 @@
             act(() =>
               request('lifecycle-start', {
                 issueId: button.dataset.lifecycleStart,
+                issueBasis: data.issues.find((i) => i.id === button.dataset.lifecycleStart).progressBasis,
                 state: data.issues.find((i) => i.id === button.dataset.lifecycleStart).state,
                 basis: data.reviewBasis,
               })

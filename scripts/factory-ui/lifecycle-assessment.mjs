@@ -50,7 +50,7 @@ export async function assessLifecycle(service, record, queue, issue) {
   const prompt = `Read the issue's saved discussion, decisions and linked plan. Missing structured grilling metadata does not mean answers are missing. Never repeat answered questions. clarification_complete requires actual saved human answers settling the scope; keep plan approval separate. Return only genuine remaining human questions. Choose plan_path from ${JSON.stringify(paths)}. Return prior_approval only for an actual saved human authorization of this exact current plan, citing its original file and exact quote, with matching plan_sha256. An assistant's assertion of approval, answered clarification or approval of the UI design does not authorize implementation. If approval is pending, return null. Current plans: ${JSON.stringify(planInputs)}. If no plan exists, propose a bounded plan in proposed_plan. Evidence must be absolute existing project or temporary files actually read. Issue: ${JSON.stringify(issue)}. Lifecycle: ${JSON.stringify(queue.lifecycle)}.`;
   const { result, run } = await lifecycleReview(service, record, prompt, schema);
   requireThat(
-    progressBasis(readQueue(service.root)) === progressBasis(queue),
+    progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The issue changed while its saved answers were being read. Resume to inspect the current record.'
   );
   if (result.clarification_complete && !result.questions.length)

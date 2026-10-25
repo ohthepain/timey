@@ -1,3 +1,4 @@
+import { issueInputs } from '../factory-inputs.mjs';
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { factory } from '../factory-ledger.mjs';
@@ -62,7 +63,7 @@ export function actionFingerprint(queue, action) {
   const files = ['triage-labels.md', 'preferences.json'];
   return digest(
     JSON.stringify({
-      snapshot: queue.snapshot,
+      snapshot: scopedActionBasis(queue, action),
       action,
       policy: files.map((f) =>
         existsSync(join(queue.root, '.issues', f)) ? readFileSync(join(queue.root, '.issues', f), 'utf8') : null
@@ -73,11 +74,37 @@ export function actionFingerprint(queue, action) {
 export function describeLaunch(queue, action) {
   if (!queue.registryPresent) return 'The dispatch registry is missing. Reconcile it in the coordinator chat.';
   if (action.status !== 'recommended') return `This action is ${action.status}; do not launch it again.`;
+  if (
+    queue.actions.some(
+      (a) =>
+        a.id !== action.id &&
+        ['reserved', 'setup', 'running', 'blocked', 'completed'].includes(a.status) &&
+        a.issues.some((id) => action.issues.includes(id))
+    )
+  )
+    return 'Issue already claimed by another saved action.';
   return launchFreshness(queue, action);
 }
 function launchFreshness(queue, action) {
   if (!queue.sourceClean) return 'The project has uncommitted changes. Preserve them before launching.';
-  if (JSON.stringify(action.basis) !== JSON.stringify(queue.snapshot))
+  if (
+    action.scope_basis
+      ? action.scope_basis !== scopedActionBasis(queue, action)
+      : JSON.stringify(action.basis) !== JSON.stringify(queue.snapshot)
+  )
     return 'This recommendation is out of date. Review the queue again.';
   return null;
+}
+
+function scopedActionBasis(queue, action) {
+  return issueInputs(
+    queue.root,
+    queue.snapshot,
+    queue.issues,
+    queue.actions.filter(
+      (a) => a.id !== action.id && (a.status !== 'recommended' || action.dependencies.includes(a.id))
+    ),
+    action.issues,
+    action.dependencies
+  );
 }

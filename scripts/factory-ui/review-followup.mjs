@@ -1,24 +1,9 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { issueInputs } from '../factory-inputs.mjs';
 import { digest } from './common.mjs';
 import { validateRoutes } from './lifecycle.mjs';
 
 export function reviewInput(queue, issue) {
-  return digest(
-    JSON.stringify({
-      head: queue.head,
-      worktree: queue.snapshot.worktree,
-      issue: issue.content,
-      lifecycle: queue.lifecycle,
-      actions: queue.actions.filter((a) => a.issues.includes(issue.id)),
-      dependencies: dependencyReports(queue, issue),
-      dependencyActions: dependencyActions(queue, issue),
-      preferences: preferences(queue.root),
-    })
-  );
-}
-function dependencyReports(queue, issue) {
-  return queue.issues.filter((other) => issue.links.depends.includes(other.id)).map((other) => other.content);
+  return issueInputs(queue.root, queue.snapshot, queue.issues, queue.actions, [issue.id]);
 }
 function latestReview(issue, runs) {
   return runs.findLast((r) => matchingReview(issue, r) && afterReopening(issue, r));
@@ -89,7 +74,16 @@ function finishedOrSave(queue, run) {
   return unsavedFollowup(queue, run);
 }
 function unsavedFollowup(queue, run) {
-  if (run.reviewBasis !== digest(JSON.stringify(queue))) return null;
+  if (
+    run.issueId
+      ? !freshReview(
+          queue,
+          queue.issues.find((i) => i.id === run.issueId),
+          run
+        )
+      : run.reviewBasis !== digest(JSON.stringify(queue))
+  )
+    return null;
   const problem = saveProblem(queue, run);
   if (problem)
     return {
@@ -115,16 +109,6 @@ function finished(run) {
     summary:
       'This review is already finished. Running it again with unchanged information would repeat the same work. Follow the next step in its result below.',
   };
-}
-
-function preferences(root) {
-  const path = join(root, '.issues/preferences.json');
-  return existsSync(path) ? readFileSync(path, 'utf8') : null;
-}
-
-function dependencyActions(queue, issue) {
-  const ids = queue.actions.filter((a) => a.issues.includes(issue.id)).flatMap((a) => a.dependencies);
-  return queue.actions.filter((a) => ids.includes(a.id));
 }
 
 export function savedReviewInput(queue, run, actions) {
@@ -165,4 +149,17 @@ function noWorkFollowup(run) {
 }
 function noWorkSummary(run) {
   return run.result.human_question?.question || run.result.next_step || run.summary;
+}
+
+export function reviewSaveCurrent(queue, run, basis) {
+  const current = digest(JSON.stringify(queue));
+  if (!run.issueId) return current === basis && current === run.reviewBasis;
+  return (
+    [current, run.reviewBasis].includes(basis) &&
+    freshReview(
+      queue,
+      queue.issues.find((i) => i.id === run.issueId),
+      run
+    )
+  );
 }

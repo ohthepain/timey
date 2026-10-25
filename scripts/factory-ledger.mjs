@@ -1,3 +1,4 @@
+import { issueInputs } from './factory-inputs.mjs';
 import { readProgress, completionBasis } from './factory-progress.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -228,6 +229,21 @@ export function factory(project) {
           report_sha256: digest(content),
         };
       });
+  const recommendationFresh = (action, data) =>
+    action.scope_basis
+      ? action.scope_basis === scopeBasis(action, data)
+      : JSON.stringify(action.basis) === JSON.stringify(snapshot());
+  const scopeBasis = (action, data) =>
+    issueInputs(
+      root,
+      snapshot(),
+      reports().map((r) => ({ id: r.metadata.id, content: r.content })),
+      data.actions.filter(
+        (a) => a.id !== action.id && (a.status !== 'recommended' || action.dependencies.includes(a.id))
+      ),
+      action.issues,
+      action.dependencies
+    );
   const snapshot = () => ({
     head: git('rev-parse', 'HEAD').trim(),
     // Include ignored queue configuration but never store its contents or Git diffs in the registry.
@@ -337,7 +353,14 @@ export function factory(project) {
             Array.isArray(proposal.dependencies) && proposal.dependencies.every((id) => typeof id === 'string'),
             'Declare dependency action IDs (or []).'
           );
-          return { ...proposal, id: randomUUID(), basis, status: 'recommended', created: new Date().toISOString() };
+          return {
+            ...proposal,
+            id: randomUUID(),
+            basis,
+            scope_basis: scopeBasis(proposal, data),
+            status: 'recommended',
+            created: new Date().toISOString(),
+          };
         });
         data.actions.push(...batch);
         return batch;
@@ -347,10 +370,8 @@ export function factory(project) {
       return mutate((data) => {
         const action = find(data, id);
         assert(action.status === 'recommended', `Action is already ${action.status}; never dispatch it twice.`);
-        assert(
-          JSON.stringify(action.basis) === JSON.stringify(snapshot()),
-          'Stale recommendation: manually reevaluate.'
-        );
+        assert(!data.actions.some((entry) => claimsIssue(entry, action)), 'Issue already claimed by another action.');
+        assert(recommendationFresh(action, data), 'Stale recommendation: manually reevaluate.');
         assert(
           !git('status', '--porcelain', '--untracked-files=all').trim(),
           'Commit or isolate source changes before starting a worktree from HEAD.'

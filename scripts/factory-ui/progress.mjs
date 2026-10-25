@@ -26,7 +26,7 @@ export function prepareProgress(service, id, state) {
     type: 'progress',
     issueId: id,
     state,
-    basis: progressBasis(queue),
+    basis: progressBasis(queue, id),
     choice,
     expires: Date.now() + 600000,
   });
@@ -54,7 +54,7 @@ export function triggerProgress(service, token, humanApproved) {
   const queue = readQueue(service.root),
     issue = progressIssue(queue, intent.issueId, intent.state);
   requireThat(
-    progressBasis(queue) === intent.basis,
+    progressBasis(queue, intent.issueId) === intent.basis,
     'The issue, code or saved work changed. Refresh before progressing.'
   );
   const choice = nextProgress(queue, issue, service.store.list(service.codex.requests));
@@ -192,7 +192,7 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
     candidate = await service.check(worker.cwd, action.basis.head, join(service.store.directory, run.id));
   if (candidate) git(worker.cwd, 'merge-base', '--is-ancestor', action.basis.head, candidate.head);
   requireThat(
-    progressBasis(readQueue(service.root)) === progressBasis(queue),
+    progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The project or saved work changed during review. No reviewed result was applied; refresh and reconcile.'
   );
   const target = reviewedTransition(service, queue, issue, action, result);
@@ -229,7 +229,7 @@ function continueExistingWork(service, queue, issue, result) {
   if (applyLifecyclePlanning(service, issue, result)) return;
   if (result.record_update) {
     requireThat(!result.recommendations.length, 'A record-only update cannot include new assignments.');
-    return service.recordUpdate(issue.id, issue.state, progressBasis(queue), result.record_update);
+    return service.recordUpdate(issue.id, issue.state, progressBasis(readQueue(service.root)), result.record_update);
   }
   if (service.lifecycleTasks.has(issue.id)) return;
   return reconcileWithoutAssignment(service, queue, issue, result);
@@ -241,7 +241,7 @@ function reconcileWithoutAssignment(service, queue, issue, result) {
 export function planProgress(service, queue, issue) {
   return service.evaluate(progressBasis(queue), issue.id, (result) => {
     requireThat(
-      progressBasis(readQueue(service.root)) === progressBasis(queue),
+      progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
       'The issue changed during planning. No continuation was dispatched.'
     );
     return continueExistingWork(service, queue, issue, result);

@@ -83,7 +83,7 @@ async function reconcile(service, queue, issue, run) {
   const { result, evidence } = await checkedReview(service, queue, issue, run, threadId);
   if (!result) return;
   requireThat(
-    progressBasis(readQueue(service.root)) === progressBasis(queue),
+    progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The project or issue changed during review. No updates recorded.'
   );
   appendReview(service.root, issue, result, run, evidence, result.next_state);

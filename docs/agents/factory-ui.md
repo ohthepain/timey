@@ -544,3 +544,23 @@ and explicit final acceptance remain enforced.
 
 The issue and chat coordinators share [progress and completion records](factory-records.md),
 including check receipts independent of UI chat history. Their control loops remain separate.
+
+## Issue-scoped decision freshness
+
+Issue-focused planning and asynchronous result recording compare selected inputs,
+not a hash of the entire queue. `factory-inputs.mjs` follows transitive Blocked by
+reports, assignment dependencies and shared assignments, retaining linked plan
+contents, policy, source revision and working-tree inputs. Ordering, captures,
+priority changes or completed actions outside that scope do not invalidate the
+selected decision. Source changes conservatively require checking the current
+checkout; they do not erase previously recorded completion or test evidence.
+
+Issue-focused recommendations can be saved after unrelated queue edits. New saved
+assignments carry their selected input receipt, checked again under the ledger
+lock at reservation. Conflicting claims, changed scope/dependencies, source,
+plans, policy or approval requirements still block the affected operation. Old
+recommendations without an input receipt retain their conservative legacy check;
+no old decision is silently grandfathered. Queue-wide evaluations still require
+whole-queue freshness before saving grouping and priority decisions. Completed
+work, test receipts and human acceptance remain separate and are never reset by
+an unrelated issue capture.
