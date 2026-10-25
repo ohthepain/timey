@@ -9,7 +9,7 @@ datasource db {
 
 model User {
   id         String   @id @default(uuid())
-  keycloakId String   @unique // Store the Keycloak user ID separately
+  keycloakId String?  @unique // Transitional Keycloak callers only; Better Auth uses id
   userName   String
   email      String   @unique
   createdAt  DateTime @default(now())

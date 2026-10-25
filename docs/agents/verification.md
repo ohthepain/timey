@@ -102,6 +102,20 @@ Use disposable fixtures for writes. A prototype is labeled simulated evidence
 unless it uses the real integration. Tutorial navigation is not a verification
 verdict. Mocked MIDI cannot establish acoustic or physical-device timing.
 
+## Authentication foundation
+
+Run `npm run test:auth` for the actual app HTTP/session and disposable PostgreSQL
+proof; see [setup and coverage](../../AUTH_SETUP.md). This creates its own cluster,
+owners and databases under a unique temporary evidence directory and retains
+commands, assertions and dumps. Existing Compose databases are not targets.
+Database-session acceptance and profile recovery are exercised independently of
+the still-pending application authorization/screens/admin cutover.
+
+The verifier links each declared workspace's installed dependency directory into
+the exported snapshot, preserving workspace dependency resolution without changing source
+or audit gates. Both application and auth use the approved Zod 4 pin; older framework
+packages retain their declared nested dependencies. Use matching `npm ci` dependencies before verification.
+
 ## Human checks
 
 Each issue can have `human_checks` in YAML, separate from `state`/`triage_role`:
