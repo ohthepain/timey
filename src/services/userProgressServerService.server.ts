@@ -4,109 +4,41 @@ import { moduleProgressRepository } from '~/repositories/moduleProgressRepositor
 import { userRepository } from '~/repositories/userRepository';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
-import { getWebRequest } from '@tanstack/react-start/server';
-import { withAuth } from '~/utils/authenticatedServerFn';
+import { requirePracticeUser } from '~/server/practice-session';
 
 export interface BeatProgressView {
   beatId: string;
-  bestTempo: number;
+  bestTempo: number | null;
 }
 
-const startBeatServerFnArgs = z.object({
-  beatId: z.string(),
-  token: z.string(),
-});
+const beatArgs = z.strictObject({ beatId: z.string() });
 
 export const startBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator(startBeatServerFnArgs)
-  .handler(
-    withAuth(async (ctx, userId) => {
-      try {
-        const { beatId } = ctx.data;
-        console.log('Received request to start beat', beatId);
+  .validator(beatArgs)
+  .handler(async (ctx) => {
+    const { userId } = await requirePracticeUser();
+    const beat = await beatRepository.getBeatWithModuleAndMethod(ctx.data.beatId);
+    if (!beat?.module?.method) throw new Error('Beat hierarchy not found');
+    await moduleProgressRepository.setCurrentMethodForModule(userId, beat.module.id, beat.module.method.id);
+    await userRepository.setCurrentModule(userId, beat.module.id);
+    return { success: true };
+  });
 
-        const beat = await beatRepository.getBeatWithModuleAndMethod(beatId);
-        if (!beat) {
-          throw new Error(`Beat not found with id ${beatId}`);
-        }
-        if (!beat.module) {
-          throw new Error(`Module not found for beat with id ${beatId}`);
-        }
-        if (!beat.module.method) {
-          throw new Error(`Method not found for module with id ${beat.module.id}`);
-        }
-        const moduleId = beat.module.id;
-        const methodId = beat.module.method.id;
-
-        // Set the user's current module
-        await moduleProgressRepository.setCurrentMethodForModule(userId, moduleId, methodId);
-
-        // Set the user's current method for the module
-        await userRepository.setCurrentModule(userId, moduleId);
-        return { success: true };
-      } catch (error) {
-        console.error('Error starting beat:', error);
-        return { error: 'Failed to start beat' };
-      }
-    })
-  );
-
-const passBeatTempoServerFnArgs = z.object({
-  beatId: z.string(),
-  tempo: z.number(),
-  token: z.string(),
-});
+const passBeatTempoArgs = z.strictObject({ beatId: z.string(), tempo: z.number().int().positive() });
 
 export const passBeatTempoServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator(passBeatTempoServerFnArgs)
-  .handler(
-    withAuth(async (ctx, userId) => {
-      try {
-        const { beatId, tempo } = ctx.data;
-        console.log('Received request to pass beat tempo', beatId, tempo);
+  .validator(passBeatTempoArgs)
+  .handler(async (ctx) => {
+    const { userId } = await requirePracticeUser();
+    return beatProgressRepository.setBeatBestTempo(userId, ctx.data.beatId, ctx.data.tempo);
+  });
 
-        return beatProgressRepository.setBeatBestTempo(userId, beatId, tempo);
-      } catch (error) {
-        console.error('Error passing beat tempo:', error);
-        return { error: 'Failed to pass beat tempo' };
-      }
-    })
-  );
-
-export const getBeatProgressForModule = async (userId: string, id: string): Promise<BeatProgressView[]> => {
-  try {
-    const moduleProgress = await beatProgressRepository.getBeatProgressForModule(userId, id);
-    const beatProgress: BeatProgressView[] = moduleProgress.map((beat) => {
-      const progress = (beat as any).beatProgress?.[0];
-      return {
-        beatId: beat.id,
-        bestTempo: progress ? progress.bestTempo : null,
-      };
-    });
-    console.log('Beat progress for module:', beatProgress);
-    return beatProgress;
-  } catch (error) {
-    console.error('Error getting beat progress for module:', error);
-    return [];
-  }
-};
-
-const getBeatProgressForModuleServerFnArgs = z.object({
-  id: z.string(),
-  token: z.string(),
-});
+const moduleArgs = z.strictObject({ id: z.string() });
 
 export const getBeatProgressForModuleServerFn = createServerFn({ method: 'GET', response: 'data' })
-  .validator(getBeatProgressForModuleServerFnArgs)
-  .handler(
-    withAuth(async (ctx, userId) => {
-      try {
-        const { id } = ctx.data;
-        const beatProgress = await getBeatProgressForModule(userId, id);
-        return beatProgress;
-      } catch (error) {
-        console.error('Error getting beat progress for module:', error);
-        return [];
-      }
-    })
-  );
+  .validator(moduleArgs)
+  .handler(async (ctx): Promise<BeatProgressView[]> => {
+    const { userId } = await requirePracticeUser();
+    const beats = await beatProgressRepository.getBeatProgressForModule(userId, ctx.data.id);
+    return beats.map((beat) => ({ beatId: beat.id, bestTempo: beat.beatProgress[0]?.bestTempo ?? null }));
+  });

@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react';
+import { privatePractice } from '~/state/privatePractice';
+import { useState, useSyncExternalStore } from 'react';
 import { TempoService } from '~/lib/TempoService';
 import { Metronome } from './Metronome';
 import { TempoInput } from './TempoInput';
@@ -10,6 +11,8 @@ import { usePersistedStore } from '~/state/PersistedStore';
 
 export const Transport = () => {
   const { currentBeat, getPerformancesForBeatId } = useNavigationStore();
+  const practiceUserId = useNavigationStore((state) => state.practiceUserId);
+  const [failure, setFailure] = useState('');
   const { devMode } = usePersistedStore();
 
   const tempoService = TempoService.getInstance();
@@ -91,6 +94,17 @@ export const Transport = () => {
   return (
     <div className="transport-controls flex gap-1 p-4 items-center">
       <div className="flex flex-col w-full">
+        {failure && <p role="alert">{failure}</p>}
+        {!practiceUserId && (
+          <a
+            href={
+              '/auth/login?returnTo=' +
+              encodeURIComponent(typeof window === 'undefined' ? '/' : window.location.pathname)
+            }
+          >
+            Sign in to save recordings
+          </a>
+        )}
         <div className="flex">
           {isRunning && !isRecording ? (
             <button
@@ -124,12 +138,16 @@ export const Transport = () => {
               Record
             </button>
           )}
-          {!isRunning && (
+          {!isRunning && practiceUserId && (
             <button
               className="text-blue-700 px-2 m-1 rounded hover:bg-blue-200 border-blue-600 border-2 rounded-e-md text-sm"
               onClick={async () => {
-                console.log('Start clicked');
-                beatRecorder.savePerformance();
+                try {
+                  await beatRecorder.savePerformance();
+                  setFailure('');
+                } catch {
+                  setFailure('Unable to save recording. Sign in or retry.');
+                }
               }}
             >
               Save
@@ -146,12 +164,22 @@ export const Transport = () => {
               {`Replay (${getPerformancesForBeatId(currentBeat.id).length})`}
             </button>
           )}
-          {!isRunning && currentBeat && currentBeat.id && (
+          {!isRunning && practiceUserId && currentBeat && currentBeat.id && (
             <button
               className="text-orange-700 px-2 m-1 rounded hover:bg-orange-200 border-orange-600 border-2 rounded-e-md text-sm"
               onClick={async () => {
-                console.log('Start clicked');
-                await deletePerformancesByBeatIdAndUserId({ data: { beatId: currentBeat.id } });
+                try {
+                  const deleted = await privatePractice(() =>
+                    deletePerformancesByBeatIdAndUserId({ data: { beatId: currentBeat.id! } })
+                  );
+                  if (deleted) {
+                    useNavigationStore.getState().clearPerformancesForBeatId(currentBeat.id!);
+                    useNavigationStore.getState().setCurrentPerformance(null);
+                  }
+                  setFailure('');
+                } catch {
+                  setFailure('Unable to delete recordings. Sign in or retry.');
+                }
               }}
             >
               {`Delete ${getPerformancesForBeatId(currentBeat.id).length} recordings`}

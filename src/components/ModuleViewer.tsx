@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Module } from '~/types/Module';
 import { BeatProgressView } from '~/services/userProgressServerService.server';
 import { BeatViewer } from './BeatViewer';
@@ -12,13 +11,7 @@ export interface ModuleProps {
 }
 
 export const ModuleViewer = ({ module, beatProgress }: ModuleProps) => {
-  const [beatProgressMap] = useState<Map<string, BeatProgressView>>(() => {
-    const map = new Map<string, BeatProgressView>();
-    beatProgress.forEach((beat) => {
-      map.set(beat.beatId, beat);
-    });
-    return map;
-  });
+  const beatProgressMap = new Map(beatProgress.map((progress) => [progress.beatId, progress]));
 
   // Sort beats by index
   const sortedBeats = module.beats ? [...module.beats].sort((a, b) => a.index - b.index) : [];

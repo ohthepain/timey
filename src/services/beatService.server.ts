@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import { beatRepository } from '~/repositories/beatRepository';
 import { z } from 'zod';
-import { getWebRequest } from '@tanstack/react-start/server';
+import { requirePracticeUser } from '~/server/practice-session';
 import { Beat } from '~/types/Beat';
 import { withAuth } from '~/utils/authenticatedServerFn';
 
@@ -30,22 +30,18 @@ export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data
   .validator(saveBeatServerFnArgs)
   .handler(
     withAuth(async (ctx, userId) => {
+      const data = {
+        ...ctx.data,
+        index: ctx.data.index || 0,
+        description: ctx.data.description || null,
+        authorId: userId,
+      };
       if (ctx.data.id) {
         console.log('Updating beat with ID:', ctx.data.id);
-        return beatRepository.updateBeat(ctx.data.id, {
-          ...ctx.data,
-          index: ctx.data.index || 0,
-          description: ctx.data.description || null,
-          authorId: userId,
-        });
+        return beatRepository.updateBeat(ctx.data.id, data);
       } else {
         console.log('Creating new beat with beat notes:', ctx.data.beatNotes);
-        return beatRepository.createBeat({
-          ...ctx.data,
-          index: ctx.data.index || 0,
-          description: ctx.data.description || null,
-          authorId: userId,
-        });
+        return beatRepository.createBeat(data);
       }
     })
   );
@@ -92,21 +88,16 @@ export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data
     })
   );
 
-const getBeatWithPerformancesServerFnArgs = z.object({
+const getBeatWithPerformancesServerFnArgs = z.strictObject({
   beatId: z.string(),
 });
 
 export const getBeatWithPerformancesServerFn = createServerFn({ method: 'GET', response: 'data' })
   .validator(getBeatWithPerformancesServerFnArgs)
-  .handler(
-    withAuth(async (ctx, userId) => {
-      const beat = await beatRepository.getBeatWithPerformances(ctx.data.beatId, userId);
-      if (!beat) {
-        return null;
-      }
-      return beat.toJSON();
-    })
-  );
+  .handler(async (ctx) => {
+    const { userId } = await requirePracticeUser();
+    return beatRepository.getBeatWithPerformances(ctx.data.beatId, userId);
+  });
 
 const getBeatByNameServerFnArgs = z.object({
   name: z.string(),
