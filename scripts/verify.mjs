@@ -88,6 +88,12 @@ try {
     );
   }
   symlinkSync(join(root, 'node_modules'), join(snapshot, 'node_modules'), 'dir');
+  // Workspace-local dependency versions must follow the exported source too.
+  const manifest = JSON.parse(readFileSync(join(snapshot, 'package.json'), 'utf8'));
+  for (const workspace of manifest.workspaces ?? []) {
+    const installed = join(root, workspace, 'node_modules');
+    if (existsSync(installed)) symlinkSync(installed, join(snapshot, workspace, 'node_modules'), 'dir');
+  }
   git(snapshot, 'add', '--all');
   report.snapshot_tree = git(snapshot, 'write-tree').trim();
   report.changed_files = git(snapshot, 'diff', '--cached', '--name-only', '-z', base).split('\0').filter(Boolean);

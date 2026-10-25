@@ -1,0 +1,13 @@
+{
+  "name": "@timey/auth-runtime",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "dependencies": {
+    "better-auth": "1.7.12",
+    "@better-auth/drizzle-adapter": "1.7.12",
+    "zod": "4.6.7",
+    "drizzle-orm": "1.0.0-rc.5",
+    "pg": "8.16.3"
+  }
+}

@@ -3,7 +3,7 @@
 ## To build and run locally:
 
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
@@ -17,6 +17,10 @@ Launches are separate: `$factory launch ACTION_ID`. Evaluating the queue never
 launches workers or starts another iteration. See [operating rules](docs/agents/operating.md).
 Use `$factory integrate ACTION_ID` to explicitly finalize a completed worker's
 code under its saved merge policy; this is separate from queue evaluation.
+
+The [authentication foundation setup](AUTH_SETUP.md) documents separate auth/domain
+ownership, migrations and the disposable PostgreSQL/HTTP proof. Existing application
+callers still use Keycloak pending the coordinated auth/admin cutover.
 
 ## Issues
 
