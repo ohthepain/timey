@@ -2,7 +2,8 @@ import { createServerFn } from '@tanstack/react-start';
 import { moduleRepository } from '~/repositories/moduleRepository';
 import { z } from 'zod';
 import { Module } from '~/types/Module';
-import { withAuth } from '~/utils/authenticatedServerFn';
+import { requireDomainUser } from '~/server/domain-session';
+import { createModuleInput, updateModuleInput } from '~/types/contentWrites';
 
 export const getAllModulesServerFn = createServerFn({ method: 'GET', response: 'data' }).handler(async () => {
   const data = await moduleRepository.getAllModules();
@@ -21,7 +22,7 @@ export const getModuleByIdServerFn = createServerFn({ method: 'GET', response: '
     };
   });
 
-export const getModuleById = async (id: string) => {
+const getModuleById = async (id: string) => {
   const data = await moduleRepository.getModuleById(id);
   if (!data) return null;
   const module = new Module(data);
@@ -31,45 +32,19 @@ export const getModuleById = async (id: string) => {
   };
 };
 
-const createModuleServerFnArgs = z.object({
-  title: z.string(),
-  description: z.string().optional(),
-  index: z.number(),
-  methodId: z.string(),
-  token: z.string().optional(),
-});
-
 export const createModuleServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator(createModuleServerFnArgs)
-  .handler(
-    withAuth(async (ctx, userId) => {
-      const data = await moduleRepository.createModule({
-        title: ctx.data.title,
-        description: ctx.data.description || '',
-        index: ctx.data.index,
-        methodId: ctx.data.methodId,
-        authorId: userId,
-      });
-      return new Module(data).toJSON();
-    })
-  );
-
-const updateModuleServerFnArgs = z.object({
-  id: z.string(),
-  data: z.object({
-    title: z.string().optional(),
-    description: z.string().optional(),
-    index: z.number().optional(),
-    authorId: z.string().optional(),
-    methodId: z.string().optional(),
-  }),
-  token: z.string().optional(),
-});
+  .validator(createModuleInput)
+  .handler(async (ctx) => {
+    const { userId } = await requireDomainUser();
+    const data = await moduleRepository.createModule(ctx.data, userId);
+    return new Module(data).toJSON();
+  });
 
 export const updateModuleServerFn = createServerFn({ method: 'POST', response: 'data' })
-  .validator((data: unknown) => updateModuleServerFnArgs.parse(data))
+  .validator(updateModuleInput)
   .handler(async (ctx) => {
-    const result = await moduleRepository.updateModule(ctx.data.data);
+    const { userId } = await requireDomainUser();
+    const result = await moduleRepository.updateModule(ctx.data.id, ctx.data.data, userId);
     return new Module(result).toJSON();
   });
 

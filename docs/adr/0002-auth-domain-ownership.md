@@ -15,7 +15,15 @@ to existing callers. See [setup and boundary behavior](../../AUTH_SETUP.md).
 
 Private-practice progress/performance operations now use this boundary. Browser
 session state controls persistence affordances and cache lifetime; only the
-validated server session/profile chooses the owner. Content operations remain on
-the legacy boundary until their coordinated cutover. Recording replacement stays
+validated server session/profile chooses the owner. Method/module creation and editing use it too; beat and deletion operations
+remain on the legacy boundary until their coordinated cutover. Recording replacement stays
 inside a domain Prisma transaction; auth/profile provisioning still has the
 separate recoverable boundary described above.
+
+Method/module authorship comes only from the validated identity on creation and
+is immutable during edits. Domain transactions lock the selected content before
+checking its author and lock a destination method before checking ownership on
+module creation/moves. These checks and writes are atomic within Prisma; no
+method/module Admin override exists. Browser session state controls affordances,
+clears drafts on identity changes and never supplies authority. See the
+[write inventory and proof](../../AUTH_SETUP.md#methodmodule-write-verification).

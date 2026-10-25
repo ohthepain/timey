@@ -247,7 +247,7 @@ try:
                      "-o", f"-h 127.0.0.1 -p {PG_PORT} -k {OUT}", "-w", "start"])
     started = True
     sql("fixture-roles", "CREATE ROLE auth_owner LOGIN; CREATE ROLE domain_owner LOGIN;", "postgres")
-    if '--practice' in sys.argv:
+    if '--practice' in sys.argv or '--content' in sys.argv:
         sql('create-practice', 'CREATE DATABASE foundation', 'postgres')
         sql('practice-schemas', 'CREATE SCHEMA auth AUTHORIZATION auth_owner; CREATE SCHEMA auth_migrations AUTHORIZATION auth_owner; CREATE SCHEMA domain AUTHORIZATION domain_owner; GRANT CREATE ON DATABASE foundation TO auth_owner, domain_owner;')
         run('practice-auth-migrate', ['npm', 'run', 'auth:migrate'], owner_env('foundation'))
@@ -284,7 +284,9 @@ try:
         time.sleep(1)
     else:
         raise RuntimeError("Application not ready; inspect application.log")
-    if '--practice' in sys.argv:
+    if '--content' in sys.argv:
+        run('content-browser', ['python3', 'scripts/content-browser.py', str(OUT)])
+    elif '--practice' in sys.argv:
         run('practice-browser', ['python3', 'scripts/practice-browser.py', str(OUT)])
     else:
         retry_id, retry_cookie = check_http()

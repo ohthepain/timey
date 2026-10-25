@@ -1,7 +1,8 @@
 import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { moduleRepository } from '~/repositories/moduleRepository';
-import { requireKeycloakUser } from '~/lib/ensureKeycloakUser';
+import { requireDomainUser } from '~/server/domain-session';
+import { createModuleInput, updateModuleApiInput } from '~/types/contentWrites';
 
 export const APIRoute = createAPIFileRoute('/api/modules')({
   GET: async () => {
@@ -15,51 +16,23 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
     }
   },
   POST: async ({ request }) => {
-    console.log(`/api/modules POST request`);
     try {
-      const { title, index, methodId } = await request.json();
-      if (!title || !methodId) {
-        return json({ error: 'Title and methodId are required' }, { status: 400 });
-      }
-
-      // Get the authenticated user ID
-      const authorId = await requireKeycloakUser();
-
-      const newMethod = await moduleRepository.createModule({
-        title,
-        index,
-        description: '',
-        authorId,
-        methodId,
-      });
-
-      return json(newMethod, { status: 201 });
+      const { userId } = await requireDomainUser(request);
+      const parsed = createModuleInput.safeParse(await request.json());
+      if (!parsed.success) return json({ error: 'Invalid module fields' }, { status: 400 });
+      return json(await moduleRepository.createModule(parsed.data, userId), { status: 201 });
     } catch (error) {
-      console.error('Error creating method:', error);
-      if (error instanceof Error && error.message === 'Authentication required') {
-        return json({ error: 'Authentication required' }, { status: 401 });
-      }
-      return json({ error: 'Failed to create method' }, { status: 500 });
+      return moduleWriteError(error);
     }
   },
   PUT: async ({ request }) => {
-    console.log(`/api/modules PUT request`);
     try {
-      const { id, title, index } = await request.json();
-      if (!id || !title) {
-        return json({ error: 'ID and title are required' }, { status: 400 });
-      }
-
-      const updatedMethod = await moduleRepository.updateModule({
-        id,
-        title,
-        index,
-      });
-
-      return json(updatedMethod, { status: 200 });
+      const { userId } = await requireDomainUser(request);
+      const parsed = updateModuleApiInput.safeParse(await request.json());
+      if (!parsed.success) return json({ error: 'Invalid module fields' }, { status: 400 });
+      return json(await moduleRepository.updateModule(parsed.data.id, parsed.data, userId));
     } catch (error) {
-      console.error('Error updating method:', error);
-      return json({ error: 'Failed to update method' }, { status: 500 });
+      return moduleWriteError(error);
     }
   },
   DELETE: async ({ request }) => {
@@ -78,3 +51,10 @@ export const APIRoute = createAPIFileRoute('/api/modules')({
     }
   },
 });
+
+function moduleWriteError(error: unknown) {
+  if (error instanceof Response) return error;
+  if (error instanceof SyntaxError) return json({ error: 'Invalid JSON' }, { status: 400 });
+  console.error('Module write failed:', error);
+  return json({ error: 'Unable to save module; please retry' }, { status: 500 });
+}
