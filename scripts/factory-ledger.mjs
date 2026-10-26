@@ -1,5 +1,6 @@
 import { issueInputs } from './factory-inputs.mjs';
 import { readProgress, completionBasis } from './factory-progress.mjs';
+import { recordStatusSummary } from './factory-status.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
@@ -201,6 +202,16 @@ function validateResultStatus(action, update, git) {
     ],
   ]);
   validators.get(update.status)?.();
+}
+
+export function readFactoryRegistry(project) {
+  const git = (...args) => execFileSync('git', ['-C', project, ...args], { encoding: 'utf8' });
+  const root = git('rev-parse', '--show-toplevel').trim();
+  const ledger = join(root, '.issues/factory.json');
+  if (!existsSync(ledger)) return null;
+  const data = JSON.parse(readFileSync(ledger, 'utf8'));
+  assert(data.version === 1 && Array.isArray(data.actions), 'Unsupported or damaged registry.');
+  return data;
 }
 
 export function factory(project) {
@@ -432,6 +443,7 @@ export function factory(project) {
           'Record an evidence pointer or specific failure reason.'
         );
         validateResultStatus(action, update, git);
+        recordStatusSummary(action, update);
         recordOperation(
           action,
           'record-' + update.status,

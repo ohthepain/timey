@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decisionView, listIssues } from './factory-interface.mjs';
-import { factory } from './factory-ledger.mjs';
+import { factory, readFactoryRegistry } from './factory-ledger.mjs';
 import { statusOutput } from './factory-status.mjs';
 export { factory };
 
@@ -19,7 +19,6 @@ function runCommand(project, argv) {
     throw Error(`Use $factory ${argv.join(' ')} in chat; this operation needs the coordinator and app tools.`);
   const api = factory(project);
   const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
-  const ledger = join(project, '.issues/factory.json');
   const commands = new Map([
     ['init', () => api.init()],
     [
@@ -35,7 +34,7 @@ function runCommand(project, argv) {
     ],
     ['recover', () => api.recover(json(args[0]))],
     ['inspect', () => api.inspect()],
-    ['status', () => statusOutput(project, existsSync(ledger) ? JSON.parse(readFileSync(ledger, 'utf8')) : null, args)],
+    ['status', () => statusOutput(project, readFactoryRegistry(project), args)],
     ['recommend', () => api.recommend(json(args[0]))],
     ['reserve', () => api.reserve(args[0])],
     ['attach', () => api.attach(args[0], json(args[1]))],
