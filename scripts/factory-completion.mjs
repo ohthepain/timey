@@ -46,6 +46,7 @@ function reviewHeading(result) {
   return result.stage_records ? 'Issue progress review' : 'Worker result review';
 }
 function recordChecklistMetadata(doc, issue, result) {
+  recordDeliveryMetadata(doc, result);
   if (result.record_update)
     doc.set('record_update', doc.createNode(result.record_update, { aliasDuplicateObjects: false }));
   if (result.plan_verification)
@@ -68,4 +69,10 @@ function formatReviewEvidence(evidence) {
           .join('\n')
       : '')
   );
+}
+
+function recordDeliveryMetadata(doc, result) {
+  if (!result.delivery) return;
+  doc.set('delivery', doc.createNode(result.delivery, { aliasDuplicateObjects: false }));
+  doc.delete('record_update');
 }

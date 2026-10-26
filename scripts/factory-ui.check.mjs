@@ -17,7 +17,7 @@ import { createFactoryServer } from './factory-ui/http.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { checkCandidate } from './factory-ui/checks.mjs';
 
-function fixture(t) {
+function fixture(t, options = {}) {
   const { root, git } = gitFixture(t, 'factory-ui-check-');
   mkdirSync(join(root, '.issues'));
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
@@ -49,7 +49,7 @@ function fixture(t) {
     dependencies: [],
     issues: ['20261022-one'],
   };
-  const service = new FactoryUI(root);
+  const service = new FactoryUI(root, options);
   t.after(() => service.close());
   return { root, git, api, proposal, service };
 }
@@ -177,12 +177,7 @@ test('a claimed successful integration cannot bypass independent verification', 
 
 test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => {
   const { root, service } = fixture(t);
-  const server = createFactoryServer(service);
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  const page = await fetch(url);
+  const { url, page } = await httpFixture(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
   assert.equal((await fetch(url + '/api/queue', { headers: { cookie } })).status, 200);
@@ -3127,6 +3122,7 @@ test('approval feedback is immediate, survives rendering, and prevents duplicate
     refresh,
     posts = 0;
   window.fetch = (path) => {
+    if (path.endsWith('/runtime')) return Promise.resolve({ ok: true, json: async () => ({ mode: 'live' }) });
     if (path.endsWith('/answer')) {
       posts++;
       return new Promise((resolve) => {
@@ -3957,4 +3953,84 @@ test('completed approvals are shown as history while outstanding checks stay vis
   completed.remove();
   assert.match(container.textContent, /Review the remaining change/);
   assert.doesNotMatch(container.textContent, /Review the prototype/);
+});
+
+test('runtime identifies the issue project separately from UI source and run details stay on demand', async (t) => {
+  const { service, root } = fixture(t, { preview: true });
+  const run = service.store.add({ id: 'history' }, 'worker', 'base');
+  service.store.update(run, { output: [{ text: 'FULL_TRANSCRIPT_CANARY' }], instructions: 'PRIVATE_INSTRUCTIONS' });
+  const { url, page } = await httpFixture(t, service);
+  const cookie = page.headers.get('set-cookie').split(';')[0];
+  const headers = { cookie };
+  const runtime = await (await fetch(url + '/api/runtime', { headers })).json();
+  assert.equal(runtime.project, service.root);
+  assert.notEqual(runtime.checkout, root);
+  assert.equal(runtime.mode, 'preview');
+  const { execFile } = await import('node:child_process');
+  const command = resolve('scripts/factory.mjs');
+  const cli = await new Promise((done, reject) =>
+    execFile(process.execPath, [command, 'runtime', url], { cwd: '/private/tmp' }, (error, stdout) =>
+      error ? reject(error) : done(JSON.parse(stdout))
+    )
+  );
+  assert.equal(cli.project, service.root);
+  const queue = await (await fetch(url + '/api/queue', { headers })).json();
+  assert.doesNotMatch(JSON.stringify(queue), /FULL_TRANSCRIPT_CANARY|PRIVATE_INSTRUCTIONS/);
+  const detail = await (await fetch(url + '/api/run?id=' + run.id, { headers })).json();
+  assert.match(JSON.stringify(detail), /FULL_TRANSCRIPT_CANARY/);
+  assert.equal((await fetch(url + '/api/run?id=' + run.id)).status, 400);
+});
+
+async function httpFixture(t, service) {
+  const server = createFactoryServer(service);
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  return { url, page: await fetch(url) };
+}
+
+test('an already integrated action resumes bookkeeping without another Codex turn or merge', async (t) => {
+  const { root, git, api, proposal, service } = fixture(t);
+  const action = completedIntegrationFixture(api, proposal, git, 'verified result');
+  const revision = git('rev-parse', 'HEAD');
+  api.record(action.id, {
+    status: 'integrated',
+    verified_revision: revision,
+    checks_passed: true,
+    human_approved: true,
+    evidence: 'Checked integration fixture',
+  });
+  const run = service.store.add(action, 'integration', revision);
+  service.store.update(run, {
+    status: 'blocked',
+    threadId: 'old-chat',
+    checkout: root,
+    deliveryCheck: { head: revision, summaries: [] },
+    deliveryResult: { summary: 'Integrated result' },
+  });
+  service.store.connected.delete(run.id);
+  const lock = join(root, '.issues/factory-integration.lock');
+  mkdirSync(lock);
+  writeFileSync(join(lock, 'owner.json'), JSON.stringify({ runId: run.id, pid: process.pid }));
+  service.codex.resume = async () => {
+    throw Error('Codex must not resume for bookkeeping');
+  };
+  await service.resume(run.id, 'Finish the saved bookkeeping');
+  assert.equal((await settle(service, run.id)).status, 'completed');
+  assert.equal(git('rev-parse', 'HEAD'), revision);
+  assert.equal(existsSync(lock), false);
+});
+
+test('queue refreshes do not overlap while a response is pending', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const requests = [];
+  window.fetch = (path) => new Promise((resolve) => requests.push({ path, resolve }));
+  const first = window.refresh();
+  const second = window.refresh();
+  assert.equal(requests.length, 2);
+  for (const request of requests)
+    request.resolve({ ok: true, json: async () => (request.path.endsWith('/runtime') ? { mode: 'live' } : snapshot) });
+  await Promise.all([first, second]);
+  assert.equal(requests.length, 2);
 });

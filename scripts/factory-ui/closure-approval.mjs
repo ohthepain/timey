@@ -10,7 +10,7 @@ import { currentRegistryEvidence, retainClosingRegistry } from './closure-regist
 import { digest, requireThat } from './common.mjs';
 
 export function recordClosingApproval(service, queue, issue) {
-  if (!issue.plan_verification) return queue;
+  if (!needsLegacyChecklist(issue)) return queue;
   const checks = closureChecks(issue, queue.head);
   if (!checks.length) return queue;
   retainCheckedPlan(service, queue, issue);
@@ -74,4 +74,8 @@ function isClosureJudgment(check) {
 }
 function currentJudgment(check, revision) {
   return check.status === 'passed' && check.revision === revision;
+}
+
+function needsLegacyChecklist(issue) {
+  return issue.plan_verification && !issue.delivery;
 }

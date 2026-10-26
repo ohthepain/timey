@@ -669,3 +669,42 @@ an issue. A changed issue, candidate URL/revision or source requires reopening;
 unrelated issue changes do not. Replay and owner mismatches are rejected.
 Completed prototype checks stay completed against their saved prototype revision
 when the issue reaches Verify; they are not re-requested against the project HEAD.
+
+## Delivery finalization and runtime identity
+
+`npm run factory -- runtime http://127.0.0.1:PORT` identifies the running UI's
+source checkout, revision, branch, authoritative issue project and live/preview
+mode. Continue using `factory issues` or the installed `issues` skill to list
+issues; runtime identity is additional context, not another issue list.
+Start disposable review servers with `--preview --authoritative-url URL`.
+Their header links to the real issue, and site-review writes are rejected.
+Live review receipts retain the issue project and mode alongside the candidate.
+
+Successful UI integration now finalizes eligible issues through the shared
+`scripts/factory-ui/delivery.mjs` owner. For a separate delivery checkout, invoke
+`npm run factory -- finalize-delivery /absolute/manifest.json` from the issue
+project using the UI source's `scripts/factory.mjs` when that project lacks it.
+This records existing integrated work; it performs no merge, deployment or acceptance.
+If a `url` is supplied, the command checks the running server's identity first.
+
+The manifest names a stable `operationId`, full `issueId`, `expectedState`,
+`reportDigest` (SHA-256 of exact report bytes), canonical `checkout`, exact
+`revision` and starting `base`, `verification` summary paths, reviewed
+`requirements` (`description` and hashed `evidence`), and hashed `authorization`.
+Each evidence entry is `{path, sha256}`. Full verification and step audit must
+pass against that base and delivered tree; the delivery checkout must be clean.
+Earlier human results need explicit `reviewApplicability` entries
+(`checkId`, `revision`, `reason`) unless they match the delivered revision or
+approved prototype. This records applicability without fabricating new testimony.
+
+Finalization retains evidence and an operation receipt before atomically updating
+the issue. Retry with the identical manifest after interruption. An already
+recorded operation adds no duplicate history; changed inputs or issue bytes fail
+closed. Verify and Commit are completed, integration is recorded, and the issue
+stops at Final review. Custom stages keep their own exit review. Closure checks
+the delivered checkout and retained evidence rather than assuming the issue
+project owns that code. Source changes or changed human results require review.
+
+Queue polling omits command events and instructions and includes a bounded live
+output tail only for the selected issue. Expanding transcript details fetches the
+saved run on demand. Polls do not overlap; retained RunStore history is unchanged.

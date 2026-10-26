@@ -823,6 +823,8 @@
       let data,
         busy = false,
         selection;
+      let refreshing = false;
+      const runDetails = new Map();
       const approvalStates = new Map();
       const $ = (id) => document.getElementById(id);
       const esc = (value) =>
@@ -847,9 +849,17 @@
         return result;
       }
       async function refresh() {
+        if (refreshing) return;
+        refreshing = true;
         try {
           const previous = JSON.stringify(data);
-          data = await request('queue');
+          const issueId = location.hash.match(/^#\/issue\/([^/]+)/)?.[1] || '';
+          const [snapshot, runtime] = await Promise.all([
+            request('queue?issue=' + encodeURIComponent(issueId)),
+            request('runtime'),
+          ]);
+          data = snapshot;
+          showRuntime(runtime);
           $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
           updateLiveOutput();
           if (
@@ -864,6 +874,29 @@
         } catch (e) {
           $('error').textContent = e.message;
           $('connection').textContent = 'Connection needs attention';
+        } finally {
+          refreshing = false;
+        }
+      }
+      function showRuntime(runtime) {
+        let status = $('runtime');
+        if (!status) {
+          status = document.createElement('small');
+          status.id = 'runtime';
+          document.querySelector('header').append(status);
+        }
+        status.textContent =
+          runtime.mode === 'preview' ? 'Preview copy — approvals belong on the real issue' : 'Live factory';
+        status.title =
+          'Issue queue: ' + runtime.project + '\nUI source: ' + runtime.checkout + '\nRevision: ' + runtime.revision;
+        if (runtime.mode === 'preview' && runtime.authoritativeUrl) {
+          const url = new URL(runtime.authoritativeUrl);
+          if (['http:', 'https:'].includes(url.protocol)) {
+            const link = document.createElement('a');
+            link.href = url.origin + '/' + location.hash;
+            link.textContent = ' Open real issue';
+            status.append(link);
+          }
         }
       }
       async function act(task) {
@@ -1038,7 +1071,7 @@
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
+        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
       const queueFilters = { search: '', stage: '', showClosed: false };
       function closedIssueState(state) {
@@ -2087,8 +2120,35 @@
           else await request('start', { token: selection.token, humanApproved: $('human-approval')?.checked === true });
           $('confirm').close();
         });
+      document.addEventListener(
+        'toggle',
+        (event) => {
+          const details = event.target;
+          if (!details.open || !details.dataset.runDetails) return;
+          const id = details.dataset.runDetails;
+          const current = data.runs.find((run) => run.id === id);
+          if (!current?.historyAvailable) return;
+          const cached = runDetails.get(id);
+          const load =
+            cached?.updated === current?.updated
+              ? Promise.resolve(cached)
+              : request('run?id=' + encodeURIComponent(id));
+          load
+            .then((run) => {
+              runDetails.set(id, run);
+              if (runDetails.size > 20) runDetails.delete(runDetails.keys().next().value);
+              details.querySelector('pre').textContent =
+                (run.output || []).map((entry) => entry.text).join('\n\n') || 'No completed output yet.';
+            })
+            .catch((error) => {
+              details.querySelector('pre').textContent = error.message;
+            });
+        },
+        true
+      );
       window.onhashchange = () => {
         if (data) render();
+        void refresh();
       };
       refresh();
       setInterval(refresh, 4000);

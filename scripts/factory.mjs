@@ -9,13 +9,28 @@ export { factory };
 function runCommand(project, argv) {
   const [command, ...args] = argv;
   // The listing path bypasses the coordinator parser and registry entirely.
-  if (command === 'issues') return listIssues(project, args);
+  const reads = new Map([
+    ['issues', () => listIssues(project, args)],
+    ['runtime', () => readRuntimeCommand(args)],
+  ]);
+  if (reads.has(command)) return reads.get(command)();
   if (['human', 'launch', 'both', 'integrate'].includes(command))
     throw Error(`Use $factory ${argv.join(' ')} in chat; this operation needs the coordinator and app tools.`);
   const api = factory(project);
   const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
   const commands = new Map([
     ['init', () => api.init()],
+    [
+      'finalize-delivery',
+      () =>
+        JSON.parse(
+          execFileSync(
+            process.execPath,
+            [fileURLToPath(new URL('./factory-delivery.mjs', import.meta.url)), project, args[0]],
+            { encoding: 'utf8' }
+          )
+        ),
+    ],
     ['recover', () => api.recover(json(args[0]))],
     ['inspect', () => api.inspect()],
     ['recommend', () => api.recommend(json(args[0]))],
@@ -45,4 +60,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.error(error.message);
     process.exitCode = 1;
   }
+}
+
+function readRuntimeCommand(args) {
+  return JSON.parse(
+    execFileSync(process.execPath, [fileURLToPath(new URL('./factory-runtime.mjs', import.meta.url)), args[0]], {
+      encoding: 'utf8',
+    })
+  );
 }

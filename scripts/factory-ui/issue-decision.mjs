@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { currentDelivery, deliveryCheckCurrent } from './delivery.mjs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
@@ -81,7 +82,8 @@ function checkClosure(service, queue, issue, action) {
   requireThat(queue.sourceClean, 'Preserve the current source changes before accepting the result.');
   const evidence = closingEvidence(queue, issue);
   checkManualResults(queue, issue);
-  requireImplementationPasses(service, queue, issue, true);
+  if (issue.delivery) currentDelivery(issue);
+  else requireImplementationPasses(service, queue, issue, true);
   service.guard(service.root, action, 'accept', queue.head);
   service.guard(service.root, action, 'close', queue.head);
   checkRecordedEvidence(queue, issue, evidence);
@@ -89,7 +91,7 @@ function checkClosure(service, queue, issue, action) {
 function checkManualResults(queue, issue) {
   for (const check of issue.human_checks || [])
     requireThat(
-      check.status === 'passed' && check.revision === queue.head,
+      manualCheckCurrent(queue, issue, check),
       'A required manual check still needs a current result before closing.'
     );
 }
@@ -127,4 +129,9 @@ function decisionResult(issue, target, kind, summary, reason) {
       { state: details.state, outcome: details.outcome, actor: 'human', reason: reason.trim() || summary },
     ],
   };
+}
+
+function manualCheckCurrent(queue, issue, check) {
+  if (issue.delivery) return deliveryCheckCurrent(issue, check);
+  return check.status === 'passed' && check.revision === queue.head;
 }

@@ -126,7 +126,7 @@ export function createSiteReviews(service, launch = openBrowser, choices = brows
           },
         ];
       });
-      return { browsers: choices(), checks };
+      return { browsers: choices(), checks, mode: service.reviewMode || 'live' };
     },
     async open(input, owner) {
       const before = context(input);
@@ -148,6 +148,7 @@ export function createSiteReviews(service, launch = openBrowser, choices = brows
       return receipt;
     },
     decide(input, owner) {
+      requireThat(service.reviewMode !== 'preview', 'This is a preview copy. Record your approval on the real issue.');
       const { queue, issue, check, target, basis } = context(input);
       const identity = key(owner, issue.id, check.id),
         receipt = opened.get(identity);
@@ -163,6 +164,8 @@ export function createSiteReviews(service, launch = openBrowser, choices = brows
       const path = join(service.store.directory, 'site-review-' + randomUUID() + '.json');
       writeJson(path, {
         actor: 'human',
+        project: service.root,
+        mode: service.reviewMode || 'live',
         issueId: issue.id,
         checkId: check.id,
         status: input.status,

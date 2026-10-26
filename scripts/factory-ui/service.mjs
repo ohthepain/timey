@@ -1,4 +1,6 @@
 import { startChat } from './chat-start.mjs';
+import { runtimeInfo } from './runtime.mjs';
+import { recordIntegratedIssues, completeDeliveryRun, resumeDelivery } from './delivery-integration.mjs';
 
 import { createSiteReviews } from './site-review.mjs';
 import { createDiscussions } from './discussion.mjs';
@@ -54,8 +56,11 @@ const operation = (action) =>
         : 'investigate';
 
 export class FactoryUI {
-  constructor(project) {
+  constructor(project, options = {}) {
+    this.reviewMode = options.preview ? 'preview' : 'live';
+    this.authoritativeUrl = options.authoritativeUrl || null;
     this.root = git(project, 'rev-parse', '--show-toplevel');
+    this.runtimeIdentity = runtimeInfo(this);
     this.api = factory(this.root);
     this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
     this.intents = new Map();
@@ -314,6 +319,7 @@ export class FactoryUI {
       'The saved action changed during verification. Review it again.'
     );
     this.guard(this.root, action, 'record-integration', checked.head);
+    this.store.update(run, { deliveryCheck: checked, deliveryResult: result });
     this.api.record(action.id, {
       status: 'integrated',
       verified_revision: checked.head,
@@ -322,13 +328,8 @@ export class FactoryUI {
       authorization: run.authorization,
       evidence: `UI manual integration. Candidate ${run.candidate}; target start ${run.base}. Coordinator review: ${JSON.stringify(result)}. Independent combined checks: ${JSON.stringify(checked)}.`,
     });
-    this.store.update(run, { status: 'completed', summary: result.summary, result, verifiedRevision: checked.head });
-    const lock = join(this.root, '.issues/factory-integration.lock');
-    requireThat(
-      JSON.parse(readFileSync(join(lock, 'owner.json'), 'utf8')).runId === run.id,
-      'Integration lock ownership changed.'
-    );
-    rmSync(lock, { recursive: true });
+    recordIntegratedIssues(this, action, run, checked, result);
+    completeDeliveryRun(this, run, result, checked.head);
   }
   perform(run, task) {
     Promise.resolve()
@@ -372,6 +373,7 @@ export class FactoryUI {
     const run = this.store.runs.find((r) => r.id === id);
     this.validateResume(run, id, text);
     const { action, queue } = currentAction(this.root, run.actionId);
+    if (completedIntegration(run, action)) return resumeDelivery(this, run, action);
     this.guard(this.root, action, run.kind === 'worker' ? operation(action) : 'merge', queue.head);
     if (run.kind === 'integration') this.requireLock(run);
     await this.codex.resume(run.threadId, run.checkout);
@@ -544,4 +546,8 @@ function defersForStageSkip(queue, run, routes) {
       )
     )
   );
+}
+
+function completedIntegration(run, action) {
+  return run.kind === 'integration' && action.status === 'integrated';
 }

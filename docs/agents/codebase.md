@@ -180,3 +180,10 @@ feedback and review controls. Open receipts are memory-only; explicit results
 retain the candidate and opening evidence in the issue's existing append path.
 Worker-status snapshot decoration forwards the requesting owner so it cannot
 lose the receipt required to enable a decision.
+
+`factory-ui/delivery.mjs` owns resumable delivery receipts and issue-stage
+finalization; `delivery-integration.mjs` invokes it after checked UI integration.
+`factory-delivery.mjs` exposes the separate-checkout coordinator command.
+`factory-ui/runtime.mjs` and `factory-runtime.mjs` identify the running UI source
+and issue project. `factory-ui/queue-response.mjs` projects bounded polling data;
+full saved runs remain available through the authenticated on-demand endpoint.

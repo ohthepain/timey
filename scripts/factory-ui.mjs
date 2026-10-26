@@ -6,7 +6,10 @@ import { createFactoryServer } from './factory-ui/http.mjs';
 // No chat, worker or integration starts until a reviewed browser action is submitted.
 function main() {
   const { project, port } = options();
-  const service = new FactoryUI(project),
+  const service = new FactoryUI(project, {
+      preview: process.argv.includes('--preview'),
+      authoritativeUrl: optionValue('--authoritative-url'),
+    }),
     server = createFactoryServer(service);
   server.listen(port, '127.0.0.1', () =>
     console.log(
@@ -41,4 +44,9 @@ function options() {
 
 function validatePort(port) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw Error('Choose a valid local port.');
+}
+
+function optionValue(flag) {
+  const index = process.argv.indexOf(flag);
+  return index < 0 ? null : process.argv[index + 1];
 }

@@ -1,4 +1,6 @@
 import { createServer } from 'node:http';
+import { runtimeInfo } from './runtime.mjs';
+import { queueResponse } from './queue-response.mjs';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +34,7 @@ function authorize(request, token, port) {
   }
 }
 async function mutation(service, path, value, owner) {
+  requireLiveMutation(service, path);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
@@ -109,13 +112,15 @@ function page(response, token, port) {
 }
 function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (url.pathname === '/api/document')
-    return response.end(JSON.stringify(service.readPlan(url.searchParams.get('path'))));
-  if (url.pathname === '/api/check-evidence')
-    return response.end(
-      JSON.stringify(service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')))
-    );
-  if (request.url === '/api/queue') return response.end(JSON.stringify(service.snapshot(owner)));
+  const routes = {
+    '/api/runtime': () => runtimeInfo(service),
+    '/api/document': () => service.readPlan(url.searchParams.get('path')),
+    '/api/check-evidence': () =>
+      service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
+    '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),
+    '/api/run': () => savedRun(service, url.searchParams.get('id')),
+  };
+  if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(routes[url.pathname]()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));
 }
@@ -143,4 +148,18 @@ function readResource(service, request, response, owner) {
   }
 
   return read(service, request, response, owner);
+}
+
+function savedRun(service, id) {
+  const run = service.store.list(service.codex.requests).find((item) => item.id === id);
+  requireThat(run, 'This saved run no longer exists.');
+  return run;
+}
+
+function requireLiveMutation(service, path) {
+  if (service.reviewMode === 'preview')
+    requireThat(
+      ['/api/discussion-open', '/api/discussion-turn', '/api/discussion-prepare', '/api/discussion-end'].includes(path),
+      'This is a preview copy. Make changes and record approvals on the real issue.'
+    );
 }

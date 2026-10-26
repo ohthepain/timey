@@ -503,3 +503,9 @@ test('site review controls enable after opening; both buttons submit and opening
   assert.equal(button('Approve result').disabled, true);
   assert.match(dom.window.document.body.textContent, /blocked/);
 });
+
+test('preview copies cannot record real site approvals', async (t) => {
+  const f = await siteFixture(t);
+  f.service.reviewMode = 'preview';
+  assert.throws(() => f.service.siteReviews.decide({}, 'owner'), /preview copy/);
+});

@@ -46,6 +46,10 @@ const siteReviewUI = (() => {
   function build(issue, check, request, refresh) {
     const panel = node('section', '', 'required-decision');
     panel.append(node('h4', panelHeading(check)), node('p', check.instructions));
+    if (issue.siteReview.mode === 'preview') {
+      panel.append(node('p', 'Preview only. Record your decision on the real issue linked in the header.'));
+      return panel;
+    }
     const address = node('p', check.url, 'muted');
     panel.append(address);
     if (check.completed) {

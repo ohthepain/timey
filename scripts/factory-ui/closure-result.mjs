@@ -1,7 +1,9 @@
 import { join } from 'node:path';
+import { currentDelivery } from './delivery.mjs';
 import { digest, git, requireThat } from './common.mjs';
 
 export function closingEvidence(queue, issue) {
+  if (issue.delivery) return currentDelivery(issue).evidence;
   const last = issue.lifecycle_history?.findLast((s) => s.outcome === 'completed' && s.next === issue.state);
   if (!last) return olderResult(queue, issue);
   requireThat(
