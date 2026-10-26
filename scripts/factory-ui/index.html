@@ -823,7 +823,8 @@
       let data,
         busy = false,
         selection;
-      let refreshing = false;
+      let refreshing = false,
+        refreshPending = false;
       const runDetails = new Map();
       const approvalStates = new Map();
       const $ = (id) => document.getElementById(id);
@@ -862,15 +863,19 @@
           showRuntime(runtime);
           $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
           updateLiveOutput();
+          refreshPending ||= previous !== JSON.stringify(data);
           if (
-            previous !== JSON.stringify(data) &&
+            refreshPending &&
             !busy &&
             !$('confirm').open &&
             !$('plan').open &&
             !document.querySelector(':popover-open') &&
-            !document.activeElement.matches('input,textarea,select')
-          )
+            (!document.activeElement.matches('input,textarea,select') ||
+              document.activeElement.closest('[data-temporary]'))
+          ) {
             render();
+            refreshPending = false;
+          }
         } catch (e) {
           $('error').textContent = e.message;
           $('connection').textContent = 'Connection needs attention';
