@@ -773,21 +773,12 @@ exclamations show blockers or errors. The current role shows play while idle and
 a spinner during actual activity. Hover or focus any square for its explanation.
 
 A yellow speech bubble above the current square marks a pending lifecycle question
-or connected worker approval, including the final acceptance decision. The bubble and square are one keyboard control that
-opens the existing issue question. Waiting for input shows idle play, while an
-actual error keeps its orange square. Play uses the issue screen's existing
-Progress flow, including its plan consent and human guards; it grants no extra
-authority. Historical squares are informational.
-
-Eligible future squares immediately toggle the saved route between take and skip.
-The server follows configured Next links and the existing skip policy: enhancement
-investigation, optional prototypes and commit recording when commits are disabled.
-Required roles and acceptance cannot be skipped. Choices can change during active
-Progress only while the selected role remains future and has no recorded outcome.
-A saving indicator prevents duplicate clicks; failures retain the saved value and
-show an error. Stale issue, route or policy versions are rejected. Other route
-choices and historical outcomes remain intact. Saving a choice starts no work and
-does not complete a stage or authorize acceptance.
+or connected worker approval, including the final acceptance decision. Every role
+block links to that issue with the selected step expanded, focused and scrolled
+into view. This includes completed, skipped and future steps. Opening a step
+starts no work and changes no route choices. The link preserves the selected step
+when opened in a new tab or refreshed; live updates retain the user's expansion
+choices without repeatedly moving focus.
 
 `npm run test:factory` includes disposable lifecycle fixtures for route persistence,
 stale writes, protected roles, active-progress choices, disk-failure rollback and

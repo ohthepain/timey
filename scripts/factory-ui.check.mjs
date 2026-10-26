@@ -3088,7 +3088,9 @@ async function activityScreen(t) {
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') +
+    readFileSync(resolve('scripts/factory-ui/queue-lifecycle-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
@@ -4236,4 +4238,51 @@ lifecycle_history:
   assert.equal(record.input.type, 'plan');
   assert.equal(record.approval, undefined);
   assert.equal(service.snapshot().issues[0].state, 'investigate');
+});
+
+test('queue role links open the selected issue step without launching or changing its route', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const requests = [];
+  window.fetch = async (url) => {
+    requests.push(url);
+    throw new Error('Unexpected request');
+  };
+  window.HTMLElement.prototype.scrollIntoView = function () {
+    this.dataset.scrolled = 'true';
+  };
+  const { queueResponse } = await import('./factory-ui/queue-response.mjs');
+  const queue = queueResponse(snapshot, null);
+  snapshot.issues.forEach((issue, index) => {
+    issue.queueLifecycle = queue.issues[index].queueLifecycle;
+  });
+  window.history.replaceState(null, '', '#/queue');
+  window.screenTest.show(snapshot);
+  const links = [...window.document.querySelectorAll('.queue-role[href]')];
+  assert.equal(links.length, snapshot.issues.length * snapshot.lifecycle.length);
+  for (const link of links) {
+    const url = new URL(link.href);
+    assert.match(url.hash, /^#\/issue\/[^?]+\?stage=.+/);
+    assert.equal(link.tagName, 'A');
+  }
+  const selected = links.at(-1);
+  window.history.replaceState(null, '', selected.href);
+  window.screenTest.show(snapshot);
+  const stage = new URLSearchParams(window.location.hash.split('?')[1]).get('stage');
+  const target = [...window.document.querySelectorAll('[data-stage-state]')].find(
+    (el) => el.dataset.stageState === stage
+  );
+  assert.ok(target.open);
+  assert.equal(target.querySelector(':scope > summary').dataset.scrolled, 'true');
+  assert.equal(window.document.activeElement, target.querySelector(':scope > summary'));
+  window.screenTest.show(snapshot);
+  const retained = [...window.document.querySelectorAll('[data-stage-state]')].find(
+    (el) => el.dataset.stageState === stage
+  );
+  assert.ok(retained.open);
+  assert.equal(
+    retained.querySelector(':scope > summary').dataset.scrolled,
+    undefined,
+    'polling must not scroll back to the linked step'
+  );
+  assert.equal(requests.length, 0);
 });

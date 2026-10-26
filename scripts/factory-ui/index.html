@@ -1024,7 +1024,7 @@
         refreshing = true;
         try {
           const previous = JSON.stringify(data);
-          const issueId = location.hash.match(/^#\/issue\/([^/]+)/)?.[1] || '';
+          const issueId = issueRoute().id || '';
           const [snapshot, runtime] = await Promise.all([
             request('queue?issue=' + encodeURIComponent(issueId)),
             request('runtime'),
@@ -1250,7 +1250,29 @@
           .map((e) => e.params.item.text);
         return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
-      let queueInputFocus = null;
+      let focusedStageRoute = null;
+      function issueRoute() {
+        const [path, query = ''] = location.hash.split('?');
+        return {
+          id: path.startsWith('#/issue/') ? decodeURIComponent(path.slice(8)) : null,
+          stage: new URLSearchParams(query).get('stage'),
+        };
+      }
+      function focusLinkedStage() {
+        const route = issueRoute();
+        if (!route.stage || focusedStageRoute === location.hash) return;
+        const target = [...document.querySelectorAll('[data-stage-state]')].find(
+          (element) => element.dataset.stageState === route.stage
+        );
+        if (!target) return;
+        target.open = true;
+        target.dataset.viewTouched = 'true';
+        viewMemory.expanded[target.dataset.viewKey] = true;
+        const summary = target.querySelector(':scope > summary');
+        summary.focus({ preventScroll: true });
+        summary.scrollIntoView({ block: 'start' });
+        focusedStageRoute = location.hash;
+      }
       let queueRouteMessage = '';
       const queueFilters = { search: '', stage: '', showClosed: false };
       function closedIssueState(state) {
@@ -1274,21 +1296,7 @@
           $('issues').innerHTML = rows(queueIssues());
           queueLifecycleUI.restore($('issues'));
         };
-        queueLifecycleUI.bind($('issues'), {
-          issue: (id) => data.issues.find((issue) => issue.id === id),
-          request,
-          refresh,
-          render,
-          feedback: (message, error = false) => {
-            if (!error) queueRouteMessage = message;
-            $(error ? 'error' : 'route-feedback').textContent = message;
-          },
-          progress: (issue) => startIssueProgress(issue),
-          openInput: (issue) => {
-            queueInputFocus = issue.id;
-            location.hash = '#/issue/' + encodeURIComponent(issue.id);
-          },
-        });
+        queueLifecycleUI.bind($('issues'));
         $('search').oninput = filter;
         $('stage').onchange = () => {
           if (closedIssueState($('stage').value)) $('show-closed').checked = true;
@@ -1505,7 +1513,7 @@
         const compact = ['completed', 'skipped', 'planned-skip', 'unknown'].includes(state.status);
         const helpId = 'step-help-' + index;
         const history = stageReviews(i, step, current);
-        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body"><button data-grill-stage="${esc(step.state || '@' + step.role)}">Discuss this step</button>${stageGrilling(i, step)}${skipDecision(state)}${current || ['skipped', 'planned-skip'].includes(state.status) ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use Progress above to continue through the approved plan. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Use Progress above to continue.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-stage-state="${esc(step.state || '@' + step.role)}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body"><button data-grill-stage="${esc(step.state || '@' + step.role)}">Discuss this step</button>${stageGrilling(i, step)}${skipDecision(state)}${current || ['skipped', 'planned-skip'].includes(state.status) ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use Progress above to continue through the approved plan. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Use Progress above to continue.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
       }
       function skipDecision(state) {
         if (!['skipped', 'planned-skip'].includes(state.status)) return '';
@@ -2144,7 +2152,7 @@
       }
       function updateLiveOutput() {
         const output = $('live-output'),
-          issueId = location.hash.split('/').slice(2).join('/');
+          issueId = issueRoute().id;
         const issue = data?.issues.find((item) => item.id === issueId);
         if (!output || !issue) return;
         for (const element of document.querySelectorAll('[data-live-health]')) {
@@ -2159,13 +2167,13 @@
       }
       function render() {
         rememberView();
-        const route = location.hash.split('/');
-        $('app').innerHTML = route[1] === 'issue' ? issue(decodeURIComponent(route.slice(2).join('/'))) : queue();
+        const route = issueRoute();
+        $('app').innerHTML = route.id ? issue(route.id) : queue();
         bind();
         applyApprovalFeedback();
         siteReviewUI.mount(data, request, refresh);
         restoreView();
-        discussionUI.mount(route[1] === 'issue' ? decodeURIComponent(route.slice(2).join('/')) : null, request);
+        discussionUI.mount(route.id, request);
         document.querySelectorAll('[data-grill-stage]').forEach((button) => {
           button.onclick = () => {
             const stage = data.lifecycle.find((stage) => stage.state === button.dataset.grillStage);
@@ -2173,15 +2181,7 @@
             discussionUI.grill(stage || { state: button.dataset.grillStage, name: extra[button.dataset.grillStage] });
           };
         });
-        if (queueInputFocus === decodeURIComponent(route.slice(2).join('/'))) {
-          const target = document.querySelector('.lifecycle-progress');
-          if (target) {
-            target.tabIndex = -1;
-            target.focus();
-            target.scrollIntoView({ block: 'center' });
-            queueInputFocus = null;
-          }
-        }
+        focusLinkedStage();
       }
       async function findExistingWorker(button) {
         const issueId = button.dataset.findWorker,
@@ -2390,6 +2390,7 @@
         true
       );
       window.onhashchange = () => {
+        focusedStageRoute = null;
         if (data) render();
         void refresh();
       };

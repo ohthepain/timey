@@ -190,7 +190,7 @@ full saved runs remain available through the authenticated on-demand endpoint.
 
 Queue lifecycle squares use `scripts/factory-ui/queue-lifecycle.mjs` to combine
 existing stage outcomes, readiness and activity. `queue-lifecycle-ui.js` renders
-and binds the accessible strip; `route-toggle.mjs` guards future-only route choices
+the accessible strip with links to expanded issue steps; `route-toggle.mjs` guards future-only route choices
 and persists them through the existing run store. `factory-lifecycle.check.mjs`
 exercises the disposable persistence and authorization boundaries.
 
