@@ -1315,7 +1315,16 @@
         const compact = ['completed', 'skipped', 'planned-skip', 'unknown'].includes(state.status);
         const helpId = 'step-help-' + index;
         const history = stageReviews(i, step, current);
-        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body">${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use Progress above to continue through the approved plan. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Use Progress above to continue.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body"><button data-grill-stage="${esc(step.state || '@' + step.role)}">Discuss this step</button>${stageGrilling(i, step)}${current ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use Progress above to continue through the approved plan. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Use Progress above to continue.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+      }
+      function stageGrilling(issue, step) {
+        return (issue.stage_grilling || [])
+          .filter((record) => record.state === (step.state || '@' + step.role))
+          .map(
+            (record) =>
+              `<details><summary>Saved grilling · ${esc(record.name)} · ${recordedDate(record.at)}</summary><pre>${esc(record.summary)}</pre><p>These are confirmed discussion results. Stage completion, test evidence and approvals remain separate.</p></details>`
+          )
+          .join('');
       }
       function currentStageContent(issue, step) {
         if (issue.implementation && step.role === 'ready-to-verify')
@@ -1947,6 +1956,13 @@
         siteReviewUI.mount(data, request, refresh);
         restoreView();
         discussionUI.mount(route[1] === 'issue' ? decodeURIComponent(route.slice(2).join('/')) : null, request);
+        document.querySelectorAll('[data-grill-stage]').forEach((button) => {
+          button.onclick = () => {
+            const stage = data.lifecycle.find((stage) => stage.state === button.dataset.grillStage);
+            const extra = { '@integration': 'Integrate', '@other': 'Other work' };
+            discussionUI.grill(stage || { state: button.dataset.grillStage, name: extra[button.dataset.grillStage] });
+          };
+        });
       }
       async function findExistingWorker(button) {
         const issueId = button.dataset.findWorker,

@@ -646,10 +646,33 @@ another issue does not block conversation or recording; an active operation on
 the selected issue blocks recording only. Integration also blocks recording.
 After recording changes context, start a new chat for further questions.
 
-**Start grilling…** previews a temporary structured interview and requires a
-separate confirmation click. It saves no interview outcome or completed grilling.
-Other workflow changes retain their existing controls and approvals. Typed chat
-instructions never perform mutations or update documentation.
+Every configured lifecycle stage offers **Discuss this step**. It opens the temporary
+chat and starts the installed `grilling` skill through a native skill input. An exact hash-checked copy is registered in
+the isolated runtime’s temporary skill directory and verified through `skills/list`;
+it is removed with that runtime. No unrelated skills or tools are enabled. The
+chat names the selected stage, including earlier or future stages, without moving
+the issue. The skill asks numbered rounds of currently answerable design questions;
+project facts come from supplied context and missing evidence remains explicit.
+The temporary runtime retains its existing no-tools/read-only policy. Grilling
+cannot launch workers or perform the technical work being discussed.
+
+**Review grilling results…** drafts decisions, unresolved questions and selected
+exact quotes from actual user messages. The preview names the issue and stage.
+**Save to [step]** confirms and appends only that reviewed package to the selected
+stage and report. The transcript, runtime identity and unselected user text are
+not saved. Saved interviews appear under their selected stage, without inventing
+missing stage history. Confirmation of discussion results is separate from
+implementation-plan approval, test evidence and final acceptance.
+
+**Save and continue** is offered only for the current unfinished stage when the
+summary has no open questions. It saves first, then invokes the usual lifecycle
+controller with fresh inputs. Clarify answers are reassessed against their actual
+exit condition; no stage advances merely because an interview ran. Existing human
+requests, exact-plan and integration approvals remain required. If continuation
+fails, the saved results remain and the UI reports that continuation stopped.
+Saving ends the temporary interview; start a new one to use the updated context.
+Stage/issue/source changes, additional answers, expiry and duplicate confirmations
+invalidate pending summary actions. Typed chat instructions never mutate work.
 
 ## Open a site for Verify
 

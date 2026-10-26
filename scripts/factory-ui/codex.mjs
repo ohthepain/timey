@@ -165,7 +165,7 @@ export class CodexConnection {
     await this.ready();
     await this.call('thread/unarchive', { threadId });
   }
-  async turn(threadId, cwd, prompt, outputSchema) {
+  async turn(threadId, cwd, prompt, outputSchema, extraInput = []) {
     requireThat(!this.turns.has(threadId), 'This conversation already has running work.');
     let resolve, reject;
     const completion = new Promise((yes, no) => {
@@ -181,7 +181,7 @@ export class CodexConnection {
         threadId,
         cwd,
         approvalsReviewer: this.approvalReviewers.get(threadId),
-        input: [{ type: 'text', text: prompt }],
+        input: [{ type: 'text', text: prompt }, ...extraInput],
         outputSchema,
       });
       if (this.turns.get(threadId) === turn) turn.id = started.turn.id;

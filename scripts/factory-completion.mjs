@@ -21,6 +21,7 @@ export function appendCompletion(root, issue, result, run, evidence, target) {
     requireThat(!doc.errors.length, 'The report frontmatter is invalid.');
     doc.set('updated', new Date().toISOString());
     recordChecklistMetadata(doc, issue, result);
+    recordInterviewMetadata(doc, result);
     recordAcceptedMetadata(doc, result);
     if (target) doc.set('state', target);
     recordStage(doc, issue, target, result, run, evidence);
@@ -42,6 +43,10 @@ function recordedBy(run) {
   );
 }
 function reviewHeading(result) {
+  if (result.stage_grilling) return 'Grilling · ' + result.stage_grilling.name;
+  return ordinaryReviewHeading(result);
+}
+function ordinaryReviewHeading(result) {
   if (result.plan_verification) return 'Implementation checklist';
   if (result.user_decision) return 'Issue decision';
   return result.stage_records ? 'Issue progress review' : 'Worker result review';
@@ -81,4 +86,12 @@ function recordDeliveryMetadata(doc, result) {
 function recordAcceptedMetadata(doc, result) {
   if (result.accepted_result)
     doc.set('accepted_result', doc.createNode(result.accepted_result, { aliasDuplicateObjects: false }));
+}
+
+function recordInterviewMetadata(doc, result) {
+  if (result.stage_grilling) {
+    const history = doc.get('stage_grilling')?.toJSON() || [];
+    requireThat(Array.isArray(history), 'Saved stage interviews are invalid; preserve them before recording.');
+    doc.set('stage_grilling', doc.createNode([...history, result.stage_grilling], { aliasDuplicateObjects: false }));
+  }
 }

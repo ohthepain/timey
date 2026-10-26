@@ -40,6 +40,7 @@ async function mutation(service, path, value, owner) {
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
     '/api/discussion-open': () => service.discussions.open(value, owner),
     '/api/discussion-turn': () => service.discussions.turn(value, owner),
+    '/api/discussion-summary': () => service.discussions.summarize(value, owner),
     '/api/discussion-prepare': () => service.discussions.prepare(value, owner),
     '/api/discussion-commit': () => service.discussions.commit(value, owner),
     '/api/discussion-end': () => service.discussions.end(value, owner),
@@ -159,7 +160,13 @@ function savedRun(service, id) {
 function requireLiveMutation(service, path) {
   if (service.reviewMode === 'preview')
     requireThat(
-      ['/api/discussion-open', '/api/discussion-turn', '/api/discussion-prepare', '/api/discussion-end'].includes(path),
+      [
+        '/api/discussion-open',
+        '/api/discussion-turn',
+        '/api/discussion-prepare',
+        '/api/discussion-summary',
+        '/api/discussion-end',
+      ].includes(path),
       'This is a preview copy. Make changes and record approvals on the real issue.'
     );
 }
