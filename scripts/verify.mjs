@@ -64,6 +64,10 @@ function recordCheck(name, command, result) {
   failure ||= !details.passed;
   report.checks.push({ name, ...details, exit: result.status, command, cwd: snapshot, log });
   console.log(`${details.passed ? 'PASS' : 'FAIL'} ${name}: ${log}`);
+  if (!details.passed && details.reasons?.length) {
+    console.error(`${name}:`);
+    for (const reason of details.reasons) console.error(`  - ${reason}`);
+  }
 }
 async function run(name, command, commandArgs) {
   console.log(`START ${name}`);

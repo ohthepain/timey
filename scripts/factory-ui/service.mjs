@@ -35,13 +35,13 @@ import {
 import { git, requireThat, writeJson, digest } from './common.mjs';
 
 import { readinessView, checkReadiness, explainBlock } from './readiness.mjs';
-import { stageStates } from './stage-state.mjs';
+import { issueLifecycleView } from './lifecycle-view.mjs';
 import { latestResult, reviewInput, savedReviewInput, reviewSaveCurrent } from './review-followup.mjs';
 import { validateRoutes } from './lifecycle.mjs';
 import { readPlan } from './plan-document.mjs';
 import { findConnection, connectWorker } from './worker-connection.mjs';
 import { decideIssue } from './issue-decision.mjs';
-import { nextProgress } from './next-action.mjs';
+import { resolveNextAction } from './next-action.mjs';
 import { prepareProgress, triggerProgress } from './progress.mjs';
 import { checklistView, readChecklistEvidence } from './plan-checks.mjs';
 import { checkImplementation } from './plan-review.mjs';
@@ -98,7 +98,8 @@ export class FactoryUI {
   }
   issueView(queue, issue, runs, owner) {
     const readiness = readinessView(queue, issue, runs);
-    const progress = nextProgress(queue, issue, runs);
+    const { choice: progress } = resolveNextAction(queue, issue, runs);
+    const { stageStates, queueLifecycle } = issueLifecycleView(queue, issue, runs, readiness);
     const lifecycle = this.lifecycleStatus(queue, issue, runs);
     return {
       ...issue,
@@ -107,7 +108,8 @@ export class FactoryUI {
       progressBasis: reviewInput(queue, issue),
       lifecycle: visibleLifecycle(lifecycle, progress),
       latestResult: latestResult(queue, issue, runs, progress),
-      stageStates: stageStates(queue, issue, runs, readiness),
+      stageStates,
+      queueLifecycle,
       progress,
       implementation: checklistView(queue, issue, runs),
       siteReview: this.siteReviews.view(queue, issue, owner),

@@ -118,6 +118,22 @@ function scopeAssessment(audit, scope) {
     limitations: [{ kind: 'empty-source-diff', message: 'No changed source; unrelated analysis was not measured.' }],
   };
 }
+function introducedFindingSummaries(audit) {
+  if (audit.verdict !== 'fail' && audit.verdict !== 'error') return [];
+  const lines = [];
+  for (const finding of audit.dead_code?.unused_files ?? []) {
+    if (finding.introduced) lines.push(`Introduced unused file: ${finding.path}`);
+  }
+  for (const finding of audit.dead_code?.unused_exports ?? []) {
+    if (finding.introduced)
+      lines.push(`Introduced unused export: ${finding.export_name} (${finding.path}:${finding.line})`);
+  }
+  for (const finding of audit.complexity?.findings ?? []) {
+    if (finding.introduced && finding.effective_severity === 'error')
+      lines.push(`Introduced complexity: ${finding.name} (${finding.path}:${finding.line})`);
+  }
+  return lines;
+}
 // Warning verdicts and some warnings still exit zero; inspect evidence, too.
 export function assessAudit(result, changedFiles) {
   // Only the caller's exported/indexed Git diff can establish empty scope.
@@ -128,7 +144,13 @@ export function assessAudit(result, changedFiles) {
     return { passed: false, reasons: ['Fallow did not return a valid JSON audit object.'], limitations: [], scope };
   const diagnostics = scopedDiagnostics(audit, scope),
     scopeResult = scopeAssessment(audit, scope);
-  const reasons = [...processErrors(result), ...reportErrors(audit, scope), ...diagnostics.reasons, ...scopeResult.reasons];
+  const reasons = [
+    ...processErrors(result),
+    ...reportErrors(audit, scope),
+    ...introducedFindingSummaries(audit),
+    ...diagnostics.reasons,
+    ...scopeResult.reasons,
+  ];
   return {
     passed: reasons.length === 0,
     reasons,

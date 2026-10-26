@@ -1,5 +1,7 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { TempoService } from '~/lib/TempoService';
+import { configureMidiTransportPolicy } from '~/lib/midiTransportPolicy';
+import { wireMidiTransportToTempo } from '~/lib/wireMidiTransportToTempo';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { usePersistedStore } from '~/state/PersistedStore';
 import { TransportControls } from '~/components/TransportControls';
@@ -9,6 +11,14 @@ export const Transport = () => {
   const [failure, setFailure] = useState('');
   const { devMode } = usePersistedStore();
   const tempoService = TempoService.getInstance();
+  useEffect(() => {
+    configureMidiTransportPolicy({
+      followSlaveTransportCommands: () => usePersistedStore.getState().midiSlave,
+      setExternalMidiClock: (active, bpm, ppqn) =>
+        useNavigationStore.getState().setExternalMidiClockState(active, bpm, ppqn),
+    });
+    return wireMidiTransportToTempo(tempoService);
+  }, [tempoService]);
   const { isRunning, isRecording } = useSyncExternalStore(
     tempoService.subscribeTransportState,
     tempoService.getTransportState,

@@ -2,10 +2,10 @@ import { useEffect } from 'react';
 import { Input, NoteMessageEvent, Output, WebMidi } from 'webmidi';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { EventEmitter } from 'events';
-import { TempoService } from '~/lib/TempoService';
-import { useNavigationStore } from '~/state/NavigationStore';
-import { usePersistedStore } from '~/state/PersistedStore';
 import { bindConfiguredMidiDevices, ensureWebMidiEnabled } from '~/lib/midiDeviceBinding';
+import { midiTransportPolicy } from '~/lib/midiTransportPolicy';
+import { MIDI_CLOCK_LOST, MIDI_CLOCK_PULSE, type MidiClockPulseEvent } from '~/lib/midiClockEvents';
+import { SLAVE_TRANSPORT_COMMAND, type SlaveTransportCommand } from '~/lib/slaveTransportCommand';
 
 class MidiService extends EventEmitter {
   receivedResponse: boolean = false;
@@ -34,10 +34,6 @@ class MidiService extends EventEmitter {
       this.emitMidiNote(e.message.dataBytes[0], e.message.dataBytes[1]);
     }
   };
-
-  get tempoService(): TempoService {
-    return TempoService.getInstance();
-  }
 
   async enable() {
     if (!(await ensureWebMidiEnabled())) return;
@@ -225,48 +221,37 @@ class MidiService extends EventEmitter {
 
     // Set a timeout to detect when clock stops
     this.clockTimeout = setTimeout(() => {
-      useNavigationStore.getState().setExternalMidiClockState(false);
-      // Only restart internal clock if we're in an active state
-      if (this.tempoService.isPlaying || this.tempoService.isRecording) {
-        this.tempoService.startIntervalTimer();
-      }
+      this.emit(MIDI_CLOCK_LOST);
     }, 1000); // If no clock for 1 second, assume it stopped
 
-    // Calculate BPM based on clock timing
     if (this.lastClockTime > 0) {
       const interval = now - this.lastClockTime;
-      const bpm = 60000 / (interval * 24); // 24 PPQN is standard
-
-      // Update state with external clock info
-      useNavigationStore.getState().setExternalMidiClockState(true, bpm, 24);
-
-      // Stop internal clock if it's running
-      this.tempoService.stopIntervalTimer();
-
-      // Forward the clock pulse to TempoService
-      this.tempoService.handleMidiClockPulse();
+      const ppqn = 24;
+      const bpm = 60000 / (interval * ppqn);
+      const pulse: MidiClockPulseEvent = { now, bpm, ppqn };
+      this.emit(MIDI_CLOCK_PULSE, pulse);
     }
 
     this.lastClockTime = now;
     this.clockCount++;
   };
 
-  private handleMidiStart = () => {
-    if (usePersistedStore.getState().midiSlave) {
-      this.tempoService.record();
+  private emitSlaveTransport(command: SlaveTransportCommand) {
+    if (midiTransportPolicy().followSlaveTransportCommands()) {
+      this.emit(SLAVE_TRANSPORT_COMMAND, command);
     }
+  }
+
+  private handleMidiStart = () => {
+    this.emitSlaveTransport('record');
   };
 
   private handleMidiStop = () => {
-    if (usePersistedStore.getState().midiSlave) {
-      this.tempoService.stop();
-    }
+    this.emitSlaveTransport('stop');
   };
 
   private handleMidiContinue = () => {
-    if (usePersistedStore.getState().midiSlave) {
-      this.tempoService.continue();
-    }
+    this.emitSlaveTransport('continue');
   };
 }
 

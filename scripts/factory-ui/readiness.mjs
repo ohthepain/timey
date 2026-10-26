@@ -3,7 +3,8 @@ import { startChat } from './chat-start.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
-import { nextProgress, progressIssue } from './next-action.mjs';
+import { resolveNextAction, progressIssue } from './next-action.mjs';
+import { sameStage } from './lifecycle-runs.mjs';
 import { inspectWorker, chatConnectionProblem } from './worker-history.mjs';
 import { digest, requireThat } from './common.mjs';
 
@@ -37,7 +38,7 @@ function relevantWork(queue, issue, run) {
 export function readinessView(queue, issue, runs) {
   const followup = finishedReviewBlock(queue, issue, runs);
   if (followup) return followup;
-  const choice = nextProgress(queue, issue, runs);
+  const { choice } = resolveNextAction(queue, issue, runs);
   const restored = connectionReadiness(queue, issue, runs);
   if (restored) return restored;
   return knownActionReadiness(queue, issue, choice) || recordedReadiness(queue, issue, runs);
@@ -110,8 +111,8 @@ export function checkReadiness(service, id, state) {
   return { runId: run.id };
 }
 async function inspectReadiness(service, queue, issue, runs, run) {
-  const choice = nextProgress(queue, issue, runs);
-  requireThat(!choice.disabled, choice.summary);
+  const { choice, structuralBlocker } = resolveNextAction(queue, issue, runs);
+  requireThat(!structuralBlocker, structuralBlocker ?? choice.summary);
   const planning = planningReadiness(choice);
   if (planning) return planning;
   if (choice.kind === 'review') return inspectReview(service, queue, issue, choice, run);
@@ -201,11 +202,11 @@ Current revision: ${queue.head}
 Issue: ${JSON.stringify(issue)}
 Action: ${JSON.stringify(action)}
 Next action: ${JSON.stringify(
-          nextProgress(
+          resolveNextAction(
             queue,
             issue,
             service.store.list(service.codex.requests).filter((r) => r.id !== run.id)
-          )
+          ).choice
         )}
 Original worker inspection: ${JSON.stringify(worker)}
 Human input: ${JSON.stringify(guards)}`
@@ -220,28 +221,8 @@ Human input: ${JSON.stringify(guards)}`
   return result;
 }
 
-export function sameStage(queue, issue, run) {
-  if (run.issueState) return run.issueState === issue.state;
-  const action = queue.actions.find((a) => a.id === run.actionId);
-  const stage = queue.lifecycle.find((s) => s.state === issue.state);
-  return linkedStage(action, stage, run.kind);
-}
-const actionRoles = {
-  investigate: 'ready-for-repro',
-  prototype: 'ready-to-prototype',
-  implement: 'ready-to-fix',
-  integrate: 'ready-to-fix',
-  verify: 'ready-to-verify',
-  review: 'ready-to-close',
-};
-function linkedStage(action, stage, kind) {
-  if (!action || !stage) return false;
-  if (kind === 'integration') return action.status === 'completed';
-  return actionRoles[action.kind] === stage.role;
-}
-
 function finishedReviewBlock(queue, issue, runs) {
-  const choice = nextProgress(queue, issue, runs);
+  const { choice } = resolveNextAction(queue, issue, runs);
   if (choice.runId && choice.disabled) return { status: 'blocked', summary: choice.summary };
   return null;
 }

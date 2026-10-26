@@ -20,6 +20,11 @@ export function progressIssue(queue, id, state) {
   );
   return issue;
 }
+export function resolveNextAction(queue, issue, runs) {
+  const choice = nextProgress(queue, issue, runs);
+  return { choice, structuralBlocker: choice.disabled ? choice.summary : null };
+}
+
 export function nextProgress(queue, issue, runs) {
   const stage = queue.lifecycle.find((s) => s.state === issue.state);
   const invalid = invalidStage(stage);

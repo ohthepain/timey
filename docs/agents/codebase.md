@@ -39,6 +39,10 @@ inside `TempoService.replay`, then stops and restores the prior clock mode in
 callbacks to `EventRecorderService.replay`, which owns event iteration. Selecting
 or cancelling a replay file does not change transport state. See the
 [transport plan and evidence](../plans/transport-state-ownership.md).
+`MidiService` emits slave transport commands and external clock pulse/loss events;
+`wireMidiTransportToTempo` (mounted from `Transport`) applies them through
+`midiTransportPolicy` and `TempoService` so the MIDI adapter does not call tempo
+directly.
 
 Dependencies flow from `BeatRecorder` to MIDI/tempo, feedback and recorded events;
 tempo and recorded events do not import each other or capture. Tempo's pulse
@@ -48,7 +52,7 @@ retains CSV serialization, and replays original timing/note inputs through the
 supplied callbacks. `PerformanceFeedback.addBeatNote` receives BPM explicitly and
 only calculates/accumulates feedback; capture logs derived feedback before
 publishing it. This preserves event ordering without singleton lookups in the
-calculation or event data. Tests in `TempoService.test.ts`,
+calculation or event data. Tests in `TempoService.test.ts`, `wireMidiTransportToTempo.test.ts`,
 `EventRecorderService.test.ts` and `Transport.test.tsx` exercise those interfaces,
 including exact live/replay CSV parity and lifecycle cleanup.
 
@@ -123,8 +127,8 @@ Current-stage recommendations and dispatch are in `scripts/factory-ui/next-actio
 and `progress.mjs`. `worker-history.mjs` reads the original worker through CLI RPC;
 `review-result.mjs` defines the bounded read-only review and guarded report update.
 
-Factory lifecycle presentation uses `scripts/factory-ui/stage-state.mjs` for
-recorded/future/current states, `readiness.mjs` for explicit action readiness,
+Factory lifecycle presentation is computed in `scripts/factory-ui/lifecycle-view.mjs`
+(stage rows and queue strip in one pass). `readiness.mjs` covers explicit action readiness;
 `lifecycle.mjs` for routes and stage records, and `stage-transition.mjs` with
 `skip-policy.mjs` for guarded optional skips. The workflow contract and storage
 boundaries are documented in [factory UI](factory-ui.md).
@@ -267,8 +271,8 @@ model read-only and separate from worker/review connections; `issue-chat-ui.js`
 preserves the composer while polling role updates. `scripts/factory-chat.check.mjs`
 checks persistence, provenance, routing, isolation, pagination and UI drafts.
 
-Queue lifecycle squares use `scripts/factory-ui/queue-lifecycle.mjs` to combine
-existing stage outcomes, readiness and activity. `queue-lifecycle-ui.js` renders
+Queue lifecycle squares read the strip from `issueLifecycleView` on each issue snapshot.
+`queue-lifecycle-ui.js` renders
 the accessible strip with links to expanded issue steps; `route-toggle.mjs` guards
 future-only route choices and persists them through the existing run store.
 `factory-lifecycle.check.mjs` exercises the disposable persistence and
