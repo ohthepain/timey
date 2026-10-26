@@ -1,3 +1,4 @@
+import { queueLifecycle } from './queue-lifecycle.mjs';
 // Polling carries summaries and a bounded tail for the selected issue. Full history is fetched on demand.
 export function queueResponse(snapshot, issueId) {
   const actions = new Set(snapshot.actions.filter((a) => a.issues.includes(issueId)).map((a) => a.id));
@@ -5,6 +6,7 @@ export function queueResponse(snapshot, issueId) {
   const shown = new Set(selected.map((r) => r.id));
   return {
     ...snapshot,
+    issues: (snapshot.issues || []).map((issue) => ({ ...issue, queueLifecycle: queueLifecycle(snapshot, issue) })),
     runs: snapshot.runs.map((run) => ({
       ...run,
       events: [],

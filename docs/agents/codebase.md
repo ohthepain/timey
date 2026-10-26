@@ -266,3 +266,9 @@ snapshots to execution/review turns. `issue-chat-runtime.mjs` keeps the conversa
 model read-only and separate from worker/review connections; `issue-chat-ui.js`
 preserves the composer while polling role updates. `scripts/factory-chat.check.mjs`
 checks persistence, provenance, routing, isolation, pagination and UI drafts.
+
+Queue lifecycle squares use `scripts/factory-ui/queue-lifecycle.mjs` to combine
+existing stage outcomes, readiness and activity. `queue-lifecycle-ui.js` renders
+and binds the accessible strip; `route-toggle.mjs` guards future-only route choices
+and persists them through the existing run store. `factory-lifecycle.check.mjs`
+exercises the disposable persistence and authorization boundaries.
