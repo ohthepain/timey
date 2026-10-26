@@ -1,3 +1,4 @@
+import { conversationPrompt } from './conversation-context.mjs';
 import { validateReconciliation } from '../factory-completion-policy.mjs';
 import { resumeReviewThread } from './review-recovery.mjs';
 import { captureInstructions } from './review-instructions.mjs';
@@ -126,7 +127,9 @@ async function checkedReview(service, queue, issue, run, threadId) {
   }
 }
 async function readReview(service, run, threadId, prompt) {
-  const result = JSON.parse(await service.codex.turn(threadId, service.root, prompt, reconciliationSchema));
+  const result = JSON.parse(
+    await service.codex.turn(threadId, service.root, conversationPrompt(service, run, prompt), reconciliationSchema)
+  );
   return recordReviewResult(service, run, result) ? result : null;
 }
 function checkedResult(service, queue, issue, result, instructions) {

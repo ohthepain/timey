@@ -49,6 +49,7 @@ function approveLifecyclePlan(service, record, input) {
     record,
     `Implementation plan approved\n\nPlan: ${record.plan.path || 'Saved proposed plan'}\nContent hash: ${record.plan.sha256}\nApproval record: ${receipt}\n\nProgress may complete this plan. Required human decisions and final acceptance remain separate.`
   );
+  saveLifecycle(service, record, { feedbackPending: null });
   lifecycleEvent(service, record, 'You approved the implementation plan. Continuing.');
 }
 function requestPlanChange(service, record, input) {

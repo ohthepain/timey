@@ -1,3 +1,5 @@
+import { createIssueChats } from './issue-chat.mjs';
+import { conversationPrompt } from './conversation-context.mjs';
 import { startChat } from './chat-start.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
@@ -66,6 +68,7 @@ export class FactoryUI {
     this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
     this.intents = new Map();
     this.discussions = createDiscussions(this);
+    this.issueChats = createIssueChats(this);
     this.siteReviews = createSiteReviews(this);
     this.lifecycleRuns = loadLifecycles(this.root);
     this.lifecycleTasks = new Map();
@@ -279,7 +282,12 @@ export class FactoryUI {
   }
   async runTurn(run, prompt) {
     this.store.update(run, { status: 'running', summary: 'Codex is working. Permission requests will appear here.' });
-    const text = await this.codex.turn(run.threadId, run.checkout, prompt, workerResultSchema);
+    const text = await this.codex.turn(
+      run.threadId,
+      run.checkout,
+      conversationPrompt(this, run, prompt),
+      workerResultSchema
+    );
     const result = JSON.parse(text);
     requireThat(
       ['completed', 'blocked', 'failed'].includes(result.outcome) && typeof result.summary === 'string',
@@ -438,12 +446,16 @@ export class FactoryUI {
         await this.codex.turn(
           threadId,
           this.root,
-          evaluationPrompt({
-            ...issueContext(queue, issueId),
-            approved_lifecycle_plan: approvedLifecyclePlan(this, issueId),
-            lifecycle_followup: lifecycleFollowup(this, issueId),
-            focus_issue_ids: issueId ? [issueId] : null,
-          }),
+          conversationPrompt(
+            this,
+            run,
+            evaluationPrompt({
+              ...issueContext(queue, issueId),
+              approved_lifecycle_plan: approvedLifecyclePlan(this, issueId),
+              lifecycle_followup: lifecycleFollowup(this, issueId),
+              focus_issue_ids: issueId ? [issueId] : null,
+            })
+          ),
           evaluationSchema
         )
       );
@@ -490,6 +502,7 @@ export class FactoryUI {
   }
   close() {
     this.discussions.close();
+    this.issueChats.close();
     this.codex.close();
     if (this.serverLock && existsSync(this.serverLock)) {
       const owner = JSON.parse(readFileSync(join(this.serverLock, 'owner.json'), 'utf8'));

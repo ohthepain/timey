@@ -257,3 +257,12 @@ matrix. `CODING_STANDARDS.md` guides semantic review of workflow gates.
 
 `scripts/factory-refresh.check.mjs` exercises the browser polling/render handoff,
 including deferred form/dialog updates and questions arriving while chat has focus.
+
+Persistent issue chat is owned by `factory-ui/issue-chat.mjs`; `conversation-store.mjs`
+retains user messages and native thread identity. `conversation-view.mjs` combines
+that history with role results and actual answer receipts without rewriting those
+owners. `conversation-context.mjs` supplies selected-issue context and full timeline
+snapshots to execution/review turns. `issue-chat-runtime.mjs` keeps the conversational
+model read-only and separate from worker/review connections; `issue-chat-ui.js`
+preserves the composer while polling role updates. `scripts/factory-chat.check.mjs`
+checks persistence, provenance, routing, isolation, pagination and UI drafts.

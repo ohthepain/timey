@@ -1,3 +1,4 @@
+import { conversationPrompt } from './conversation-context.mjs';
 import { startChat } from './chat-start.mjs';
 import { captureInstructions } from './review-instructions.mjs';
 import { releaseReviewLock } from './review-lock.mjs';
@@ -64,7 +65,11 @@ async function reviewPlan(service, queue, issue, plan, run) {
     await service.codex.turn(
       threadId,
       service.root,
-      planCheckPrompt(queue, issue, plan) + '\nServer-captured instruction copies: ' + JSON.stringify(instructions),
+      conversationPrompt(
+        service,
+        run,
+        planCheckPrompt(queue, issue, plan) + '\nServer-captured instruction copies: ' + JSON.stringify(instructions)
+      ),
       planCheckSchema
     )
   );

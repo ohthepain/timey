@@ -3084,7 +3084,7 @@ async function activityScreen(t) {
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
-      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       '\n' +
       script +
       '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'
@@ -3126,6 +3126,8 @@ test('approval feedback is immediate, survives rendering, and prevents duplicate
     posts = 0;
   window.fetch = (path) => {
     if (path.endsWith('/runtime')) return Promise.resolve({ ok: true, json: async () => ({ mode: 'live' }) });
+    if (path.includes('/issue-chat?'))
+      return Promise.resolve({ ok: true, json: async () => ({ issueId: '20261022-one', messages: [] }) });
     if (path.endsWith('/answer')) {
       posts++;
       return new Promise((resolve) => {
@@ -4031,11 +4033,11 @@ test('queue refreshes do not overlap while a response is pending', async (t) => 
   window.fetch = (path) => new Promise((resolve) => requests.push({ path, resolve }));
   const first = window.refresh();
   const second = window.refresh();
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
   for (const request of requests)
     request.resolve({ ok: true, json: async () => (request.path.endsWith('/runtime') ? { mode: 'live' } : snapshot) });
   await Promise.all([first, second]);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
 });
 
 test('recorded acceptance survives unrelated commits, branch switches and dirty source without certifying the new HEAD', async (t) => {

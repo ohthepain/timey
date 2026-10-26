@@ -817,7 +817,7 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
-    <script src="/discussion-ui.js"></script>
+    <script src="/issue-chat-ui.js"></script>
     <script src="/site-review-ui.js"></script>
     <script>
       let data,
@@ -855,11 +855,12 @@
         try {
           const previous = JSON.stringify(data);
           const issueId = location.hash.match(/^#\/issue\/([^/]+)/)?.[1] || '';
-          const [snapshot, runtime] = await Promise.all([
+          const [snapshot, runtime, conversation] = await Promise.all([
             request('queue?issue=' + encodeURIComponent(issueId)),
             request('runtime'),
+            issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
           ]);
-          data = snapshot;
+          data = { ...snapshot, conversation };
           showRuntime(runtime);
           $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
           updateLiveOutput();
@@ -1675,7 +1676,7 @@
             ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
             : '');
         const canStart = !input && stage?.role !== 'ready-to-close';
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input && !data.conversation ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected && !data.conversation ? approvals(child) : ''}</div><details><summary>Execution details</summary>${lifecycleActivity(issue)}</details>${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -1727,7 +1728,7 @@
       function lifecycleActivity(issue) {
         return `<div class="activity-toolbar"><strong>Live output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${esc(activityText(issue) || 'No output recorded yet.')}</pre><p class="muted">Recent output is kept for each chat. Scroll up to read; Follow latest returns to new output.</p>`;
       }
-      function lifecycleInput(issue, record) {
+      function lifecycleInput(issue, record, conversational = false) {
         const input = record.input;
         const common = `data-lifecycle-answer="${esc(issue.id)}" data-lifecycle-updated="${esc(record.updated)}"`;
         const draftKey =
@@ -1736,7 +1737,9 @@
           input.type +
           ':' +
           (input.reportHash || input.plan?.sha256 || input.question || input.request?.source_key || 'answer');
-        const textarea = `<label>Your answer<textarea id="lifecycle-answer-${esc(issue.id)}" data-draft-key="${esc(draftKey)}" rows="4">${esc(lifecycleDrafts.get(draftKey) || '')}</textarea></label>`;
+        const textarea = conversational
+          ? ''
+          : `<label>Your answer<textarea id="lifecycle-answer-${esc(issue.id)}" data-draft-key="${esc(draftKey)}" rows="4">${esc(lifecycleDrafts.get(draftKey) || '')}</textarea></label>`;
         const approve = `<button class="primary" ${common} data-decision="approve">${input.type === 'integration' ? 'Approve these changes and continue' : 'Approve plan and continue'}</button>`;
         if (input.type === 'plan')
           return `<p>${esc(input.plan.summary)}</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
@@ -1754,7 +1757,7 @@
             : input.request?.prompt === record.summary || input.question === record.summary
               ? ''
               : `<p>${esc(input.request?.prompt || input.question)}</p>`;
-        return `${question}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
+        return `${question}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${conversational ? '<p>Reply using the chat input below.</p>' : textarea + `<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`}`;
       }
       function liveStepWork(issue, stage) {
         return data.runs
@@ -1939,14 +1942,31 @@
         output.scrollTop = saved?.follow ? output.scrollHeight : saved?.top || 0;
       }
       function render() {
+        issueChatUI.beforeRender();
         rememberView();
         const route = location.hash.split('/');
         $('app').innerHTML = route[1] === 'issue' ? issue(decodeURIComponent(route.slice(2).join('/'))) : queue();
+        const issueId = route[1] === 'issue' ? decodeURIComponent(route.slice(2).join('/')) : null;
+        const currentIssue = data.issues.find((entry) => entry.id === issueId);
+        const record = currentIssue?.lifecycle;
+        const pending =
+          record?.input && record.input.type !== 'retry'
+            ? '<h3>Waiting for you · ' + esc(currentIssue.stage) + '</h3>' + lifecycleInput(currentIssue, record, true)
+            : '';
+        const permissions = data.runs
+          .filter(
+            (run) =>
+              run.connected &&
+              (run.issueId === issueId ||
+                data.actions.some((action) => action.id === run.actionId && action.issues.includes(issueId)))
+          )
+          .map((run) => approvals(run))
+          .join('');
+        issueChatUI.mount(issueId, data, request, refresh, data.conversation ? pending + permissions : '');
         bind();
         applyApprovalFeedback();
         siteReviewUI.mount(data, request, refresh);
         restoreView();
-        discussionUI.mount(route[1] === 'issue' ? decodeURIComponent(route.slice(2).join('/')) : null, request);
       }
       async function findExistingWorker(button) {
         const issueId = button.dataset.findWorker,
@@ -2038,7 +2058,10 @@
                 issueId: button.dataset.lifecycleAnswer,
                 updated: button.dataset.lifecycleUpdated,
                 decision: button.dataset.decision,
-                text: $('lifecycle-answer-' + button.dataset.lifecycleAnswer)?.value || '',
+                text:
+                  $('lifecycle-answer-' + button.dataset.lifecycleAnswer)?.value ||
+                  $('issue-chat-input-' + button.dataset.lifecycleAnswer)?.value ||
+                  '',
               })
             );
         });

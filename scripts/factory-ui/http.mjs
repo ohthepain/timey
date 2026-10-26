@@ -51,6 +51,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/lifecycle-start': () => service.startLifecycle(value),
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
@@ -114,6 +115,8 @@ function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
   const routes = {
     '/api/runtime': () => runtimeInfo(service),
+    '/api/issue-chat': () =>
+      service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
@@ -141,6 +144,10 @@ function readResource(service, request, response, owner) {
   if (request.url === '/site-review-ui.js') {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     return response.end(readFileSync(new URL('./site-review-ui.js', import.meta.url)));
+  }
+  if (request.url === '/issue-chat-ui.js') {
+    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    return response.end(readFileSync(new URL('./issue-chat-ui.js', import.meta.url)));
   }
   if (request.url === '/discussion-ui.js') {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');

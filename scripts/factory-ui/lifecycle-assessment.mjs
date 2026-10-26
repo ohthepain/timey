@@ -88,7 +88,7 @@ function finishAssessment(service, record, queue, issue, result, run) {
     'The review did not establish completed clarification or identify a question.'
   );
   const plan = reviewedPlan(service.root, issue, queue.actions, result);
-  const approval = existingPlanApproval(service, plan, result, run);
+  const approval = record.feedbackPending ? null : existingPlanApproval(service, plan, result, run);
   if (approval) {
     saveLifecycle(service, record, {
       plan,

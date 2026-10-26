@@ -10,6 +10,7 @@ export function prepareDeployment(service) {
       !existsSync(join(service.root, '.issues', lock)),
       'Wait for the current coordinator operation before deployment.'
     );
+  requireThat(!service.issueChats?.tasks.size, 'Wait for issue chat responses before deployment.');
   const snapshot = service.snapshot();
   requireThat(!service.store.connected.size, 'Wait for connected work before deployment.');
   requireThat(!snapshot.runs.some(activeRun), 'Wait for active issue work before deployment.');

@@ -1,3 +1,4 @@
+import { conversationPrompt } from './conversation-context.mjs';
 import { mkdirSync } from 'node:fs';
 import { redactValue } from './activity.mjs';
 import { join } from 'node:path';
@@ -30,7 +31,9 @@ export async function readWorkerReview(service, run, queue, issue, action, worke
   return corrected;
 }
 function readResult(service, run, prompt) {
-  return service.codex.turn(run.threadId, service.root, prompt, reviewSchema).then(JSON.parse);
+  return service.codex
+    .turn(run.threadId, service.root, conversationPrompt(service, run, prompt), reviewSchema)
+    .then(JSON.parse);
 }
 function citesTranscript(result, path) {
   return path && result.outcome === 'completed' && result.evidence?.includes(path);

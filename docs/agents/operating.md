@@ -59,6 +59,11 @@ human obligations and blocker outcomes from reports. A triage label does not pro
 readiness. The helper guards current code/queue fingerprints and active claims,
 but the coordinator must assess semantic dependencies and report evidence.
 
+For an issue with a saved conversation, include its selected-issue conversation
+context and current report in role assignments. The [persistent conversation](factory-ui.md#persistent-issue-conversation)
+retains its full timeline for handoffs and retrospective review; it supplies evidence
+and feedback, while each operation retains its existing authorization guards.
+
 Workers use separate Git worktrees from the explicit approved revision. Commit
 approved source before launch so the worktree includes the factory and agreed
 scope. Preserve unrelated dirty work; do not add it to a commit to satisfy launch.

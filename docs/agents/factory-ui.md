@@ -622,40 +622,50 @@ A restart before the creation response is retained remains uncertain and require
 reconciliation. Keep the owning server running while startup is pending. This
 recovery changes neither integration approval nor acceptance policy.
 
-## Temporary issue discussion
+## Persistent issue conversation
 
-Each issue has a collapsed **Chat** toggle above its lifecycle. The borderless
-toggle opens joined conversation output and full-width input; an inset circular
-up-arrow sends. Enter sends; Shift+Enter adds a line. Opening starts no model turn.
-Sending starts a dedicated ephemeral process in an empty workspace, separate from
-coordinator/worker recovery and RunStore. Its context contains the selected report
-and lifecycle policy, not other reports or saved chats. Proposed skips remain
-revisable plans, never historical outcomes or permission.
+The issue's **Chat** is its persistent interactive conversation. Joined output and
+full-width input retain the inset up-arrow; Enter sends and Shift+Enter adds a line.
+Opening or refreshing reads history without starting a model turn. Reloads,
+navigation and server restarts preserve sent messages. Each issue has its own
+conversation and native conversational thread. Earlier expired temporary chats
+cannot be imported; their surviving explicitly recorded outputs remain in reports.
+Legacy temporary endpoints remain available only for older clients.
 
-Discussion stays in page/server memory. It is excluded from generic draft storage
-and saved factory activity. Navigation, reload, End chat, 15-minute inactivity,
-the one-hour lifetime and shutdown clear it and stop its process. Server expiry
-bounds cleanup if a page-close request is lost. **Temporary chat** discloses these
-limits and contains End chat and the optional grilling control. Messages still go
-to the configured model provider under the account's policies; local ephemeral
-handling does not establish zero provider retention. The dedicated runtime uses
-the configured default OpenAI model/login. Custom providers/profiles fail closed.
+Human messages are retained under `.issues/conversations/ISSUE_ID/messages.jsonl`;
+`chat.json` keeps the conversational model's identity and response status. The
+conversation also projects actual role results, stage outcomes and original human
+answer receipts from their existing owners. It preserves source IDs and labels
+worker results as claims rather than verification. Pagination bounds polling;
+old history remains available through Earlier messages. Model turns receive a
+bounded recent context and `context.json` with the complete selected-issue timeline
+and current report, available to later roles and retrospective review. Comments
+and provider responses are persistent local records and go to the configured model
+provider under the account's policies. This is a deliberate retention change from
+the former temporary chat; sent messages no longer expire or disappear on reload.
 
-Select conversation text to reveal **Record selected text…**. Review the exact
-text, selected issue and stated effect, then click **Record this text on the issue**.
-A short-lived one-use token binds that selection to its session and current
-issue/policy/source. Recording rechecks ownership and human-input guards and uses
-the existing locked report append. It labels output human-approved and possibly
-model-written, never human testimony, completed grilling, workflow approval or
-acceptance. No transcript, context bundle or session identity is saved. Work on
-another issue does not block conversation or recording; an active operation on
-the selected issue blocks recording only. Integration also blocks recording.
-After recording changes context, start a new chat for further questions.
+The composer distinguishes **Comment**, **Request revision**, and **Reply and
+continue**. Comments save during implementation and become available on subsequent
+role turns; they do not interrupt an already executing instruction. A revision
+request marks the plan for reconsideration, revokes approval reuse and asks active
+Progress to pause at its next checkpoint. Progress then reviews the saved feedback;
+implementation approval must be supplied for the resulting plan. It does not erase
+existing questions or invent new implementation authority.
 
-**Start grilling…** previews a temporary structured interview and requires a
-separate confirmation click. It saves no interview outcome or completed grilling.
-Other workflow changes retain their existing controls and approvals. Typed chat
-instructions never perform mutations or update documentation.
+Pending questions and exact plan/candidate controls appear within the same chat.
+Reply and continue uses the current question identity and original answer handler.
+Stale replies remain unsent; comments never masquerade as answers. Plan and
+integration approvals retain their exact candidate/plan checks, and closure remains
+an explicit final decision. Implementation stays in isolated worker checkouts;
+independent review stays in separate read-only chats and checks raw proof. Those
+roles receive the selected issue conversation as context, never expanded permission.
+
+Message IDs make transport retries idempotent. Responses are serialized per issue,
+while comments can continue arriving. A failed response retains the user message
+and displays an error; an uncertain native startup is not silently replaced. A
+known chat reconnects only after checking that its native state is idle. The chat
+assistant has read-only context access and cannot grant permissions or dispatch
+workflow actions. Execution details remain expandable under lifecycle progress.
 
 ## Open a site for Verify
 

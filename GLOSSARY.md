@@ -95,3 +95,12 @@ approved implementation plan. It composes individual factory actions, retains
 its activity and answers in the issue UI, and pauses for actual human input.
 It is separate from a single `/factory` decision iteration and never supplies
 human-first integration approval or final acceptance on the user’s behalf.
+
+**Issue conversation**:
+The persistent exchange for one issue, including human messages, lifecycle role
+contributions, questions, decisions and outcomes.
+_Avoid_: Temporary chat, worker chat
+
+**Revision request**:
+An explicit request to reconsider an issue's agreed work, retained for review
+before continuing under an approved plan. It is separate from a comment or approval.

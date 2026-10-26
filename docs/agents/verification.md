@@ -249,3 +249,14 @@ missing historical tests. Keep the matrix current when adding a record format.
 Review gate meaning with [review standards](../../CODING_STANDARDS.md), including
 whether the tests assert the intended policy. Queue-wide freshness is not a default
 for an issue-local decision.
+
+## Persistent issue chat checks
+
+Run `npm run test:chat` for the shared issue conversation: disk persistence and
+native identity reuse, issue separation, bounded history and full retrospective
+context, comments during active work, idempotent transport retries, response
+failures, current-question routing, revision checkpoints and DOM draft/focus safety.
+The aggregate factory suite includes these checks. Use real browser/provider
+smoke evidence separately from protocol fixtures; a mocked response proves no
+provider availability. Existing lifecycle and integration tests still own worker
+checkout isolation, review independence and actual approval/acceptance guards.
