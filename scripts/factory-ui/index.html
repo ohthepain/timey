@@ -1151,13 +1151,20 @@
         );
       }
       function humanChecks(i) {
-        return (i.human_checks || [])
-          .map((check) =>
-            checkDueNow(i, check)
-              ? humanCheckText(check)
-              : `<details><summary>Final review — needed later</summary>${humanCheckText(check)}</details>`
-          )
-          .join('');
+        const completed = (i.human_checks || []).filter((check) => !outstandingDecision(i, check));
+        const pending = (i.human_checks || []).filter((check) => outstandingDecision(i, check));
+        return (
+          pending
+            .map((check) =>
+              checkDueNow(i, check)
+                ? humanCheckText(check)
+                : `<details><summary>Final review — needed later</summary>${humanCheckText(check)}</details>`
+            )
+            .join('') +
+          (completed.length
+            ? `<details><summary>Completed checks (${completed.length})</summary>${completed.map(humanCheckText).join('')}</details>`
+            : '')
+        );
       }
       function humanCheckText(c) {
         return `<h3>${esc(c.kind === 'judgment' ? 'Your judgment' : 'Manual check')}</h3><p>${esc(c.instructions)}</p><span class="badge">${esc(c.status)}</span><p>${esc(c.result || 'No result recorded.')}</p>`;
@@ -1642,7 +1649,9 @@
         try {
           const url = new URL(issue.prototype_preview?.url);
           if (!['http:', 'https:'].includes(url.protocol)) return '';
-          return `<p><a href="${esc(url.href)}" target="_blank" rel="noopener">Open prototype</a> · Preview ready for your review.</p>`;
+          const status =
+            issue.prototype_preview.status === 'approved' ? 'Prototype approved.' : 'Preview ready for your review.';
+          return `<p><a href="${esc(url.href)}" target="_blank" rel="noopener">Open prototype</a> · ${status}</p>`;
         } catch {
           return '';
         }

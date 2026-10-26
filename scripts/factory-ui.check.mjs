@@ -3924,3 +3924,37 @@ test('a recorded site approval remains complete across workflow stages and proje
   assert.equal(window.outstandingDecision(issue, { ...approved, review_target: { revision: 'new-candidate' } }), true);
   assert.equal(window.outstandingDecision(issue, { ...approved, status: 'failed' }), true);
 });
+
+test('completed approvals are shown as history while outstanding checks stay visible', async (t) => {
+  const { window } = await activityScreen(t);
+  const issue = {
+    state: 'in-review',
+    prototype_preview: { url: 'http://127.0.0.1:52996/', status: 'approved', revision: 'approved-design' },
+    human_checks: [
+      {
+        kind: 'judgment',
+        instructions: 'Review the prototype',
+        status: 'passed',
+        revision: 'approved-design',
+        result: 'Looks great',
+      },
+      { kind: 'judgment', instructions: 'Review the remaining change', status: 'pending' },
+    ],
+  };
+  assert.match(window.prototypePreview(issue), /Prototype approved/);
+  assert.doesNotMatch(window.prototypePreview(issue), /ready for your review/);
+  assert.match(
+    window.prototypePreview({ prototype_preview: { ...issue.prototype_preview, status: 'ready' } }),
+    /ready for your review/
+  );
+  const container = window.document.createElement('div');
+  container.innerHTML = window.humanChecks(issue);
+  const completed = container.querySelector('details');
+  assert.equal(completed.open, false);
+  assert.equal(completed.querySelector('summary').textContent, 'Completed checks (1)');
+  assert.match(completed.textContent, /Looks great/);
+  assert.doesNotMatch(completed.textContent, /remaining change/);
+  completed.remove();
+  assert.match(container.textContent, /Review the remaining change/);
+  assert.doesNotMatch(container.textContent, /Review the prototype/);
+});
