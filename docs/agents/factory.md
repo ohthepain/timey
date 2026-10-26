@@ -94,7 +94,8 @@ policy; a flag or timestamp cannot establish an answer or human evidence.
 
 `npm run factory --` returns a read-only inspection with `focus_issue_ids` for
 the whole queue. Add issue IDs to narrow that focus. Dependency context stays in
-the inspection; it does not expand the assignment. The coordinator evaluates
+the inspection; it does not expand the assignment. The inspection also includes shared issue progress, plan approval and outstanding
+questions; consult these before proposing overlapping work. The coordinator evaluates
 meaning, grouping, evidence and priorities and saves recommendations.
 
 For listing, run:
@@ -120,3 +121,18 @@ Groups are not atomic and never imply automatic retries or subsequent batches.
 Read [operating rules](operating.md) for ownership, launch and integration policy,
 [verification](verification.md) for evidence and human gates, and the
 [factory skill](../../.agents/skills/factory/SKILL.md) for execution steps.
+
+## Local UI adapter
+
+The [local factory UI](factory-ui.md) is an alternative front door for the same
+queue and ledger. `npm run factory:ui -- --project /absolute/project` serves the
+queue and issue screens locally. This adapter uses the installed Codex CLI
+app-server transport instead of native chat creation. Scope, ownership, human
+gates and verification policy remain enforced. The issue screen’s lifecycle
+Progress control continues within an approved issue plan, including workers and
+automatic-policy integration. Human-first integration and final acceptance still
+require explicit decisions. This opt-in UI workflow is described below; native
+chat commands continue to follow the factory skill’s one-iteration contract.
+
+Both front doors use [shared progress and completion records](factory-records.md).
+Their selection scope and control loops remain separate.

@@ -54,3 +54,44 @@ _Avoid_: Automated verification
 **Acceptance**:
 The user’s explicit decision that an issue is complete.
 _Avoid_: Worker completion, integration
+
+**Stage outcome**:
+A recorded decision that a lifecycle stage completed or was skipped, with its
+reason and evidence. A finished worker is evidence for review, not this decision.
+
+**Planned route**:
+The saved expectation of which future issue stages will be taken, skipped or
+remain undecided. It can change and does not authorize bypassing required checks.
+
+**Readiness**:
+Whether anything currently blocks the next selected action. It must be checked,
+can expire, and is distinct from completing the whole stage.
+
+**Issue reconciliation**:
+Bringing an issue report up to date with work already completed and checked.
+It records evidence-backed stage outcomes without repeating implementation,
+integration or human acceptance.
+
+**Implementation checklist**:
+Work items from one issue's implementation plan, grouped by its work versions and
+checked against explicit acceptance criteria. A passing criterion has supporting
+evidence; it does not imply human approval, integration or issue acceptance.
+_Avoid_: Lifecycle stage, triage role
+
+**Manual checklist skip**:
+The user's explicit decision that an implementation criterion is not required for
+this issue at the recorded plan and source revision. It preserves the earlier
+result and reason without claiming a pass or accepting the issue.
+
+**Record-only update**:
+A coordinator update to one local issue that records corrections already made.
+It checks preservation of other records and source, requires no code commit, and
+leaves unperformed demonstrations and final acceptance explicit.
+
+## Lifecycle Progress
+
+An explicitly started run that continues one issue through work covered by its
+approved implementation plan. It composes individual factory actions, retains
+its activity and answers in the issue UI, and pauses for actual human input.
+It is separate from a single `/factory` decision iteration and never supplies
+human-first integration approval or final acceptance on the user’s behalf.

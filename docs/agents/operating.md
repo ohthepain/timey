@@ -118,3 +118,18 @@ standards cover genuine judgment. Larger repairs can proceed after notification
 of problem, scope, and verification plan, within approved authority. Weakening
 checks, expanding authority, or changing product expectations requires agreement.
 Verify the repair's effect rather than accumulating generic instructions.
+
+## Local UI transport
+
+The [factory UI adapter](factory-ui.md) may use the installed Codex CLI instead
+of native chat tools. It retains exact saved action IDs, isolated worker
+checkouts and durable conversation references. Explicit lifecycle Progress
+consent authorizes continued work within the selected issue’s approved plan:
+recommend, save, launch/reuse, review, verify, record commits and integrate under
+an automatic merge policy. It does not authorize another issue, broader scope,
+pushes, deployment or closure. A changed plan needs renewed approval. Human-first
+integration needs approval of the exact current candidate and target. Required
+input is shown and answered in the issue; the same run continues afterward.
+Opening or refreshing the UI starts nothing. Native `/factory` commands retain
+the separate manual steps above. Independent combined checks and operation-specific
+human guards apply in both workflows.

@@ -1,3 +1,4 @@
+import { issueInputs, issueContext } from './factory-inputs.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -51,6 +52,60 @@ test('planning is inert; manual reservation is exclusive across overlapping acti
   api.attach(first.id, { threadId: 'ready', hostId: 'local', issues: ['two'] });
   assert.deepEqual(api.inspect().registry.actions[0].issues, ['one']);
   assert.throws(() => api.attach(first.id, { threadId: 'again', hostId: 'local' }), /unbound/);
+});
+
+test('issue inputs track transitive dependencies, action dependencies, linked plans and policy', (t) => {
+  const { root, api } = fixture(t);
+  const snapshot = api.inspect().snapshot;
+  mkdirSync(join(root, 'docs/plans'), { recursive: true });
+  const plan = join(root, 'docs/plans/implementation.md');
+  writeFileSync(plan, '# Approved plan');
+  const reports = [
+    { id: 'one', content: '# One\n[Plan](docs/plans/implementation.md)\n## Blocked by\ntwo' },
+    { id: 'two', content: '# Two\n## Blocked by\nthree' },
+    { id: 'three', content: '# Three' },
+    { id: 'other', content: '# Independent' },
+  ];
+  const actions = [
+    { id: 'selected', issues: ['one'], dependencies: ['prerequisite'], status: 'blocked' },
+    { id: 'prerequisite', issues: ['three'], dependencies: [], status: 'completed' },
+    { id: 'other-action', issues: ['other'], dependencies: [], status: 'running' },
+  ];
+  const key = () => issueInputs(root, snapshot, reports, actions, ['one']);
+  const original = key();
+  const context = issueContext({ issues: reports, actions }, 'one');
+  assert.deepEqual(
+    context.issues.map((r) => r.id),
+    ['one', 'two', 'three']
+  );
+  assert.equal(
+    context.actions.some((a) => a.id === 'other-action'),
+    false
+  );
+  reports[3].content += ' changed';
+  actions[2].status = 'completed';
+  reports.reverse();
+  actions.reverse();
+  assert.equal(key(), original);
+  const prerequisite = actions.find((a) => a.id === 'prerequisite');
+  prerequisite.status = 'blocked';
+  assert.notEqual(key(), original);
+  prerequisite.status = 'completed';
+  reports.find((r) => r.id === 'three').content += ' changed';
+  const dependencyChanged = key();
+  assert.notEqual(dependencyChanged, original);
+  writeFileSync(plan, '# Changed approval requirements');
+  const planChanged = key();
+  assert.notEqual(planChanged, dependencyChanged);
+  writeFileSync(join(root, '.issues/preferences.json'), '{"commit":false}');
+  assert.notEqual(key(), planChanged);
+});
+
+test('unrelated report changes do not invalidate an independent saved assignment', (t) => {
+  const { root, api, proposal } = fixture(t);
+  const [action] = api.recommend([proposal()]);
+  writeFileSync(join(root, '.issues/20261022-two.md'), '---\nid: two\nstate: closed\n---\nUnrelated completion');
+  assert.equal(api.reserve(action.id).status, 'reserved');
 });
 
 test('stale queue and committed changes invalidate recommendations', (t) => {

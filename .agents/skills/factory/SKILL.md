@@ -57,7 +57,9 @@ coordinating work.
    If the queue itself is absent, initialize it with the installed setup-local-issues
    skill and apply this repo's policy before inspection. Do not reset damaged state
    or erase uncertain reservations.
-2. Inspect recorded workers with compact `wait_threads` snapshots, preserving
+2. Read the shared `progress` entries in the inspection before selecting work;
+   an active issue coordinator must not get a competing coordinator. Surface an
+   existing waiting question through its original response control. Inspect recorded workers with compact `wait_threads` snapshots, preserving
    cursors in the effort plan/registry as needed. Read evidence before recording
    outcomes. A worker's final message is not integration or issue acceptance.
 3. Assess shared causes/grouping, semantic dependencies, human obligations,
@@ -193,6 +195,12 @@ For a completed code action needing finalization, the decision branch can recomm
 use saved recommendations and the launch branch.
 
 ## Reconcile evidence
+
+For issue-step completion or implementation-plan findings, read
+[shared records](../../../docs/agents/factory-records.md) and use its guarded
+`complete` and `record-checks` commands. Both coordinators record the same facts
+with the same formats. Reuse current shared check receipts; never rerun a review
+just to create UI history. Worker completion alone still does not advance an issue.
 
 Use `npm run factory -- record ACTION_ID /absolute/tmp/result.json` for lifecycle
 records: `{status,evidence}`. Completion never edits issue state. For `integrated`,
