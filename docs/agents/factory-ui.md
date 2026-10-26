@@ -772,3 +772,47 @@ and checks its runtime identity. Failure restores the previous unchanged checkou
 failed recovery retains the deployment lock for reconciliation. Logs and receipts
 remain in the authoritative project's `.issues/evidence/`. Never clear an unknown
 deployment lock or stop another listener to retry.
+
+Candidate and recovery readiness each retain observations in the receipt's
+`readiness` links to an adjacent `.readiness.json` file. Each attempt records HTTP
+phase/path/status, transport error names/codes, elapsed time, and expected versus
+observed runtime identity with mismatched fields. Response bodies, headers,
+session cookies and arbitrary runtime fields are excluded. The file keeps twenty
+recent attempts per wait, its first failure and its latest failure of each kind
+(HTTP, transport, decode or identity), so failures survive a later successful poll.
+The receipt and diagnostics are updated during polling, including unsuccessful
+candidate and recovery waits. Identity requirements, request/polling timeouts and
+recovery/locking rules are unchanged. A later passing run does not establish the
+cause of a historical timeout without those observations.
+
+### Queue lifecycle controls
+
+The queue shows every configured lifecycle role in a fixed horizontal strip. The
+strip scrolls on narrow screens and retains its scroll and keyboard focus across
+live updates. Blue checks mean recorded completion; grey Xs mean recorded or
+planned skips. Earlier stages without valid outcome records stay neutral. Orange
+exclamations show blockers or errors. The current role shows play while idle and
+a spinner during actual activity. Hover or focus any square for its explanation.
+
+A yellow speech bubble above the current square marks a pending lifecycle question
+or connected worker approval, including the final acceptance decision. The bubble and square are one keyboard control that
+opens the existing issue question. Waiting for input shows idle play, while an
+actual error keeps its orange square. Play uses the issue screen's existing
+Progress flow, including its plan consent and human guards; it grants no extra
+authority. Historical squares are informational.
+
+Eligible future squares immediately toggle the saved route between take and skip.
+The server follows configured Next links and the existing skip policy: enhancement
+investigation, optional prototypes and commit recording when commits are disabled.
+Required roles and acceptance cannot be skipped. Choices can change during active
+Progress only while the selected role remains future and has no recorded outcome.
+A saving indicator prevents duplicate clicks; failures retain the saved value and
+show an error. Stale issue, route or policy versions are rejected. Other route
+choices and historical outcomes remain intact. Saving a choice starts no work and
+does not complete a stage or authorize acceptance.
+
+`npm run test:factory` includes disposable lifecycle fixtures for route persistence,
+stale writes, protected roles, active-progress choices, disk-failure rollback and
+HTTP authorization. Browser evidence separately checks rendering and interaction;
+synthetic activity and provider failures establish no provider availability or
+human acceptance.
