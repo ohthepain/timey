@@ -49,6 +49,9 @@ connected and puts the requested decision under **Waiting for you**. Answer erro
 appear separately from the activity summary. Saving plan, scope and question answers
 checks connected work for this issue, including grouped assignments, before retaining
 any answer or approval. Work on other issues does not block saving the response.
+Background updates deferred during form editing or an open dialog remain pending
+and render once that interaction ends, even if later polls return unchanged data.
+Temporary chat keeps its existing DOM and draft while lifecycle questions update.
 Report and question freshness checks still apply; native worker requests keep their
 existing reply path.
 

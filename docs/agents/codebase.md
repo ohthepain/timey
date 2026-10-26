@@ -254,3 +254,6 @@ matrix. `CODING_STANDARDS.md` guides semantic review of workflow gates.
 `scripts/factory-deploy.mjs` validates candidates and manages local restart/recovery;
 `factory-deploy-transport.mjs` owns HTTP preparation, listener draining and startup.
 `factory-ui/deployment.mjs` blocks new mutations while an idle server drains.
+
+`scripts/factory-refresh.check.mjs` exercises the browser polling/render handoff,
+including deferred form/dialog updates and questions arriving while chat has focus.
