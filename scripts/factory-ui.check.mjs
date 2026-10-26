@@ -3417,6 +3417,7 @@ test('administrative notes cannot re-enable the same stopped review', async (t) 
     answer: 'Use the bounded selected scope.',
   });
   assert.equal(service.snapshot().issues[0].lifecycle.canResume, true);
+  assert.equal(service.snapshot().issues[0].lifecycle.summary, service.snapshot().issues[0].progress.summary);
 });
 
 test('live output redacts known credentials before storing or displaying events', async (t) => {
@@ -4082,4 +4083,70 @@ test('another issue changing cannot invalidate a selected issue acceptance butto
   );
   service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis);
   assert.equal(service.snapshot().issues.find((issue) => issue.id === '20261022-one').state, 'closed');
+});
+
+test('uncommitted source exposes the real launch blocker ahead of a saved finished review', (t) => {
+  const { service, root, api, proposal, git } = fixture(t);
+  writeFileSync(join(root, 'source.js'), 'export const answer = 43;\n');
+  git('add', 'source.js');
+  writeFileSync(join(root, 'new file.txt'), 'untracked source');
+  const [action] = api.recommend([proposal]);
+  const record = {
+    issueId: '20261022-one',
+    status: 'blocked',
+    summary: 'This review is already finished.',
+    events: [],
+    attempts: [],
+  };
+  const before = readQueue(root);
+  record.stopBasis = lifecycleWorkBasis(before, before.issues[0], record);
+  service.lifecycleRuns['20261022-one'] = record;
+  const run = service.store.add({ id: 'queue-review' }, 'evaluation', before.head);
+  service.store.update(run, {
+    issueId: '20261022-one',
+    issueState: 'investigate',
+    status: 'completed',
+    savedActions: [action.id],
+    result: { recommendations: [proposal], routes: [] },
+  });
+  service.store.connected.delete(run.id);
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.progress.blocker.code, 'uncommitted-changes');
+  assert.deepEqual(issue.progress.blocker.files.sort(), ['new file.txt', 'source.js']);
+  assert.match(issue.lifecycle.summary, /uncommitted code changes/);
+  assert.match(issue.progress.blocker.nextStep, /No GitHub push/);
+  assert.equal(record.summary, 'This review is already finished.', 'projection must preserve historical records');
+  assert.equal(service.codex.child, undefined);
+  git('add', 'source.js', 'new file.txt');
+  git('commit', '-qm', 'preserve fixture work');
+  assert.equal(service.snapshot().issues[0].progress.blocker, undefined);
+  assert.equal(service.snapshot().issues[0].lifecycle.canResume, true);
+});
+
+test('stopped lifecycle screen displays uncommitted paths and next steps instead of its old review reason', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const issue = snapshot.issues[0];
+  snapshot.runs = [];
+  issue.lifecycle = { status: 'blocked', summary: 'This review is already finished.', canResume: false, events: [] };
+  issue.progress = {
+    kind: 'unavailable',
+    disabled: true,
+    summary: 'The project has uncommitted code changes.',
+    blocker: {
+      code: 'uncommitted-changes',
+      files: ['scripts/factory.mjs', 'scripts/<unsafe>.mjs'],
+      nextStep:
+        'Review and commit these changes locally, then click Continue. No GitHub push is needed. Saved issue notes do not need a Git commit.',
+    },
+  };
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Uncommitted changes/);
+  assert.match(panel.textContent, /scripts\/factory.mjs/);
+  assert.match(panel.textContent, /scripts\/<unsafe>.mjs/);
+  assert.match(panel.textContent, /No GitHub push/);
+  assert.ok(!panel.textContent.includes('This review is already finished'));
+  assert.ok(!panel.textContent.includes('The last action cannot advance'));
+  assert.equal(panel.querySelector('unsafe'), null);
+  assert.equal(panel.querySelector('[data-lifecycle-start]').disabled, true);
 });

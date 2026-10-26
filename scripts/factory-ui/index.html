@@ -1649,6 +1649,7 @@
         const active = ['running', 'answering'].includes(record?.status);
         const child = data.runs.find((r) => r.id === record?.childRunId);
         const input = record?.input?.type === 'retry' ? null : record?.input;
+        const blocker = !active && !input ? issue.progress?.blocker : null;
         const stopped = record?.status === 'blocked' || record?.legacyRetry || record?.input?.type === 'retry';
         const issueWork = data.runs.find(
           (run) =>
@@ -1656,8 +1657,9 @@
             (run.issueId === issue.id ||
               data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
         );
-        const title =
-          record?.status === 'answering'
+        const title = blocker
+          ? 'Uncommitted changes'
+          : record?.status === 'answering'
             ? 'Saving your answer'
             : active
               ? 'Working on this issue'
@@ -1668,8 +1670,9 @@
                   : stage?.role === 'ready-to-close'
                     ? 'Ready for final review'
                     : 'Move this issue forward';
-        const summary =
-          record?.status === 'answering'
+        const summary = blocker
+          ? issue.progress.summary
+          : record?.status === 'answering'
             ? 'Saving your response before continuing this issue.'
             : input
               ? issueWork
@@ -1684,7 +1687,7 @@
             ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
             : '');
         const canStart = !input && stage?.role !== 'ready-to-close';
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -1692,6 +1695,13 @@
                 .join('')}</ol></details>`
             : ''
         }</section>`;
+      }
+      function launchBlockDetails(blocker) {
+        if (!blocker) return '';
+        return `<ul>${blocker.files
+          .slice(0, 20)
+          .map((path) => `<li><code>${esc(path)}</code></li>`)
+          .join('')}</ul><p>${esc(blocker.nextStep)}</p>`;
       }
       function prototypePreview(issue) {
         try {

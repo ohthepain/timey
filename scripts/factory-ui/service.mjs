@@ -95,12 +95,13 @@ export class FactoryUI {
   issueView(queue, issue, runs, owner) {
     const readiness = readinessView(queue, issue, runs);
     const progress = nextProgress(queue, issue, runs);
+    const lifecycle = this.lifecycleStatus(queue, issue);
     return {
       ...issue,
       readiness,
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
-      lifecycle: this.lifecycleStatus(queue, issue),
+      lifecycle: visibleLifecycle(lifecycle, progress),
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
@@ -552,4 +553,14 @@ function defersForStageSkip(queue, run, routes) {
 
 function completedIntegration(run, action) {
   return run.kind === 'integration' && action.status === 'integrated';
+}
+
+function visibleLifecycle(record, progress) {
+  if (!record) return record;
+  if (record.status !== 'blocked') return record;
+  return visibleStoppedReason(record, progress);
+}
+function visibleStoppedReason(record, progress) {
+  if (progress.blocker || !progress.disabled) return { ...record, summary: progress.summary };
+  return record;
 }

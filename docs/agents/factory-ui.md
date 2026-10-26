@@ -754,3 +754,11 @@ snapshot. Changed or missing immutable test logs still fail with the exact path.
 Queue reports and the registry are mutable context; their current bytes and
 original recorded digests are retained separately from technical evidence.
 Verification and commit operations continue to require current source checks.
+
+When a saved assignment cannot launch because the target has uncommitted files,
+the current issue shows Uncommitted changes, the affected paths and the local
+commit/Continue next step. This live blocker takes priority over a finished review's
+historical summary. Issue notes and grilling answers are already local records;
+this message refers to project files and requires no GitHub push. The UI never
+stages, commits or discards those files itself. After the changes are preserved,
+normal source freshness and approval checks apply before the task starts.

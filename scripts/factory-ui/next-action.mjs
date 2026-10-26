@@ -3,7 +3,7 @@ import { skipAllowed } from './skip-policy.mjs';
 import { describeLaunch } from './data.mjs';
 import { chatConnectionProblem } from './worker-history.mjs';
 import { reviewFollowup, reviewInput } from './review-followup.mjs';
-import { digest, requireThat } from './common.mjs';
+import { digest, requireThat, git } from './common.mjs';
 
 export const progressBasis = (queue, id = null) =>
   id
@@ -67,12 +67,14 @@ function chooseWork(queue, issue, runs) {
   const recommended = actions.find((a) => a.status === 'recommended' && !describeLaunch(queue, a));
   if (recommended)
     return { kind: 'launch', actionId: recommended.id, title: 'Start recommended work', summary: recommended.scope };
-  return {
-    kind: 'plan',
-    title: 'Recommend the next action',
-    summary:
-      'Review this issue, record steps already finished, and stop at the next task or decision. Starting a worker or integrating changes remains a separate choice.',
-  };
+  return (
+    blockedRecommendation(queue, actions) || {
+      kind: 'plan',
+      title: 'Recommend the next action',
+      summary:
+        'Review this issue, record steps already finished, and stop at the next task or decision. Starting a worker or integrating changes remains a separate choice.',
+    }
+  );
 }
 function existingWork(action, runs) {
   if (needsIntegration(action)) return integration(action);
@@ -150,4 +152,27 @@ function latestStageReview(issue, runs) {
 
 function currentReconciliation(queue, run) {
   return run?.kind === 'reconciliation' && run.reviewBasis === progressBasis(queue);
+}
+
+function uncommittedBlock(queue) {
+  const tracked = git(queue.root, 'diff', '--name-only', '-z', 'HEAD', '--');
+  const untracked = git(queue.root, 'ls-files', '--others', '--exclude-standard', '-z');
+  const files = [...new Set((tracked + untracked).split('\0').filter(Boolean))];
+  return {
+    kind: 'unavailable',
+    disabled: true,
+    title: 'Uncommitted changes',
+    summary: 'The project has uncommitted code changes. The saved task cannot start until they are preserved.',
+    blocker: {
+      code: 'uncommitted-changes',
+      files,
+      nextStep:
+        'Review and commit these changes locally before starting the saved task, then click Continue. No GitHub push is needed. Saved issue notes and grilling answers do not need a Git commit.',
+    },
+  };
+}
+
+function blockedRecommendation(queue, actions) {
+  if (queue.sourceClean) return null;
+  return actions.some((action) => action.status === 'recommended') ? uncommittedBlock(queue) : null;
 }
