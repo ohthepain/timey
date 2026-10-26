@@ -41,3 +41,59 @@ test('unconfigured optional detectors are explicit unmeasured coverage, not clea
   assert.equal(assessment.passed, true);
   assert.equal(assessment.limitations.length, 1);
 });
+
+const emptyAudit = () => {
+  const audit = clean();
+  delete audit.dead_code;
+  audit.changed_files_count = 0;
+  return audit;
+};
+test('only independently supplied empty scope permits omitted diagnostics', () => {
+  const compact = result(emptyAudit());
+  assert.equal(assessAudit(compact).passed, false);
+  assert.equal(assessAudit(compact, ['untracked.js']).passed, false);
+  const assessment = assessAudit(compact, []);
+  assert.equal(assessment.passed, true);
+  assert.equal(assessment.scope, 'empty');
+  assert.ok(assessment.limitations.some((entry) => entry.kind === 'empty-source-diff'));
+  const malformed = emptyAudit();
+  malformed.dead_code = {};
+  assert.equal(assessAudit(result(malformed), []).passed, false);
+  const mismatch = emptyAudit();
+  mismatch.changed_files_count = 1;
+  assert.equal(assessAudit(result(mismatch), []).passed, false);
+});
+test('empty scope still rejects invalid, warning, failed, degraded and finding-bearing results', () => {
+  for (const mutate of [
+    (audit) => (audit.schema_version = 14),
+    (audit) => (audit.verdict = 'warn'),
+    (audit) => (audit.attribution.gate = 'new-only'),
+    (audit) => (audit.summary.complexity_findings = 1),
+    (audit) => (audit.summary.dead_code_has_errors = true),
+    (audit) => (audit.gate_outcomes = { analysis: { status: 'fail', enforced: true } }),
+    (audit) => (audit.gate_outcomes = []),
+    (audit) => (audit.gate_outcomes = {}),
+    (audit) => (audit.gate_outcomes = null),
+    (audit) => (audit.command = 'review'),
+    (audit) => (audit.complexity = { findings: [{ name: 'hidden by summary' }] }),
+    (audit) => (audit.duplication = { clone_groups: [{}] }),
+    (audit) => (audit.complexity = {}),
+  ]) {
+    const audit = emptyAudit();
+    mutate(audit);
+    assert.equal(assessAudit(result(audit), []).passed, false);
+  }
+  assert.equal(assessAudit({ ...result(emptyAudit()), status: 1 }, []).passed, false);
+  assert.equal(assessAudit({ ...result(emptyAudit()), error: Error('spawn failed') }, []).passed, false);
+  assert.equal(assessAudit(result(emptyAudit(), 'warning: degraded'), []).passed, false);
+  assert.equal(assessAudit({ status: 0, stdout: '{' }, []).passed, false);
+  const degraded = clean();
+  degraded.changed_files_count = 0;
+  degraded.dead_code.workspace_diagnostics = [{ kind: 'parse', degrades_analysis: true }];
+  assert.equal(assessAudit(result(degraded), []).passed, false);
+  degraded.dead_code.workspace_diagnostics = [null];
+  assert.equal(assessAudit(result(degraded), []).passed, false);
+  const hidden = clean();
+  hidden.dead_code.total_issues = 1;
+  assert.equal(assessAudit(result(hidden), ['source.js']).passed, false);
+});
