@@ -146,8 +146,12 @@ test('queue polling excludes transcripts and bounds selected live output without
 });
 
 test('finalized separate-source delivery closes only on an explicit decision', (t) => {
-  const { queue, input } = fixture(t);
+  const { queue, source, input } = fixture(t);
   finalizeDelivery(queue.root, input);
+  writeFileSync(join(source.root, 'later.js'), 'another issue\n');
+  source.git('add', 'later.js');
+  source.git('commit', '-qm', 'later unrelated work');
+  writeFileSync(join(source.root, 'code.js'), 'uncommitted later source\n');
   const service = new FactoryUI(queue.root);
   t.after(() => service.close());
   let snapshot = readQueue(queue.root);
@@ -155,6 +159,8 @@ test('finalized separate-source delivery closes only on an explicit decision', (
   service.decideIssue(input.issueId, 'final', 'close', progressBasis(snapshot));
   snapshot = readQueue(queue.root);
   assert.equal(snapshot.issues[0].state, 'closed');
+  assert.equal(snapshot.issues[0].accepted_result.revision, input.revision);
+  assert.equal(snapshot.issues[0].accepted_result.verification_rerun, false);
 });
 test('delivery preserves a required custom stage instead of skipping it', (t) => {
   const { queue, input } = fixture(t);

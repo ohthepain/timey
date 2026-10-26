@@ -1,4 +1,5 @@
 import { startChat } from './chat-start.mjs';
+import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
 import { recordIntegratedIssues, completeDeliveryRun, resumeDelivery } from './delivery-integration.mjs';
 
@@ -97,6 +98,7 @@ export class FactoryUI {
     return {
       ...issue,
       readiness,
+      decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
       lifecycle: this.lifecycleStatus(queue, issue),
       latestResult: latestResult(queue, issue, runs, progress),

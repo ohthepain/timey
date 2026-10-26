@@ -21,6 +21,7 @@ export function appendCompletion(root, issue, result, run, evidence, target) {
     requireThat(!doc.errors.length, 'The report frontmatter is invalid.');
     doc.set('updated', new Date().toISOString());
     recordChecklistMetadata(doc, issue, result);
+    recordAcceptedMetadata(doc, result);
     if (target) doc.set('state', target);
     recordStage(doc, issue, target, result, run, evidence);
     const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${formatReviewEvidence(evidence)}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${target ? '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n' : ''}`;
@@ -75,4 +76,9 @@ function recordDeliveryMetadata(doc, result) {
   if (!result.delivery) return;
   doc.set('delivery', doc.createNode(result.delivery, { aliasDuplicateObjects: false }));
   doc.delete('record_update');
+}
+
+function recordAcceptedMetadata(doc, result) {
+  if (result.accepted_result)
+    doc.set('accepted_result', doc.createNode(result.accepted_result, { aliasDuplicateObjects: false }));
 }

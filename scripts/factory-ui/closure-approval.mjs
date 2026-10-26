@@ -1,81 +1,82 @@
-import { readCheckReceipt, writeCheckReceipt } from '../factory-progress.mjs';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { digest, requireThat, writeJson } from './common.mjs';
 import { readQueue } from './data.mjs';
-import { progressBasis } from './next-action.mjs';
-import { checklistBasis } from './plan-checks.mjs';
-import { selectPlan } from './plan-outline.mjs';
-import { stageOutcome } from './lifecycle.mjs';
-import { decidePlanCheck } from './plan-approval.mjs';
-import { currentRegistryEvidence, retainClosingRegistry } from './closure-registry.mjs';
-import { digest, requireThat } from './common.mjs';
+import { appendCompletion } from '../factory-completion.mjs';
+import { retainClosingRegistry } from './closure-registry.mjs';
+import { recordedResult, validateRecordedEvidence } from './recorded-result.mjs';
 
 export function recordClosingApproval(service, queue, issue) {
-  if (!needsLegacyChecklist(issue)) return queue;
-  const checks = closureChecks(issue, queue.head);
-  if (!checks.length) return queue;
-  retainCheckedPlan(service, queue, issue);
-  queue = retainClosingRegistry(service, queue, issue);
+  const artifact = recordedResult(queue, issue);
+  validateRecordedEvidence(queue, artifact);
+  requireActualObservations(issue);
+  requireRecordedChecklist(issue);
+  if (issue.plan_verification) queue = retainClosingRegistry(service, queue, issue);
+  issue = queue.issues.find((entry) => entry.id === issue.id);
+  const checks = (issue.human_checks || []).filter(closureJudgment);
   for (const check of checks) {
-    decidePlanCheck(
-      service,
-      issue.id,
-      issue.state,
-      check.id,
-      'passed',
-      progressBasis(queue),
-      'I accept the recorded result. Final approval recorded from Accept and close issue.'
-    );
+    recordAcceptanceCheck(service, queue, issue, check, artifact.revision);
     queue = readQueue(service.root);
+    issue = queue.issues.find((entry) => entry.id === issue.id);
   }
   return queue;
 }
-function closingJudgment(issue, check, revision) {
-  if (!isClosureJudgment(check)) return false;
-  if (currentJudgment(check, revision)) return false;
-  return issue.plan_verification.steps.some((s) => s.criteria.some((c) => c.human_check_id === check.id));
+function closureJudgment(check) {
+  return check.kind === 'judgment' && check.blocks === 'closure' && check.status === 'pending';
 }
-function retainCheckedPlan(service, queue, issue) {
-  requireThat(queue.sourceClean, 'Save the current source changes before accepting the result.');
-  const record = issue.plan_verification;
-  const plan = selectPlan(queue, issue, record.path);
+function requireRecordedChecklist(issue) {
+  if (!issue.plan_verification) return;
+  const checks = issue.plan_verification.steps.flatMap((step) => step.criteria);
   requireThat(
-    plan.sha256 === record.plan_sha256,
-    'The implementation plan changed. Check the changed requirements before closing.'
+    checks.every((criterion) => acceptableCriterion(issue, criterion)),
+    'Finish the outstanding implementation checks before final approval.'
   );
-  const stage = queue.lifecycle.find((s) => s.role === 'ready-to-verify');
-  const verified = stageOutcome(issue, stage?.state);
-  requireThat(verified?.outcome === 'completed', 'Verify has not been recorded complete.');
-  requireThat(
-    verified.revision === queue.head,
-    'The source changed since Verify. Check the changed work before closing.'
-  );
-  requireThat(
-    record.evidence.every((e) => currentRegistryEvidence(queue, e) || digest(readFileSync(e.path)) === e.sha256),
-    'Supporting evidence changed. Review the changed result before closing.'
-  );
-  retainCompletionReceipt(service, queue, issue, plan);
+}
+function acceptableCriterion(issue, criterion) {
+  if (['passed', 'skipped'].includes(criterion.status)) return true;
+  return (issue.human_checks || []).some((check) => check.id === criterion.human_check_id && closureJudgment(check));
+}
+function recordAcceptanceCheck(service, queue, issue, check, revision) {
+  const run = service.store.add({ id: 'final-acceptance' }, 'plan-decision', revision || queue.head);
+  const path = join(service.store.directory, run.id + '-acceptance.json');
+  const result = 'I accept the recorded result. No verification of later source changes is implied.';
+  writeJson(path, { actor: 'human', issueId: issue.id, checkId: check.id, revision, result });
+  const record = updatedChecklist(issue.plan_verification, check.id, result);
+  try {
+    appendCompletion(
+      service.root,
+      issue,
+      {
+        summary: 'Final judgment recorded from Close issue.',
+        notes: result,
+        remaining: [],
+        plan_verification: record,
+        human_check_update: {
+          ...check,
+          status: 'passed',
+          revision: revision || check.revision || queue.head,
+          result,
+          evidence_refs: [path],
+        },
+      },
+      run,
+      [{ path, sha256: digest(readFileSync(path)) }],
+      null
+    );
+    service.store.update(run, { issueId: issue.id, status: 'completed', summary: 'Final judgment recorded.' });
+  } finally {
+    service.store.connected.delete(run.id);
+  }
+}
+function updatedChecklist(value, id, result) {
+  if (!value) return null;
+  const record = structuredClone(value);
+  for (const criterion of record.steps.flatMap((step) => step.criteria).filter((entry) => entry.human_check_id === id))
+    Object.assign(criterion, { status: 'passed', explanation: result, next_action: '' });
+  return record;
 }
 
-function retainCompletionReceipt(service, queue, issue, plan) {
-  const record = issue.plan_verification;
-  const uiRun = service.store.runs.find((r) => r.id === record.run_id);
-  const saved = readCheckReceipt(service.root, record.run_id) || uiRun;
-  requireThat(saved?.base === queue.head, 'The checklist was recorded for a different source revision.');
-  const changes = { previousAfterBasis: saved.afterBasis, afterBasis: checklistBasis(queue, issue, plan) };
-  writeCheckReceipt(service.root, { ...saved, id: record.run_id, ...changes });
-  if (uiRun) service.store.update(uiRun, changes);
-}
-
-function closureChecks(issue, revision) {
-  return (issue.human_checks || []).filter((c) => closingJudgment(issue, c, revision));
-}
-function isClosureJudgment(check) {
-  return check.kind === 'judgment' && check.blocks === 'closure' && check.status !== 'failed';
-}
-function currentJudgment(check, revision) {
-  return check.status === 'passed' && check.revision === revision;
-}
-
-function needsLegacyChecklist(issue) {
-  return issue.plan_verification && !issue.delivery;
+function requireActualObservations(issue) {
+  const pending = (issue.human_checks || []).some((check) => check.kind === 'evidence' && check.status !== 'passed');
+  requireThat(!pending, 'A required manual check still needs an actual observation before closing.');
 }

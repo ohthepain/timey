@@ -1268,20 +1268,23 @@ test('final-review buttons close with explicit acceptance and reopen without lau
   assert.equal(api.inspect().registry.actions.length, 0);
   assert.equal(readFileSync(join(root, '.issues/factory.json'), 'utf8'), before);
 });
-test('closing refuses stale source, changed evidence and outstanding manual checks', async (t) => {
-  const { service, root, git } = completedWorkFixture(t);
+test('closing refuses selected-report changes, changed evidence and missing observations', async (t) => {
+  const { service, root } = completedWorkFixture(t);
   await reconcileNow(service);
   const snapshot = service.snapshot();
-  writeFileSync(join(root, 'source.js'), 'export const answer=99;\n');
-  assert.throws(() => service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), /out of date/);
-  git('checkout', '--', 'source.js');
   const report = join(root, '.issues/20261022-one.md');
   const original = readFileSync(report, 'utf8');
+  writeFileSync(report, original + '\nThe selected report changed.\n');
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'final', 'close', snapshot.issues[0].decisionBasis),
+    /issue changed/
+  );
+  writeFileSync(report, original);
   writeFileSync(
     report,
     original.replace(
       'state: final',
-      'state: final\nhuman_checks:\n  - id: manual\n    kind: judgment\n    status: pending\n    instructions: Check the result\n    blocks: closure\n    revision: current\n    result: null'
+      'state: final\nhuman_checks:\n  - id: manual\n    kind: evidence\n    status: pending\n    instructions: Check the result\n    blocks: closure\n    revision: current\n    result: null'
     )
   );
   assert.throws(
@@ -1293,7 +1296,7 @@ test('closing refuses stale source, changed evidence and outstanding manual chec
   writeFileSync(log, readFileSync(log, 'utf8') + 'Changed\n');
   assert.throws(
     () => service.decideIssue('20261022-one', 'final', 'close', service.snapshot().reviewBasis),
-    /recorded result changed/
+    /Supporting evidence changed/
   );
   assert.equal(service.snapshot().issues[0].state, 'final');
 });
@@ -2142,7 +2145,7 @@ test('Accept and close records the final checklist judgment and closes after boo
   assert.equal(issue.plan_verification.steps[0].criteria[0].status, 'passed');
   assert.match(issue.content, /Accepted and closed by the user/);
 });
-test('Accept and close cannot invent an observation or approve changed evidence', async (t) => {
+test('Accept and close requires actual observations and accepts the recorded source snapshot', async (t) => {
   const observation = await finalChecklist(t);
   const report = join(observation.root, '.issues/20261022-one.md');
   writeFileSync(report, readFileSync(report, 'utf8').replace('kind: judgment', 'kind: evidence'));
@@ -2154,11 +2157,11 @@ test('Accept and close cannot invent an observation or approve changed evidence'
   assert.equal(observation.service.snapshot().issues[0].human_checks[0].status, 'pending');
   const changed = await finalChecklist(t);
   writeFileSync(join(changed.root, 'source.js'), 'export const answer = 99;\n');
-  assert.throws(
-    () => changed.service.decideIssue('20261022-one', 'review', 'close', changed.service.snapshot().reviewBasis),
-    /source changes/
+  assert.deepEqual(
+    changed.service.decideIssue('20261022-one', 'review', 'close', changed.service.snapshot().reviewBasis),
+    { state: 'closed' }
   );
-  assert.equal(changed.service.snapshot().issues[0].state, 'review');
+  assert.equal(changed.service.snapshot().issues[0].accepted_result.verification_rerun, false);
 });
 test('confirmation failure is visible inside the dialog and successful actions refresh the screen', async () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
@@ -2271,7 +2274,7 @@ test('Close issue submits acceptance in one tap without opening a confirmation d
     'let selection;' + source + ';return selectIssueDecision;'
   )(
     (id) => elements[id],
-    { reviewBasis: 'current-page' },
+    { reviewBasis: 'current-page', issues: [{ id: 'one', decisionBasis: 'current-page' }] },
     async (task) => task(),
     async (endpoint, body) => {
       if (failRequest) throw Error('The recorded result is missing.');
@@ -4033,4 +4036,50 @@ test('queue refreshes do not overlap while a response is pending', async (t) => 
     request.resolve({ ok: true, json: async () => (request.path.endsWith('/runtime') ? { mode: 'live' } : snapshot) });
   await Promise.all([first, second]);
   assert.equal(requests.length, 2);
+});
+
+test('recorded acceptance survives unrelated commits, branch switches and dirty source without certifying the new HEAD', async (t) => {
+  const { service, root, git } = await finalChecklist(t);
+  const reviewed = git('rev-parse', 'HEAD');
+  writeFileSync(join(root, 'unrelated.js'), 'export const other = 1;\n');
+  git('add', 'unrelated.js');
+  git('commit', '-qm', 'another issue');
+  git('checkout', '-qb', 'another-issue');
+  writeFileSync(join(root, 'source.js'), 'export const answer = 99;\n');
+  const snapshot = service.snapshot();
+  assert.deepEqual(
+    service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis || snapshot.reviewBasis),
+    { state: 'closed' }
+  );
+  const closed = service.snapshot().issues[0];
+  assert.equal(closed.accepted_result.revision, reviewed);
+  assert.notEqual(closed.accepted_result.revision, git('rev-parse', 'HEAD'));
+  assert.equal(closed.accepted_result.verification_rerun, false);
+  assert.match(readFileSync(join(root, 'source.js'), 'utf8'), /99/);
+});
+
+test('legacy final-review prose can be accepted without an integrated factory action', (t) => {
+  const { service, root, git } = fixture(t),
+    revision = git('rev-parse', 'HEAD');
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  writeFileSync(
+    join(root, '.issues/20261022-one.md'),
+    '---\nid: 20261022-one\nstate: final\n---\nCommitted as `' + revision + '`. Checks passed.\n'
+  );
+  const snapshot = service.snapshot();
+  service.decideIssue('20261022-one', 'final', 'close', snapshot.issues[0].decisionBasis);
+  assert.equal(service.snapshot().issues[0].accepted_result.revision, revision);
+});
+test('another issue changing cannot invalidate a selected issue acceptance button', async (t) => {
+  const { service, root } = await finalChecklist(t),
+    snapshot = service.snapshot();
+  writeFileSync(
+    join(root, '.issues/20261022-other.md'),
+    '---\nid: 20261022-other\nstate: verify\n---\nAnother issue changed\n'
+  );
+  service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis);
+  assert.equal(service.snapshot().issues.find((issue) => issue.id === '20261022-one').state, 'closed');
 });

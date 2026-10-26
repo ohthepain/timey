@@ -8,13 +8,17 @@ import { humanGuard } from './guard.mjs';
 
 // A delivery is evidence for completed work, never acceptance or permission to merge.
 export function currentDelivery(issue) {
+  const receipt = recordedDelivery(issue);
+  validateSource(receipt);
+  return receipt;
+}
+export function recordedDelivery(issue) {
   const delivery = issue.delivery;
   requireThat(delivery, 'Record the checked delivery before continuing.');
   const receipt = JSON.parse(readFileSync(delivery.receipt, 'utf8'));
   requireThat(digest(readFileSync(delivery.receipt)) === delivery.sha256, 'The delivery receipt changed.');
   requireThat(receipt.issueId === issue.id, 'The delivery belongs to another issue.');
-  validateSource(receipt);
-  for (const entry of receipt.evidence) requireEvidence(entry);
+  receipt.evidence.forEach(requireEvidence);
   return receipt;
 }
 function requireEvidence(entry) {
@@ -195,14 +199,6 @@ function repeatedDelivery(issue, fingerprint) {
   const receipt = currentDelivery(issue);
   requireThat(receipt.fingerprint === fingerprint, 'Delivery inputs changed.');
   return { state: issue.state, revision: receipt.revision, recorded: true, repeated: true };
-}
-export function deliveryCheckCurrent(issue, check) {
-  const receipt = currentDelivery(issue);
-  return (
-    check.status === 'passed' &&
-    (check.revision === receipt.revision ||
-      receipt.humanChecks.some((entry) => entry.id === check.id && entry.digest === digest(JSON.stringify(check))))
-  );
 }
 
 function alreadyRecorded(issue, input) {

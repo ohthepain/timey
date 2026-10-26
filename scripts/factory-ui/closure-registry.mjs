@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { digest, writeJson } from './common.mjs';
-import { savePlanDecision } from './plan-decision-record.mjs';
+import { appendCompletion } from '../factory-completion.mjs';
 
-export function currentRegistryEvidence(queue, entry) {
+function currentRegistryEvidence(queue, entry) {
   return entry.path === join(queue.root, '.issues/factory.json');
 }
 export function retainClosingRegistry(service, queue, issue) {
@@ -29,10 +29,9 @@ export function retainClosingRegistry(service, queue, issue) {
         criterion.evidence = criterion.evidence.map((p) => (p === source ? path : p));
       });
     record.run_id = run.id;
-    savePlanDecision(
-      service,
+    appendCompletion(
+      service.root,
       issue,
-      run,
       {
         summary: 'Current task status retained for final acceptance.',
         notes:
@@ -40,8 +39,15 @@ export function retainClosingRegistry(service, queue, issue) {
         remaining: [],
         plan_verification: record,
       },
-      [entry]
+      run,
+      [entry],
+      null
     );
+    service.store.update(run, {
+      issueId: issue.id,
+      status: 'completed',
+      summary: 'Administrative task status retained.',
+    });
   } finally {
     service.store.connected.delete(run.id);
   }

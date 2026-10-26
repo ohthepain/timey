@@ -701,10 +701,33 @@ Finalization retains evidence and an operation receipt before atomically updatin
 the issue. Retry with the identical manifest after interruption. An already
 recorded operation adds no duplicate history; changed inputs or issue bytes fail
 closed. Verify and Commit are completed, integration is recorded, and the issue
-stops at Final review. Custom stages keep their own exit review. Closure checks
-the delivered checkout and retained evidence rather than assuming the issue
-project owns that code. Source changes or changed human results require review.
+stops at Final review. Custom stages keep their own exit review. Closure accepts the recorded artifact and retained evidence. It does not certify
+later checkout changes or require the issue project to own that code. Changed
+verification evidence and unfinished human obligations still block acceptance.
 
 Queue polling omits command events and instructions and includes a bounded live
 output tail only for the selected issue. Expanding transcript details fetches the
 saved run on demand. Polls do not overlap; retained RunStore history is unchanged.
+
+## Acceptance of recorded results
+
+Close issue accepts the result recorded for that issue. It is independent of the
+current project HEAD, branch and uncommitted source. The acceptance receipt names
+the recorded revision and checkout when known, retains supporting bytes and
+explicitly states that verification was not rerun. Legacy Final review reports
+without structured delivery metadata remain usable; an unknown artifact revision
+stays unknown rather than being replaced with the current HEAD.
+
+The decision token covers the selected report and lifecycle configuration.
+Another issue changing or another branch advancing does not invalidate it.
+Changes to the selected report still require refreshing the decision. Same-issue
+active work, unfinished implementation criteria, pending observations and failed
+human checks remain blockers. Close supplies pending final judgment only through
+the user's actual click, never missing physical observations.
+
+For tracked source evidence, acceptance reads the exact blob from the recorded
+commit when the working file differs. It never substitutes newer code for that
+snapshot. Changed or missing immutable test logs still fail with the exact path.
+Queue reports and the registry are mutable context; their current bytes and
+original recorded digests are retained separately from technical evidence.
+Verification and commit operations continue to require current source checks.
