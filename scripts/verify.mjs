@@ -1,4 +1,5 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { runVerificationProcess } from './verify-process.mjs';
+import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -53,13 +54,18 @@ function recordCheck(name, command, result) {
   report.checks.push({ name, ...details, exit: result.status, command, cwd: snapshot, log });
   console.log(`${details.passed ? 'PASS' : 'FAIL'} ${name}: ${log}`);
 }
-function run(name, command, commandArgs) {
-  const result = spawnSync(command, commandArgs, {
-    cwd: snapshot,
-    encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
-    env: isolatedEnv,
-  });
+async function run(name, command, commandArgs) {
+  console.log(`START ${name}`);
+  const result = await runVerificationProcess(
+    command,
+    commandArgs,
+    {
+      cwd: snapshot,
+      encoding: 'utf8',
+      env: isolatedEnv,
+    },
+    join(reportDir, `${stamp}-${name}.log`)
+  );
   recordCheck(name, [command, ...commandArgs], result);
 }
 
@@ -98,7 +104,7 @@ try {
   report.snapshot_tree = git(snapshot, 'write-tree').trim();
   report.changed_files = git(snapshot, 'diff', '--cached', '--name-only', '-z', base).split('\0').filter(Boolean);
   const bin = (name) => join(root, 'node_modules', '.bin', name);
-  run('fallow', 'npx', [
+  await run('fallow', 'npx', [
     '--no-install',
     '--offline',
     'fallow',
@@ -114,11 +120,11 @@ try {
     const changed = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
       .split('\0')
       .filter(Boolean);
-    if (changed.length) run('format-changed', bin('prettier'), ['--check', '--ignore-unknown', ...changed]);
-    run('factory', 'npm', ['run', 'test:factory']);
-    run('typecheck', bin('tsc'), ['--noEmit']);
-    run('tests', bin('vitest'), ['run']);
-    run('build', 'npm', ['run', 'build']);
+    if (changed.length) await run('format-changed', bin('prettier'), ['--check', '--ignore-unknown', ...changed]);
+    await run('factory', 'npm', ['run', 'test:factory']);
+    await run('typecheck', bin('tsc'), ['--noEmit']);
+    await run('tests', bin('vitest'), ['run']);
+    await run('build', 'npm', ['run', 'build']);
   }
 } catch (error) {
   failure = true;

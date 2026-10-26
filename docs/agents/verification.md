@@ -23,7 +23,10 @@ inputs are self-contained; individual replay tests do not depend on earlier test
 or root CSV files. Existing root CSVs are never test cleanup targets.
 
 `verify` exports source into a disposable local clone, shares installed dependencies
-only when lockfiles match, and deletes the clone afterward. Evidence stays under
+only when lockfiles match, and deletes the clone afterward. Each command prints
+START, streams output while it runs, and emits a periodic running message during
+silence. Per-command logs are readable before completion; summaries retain the
+original pass/fail and separate audit-channel assessment. Evidence stays under
 `.issues/evidence/` with a JSON summary and per-command logs. Preserve relevant
 results in the tracked effort plan before a fresh-worktree handoff. Reports identify
 base and snapshot mode; a failed or unavailable check remains a failure/blocker.
@@ -225,3 +228,24 @@ reference clearing, preserved auth/unrelated records, concurrent changes and
 rollback. Browser/import failures fail the check and never count as rejections.
 See [deletion semantics and lock tradeoff](../../AUTH_SETUP.md#ordinary-author-deletion-verification).
 Designated-admin enforcement, retirement, integration and human judgment remain separate.
+
+## Workflow compatibility
+
+Run `npm run test:workflow` while changing issue decisions or evidence freshness.
+This shared suite uses disposable queues, the actual decision handler and installed
+human-input guard. Its fixture also supplies delivery tests. Full `test:factory`
+and `verify` include it; use the focused command during editing before final checks.
+
+Exercise all supported result formats: retained delivery receipts, completed stage
+history and older prose-only commit records. For each, acceptance must survive an
+unrelated commit, branch switch, dirty checkout, another issue's activity and an
+unrelated coordinator lock. Acceptance retains the original result revision and
+explicitly records that verification was not rerun. No mutation accepts by itself.
+Pair these cases with selected-report freshness, same-issue work and pending/failed
+observations. For formats with retained proof, changed or missing proof must block
+with its path. Prose-only records preserve their limited evidence; never fabricate
+missing historical tests. Keep the matrix current when adding a record format.
+
+Review gate meaning with [review standards](../../CODING_STANDARDS.md), including
+whether the tests assert the intended policy. Queue-wide freshness is not a default
+for an issue-local decision.

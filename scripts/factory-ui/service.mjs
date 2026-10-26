@@ -1,4 +1,10 @@
 import { startChat } from './chat-start.mjs';
+import { decisionBasis } from './recorded-result.mjs';
+import { runtimeInfo } from './runtime.mjs';
+import { recordIntegratedIssues, completeDeliveryRun, resumeDelivery } from './delivery-integration.mjs';
+
+import { createSiteReviews } from './site-review.mjs';
+import { createDiscussions } from './discussion.mjs';
 import { issueContext } from '../factory-inputs.mjs';
 import { installWorkerHealth } from './worker-health.mjs';
 import { runAuthorization, describeAuthorization } from '../factory-authorization.mjs';
@@ -51,11 +57,16 @@ const operation = (action) =>
         : 'investigate';
 
 export class FactoryUI {
-  constructor(project) {
+  constructor(project, options = {}) {
+    this.reviewMode = options.preview ? 'preview' : 'live';
+    this.authoritativeUrl = options.authoritativeUrl || null;
     this.root = git(project, 'rev-parse', '--show-toplevel');
+    this.runtimeIdentity = runtimeInfo(this);
     this.api = factory(this.root);
     this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
     this.intents = new Map();
+    this.discussions = createDiscussions(this);
+    this.siteReviews = createSiteReviews(this);
     this.lifecycleRuns = loadLifecycles(this.root);
     this.lifecycleTasks = new Map();
     this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
@@ -63,14 +74,14 @@ export class FactoryUI {
     this.guard = humanGuard;
     installWorkerHealth(this);
   }
-  snapshot() {
+  snapshot(owner = null) {
     if (!this.serverLock) this.store.reload();
     const queue = readQueue(this.root);
     const runs = this.store.list(this.codex.requests);
     return {
       ...queue,
       reviewBasis: digest(JSON.stringify(queue)),
-      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs)),
+      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner)),
       runs: runs.map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
       actions: queue.actions.map((a) => ({
         ...a,
@@ -81,18 +92,20 @@ export class FactoryUI {
       })),
     };
   }
-  issueView(queue, issue, runs) {
+  issueView(queue, issue, runs, owner) {
     const readiness = readinessView(queue, issue, runs);
     const progress = nextProgress(queue, issue, runs);
     return {
       ...issue,
       readiness,
+      decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
       lifecycle: this.lifecycleStatus(queue, issue),
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
       implementation: checklistView(queue, issue, runs),
+      siteReview: this.siteReviews.view(queue, issue, owner),
     };
   }
   lifecycleStatus(queue, issue) {
@@ -308,6 +321,7 @@ export class FactoryUI {
       'The saved action changed during verification. Review it again.'
     );
     this.guard(this.root, action, 'record-integration', checked.head);
+    this.store.update(run, { deliveryCheck: checked, deliveryResult: result });
     this.api.record(action.id, {
       status: 'integrated',
       verified_revision: checked.head,
@@ -316,13 +330,8 @@ export class FactoryUI {
       authorization: run.authorization,
       evidence: `UI manual integration. Candidate ${run.candidate}; target start ${run.base}. Coordinator review: ${JSON.stringify(result)}. Independent combined checks: ${JSON.stringify(checked)}.`,
     });
-    this.store.update(run, { status: 'completed', summary: result.summary, result, verifiedRevision: checked.head });
-    const lock = join(this.root, '.issues/factory-integration.lock');
-    requireThat(
-      JSON.parse(readFileSync(join(lock, 'owner.json'), 'utf8')).runId === run.id,
-      'Integration lock ownership changed.'
-    );
-    rmSync(lock, { recursive: true });
+    recordIntegratedIssues(this, action, run, checked, result);
+    completeDeliveryRun(this, run, result, checked.head);
   }
   perform(run, task) {
     Promise.resolve()
@@ -366,6 +375,7 @@ export class FactoryUI {
     const run = this.store.runs.find((r) => r.id === id);
     this.validateResume(run, id, text);
     const { action, queue } = currentAction(this.root, run.actionId);
+    if (completedIntegration(run, action)) return resumeDelivery(this, run, action);
     this.guard(this.root, action, run.kind === 'worker' ? operation(action) : 'merge', queue.head);
     if (run.kind === 'integration') this.requireLock(run);
     await this.codex.resume(run.threadId, run.checkout);
@@ -462,10 +472,12 @@ export class FactoryUI {
         run.result.recommendations.every((action) => action.issues.every((id) => id === run.issueId)),
         'The review proposed work outside the selected issue. Review its scope before saving.'
       );
-    const actions = saveAssignments(this.api, run.result.recommendations);
+    const skipsCurrent = defersForStageSkip(queue, run, routes);
+    const actions = saveAssignments(this.api, skipsCurrent ? [] : run.result.recommendations);
     this.store.update(run, {
       savedActions: actions.map((a) => a.id),
       savedRoutes: routes,
+      deferredRecommendations: skipsCurrent ? run.result.recommendations : null,
       savedReviewInput: savedReviewInput(queue, run, actions),
     });
     return { savedActions: actions.map((a) => a.id) };
@@ -477,6 +489,7 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.discussions.close();
     this.codex.close();
     if (this.serverLock && existsSync(this.serverLock)) {
       const owner = JSON.parse(readFileSync(join(this.serverLock, 'owner.json'), 'utf8'));
@@ -522,4 +535,21 @@ function fileFailure(error) {
 
 function lifecycleFollowup(service, issueId) {
   return service.lifecycleRuns[issueId]?.lastFailure || null;
+}
+
+function defersForStageSkip(queue, run, routes) {
+  return (
+    Boolean(run.issueId) &&
+    routes.some((route) =>
+      queue.issues.some(
+        (issue) =>
+          issue.id === route.issueId &&
+          route.steps.some((step) => step.state === issue.state && step.decision === 'skip')
+      )
+    )
+  );
+}
+
+function completedIntegration(run, action) {
+  return run.kind === 'integration' && action.status === 'integrated';
 }

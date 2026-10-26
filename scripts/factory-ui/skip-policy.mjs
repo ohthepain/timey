@@ -8,7 +8,7 @@ export function skipAllowed(queue, issue, state) {
   return optionalRole(queue, issue, role);
 }
 function optionalRole(queue, issue, role) {
-  if (role === 'ready-to-prototype') return true;
+  if (role === 'ready-to-prototype') return issue.prototype_required !== true;
   if (role === 'ready-for-repro') return issue.category === 'enhancement';
   return commitDisabled(queue, role);
 }

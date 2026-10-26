@@ -1,8 +1,7 @@
 import { validateReconciliation } from '../factory-completion-policy.mjs';
 import { resumeReviewThread } from './review-recovery.mjs';
 import { captureInstructions } from './review-instructions.mjs';
-import { releaseReviewLock } from './review-lock.mjs';
-import { existsSync, mkdirSync } from 'node:fs';
+import { releaseReviewLock, acquireReviewLock } from './review-lock.mjs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { progressBasis } from './next-action.mjs';
@@ -49,12 +48,7 @@ const reconciliationSchema = {
   required: [...reviewSchema.required, 'stage_records', 'commit_revision', 'verification_summary', 'audit_summary'],
 };
 export function beginReconciliation(service, queue, issue) {
-  requireThat(
-    !existsSync(join(service.root, '.issues/factory-integration.lock')),
-    'Finish the active integration first.'
-  );
-  const lock = join(service.root, '.issues/factory-progress.lock');
-  mkdirSync(lock);
+  const lock = acquireReviewLock(service.root);
   const run = service.store.add({ id: 'issue-reconciliation' }, 'reconciliation', queue.head);
   service.store.update(run, {
     issueId: issue.id,

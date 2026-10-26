@@ -1,4 +1,7 @@
+import { prepareDeployment } from './deployment.mjs';
 import { createServer } from 'node:http';
+import { runtimeInfo } from './runtime.mjs';
+import { queueResponse } from './queue-response.mjs';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +34,22 @@ function authorize(request, token, port) {
     );
   }
 }
-async function mutation(service, path, value) {
+async function mutation(service, path, value, owner) {
+  requireLiveMutation(service, path);
+  const discussionRoutes = {
+    '/api/site-review-open': () => service.siteReviews.open(value, owner),
+    '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
+    '/api/discussion-open': () => service.discussions.open(value, owner),
+    '/api/discussion-turn': () => service.discussions.turn(value, owner),
+    '/api/discussion-prepare': () => service.discussions.prepare(value, owner),
+    '/api/discussion-commit': () => service.discussions.commit(value, owner),
+    '/api/discussion-end': () => service.discussions.end(value, owner),
+  };
+  if (path.startsWith('/api/site-review-')) {
+    requireThat(Object.hasOwn(discussionRoutes, path), 'Unknown site review operation.');
+    return discussionRoutes[path]();
+  }
+  if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
     '/api/lifecycle-start': () => service.startLifecycle(value),
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
@@ -82,9 +100,8 @@ async function respond(service, request, response, token, port) {
   if (isPage(request)) return page(response, token, port);
   authorize(request, token, port);
   response.setHeader('Content-Type', 'application/json');
-  if (request.method === 'GET') return read(service, request, response);
-  if (request.method === 'POST')
-    return response.end(JSON.stringify(await mutation(service, request.url, await body(request))));
+  if (request.method === 'GET') return readResource(service, request, response, token);
+  if (request.method === 'POST') return response.end(JSON.stringify(await postedAction(service, request, token)));
   response.statusCode = 405;
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }
@@ -93,19 +110,71 @@ function page(response, token, port) {
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   response.end(readFileSync(join(directory, 'index.html')));
 }
-function read(service, request, response) {
+function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (url.pathname === '/api/document')
-    return response.end(JSON.stringify(service.readPlan(url.searchParams.get('path'))));
-  if (url.pathname === '/api/check-evidence')
-    return response.end(
-      JSON.stringify(service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')))
-    );
-  if (request.url === '/api/queue') return response.end(JSON.stringify(service.snapshot()));
+  const routes = {
+    '/api/runtime': () => runtimeInfo(service),
+    '/api/document': () => service.readPlan(url.searchParams.get('path')),
+    '/api/check-evidence': () =>
+      service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
+    '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),
+    '/api/run': () => savedRun(service, url.searchParams.get('id')),
+  };
+  if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(routes[url.pathname]()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));
 }
 
 function isPage(request) {
   return request.method === 'GET' && request.url === '/';
+}
+
+async function temporaryAction(action) {
+  try {
+    return await action();
+  } catch {
+    throw Error('Discussion could not complete. Refresh or start a new temporary discussion.');
+  }
+}
+
+function readResource(service, request, response, owner) {
+  if (request.url === '/site-review-ui.js') {
+    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    return response.end(readFileSync(new URL('./site-review-ui.js', import.meta.url)));
+  }
+  if (request.url === '/discussion-ui.js') {
+    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    return response.end(readFileSync(new URL('./discussion-ui.js', import.meta.url)));
+  }
+
+  return read(service, request, response, owner);
+}
+
+function savedRun(service, id) {
+  const run = service.store.list(service.codex.requests).find((item) => item.id === id);
+  requireThat(run, 'This saved run no longer exists.');
+  return run;
+}
+
+function requireLiveMutation(service, path) {
+  if (service.reviewMode === 'preview')
+    requireThat(
+      ['/api/discussion-open', '/api/discussion-turn', '/api/discussion-prepare', '/api/discussion-end'].includes(path),
+      'This is a preview copy. Make changes and record approvals on the real issue.'
+    );
+}
+
+function deploymentAction(service, path) {
+  if (path === '/api/deployment-prepare') return prepareDeployment(service);
+  if (path === '/api/deployment-cancel') {
+    service.deploymentDraining = false;
+    return { cancelled: true };
+  }
+  throw Error('Unknown deployment operation.');
+}
+
+async function postedAction(service, request, token) {
+  if (request.url.startsWith('/api/deployment-')) return deploymentAction(service, request.url);
+  requireThat(!service.deploymentDraining, 'The factory UI is restarting. Refresh when it is ready.');
+  return mutation(service, request.url, await body(request), token);
 }

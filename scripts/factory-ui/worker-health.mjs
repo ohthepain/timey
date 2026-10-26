@@ -10,8 +10,8 @@ export function installWorkerHealth(service) {
     return event(message);
   };
   const snapshot = service.snapshot.bind(service);
-  service.snapshot = () => {
-    const data = snapshot();
+  service.snapshot = (...args) => {
+    const data = snapshot(...args);
     return { ...data, runs: data.runs.map((run) => ({ ...run, health: healthFor(connection, states, run) })) };
   };
   let pending;

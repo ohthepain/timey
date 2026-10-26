@@ -1,3 +1,4 @@
+import { lifecycleWorkBasis } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
 import { workerPrompt, integrationPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
@@ -16,7 +17,7 @@ import { createFactoryServer } from './factory-ui/http.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { checkCandidate } from './factory-ui/checks.mjs';
 
-function fixture(t) {
+function fixture(t, options = {}) {
   const { root, git } = gitFixture(t, 'factory-ui-check-');
   mkdirSync(join(root, '.issues'));
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
@@ -48,7 +49,7 @@ function fixture(t) {
     dependencies: [],
     issues: ['20261022-one'],
   };
-  const service = new FactoryUI(root);
+  const service = new FactoryUI(root, options);
   t.after(() => service.close());
   return { root, git, api, proposal, service };
 }
@@ -176,12 +177,7 @@ test('a claimed successful integration cannot bypass independent verification', 
 
 test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => {
   const { root, service } = fixture(t);
-  const server = createFactoryServer(service);
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  const page = await fetch(url);
+  const { url, page } = await httpFixture(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
   assert.equal((await fetch(url + '/api/queue', { headers: { cookie } })).status, 200);
@@ -619,14 +615,15 @@ test('a failed recording retains the model response and offers an explicit fresh
 async function checkNow(service, state = 'investigate') {
   return settle(service, service.checkReadiness('20261022-one', state).runId);
 }
-function saveRouteFixture(service, root, steps) {
+function saveRouteFixture(service, root, steps, recommendations = []) {
   service.ownServer();
   const run = service.store.add({ id: 'queue-review' }, 'evaluation', readQueue(root).head);
   const reviewBasis = service.snapshot().reviewBasis;
   service.store.update(run, {
     status: 'completed',
     reviewBasis,
-    result: { summary: 'Planned route', recommendations: [], routes: [{ issueId: '20261022-one', steps }] },
+    ...(recommendations.length ? { issueId: '20261022-one', issueState: readQueue(root).issues[0].state } : {}),
+    result: { summary: 'Planned route', recommendations, routes: [{ issueId: '20261022-one', steps }] },
   });
   service.store.connected.delete(run.id);
   service.saveReview(run.id, reviewBasis);
@@ -703,6 +700,125 @@ test('routes save separately from execution, survive restart, and do not invent 
   assert.equal(api.inspect().registry.actions.length, 1);
   assert.equal(api.inspect().registry.actions[0].status, 'setup');
   assert.equal(api.inspect().reports[0].metadata.lifecycle_history, undefined);
+});
+
+test('a current optional stage can be planned and skipped before implementation without a worker', async (t) => {
+  const { root, service, api, proposal } = fixture(t);
+  prototypePath(root);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state: investigate', 'state: experiment'));
+  const before = readFileSync(report, 'utf8');
+  const run = saveRouteFixture(
+    service,
+    root,
+    [{ state: 'experiment', decision: 'skip', reason: 'The investigation settled the design.' }],
+    [{ ...proposal, kind: 'implement', merge: 'human-first' }]
+  );
+  assert.equal(
+    api.inspect().registry.actions.length,
+    0,
+    'recommendations wait for the new stage before taking their basis'
+  );
+  assert.equal(readFileSync(report, 'utf8'), before, 'saving a route must not advance the issue');
+  assert.equal(service.snapshot().issues[0].progress.kind, 'skip-stage');
+  service.codex.start = async () => {
+    throw Error('Skipping needs no model or worker');
+  };
+  service.guard = () => ({});
+  const preview = service.progressPreflight('20261022-one', 'experiment');
+  const result = await settle(service, service.progressStart(preview.token).runId);
+  assert.equal(result.status, 'completed', result.summary);
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.state, 'implement');
+  assert.equal(issue.lifecycle_history.length, 1);
+  assert.equal(issue.lifecycle_history[0].outcome, 'skipped');
+  assert.equal(issue.lifecycle_history[0].state, 'experiment');
+  assert.match(issue.lifecycle_history[0].reason, /investigation settled/);
+  assert.equal(api.inspect().registry.actions.length, 1);
+  const action = api.inspect().registry.actions[0];
+  assert.equal(action.kind, 'implement');
+  assert.equal(service.snapshot().actions[0].launchBlocked, null);
+  assert.equal(issue.progress.kind, 'launch');
+  assert.ok(run.savedRoutes);
+  assert.throws(() => service.progressStart(preview.token), /expired/);
+});
+
+test('a stopped current-skip review can resume by saving its existing result without replanning', (t) => {
+  const { root, service, proposal } = fixture(t);
+  prototypePath(root);
+  const path = join(root, '.issues/20261022-one.md');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('state: investigate', 'state: experiment'));
+  service.ownServer();
+  const queue = readQueue(root),
+    issue = queue.issues[0];
+  const run = service.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
+  service.store.update(run, {
+    issueId: issue.id,
+    issueState: issue.state,
+    status: 'completed',
+    reviewBasis: service.snapshot().reviewBasis,
+    result: {
+      summary: 'Implementation is next',
+      recommendations: [{ ...proposal, kind: 'implement', merge: 'human-first' }],
+      routes: [
+        { issueId: issue.id, steps: [{ state: issue.state, decision: 'skip', reason: 'The design is settled.' }] },
+      ],
+    },
+  });
+  service.store.connected.delete(run.id);
+  const record = {
+    id: 'existing-progress',
+    issueId: issue.id,
+    status: 'blocked',
+    input: null,
+    summary: 'The current stage cannot be marked as a future skip.',
+    attempts: [],
+  };
+  record.stopBasis = lifecycleWorkBasis(queue, issue, record);
+  record.attempts.push(record.stopBasis + ':replan');
+  service.lifecycleRuns[issue.id] = record;
+  const view = service.snapshot().issues[0];
+  assert.equal(view.lifecycle.canResume, true);
+  assert.equal(view.progress.kind, 'save-review');
+  const preview = service.progressPreflight(issue.id, issue.state);
+  service.progressStart(preview.token);
+  assert.equal(service.snapshot().issues[0].progress.kind, 'skip-stage');
+  assert.equal(service.store.runs.filter((item) => item.kind === 'evaluation').length, 1);
+});
+
+test('recording a current skip retains human advance guards and records no outcome on rejection', async (t) => {
+  const { root, service } = fixture(t);
+  prototypePath(root);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state: investigate', 'state: experiment'));
+  saveRouteFixture(service, root, [{ state: 'experiment', decision: 'skip', reason: 'Settled design.' }]);
+  const before = readFileSync(report, 'utf8');
+  service.guard = (root, action, operation) => {
+    assert.equal(operation, 'advance');
+    throw Error('A real human decision is still needed.');
+  };
+  const preview = service.progressPreflight('20261022-one', 'experiment');
+  const result = await settle(service, service.progressStart(preview.token).runId);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /human decision/);
+  assert.equal(readFileSync(report, 'utf8'), before);
+});
+
+test('an explicitly required prototype cannot be skipped by an old route recommendation', (t) => {
+  const { root, service } = fixture(t);
+  prototypePath(root);
+  writeFileSync(
+    join(root, '.issues/20261022-one.md'),
+    '---\nid: 20261022-one\nstate: experiment\ngrill_later: false\nprototype_required: true\n---\nPrototype review required.\n'
+  );
+  assert.throws(
+    () =>
+      saveRouteFixture(service, root, [
+        { state: 'experiment', decision: 'skip', reason: 'The old plan called the design settled.' },
+      ]),
+    /required by project policy/
+  );
+  assert.equal(service.snapshot().issues[0].state, 'experiment');
 });
 
 test('invalid routes are rejected before saving any assignments', (t) => {
@@ -1152,20 +1268,23 @@ test('final-review buttons close with explicit acceptance and reopen without lau
   assert.equal(api.inspect().registry.actions.length, 0);
   assert.equal(readFileSync(join(root, '.issues/factory.json'), 'utf8'), before);
 });
-test('closing refuses stale source, changed evidence and outstanding manual checks', async (t) => {
-  const { service, root, git } = completedWorkFixture(t);
+test('closing refuses selected-report changes, changed evidence and missing observations', async (t) => {
+  const { service, root } = completedWorkFixture(t);
   await reconcileNow(service);
   const snapshot = service.snapshot();
-  writeFileSync(join(root, 'source.js'), 'export const answer=99;\n');
-  assert.throws(() => service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), /out of date/);
-  git('checkout', '--', 'source.js');
   const report = join(root, '.issues/20261022-one.md');
   const original = readFileSync(report, 'utf8');
+  writeFileSync(report, original + '\nThe selected report changed.\n');
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'final', 'close', snapshot.issues[0].decisionBasis),
+    /issue changed/
+  );
+  writeFileSync(report, original);
   writeFileSync(
     report,
     original.replace(
       'state: final',
-      'state: final\nhuman_checks:\n  - id: manual\n    kind: judgment\n    status: pending\n    instructions: Check the result\n    blocks: closure\n    revision: current\n    result: null'
+      'state: final\nhuman_checks:\n  - id: manual\n    kind: evidence\n    status: pending\n    instructions: Check the result\n    blocks: closure\n    revision: current\n    result: null'
     )
   );
   assert.throws(
@@ -1177,7 +1296,7 @@ test('closing refuses stale source, changed evidence and outstanding manual chec
   writeFileSync(log, readFileSync(log, 'utf8') + 'Changed\n');
   assert.throws(
     () => service.decideIssue('20261022-one', 'final', 'close', service.snapshot().reviewBasis),
-    /recorded result changed/
+    /Supporting evidence changed/
   );
   assert.equal(service.snapshot().issues[0].state, 'final');
 });
@@ -1904,6 +2023,13 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   assert.match(waiting, /No work is running for this issue/);
   assert.match(waiting, /does not mean a prototype is being built or is ready to view/);
   assert.doesNotMatch(waiting, /Wait for the current work/);
+  issue.prototype_preview = { url: 'http://127.0.0.1:52996/?variant=A' };
+  assert.match(render(issue), /href="http:\/\/127.0.0.1:52996\/\?variant=A"[^>]*>Open prototype/);
+  assert.doesNotMatch(render(issue), /does not mean a prototype/);
+  issue.prototype_preview.url = 'javascript:alert(1)';
+  assert.doesNotMatch(render(issue), /href="javascript/);
+  delete issue.prototype_preview;
+
   screen.runs.push({ id: 'other', issueId: 'different-issue', connected: true, summary: 'Other work' });
   assert.match(render(issue), /No work is running for this issue/);
   screen.runs.push({ id: 'own', issueId: issue.id, connected: true, summary: 'Inspecting the panel' });
@@ -2019,7 +2145,7 @@ test('Accept and close records the final checklist judgment and closes after boo
   assert.equal(issue.plan_verification.steps[0].criteria[0].status, 'passed');
   assert.match(issue.content, /Accepted and closed by the user/);
 });
-test('Accept and close cannot invent an observation or approve changed evidence', async (t) => {
+test('Accept and close requires actual observations and accepts the recorded source snapshot', async (t) => {
   const observation = await finalChecklist(t);
   const report = join(observation.root, '.issues/20261022-one.md');
   writeFileSync(report, readFileSync(report, 'utf8').replace('kind: judgment', 'kind: evidence'));
@@ -2031,11 +2157,11 @@ test('Accept and close cannot invent an observation or approve changed evidence'
   assert.equal(observation.service.snapshot().issues[0].human_checks[0].status, 'pending');
   const changed = await finalChecklist(t);
   writeFileSync(join(changed.root, 'source.js'), 'export const answer = 99;\n');
-  assert.throws(
-    () => changed.service.decideIssue('20261022-one', 'review', 'close', changed.service.snapshot().reviewBasis),
-    /source changes/
+  assert.deepEqual(
+    changed.service.decideIssue('20261022-one', 'review', 'close', changed.service.snapshot().reviewBasis),
+    { state: 'closed' }
   );
-  assert.equal(changed.service.snapshot().issues[0].state, 'review');
+  assert.equal(changed.service.snapshot().issues[0].accepted_result.verification_rerun, false);
 });
 test('confirmation failure is visible inside the dialog and successful actions refresh the screen', async () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
@@ -2148,7 +2274,7 @@ test('Close issue submits acceptance in one tap without opening a confirmation d
     'let selection;' + source + ';return selectIssueDecision;'
   )(
     (id) => elements[id],
-    { reviewBasis: 'current-page' },
+    { reviewBasis: 'current-page', issues: [{ id: 'one', decisionBasis: 'current-page' }] },
     async (task) => task(),
     async (endpoint, body) => {
       if (failRequest) throw Error('The recorded result is missing.');
@@ -2956,7 +3082,11 @@ async function activityScreen(t) {
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
-    script +
+    readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      '\n' +
+      script +
       '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'
   );
   const snapshot = service.snapshot();
@@ -2995,6 +3125,7 @@ test('approval feedback is immediate, survives rendering, and prevents duplicate
     refresh,
     posts = 0;
   window.fetch = (path) => {
+    if (path.endsWith('/runtime')) return Promise.resolve({ ok: true, json: async () => ({ mode: 'live' }) });
     if (path.endsWith('/answer')) {
       posts++;
       return new Promise((resolve) => {
@@ -3779,3 +3910,176 @@ function completedIntegrationFixture(api, proposal, git, evidence) {
   api.record(action.id, { status: 'completed', worker_revision: git('rev-parse', 'HEAD'), evidence });
   return action;
 }
+
+test('a recorded site approval remains complete across workflow stages and project revisions', async (t) => {
+  const { window } = await activityScreen(t);
+  const issue = { state: 'resolved', prototype_preview: { revision: 'design-revision' } };
+  const approved = {
+    status: 'passed',
+    revision: 'reviewed-candidate',
+    review_target: { revision: 'reviewed-candidate' },
+  };
+  assert.equal(window.outstandingDecision(issue, approved), false);
+  assert.equal(window.outstandingDecision(issue, { ...approved, review_target: { revision: 'new-candidate' } }), true);
+  assert.equal(window.outstandingDecision(issue, { ...approved, status: 'failed' }), true);
+});
+
+test('completed approvals are shown as history while outstanding checks stay visible', async (t) => {
+  const { window } = await activityScreen(t);
+  const issue = {
+    state: 'in-review',
+    prototype_preview: { url: 'http://127.0.0.1:52996/', status: 'approved', revision: 'approved-design' },
+    human_checks: [
+      {
+        kind: 'judgment',
+        instructions: 'Review the prototype',
+        status: 'passed',
+        revision: 'approved-design',
+        result: 'Looks great',
+      },
+      { kind: 'judgment', instructions: 'Review the remaining change', status: 'pending' },
+    ],
+  };
+  assert.match(window.prototypePreview(issue), /Prototype approved/);
+  assert.doesNotMatch(window.prototypePreview(issue), /ready for your review/);
+  assert.match(
+    window.prototypePreview({ prototype_preview: { ...issue.prototype_preview, status: 'ready' } }),
+    /ready for your review/
+  );
+  const container = window.document.createElement('div');
+  container.innerHTML = window.humanChecks(issue);
+  const completed = container.querySelector('details');
+  assert.equal(completed.open, false);
+  assert.equal(completed.querySelector('summary').textContent, 'Completed checks (1)');
+  assert.match(completed.textContent, /Looks great/);
+  assert.doesNotMatch(completed.textContent, /remaining change/);
+  completed.remove();
+  assert.match(container.textContent, /Review the remaining change/);
+  assert.doesNotMatch(container.textContent, /Review the prototype/);
+});
+
+test('runtime identifies the issue project separately from UI source and run details stay on demand', async (t) => {
+  const { service, root } = fixture(t, { preview: true });
+  const run = service.store.add({ id: 'history' }, 'worker', 'base');
+  service.store.update(run, { output: [{ text: 'FULL_TRANSCRIPT_CANARY' }], instructions: 'PRIVATE_INSTRUCTIONS' });
+  const { url, page } = await httpFixture(t, service);
+  const cookie = page.headers.get('set-cookie').split(';')[0];
+  const headers = { cookie };
+  const runtime = await (await fetch(url + '/api/runtime', { headers })).json();
+  assert.equal(runtime.project, service.root);
+  assert.notEqual(runtime.checkout, root);
+  assert.equal(runtime.mode, 'preview');
+  const { execFile } = await import('node:child_process');
+  const command = resolve('scripts/factory.mjs');
+  const cli = await new Promise((done, reject) =>
+    execFile(process.execPath, [command, 'runtime', url], { cwd: '/private/tmp' }, (error, stdout) =>
+      error ? reject(error) : done(JSON.parse(stdout))
+    )
+  );
+  assert.equal(cli.project, service.root);
+  const queue = await (await fetch(url + '/api/queue', { headers })).json();
+  assert.doesNotMatch(JSON.stringify(queue), /FULL_TRANSCRIPT_CANARY|PRIVATE_INSTRUCTIONS/);
+  const detail = await (await fetch(url + '/api/run?id=' + run.id, { headers })).json();
+  assert.match(JSON.stringify(detail), /FULL_TRANSCRIPT_CANARY/);
+  assert.equal((await fetch(url + '/api/run?id=' + run.id)).status, 400);
+});
+
+async function httpFixture(t, service) {
+  const server = createFactoryServer(service);
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  return { url, page: await fetch(url) };
+}
+
+test('an already integrated action resumes bookkeeping without another Codex turn or merge', async (t) => {
+  const { root, git, api, proposal, service } = fixture(t);
+  const action = completedIntegrationFixture(api, proposal, git, 'verified result');
+  const revision = git('rev-parse', 'HEAD');
+  api.record(action.id, {
+    status: 'integrated',
+    verified_revision: revision,
+    checks_passed: true,
+    human_approved: true,
+    evidence: 'Checked integration fixture',
+  });
+  const run = service.store.add(action, 'integration', revision);
+  service.store.update(run, {
+    status: 'blocked',
+    threadId: 'old-chat',
+    checkout: root,
+    deliveryCheck: { head: revision, summaries: [] },
+    deliveryResult: { summary: 'Integrated result' },
+  });
+  service.store.connected.delete(run.id);
+  const lock = join(root, '.issues/factory-integration.lock');
+  mkdirSync(lock);
+  writeFileSync(join(lock, 'owner.json'), JSON.stringify({ runId: run.id, pid: process.pid }));
+  service.codex.resume = async () => {
+    throw Error('Codex must not resume for bookkeeping');
+  };
+  await service.resume(run.id, 'Finish the saved bookkeeping');
+  assert.equal((await settle(service, run.id)).status, 'completed');
+  assert.equal(git('rev-parse', 'HEAD'), revision);
+  assert.equal(existsSync(lock), false);
+});
+
+test('queue refreshes do not overlap while a response is pending', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const requests = [];
+  window.fetch = (path) => new Promise((resolve) => requests.push({ path, resolve }));
+  const first = window.refresh();
+  const second = window.refresh();
+  assert.equal(requests.length, 2);
+  for (const request of requests)
+    request.resolve({ ok: true, json: async () => (request.path.endsWith('/runtime') ? { mode: 'live' } : snapshot) });
+  await Promise.all([first, second]);
+  assert.equal(requests.length, 2);
+});
+
+test('recorded acceptance survives unrelated commits, branch switches and dirty source without certifying the new HEAD', async (t) => {
+  const { service, root, git } = await finalChecklist(t);
+  const reviewed = git('rev-parse', 'HEAD');
+  writeFileSync(join(root, 'unrelated.js'), 'export const other = 1;\n');
+  git('add', 'unrelated.js');
+  git('commit', '-qm', 'another issue');
+  git('checkout', '-qb', 'another-issue');
+  writeFileSync(join(root, 'source.js'), 'export const answer = 99;\n');
+  const snapshot = service.snapshot();
+  assert.deepEqual(
+    service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis || snapshot.reviewBasis),
+    { state: 'closed' }
+  );
+  const closed = service.snapshot().issues[0];
+  assert.equal(closed.accepted_result.revision, reviewed);
+  assert.notEqual(closed.accepted_result.revision, git('rev-parse', 'HEAD'));
+  assert.equal(closed.accepted_result.verification_rerun, false);
+  assert.match(readFileSync(join(root, 'source.js'), 'utf8'), /99/);
+});
+
+test('legacy final-review prose can be accepted without an integrated factory action', (t) => {
+  const { service, root, git } = fixture(t),
+    revision = git('rev-parse', 'HEAD');
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  writeFileSync(
+    join(root, '.issues/20261022-one.md'),
+    '---\nid: 20261022-one\nstate: final\n---\nCommitted as `' + revision + '`. Checks passed.\n'
+  );
+  const snapshot = service.snapshot();
+  service.decideIssue('20261022-one', 'final', 'close', snapshot.issues[0].decisionBasis);
+  assert.equal(service.snapshot().issues[0].accepted_result.revision, revision);
+});
+test('another issue changing cannot invalidate a selected issue acceptance button', async (t) => {
+  const { service, root } = await finalChecklist(t),
+    snapshot = service.snapshot();
+  writeFileSync(
+    join(root, '.issues/20261022-other.md'),
+    '---\nid: 20261022-other\nstate: verify\n---\nAnother issue changed\n'
+  );
+  service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis);
+  assert.equal(service.snapshot().issues.find((issue) => issue.id === '20261022-one').state, 'closed');
+});

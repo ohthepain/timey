@@ -71,6 +71,18 @@ A changed plan pauses before the next action. Old manual action endpoints remain
 available for queue-level operation and compatibility; their individual guards
 and exact-candidate checks remain enforced.
 
+An optional stage can be planned as a skip while it is the current stage. An issue
+with `prototype_required: true` must complete Prototype and cannot plan a skip.
+A saved `prototype_preview.url` supplies an **Open prototype** link in the activity
+header; only HTTP(S) preview links are rendered.
+Saving that route does not advance the issue or claim the stage was completed.
+Progress records the saved reason as **Skipped**, checks the configured next stage
+and human advance requirements, then continues. Existing unfinished work takes
+precedence over a skip. An issue-focused implementation recommendation following
+that skip is saved after the transition so its freshness checks use the new stage.
+A stopped review rejected by the former current-stage skip restriction can reuse
+its still-current result through Continue without repeating the investigation.
+
 ## CLI connection and recovery
 
 The adapter uses the installed `codex app-server --listen stdio://`, its existing
@@ -603,3 +615,142 @@ existing work must have its result reconciled rather than receive another assign
 A restart before the creation response is retained remains uncertain and requires
 reconciliation. Keep the owning server running while startup is pending. This
 recovery changes neither integration approval nor acceptance policy.
+
+## Temporary issue discussion
+
+Each issue has a collapsed **Chat** toggle above its lifecycle. The borderless
+toggle opens joined conversation output and full-width input; an inset circular
+up-arrow sends. Enter sends; Shift+Enter adds a line. Opening starts no model turn.
+Sending starts a dedicated ephemeral process in an empty workspace, separate from
+coordinator/worker recovery and RunStore. Its context contains the selected report
+and lifecycle policy, not other reports or saved chats. Proposed skips remain
+revisable plans, never historical outcomes or permission.
+
+Discussion stays in page/server memory. It is excluded from generic draft storage
+and saved factory activity. Navigation, reload, End chat, 15-minute inactivity,
+the one-hour lifetime and shutdown clear it and stop its process. Server expiry
+bounds cleanup if a page-close request is lost. **Temporary chat** discloses these
+limits and contains End chat and the optional grilling control. Messages still go
+to the configured model provider under the account's policies; local ephemeral
+handling does not establish zero provider retention. The dedicated runtime uses
+the configured default OpenAI model/login. Custom providers/profiles fail closed.
+
+Select conversation text to reveal **Record selected text…**. Review the exact
+text, selected issue and stated effect, then click **Record this text on the issue**.
+A short-lived one-use token binds that selection to its session and current
+issue/policy/source. Recording rechecks ownership and human-input guards and uses
+the existing locked report append. It labels output human-approved and possibly
+model-written, never human testimony, completed grilling, workflow approval or
+acceptance. No transcript, context bundle or session identity is saved. Work on
+another issue does not block conversation or recording; an active operation on
+the selected issue blocks recording only. Integration also blocks recording.
+After recording changes context, start a new chat for further questions.
+
+**Start grilling…** previews a temporary structured interview and requires a
+separate confirmation click. It saves no interview outcome or completed grilling.
+Other workflow changes retain their existing controls and approvals. Typed chat
+instructions never perform mutations or update documentation.
+
+## Open a site for Verify
+
+A Verify human check can declare `review_target: {url, revision}`, or use the
+issue's `implementation_preview` with those fields. URLs must be HTTP(S), without
+embedded credentials. **Open site** offers the hosting browser (including ChatGPT)
+and, on macOS, the default browser and installed Chrome, Brave, Safari, Firefox or
+Edge. Native choices launch a fixed application name with the validated URL;
+arbitrary application names or commands are never accepted.
+
+Approve result and Needs changes enable after the open request succeeds. Opening
+records an attempt to open the exact candidate, not an observation or approval.
+Needs changes requires comments; evidence checks require an actual observation.
+The recorded decision belongs only to that human check and candidate revision.
+It does not pass technical checks, advance stages, approve integration or close
+an issue. A changed issue, candidate URL/revision or source requires reopening;
+unrelated issue changes do not. Replay and owner mismatches are rejected.
+Completed prototype checks stay completed against their saved prototype revision
+when the issue reaches Verify; they are not re-requested against the project HEAD.
+
+## Delivery finalization and runtime identity
+
+`npm run factory -- runtime http://127.0.0.1:PORT` identifies the running UI's
+source checkout, revision, branch, authoritative issue project and live/preview
+mode. Continue using `factory issues` or the installed `issues` skill to list
+issues; runtime identity is additional context, not another issue list.
+Start disposable review servers with `--preview --authoritative-url URL`.
+Their header links to the real issue, and site-review writes are rejected.
+Live review receipts retain the issue project and mode alongside the candidate.
+
+Successful UI integration now finalizes eligible issues through the shared
+`scripts/factory-ui/delivery.mjs` owner. For a separate delivery checkout, invoke
+`npm run factory -- finalize-delivery /absolute/manifest.json` from the issue
+project using the UI source's `scripts/factory.mjs` when that project lacks it.
+This records existing integrated work; it performs no merge, deployment or acceptance.
+If a `url` is supplied, the command checks the running server's identity first.
+
+The manifest names a stable `operationId`, full `issueId`, `expectedState`,
+`reportDigest` (SHA-256 of exact report bytes), canonical `checkout`, exact
+`revision` and starting `base`, `verification` summary paths, reviewed
+`requirements` (`description` and hashed `evidence`), and hashed `authorization`.
+Each evidence entry is `{path, sha256}`. Full verification and step audit must
+pass against that base and delivered tree; the delivery checkout must be clean.
+Earlier human results need explicit `reviewApplicability` entries
+(`checkId`, `revision`, `reason`) unless they match the delivered revision or
+approved prototype. This records applicability without fabricating new testimony.
+
+Finalization retains evidence and an operation receipt before atomically updating
+the issue. Retry with the identical manifest after interruption. An already
+recorded operation adds no duplicate history; changed inputs or issue bytes fail
+closed. Verify and Commit are completed, integration is recorded, and the issue
+stops at Final review. Custom stages keep their own exit review. Closure accepts the recorded artifact and retained evidence. It does not certify
+later checkout changes or require the issue project to own that code. Changed
+verification evidence and unfinished human obligations still block acceptance.
+
+Queue polling omits command events and instructions and includes a bounded live
+output tail only for the selected issue. Expanding transcript details fetches the
+saved run on demand. Polls do not overlap; retained RunStore history is unchanged.
+
+## Acceptance of recorded results
+
+Close issue accepts the result recorded for that issue. It is independent of the
+current project HEAD, branch and uncommitted source. The acceptance receipt names
+the recorded revision and checkout when known, retains supporting bytes and
+explicitly states that verification was not rerun. Legacy Final review reports
+without structured delivery metadata remain usable; an unknown artifact revision
+stays unknown rather than being replaced with the current HEAD.
+
+The decision token covers the selected report and lifecycle configuration.
+Another issue changing or another branch advancing does not invalidate it.
+Changes to the selected report still require refreshing the decision. Same-issue
+active work, unfinished implementation criteria, pending observations and failed
+human checks remain blockers. Close supplies pending final judgment only through
+the user's actual click, never missing physical observations.
+
+For tracked source evidence, acceptance reads the exact blob from the recorded
+commit when the working file differs. It never substitutes newer code for that
+snapshot. Changed or missing immutable test logs still fail with the exact path.
+Queue reports and the registry are mutable context; their current bytes and
+original recorded digests are retained separately from technical evidence.
+Verification and commit operations continue to require current source checks.
+
+## Managed deployment
+
+After committing and verifying a candidate, run:
+
+```sh
+npm run factory:deploy -- --checkout /absolute/verified/checkout --project /absolute/queue/project --url http://127.0.0.1:52995 --verification /absolute/verification-summary.json --base FULL_START_COMMIT
+```
+
+This switches the local listener to an already committed checkout; it performs no
+Git merge, issue acceptance or workflow advancement. Record delivery through the
+existing finalizer separately. The full verification summary must match the exact
+candidate tree and base, with passing raw check evidence. Keep the prior source
+checkout clean and unchanged so it can be restarted on failure.
+
+The running server must support deployment preparation and report its PID. Older
+servers need one manual restart onto this version. Preparation rejects connected
+work and running lifecycle controllers, then blocks new mutations while draining.
+Deployment waits for the old listener to release its port, starts the candidate,
+and checks its runtime identity. Failure restores the previous unchanged checkout;
+failed recovery retains the deployment lock for reconciliation. Logs and receipts
+remain in the authoritative project's `.issues/evidence/`. Never clear an unknown
+deployment lock or stop another listener to retry.

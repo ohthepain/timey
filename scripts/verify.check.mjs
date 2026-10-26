@@ -35,7 +35,7 @@ function auditFixture(t, extraFiles = {}) {
   writeFileSync(join(root, 'package-lock.json'), readFileSync('package-lock.json'));
   writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/*.mjs"]}\n');
   mkdirSync(join(root, 'scripts'));
-  for (const name of ['verify.mjs', 'audit-result.mjs'])
+  for (const name of ['verify.mjs', 'verify-process.mjs', 'audit-result.mjs'])
     writeFileSync(join(root, 'scripts', name), readFileSync(join('scripts', name)));
   writeFileSync(join(root, 'index.js'), 'console.log("baseline");\n');
   for (const [name, content] of Object.entries(extraFiles)) writeFileSync(join(root, name), content);

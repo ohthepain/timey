@@ -63,7 +63,6 @@ function nonempty(value) {
   return typeof value === 'string' && Boolean(value.trim());
 }
 function validatePlannedSkip(queue, issue, state) {
-  requireThat(state !== issue.state, 'The current stage cannot be marked as a future skip.');
   const stage = queue.lifecycle.find((s) => s.state === state);
   requireThat(stage?.role !== 'closed', 'The route cannot skip explicit acceptance.');
   requireThat(

@@ -79,7 +79,7 @@ runs in separate chats; this final coordinator operation serializes the target
 merge and queue bookkeeping. It is never executed by a decision invocation.
 
 Worker completion does not verify or integrate work. The coordinator reviews
-the diff and evidence, serializes integration, and checks the combined revision.
+the diff and evidence using [review standards](../../CODING_STANDARDS.md), serializes integration, and checks the combined revision.
 Choose automatic merge for approved scoped changes with sufficient evidence;
 require human approval first for unresolved behavioral decisions, material scope,
 or correctness uncertainty requiring human judgment. Make the policy visible

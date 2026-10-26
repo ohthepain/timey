@@ -3,19 +3,19 @@
 Timey is a MIDI rhythm-practice app. Read the code for current signatures and
 configuration; this map explains responsibilities and the useful starting points.
 
-| Area                     | Start reading                                                                                                       | Responsibility                                                                                                                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`                                                                           | Shared UI, authentication context, route restoration                                                                                                                                                                |
-| Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                  | Display the beat and control practice                                                                                                                                                                               |
-| Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                  | Clock pulses, MIDI input/output, metronome                                                                                                                                                                          |
-| Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                 | Turn performed notes into timing/velocity feedback                                                                                                                                                                  |
-| Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                   | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
-| Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                      | Practice hierarchy and recorded performance                                                                                                                                                                         |
-| Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                                        | Repository calls, server operations, relational storage                                                                                                                                                             |
-| Authentication           | `src/contexts/KeycloakContext.tsx`, `src/config/keycloak.ts`, `src/utils/authenticatedServerFn.ts`                  | Browser identity and protected server access                                                                                                                                                                        |
-| Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                           | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
-| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`              | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit; deferred content paths retain Keycloak                                                                  |
-| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                            | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
+| Area                     | Start reading                                                                                                                                                                        | Responsibility                                                                                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`                                                                                                                                            | Shared UI, authentication context, route restoration                                                                                                                                                                |
+| Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                                                                                   | Display the beat and control practice                                                                                                                                                                               |
+| Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                                                                                   | Clock pulses, MIDI input/output, metronome                                                                                                                                                                          |
+| Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                                                                                  | Turn performed notes into timing/velocity feedback                                                                                                                                                                  |
+| Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                                                                                    | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
+| Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                                                                                       | Practice hierarchy and recorded performance                                                                                                                                                                         |
+| Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                                                                                                         | Repository calls, server operations, relational storage                                                                                                                                                             |
+| Authentication           | `src/contexts/KeycloakContext.tsx`, `src/config/keycloak.ts`, `src/utils/authenticatedServerFn.ts`                                                                                   | Browser identity and protected server access                                                                                                                                                                        |
+| Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                            | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
+| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                               | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit; deferred content paths retain Keycloak                                                                  |
+| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                                                                                             | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
 | Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue focus/listing, ledger CLI, saved progress, manual decisions and guarded worker dispatch                                                                                                                       |
 
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
@@ -129,6 +129,11 @@ recorded/future/current states, `readiness.mjs` for explicit action readiness,
 `skip-policy.mjs` for guarded optional skips. The workflow contract and storage
 boundaries are documented in [factory UI](factory-ui.md).
 
+`factory-ui/stage-skip.mjs` records a saved optional current-stage skip through the
+shared completion policy and human advance guards, then saves any deferred
+issue-focused recommendations against the resulting stage. Route planning alone
+records no outcome and launches no work.
+
 `factory-ui/reconcile.mjs` reviews already finished work and validates a consecutive
 set of evidence-backed stage outcomes before updating a stale issue. It never
 launches workers, merges code or accepts issues.
@@ -171,7 +176,7 @@ by the explicit Accept and close action, retaining unchanged verification inputs
 `scripts/factory-ui/closure-registry.mjs` retains the changing factory task log as
 administrative context during final acceptance, preserving its earlier hash.
 
-`scripts/factory-ui/closure-result.mjs` checks recorded modern completion or existing
+`scripts/factory-ui/recorded-result.mjs` retains acceptance of a recorded result independently of later source changes; it supports modern completion and existing
 legacy integration records for explicit final acceptance, without inventing history.
 
 `scripts/factory-ui/record-update.mjs` applies reviewed updates to one local issue
@@ -219,3 +224,33 @@ approval results into live output; it never grants access or reports test succes
 `factory-inputs.mjs` defines selected decision inputs shared by issue planning and
 ledger reservations. It follows report/action dependencies and linked plans while
 excluding unrelated queue entries; full-queue grouping keeps its original guard.
+
+Issue discussion lives in `scripts/factory-ui/discussion.mjs` (memory-only
+sessions, issue context, expiry and one-use clicked intents),
+`discussion-codex.mjs` (dedicated ephemeral model process),
+`discussion-record.mjs` (guarded selected-output append), and `discussion-ui.js`
+(temporary panel DOM, excluded from generic draft restoration). `http.mjs` exposes
+only fixed discussion operations; `service.mjs` owns shutdown. These modules do
+not use worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).
+
+`factory-ui/site-review.mjs` owns Verify review targets, available browser choices,
+open receipts and guarded human results. `site-review-ui.js` renders Open site,
+feedback and review controls. Open receipts are memory-only; explicit results
+retain the candidate and opening evidence in the issue's existing append path.
+Worker-status snapshot decoration forwards the requesting owner so it cannot
+lose the receipt required to enable a decision.
+
+`factory-ui/delivery.mjs` owns resumable delivery receipts and issue-stage
+finalization; `delivery-integration.mjs` invokes it after checked UI integration.
+`factory-delivery.mjs` exposes the separate-checkout coordinator command.
+`factory-ui/runtime.mjs` and `factory-runtime.mjs` identify the running UI source
+and issue project. `factory-ui/queue-response.mjs` projects bounded polling data;
+full saved runs remain available through the authenticated on-demand endpoint.
+
+`scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;
+`factory-workflow.check.mjs` owns the cross-format issue-decision compatibility
+matrix. `CODING_STANDARDS.md` guides semantic review of workflow gates.
+`scripts/verify-process.mjs` streams verifier subprocess output and retains channels.
+`scripts/factory-deploy.mjs` validates candidates and manages local restart/recovery;
+`factory-deploy-transport.mjs` owns HTTP preparation, listener draining and startup.
+`factory-ui/deployment.mjs` blocks new mutations while an idle server drains.
