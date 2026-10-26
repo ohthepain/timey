@@ -773,6 +773,18 @@ failed recovery retains the deployment lock for reconciliation. Logs and receipt
 remain in the authoritative project's `.issues/evidence/`. Never clear an unknown
 deployment lock or stop another listener to retry.
 
+Candidate and recovery readiness each retain observations in the receipt's
+`readiness` links to an adjacent `.readiness.json` file. Each attempt records HTTP
+phase/path/status, transport error names/codes, elapsed time, and expected versus
+observed runtime identity with mismatched fields. Response bodies, headers,
+session cookies and arbitrary runtime fields are excluded. The file keeps twenty
+recent attempts per wait, its first failure and its latest failure of each kind
+(HTTP, transport, decode or identity), so failures survive a later successful poll.
+The receipt and diagnostics are updated during polling, including unsuccessful
+candidate and recovery waits. Identity requirements, request/polling timeouts and
+recovery/locking rules are unchanged. A later passing run does not establish the
+cause of a historical timeout without those observations.
+
 ### Queue lifecycle controls
 
 The queue shows every configured lifecycle role in a fixed horizontal strip. The

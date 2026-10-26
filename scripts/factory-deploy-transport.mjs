@@ -1,3 +1,4 @@
+import { observeRuntime } from './factory-deploy-readiness.mjs';
 import { spawn } from 'node:child_process';
 import { openSync, closeSync } from 'node:fs';
 import { createConnection } from 'node:net';
@@ -66,15 +67,8 @@ export function portReleased(port) {
     });
   });
 }
-export async function readyRuntime(url, checkout, revision, project) {
-  try {
-    const runtime = await readRuntime(url);
-    return sameIdentity(runtime, { checkout, revision, project, mode: 'live', sourceChanged: false });
-  } catch {
-    return false;
-  }
-}
-
-function sameIdentity(runtime, expected) {
-  return Object.entries(expected).every(([key, value]) => runtime[key] === value);
+export async function readyRuntime(url, checkout, revision, project, record = () => {}) {
+  const observation = await observeRuntime(url, { checkout, revision, project, mode: 'live', sourceChanged: false });
+  record(observation);
+  return observation.outcome === 'ready';
 }

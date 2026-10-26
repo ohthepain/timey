@@ -260,3 +260,15 @@ The aggregate factory suite includes these checks. Use real browser/provider
 smoke evidence separately from protocol fixtures; a mocked response proves no
 provider availability. Existing lifecycle and integration tests still own worker
 checkout isolation, review independence and actual approval/acceptance guards.
+
+## Deployment readiness diagnostics
+
+`node --test scripts/factory-deploy.check.mjs` uses disposable listeners and Git
+fixtures. It includes an unsuccessful candidate (HTTP 503) and unsuccessful
+recovery (runtime identity mismatch) through the real deployment waits, with the
+production timeouts and failed-recovery lock intact. It prints the retained
+absolute evidence directory containing receipt, readiness observations and server
+log. Separate probes verify transport refusal, runtime HTTP rejection, malformed
+JSON, successful readiness, bounded retention and exclusion of response secrets.
+These fixtures deploy no live service and do not diagnose a historical timeout
+when its original readiness observations were not retained.

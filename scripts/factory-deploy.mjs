@@ -1,3 +1,4 @@
+import { retainReadiness } from './factory-deploy-readiness.mjs';
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,10 +74,7 @@ async function activate(session, target, receipt, path) {
     await waitFor(() => portReleased(port), 'the old listener to release its port');
     child = startFactory(target.checkout, target.project, port, path + '.log');
     child.on('error', () => {}); // Readiness reports spawn and early-exit failures through the retained log.
-    await waitFor(
-      () => readyRuntime(previous.url, target.checkout, target.revision, target.project),
-      'the verified candidate'
-    );
+    await waitForRuntime(previous.url, target, receipt, path, 'candidate', 'the verified candidate');
     receipt.status = 'ready';
     receipt.pid = child.pid;
   } catch (error) {
@@ -91,10 +89,7 @@ async function recover(previous, port, child, receipt, path) {
   await waitFor(() => portReleased(port), 'the failed candidate to release its port');
   const restored = startFactory(previous.checkout, previous.project, port, path + '.log');
   restored.on('error', () => {});
-  await waitFor(
-    () => readyRuntime(previous.url, previous.checkout, previous.revision, previous.project),
-    'the previous server'
-  );
+  await waitForRuntime(previous.url, previous, receipt, path, 'recovery', 'the previous server');
   receipt.recovery = { status: 'ready', pid: restored.pid };
 }
 function options() {
@@ -129,4 +124,14 @@ async function recoverOrCancel(stopped, session, previous, port, child, receipt,
   } catch (error) {
     receipt.recovery = { status: 'failed', error: error.message };
   }
+}
+
+async function waitForRuntime(url, identity, receipt, path, phase, description) {
+  await waitFor(
+    () =>
+      readyRuntime(url, identity.checkout, identity.revision, identity.project, (observation) =>
+        retainReadiness(receipt, path, phase, observation)
+      ),
+    description
+  );
 }
