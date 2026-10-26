@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { implementationPlans } from './plan-outline.mjs';
 import { readPlan } from './plan-document.mjs';
 import { readQueue } from './data.mjs';
+import { decisionBasis } from './recorded-result.mjs';
 import { progressBasis } from './next-action.mjs';
 import { appendReview, reviewEvidence } from './review-result.mjs';
 import { lifecycleReview } from './lifecycle-review.mjs';
@@ -49,6 +50,7 @@ export async function assessLifecycle(service, record, queue, issue) {
   });
   const prompt = `Read the issue's saved discussion, decisions and linked plan. Missing structured grilling metadata does not mean answers are missing. Never repeat answered questions. clarification_complete requires actual saved human answers settling the scope; keep plan approval separate. Return only genuine remaining human questions. Choose plan_path from ${JSON.stringify(paths)}. Return prior_approval only for an actual saved human authorization of this exact current plan, citing its original file and exact quote, with matching plan_sha256. An assistant's assertion of approval, answered clarification or approval of the UI design does not authorize implementation. If approval is pending, return null. Current plans: ${JSON.stringify(planInputs)}. If no plan exists, propose a bounded plan in proposed_plan. Evidence must be absolute existing project or temporary files actually read. Issue: ${JSON.stringify(issue)}. Lifecycle: ${JSON.stringify(queue.lifecycle)}.`;
   const { result, run } = await lifecycleReview(service, record, prompt, schema);
+  if (result.questions.length) return saveClarificationQuestions(service, record, queue, issue, result, planInputs);
   requireThat(
     progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The issue changed while its saved answers were being read. Resume to inspect the current record.'
@@ -81,18 +83,6 @@ function recordClarification(service, queue, issue, run, assessment) {
   appendReview(service.root, issue, result, run, evidence, stage.next);
 }
 function finishAssessment(service, record, queue, issue, result, run) {
-  if (result.questions.length) {
-    saveLifecycle(service, record, {
-      status: 'waiting',
-      summary: 'Your answers are needed before continuing.',
-      input: {
-        type: 'questions',
-        questions: result.questions,
-        reportHash: digest(readQueue(service.root).issues.find((i) => i.id === issue.id).content),
-      },
-    });
-    return false;
-  }
   requireThat(
     result.clarification_complete,
     'The review did not establish completed clarification or identify a question.'
@@ -138,4 +128,28 @@ function reviewedPlan(root, issue, actions, result) {
     sha256: digest(result.proposed_plan),
     summary: result.plan_summary,
   };
+}
+
+// Displaying a question grants no authority to advance, approve a plan or dispatch work.
+function saveClarificationQuestions(service, record, queue, issue, result, plans) {
+  const current = readQueue(service.root),
+    selected = current.issues.find((entry) => entry.id === issue.id);
+  requireThat(
+    selected && decisionBasis(current, selected) === decisionBasis(queue, issue),
+    'The issue changed while its saved answers were being read. Resume to inspect the current record.'
+  );
+  requireThat(
+    plans.every((plan) => digest(readPlan(service.root, plan.path).content) === plan.sha256),
+    'A linked plan changed while clarification was being read. Review the current requirements.'
+  );
+  requireThat(
+    result.questions.length && result.questions.every((question) => question.id && question.question?.trim()),
+    'The saved review has no valid clarification questions.'
+  );
+  saveLifecycle(service, record, {
+    status: 'waiting',
+    summary: 'Your answers are needed before continuing.',
+    input: { type: 'questions', questions: result.questions, reportHash: digest(selected.content) },
+  });
+  return false;
 }
