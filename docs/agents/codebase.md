@@ -200,3 +200,8 @@ hands the installed listener to a replacement process and resumes saved paused
 controllers through normal guards. `server-control-ui.js` owns the header controls
 and reconnects without replacing the page or its draft. Disposable process and
 transport tests live in `factory-server-control.check.mjs`.
+
+`factory-ui/closure-reasons.mjs` reads project closure choices from the local
+lifecycle Markdown. `issue-decision.mjs` keeps accepted fixes separate from
+explicit user decisions to stop work; `factory-completion.mjs` preserves the
+closure record without marking unfinished stages complete.

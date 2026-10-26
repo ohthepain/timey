@@ -123,3 +123,12 @@ decisions use `source: { kind: user }`. Preserve the source when applying a
 previously saved skip. Required exit conditions, technical checks, human checks
 and explicit acceptance still apply. Existing completed work is recorded as
 completed, not skipped. Unknown historical sources stay unknown.
+
+## Closing without a fix
+
+An explicit user decision may close an idle issue as Won’t Do, Duplicate, Cannot
+Reproduce, Not Enough Information, or No Longer Relevant. Record the configured
+reason and details without passing checks, completing skipped work or claiming
+acceptance. Fixed closure still requires the normal final review and acceptance.
+Project-specific reasons live in the Closed reasons table in
+`.issues/triage-labels.md`; `fixed` retains its acceptance meaning.

@@ -6,7 +6,9 @@ import { digest, git, requireThat, cleanEnvironment } from './common.mjs';
 import { recordedDelivery } from './delivery.mjs';
 
 export function decisionBasis(queue, issue) {
-  return digest(JSON.stringify({ issue: issue.content, lifecycle: queue.lifecycle }));
+  return digest(
+    JSON.stringify({ issue: issue.content, lifecycle: queue.lifecycle, closureReasons: queue.closureReasons })
+  );
 }
 export function recordedResult(queue, issue) {
   if (issue.delivery) return recordedDelivery(issue);

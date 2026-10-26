@@ -4286,3 +4286,96 @@ test('queue role links open the selected issue step without launching or changin
   );
   assert.equal(requests.length, 0);
 });
+
+test('an explicit non-fix closure preserves unfinished work and never grants acceptance', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace(
+      'state: clarify',
+      'state: clarify\nhuman_checks:\n  - id: pending\n    kind: evidence\n    status: pending\n    instructions: Check the result\n    blocks: closure\n    revision: current\n    result: null'
+    )
+  );
+  const before = service.snapshot();
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'clarify', 'close', before.issues[0].decisionBasis, '', 'fixed'),
+    /final review/
+  );
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'clarify', 'close', before.issues[0].decisionBasis, '', 'invented'),
+    /closure reason/
+  );
+  service.lifecycleTasks.set('20261022-one', Promise.resolve());
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'clarify', 'close', before.issues[0].decisionBasis, '', 'wont-do'),
+    /current work/
+  );
+  service.lifecycleTasks.delete('20261022-one');
+  service.decideIssue(
+    '20261022-one',
+    'clarify',
+    'close',
+    before.issues[0].decisionBasis,
+    'Priorities changed.',
+    'wont-do'
+  );
+  const closed = service.snapshot().issues[0];
+  assert.equal(closed.state, 'closed');
+  assert.equal(closed.closure.reason, 'wont-do');
+  assert.equal(closed.closure.details, 'Priorities changed.');
+  assert.equal(closed.accepted_result, undefined);
+  assert.equal(closed.human_checks[0].status, 'pending');
+  assert.ok(closed.lifecycle_history.every((event) => event.state === 'closed'));
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'clarify', 'close', before.issues[0].decisionBasis, '', 'wont-do'),
+    /another stage|out of date/
+  );
+  const reopened = service.snapshot();
+  service.decideIssue('20261022-one', 'closed', 'reopen', reopened.issues[0].decisionBasis);
+  assert.equal(service.snapshot().issues[0].closure, undefined);
+  assert.match(service.snapshot().issues[0].content, /Priorities changed/);
+});
+
+test('closure choices come from project Markdown and stale choices cannot close an issue', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  const snapshot = service.snapshot();
+  const path = join(root, '.issues/triage-labels.md');
+  writeFileSync(
+    path,
+    readFileSync(path, 'utf8') +
+      '\n## Closed reasons\n\n| ID | Label | Meaning |\n| --- | --- | --- |\n| parked | Parked | Not planned anymore. |\n'
+  );
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'clarify', 'close', snapshot.issues[0].decisionBasis, '', 'parked'),
+    /issue changed/
+  );
+  const updated = service.snapshot();
+  assert.equal(updated.closureReasons[0].label, 'Parked');
+  service.decideIssue('20261022-one', 'clarify', 'close', updated.issues[0].decisionBasis, '', 'parked');
+  assert.equal(service.snapshot().issues[0].closure.reason, 'parked');
+});
+
+test('an open issue offers a single close dialog with project reasons and immediate submission feedback', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const dialog = window.document.getElementById('confirm');
+  dialog.showModal = () => dialog.setAttribute('open', '');
+  dialog.close = () => dialog.removeAttribute('open');
+  window.document.querySelector('[data-issue-decision="choose-close"]').click();
+  assert.ok(dialog.hasAttribute('open'));
+  const choices = [...window.document.querySelectorAll('#closure-reason option')];
+  assert.ok(choices.some((choice) => choice.value === 'wont-do'));
+  assert.ok(!choices.some((choice) => choice.value === 'fixed'));
+  const sent = [];
+  window.fetch = async (url, options) => {
+    sent.push([url, options && JSON.parse(options.body)]);
+    return { ok: true, json: async () => (url.includes('runtime') ? {} : snapshot) };
+  };
+  window.document.getElementById('closure-reason').value = 'wont-do';
+  const button = window.document.getElementById('approve');
+  button.click();
+  assert.equal(button.disabled, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(sent.filter(([url]) => url.endsWith('issue-decision')).length, 1);
+  assert.equal(sent[0][1].resolution, 'wont-do');
+});

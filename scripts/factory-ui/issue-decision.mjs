@@ -7,30 +7,68 @@ import { digest, requireThat } from './common.mjs';
 
 import { recordClosingApproval } from './closure-approval.mjs';
 
-export function decideIssue(service, id, state, kind, basis, reason = '') {
+export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed') {
   service.ownServer();
   let queue = readQueue(service.root),
     issue = progressIssue(queue, id, state);
   requireThat(validDecisionBasis(queue, issue, basis), 'This issue changed. Refresh before making a decision.');
   requireThat(['close', 'reopen'].includes(kind), 'Choose Close issue or Reopen issue.');
   const role = queue.lifecycle.find((s) => s.state === state).role;
-  requireThat(['ready-to-close', 'closed'].includes(role), 'This issue is not at final review or closed.');
-  checkIdle(service, queue, issue);
-  const target = decisionTarget(queue, role, kind);
-  const action = { issues: [id] };
-  let accepted;
-  if (kind === 'close') {
-    queue = recordClosingApproval(service, queue, issue);
-    issue = progressIssue(queue, id, state);
-    accepted = checkClosure(service, queue, issue, action);
-  } else service.guard(service.root, action, 'advance', queue.head, { target_state: target });
-  basis = decisionBasis(queue, issue);
-  const summary = kind === 'close' ? 'Accepted and closed by the user.' : 'Reopened by the user for investigation.';
   requireThat(typeof reason === 'string' && reason.length <= 4000, 'Keep the reason under 4,000 characters.');
+  const { choice, dismissed } = closureChoice(queue, role, kind, resolution);
+  checkIdle(service, queue, issue);
+  const target = decisionTarget(queue, role, kind, dismissed);
+  const action = { issues: [id] };
+  const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target });
+  queue = prepared.queue;
+  issue = prepared.issue;
+  basis = decisionBasis(queue, issue);
   const run = service.store.add({ id }, 'decision', queue.head);
-  const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: accepted };
+  const summary = decisionSummary(kind, choice, dismissed);
+  const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: prepared.accepted };
+  applyClosure(result, choice, reason, target, dismissed);
   const evidence = [{ path: join(service.root, '.issues', id + '.md'), sha256: digest(issue.content) }];
   return recordDecision(service, queue, issue, run, result, evidence, target, basis);
+}
+function closureChoice(queue, role, kind, resolution) {
+  if (kind === 'reopen') {
+    requireThat(['ready-to-close', 'closed'].includes(role), 'This issue is not at final review or closed.');
+    return { choice: null, dismissed: false };
+  }
+  const choice = queue.closureReasons.find((entry) => entry.id === resolution);
+  requireThat(choice, 'Choose a closure reason from the project’s current list.');
+  const dismissed = choice.id !== 'fixed';
+  if (!dismissed)
+    requireThat(['ready-to-close', 'closed'].includes(role), 'Fixed issues must reach final review before closing.');
+  return { choice, dismissed };
+}
+function prepareDecision(service, queue, issue, action, decision) {
+  if (decision.kind === 'reopen') {
+    service.guard(service.root, action, 'advance', queue.head, { target_state: decision.target });
+    return { queue, issue };
+  }
+  if (decision.dismissed) return { queue, issue };
+  queue = recordClosingApproval(service, queue, issue);
+  issue = progressIssue(queue, issue.id, issue.state);
+  return { queue, issue, accepted: checkClosure(service, queue, issue, action) };
+}
+function decisionSummary(kind, choice, dismissed) {
+  if (kind === 'reopen') return 'Reopened by the user for investigation.';
+  if (dismissed) return `Closed by the user: ${choice.label}. No fix or acceptance is claimed.`;
+  return 'Accepted and closed by the user.';
+}
+function applyClosure(result, choice, reason, target, dismissed) {
+  if (!choice) return;
+  result.closure = {
+    reason: choice.id,
+    label: choice.label,
+    details: reason.trim(),
+    at: new Date().toISOString(),
+    actor: 'human',
+  };
+  if (!dismissed) return;
+  result.notes = `${choice.description} ${reason.trim()} Closing without completing the work. Existing checks and unfinished steps remain unchanged.`;
+  result.stage_records = [{ state: target, outcome: 'completed', actor: 'human', reason: result.summary }];
 }
 function recordDecision(service, queue, issue, run, result, evidence, target, basis) {
   const summary = result.summary,
@@ -57,6 +95,7 @@ function recordDecision(service, queue, issue, run, result, evidence, target, ba
 }
 
 function checkIdle(service, queue, issue) {
+  requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for this issue’s current work to finish before closing.');
   const actions = queue.actions.filter((a) => a.issues.includes(issue.id));
   requireThat(
     !actions.some((a) => ['reserved', 'setup', 'running', 'completed'].includes(a.status)),
@@ -67,17 +106,20 @@ function checkIdle(service, queue, issue) {
     'Wait for the current issue action to finish.'
   );
 }
-function decisionTarget(queue, role, kind) {
-  if (kind === 'close') requireThat(role === 'ready-to-close', 'This issue is already closed.');
+function decisionTarget(queue, role, kind, dismissed) {
+  requireThat(!(kind === 'close' && role === 'closed'), 'This issue is already closed.');
   const targetRole = kind === 'close' ? 'closed' : 'ready-for-repro';
   const matches = queue.lifecycle.filter((s) => s.role === targetRole);
   requireThat(matches.length === 1, 'The lifecycle needs one valid destination for this action.');
-  if (kind === 'close')
-    requireThat(
-      queue.lifecycle.find((s) => s.role === role).next === matches[0].state,
-      'Complete the configured final checks before closing.'
-    );
+  if (kind === 'close') checkClosingTarget(queue, role, matches[0], dismissed);
   return matches[0].state;
+}
+function checkClosingTarget(queue, role, target, dismissed) {
+  if (dismissed) return;
+  requireThat(
+    queue.lifecycle.find((stage) => stage.role === role).next === target.state,
+    'Complete the configured final checks before closing.'
+  );
 }
 function checkClosure(service, queue, issue, action) {
   checkManualResults(issue);

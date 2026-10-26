@@ -1443,7 +1443,7 @@
         'ready-for-commit':
           'Save the checked changes in a commit, or record the explicit decision not to make a commit.',
         'ready-to-close': 'Review the finished result, address required manual checks and ask for explicit acceptance.',
-        closed: 'Record the user’s explicit acceptance before closing the issue.',
+        closed: 'Record why the issue was closed.',
         integration:
           'Review the finished changes, approve them when required, then integrate and check the combined project. This needs its own manual action.',
       };
@@ -1815,7 +1815,8 @@
       }
       function selectIssueDecision(button) {
         const issue = data.issues.find((entry) => entry.id === button.dataset.issueId);
-        const kind = button.dataset.issueDecision;
+        const chooseReason = button.dataset.issueDecision === 'choose-close';
+        const kind = chooseReason ? 'close' : button.dataset.issueDecision;
         selection = {
           decision: true,
           issueId: button.dataset.issueId,
@@ -1823,6 +1824,16 @@
           kind,
           basis: issue.decisionBasis || data.reviewBasis,
         };
+        if (chooseReason) {
+          const final = data.lifecycle.some((stage) => stage.state === issue.state && stage.role === 'ready-to-close');
+          const choices = data.closureReasons.filter((choice) => final || choice.id !== 'fixed');
+          $('selection').innerHTML =
+            `<h2>Close this issue</h2><p>Choose why you are closing it. Reasons other than Fixed leave unfinished work and checks as they are.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}">${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`;
+          $('approve').textContent = 'Close issue';
+          $('approve').disabled = choices.length === 0;
+          $('confirm').showModal();
+          return;
+        }
         if (kind === 'close') {
           button.disabled = true;
           const decision = selection;
@@ -2037,7 +2048,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div id="discussion-slot"></div><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2>${lifecyclePanel(i)}<p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2>${lifecyclePanel(i)}<p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2353,7 +2364,11 @@
               link: $('worker-link').value || $('worker-choice')?.value || '',
             });
           else if (selection.decision)
-            await request('issue-decision', { ...selection, reason: $('reopen-reason')?.value || '' });
+            await request('issue-decision', {
+              ...selection,
+              reason: $('reopen-reason')?.value || '',
+              resolution: $('closure-reason')?.value || 'fixed',
+            });
           else if (selection.progress)
             await request('progress-start', {
               token: selection.token,

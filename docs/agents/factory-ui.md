@@ -806,3 +806,18 @@ Queue roles use 18-pixel squares in a compact path. Future roles are small point
 on dotted connectors. Skipped roles sit below the connector, which continues over
 them. Accessible names, keyboard focus, skip toggles and pending-input bubbles
 retain the same meaning and operation.
+
+## Closing without completing the work
+
+Every open issue has **Close with reason…** above its chat. Choose a reason and
+optionally add details or the duplicate issue ID. The project’s editable
+`.issues/triage-labels.md` defines the reasons in a Closed reasons table with
+ID, Label and Meaning columns. Older projects use the standard reasons until
+they add that section. The stable `fixed` ID always means verified, accepted
+work and retains final-review checks. All other reasons close idle work without
+claiming implementation, passing checks or acceptance. Active work must finish
+first. The report records the reason, label, time and optional details, and the
+page shows them after closure. Reopening preserves the decision in history.
+Changed reports or reason lists invalidate an open decision; duplicate submissions
+cannot close twice. This explicit user disposition is separate from automatic
+Progress, which still cannot close issues.

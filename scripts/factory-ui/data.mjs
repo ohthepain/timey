@@ -1,3 +1,4 @@
+import { closureReasons } from './closure-reasons.mjs';
 import { issueInputs } from '../factory-inputs.mjs';
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
@@ -42,6 +43,7 @@ export function readQueue(project) {
     head: inspection.snapshot.head,
     snapshot: inspection.snapshot,
     lifecycle: stages,
+    closureReasons: closureReasons(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8')),
     issues: inspection.reports.map((report) => ({
       ...report.metadata,
       content: report.content,
