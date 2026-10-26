@@ -1,3 +1,6 @@
+import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
+import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
+import { readQueue } from './factory-ui/data.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, realpathSync } from 'node:fs';
@@ -535,6 +538,20 @@ test('stage grilling binds its configured role, previews selected answers and sa
   assert.equal(f.started.stage.name, 'Investigate');
   assert.equal(f.started.stage.role, 'ready-for-repro');
   const before = readFileSync(join(f.root, '.issues/20261025-a.md'), 'utf8');
+  const queue = readQueue(f.root),
+    selected = queue.issues.find((issue) => issue.id === f.input.issueId);
+  const record = {
+    id: 'blocked-grilling',
+    issueId: selected.id,
+    assessed: true,
+    status: 'blocked',
+    attempts: [],
+    events: [],
+  };
+  record.stopBasis = lifecycleWorkBasis(queue, selected, record);
+  saveLifecycle(f.service, record);
+  assert.equal(canResumeLifecycle(f.service, record, queue, selected), false);
+
   const draft = await f.discussion.summarize(f.input, f.owner);
   assert.equal(readFileSync(join(f.root, '.issues/20261025-a.md'), 'utf8'), before);
   assert.match(draft.text, /Your selected answers/);
@@ -549,6 +566,18 @@ test('stage grilling binds its configured role, previews selected answers and sa
   assert.ok(!issue.content.includes('PRIVATE_UNSELECTED_DETAIL'));
   assert.ok(!issue.content.includes(f.input.session));
   assert.equal(f.service.lifecycleTasks.size, 0);
+  assert.equal(f.service.lifecycleRuns[selected.id].assessed, false);
+  const freshQueue = readQueue(f.root);
+  assert.equal(
+    canResumeLifecycle(
+      f.service,
+      record,
+      freshQueue,
+      freshQueue.issues.find((item) => item.id === selected.id)
+    ),
+    true
+  );
+
   await assert.rejects(f.discussion.commit({ ...f.input, token: draft.token, clicked: true }, f.owner));
 });
 

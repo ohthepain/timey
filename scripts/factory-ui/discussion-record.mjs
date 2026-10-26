@@ -41,6 +41,7 @@ export function recordDiscussion(service, queue, issue, intent, continueWork = f
     [],
     null
   );
+  refreshGrillingAssessment(service, issue, intent.stage);
   if (continueWork) return continueAfterGrilling(service, issue, result.stage_grilling);
   return { recorded: true };
 }
@@ -80,4 +81,14 @@ function continueAfterGrilling(service, issue, result) {
   } catch (error) {
     return { recorded: true, continuing: false, continueError: error.message };
   }
+}
+
+function refreshGrillingAssessment(service, issue, stage) {
+  if (!stage) return;
+  const record = service.lifecycleRuns[issue.id];
+  if (!record) return;
+  saveLifecycle(service, record, {
+    assessed: false,
+    summary: 'New grilling results are saved. Continue to review the updated decisions and next step.',
+  });
 }

@@ -571,6 +571,11 @@ function visibleLifecycle(record, progress) {
   return visibleStoppedReason(record, progress);
 }
 function visibleStoppedReason(record, progress) {
-  if (progress.blocker || !progress.disabled) return { ...record, summary: progress.summary };
+  if (progress.blocker) return { ...record, summary: progress.summary };
+  if (record.canResume)
+    return {
+      ...record,
+      summary: 'New information is available. Continue will check the saved work and take the next step.',
+    };
   return record;
 }

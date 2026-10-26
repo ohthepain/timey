@@ -3423,7 +3423,7 @@ test('administrative notes cannot re-enable the same stopped review', async (t) 
     answer: 'Use the bounded selected scope.',
   });
   assert.equal(service.snapshot().issues[0].lifecycle.canResume, true);
-  assert.equal(service.snapshot().issues[0].lifecycle.summary, service.snapshot().issues[0].progress.summary);
+  assert.match(service.snapshot().issues[0].lifecycle.summary, /New information is available/);
 });
 
 test('live output redacts known credentials before storing or displaying events', async (t) => {
@@ -4196,4 +4196,42 @@ test('skip decisions retain their source separately from execution approval', ()
   assert.deepEqual(stageSource(issue, { ...run, kind: 'plan-skip', authorization: { kind: 'direct-user' } }), {
     kind: 'user',
   });
+});
+
+test('a recorded initial Clarify skip still presents a plan when no interview was needed', async (t) => {
+  const { service, root } = lifecycleFixture(t);
+  const path = join(root, '.issues/20261022-one.md');
+  const text = readFileSync(path, 'utf8')
+    .replace('state: clarify', 'state: investigate')
+    .replace(
+      'grill_later: false',
+      `grill_later: false
+lifecycle_history:
+  - state: clarify
+    outcome: skipped
+    source: { kind: original-report }
+    reason: The original request defines the scope.
+    at: 2026-10-26T15:00:00Z
+    evidence: [capture-routing.json]`
+    );
+  writeFileSync(path, text);
+  service.codex.turn = async (_id, _cwd, _prompt, schema) => {
+    assert.ok(schema.properties.clarification_complete, 'Only assessment should run before plan approval.');
+    return JSON.stringify({
+      prior_approval: null,
+      clarification_complete: false,
+      summary: 'The original request is clear; no interview was needed.',
+      evidence: [path],
+      questions: [],
+      plan_path: 'docs/plans/inspect.md',
+      plan_summary: 'Read the source and record the result.',
+      proposed_plan: '',
+    });
+  };
+  startIssueLifecycle(service);
+  const record = await finishLifecycle(service);
+  assert.equal(record.status, 'waiting', record.summary);
+  assert.equal(record.input.type, 'plan');
+  assert.equal(record.approval, undefined);
+  assert.equal(service.snapshot().issues[0].state, 'investigate');
 });

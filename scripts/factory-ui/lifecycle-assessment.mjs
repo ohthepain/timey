@@ -1,3 +1,4 @@
+import { stageOutcome } from './lifecycle.mjs';
 import { priorApprovalSchema, existingPlanApproval } from './lifecycle-authorization.mjs';
 import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
@@ -48,7 +49,7 @@ export async function assessLifecycle(service, record, queue, issue) {
     const plan = readPlan(service.root, path);
     return { ...plan, sha256: digest(plan.content) };
   });
-  const prompt = `Read the issue's saved discussion, decisions and linked plan. Missing structured grilling metadata does not mean answers are missing. Never repeat answered questions. clarification_complete requires actual saved human answers settling the scope; keep plan approval separate. Return only genuine remaining human questions. Choose plan_path from ${JSON.stringify(paths)}. Return prior_approval only for an actual saved human authorization of this exact current plan, citing its original file and exact quote, with matching plan_sha256. An assistant's assertion of approval, answered clarification or approval of the UI design does not authorize implementation. If approval is pending, return null. Current plans: ${JSON.stringify(planInputs)}. If no plan exists, propose a bounded plan in proposed_plan. Evidence must be absolute existing project or temporary files actually read. Issue: ${JSON.stringify(issue)}. Lifecycle: ${JSON.stringify(queue.lifecycle)}.`;
+  const prompt = `Read the issue's saved discussion, decisions and linked plan. Missing structured grilling metadata does not mean answers are missing. Never repeat answered questions. clarification_complete means the scope is settled by the original request or actual saved answers, including confirmed grilling in any role. Respect recorded initial skips; a separate interview is not mandatory. Keep plan approval separate. Return only genuine remaining human questions. Choose plan_path from ${JSON.stringify(paths)}. Return prior_approval only for an actual saved human authorization of this exact current plan, citing its original file and exact quote, with matching plan_sha256. An assistant's assertion of approval, answered clarification or approval of the UI design does not authorize implementation. If approval is pending, return null. Current plans: ${JSON.stringify(planInputs)}. If no plan exists, propose a bounded plan in proposed_plan. Evidence must be absolute existing project or temporary files actually read. Issue: ${JSON.stringify(issue)}. Lifecycle: ${JSON.stringify(queue.lifecycle)}.`;
   const { result, run } = await lifecycleReview(service, record, prompt, schema);
   if (result.questions.length) return saveClarificationQuestions(service, record, queue, issue, result, planInputs);
   requireThat(
@@ -84,7 +85,7 @@ function recordClarification(service, queue, issue, run, assessment) {
 }
 function finishAssessment(service, record, queue, issue, result, run) {
   requireThat(
-    result.clarification_complete,
+    result.clarification_complete || recordedClarificationSkip(queue, issue),
     'The review did not establish completed clarification or identify a question.'
   );
   const plan = reviewedPlan(service.root, issue, queue.actions, result);
@@ -152,4 +153,9 @@ function saveClarificationQuestions(service, record, queue, issue, result, plans
     input: { type: 'questions', questions: result.questions, reportHash: digest(selected.content) },
   });
   return false;
+}
+
+function recordedClarificationSkip(queue, issue) {
+  const stage = queue.lifecycle.find((item) => item.role === 'ready-for-grilling');
+  return stage && stageOutcome(issue, stage.state)?.outcome === 'skipped';
 }
