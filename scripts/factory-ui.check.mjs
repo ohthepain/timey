@@ -4379,3 +4379,95 @@ test('an open issue offers a single close dialog with project reasons and immedi
   assert.equal(sent.filter(([url]) => url.endsWith('issue-decision')).length, 1);
   assert.equal(sent[0][1].resolution, 'wont-do');
 });
+
+test('priority defaults to Major and one-level changes preserve work without launching chats', async (t) => {
+  const { changePriority } = await import('./factory-ui/issue-priority.mjs');
+  const { service, root, calls } = lifecycleFixture(t);
+  const view = () => service.snapshot().issues[0];
+  const initial = view();
+  assert.equal(initial.priorityInfo.name, 'Major');
+  assert.equal(initial.priority, undefined);
+  const runs = service.store.runs.length;
+  const move = (direction) =>
+    changePriority(service, { issueId: initial.id, direction, basis: view().priorityInfo.basis });
+  move('up');
+  assert.equal(view().priority, 'critical');
+  assert.throws(
+    () => changePriority(service, { issueId: initial.id, direction: 'up', basis: initial.priorityInfo.basis }),
+    /priority or project list changed/
+  );
+  move('up');
+  assert.equal(view().priority, 'showstopper');
+  assert.throws(() => move('up'), /cannot move further/);
+  for (let n = 0; n < 4; n++) move('down');
+  assert.equal(view().priority, 'suggestion');
+  assert.throws(() => move('down'), /cannot move further/);
+  assert.equal(view().state, initial.state);
+  assert.deepEqual(view().lifecycle_history, initial.lifecycle_history);
+  assert.match(view().content, /All questions answered/);
+  assert.equal(service.store.runs.length, runs);
+  assert.equal(calls.length, 0);
+  assert.match(readFileSync(join(root, '.issues', initial.id + '.md'), 'utf8'), /Issue priority/);
+});
+
+test('priority writes use current report bytes, reject changed configuration, and respect the queue lock', async (t) => {
+  const { changePriority } = await import('./factory-ui/issue-priority.mjs');
+  const { service, root } = lifecycleFixture(t);
+  const snapshot = service.snapshot();
+  const issue = snapshot.issues[0];
+  const input = { issueId: issue.id, direction: 'up', basis: issue.priorityInfo.basis };
+  const report = join(root, '.issues', issue.id + '.md');
+  writeFileSync(report, readFileSync(report, 'utf8') + '\nNew worker evidence must survive.\n');
+  mkdirSync(join(root, '.issues/factory.lock'));
+  assert.throws(() => changePriority(service, input), /EEXIST/);
+  rmSync(join(root, '.issues/factory.lock'), { recursive: true });
+  changePriority(service, input);
+  assert.match(service.snapshot().issues[0].content, /New worker evidence must survive/);
+  const current = service.snapshot().issues[0];
+  const config = join(root, '.issues/triage-labels.md');
+  writeFileSync(
+    config,
+    readFileSync(config, 'utf8') +
+      '\n## Issue Priorities\n\n| Name | Color | Meaning |\n| --- | --- | --- |\n| Critical | Red | Most urgent. |\n| Major | Yellow | Default. |\n'
+  );
+  assert.throws(
+    () => changePriority(service, { ...input, basis: current.priorityInfo.basis }),
+    /priority or project list changed/
+  );
+  assert.equal(service.snapshot().priorities.length, 2);
+});
+
+test('queue priority controls show immediate saving feedback and dividers use the following issue color', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const { queueResponse } = await import('./factory-ui/queue-response.mjs');
+  const other = structuredClone(snapshot.issues[0]);
+  other.id = 'another-issue';
+  other.title = 'Another issue';
+  other.priorityInfo = { ...other.priorityInfo, id: 'critical', name: 'Critical', color: '#ef4444', index: 1 };
+  snapshot.issues.push(other);
+  const queue = queueResponse(snapshot, null);
+  window.history.replaceState(null, '', '#/queue');
+  window.screenTest.show(queue);
+  const rows = window.document.querySelectorAll('#issues tr');
+  assert.equal(rows[1].style.getPropertyValue('--issue-priority'), '#ef4444');
+  let finish;
+  const sent = [];
+  window.fetch = async (url, options) => {
+    if (options) {
+      sent.push(JSON.parse(options.body));
+      await new Promise((resolve) => {
+        finish = resolve;
+      });
+    }
+    return { ok: true, json: async () => (url.includes('runtime') ? {} : queue) };
+  };
+  const id = snapshot.issues[0].id;
+  window.document.querySelector(`[data-priority="up"][data-priority-issue="${id}"]`).click();
+  assert.match(window.document.querySelector('.issue-priority').textContent, /Saving/);
+  assert.ok([...window.document.querySelectorAll(`[data-priority-issue="${id}"]`)].every((button) => button.disabled));
+  assert.equal(sent[0].direction, 'up');
+  finish();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(sent.length, 1);
+  assert.ok([...window.document.querySelectorAll(`[data-priority-issue="${id}"]`)].every((button) => !button.disabled));
+});

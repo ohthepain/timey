@@ -1,3 +1,4 @@
+import { changePriority } from './issue-priority.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
 import { createServer } from 'node:http';
@@ -60,6 +61,7 @@ async function mutation(service, path, value, owner) {
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
+    '/api/issue-priority': () => changePriority(service, value),
     '/api/toggle-route': () => toggleRoute(service, value),
     '/api/skip-plan-checks': () => service.skipPlanChecks(value),
     '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),

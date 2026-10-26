@@ -20,6 +20,7 @@ export function appendCompletion(root, issue, result, run, evidence, target) {
     const doc = parseDocument(match[1]);
     requireThat(!doc.errors.length, 'The report frontmatter is invalid.');
     doc.set('updated', new Date().toISOString());
+    if (result.priority_update) doc.set('priority', result.priority_update);
     recordChecklistMetadata(doc, issue, result);
     recordInterviewMetadata(doc, result);
     recordAcceptedMetadata(doc, result);
@@ -44,6 +45,7 @@ function recordedBy(run) {
   );
 }
 function reviewHeading(result) {
+  if (result.priority_update) return 'Issue priority';
   if (result.stage_grilling) return 'Grilling · ' + result.stage_grilling.name;
   return ordinaryReviewHeading(result);
 }

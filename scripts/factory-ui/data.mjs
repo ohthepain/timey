@@ -1,3 +1,4 @@
+import { readPriorities, priorityView } from './priorities.mjs';
 import { closureReasons } from './closure-reasons.mjs';
 import { issueInputs } from '../factory-inputs.mjs';
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
@@ -36,6 +37,7 @@ function relationships(report, ids) {
 export function readQueue(project) {
   const root = realpathSync(project);
   const inspection = factory(root).inspect();
+  const priorities = readPriorities(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8'));
   const stages = lifecycle(root),
     ids = inspection.reports.map((r) => r.metadata.id);
   return {
@@ -43,9 +45,11 @@ export function readQueue(project) {
     head: inspection.snapshot.head,
     snapshot: inspection.snapshot,
     lifecycle: stages,
+    priorities,
     closureReasons: closureReasons(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8')),
     issues: inspection.reports.map((report) => ({
       ...report.metadata,
+      priorityInfo: priorityView(report.metadata, priorities),
       content: report.content,
       links: relationships(report, ids),
       stage: stages.find((s) => s.state === report.metadata.state)?.name || report.metadata.state,

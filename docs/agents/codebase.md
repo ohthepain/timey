@@ -205,3 +205,7 @@ transport tests live in `factory-server-control.check.mjs`.
 lifecycle Markdown. `issue-decision.mjs` keeps accepted fixes separate from
 explicit user decisions to stop work; `factory-completion.mjs` preserves the
 closure record without marking unfinished stages complete.
+
+`factory-ui/priorities.mjs` reads the project’s ordered priority definitions and
+projects default Major values without backfilling reports. `issue-priority.mjs`
+records one-level user changes through the shared report writer and queue lock.

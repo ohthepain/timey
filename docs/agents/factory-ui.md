@@ -821,3 +821,19 @@ page shows them after closure. Reopening preserves the decision in history.
 Changed reports or reason lists invalidate an open decision; duplicate submissions
 cannot close twice. This explicit user disposition is separate from automatic
 Progress, which still cannot close issues.
+
+## Issue priorities
+
+The queue and issue page show the saved priority and up/down buttons. Each click
+moves one level through the project’s Issue Priorities table in
+`.issues/triage-labels.md`, ordered highest first. Missing priorities display as
+Major without rewriting old reports. The defaults are Showstopper (orange),
+Critical (red), Major (yellow), Minor (green), and Suggestion (pink). The divider
+above each queue row uses that row’s priority color, so the line between two
+issues describes the following issue. Labels and hover descriptions supplement
+color. Filtering retains the same rule for the visible issues.
+
+Arrows disable at either end and while saving. Writes serialize with other queue
+writes, preserve current report content, record the priority change and timestamp,
+and reject stale priority/configuration choices. They change no stage, test result
+or acceptance and start no work. Existing queue ordering is retained.

@@ -95,3 +95,8 @@ approved implementation plan. It composes individual factory actions, retains
 its activity and answers in the issue UI, and pauses for actual human input.
 It is separate from a single `/factory` decision iteration and never supplies
 human-first integration approval or final acceptance on the user’s behalf.
+
+**Issue priority**:
+The relative urgency of an issue, independent of its lifecycle stage. The
+project’s ordered Issue Priorities list defines adjacent levels and colors;
+issues without a saved value use Major. A priority change does not complete work.

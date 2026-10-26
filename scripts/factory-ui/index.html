@@ -234,6 +234,30 @@
         border-bottom: 1px solid #ddd;
         vertical-align: top;
       }
+      #issues td {
+        border-bottom: 0;
+      }
+      #issues tr + tr td {
+        border-top: 2px solid var(--issue-priority, #eab308);
+      }
+      .issue-priority {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 6px 10px 6px 0;
+        font-size: 13px;
+      }
+      .priority-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--issue-priority);
+      }
+      .issue-priority button {
+        padding: 2px 7px;
+        min-width: 28px;
+        min-height: 28px;
+      }
       small,
       .muted {
         color: #657169;
@@ -1295,6 +1319,7 @@
           });
           $('issues').innerHTML = rows(queueIssues());
           queueLifecycleUI.restore($('issues'));
+          bindPriorities();
         };
         queueLifecycleUI.bind($('issues'));
         $('search').oninput = filter;
@@ -1325,11 +1350,36 @@
             .join('') || '<p>No reviews started here yet.</p>'
         }`;
       }
+      const priorityPending = new Set();
+      function priorityControls(issue) {
+        const info = issue.priorityInfo;
+        if (!info) return '';
+        const pending = priorityPending.has(issue.id);
+        return `<span class="issue-priority" style="--issue-priority:${esc(info.color)}"><span class="priority-dot" aria-hidden="true"></span><span title="${esc(info.meaning)}">${esc(info.name)}</span><button type="button" data-priority="up" data-priority-issue="${esc(issue.id)}" aria-label="Increase priority for ${esc(issue.title || issue.id)}" ${pending || info.index <= 0 ? 'disabled' : ''}>↑</button><button type="button" data-priority="down" data-priority-issue="${esc(issue.id)}" aria-label="Decrease priority for ${esc(issue.title || issue.id)}" ${pending || info.index < 0 || info.index >= data.priorities.length - 1 ? 'disabled' : ''}>↓</button><small role="status">${pending ? 'Saving…' : ''}</small></span>`;
+      }
+      function bindPriorities() {
+        document.querySelectorAll('[data-priority]').forEach((button) => {
+          button.onclick = () => {
+            const issue = data.issues.find((entry) => entry.id === button.dataset.priorityIssue);
+            if (priorityPending.has(issue.id)) return;
+            priorityPending.add(issue.id);
+            const direction = button.dataset.priority;
+            render();
+            void act(async () => {
+              try {
+                await request('issue-priority', { issueId: issue.id, direction, basis: issue.priorityInfo.basis });
+              } finally {
+                priorityPending.delete(issue.id);
+              }
+            });
+          };
+        });
+      }
       function rows(issues) {
         return issues
           .map(
             (i) =>
-              `<tr><td>${link(i.id)}<br><small>${esc(i.id)}</small></td><td>${queueLifecycleUI.render(i, esc)}</td></tr>`
+              `<tr style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${queueLifecycleUI.render(i, esc)}</td></tr>`
           )
           .join('');
       }
@@ -2048,7 +2098,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2>${lifecyclePanel(i)}<p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2>${lifecyclePanel(i)}<p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2181,6 +2231,7 @@
         const route = issueRoute();
         $('app').innerHTML = route.id ? issue(route.id) : queue();
         bind();
+        bindPriorities();
         applyApprovalFeedback();
         siteReviewUI.mount(data, request, refresh);
         restoreView();
