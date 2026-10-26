@@ -1,4 +1,4 @@
-import { lifecycleWorkBasis } from './factory-ui/lifecycle-stop.mjs';
+import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
 import { workerPrompt, integrationPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
@@ -4131,3 +4131,28 @@ for (const [name, mutate] of Object.entries(clarificationMutations)) {
     assert.equal(f.api.inspect().registry.actions.length, 0);
   });
 }
+
+test('a queue snapshot projects run history once while dispatch still reads current runs', (t) => {
+  const { service, root } = fixture(t);
+  const queue = readQueue(root),
+    issue = queue.issues[0];
+  const record = {
+    issueId: issue.id,
+    status: 'blocked',
+    attempts: [],
+    events: [],
+    stopBasis: lifecycleWorkBasis(queue, issue, {}),
+  };
+  service.lifecycleRuns[issue.id] = record;
+  const list = service.store.list.bind(service.store);
+  let calls = 0;
+  service.store.list = (...args) => {
+    calls++;
+    return list(...args);
+  };
+  const snapshot = service.snapshot();
+  assert.equal(snapshot.issues[0].lifecycle.canResume, false);
+  assert.equal(calls, 1, 'a blocked issue must reuse the snapshot history');
+  assert.equal(canResumeLifecycle(service, record, queue, issue), false);
+  assert.equal(calls, 2, 'dispatch without a snapshot must still read current runs');
+});

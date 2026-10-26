@@ -8,7 +8,9 @@ authoritative project rather than an old worker checkout. Use `--port NUMBER`
 only when a fixed local port is needed.
 
 The queue and issue screens read actual reports and the dispatch ledger through
-the existing factory helper. Refreshing and filtering are read-only. Lifecycle
+the existing factory helper. Each queue refresh projects saved run history once
+and reuses that projection for lifecycle availability; dispatch still reads current
+history and applies its guards. No history projection is cached across requests. Refreshing and filtering are read-only. Lifecycle
 stages come from the configured role mapping. Human input remains separate from
 stage, worker completion and code integration. Links use the report's Parent,
 Blocked by and Related sections; reverse links are computed from those explicit

@@ -103,7 +103,7 @@ export class FactoryUI {
       readiness,
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
-      lifecycle: this.lifecycleStatus(queue, issue),
+      lifecycle: this.lifecycleStatus(queue, issue, runs),
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
@@ -111,10 +111,10 @@ export class FactoryUI {
       siteReview: this.siteReviews.view(queue, issue, owner),
     };
   }
-  lifecycleStatus(queue, issue) {
+  lifecycleStatus(queue, issue, runs) {
     const record = lifecycleView(this, issue);
     if (!record) return null;
-    return { ...record, canResume: canResumeLifecycle(this, record, queue, issue) };
+    return { ...record, canResume: canResumeLifecycle(this, record, queue, issue, runs) };
   }
   readPlan(path) {
     return readPlan(this.root, path);

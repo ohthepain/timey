@@ -49,9 +49,9 @@ function remainingWork(run) {
   return run.result?.remaining || [];
 }
 
-export function canResumeLifecycle(service, record, queue, issue) {
+export function canResumeLifecycle(service, record, queue, issue, runs) {
   const basis = lifecycleWorkBasis(queue, issue, record);
   if (record.stopBasis !== basis) return true;
-  const choice = nextProgress(queue, issue, service.store.list(service.codex.requests));
+  const choice = nextProgress(queue, issue, runs || service.store.list(service.codex.requests));
   return choice.kind === 'save-review' && !record.attempts.includes(basis + ':save-review');
 }
