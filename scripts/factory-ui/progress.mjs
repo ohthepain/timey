@@ -200,7 +200,10 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
   const target = reviewedTransition(service, queue, issue, action, result);
   service.guard(service.root, action, reviewOperation(queue, issue), queue.head);
   recordWorker(service, action, worker, result, evidence, candidate, run.authorization);
-  appendReview(service.root, issue, result, run, evidence, target);
+  const skipSources = Object.fromEntries(
+    savedRoute(issue, service.store.runs).map((step) => [step.state, step.source])
+  );
+  appendReview(service.root, issue, result, { ...run, skipSources }, evidence, target);
 }
 function recordWorker(service, action, worker, result, evidence, candidate, authorization) {
   const note = `Coordinator evidence review: ${result.summary}. ${JSON.stringify(evidence)}. Remaining: ${JSON.stringify(result.remaining)}`;

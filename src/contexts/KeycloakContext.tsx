@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { getKeycloak, getKeycloakInitOptions } from '~/config/keycloak';
-import { KeycloakEvent, KeycloakUser } from '~/config/keycloak';
+import {
+  ensureKeycloakUserRecorded,
+  getKeycloak,
+  getKeycloakInitOptions,
+  keycloakUserFromProfile,
+  KeycloakUser,
+} from '~/config/keycloak';
 
 interface KeycloakContextType {
   keycloak: any;
@@ -64,27 +69,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
           setAuthenticated(true);
 
           await loadUserInfo(kc);
-
-          // Ensure user exists in the database
-          try {
-            const response = await fetch('/api/auth/ensure-user', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${kc.token}`,
-                'Content-Type': 'application/json',
-              },
-            });
-
-            if (response.ok) {
-              const { userId } = await response.json();
-              console.log('User ensured in database:', userId);
-            } else {
-              console.error('Failed to ensure user in database');
-            }
-          } catch (error) {
-            console.error('Error ensuring user in database:', error);
-          }
-
+          await ensureKeycloakUserRecorded(kc.token);
           setLoading(false);
         };
 
@@ -122,26 +107,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
 
         if (authenticated) {
           await loadUserInfo(kc);
-
-          // Ensure user exists in the database
-          try {
-            const response = await fetch('/api/auth/ensure-user', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${kc.token}`,
-                'Content-Type': 'application/json',
-              },
-            });
-
-            if (response.ok) {
-              const { userId } = await response.json();
-              console.log('User ensured in database:', userId);
-            } else {
-              console.error('Failed to ensure user in database');
-            }
-          } catch (error) {
-            console.error('Error ensuring user in database:', error);
-          }
+          await ensureKeycloakUserRecorded(kc.token);
         }
 
         // Always set loading to false after initialization, regardless of authentication status
@@ -173,18 +139,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
     try {
       if (kc.authenticated && kc.token) {
         const userInfo = await kc.loadUserInfo();
-        setUser({
-          id: userInfo.sub || '',
-          username: userInfo.preferred_username || '',
-          email: userInfo.email,
-          userName:
-            userInfo.userName || (userInfo.given_name && userInfo.family_name)
-              ? `${userInfo.given_name} ${userInfo.family_name}`.trim()
-              : userInfo.preferred_username || 'User',
-          firstName: userInfo.given_name,
-          lastName: userInfo.family_name,
-          roles: kc.realmAccess?.roles || [],
-        });
+        setUser(keycloakUserFromProfile(userInfo, kc.realmAccess?.roles || []));
       }
     } catch (error) {
       console.error('Failed to load user info:', error);

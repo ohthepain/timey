@@ -1,21 +1,24 @@
+import { handoffRestart, waitForPrevious, resumeAfterRestart } from './factory-ui/restart-process.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 
 // No chat, worker or integration starts until a reviewed browser action is submitted.
-function main() {
+async function main() {
+  await waitForPrevious(Number(optionValue('--after-pid') || 0));
   const { project, port } = options();
   const service = new FactoryUI(project, {
       preview: process.argv.includes('--preview'),
       authoritativeUrl: optionValue('--authoritative-url'),
     }),
-    server = createFactoryServer(service);
-  server.listen(port, '127.0.0.1', () =>
+    server = createFactoryServer(service, { restart: () => handoffRestart(service, server) });
+  server.listen(port, '127.0.0.1', () => {
     console.log(
       `Factory UI: http://127.0.0.1:${server.address().port}/\nProject: ${service.root}\nOpening or refreshing the page does not launch work.`
-    )
-  );
+    );
+    resumeAfterRestart(service);
+  });
   const close = () => {
     service.close();
     server.close(() => process.exit(0));
@@ -25,7 +28,7 @@ function main() {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    main();
+    await main();
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

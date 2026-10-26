@@ -10,10 +10,11 @@ factory launch or acceptance is part of this change.
 ## Changes
 
 - The shared verification path invokes the pinned local Fallow 3.35.0 with
-  `npx --no-install --offline fallow audit --base <resolved-ref> --gate all --format json`.
-  Both the existing staged hook and new `npm run audit:step -- --base REF` use it.
-- Audits cover whole changed files instead of a line-only diff. Inherited findings
-  in those files are not waived. Exit zero alone is insufficient: warning verdicts,
+  `npx --no-install --offline fallow audit --base <resolved-ref> --format json`
+  and `.fallowrc.json` `audit.gate: new-only` so checkpoints block on introduced
+  findings only. Both the staged hook and `npm run audit:step -- --base REF` use it.
+- Audits cover whole changed files instead of a line-only diff. Exit zero alone is
+  insufficient: warning verdicts,
   warnings on stderr, findings, unknown reports and degraded diagnostics fail.
 - Step completion requires the recorded starting revision explicitly. Evidence
   records resolved base, source HEAD, exported tree, changed paths, command,

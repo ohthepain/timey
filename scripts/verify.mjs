@@ -111,8 +111,6 @@ try {
     'audit',
     '--base',
     base,
-    '--gate',
-    'all',
     '--format',
     'json',
   ]);

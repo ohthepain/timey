@@ -106,3 +106,29 @@ and metadata to enforce these conventions; the table is a lifecycle view.
 - **Handoff:** implementation tickets created from planning follow the local
   capture and implementation workflow above. Wayfinding itself authorizes no
   production implementation or automatic remote publication.
+
+## Record skipped stages
+
+When capture starts an issue beyond Clarify, record every bypassed stage in
+`lifecycle_history` with `outcome: skipped`, its own plain-language `reason`,
+`source: { kind: original-report }`, the recording time `at`, and `evidence`
+pointing to the original report. This records a routing decision, not completed
+clarification or investigation. Explain each stage separately; do not infer old
+skip decisions merely because an issue currently has a later state.
+
+Any stage may propose that later optional stages are unnecessary. Save each
+stage's reason and decision source before advancing past it. The shared writer
+records `source: { kind: stage, state: <deciding-state> }`; explicit user skip
+decisions use `source: { kind: user }`. Preserve the source when applying a
+previously saved skip. Required exit conditions, technical checks, human checks
+and explicit acceptance still apply. Existing completed work is recorded as
+completed, not skipped. Unknown historical sources stay unknown.
+
+## Closing without a fix
+
+An explicit user decision may close an idle issue as Won’t Do, Duplicate, Cannot
+Reproduce, Not Enough Information, or No Longer Relevant. Record the configured
+reason and details without passing checks, completing skipped work or claiming
+acceptance. Fixed closure still requires the normal final review and acceptance.
+Project-specific reasons live in the Closed reasons table in
+`.issues/triage-labels.md`; `fixed` retains its acceptance meaning.

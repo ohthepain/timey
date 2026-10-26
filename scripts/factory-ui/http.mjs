@@ -1,5 +1,7 @@
-import { toggleRoute } from './route-toggle.mjs';
+import { changePriority } from './issue-priority.mjs';
 import { prepareDeployment } from './deployment.mjs';
+import { serverControl } from './server-control.mjs';
+import { toggleRoute } from './route-toggle.mjs';
 import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
@@ -37,11 +39,13 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
+  service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
     '/api/discussion-open': () => service.discussions.open(value, owner),
     '/api/discussion-turn': () => service.discussions.turn(value, owner),
+    '/api/discussion-summary': () => service.discussions.summarize(value, owner),
     '/api/discussion-prepare': () => service.discussions.prepare(value, owner),
     '/api/discussion-commit': () => service.discussions.commit(value, owner),
     '/api/discussion-end': () => service.discussions.end(value, owner),
@@ -53,10 +57,14 @@ async function mutation(service, path, value, owner) {
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
     '/api/issue-chat-send': () => service.issueChats.send(value),
+    '/api/server-pause': () => service.serverControl.pause(),
+    '/api/server-restart': () => service.serverControl.request(),
+    '/api/server-cancel-restart': () => service.serverControl.cancel(),
     '/api/lifecycle-start': () => service.startLifecycle(value),
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
+    '/api/issue-priority': () => changePriority(service, value),
     '/api/toggle-route': () => toggleRoute(service, value),
     '/api/skip-plan-checks': () => service.skipPlanChecks(value),
     '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),
@@ -64,7 +72,8 @@ async function mutation(service, path, value, owner) {
       service.decidePlanCheck(value.issueId, value.state, value.checkId, value.status, value.basis, value.result),
     '/api/find-worker': () => service.findConnection(value.issueId, value.state, value.basis),
     '/api/connect-worker': () => service.connectWorker(value.issueId, value.state, value.basis, value.link),
-    '/api/issue-decision': () => service.decideIssue(value.issueId, value.state, value.kind, value.basis, value.reason),
+    '/api/issue-decision': () =>
+      service.decideIssue(value.issueId, value.state, value.kind, value.basis, value.reason, value.resolution),
     '/api/check-readiness': () => service.checkReadiness(value.issueId, value.state),
     '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),
     '/api/progress-start': () => service.progressStart(value.token, value.humanApproved),
@@ -78,7 +87,8 @@ async function mutation(service, path, value, owner) {
   if (Object.hasOwn(routes, path)) return routes[path]();
   throw Error('Unknown operation. No action was taken.');
 }
-export function createFactoryServer(service) {
+export function createFactoryServer(service, options = {}) {
+  service.serverControl = serverControl(service, options.restart);
   const token = randomBytes(32).toString('hex');
   const server = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
@@ -96,6 +106,7 @@ export function createFactoryServer(service) {
       response.end(JSON.stringify({ error: error.message }));
     }
   });
+  server.once('close', () => service.serverControl.close());
   return server;
 }
 
@@ -104,7 +115,8 @@ async function respond(service, request, response, token, port) {
   authorize(request, token, port);
   response.setHeader('Content-Type', 'application/json');
   if (request.method === 'GET') return readResource(service, request, response, token);
-  if (request.method === 'POST') return response.end(JSON.stringify(await postedAction(service, request, token)));
+  if (request.method === 'POST')
+    return response.end(JSON.stringify(await postedAction(service, request, token)));
   response.statusCode = 405;
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }
@@ -116,7 +128,8 @@ function page(response, token, port) {
 function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
   const routes = {
-    '/api/runtime': () => runtimeInfo(service),
+    '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
+    '/api/server-status': () => service.serverControl.status(),
     '/api/issue-chat': () =>
       service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
@@ -143,17 +156,16 @@ async function temporaryAction(action) {
 }
 
 function readResource(service, request, response, owner) {
-  if (request.url === '/queue-lifecycle-ui.js') {
+  const scripts = {
+    '/server-control-ui.js': new URL('./server-control-ui.js', import.meta.url),
+    '/queue-lifecycle-ui.js': new URL('./queue-lifecycle-ui.js', import.meta.url),
+    '/issue-chat-ui.js': new URL('./issue-chat-ui.js', import.meta.url),
+    '/site-review-ui.js': new URL('./site-review-ui.js', import.meta.url),
+    '/discussion-ui.js': new URL('./discussion-ui.js', import.meta.url),
+  };
+  if (Object.hasOwn(scripts, request.url)) {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-    return response.end(readFileSync(new URL('./queue-lifecycle-ui.js', import.meta.url)));
-  }
-  return readClientResource(service, request, response, owner);
-}
-function readClientResource(service, request, response, owner) {
-  const scripts = ['/site-review-ui.js', '/issue-chat-ui.js', '/discussion-ui.js'];
-  if (scripts.includes(request.url)) {
-    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-    return response.end(readFileSync(new URL('.' + request.url, import.meta.url)));
+    return response.end(readFileSync(scripts[request.url]));
   }
   return read(service, request, response, owner);
 }
@@ -167,7 +179,13 @@ function savedRun(service, id) {
 function requireLiveMutation(service, path) {
   if (service.reviewMode === 'preview')
     requireThat(
-      ['/api/discussion-open', '/api/discussion-turn', '/api/discussion-prepare', '/api/discussion-end'].includes(path),
+      [
+        '/api/discussion-open',
+        '/api/discussion-turn',
+        '/api/discussion-prepare',
+        '/api/discussion-summary',
+        '/api/discussion-end',
+      ].includes(path),
       'This is a preview copy. Make changes and record approvals on the real issue.'
     );
 }

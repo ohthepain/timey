@@ -91,3 +91,21 @@ coordinator records its requested operation and presents the next manual choice.
 Ask the user only for an actual missing decision, observation or permission, and
 show that request where they can answer it. Do not ask them to find a different
 coordinator to perform routine bookkeeping.
+
+## Skip decision sources
+
+Stage history and saved route steps carry a `source` beside the reason:
+`{ kind: original-report }`, `{ kind: user }`, or
+`{ kind: stage, state: <configured-state> }`. The expanded skipped stage shows
+both source and reason. A future skip remains a plan until applied; applying it
+preserves the original decision source. The server supplies stage sources from
+the actual review context, independently of execution authorization. Older records
+with no known source say “Source not recorded”; the current stage is not used to
+invent a historical source. See the tracker guide for initial capture routing.
+
+Saving confirmed grilling to any role updates the inputs used by Progress and
+invalidates its previous scope assessment. Save alone enables Continue without
+starting work; Save and continue uses that same updated record immediately.
+The next assessment reads the saved answers and respects recorded initial skips,
+then presents any required exact-plan approval. A saved interview alone does not
+approve implementation, finish the role or grant final acceptance.

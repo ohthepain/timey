@@ -11,24 +11,36 @@ const clean = () => ({
   dead_code: { workspace_diagnostics: [] },
 });
 const result = (audit = clean(), stderr = '') => ({ status: 0, stdout: JSON.stringify(audit), stderr });
-test('zero-exit warnings and findings are failures, not successful checkpoints', () => {
+test('checkpoints follow Fallow verdict and stderr, not raw introduced counts', () => {
   assert.equal(assessAudit(result()).passed, true);
   const warn = clean();
   warn.verdict = 'warn';
-  assert.equal(assessAudit(result(warn)).passed, false);
+  warn.attribution.gate = 'new-only';
+  warn.attribution.complexity_introduced = 5;
+  assert.equal(assessAudit(result(warn)).passed, true);
   assert.equal(assessAudit(result(clean(), 'WARN skipped entry point\n')).passed, false);
-  const findings = clean();
-  findings.summary.dead_code_issues = 1;
-  assert.equal(assessAudit(result(findings)).passed, false);
+  const inherited = clean();
+  inherited.summary.dead_code_issues = 1;
+  inherited.verdict = 'fail';
+  assert.equal(assessAudit(result(inherited)).passed, false);
+  const inheritedNewOnly = clean();
+  inheritedNewOnly.attribution.gate = 'new-only';
+  inheritedNewOnly.summary.dead_code_issues = 1;
+  inheritedNewOnly.attribution.dead_code_introduced = 0;
+  inheritedNewOnly.attribution.dead_code_inherited = 1;
+  assert.equal(assessAudit(result(inheritedNewOnly)).passed, true);
+  const introduced = clean();
+  introduced.attribution.gate = 'new-only';
+  introduced.summary.dead_code_issues = 1;
+  introduced.attribution.dead_code_introduced = 1;
+  introduced.verdict = 'fail';
+  assert.equal(assessAudit(result(introduced)).passed, false);
 });
-test('invalid reports, new-only gates, failed processes and degraded analysis fail closed', () => {
+test('invalid reports, failed processes and degraded analysis fail closed', () => {
   assert.equal(assessAudit({ status: 0, stdout: 'not JSON' }).passed, false);
   const unsupported = clean();
   unsupported.schema_version = 14;
   assert.equal(assessAudit(result(unsupported)).passed, false);
-  const waiver = clean();
-  waiver.attribution.gate = 'new-only';
-  assert.equal(assessAudit(result(waiver)).passed, false);
   assert.equal(assessAudit({ ...result(), status: 1 }).passed, false);
   const degraded = clean();
   degraded.dead_code.workspace_diagnostics.push({ kind: 'source-parse-degraded', degrades_analysis: true });

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, unlinkSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { deliveryFixture as fixture } from './factory-workflow-fixture.mjs';
+import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { finalizeDelivery, currentDelivery } from './factory-ui/delivery.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
@@ -10,7 +10,7 @@ import { progressBasis } from './factory-ui/next-action.mjs';
 import { queueResponse } from './factory-ui/queue-response.mjs';
 
 test('separate-source delivery advances actual issue once and preserves verification, commit and integration', (t) => {
-  const { queue, source, input } = fixture(t);
+  const { queue, source, input } = deliveryFixture(t);
   const before = queue.git('rev-parse', 'HEAD');
   assert.equal(finalizeDelivery(queue.root, input).state, 'final');
   let issue = readQueue(queue.root).issues[0];
@@ -33,7 +33,7 @@ test('separate-source delivery advances actual issue once and preserves verifica
   assert.throws(() => currentDelivery(issue), /uncommitted/);
 });
 test('failed evidence and stale report leave the issue unchanged', (t) => {
-  const { queue, input } = fixture(t),
+  const { queue, input } = deliveryFixture(t),
     file = join(queue.root, '.issues/20261025-one.md'),
     before = readFileSync(file, 'utf8');
   assert.throws(
@@ -45,7 +45,7 @@ test('failed evidence and stale report leave the issue unchanged', (t) => {
   assert.equal(readFileSync(file, 'utf8'), before);
 });
 test('an interrupted prepared delivery resumes without repeating software work', (t) => {
-  const { queue, input } = fixture(t);
+  const { queue, input } = deliveryFixture(t);
   const file = join(queue.root, '.issues/20261025-one.md'),
     before = readFileSync(file, 'utf8');
   finalizeDelivery(queue.root, input);
@@ -71,7 +71,7 @@ test('queue polling excludes transcripts and bounds selected live output without
 });
 
 test('finalized separate-source delivery closes only on an explicit decision', (t) => {
-  const { queue, source, input } = fixture(t);
+  const { queue, source, input } = deliveryFixture(t);
   finalizeDelivery(queue.root, input);
   writeFileSync(join(source.root, 'later.js'), 'another issue\n');
   source.git('add', 'later.js');
@@ -88,7 +88,7 @@ test('finalized separate-source delivery closes only on an explicit decision', (
   assert.equal(snapshot.issues[0].accepted_result.verification_rerun, false);
 });
 test('delivery preserves a required custom stage instead of skipping it', (t) => {
-  const { queue, input } = fixture(t);
+  const { queue, input } = deliveryFixture(t);
   const file = join(queue.root, '.issues/triage-labels.md');
   writeFileSync(
     file,

@@ -57,7 +57,7 @@ _Avoid_: Worker completion, integration
 
 **Stage outcome**:
 A recorded decision that a lifecycle stage completed or was skipped, with its
-reason and evidence. A finished worker is evidence for review, not this decision.
+reason, decision source and evidence. A finished worker is evidence for review, not this decision.
 
 **Planned route**:
 The saved expectation of which future issue stages will be taken, skipped or
@@ -104,3 +104,8 @@ _Avoid_: Temporary chat, worker chat
 **Revision request**:
 An explicit request to reconsider an issue's agreed work, retained for review
 before continuing under an approved plan. It is separate from a comment or approval.
+
+**Issue priority**:
+The relative urgency of an issue, independent of its lifecycle stage. The
+project’s ordered Issue Priorities list defines adjacent levels and colors;
+issues without a saved value use Major. A priority change does not complete work.

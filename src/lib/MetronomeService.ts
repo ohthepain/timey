@@ -1,6 +1,6 @@
 import { midiService } from '~/lib/MidiService';
+import { metronomeTickNote } from '~/lib/metronomePulse';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
-import { useNavigationStore } from '~/state/NavigationStore';
 import { TempoService } from '~/lib/TempoService';
 
 class MetronomeService {
@@ -42,23 +42,11 @@ class MetronomeService {
   private handleStop = () => {};
 
   private handlePulse = (event: { time: number; ticks: number }) => {
-    if (!this.tempoService.isRunning || !useNavigationStore.getState().isMetronomeOn) {
-      return;
-    }
-
-    // Only play on quarter note ticks
-    const ppqn = this.tempoService.ppqn;
-    if (event.ticks % ppqn !== 0) {
-      return;
-    }
-
-    const midiSettings = useMidiSettingsStore.getState();
-    if (!midiSettings.midiOutputDeviceId) {
-      return;
-    }
-
-    midiService.playNote(midiSettings.metronomeNoteNumber, midiSettings.metronomeVelocity);
+    const note = metronomeTickNote(this.tempoService, event.ticks);
+    if (note === null) return;
+    const velocity = useMidiSettingsStore.getState().metronomeVelocity;
+    midiService.playNote(note, velocity);
   };
 }
 
-export const metronomeService = MetronomeService.getInstance();
+const metronomeService = MetronomeService.getInstance();

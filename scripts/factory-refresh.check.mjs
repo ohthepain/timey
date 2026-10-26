@@ -12,7 +12,12 @@ function refreshFixture(t) {
     { url: 'http://127.0.0.1/#/issue/one', runScripts: 'outside-only' }
   );
   t.after(() => dom.window.close());
-  dom.window.eval(readFileSync('scripts/factory-ui/discussion-ui.js', 'utf8') + '\nwindow.chatTest = discussionUI;');
+  dom.window.eval(
+    readFileSync('scripts/factory-ui/server-control-ui.js', 'utf8') +
+      '\nwindow.serverControlUI = serverControlUI;\n' +
+      readFileSync('scripts/factory-ui/discussion-ui.js', 'utf8') +
+      '\nwindow.chatTest = discussionUI;'
+  );
   let snapshot = { issues: [{ id: 'one', lifecycle: { status: 'running', input: null } }] };
   let renders = 0,
     busy = false;
@@ -28,6 +33,7 @@ function refreshFixture(t) {
     'updateLiveOutput',
     'render',
     'isBusy',
+    'serverControlUI',
     'let data,refreshing=false,refreshPending=false;\n' +
       html.slice(start, end).replace('!busy', '!isBusy()') +
       ';return refresh;'
@@ -46,7 +52,8 @@ function refreshFixture(t) {
         throw Error('No model request expected');
       });
     },
-    () => busy
+    () => busy,
+    dom.window.serverControlUI
   );
   return {
     refresh,

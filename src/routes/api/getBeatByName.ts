@@ -2,7 +2,7 @@ import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { beatRepository } from '~/repositories/beatRepository';
 import { json } from '@tanstack/react-start';
 
-export const APIRoute = createAPIFileRoute('/api/getBeatByName')({
+const APIRoute = createAPIFileRoute('/api/getBeatByName')({
   GET: async ({ request }) => {
     try {
       // Extract the `name` query parameter from the request URL

@@ -1066,7 +1066,7 @@ function completedWorkFixture(t) {
       schema_version: 13,
       version: '3.35.0',
       verdict: 'pass',
-      attribution: { gate: 'all' },
+      attribution: { gate: 'new-only' },
       summary: { dead_code_issues: 0, complexity_findings: 0, duplication_clone_groups: 0 },
       dead_code: { workspace_diagnostics: [] },
     }) + '\n'
@@ -3082,9 +3082,15 @@ async function activityScreen(t) {
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
+    readFileSync(resolve('scripts/factory-ui/queue-lifecycle-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\n' +
       script +
       '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'

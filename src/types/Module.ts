@@ -1,26 +1,21 @@
 import { Beat } from './Beat';
 import { Method } from './Method';
+import { applyCatalogEntityFields } from './catalogEntity';
 
 export class Module {
-  id: string;
-  title: string;
+  id!: string;
+  title!: string;
   description?: string;
-  index: number;
-  authorId: string;
-  createdAt: Date;
-  modifiedAt: Date;
+  index!: number;
+  authorId!: string;
+  createdAt!: Date;
+  modifiedAt!: Date;
   beats?: Beat[];
   methodId: string;
   method: Method | null;
 
   constructor(data: any) {
-    this.id = data.id;
-    this.title = data.title;
-    this.description = data.description || '';
-    this.index = data.index || 0;
-    this.authorId = data.authorId;
-    this.createdAt = data.createdAt || new Date();
-    this.modifiedAt = data.modifiedAt || new Date();
+    applyCatalogEntityFields(this, data);
     this.methodId = data.methodId;
     this.method = data.method ? new Method(data.method) : null;
     this.beats = data.beats ? data.beats.map((b: any) => new Beat(b)) : [];

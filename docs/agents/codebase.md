@@ -269,9 +269,10 @@ checks persistence, provenance, routing, isolation, pagination and UI drafts.
 
 Queue lifecycle squares use `scripts/factory-ui/queue-lifecycle.mjs` to combine
 existing stage outcomes, readiness and activity. `queue-lifecycle-ui.js` renders
-and binds the accessible strip; `route-toggle.mjs` guards future-only route choices
-and persists them through the existing run store. `factory-lifecycle.check.mjs`
-exercises the disposable persistence and authorization boundaries.
+the accessible strip with links to expanded issue steps; `route-toggle.mjs` guards
+future-only route choices and persists them through the existing run store.
+`factory-lifecycle.check.mjs` exercises the disposable persistence and
+authorization boundaries.
 
 `factory-deploy-readiness.mjs` records bounded, sanitized candidate/recovery
 readiness observations. `factory-ui/runtime.mjs` exposes response metadata to the
@@ -280,3 +281,19 @@ its boolean readiness contract. Deployment receipts link observations persisted
 by the unchanged candidate/recovery polling flow. Disposable deployment fixtures
 cover HTTP/transport/decode failures, identity mismatches, successful readiness,
 bounded retention and failed-recovery lock preservation.
+
+`factory-ui/server-control.mjs` counts live actions and temporary chats, blocks new
+UI work while paused or draining and requests coordinator pauses. `restart-process.mjs`
+hands the installed listener to a replacement process and resumes saved paused
+controllers through normal guards. `server-control-ui.js` owns the header controls
+and reconnects without replacing the page or its draft. Disposable process and
+transport tests live in `factory-server-control.check.mjs`.
+
+`factory-ui/closure-reasons.mjs` reads project closure choices from the local
+lifecycle Markdown. `issue-decision.mjs` keeps accepted fixes separate from
+explicit user decisions to stop work; `factory-completion.mjs` preserves the
+closure record without marking unfinished stages complete.
+
+`factory-ui/priorities.mjs` reads the project’s ordered priority definitions and
+projects default Major values without backfilling reports. `issue-priority.mjs`
+records one-level user changes through the shared report writer and queue lock.

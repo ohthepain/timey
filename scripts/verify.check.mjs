@@ -143,25 +143,26 @@ test('aggregate verification dispatches the package factory suite in an isolated
   assert.match(readFileSync(passed.factory.log, 'utf8'), /interface dispatch sentinel/);
 });
 
-test('step and commit audits reject inherited findings anywhere in changed files', (t) => {
+test('step and commit audits block only introduced findings in changed files', (t) => {
   const { root, git, run } = auditFixture(t, { 'unused.js': 'export const unused = 1;\n' });
-  // This dead file already existed in the baseline. A new-only gate waived it.
+  // Inherited dead code in an already-tracked file does not block under new-only.
   writeFileSync(join(root, 'unused.js'), 'export const unused = 2;\n');
   git('add', '.');
   for (const args of [['--step', '--base', 'HEAD'], ['--staged']]) {
     const result = run(...args);
-    assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.match(result.stdout, /FAIL fallow/);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
   }
-  writeFileSync(join(root, 'index.js'), 'import { unused } from "./unused.js";\nconsole.log(unused);\n');
-  const fixed = run('--step', '--base', 'HEAD');
-  assert.equal(fixed.status, 0, fixed.stdout + fixed.stderr);
+  writeFileSync(join(root, 'new-dead.js'), 'export const orphan = 1;\n');
+  git('add', 'new-dead.js');
+  const introduced = run('--step', '--base', 'HEAD');
+  assert.equal(introduced.status, 1, introduced.stdout + introduced.stderr);
+  assert.match(introduced.stdout, /FAIL fallow/);
 });
 
 test('real pre-commit hook isolates Git environment and preserves the source index on failure', (t) => {
   const { root, git } = auditFixture(t);
   git('config', 'core.hooksPath', resolve('.githooks'));
-  writeFileSync(join(root, 'unused.js'), 'export const unused = 1;\n');
+  writeFileSync(join(root, 'new-dead.js'), 'export const orphan = 1;\n');
   git('add', '.');
   const beforeHead = git('rev-parse', 'HEAD');
   const beforeEntries = git('ls-files', '--stage');
@@ -178,7 +179,7 @@ test('real pre-commit hook isolates Git environment and preserves the source ind
   assert.equal(git('rev-parse', 'HEAD'), beforeHead);
   assert.equal(git('ls-files', '--stage'), beforeEntries);
   assert.equal(git('diff', '--cached', '--binary'), beforeDiff);
-  writeFileSync(join(root, 'index.js'), 'import { unused } from "./unused.js";\nconsole.log(unused);\n');
+  writeFileSync(join(root, 'index.js'), 'import { orphan } from "./new-dead.js";\nconsole.log(orphan);\n');
   git('add', '.');
   const passed = commit();
   assert.equal(passed.status, 0, passed.stdout + passed.stderr);

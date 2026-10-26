@@ -36,7 +36,7 @@ export const ensureKeycloakUser = async (token?: string): Promise<string | null>
   }
 };
 
-export const requireKeycloakUser = async (): Promise<string> => {
+const requireKeycloakUser = async (): Promise<string> => {
   const userId = await ensureKeycloakUser();
   if (!userId) {
     throw new Error('Authentication required');

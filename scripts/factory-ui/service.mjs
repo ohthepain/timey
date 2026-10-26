@@ -1,5 +1,6 @@
 import { createIssueChats } from './issue-chat.mjs';
 import { conversationPrompt } from './conversation-context.mjs';
+import { stageSource } from './stage-source.mjs';
 import { startChat } from './chat-start.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
@@ -98,12 +99,13 @@ export class FactoryUI {
   issueView(queue, issue, runs, owner) {
     const readiness = readinessView(queue, issue, runs);
     const progress = nextProgress(queue, issue, runs);
+    const lifecycle = this.lifecycleStatus(queue, issue, runs);
     return {
       ...issue,
       readiness,
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
-      lifecycle: this.lifecycleStatus(queue, issue, runs),
+      lifecycle: visibleLifecycle(lifecycle, progress),
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
@@ -147,8 +149,8 @@ export class FactoryUI {
   connectWorker(id, state, basis, link) {
     return connectWorker(this, id, state, basis, link);
   }
-  decideIssue(id, state, kind, basis, reason) {
-    return decideIssue(this, id, state, kind, basis, reason);
+  decideIssue(id, state, kind, basis, reason, resolution) {
+    return decideIssue(this, id, state, kind, basis, reason, resolution);
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);
@@ -525,7 +527,16 @@ function routesForReview(queue, run) {
     { ...queue, actions: [...queue.actions, ...run.result.recommendations] },
     run.result.routes || [],
     run.issueId
-  );
+  ).map((route) => ({
+    ...route,
+    steps: route.steps.map((step) => ({
+      ...step,
+      source: stageSource(
+        queue.issues.find((issue) => issue.id === route.issueId),
+        run
+      ),
+    })),
+  }));
 }
 function saveAssignments(api, proposals) {
   return proposals.length ? api.recommend(proposals) : [];
@@ -565,4 +576,19 @@ function defersForStageSkip(queue, run, routes) {
 
 function completedIntegration(run, action) {
   return run.kind === 'integration' && action.status === 'integrated';
+}
+
+function visibleLifecycle(record, progress) {
+  if (!record) return record;
+  if (record.status !== 'blocked') return record;
+  return visibleStoppedReason(record, progress);
+}
+function visibleStoppedReason(record, progress) {
+  if (progress.blocker) return { ...record, summary: progress.summary };
+  if (record.canResume)
+    return {
+      ...record,
+      summary: 'New information is available. Continue will check the saved work and take the next step.',
+    };
+  return record;
 }

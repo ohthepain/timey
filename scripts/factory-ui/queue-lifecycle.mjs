@@ -54,6 +54,7 @@ function roleView(snapshot, issue, stage, activity) {
     name: stage.name,
     status,
     waiting: Boolean(waiting),
+    future: ['future', 'planned-skip'].includes(recorded.status),
     action,
     explanation: explanationFor(action, status, recorded),
     label: statusLabel(status, recorded.label),

@@ -8,6 +8,7 @@ import { useNavigationStore } from '~/state/NavigationStore';
 import { BeatNoteFeedback } from '~/lib/PerformanceFeedback';
 import { BeatRecorder } from '~/lib/BeatRecorder';
 import { BeatNote } from '~/types/BeatNote';
+import { plotMetricsForNote } from '~/utils/scoreNoteMetrics';
 
 const marginX = 20;
 const beatSpace = 10;
@@ -33,53 +34,6 @@ function stroke(ctx: RenderContext, x1: number, x2: number, y: number, color: st
   ctx.lineTo(x2, y);
   ctx.stroke();
 }
-
-const plotMetricsForNote = (
-  ctx: RenderContext,
-  noteEntry: NoteEntry,
-  beat: Beat,
-  beatNoteFeedback: BeatNoteFeedback,
-  yPos: number
-): void => {
-  function stroke(x1: number, x2: number, color: string, yy: number = y) {
-    ctx.beginPath();
-    ctx.setStrokeStyle(color);
-    ctx.setFillStyle(color);
-    ctx.setLineWidth(3);
-    ctx.moveTo(x1 + note.getXShift(), yy);
-    ctx.lineTo(x2 + note.getXShift(), yy);
-    ctx.stroke();
-  }
-
-  const note: Tickable = noteEntry.staveNote;
-  const x = note.getAbsoluteX();
-  ctx.clearRect(x - 20, yPos - 10, 50, 20);
-
-  let feedback = 'X';
-  if (beatNoteFeedback.timingDifferenceMs) {
-    feedback = Math.round(beatNoteFeedback.timingDifferenceMs) + '';
-  }
-
-  ctx.save();
-  ctx.setFont('Arial', 8);
-  ctx.setFillStyle('black'); // text color
-  ctx.fillText(feedback, x, yPos);
-
-  const y = yPos + 7;
-  if (beatNoteFeedback.timingDifferenceMs) {
-    const xEnd = x + 20; //(note.getFormatterMetrics().freedom.right || 0);
-    stroke(x, xEnd, 'red');
-    stroke(x - note.getXShift(), x, '#BBB'); // Shift
-    let dotOffset = beatNoteFeedback.timingDifferenceMs / 10;
-    if (Math.abs(dotOffset) > 20) {
-      dotOffset = dotOffset > 0 ? 20 : -20;
-    }
-    drawDot(ctx, (x + xEnd) / 2 + dotOffset, y, 'blue');
-  }
-
-  // Not sure if this is required
-  ctx.restore();
-};
 
 const showNoteBar = (ctx: RenderContext, allNotes: NoteEntry[], noteNum: number, y: number): void => {
   const noteEntry = allNotes[noteNum];
@@ -290,7 +244,7 @@ export const ScoreView = ({ beat }: ScoreViewProps) => {
       drawNote(context, previousNoteIndex, 'black');
 
       let noteEntry = noteEntries[beatNoteFeedback.index];
-      plotMetricsForNote(context, noteEntry, beat, beatNoteFeedback, 10);
+      plotMetricsForNote(context, noteEntry, beatNoteFeedback, 10, drawDot);
 
       showNoteBar(context, noteEntries, beatNoteFeedback.index, 150);
     }

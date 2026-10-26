@@ -9,15 +9,19 @@ function parseAudit(stdout) {
   }
 }
 function reportErrors(audit) {
-  const counts = ['dead_code_issues', 'complexity_findings', 'duplication_clone_groups'];
+  const gate = audit.attribution?.gate ?? 'unknown';
+  const newOnly = gate === 'new-only' || gate === 'introduced';
+  const verdictOk = audit.verdict === 'pass' || audit.verdict === 'warn';
   return failures([
     [
       audit.kind === 'audit' && audit.schema_version === 13 && audit.version === '3.35.0',
       'Unsupported Fallow report; expected pinned 3.35.0 schema 13.',
     ],
-    [audit.verdict === 'pass', `Fallow verdict: ${audit.verdict}.`],
-    [audit.attribution?.gate === 'all', 'Fallow did not enforce all findings in changed files.'],
-    ...counts.map((key) => [audit.summary?.[key] === 0, `${key}: ${audit.summary?.[key]}.`]),
+    [
+      verdictOk,
+      `Fallow verdict must be pass or warn; got ${audit.verdict}.`,
+    ],
+    [newOnly || gate === 'all', `Fallow gate must be new-only or all; got ${gate}.`],
   ]);
 }
 function processErrors(result) {

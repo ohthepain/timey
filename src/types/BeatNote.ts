@@ -1,8 +1,4 @@
-import { GeneralMidiService } from '~/lib/GeneralMidiService';
-
-const hihats = [42, 46, 51, 53, 59];
-const kicks = [36, 35];
-const snares = [37, 38, 39, 40];
+import { matchBeatNoteMidi } from '~/lib/beatNoteMidiMatch';
 
 export class BeatNote {
   id: string;
@@ -67,35 +63,6 @@ export class BeatNote {
   }
 
   matchMidiNote(midiNote: number): string | null {
-    const drumName = GeneralMidiService.getDrumName(midiNote);
-    if (!drumName) {
-      throw new Error(`Unknown MIDI note: ${midiNote}`);
-    }
-
-    const notes = this.noteString.split(', ');
-    if (notes.some((note) => note === drumName)) {
-      return drumName;
-    }
-
-    for (const note of notes) {
-      if (note === 'hihat') {
-        // If midiNote is in list then return true
-        if (hihats.includes(midiNote)) {
-          return 'hihat';
-        }
-      }
-      if (note === 'kick') {
-        if (kicks.includes(midiNote)) {
-          return 'kick';
-        }
-      }
-      if (note === 'snare') {
-        if (snares.includes(midiNote)) {
-          return 'snare';
-        }
-      }
-    }
-
-    return null;
+    return matchBeatNoteMidi(this.noteString, midiNote);
   }
 }

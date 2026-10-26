@@ -1,5 +1,5 @@
 import { BeatNote } from './BeatNote';
-import { Module } from './Module';
+import type { Module } from './Module';
 
 export class Beat {
   id: string | undefined;
@@ -23,7 +23,7 @@ export class Beat {
     this.beatNotes = data.beatNotes ? data.beatNotes.map((note: any) => new BeatNote(note)) : [];
     this.beatsPerBar = data.beatsPerBar || 4;
     this.moduleId = data.moduleId;
-    this.module = data.module ? new Module(data.module) : undefined;
+    this.module = data.module;
   }
 
   toJSON() {
@@ -71,11 +71,4 @@ export class Beat {
     return diff;
   }
 
-  static isDrumEquivalent = (a: string, b: string) => {
-    if (a === b) return true;
-    if ((b === '35' || b === '36') && a.includes('kick')) return true;
-    if ((b === '38' || b === '40') && a.includes('snare')) return true;
-    if ((b === '42' || b === '44' || b === '46') && a.includes('hihat')) return true;
-    return false;
-  };
 }

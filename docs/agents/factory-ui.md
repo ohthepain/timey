@@ -669,6 +669,64 @@ known chat reconnects only after checking that its native state is idle. The cha
 assistant has read-only context access and cannot grant permissions or dispatch
 workflow actions. Execution details remain expandable under lifecycle progress.
 
+## Temporary issue discussion
+
+Each issue has a collapsed **Chat** toggle above its lifecycle. The borderless
+toggle opens joined conversation output and full-width input; an inset circular
+up-arrow sends. Enter sends; Shift+Enter adds a line. Opening starts no model turn.
+Sending starts a dedicated ephemeral process in an empty workspace, separate from
+coordinator/worker recovery and RunStore. Its context contains the selected report
+and lifecycle policy, not other reports or saved chats. Proposed skips remain
+revisable plans, never historical outcomes or permission.
+
+Discussion stays in page/server memory. It is excluded from generic draft storage
+and saved factory activity. Navigation, reload, End chat, 15-minute inactivity,
+the one-hour lifetime and shutdown clear it and stop its process. Server expiry
+bounds cleanup if a page-close request is lost. **Temporary chat** discloses these
+limits and contains End chat and the optional grilling control. Messages still go
+to the configured model provider under the account's policies; local ephemeral
+handling does not establish zero provider retention. The dedicated runtime uses
+the configured default OpenAI model/login. Custom providers/profiles fail closed.
+
+Select conversation text to reveal **Record selected text…**. Review the exact
+text, selected issue and stated effect, then click **Record this text on the issue**.
+A short-lived one-use token binds that selection to its session and current
+issue/policy/source. Recording rechecks ownership and human-input guards and uses
+the existing locked report append. It labels output human-approved and possibly
+model-written, never human testimony, completed grilling, workflow approval or
+acceptance. No transcript, context bundle or session identity is saved. Work on
+another issue does not block conversation or recording; an active operation on
+the selected issue blocks recording only. Integration also blocks recording.
+After recording changes context, start a new chat for further questions.
+
+Every configured lifecycle stage offers **Discuss this step**. It opens the temporary
+chat and starts the installed `grilling` skill through a native skill input. An exact hash-checked copy is registered in
+the isolated runtime’s temporary skill directory and verified through `skills/list`;
+it is removed with that runtime. No unrelated skills or tools are enabled. The
+chat names the selected stage, including earlier or future stages, without moving
+the issue. The skill asks numbered rounds of currently answerable design questions;
+project facts come from supplied context and missing evidence remains explicit.
+The temporary runtime retains its existing no-tools/read-only policy. Grilling
+cannot launch workers or perform the technical work being discussed.
+
+**Review grilling results…** drafts decisions, unresolved questions and selected
+exact quotes from actual user messages. The preview names the issue and stage.
+**Save to [step]** confirms and appends only that reviewed package to the selected
+stage and report. The transcript, runtime identity and unselected user text are
+not saved. Saved interviews appear under their selected stage, without inventing
+missing stage history. Confirmation of discussion results is separate from
+implementation-plan approval, test evidence and final acceptance.
+
+**Save and continue** is offered only for the current unfinished stage when the
+summary has no open questions. It saves first, then invokes the usual lifecycle
+controller with fresh inputs. Clarify answers are reassessed against their actual
+exit condition; no stage advances merely because an interview ran. Existing human
+requests, exact-plan and integration approvals remain required. If continuation
+fails, the saved results remain and the UI reports that continuation stopped.
+Saving ends the temporary interview; start a new one to use the updated context.
+Stage/issue/source changes, additional answers, expiry and duplicate confirmations
+invalidate pending summary actions. Typed chat instructions never mutate work.
+
 ## Open a site for Verify
 
 A Verify human check can declare `review_target: {url, revision}`, or use the
@@ -785,6 +843,14 @@ candidate and recovery waits. Identity requirements, request/polling timeouts an
 recovery/locking rules are unchanged. A later passing run does not establish the
 cause of a historical timeout without those observations.
 
+When a saved assignment cannot launch because the target has uncommitted files,
+the current issue shows Uncommitted changes, the affected paths and the local
+commit/Continue next step. This live blocker takes priority over a finished review's
+historical summary. Issue notes and grilling answers are already local records;
+this message refers to project files and requires no GitHub push. The UI never
+stages, commits or discards those files itself. After the changes are preserved,
+normal source freshness and approval checks apply before the task starts.
+
 ### Queue lifecycle controls
 
 The queue shows every configured lifecycle role in a fixed horizontal strip. The
@@ -799,7 +865,12 @@ or connected worker approval, including the final acceptance decision. The bubbl
 opens the existing issue question. Waiting for input shows idle play, while an
 actual error keeps its orange square. Play uses the issue screen's existing
 Progress flow, including its plan consent and human guards; it grants no extra
-authority. Historical squares are informational.
+authority. Historical squares are informational. Every role block also links to
+that issue with the selected step expanded, focused and scrolled into view. This
+includes completed, skipped and future steps. Opening a step starts no work and
+changes no route choices. The link preserves the selected step when opened in a
+new tab or refreshed; live updates retain the user's expansion choices without
+repeatedly moving focus.
 
 Eligible future squares immediately toggle the saved route between take and skip.
 The server follows configured Next links and the existing skip policy: enhancement
@@ -816,3 +887,59 @@ stale writes, protected roles, active-progress choices, disk-failure rollback an
 HTTP authorization. Browser evidence separately checks rendering and interaction;
 synthetic activity and provider failures establish no provider availability or
 human acceptance.
+
+## Header action control and version
+
+The header counts running actions and open temporary chats. **No new actions** is
+an on/off switch. Turning it on blocks new work and requests that coordinators
+pause after their current action. Existing work can finish, permission replies
+and saving/ending a temporary chat remain available. Turning it off restores
+normal dispatch and resumes paused coordinators through their existing guards.
+The switch does not restart the server or start a build. Unknown locks still
+need their existing reconciliation workflow.
+
+The separate server-restart API remains available to deployment and maintenance:
+it drains current work, permission replies, temporary chats and coordinator locks
+before handing the installed listener to a replacement on the same port. It
+installs no build. Saved chats, pending questions and progress remain in the
+project, and the browser reconnects without erasing drafts.
+
+The header displays the last four characters of the server's reported startup
+commit, with the full hash and source path in its tooltip. Unknown revisions
+are shown as unknown, and source changes retain their warning. This is not an
+independent attestation of the browser’s loaded code or dirty source contents.
+
+Queue roles use 24-pixel squares. Future roles remain outlined squares on dotted
+connectors. Skipped roles use slightly smaller, lowered squares, with the dotted
+connector above them. Every square still links to its expanded issue step.
+
+## Closing without completing the work
+
+Every open issue has **Close with reason…** above its chat. Choose a reason and
+optionally add details or the duplicate issue ID. The project’s editable
+`.issues/triage-labels.md` defines the reasons in a Closed reasons table with
+ID, Label and Meaning columns. Older projects use the standard reasons until
+they add that section. The stable `fixed` ID always means verified, accepted
+work and retains final-review checks. All other reasons close idle work without
+claiming implementation, passing checks or acceptance. Active work must finish
+first. The report records the reason, label, time and optional details, and the
+page shows them after closure. Reopening preserves the decision in history.
+Changed reports or reason lists invalidate an open decision; duplicate submissions
+cannot close twice. This explicit user disposition is separate from automatic
+Progress, which still cannot close issues.
+
+## Issue priorities
+
+The queue and issue page show the saved priority and up/down buttons. Each click
+moves one level through the project’s Issue Priorities table in
+`.issues/triage-labels.md`, ordered highest first. Missing priorities display as
+Major without rewriting old reports. The defaults are Showstopper (orange),
+Critical (red), Major (yellow), Minor (green), and Suggestion (pink). The divider
+above each queue row uses that row’s priority color, so the line between two
+issues describes the following issue. Labels and hover descriptions supplement
+color. Filtering retains the same rule for the visible issues.
+
+Arrows disable at either end and while saving. Writes serialize with other queue
+writes, preserve current report content, record the priority change and timestamp,
+and reject stale priority/configuration choices. They change no stage, test result
+or acceptance and start no work. Existing queue ordering is retained.

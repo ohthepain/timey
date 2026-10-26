@@ -1,3 +1,4 @@
+import { outcomeSource, savedRouteSource } from './stage-source.mjs';
 import { skipAllowed } from './skip-policy.mjs';
 import { requireThat } from './common.mjs';
 
@@ -72,7 +73,10 @@ function validatePlannedSkip(queue, issue, state) {
 }
 export function savedRoute(issue, runs) {
   const review = runs.findLast((r) => r.savedRoutes?.some((route) => route.issueId === issue.id));
-  return review?.savedRoutes.find((route) => route.issueId === issue.id)?.steps || [];
+  return (review?.savedRoutes.find((route) => route.issueId === issue.id)?.steps || []).map((step) => ({
+    ...step,
+    source: step.source || savedRouteSource(issue, review),
+  }));
 }
 export function stageOutcome(issue, state) {
   const history = Array.isArray(issue.lifecycle_history) ? issue.lifecycle_history : [];
@@ -89,7 +93,7 @@ export function recordStage(doc, issue, target, result, run, evidence) {
   if (!target) return;
   const events = historyFrom(doc);
   requireThat(Array.isArray(events), 'The stage history is invalid. Preserve and reconcile it before advancing.');
-  if (result.stage_records) return recordMultiple(doc, events, result, run, evidence, target);
+  if (result.stage_records) return recordMultiple(doc, events, issue, result, run, evidence, target);
   recordSingle(doc, events, issue, target, result, run, evidence);
 }
 function recordSingle(doc, events, issue, target, result, run, evidence) {
@@ -111,6 +115,7 @@ function recordSingle(doc, events, issue, target, result, run, evidence) {
       next: target,
       at: new Date().toISOString(),
       reason: step.reason,
+      source: outcomeSource(issue, run, step.state),
       revision: run.base,
       chat: run.threadId,
       authorization: run.authorization,
@@ -123,10 +128,11 @@ function historyFrom(doc) {
   return doc.get('lifecycle_history')?.toJSON() || [];
 }
 
-function recordMultiple(doc, events, result, run, evidence, target) {
+function recordMultiple(doc, events, issue, result, run, evidence, target) {
   for (const step of result.stage_records)
     events.push({
       ...step,
+      source: outcomeSource(issue, run, step.state),
       next: target,
       at: new Date().toISOString(),
       revision: run.base,

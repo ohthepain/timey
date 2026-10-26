@@ -20,11 +20,14 @@ export function appendCompletion(root, issue, result, run, evidence, target) {
     const doc = parseDocument(match[1]);
     requireThat(!doc.errors.length, 'The report frontmatter is invalid.');
     doc.set('updated', new Date().toISOString());
+    if (result.priority_update) doc.set('priority', result.priority_update);
     recordChecklistMetadata(doc, issue, result);
+    recordInterviewMetadata(doc, result);
     recordAcceptedMetadata(doc, result);
+    recordClosureMetadata(doc, result);
     if (target) doc.set('state', target);
     recordStage(doc, issue, target, result, run, evidence);
-    const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${formatReviewEvidence(evidence)}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${target ? '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n' : ''}`;
+    const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${formatReviewEvidence(evidence)}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${transitionNote(issue, target, result)}`;
     const next = '---\n' + doc.toString() + '---' + content.slice(match[0].length) + notes;
     const temp = join(dirname(path), '.review-' + randomUUID() + '.tmp');
     writeFileSync(temp, next, { mode: 0o600 });
@@ -42,6 +45,11 @@ function recordedBy(run) {
   );
 }
 function reviewHeading(result) {
+  if (result.priority_update) return 'Issue priority';
+  if (result.stage_grilling) return 'Grilling · ' + result.stage_grilling.name;
+  return ordinaryReviewHeading(result);
+}
+function ordinaryReviewHeading(result) {
   if (result.plan_verification) return 'Implementation checklist';
   if (result.user_decision) return 'Issue decision';
   return result.stage_records ? 'Issue progress review' : 'Worker result review';
@@ -81,4 +89,31 @@ function recordDeliveryMetadata(doc, result) {
 function recordAcceptedMetadata(doc, result) {
   if (result.accepted_result)
     doc.set('accepted_result', doc.createNode(result.accepted_result, { aliasDuplicateObjects: false }));
+}
+
+function recordInterviewMetadata(doc, result) {
+  if (result.stage_grilling) {
+    const history = doc.get('stage_grilling')?.toJSON() || [];
+    requireThat(Array.isArray(history), 'Saved stage interviews are invalid; preserve them before recording.');
+    doc.set('stage_grilling', doc.createNode([...history, result.stage_grilling], { aliasDuplicateObjects: false }));
+  }
+}
+
+function recordClosureMetadata(doc, result) {
+  if (result.closure) {
+    doc.set('closure', doc.createNode(result.closure));
+    if (result.closure.reason !== 'fixed') doc.delete('accepted_result');
+  }
+  if (result.user_decision === 'reopen') doc.delete('closure');
+}
+
+function transitionNote(issue, target, result) {
+  if (!target) return '';
+  if (closedWithoutFix(result))
+    return `\nIssue closed from ${issue.state} by explicit user decision. Unfinished work was not completed or verified.\n`;
+  return '\nStage advanced from ' + issue.state + ' to ' + target + ' after review of its exit condition.\n';
+}
+
+function closedWithoutFix(result) {
+  return result.closure?.reason !== undefined && result.closure.reason !== 'fixed';
 }

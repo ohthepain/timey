@@ -4,7 +4,7 @@ import type { User } from '~/utils/users';
 import { DEPLOY_URL } from '~/utils/users';
 import { NotFound } from '~/components/NotFound';
 import { UserErrorComponent } from '~/components/UserError';
-import { useState, useEffect } from 'react';
+import { useLoadedResource } from '~/hooks/useLoadedResource';
 
 export const Route = createFileRoute('/users/$userId')({
   errorComponent: UserErrorComponent,
@@ -16,28 +16,10 @@ export const Route = createFileRoute('/users/$userId')({
 
 function UserComponent() {
   const params = Route.useParams();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const response = await axios.get<User>(DEPLOY_URL + '/api/users/' + params.userId);
-        setUser(response.data);
-      } catch (err) {
-        console.error('Error loading user:', err);
-        setError('Failed to fetch user');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadUser();
-  }, [params.userId]);
+  const { data: user, loading, error } = useLoadedResource(
+    () => axios.get<User>(DEPLOY_URL + '/api/users/' + params.userId).then((response) => response.data),
+    params.userId
+  );
 
   if (loading) {
     return (

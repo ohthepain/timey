@@ -70,10 +70,11 @@ test('future choices persist without changing reports, other routes or history; 
   assert.equal(readFileSync(report, 'utf8'), original);
   assert.deepEqual(
     service.store.runs.at(-1).savedRoutes[0].steps.slice(0, 2),
-    service.store.runs[0].savedRoutes[0].steps
+    service.store.runs[0].savedRoutes[0].steps.map((step) => ({ ...step, source: null }))
   );
   service.store.reload();
   assert.equal(service.store.runs.at(-1).savedRoutes[0].steps.at(-1).decision, 'skip');
+  assert.deepEqual(service.store.runs.at(-1).savedRoutes[0].steps.at(-1).source, { kind: 'user' });
   toggleRoute(service, input());
   assert.equal(service.store.runs.at(-1).savedRoutes[0].steps.at(-1).decision, 'take');
   for (const state of ['clarify', 'implement', 'verify', 'commit', 'final', 'closed', '@integration', 'unknown'])

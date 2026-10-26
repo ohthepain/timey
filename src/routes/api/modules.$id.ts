@@ -2,7 +2,7 @@ import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { moduleRepository } from '~/repositories/moduleRepository';
 
-export const APIRoute = createAPIFileRoute('/api/modules/$id')({
+const APIRoute = createAPIFileRoute('/api/modules/$id')({
   GET: async ({ params }) => {
     const { id } = params;
     console.log(`/api/modules/${id} GET request`);

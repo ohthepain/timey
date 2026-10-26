@@ -59,7 +59,12 @@ export function toggleRoute(service, input) {
 function changeChoice(steps, target) {
   const previous = steps.find((s) => s.state === target);
   const decision = previous?.decision === 'skip' ? 'take' : 'skip';
-  const choice = { state: target, decision, reason: `You chose to ${decision} this optional future role.` };
+  const choice = {
+    state: target,
+    decision,
+    source: { kind: 'user' },
+    reason: `You chose to ${decision} this optional future role.`,
+  };
   if (previous) Object.assign(previous, choice);
   else steps.push(choice);
   return choice;

@@ -5,6 +5,7 @@ import { EventEmitter } from 'events';
 import { TempoService } from '~/lib/TempoService';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { usePersistedStore } from '~/state/PersistedStore';
+import { bindConfiguredMidiDevices, ensureWebMidiEnabled } from '~/lib/midiDeviceBinding';
 
 class MidiService extends EventEmitter {
   receivedResponse: boolean = false;
@@ -28,45 +29,31 @@ class MidiService extends EventEmitter {
     this.enable();
   }
 
+  private handleNoteOnMessage = (e: NoteMessageEvent) => {
+    if (e.message.type === 'noteon') {
+      this.emitMidiNote(e.message.dataBytes[0], e.message.dataBytes[1]);
+    }
+  };
+
   get tempoService(): TempoService {
     return TempoService.getInstance();
   }
 
   async enable() {
-    // Don't access tempoService during initialization to avoid circular dependency issues
-    // The tempoService getter will be called later when actually needed
-    if (typeof window === 'undefined') {
-      // In test environment, skip WebMidi initialization
-      return;
-    }
-    if (!WebMidi.enabled) {
-      console.log('WebMidi not enabled, enabling...');
-      try {
-        await WebMidi.enable({ sysex: true });
-      } catch (error) {
-        console.error('Error enabling WebMidi:', error);
-        return;
-      }
-    }
+    if (!(await ensureWebMidiEnabled())) return;
     console.log('WebMidi enabled (MidiService)');
     this.refreshDevices();
     this.initListeners();
-
-    if (this.midiInputDeviceId && this.midiOutputDeviceId) {
-      this.midiOutputDevice = WebMidi.getOutputById(this.midiOutputDeviceId);
-      if (!this.midiOutputDevice) {
-        throw new Error(`MIDI output device not found: ${this.midiOutputDeviceId}`);
-      }
-      this.midiOutputChannel = this.midiOutputDevice.channels[this.midiOutputChannelNum];
-    }
-
-    if (this.midiInputDeviceId && this.midiInputChannelNum) {
-      this.midiInputDevice = WebMidi.getInputById(this.midiInputDeviceId);
-      if (!this.midiInputDevice) {
-        throw new Error(`MIDI input device not found: ${this.midiInputDeviceId}`);
-      }
-      this.midiInputChannel = this.midiInputDevice.channels[this.midiInputChannelNum];
-    }
+    const bound = bindConfiguredMidiDevices(
+      this.midiInputDeviceId,
+      this.midiOutputDeviceId,
+      this.midiInputChannelNum,
+      this.midiOutputChannelNum
+    );
+    this.midiOutputDevice = bound.midiOutputDevice;
+    this.midiOutputChannel = bound.midiOutputChannel;
+    this.midiInputDevice = bound.midiInputDevice ?? null;
+    this.midiInputChannel = bound.midiInputChannel;
   }
 
   isEnabled() {
@@ -221,22 +208,10 @@ class MidiService extends EventEmitter {
       }
 
       channel.removeListener('noteon');
-      channel.addListener('noteon', (e) => {
-        if (e.message.type === 'noteon') {
-          const note = e.message.dataBytes[0];
-          const velocity = e.message.dataBytes[1];
-          this.emitMidiNote(note, velocity);
-        }
-      });
+      channel.addListener('noteon', this.handleNoteOnMessage);
     } else {
       console.log(`listenToInput : all channels`);
-      this.midiInputDevice.addListener('noteon', (e: NoteMessageEvent) => {
-        if (e.message.type === 'noteon') {
-          const note = e.message.dataBytes[0];
-          const velocity = e.message.dataBytes[1];
-          this.emitMidiNote(note, velocity);
-        }
-      });
+      this.midiInputDevice.addListener('noteon', this.handleNoteOnMessage);
     }
   }
 

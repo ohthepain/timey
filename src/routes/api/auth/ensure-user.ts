@@ -2,7 +2,7 @@ import { json } from '@tanstack/react-start';
 import { createAPIFileRoute } from '@tanstack/react-start/api';
 import { ensureKeycloakUser } from '~/lib/ensureKeycloakUser';
 
-export const APIRoute = createAPIFileRoute('/api/auth/ensure-user')({
+const APIRoute = createAPIFileRoute('/api/auth/ensure-user')({
   POST: async ({ request }) => {
     try {
       // This will ensure the user exists in the database

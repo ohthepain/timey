@@ -78,6 +78,11 @@ const discussionUI = (() => {
     const body = document.createElement('div');
     body.id = 'discussion-body';
     body.hidden = true;
+    const stageLabel = document.createElement('p');
+    stageLabel.className = 'discussion-stage';
+    stageLabel.hidden = true;
+    let stageState = null,
+      saved = false;
     const log = document.createElement('div');
     log.className = 'discussion-output';
     log.setAttribute('role', 'log');
@@ -151,7 +156,31 @@ const discussionUI = (() => {
       end();
       mount(idForMount, requestForMount);
     });
-    const grill = button('Start grilling…', () => review('grill', ''));
+    const grill = button('Start grilling…', () => startGrill(null));
+    const results = button('Review grilling results…', () =>
+      run(async () => showPreview(await call('summary', {})), 'Preparing the interview summary…')
+    );
+    results.hidden = true;
+    node.startGrill = (stage) => {
+      const error = stageError(stage);
+      if (error) {
+        status.textContent = error;
+        return;
+      }
+      toggle.setAttribute('aria-expanded', 'true');
+      body.hidden = false;
+      draft.focus();
+      if (stageState) return;
+      stageState = stage.state;
+      stageLabel.textContent = 'Grilling · ' + stage.name;
+      stageLabel.hidden = false;
+      startGrill(stage);
+    };
+    function stageError(stage) {
+      if (saved) return 'End this chat before starting another interview.';
+      if (stageState && stageState !== stage.state) return 'End this interview before choosing another step.';
+      return '';
+    }
     details.append(summary, notice, grill, reset);
     function add(who, text) {
       empty.remove();
@@ -196,7 +225,7 @@ const discussionUI = (() => {
       if (pending) return;
       pending = true;
       const current = generation;
-      send.disabled = grill.disabled = record.disabled = true;
+      send.disabled = grill.disabled = record.disabled = results.disabled = true;
       status.textContent = message;
       try {
         await work();
@@ -204,7 +233,7 @@ const discussionUI = (() => {
       } catch {
         updateStatus(
           current,
-          'Chat could not complete. Open Temporary chat and end it to start again. Your message has not been saved to the issue.'
+          'Chat could not complete. If you were saving, check the issue before retrying. End this temporary chat to start again.'
         );
       } finally {
         settle(current);
@@ -216,46 +245,74 @@ const discussionUI = (() => {
     function settle(current) {
       if (current !== generation) return;
       pending = false;
-      send.disabled = grill.disabled = record.disabled = false;
+      send.disabled = grill.disabled = saved;
+      record.disabled = results.disabled = false;
+    }
+    function startGrill(stage) {
+      run(async () => {
+        const intent = await call('prepare', { kind: 'grill', stageState: stage?.state });
+        const result = await call('commit', { token: intent.token, clicked: true });
+        stageState = result.stage.state;
+        stageLabel.textContent = 'Grilling · ' + result.stage.name;
+        stageLabel.hidden = false;
+        results.hidden = false;
+        add('Codex', result.text);
+        draft.focus();
+      }, 'Starting the grilling interview…');
     }
     function review(kind, text) {
-      run(async () => {
-        const intent = await call('prepare', { kind, text });
-        preview.replaceChildren();
-        const effect = document.createElement('p');
-        effect.textContent = intent.effect + ' Issue: ' + intent.issueId;
-        const output = document.createElement('pre');
-        output.textContent = intent.text;
-        const confirm = button(kind === 'record' ? 'Record this text on the issue' : 'Start temporary grilling', () =>
-          run(async () => {
-            confirm.disabled = true;
-            const result = await call('commit', { token: intent.token, clicked: true });
-            preview.replaceChildren();
-            if (result.text) add('Codex', result.text);
-            if (result.recorded) {
-              record.hidden = true;
-              add(
-                'Factory',
-                'Selected text recorded. No workflow change or acceptance. Start a new chat to use the updated issue context.'
-              );
-            }
-          })
-        );
-        preview.append(
-          effect,
-          output,
-          confirm,
-          button('Cancel', () => preview.replaceChildren())
-        );
-        confirm.focus();
-      }, 'Preparing the selected action…');
+      run(async () => showPreview(await call('prepare', { kind, text })), 'Preparing the selected action…');
     }
-    body.append(log, form, status, record, preview, details);
+    function showPreview(intent) {
+      preview.replaceChildren();
+      const effect = document.createElement('p');
+      effect.textContent = intent.effect + ' Issue: ' + intent.issueId;
+      const output = document.createElement('pre');
+      output.textContent = intent.text;
+      const label = intent.stage ? 'Save to ' + intent.stage.name : 'Record this text on the issue';
+      const save = confirmButton(label, intent, false);
+      preview.append(effect, output, save);
+      if (intent.canContinue) preview.append(confirmButton('Save and continue', intent, true));
+      preview.append(button('Cancel', () => preview.replaceChildren()));
+      save.focus();
+    }
+    function confirmButton(label, intent, continueWork) {
+      const confirm = button(label, () =>
+        run(async () => {
+          confirm.disabled = true;
+          confirm.textContent = 'Saving…';
+          const result = await call('commit', { token: intent.token, clicked: true, continue: continueWork });
+          preview.replaceChildren();
+          if (!result.recorded) return;
+          session = null;
+          saved = true;
+          draft.disabled = true;
+          record.hidden = results.hidden = true;
+          const outcome = result.continuing
+            ? 'Saved. Continuing through the normal workflow checks.'
+            : 'Saved. No work was started.';
+          add(
+            'Factory',
+            outcome +
+              (result.continueError ? ' Could not continue: ' + result.continueError : '') +
+              ' End this temporary chat to start another.'
+          );
+        }, 'Saving the reviewed results…')
+      );
+      return confirm;
+    }
+    body.append(stageLabel, log, form, status, record, results, preview, details);
     node.append(toggle, body);
     return node;
   }
   window.addEventListener('pagehide', end);
   window.addEventListener('offline', end);
   window.addEventListener('hashchange', end);
-  return { mount, end };
+  return {
+    mount,
+    end,
+    grill: (stage) => {
+      if (stage) panel?.startGrill(stage);
+    },
+  };
 })();
