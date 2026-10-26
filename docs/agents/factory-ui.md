@@ -762,3 +762,35 @@ historical summary. Issue notes and grilling answers are already local records;
 this message refers to project files and requires no GitHub push. The UI never
 stages, commits or discards those files itself. After the changes are preserved,
 normal source freshness and approval checks apply before the task starts.
+
+### Queue lifecycle controls
+
+The queue shows every configured lifecycle role in a fixed horizontal strip. The
+strip scrolls on narrow screens and retains its scroll and keyboard focus across
+live updates. Blue checks mean recorded completion; grey Xs mean recorded or
+planned skips. Earlier stages without valid outcome records stay neutral. Orange
+exclamations show blockers or errors. The current role shows play while idle and
+a spinner during actual activity. Hover or focus any square for its explanation.
+
+A yellow speech bubble above the current square marks a pending lifecycle question
+or connected worker approval, including the final acceptance decision. The bubble and square are one keyboard control that
+opens the existing issue question. Waiting for input shows idle play, while an
+actual error keeps its orange square. Play uses the issue screen's existing
+Progress flow, including its plan consent and human guards; it grants no extra
+authority. Historical squares are informational.
+
+Eligible future squares immediately toggle the saved route between take and skip.
+The server follows configured Next links and the existing skip policy: enhancement
+investigation, optional prototypes and commit recording when commits are disabled.
+Required roles and acceptance cannot be skipped. Choices can change during active
+Progress only while the selected role remains future and has no recorded outcome.
+A saving indicator prevents duplicate clicks; failures retain the saved value and
+show an error. Stale issue, route or policy versions are rejected. Other route
+choices and historical outcomes remain intact. Saving a choice starts no work and
+does not complete a stage or authorize acceptance.
+
+`npm run test:factory` includes disposable lifecycle fixtures for route persistence,
+stale writes, protected roles, active-progress choices, disk-failure rollback and
+HTTP authorization. Browser evidence separately checks rendering and interaction;
+synthetic activity and provider failures establish no provider availability or
+human acceptance.

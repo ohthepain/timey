@@ -795,6 +795,127 @@
         font-size: 12px;
         margin: 6px 0;
       }
+
+      .queue-lifecycle {
+        display: flex;
+        gap: 8px;
+        width: min(560px, 62vw);
+        overflow-x: auto;
+        padding: 8px 5px 12px;
+      }
+      .queue-role-shell {
+        flex: 0 0 48px;
+      }
+      .queue-role {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: none;
+        border: 0;
+        padding: 3px;
+        color: inherit;
+        border-radius: 5px;
+        text-decoration: none;
+      }
+      .queue-role:focus-visible {
+        outline: 3px solid #245bcc;
+        outline-offset: 0;
+      }
+      .queue-square {
+        box-sizing: border-box;
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border: 2px solid #9aa5b2;
+        border-radius: 7px;
+        font-size: 23px;
+        font-weight: bold;
+      }
+      .queue-bubble {
+        box-sizing: border-box;
+        position: relative;
+        height: 23px;
+        width: 26px;
+        border-radius: 7px;
+        visibility: hidden;
+        font-weight: bold;
+        line-height: 23px;
+        text-align: center;
+      }
+      .queue-bubble.has-input {
+        visibility: visible;
+        background: #ffdb4d;
+        color: #5b4400;
+      }
+      .queue-bubble.has-input::after {
+        content: '';
+        position: absolute;
+        bottom: -5px;
+        left: 10px;
+        border-left: 5px solid transparent;
+        border-top: 6px solid #ffdb4d;
+      }
+      .queue-square.status-completed {
+        background: #2463cd;
+        border-color: #2463cd;
+        color: white;
+      }
+      .queue-square:is(.status-skipped, .status-planned-skip) {
+        background: #e3e6eb;
+        border-color: #a2aab5;
+        color: #59616e;
+      }
+      .queue-square:is(.status-blocked, .status-failed) {
+        background: #ffdaaf;
+        border-color: #c36b11;
+        color: #8c4200;
+      }
+      .queue-square:is(.status-idle, .status-working) {
+        border-color: #2463cd;
+        color: #2463cd;
+      }
+      .queue-spinner {
+        width: 18px;
+        height: 18px;
+        border: 3px solid #b4c8ee;
+        border-top-color: #2463cd;
+        border-radius: 50%;
+        animation: queue-spin 1s linear infinite;
+      }
+      .queue-square.is-saving {
+        opacity: 0.55;
+      }
+      .queue-role[aria-disabled='true'] {
+        cursor: wait;
+      }
+      .queue-role-help {
+        display: none;
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        max-width: min(520px, 90vw);
+        padding: 12px;
+        background: #182333;
+        color: white;
+        border-radius: 6px;
+        z-index: 30;
+      }
+      .queue-role-shell:hover .queue-role-help,
+      .queue-role-shell:focus-within .queue-role-help {
+        display: block;
+      }
+      @keyframes queue-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .queue-spinner {
+          animation: none;
+        }
+      }
     </style>
   </head>
   <body>
@@ -817,6 +938,7 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
+    <script src="/queue-lifecycle-ui.js"></script>
     <script src="/discussion-ui.js"></script>
     <script src="/site-review-ui.js"></script>
     <script>
@@ -1078,6 +1200,8 @@
           .map((e) => e.params.item.text);
         return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
+      let queueInputFocus = null;
+      let queueRouteMessage = '';
       const queueFilters = { search: '', stage: '', showClosed: false };
       function closedIssueState(state) {
         return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
@@ -1098,7 +1222,23 @@
             showClosed: $('show-closed').checked,
           });
           $('issues').innerHTML = rows(queueIssues());
+          queueLifecycleUI.restore($('issues'));
         };
+        queueLifecycleUI.bind($('issues'), {
+          issue: (id) => data.issues.find((issue) => issue.id === id),
+          request,
+          refresh,
+          render,
+          feedback: (message, error = false) => {
+            if (!error) queueRouteMessage = message;
+            $(error ? 'error' : 'route-feedback').textContent = message;
+          },
+          progress: (issue) => startIssueProgress(issue),
+          openInput: (issue) => {
+            queueInputFocus = issue.id;
+            location.hash = '#/issue/' + encodeURIComponent(issue.id);
+          },
+        });
         $('search').oninput = filter;
         $('stage').onchange = () => {
           if (closedIssueState($('stage').value)) $('show-closed').checked = true;
@@ -1113,7 +1253,7 @@
         const counts = data.lifecycle
           .map((s) => `<span>${esc(s.name)} <b>${data.issues.filter((i) => i.state === s.state).length}</b></span>`)
           .join(' · ');
-        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Stage</th><th>Your input</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -1131,7 +1271,7 @@
         return issues
           .map(
             (i) =>
-              `<tr><td>${link(i.id)}<br><small>${esc(i.id)}</small></td><td>${esc(i.stage)}</td><td>${inputStatus(i)}</td></tr>`
+              `<tr><td>${link(i.id)}<br><small>${esc(i.id)}</small></td><td>${queueLifecycleUI.render(i, esc)}</td></tr>`
           )
           .join('');
       }
@@ -1920,7 +2060,7 @@
         const focus = viewMemory.focus;
         if (focus?.route === location.hash && $(focus.id)) {
           $(focus.id).focus({ preventScroll: true });
-          if (focus.start !== null) $(focus.id).setSelectionRange(focus.start, focus.end);
+          if (focus.start != null) $(focus.id).setSelectionRange(focus.start, focus.end);
         }
         window.scrollTo(0, viewMemory.positions.get(location.hash) || 0);
         bindOutput();
@@ -1983,6 +2123,15 @@
             discussionUI.grill(stage || { state: button.dataset.grillStage, name: extra[button.dataset.grillStage] });
           };
         });
+        if (queueInputFocus === decodeURIComponent(route.slice(2).join('/'))) {
+          const target = document.querySelector('.lifecycle-progress');
+          if (target) {
+            target.tabIndex = -1;
+            target.focus();
+            target.scrollIntoView({ block: 'center' });
+            queueInputFocus = null;
+          }
+        }
       }
       async function findExistingWorker(button) {
         const issueId = button.dataset.findWorker,
@@ -1995,6 +2144,16 @@
         $('approve').textContent = 'Connect this chat';
         $('approve').disabled = false;
         $('confirm').showModal();
+      }
+      function startIssueProgress(issue) {
+        return act(() =>
+          request('lifecycle-start', {
+            issueId: issue.id,
+            issueBasis: issue.progressBasis,
+            state: issue.state,
+            basis: data.reviewBasis,
+          })
+        );
       }
       function bind() {
         document.querySelectorAll('[data-review-file]').forEach(
@@ -2054,15 +2213,7 @@
           button.onclick = () => selectIssueDecision(button);
         });
         document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
-          button.onclick = () =>
-            act(() =>
-              request('lifecycle-start', {
-                issueId: button.dataset.lifecycleStart,
-                issueBasis: data.issues.find((i) => i.id === button.dataset.lifecycleStart).progressBasis,
-                state: data.issues.find((i) => i.id === button.dataset.lifecycleStart).state,
-                basis: data.reviewBasis,
-              })
-            );
+          button.onclick = () => startIssueProgress(data.issues.find((i) => i.id === button.dataset.lifecycleStart));
         });
         document.querySelectorAll('[id^=lifecycle-answer-]').forEach((field) => {
           field.oninput = () => lifecycleDrafts.set(field.dataset.draftKey, field.value);

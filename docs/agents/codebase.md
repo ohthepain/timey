@@ -187,3 +187,9 @@ finalization; `delivery-integration.mjs` invokes it after checked UI integration
 `factory-ui/runtime.mjs` and `factory-runtime.mjs` identify the running UI source
 and issue project. `factory-ui/queue-response.mjs` projects bounded polling data;
 full saved runs remain available through the authenticated on-demand endpoint.
+
+Queue lifecycle squares use `scripts/factory-ui/queue-lifecycle.mjs` to combine
+existing stage outcomes, readiness and activity. `queue-lifecycle-ui.js` renders
+and binds the accessible strip; `route-toggle.mjs` guards future-only route choices
+and persists them through the existing run store. `factory-lifecycle.check.mjs`
+exercises the disposable persistence and authorization boundaries.

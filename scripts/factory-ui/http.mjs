@@ -1,3 +1,4 @@
+import { toggleRoute } from './route-toggle.mjs';
 import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
@@ -55,6 +56,7 @@ async function mutation(service, path, value, owner) {
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
+    '/api/toggle-route': () => toggleRoute(service, value),
     '/api/skip-plan-checks': () => service.skipPlanChecks(value),
     '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),
     '/api/plan-decision': () =>
@@ -139,15 +141,18 @@ async function temporaryAction(action) {
 }
 
 function readResource(service, request, response, owner) {
+  if (request.url === '/queue-lifecycle-ui.js') {
+    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    return response.end(readFileSync(new URL('./queue-lifecycle-ui.js', import.meta.url)));
+  }
   if (request.url === '/site-review-ui.js') {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     return response.end(readFileSync(new URL('./site-review-ui.js', import.meta.url)));
   }
   if (request.url === '/discussion-ui.js') {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-    return response.end(readFileSync(new URL('./discussion-ui.js', import.meta.url)));
+    return response.end(readFileSync(new URL('.' + request.url, import.meta.url)));
   }
-
   return read(service, request, response, owner);
 }
 
