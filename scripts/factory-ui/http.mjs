@@ -1,3 +1,4 @@
+import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
 import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
@@ -36,6 +37,7 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
+  service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
@@ -52,6 +54,8 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/server-restart': () => service.serverControl.request(),
+    '/api/server-cancel-restart': () => service.serverControl.cancel(),
     '/api/lifecycle-start': () => service.startLifecycle(value),
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
@@ -77,7 +81,8 @@ async function mutation(service, path, value, owner) {
   if (Object.hasOwn(routes, path)) return routes[path]();
   throw Error('Unknown operation. No action was taken.');
 }
-export function createFactoryServer(service) {
+export function createFactoryServer(service, options = {}) {
+  service.serverControl = serverControl(service, options.restart);
   const token = randomBytes(32).toString('hex');
   const server = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
@@ -95,6 +100,7 @@ export function createFactoryServer(service) {
       response.end(JSON.stringify({ error: error.message }));
     }
   });
+  server.once('close', () => service.serverControl.close());
   return server;
 }
 
@@ -116,7 +122,8 @@ function page(response, token, port) {
 function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
   const routes = {
-    '/api/runtime': () => runtimeInfo(service),
+    '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
+    '/api/server-status': () => service.serverControl.status(),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
@@ -141,17 +148,15 @@ async function temporaryAction(action) {
 }
 
 function readResource(service, request, response, owner) {
-  if (request.url === '/queue-lifecycle-ui.js') {
+  const scripts = {
+    '/server-control-ui.js': new URL('./server-control-ui.js', import.meta.url),
+    '/queue-lifecycle-ui.js': new URL('./queue-lifecycle-ui.js', import.meta.url),
+    '/site-review-ui.js': new URL('./site-review-ui.js', import.meta.url),
+    '/discussion-ui.js': new URL('./discussion-ui.js', import.meta.url),
+  };
+  if (Object.hasOwn(scripts, request.url)) {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-    return response.end(readFileSync(new URL('./queue-lifecycle-ui.js', import.meta.url)));
-  }
-  if (request.url === '/site-review-ui.js') {
-    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-    return response.end(readFileSync(new URL('./site-review-ui.js', import.meta.url)));
-  }
-  if (request.url === '/discussion-ui.js') {
-    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-    return response.end(readFileSync(new URL('.' + request.url, import.meta.url)));
+    return response.end(readFileSync(scripts[request.url]));
   }
   return read(service, request, response, owner);
 }

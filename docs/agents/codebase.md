@@ -193,3 +193,10 @@ existing stage outcomes, readiness and activity. `queue-lifecycle-ui.js` renders
 and binds the accessible strip; `route-toggle.mjs` guards future-only route choices
 and persists them through the existing run store. `factory-lifecycle.check.mjs`
 exercises the disposable persistence and authorization boundaries.
+
+`factory-ui/server-control.mjs` counts live actions and temporary chats, blocks new
+UI work during draining and requests coordinator pauses. `restart-process.mjs`
+hands the installed listener to a replacement process and resumes saved paused
+controllers through normal guards. `server-control-ui.js` owns the header controls
+and reconnects without replacing the page or its draft. Disposable process and
+transport tests live in `factory-server-control.check.mjs`.

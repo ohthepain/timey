@@ -796,27 +796,73 @@
         margin: 6px 0;
       }
 
+      #server-controls {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-left: auto;
+        font-size: 12px;
+      }
+      #server-controls button {
+        padding: 5px 8px;
+        font-size: 12px;
+      }
+      #server-controls small {
+        flex-basis: 100%;
+      }
       .queue-lifecycle {
         display: flex;
-        gap: 8px;
-        width: min(560px, 62vw);
+        gap: 0;
+        width: min(242px, 55vw);
         overflow-x: auto;
         padding: 8px 5px 12px;
       }
       .queue-role-shell {
-        flex: 0 0 48px;
+        flex: 0 0 28px;
+        position: relative;
+        height: 56px;
       }
       .queue-role {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
+        position: relative;
+        z-index: 1;
+        width: 28px;
+        min-height: 48px;
         background: none;
         border: 0;
         padding: 3px;
         color: inherit;
         border-radius: 5px;
         text-decoration: none;
+      }
+      .queue-role-shell:is(.is-ahead, .is-skipped)::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 32px;
+        border-top: 1px dotted #93a0af;
+      }
+      .queue-role-shell.is-skipped .queue-square {
+        transform: translateY(12px);
+        width: 13px;
+        height: 13px;
+        font-size: 10px;
+      }
+      .queue-square.status-future {
+        border: 0;
+        background: none;
+      }
+      .queue-square.status-future::after {
+        content: '';
+        width: 4px;
+        height: 4px;
+        background: #8995a4;
+        border-radius: 50%;
       }
       .queue-role:focus-visible {
         outline: 3px solid #245bcc;
@@ -826,22 +872,23 @@
         box-sizing: border-box;
         display: grid;
         place-items: center;
-        width: 40px;
-        height: 40px;
+        width: 18px;
+        height: 18px;
         border: 2px solid #9aa5b2;
-        border-radius: 7px;
-        font-size: 23px;
+        border-radius: 3px;
+        font-size: 12px;
         font-weight: bold;
       }
       .queue-bubble {
         box-sizing: border-box;
         position: relative;
-        height: 23px;
-        width: 26px;
+        height: 16px;
+        width: 18px;
         border-radius: 7px;
         visibility: hidden;
         font-weight: bold;
-        line-height: 23px;
+        line-height: 16px;
+        font-size: 11px;
         text-align: center;
       }
       .queue-bubble.has-input {
@@ -853,7 +900,7 @@
         content: '';
         position: absolute;
         bottom: -5px;
-        left: 10px;
+        left: 6px;
         border-left: 5px solid transparent;
         border-top: 6px solid #ffdb4d;
       }
@@ -877,9 +924,9 @@
         color: #2463cd;
       }
       .queue-spinner {
-        width: 18px;
-        height: 18px;
-        border: 3px solid #b4c8ee;
+        width: 10px;
+        height: 10px;
+        border: 2px solid #b4c8ee;
         border-top-color: #2463cd;
         border-radius: 50%;
         animation: queue-spin 1s linear infinite;
@@ -938,6 +985,7 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
+    <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
     <script src="/discussion-ui.js"></script>
     <script src="/site-review-ui.js"></script>
@@ -983,6 +1031,7 @@
           ]);
           data = snapshot;
           showRuntime(runtime);
+          if (runtime.server) serverControlUI.show(runtime.server, request);
           $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
           updateLiveOutput();
           refreshPending ||= previous !== JSON.stringify(data);
@@ -999,6 +1048,7 @@
             refreshPending = false;
           }
         } catch (e) {
+          if (await serverControlUI.reconnect(request)) return;
           $('error').textContent = e.message;
           $('connection').textContent = 'Connection needs attention';
         } finally {

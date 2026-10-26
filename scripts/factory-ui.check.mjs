@@ -3088,7 +3088,9 @@ async function activityScreen(t) {
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
+    readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\n' +

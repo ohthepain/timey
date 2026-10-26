@@ -794,3 +794,24 @@ stale writes, protected roles, active-progress choices, disk-failure rollback an
 HTTP authorization. Browser evidence separately checks rendering and interaction;
 synthetic activity and provider failures establish no provider availability or
 human acceptance.
+
+## Header restart control
+
+The header counts running actions and open temporary chats. **Restart when safe**
+blocks new work, requests a pause after each current coordinator action, and waits
+for current work, permission replies, temporary chats and coordinator locks to
+finish. Existing permission replies and saving/ending a temporary chat remain
+available. No lock or chat is discarded to force a restart. Cancel restores normal
+operation. Unknown locks need their existing reconciliation workflow.
+
+The replacement reloads the installed UI on the same local port. It starts no
+build and installs no new candidate; deployment handles updates separately. Saved
+chat identities, pending questions and progress stay in the authoritative project.
+Paused coordinators resume through normal workflow guards. Existing guards may
+still stop their next action. The browser reconnects without reloading the page or
+erasing a draft. Restart handoff failures remain visible with a local log.
+
+Queue roles use 18-pixel squares in a compact path. Future roles are small points
+on dotted connectors. Skipped roles sit below the connector, which continues over
+them. Accessible names, keyboard focus, skip toggles and pending-input bubbles
+retain the same meaning and operation.

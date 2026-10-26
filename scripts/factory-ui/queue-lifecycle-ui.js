@@ -23,7 +23,7 @@ const queueLifecycleUI = (() => {
     const attrs = `id="${esc(id)}" class="queue-role" aria-label="${esc(label)}" aria-describedby="${esc(id)}-help"`;
     const body = squareBody(role, saving, esc);
     const control = roleControl(issue, role, { attrs, body, saving }, esc);
-    return `<span class="queue-role-shell">${control}<span class="queue-role-help" role="tooltip" id="${esc(id)}-help">${esc(label)}</span></span>`;
+    return `<span class="queue-role-shell ${role.future ? 'is-ahead' : ''} ${['skipped', 'planned-skip'].includes(role.status) ? 'is-skipped' : ''}">${control}<span class="queue-role-help" role="tooltip" id="${esc(id)}-help">${esc(label)}</span></span>`;
   }
   function roleLabel(role) {
     const status = role.waiting ? `${role.label}. Your input is needed` : role.label;
