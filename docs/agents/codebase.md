@@ -165,3 +165,18 @@ approval results into live output; it never grants access or reports test succes
 `factory-inputs.mjs` defines selected decision inputs shared by issue planning and
 ledger reservations. It follows report/action dependencies and linked plans while
 excluding unrelated queue entries; full-queue grouping keeps its original guard.
+
+Issue discussion lives in `scripts/factory-ui/discussion.mjs` (memory-only
+sessions, issue context, expiry and one-use clicked intents),
+`discussion-codex.mjs` (dedicated ephemeral model process),
+`discussion-record.mjs` (guarded selected-output append), and `discussion-ui.js`
+(temporary panel DOM, excluded from generic draft restoration). `http.mjs` exposes
+only fixed discussion operations; `service.mjs` owns shutdown. These modules do
+not use worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).
+
+`factory-ui/site-review.mjs` owns Verify review targets, available browser choices,
+open receipts and guarded human results. `site-review-ui.js` renders Open site,
+feedback and review controls. Open receipts are memory-only; explicit results
+retain the candidate and opening evidence in the issue's existing append path.
+Worker-status snapshot decoration forwards the requesting owner so it cannot
+lose the receipt required to enable a decision.

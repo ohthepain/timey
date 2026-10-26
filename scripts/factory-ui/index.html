@@ -79,6 +79,105 @@
         font-size: 12px;
         margin: 6px 0;
       }
+      .discussion {
+        margin: 22px 0 30px;
+      }
+      .discussion .discussion-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: transparent;
+        padding: 6px 0;
+        color: #243f39;
+        font: inherit;
+        font-weight: 600;
+      }
+      .discussion-toggle::before {
+        content: '▸';
+      }
+      .discussion-toggle[aria-expanded='true']::before {
+        content: '▾';
+      }
+      .discussion-output {
+        height: 260px;
+        overflow: auto;
+        border: 1px solid #d7d9cd;
+        border-radius: 6px 6px 0 0;
+        background: #fffefa;
+        padding: 16px 18px;
+        line-height: 1.6;
+      }
+      .discussion-output p {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .discussion-output strong {
+        display: block;
+        font-size: 12px;
+        color: #758071;
+      }
+      .discussion-compose {
+        position: relative;
+        margin: 0;
+      }
+      .discussion-compose textarea {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 84px;
+        margin: 0;
+        padding: 12px 60px 14px 18px;
+        border: 1px solid #d7d9cd;
+        border-top: 0;
+        border-radius: 0 0 6px 6px;
+        resize: vertical;
+        background: #fffefa;
+      }
+      .discussion .discussion-send {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        display: grid;
+        place-items: center;
+        box-sizing: border-box;
+        width: 34px;
+        height: 34px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: #243f39;
+        color: white;
+        line-height: 1;
+      }
+      .discussion-send svg {
+        display: block;
+        width: 19px;
+        height: 19px;
+      }
+      .discussion-status:empty {
+        display: none;
+      }
+      .discussion-info {
+        font-size: 12px;
+        color: #758071;
+        margin: 7px 0 0;
+      }
+      .discussion-info summary {
+        cursor: pointer;
+      }
+      .discussion-preview pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      @media (max-width: 600px) {
+        .discussion-output {
+          height: 230px;
+        }
+      }
     </style>
     <style>
       body {
@@ -718,6 +817,8 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
+    <script src="/discussion-ui.js"></script>
+    <script src="/site-review-ui.js"></script>
     <script>
       let data,
         busy = false,
@@ -1213,7 +1314,7 @@
               `<section class="check-version"><h4>${esc(version)}</h4>${steps.map((step) => implementationStep(issue, step)).join('')}</section>`
           )
           .join('');
-        return `<section class="implementation-checklist"><h3>Implementation checks</h3><p>${esc(implementationSummary(view))}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar">${skipAllChecks(issue)}<button data-check-plan="${esc(issue.id)}" ${view.readOnly || !view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Technical checks are work for Codex. You can skip checks you no longer require; they stay marked Skipped. Required human decisions remain separate.</p>${requiredPlanDecisions(issue)}</section>`;
+        return `<section class="implementation-checklist">${!view.readOnly && issue.siteReview?.checks.length ? `<div data-site-review="${esc(issue.id)}"></div>` : ''}<h3>Implementation checks</h3><p>${esc(implementationSummary(view))}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar">${skipAllChecks(issue)}<button data-check-plan="${esc(issue.id)}" ${view.readOnly || !view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Technical checks are work for Codex. You can skip checks you no longer require; they stay marked Skipped. Required human decisions remain separate.</p>${requiredPlanDecisions(issue)}</section>`;
       }
       function implementationSummary(view) {
         if (view.running) return 'Checking the plan and saved results.';
@@ -1286,10 +1387,18 @@
         $('approve').disabled = false;
         $('confirm').showModal();
       }
+      function outstandingDecision(issue, check) {
+        if (check.status !== 'passed') return true;
+        const revisions = [data.head, issue.prototype_preview?.revision, check.review_target?.revision].filter(Boolean);
+        return !revisions.includes(check.revision);
+      }
       function requiredPlanDecisions(issue) {
         if (issue.implementation.readOnly) return '';
         const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
-        const checks = (issue.human_checks || []).filter((c) => c.status !== 'passed' || c.revision !== data.head);
+        const siteChecks = new Set((issue.siteReview?.checks || []).map((check) => check.id));
+        const checks = (issue.human_checks || []).filter(
+          (check) => !siteChecks.has(check.id) && outstandingDecision(issue, check)
+        );
         return checks
           .filter((c) => c.blocks !== 'closure' || role === 'ready-to-close')
           .map(
@@ -1653,7 +1762,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2>${lifecyclePanel(i)}<p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><div id="discussion-slot"></div><div class="layout"><div><div class="lifecycle-heading"><h2>Issue lifecycle</h2>${lifecyclePanel(i)}<p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -1687,15 +1796,18 @@
       }
       function rememberView() {
         if (!viewMemory.route) return;
-        document.querySelectorAll('#app details').forEach((element) => {
+        document.querySelectorAll('#app details:not([data-temporary] *)').forEach((element) => {
           if (element.dataset.viewTouched === 'true') viewMemory.expanded[element.dataset.viewKey] = element.open;
         });
-        document.querySelectorAll('#app textarea,#app input').forEach((field) => {
-          if (field.id && !['checkbox', 'radio'].includes(field.type))
-            viewMemory.fields.set(viewMemory.route + '|' + (field.dataset.draftKey || field.id), field.value);
-        });
+        document
+          .querySelectorAll('#app textarea:not([data-temporary] *),#app input:not([data-temporary] *)')
+          .forEach((field) => {
+            if (field.id && !['checkbox', 'radio'].includes(field.type))
+              viewMemory.fields.set(viewMemory.route + '|' + (field.dataset.draftKey || field.id), field.value);
+          });
         viewMemory.positions.set(viewMemory.route, window.scrollY);
-        const focused = document.activeElement;
+        const active = document.activeElement;
+        const focused = active?.closest('[data-temporary]') ? null : active;
         viewMemory.focus = focused?.id
           ? { route: viewMemory.route, id: focused.id, start: focused.selectionStart, end: focused.selectionEnd }
           : null;
@@ -1706,7 +1818,7 @@
       }
       function restoreView() {
         viewMemory.route = location.hash;
-        document.querySelectorAll('#app details').forEach((element) => {
+        document.querySelectorAll('#app details:not([data-temporary] *)').forEach((element) => {
           const key = detailKey(element);
           element.dataset.viewKey = key;
           if (Object.hasOwn(viewMemory.expanded, key)) element.open = viewMemory.expanded[key];
@@ -1722,10 +1834,12 @@
             } catch {}
           });
         });
-        document.querySelectorAll('#app textarea,#app input').forEach((field) => {
-          const saved = viewMemory.fields.get(location.hash + '|' + (field.dataset.draftKey || field.id));
-          if (saved !== undefined) field.value = saved;
-        });
+        document
+          .querySelectorAll('#app textarea:not([data-temporary] *),#app input:not([data-temporary] *)')
+          .forEach((field) => {
+            const saved = viewMemory.fields.get(location.hash + '|' + (field.dataset.draftKey || field.id));
+            if (saved !== undefined) field.value = saved;
+          });
         const focus = viewMemory.focus;
         if (focus?.route === location.hash && $(focus.id)) {
           $(focus.id).focus({ preventScroll: true });
@@ -1782,7 +1896,9 @@
         $('app').innerHTML = route[1] === 'issue' ? issue(decodeURIComponent(route.slice(2).join('/'))) : queue();
         bind();
         applyApprovalFeedback();
+        siteReviewUI.mount(data, request, refresh);
         restoreView();
+        discussionUI.mount(route[1] === 'issue' ? decodeURIComponent(route.slice(2).join('/')) : null, request);
       }
       async function findExistingWorker(button) {
         const issueId = button.dataset.findWorker,

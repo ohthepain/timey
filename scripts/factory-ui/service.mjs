@@ -1,4 +1,7 @@
 import { startChat } from './chat-start.mjs';
+
+import { createSiteReviews } from './site-review.mjs';
+import { createDiscussions } from './discussion.mjs';
 import { issueContext } from '../factory-inputs.mjs';
 import { installWorkerHealth } from './worker-health.mjs';
 import { runAuthorization, describeAuthorization } from '../factory-authorization.mjs';
@@ -56,6 +59,8 @@ export class FactoryUI {
     this.api = factory(this.root);
     this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
     this.intents = new Map();
+    this.discussions = createDiscussions(this);
+    this.siteReviews = createSiteReviews(this);
     this.lifecycleRuns = loadLifecycles(this.root);
     this.lifecycleTasks = new Map();
     this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
@@ -63,14 +68,14 @@ export class FactoryUI {
     this.guard = humanGuard;
     installWorkerHealth(this);
   }
-  snapshot() {
+  snapshot(owner = null) {
     if (!this.serverLock) this.store.reload();
     const queue = readQueue(this.root);
     const runs = this.store.list(this.codex.requests);
     return {
       ...queue,
       reviewBasis: digest(JSON.stringify(queue)),
-      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs)),
+      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner)),
       runs: runs.map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
       actions: queue.actions.map((a) => ({
         ...a,
@@ -81,7 +86,7 @@ export class FactoryUI {
       })),
     };
   }
-  issueView(queue, issue, runs) {
+  issueView(queue, issue, runs, owner) {
     const readiness = readinessView(queue, issue, runs);
     const progress = nextProgress(queue, issue, runs);
     return {
@@ -93,6 +98,7 @@ export class FactoryUI {
       stageStates: stageStates(queue, issue, runs, readiness),
       progress,
       implementation: checklistView(queue, issue, runs),
+      siteReview: this.siteReviews.view(queue, issue, owner),
     };
   }
   lifecycleStatus(queue, issue) {
@@ -479,6 +485,7 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.discussions.close();
     this.codex.close();
     if (this.serverLock && existsSync(this.serverLock)) {
       const owner = JSON.parse(readFileSync(join(this.serverLock, 'owner.json'), 'utf8'));

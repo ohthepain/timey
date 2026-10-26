@@ -615,3 +615,57 @@ existing work must have its result reconciled rather than receive another assign
 A restart before the creation response is retained remains uncertain and requires
 reconciliation. Keep the owning server running while startup is pending. This
 recovery changes neither integration approval nor acceptance policy.
+
+## Temporary issue discussion
+
+Each issue has a collapsed **Chat** toggle above its lifecycle. The borderless
+toggle opens joined conversation output and full-width input; an inset circular
+up-arrow sends. Enter sends; Shift+Enter adds a line. Opening starts no model turn.
+Sending starts a dedicated ephemeral process in an empty workspace, separate from
+coordinator/worker recovery and RunStore. Its context contains the selected report
+and lifecycle policy, not other reports or saved chats. Proposed skips remain
+revisable plans, never historical outcomes or permission.
+
+Discussion stays in page/server memory. It is excluded from generic draft storage
+and saved factory activity. Navigation, reload, End chat, 15-minute inactivity,
+the one-hour lifetime and shutdown clear it and stop its process. Server expiry
+bounds cleanup if a page-close request is lost. **Temporary chat** discloses these
+limits and contains End chat and the optional grilling control. Messages still go
+to the configured model provider under the account's policies; local ephemeral
+handling does not establish zero provider retention. The dedicated runtime uses
+the configured default OpenAI model/login. Custom providers/profiles fail closed.
+
+Select conversation text to reveal **Record selected text…**. Review the exact
+text, selected issue and stated effect, then click **Record this text on the issue**.
+A short-lived one-use token binds that selection to its session and current
+issue/policy/source. Recording rechecks ownership and human-input guards and uses
+the existing locked report append. It labels output human-approved and possibly
+model-written, never human testimony, completed grilling, workflow approval or
+acceptance. No transcript, context bundle or session identity is saved. Work on
+another issue does not block conversation or recording; an active operation on
+the selected issue blocks recording only. Integration also blocks recording.
+After recording changes context, start a new chat for further questions.
+
+**Start grilling…** previews a temporary structured interview and requires a
+separate confirmation click. It saves no interview outcome or completed grilling.
+Other workflow changes retain their existing controls and approvals. Typed chat
+instructions never perform mutations or update documentation.
+
+## Open a site for Verify
+
+A Verify human check can declare `review_target: {url, revision}`, or use the
+issue's `implementation_preview` with those fields. URLs must be HTTP(S), without
+embedded credentials. **Open site** offers the hosting browser (including ChatGPT)
+and, on macOS, the default browser and installed Chrome, Brave, Safari, Firefox or
+Edge. Native choices launch a fixed application name with the validated URL;
+arbitrary application names or commands are never accepted.
+
+Approve result and Needs changes enable after the open request succeeds. Opening
+records an attempt to open the exact candidate, not an observation or approval.
+Needs changes requires comments; evidence checks require an actual observation.
+The recorded decision belongs only to that human check and candidate revision.
+It does not pass technical checks, advance stages, approve integration or close
+an issue. A changed issue, candidate URL/revision or source requires reopening;
+unrelated issue changes do not. Replay and owner mismatches are rejected.
+Completed prototype checks stay completed against their saved prototype revision
+when the issue reaches Verify; they are not re-requested against the project HEAD.

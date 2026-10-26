@@ -3084,7 +3084,11 @@ async function activityScreen(t) {
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
-    script +
+    readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      '\n' +
+      script +
       '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'
   );
   const snapshot = service.snapshot();
@@ -3907,3 +3911,16 @@ function completedIntegrationFixture(api, proposal, git, evidence) {
   api.record(action.id, { status: 'completed', worker_revision: git('rev-parse', 'HEAD'), evidence });
   return action;
 }
+
+test('a recorded site approval remains complete across workflow stages and project revisions', async (t) => {
+  const { window } = await activityScreen(t);
+  const issue = { state: 'resolved', prototype_preview: { revision: 'design-revision' } };
+  const approved = {
+    status: 'passed',
+    revision: 'reviewed-candidate',
+    review_target: { revision: 'reviewed-candidate' },
+  };
+  assert.equal(window.outstandingDecision(issue, approved), false);
+  assert.equal(window.outstandingDecision(issue, { ...approved, review_target: { revision: 'new-candidate' } }), true);
+  assert.equal(window.outstandingDecision(issue, { ...approved, status: 'failed' }), true);
+});
