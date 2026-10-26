@@ -50,6 +50,17 @@ An empty diff is not evidence that new uncommitted files were audited: the snaps
 helper stages its exported files before computing the diff. Sources, index, and
 queue of the original checkout are not modified by verification.
 
+For an independently empty exported index diff against the resolved base, the
+pinned CLI's compact audit may omit analysis diagnostics. The verifier supplies
+that Git-derived scope to the validator; a zero changed-file count reported by
+Fallow alone never establishes emptiness. The result records `scope: "empty"`
+and an `empty-source-diff` limitation, without claiming unrelated analysis passed.
+Process success, pinned JSON/schema, zero findings, pass verdict and the all gate
+are still required; warnings, degraded or malformed diagnostics and contradictory
+scope fail. Every nonempty snapshot still requires analysis diagnostics, including
+untracked additions and deletions. Callers without independently verified scope
+retain strict validation and cannot infer empty scope from a saved tool report.
+
 ### Commit and step-completion checkpoints
 
 Before a commit, the pre-commit hook audits the exact staged snapshot against

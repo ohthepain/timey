@@ -1,6 +1,17 @@
 import { runVerificationProcess } from './verify-process.mjs';
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -41,7 +52,7 @@ const report = {
 };
 let failure = false;
 function checkAssessment(name, result) {
-  if (name === 'fallow') return assessAudit(result);
+  if (name === 'fallow') return assessAudit(result, report.changed_files);
   return { passed: result.status === 0 && !result.error };
 }
 function recordCheck(name, command, result) {
@@ -68,6 +79,15 @@ async function run(name, command, commandArgs) {
   );
   recordCheck(name, [command, ...commandArgs], result);
 }
+function copySourceFile(name) {
+  const source = join(root, name),
+    destination = join(snapshot, name);
+  const entry = lstatSync(source, { throwIfNoEntry: false });
+  if (!entry) return;
+  mkdirSync(dirname(destination), { recursive: true });
+  if (entry.isSymbolicLink()) symlinkSync(readlinkSync(source), destination);
+  else cpSync(source, destination, { recursive: true, dereference: false });
+}
 
 try {
   if (step && baseIndex < 0) throw Error('Step completion requires --base REF naming the start of the step.');
@@ -81,9 +101,7 @@ try {
     for (const name of git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z')
       .split('\0')
       .filter(Boolean)) {
-      if (!existsSync(join(root, name))) continue;
-      mkdirSync(dirname(join(snapshot, name)), { recursive: true });
-      cpSync(join(root, name), join(snapshot, name), { recursive: true, dereference: false });
+      copySourceFile(name);
     }
   }
   if (
@@ -104,7 +122,7 @@ try {
   report.snapshot_tree = git(snapshot, 'write-tree').trim();
   report.changed_files = git(snapshot, 'diff', '--cached', '--name-only', '-z', base).split('\0').filter(Boolean);
   const bin = (name) => join(root, 'node_modules', '.bin', name);
-  await run('fallow', 'npx', [
+  const fallowArgs = [
     '--no-install',
     '--offline',
     'fallow',
@@ -113,7 +131,9 @@ try {
     base,
     '--format',
     'json',
-  ]);
+  ];
+  if (report.changed_files.length === 0) fallowArgs.push('--gate', 'all');
+  await run('fallow', 'npx', fallowArgs);
   if (!auditOnly) {
     const changed = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
       .split('\0')
