@@ -786,26 +786,30 @@ HTTP authorization. Browser evidence separately checks rendering and interaction
 synthetic activity and provider failures establish no provider availability or
 human acceptance.
 
-## Header restart control
+## Header action control and version
 
-The header counts running actions and open temporary chats. **Restart when safe**
-blocks new work, requests a pause after each current coordinator action, and waits
-for current work, permission replies, temporary chats and coordinator locks to
-finish. Existing permission replies and saving/ending a temporary chat remain
-available. No lock or chat is discarded to force a restart. Cancel restores normal
-operation. Unknown locks need their existing reconciliation workflow.
+The header counts running actions and open temporary chats. **No new actions** is
+an on/off switch. Turning it on blocks new work and requests that coordinators
+pause after their current action. Existing work can finish, permission replies
+and saving/ending a temporary chat remain available. Turning it off restores
+normal dispatch and resumes paused coordinators through their existing guards.
+The switch does not restart the server or start a build. Unknown locks still
+need their existing reconciliation workflow.
 
-The replacement reloads the installed UI on the same local port. It starts no
-build and installs no new candidate; deployment handles updates separately. Saved
-chat identities, pending questions and progress stay in the authoritative project.
-Paused coordinators resume through normal workflow guards. Existing guards may
-still stop their next action. The browser reconnects without reloading the page or
-erasing a draft. Restart handoff failures remain visible with a local log.
+The separate server-restart API remains available to deployment and maintenance:
+it drains current work, permission replies, temporary chats and coordinator locks
+before handing the installed listener to a replacement on the same port. It
+installs no build. Saved chats, pending questions and progress remain in the
+project, and the browser reconnects without erasing drafts.
 
-Queue roles use 18-pixel squares in a compact path. Future roles are small points
-on dotted connectors. Skipped roles sit below the connector, which continues over
-them. Accessible names, keyboard focus, skip toggles and pending-input bubbles
-retain the same meaning and operation.
+The header displays the last four characters of the server's reported startup
+commit, with the full hash and source path in its tooltip. Unknown revisions
+are shown as unknown, and source changes retain their warning. This is not an
+independent attestation of the browser’s loaded code or dirty source contents.
+
+Queue roles use 24-pixel squares. Future roles remain outlined squares on dotted
+connectors. Skipped roles use slightly smaller, lowered squares, with the dotted
+connector above them. Every square still links to its expanded issue step.
 
 ## Closing without completing the work
 

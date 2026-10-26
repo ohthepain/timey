@@ -832,18 +832,59 @@
         padding: 5px 8px;
         font-size: 12px;
       }
+      .actions-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+      .actions-switch input {
+        appearance: none;
+        width: 30px;
+        height: 18px;
+        margin: 0;
+        border-radius: 12px;
+        background: #9aa5a0;
+        position: relative;
+        cursor: pointer;
+      }
+      .actions-switch input::after {
+        content: '';
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        top: 2px;
+        left: 2px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.12s;
+      }
+      .actions-switch input:checked {
+        background: #245bcc;
+      }
+      .actions-switch input:checked::after {
+        transform: translateX(12px);
+      }
+      .actions-switch input:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      .actions-switch input:focus-visible {
+        outline: 2px solid #245bcc;
+        outline-offset: 3px;
+      }
       #server-controls small {
         flex-basis: 100%;
       }
       .queue-lifecycle {
         display: flex;
         gap: 0;
-        width: min(242px, 55vw);
+        width: min(290px, 55vw);
         overflow-x: auto;
         padding: 8px 5px 12px;
       }
       .queue-role-shell {
-        flex: 0 0 28px;
+        flex: 0 0 34px;
         position: relative;
         height: 56px;
       }
@@ -854,7 +895,7 @@
         gap: 4px;
         position: relative;
         z-index: 1;
-        width: 28px;
+        width: 34px;
         min-height: 48px;
         background: none;
         border: 0;
@@ -868,25 +909,17 @@
         position: absolute;
         left: 0;
         right: 0;
-        top: 32px;
+        top: 35px;
         border-top: 1px dotted #93a0af;
       }
       .queue-role-shell.is-skipped .queue-square {
         transform: translateY(12px);
-        width: 13px;
-        height: 13px;
-        font-size: 10px;
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
       }
       .queue-square.status-future {
-        border: 0;
-        background: none;
-      }
-      .queue-square.status-future::after {
-        content: '';
-        width: 4px;
-        height: 4px;
-        background: #8995a4;
-        border-radius: 50%;
+        background: #fffef9;
       }
       .queue-role:focus-visible {
         outline: 3px solid #245bcc;
@@ -896,8 +929,8 @@
         box-sizing: border-box;
         display: grid;
         place-items: center;
-        width: 18px;
-        height: 18px;
+        width: 24px;
+        height: 24px;
         border: 2px solid #9aa5b2;
         border-radius: 3px;
         font-size: 12px;
@@ -1087,7 +1120,9 @@
           document.querySelector('header').append(status);
         }
         status.textContent =
-          runtime.mode === 'preview' ? 'Preview copy — approvals belong on the real issue' : 'Live factory';
+          runtime.mode === 'preview'
+            ? 'Preview copy — approvals belong on the real issue'
+            : `Live factory · ${/^[a-f0-9]{7,40}$/i.test(runtime.revision || '') ? '…' + runtime.revision.slice(-4) : 'version unknown'}${runtime.sourceChanged ? ' · source changed' : ''}`;
         status.title =
           'Issue queue: ' + runtime.project + '\nUI source: ' + runtime.checkout + '\nRevision: ' + runtime.revision;
         if (runtime.mode === 'preview' && runtime.authoritativeUrl) {

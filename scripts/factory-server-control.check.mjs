@@ -165,17 +165,73 @@ test('real restart changes the listener PID and preserves existing chat and prog
   assert.equal(readFileSync(history, 'utf8'), saved);
   assert.equal(readFileSync(progress, 'utf8'), ledger);
 });
-test('header shows the action counter and reconnects without reloading or erasing a draft', async () => {
+test('No new actions pauses dispatch without restarting and can be turned off', async (t) => {
+  const service = new FactoryUI(project(t));
+  let restarts = 0;
+  const control = serverControl(service, () => {
+    restarts++;
+  });
+  try {
+    service.store.connected.add('existing-work');
+    assert.equal(control.pause().phase, 'paused');
+    control.pause();
+    assert.throws(() => control.allow('/api/start'), /New work is paused/);
+    control.allow('/api/answer');
+    control.allow('/api/discussion-end');
+    service.store.connected.clear();
+    await delay(700);
+    assert.equal(restarts, 0);
+    assert.equal(control.status().phase, 'paused');
+    assert.equal(control.status().actions, 0);
+    control.cancel();
+    control.allow('/api/start');
+    assert.equal(control.status().phase, 'idle');
+  } finally {
+    control.close();
+    service.close();
+  }
+});
+
+test('header toggle shows immediate feedback and reconnects without erasing a draft', async () => {
   const dom = new JSDOM('<header></header><textarea>keep this draft</textarea>', { runScripts: 'outside-only' });
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') + '\nwindow.controls = serverControlUI;'
   );
-  const value = { actions: 1, chats: 0, approvals: 0, locks: [], phase: 'idle', supported: true, pid: 1 };
-  dom.window.controls.show(value, async () => ({ ...value, phase: 'draining' }));
+  const value = {
+    actions: 1,
+    chats: 0,
+    approvals: 0,
+    locks: [],
+    phase: 'idle',
+    supported: true,
+    pauseSupported: true,
+    pid: 1,
+  };
+  const calls = [];
+  let finish;
+  dom.window.controls.show(value, async (path) => {
+    calls.push(path);
+    await new Promise((resolve) => {
+      finish = resolve;
+    });
+    return { ...value, phase: path === 'server-pause' ? 'paused' : 'idle' };
+  });
   assert.match(dom.window.document.querySelector('[data-server-count]').textContent, /1 action running/);
-  dom.window.document.querySelector('[data-server-restart]').click();
+  const toggle = dom.window.document.querySelector('[data-server-toggle]');
+  toggle.click();
+  assert.equal(toggle.checked, true);
+  assert.equal(toggle.disabled, true);
+  assert.deepEqual(calls, ['server-pause']);
+  finish();
   await delay(0);
-  assert.equal(dom.window.document.querySelector('[data-server-restart]').disabled, true);
+  assert.equal(toggle.disabled, false);
+  toggle.click();
+  assert.equal(toggle.checked, false);
+  assert.equal(toggle.disabled, true);
+  finish();
+  await delay(0);
+  assert.deepEqual(calls, ['server-pause', 'server-cancel-restart']);
+  dom.window.controls.show({ ...value, phase: 'draining' }, async () => value);
   dom.window.fetch = async () => ({});
   await dom.window.controls.reconnect(async () => ({ ...value, actions: 0, pid: 2 }));
   assert.equal(dom.window.document.querySelector('textarea').value, 'keep this draft');

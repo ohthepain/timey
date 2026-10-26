@@ -4471,3 +4471,14 @@ test('queue priority controls show immediate saving feedback and dividers use th
   assert.equal(sent.length, 1);
   assert.ok([...window.document.querySelectorAll(`[data-priority-issue="${id}"]`)].every((button) => !button.disabled));
 });
+
+test('the header uses the last four revision characters and keeps the full revision in its tooltip', async (t) => {
+  const { window } = await activityScreen(t);
+  const revision = '0123456789abcdef0123456789abcdef01234567';
+  window.showRuntime({ mode: 'live', revision, project: '/project', checkout: '/source' });
+  const status = window.document.getElementById('runtime');
+  assert.match(status.textContent, /…4567/);
+  assert.ok(status.title.includes(revision));
+  window.showRuntime({ mode: 'live', revision: null, project: '/project', checkout: '/source' });
+  assert.match(status.textContent, /version unknown/);
+});

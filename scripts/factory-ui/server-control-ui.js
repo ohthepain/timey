@@ -3,45 +3,48 @@ const serverControlUI = (() => {
   let state = null,
     expecting = false,
     previousPid = null,
-    busy = false;
+    busy = false,
+    requestedPause = null;
   function panel() {
     let element = document.getElementById('server-controls');
     if (element) return element;
     element = document.createElement('span');
     element.id = 'server-controls';
     element.innerHTML =
-      '<span data-server-count role="status"></span> <button data-server-restart>Restart when safe</button> <button data-server-cancel hidden>Cancel restart</button> <small data-server-message role="status"></small>';
+      '<span data-server-count role="status"></span> <label class="actions-switch"><input type="checkbox" role="switch" data-server-toggle> <span>No new actions</span></label> <small data-server-message role="status"></small>';
     document.querySelector('header').append(element);
     return element;
   }
   function show(value, request) {
     state = value;
-    const element = panel(),
-      draining = state.phase !== 'idle';
-    if (draining) {
+    const element = panel();
+    if (['draining', 'restarting'].includes(state.phase)) {
       expecting = true;
       previousPid = state.pid;
     }
     element.querySelector('[data-server-count]').textContent = counts(state);
-    const restart = element.querySelector('[data-server-restart]'),
-      cancel = element.querySelector('[data-server-cancel]');
-    restart.disabled = unavailable();
-    restart.textContent = draining ? 'Waiting to restart…' : 'Restart when safe';
-    cancel.hidden = !draining;
-    cancel.disabled = busy || state.phase === 'restarting';
+    const toggle = element.querySelector('[data-server-toggle]');
+    toggle.checked = requestedPause ?? state.phase !== 'idle';
+    toggle.disabled = toggleUnavailable();
     element.querySelector('[data-server-message]').textContent = message(state);
-    restart.onclick = () => change('server-restart', request);
-    cancel.onclick = () => change('server-cancel-restart', request);
+    toggle.onchange = () => {
+      requestedPause = toggle.checked;
+      void change(toggle.checked ? 'server-pause' : 'server-cancel-restart', request);
+    };
   }
-  function unavailable() {
-    return busy || state.phase !== 'idle' || !state.supported;
+  function toggleUnavailable() {
+    return busy || state.phase === 'restarting' || !state.pauseSupported;
+  }
+  function pausedMessage(value) {
+    return value.actions ? 'Finishing current actions. New work is paused.' : 'No actions running. New work is paused.';
   }
   function message(value) {
     if (value.phase === 'idle') return value.error || '';
+    if (value.phase === 'paused') return pausedMessage(value);
     return drainMessage(value);
   }
   function drainMessage(value) {
-    if (value.error) return value.error + ' Cancel restart before trying again.';
+    if (value.error) return value.error + ' Turn off No new actions before trying again.';
     if (value.chats) return 'Save or end the open temporary chats before restart.';
     if (value.approvals) return 'Answer the pending permissions so current work can finish.';
     return waitMessage(value);
@@ -64,6 +67,7 @@ const serverControlUI = (() => {
       problem = error.message;
     } finally {
       busy = false;
+      requestedPause = null;
       show(state, request);
       showProblem(problem);
     }

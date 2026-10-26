@@ -43,29 +43,40 @@ export function serverControl(service, restart) {
       phase,
       error,
       supported: Boolean(restart) && service.reviewMode !== 'preview',
+      pauseSupported: service.reviewMode !== 'preview',
       pid: process.pid,
     };
   }
-  function request() {
-    requireThat(restart && service.reviewMode !== 'preview', 'Restart the live server, not a preview.');
+  function pause() {
+    requireThat(service.reviewMode !== 'preview', 'Pause new actions on the live server, not a preview.');
     if (phase !== 'idle') return status();
     service.ownServer();
-    phase = 'draining';
+    phase = 'paused';
     error = null;
     paused = [...service.lifecycleTasks.keys()];
     for (const issueId of paused) service.pauseLifecycle({ issueId });
     return status();
   }
+  function request() {
+    requireThat(restart && service.reviewMode !== 'preview', 'Restart the live server, not a preview.');
+    if (phase === 'idle') pause();
+    if (phase === 'paused') phase = 'draining';
+    return status();
+  }
   function allow(path, input = {}) {
-    requireThat(phase === 'idle' || finishing.has(path), 'The server is preparing to restart. New work is paused.');
+    requireThat(
+      phase === 'idle' || finishing.has(path),
+      'New work is paused. Turn off No new actions to start more work.'
+    );
     requireThat(
       phase === 'idle' || !input.continue,
-      'Save these results without continuing while the server prepares to restart.'
+      'Save these results without continuing while new actions are paused.'
     );
   }
   function cancel() {
     requireThat(phase !== 'restarting', 'Restart has already started.');
     phase = 'idle';
+    error = null;
     for (const issueId of paused) restoreProgress(service, issueId);
     paused = [];
     return status();
@@ -86,7 +97,7 @@ export function serverControl(service, restart) {
       clearInterval(timer);
     }
   }
-  return { status, request, cancel, allow, close: () => clearInterval(timer) };
+  return { status, request, pause, cancel, allow, close: () => clearInterval(timer) };
 }
 function restoreProgress(service, issueId) {
   const record = service.lifecycleRuns[issueId];

@@ -55,6 +55,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),
     '/api/lifecycle-start': () => service.startLifecycle(value),
