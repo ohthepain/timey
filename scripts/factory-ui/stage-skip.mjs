@@ -41,6 +41,7 @@ function recordPlannedSkip(service, queue, issue, run) {
   );
   checkDeferredReview(review, queue, issue);
   const path = join(service.store.directory, run.id + '-skip.json');
+  service.store.update(run, { decisionSource: step.source || null });
   const result = {
     outcome: 'completed',
     summary: `${stage.name} was skipped for the saved reason. The issue can continue to the next workflow stage.`,

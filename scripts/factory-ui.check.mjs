@@ -1,3 +1,6 @@
+import { stageSource, sourceLabel } from './factory-ui/stage-source.mjs';
+import { recordStage } from './factory-ui/lifecycle.mjs';
+import { parseDocument } from 'yaml';
 import { lifecycleWorkBasis } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
@@ -696,6 +699,7 @@ test('routes save separately from execution, survive restart, and do not invent 
   const issue = restarted.snapshot().issues[0];
   assert.equal(issue.stageStates.implement.label, 'Planned');
   assert.equal(issue.stageStates.experiment.status, 'planned-skip');
+  assert.equal(issue.stageStates.experiment.sourceLabel, 'Investigate');
   assert.equal(issue.stageStates.final.label, 'Not decided');
   assert.equal(api.inspect().registry.actions.length, 1);
   assert.equal(api.inspect().registry.actions[0].status, 'setup');
@@ -734,6 +738,8 @@ test('a current optional stage can be planned and skipped before implementation 
   assert.equal(issue.lifecycle_history[0].outcome, 'skipped');
   assert.equal(issue.lifecycle_history[0].state, 'experiment');
   assert.match(issue.lifecycle_history[0].reason, /investigation settled/);
+  assert.deepEqual(issue.lifecycle_history[0].source, { kind: 'stage', state: 'experiment' });
+  assert.equal(issue.stageStates.experiment.sourceLabel, 'Prototype');
   assert.equal(api.inspect().registry.actions.length, 1);
   const action = api.inspect().registry.actions[0];
   assert.equal(action.kind, 'implement');
@@ -4149,4 +4155,45 @@ test('stopped lifecycle screen displays uncommitted paths and next steps instead
   assert.ok(!panel.textContent.includes('The last action cannot advance'));
   assert.equal(panel.querySelector('unsafe'), null);
   assert.equal(panel.querySelector('[data-lifecycle-start]').disabled, true);
+});
+
+test('skip decisions retain their source separately from execution approval', () => {
+  const stages = [{ state: 'clarify', name: 'Clarify' }];
+  assert.equal(sourceLabel({ kind: 'original-report' }, stages), 'Original report');
+  assert.equal(sourceLabel({ kind: 'user' }, stages), 'User');
+  assert.equal(sourceLabel({ kind: 'stage', state: 'clarify' }, stages), 'Clarify');
+  assert.equal(sourceLabel(null, stages), 'Source not recorded');
+  const issue = { state: 'prototype' };
+  assert.equal(stageSource(issue, { decisionSource: null }), null);
+  const run = { issueState: 'clarify', authorization: { kind: 'approved-plan' } };
+  const doc = parseDocument('state: prototype\n');
+  recordStage(
+    doc,
+    issue,
+    'implement',
+    {
+      stage_records: [
+        { state: 'prototype', outcome: 'skipped', reason: 'The approved interaction is already defined.' },
+      ],
+    },
+    run,
+    [{ path: '/evidence/review.json' }]
+  );
+  assert.deepEqual(doc.get('lifecycle_history').toJSON()[0].source, { kind: 'stage', state: 'clarify' });
+  const plannedDoc = parseDocument('state: prototype\n');
+  recordStage(
+    plannedDoc,
+    issue,
+    'implement',
+    {
+      summary: 'Current work is complete.',
+      skipped_steps: [{ state: 'prototype', reason: 'The interaction is defined.' }],
+    },
+    { ...run, issueState: 'implement', skipSources: { prototype: { kind: 'user' } } },
+    [{ path: '/evidence/decision.json' }]
+  );
+  assert.deepEqual(plannedDoc.get('lifecycle_history').toJSON()[1].source, { kind: 'user' });
+  assert.deepEqual(stageSource(issue, { ...run, kind: 'plan-skip', authorization: { kind: 'direct-user' } }), {
+    kind: 'user',
+  });
 });

@@ -57,7 +57,7 @@ _Avoid_: Worker completion, integration
 
 **Stage outcome**:
 A recorded decision that a lifecycle stage completed or was skipped, with its
-reason and evidence. A finished worker is evidence for review, not this decision.
+reason, decision source and evidence. A finished worker is evidence for review, not this decision.
 
 **Planned route**:
 The saved expectation of which future issue stages will be taken, skipped or

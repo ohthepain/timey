@@ -1,3 +1,4 @@
+import { stageSource } from './stage-source.mjs';
 import { startChat } from './chat-start.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
@@ -513,7 +514,16 @@ function routesForReview(queue, run) {
     { ...queue, actions: [...queue.actions, ...run.result.recommendations] },
     run.result.routes || [],
     run.issueId
-  );
+  ).map((route) => ({
+    ...route,
+    steps: route.steps.map((step) => ({
+      ...step,
+      source: stageSource(
+        queue.issues.find((issue) => issue.id === route.issueId),
+        run
+      ),
+    })),
+  }));
 }
 function saveAssignments(api, proposals) {
   return proposals.length ? api.recommend(proposals) : [];

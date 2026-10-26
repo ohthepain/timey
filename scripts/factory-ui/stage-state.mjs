@@ -1,3 +1,4 @@
+import { sourceLabel } from './stage-source.mjs';
 import { savedRoute, stageOutcome } from './lifecycle.mjs';
 import { explainBlock, sameStage } from './readiness.mjs';
 
@@ -5,15 +6,20 @@ export function stageStates(queue, issue, runs, readiness) {
   const route = savedRoute(issue, runs);
   return Object.fromEntries([
     ...queue.lifecycle.map((stage) => [stage.state, describeStage(stage, queue, issue, runs, route, readiness)]),
-    ['@integration', stageOutcome(issue, '@integration') ? recordedOutcome(stageOutcome(issue, '@integration')) : null],
+    [
+      '@integration',
+      stageOutcome(issue, '@integration')
+        ? recordedOutcome(stageOutcome(issue, '@integration'), queue.lifecycle)
+        : null,
+    ],
   ]);
 }
 function describeStage(stage, queue, issue, runs, route, readiness) {
   if (stage.state === issue.state) return currentStage(queue, issue, runs, readiness);
   const event = stageOutcome(issue, stage.state);
-  if (event) return recordedOutcome(event);
+  if (event) return recordedOutcome(event, queue.lifecycle);
   const planned = route.find((s) => s.state === stage.state);
-  if (isFuture(queue.lifecycle, issue.state, stage.state)) return futureStage(planned);
+  if (isFuture(queue.lifecycle, issue.state, stage.state)) return futureStage(planned, queue.lifecycle);
   return {
     status: 'unknown',
     label: 'No outcome recorded',
@@ -21,9 +27,10 @@ function describeStage(stage, queue, issue, runs, route, readiness) {
       'We have no recorded outcome for this step. Any assignments or notes we do have remain available when you expand it.',
   };
 }
-function recordedOutcome(event) {
+function recordedOutcome(event, stages) {
   return {
     ...event,
+    sourceLabel: sourceLabel(event.source, stages),
     status: event.outcome,
     label: event.outcome === 'completed' ? 'Completed' : 'Skipped',
     summary: event.reason,
@@ -45,7 +52,7 @@ const planStates = {
   take: { status: 'future', label: 'Planned' },
   undecided: { status: 'future', label: 'Not decided' },
 };
-function futureStage(planned) {
+function futureStage(planned, stages) {
   if (!planned)
     return {
       status: 'future',
@@ -53,7 +60,7 @@ function futureStage(planned) {
       summary:
         'No route has been saved for this step yet. Reviewing the issue can propose whether it is needed; saving that recommendation records the plan.',
     };
-  return { ...planStates[planned.decision], summary: planned.reason };
+  return { ...planStates[planned.decision], summary: planned.reason, sourceLabel: sourceLabel(planned.source, stages) };
 }
 function currentStage(queue, issue, runs, readiness) {
   const working = runs.findLast(
