@@ -52,6 +52,9 @@ any answer or approval. Work on other issues does not block saving the response.
 Background updates deferred during form editing or an open dialog remain pending
 and render once that interaction ends, even if later polls return unchanged data.
 Temporary chat keeps its existing DOM and draft while lifecycle questions update.
+Read-only Clarify questions are bound to the selected report, lifecycle and linked
+plan contents. An unrelated source commit does not discard those questions. Results
+that advance a stage or reuse implementation approval retain their source guards.
 Report and question freshness checks still apply; native worker requests keep their
 existing reply path.
 

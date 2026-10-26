@@ -4083,3 +4083,49 @@ test('another issue changing cannot invalidate a selected issue acceptance butto
   service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis);
   assert.equal(service.snapshot().issues.find((issue) => issue.id === '20261022-one').state, 'closed');
 });
+
+const clarificationMutations = {
+  commit({ root, git }) {
+    writeFileSync(join(root, 'unrelated.js'), 'another feature\n');
+    git('add', 'unrelated.js');
+    git('commit', '-qm', 'Unrelated source');
+  },
+  dirty({ root }) {
+    writeFileSync(join(root, 'source.js'), 'unfinished unrelated source\n');
+  },
+  report({ root }) {
+    const path = join(root, '.issues/20261022-one.md');
+    writeFileSync(path, readFileSync(path, 'utf8') + '\nChanged requirements\n');
+  },
+  plan({ root }) {
+    writeFileSync(join(root, 'docs/plans/inspect.md'), '# Changed plan\n');
+  },
+};
+for (const [name, mutate] of Object.entries(clarificationMutations)) {
+  test(`clarification questions handle ${name} changes during the read-only assessment`, async (t) => {
+    const f = lifecycleFixture(t);
+    f.service.codex.turn = async (_id, _cwd, _prompt, schema) => {
+      assert.ok(schema.properties.clarification_complete);
+      mutate(f);
+      return JSON.stringify({
+        ...lifecycleResponse(f.root, schema, f.proposal),
+        clarification_complete: false,
+        prior_approval: null,
+        questions: [{ id: 'placement', question: 'May Retro run before acceptance?' }],
+      });
+    };
+    startIssueLifecycle(f.service);
+    const result = await finishLifecycle(f.service);
+    if (['report', 'plan'].includes(name)) {
+      assert.equal(result.status, 'blocked');
+      assert.match(result.summary, /changed/);
+      assert.equal(result.input, null);
+    } else {
+      assert.equal(result.status, 'waiting', result.summary);
+      assert.equal(result.input.questions[0].id, 'placement');
+      assert.equal(f.service.snapshot().issues[0].state, 'clarify');
+      assert.equal(result.approval, undefined);
+    }
+    assert.equal(f.api.inspect().registry.actions.length, 0);
+  });
+}
