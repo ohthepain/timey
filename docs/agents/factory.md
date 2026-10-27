@@ -76,7 +76,7 @@ If no work or human input is actionable, explain what is pending.
 | `/factory human [ISSUE_ID ...]` | Handle the selected issues' human input; omit IDs for the queue.                                                               |
 | `/factory launch ACTION_ID ...` | Launch exactly the selected saved actions.                                                                                     |
 | `/factory both ACTION_ID ...`   | Launch those actions, then offer human input for their issues and the previously displayed human-input selection in this chat. |
-| `/factory integrate ACTION_ID`  | Finalize one completed code action under its merge policy.                                                                     |
+| `/factory integrate ACTION_ID`  | Assemble one reviewed contribution on its issue branch; complete-issue PR delivery is separate.                                |
 
 For Both, include the displayed human-input issue IDs in the follow-up's plain
 language prompt as well as the explicit action IDs. With a bare Both command,
@@ -136,3 +136,9 @@ chat commands continue to follow the factory skill’s one-iteration contract.
 
 Both front doors use [shared progress and completion records](factory-records.md).
 Their selection scope and control loops remain separate.
+
+## Issue PR delivery
+
+Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
+review, publication, recovery and server-enforced merge gates. New delivery uses
+one PR per complete issue. Historical records retain their original meaning.

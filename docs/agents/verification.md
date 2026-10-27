@@ -293,3 +293,9 @@ log. Separate probes verify transport refusal, runtime HTTP rejection, malformed
 JSON, successful readiness, bounded retention and exclusion of response secrets.
 These fixtures deploy no live service and do not diagnose a historical timeout
 when its original readiness observations were not retained.
+
+## Issue PR delivery
+
+Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
+review, publication, recovery and server-enforced merge gates. New delivery uses
+one PR per complete issue. Historical records retain their original meaning.

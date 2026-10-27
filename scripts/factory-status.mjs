@@ -8,6 +8,7 @@ const progress = {
   running: ['Started', 'Check the recorded chat for a result.'],
   blocked: ['Blocked', 'Review the recorded blocker before continuing.'],
   completed: ['Work finished', 'Review the result; code still needs a separate merge.'],
+  assembled: ['Assembled', 'Issue branch checked; complete the issue before opening its PR.'],
   integrated: ['Merged', 'Check the issue for remaining review or acceptance.'],
   reconciled: ['Result reviewed', 'Check the issue for follow-on work or acceptance.'],
   failed: ['Failed', 'Review the failure before choosing another action.'],

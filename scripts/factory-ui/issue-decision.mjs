@@ -1,3 +1,4 @@
+import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { decisionBasis, retainAcceptedResult } from './recorded-result.mjs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
@@ -48,6 +49,11 @@ function prepareDecision(service, queue, issue, action, decision) {
     return { queue, issue };
   }
   if (decision.dismissed) return { queue, issue };
+  const delivery = new DeliveryStore(service.root, issue.id).read();
+  requireThat(
+    !delivery || delivery.state === 'verified',
+    'Complete independent issue PR integration verification before accepting the fix.'
+  );
   queue = recordClosingApproval(service, queue, issue);
   issue = progressIssue(queue, issue.id, issue.state);
   return { queue, issue, accepted: checkClosure(service, queue, issue, action) };

@@ -78,17 +78,13 @@ cross-chat replies or new work; the coordinator reads worker results itself.
 
 ## Integration and review
 
-`$factory integrate ACTION_ID` explicitly triggers finalization of a completed
-code action in the authoritative checkout. Coding and integration-candidate work
-runs in separate chats; this final coordinator operation serializes the target
-merge and queue bookkeeping. It is never executed by a decision invocation.
-
-Worker completion does not verify or integrate work. The coordinator reviews
-the diff and evidence using [review standards](../../CODING_STANDARDS.md), serializes integration, and checks the combined revision.
-Choose automatic merge for approved scoped changes with sufficient evidence;
-require human approval first for unresolved behavioral decisions, material scope,
-or correctness uncertainty requiring human judgment. Make the policy visible
-before launch. A worker may not silently expand an action's integration scope.
+`$factory integrate ACTION_ID` assembles a reviewed contribution on the issue's
+stable delivery branch through the shared server operations. It never merges new
+work directly into dev/main. Follow [issue PR delivery](issue-delivery.md) for the
+completion manifest, publication, recovery, required checks and exact aggregate
+human-first approval. All contributions preserve their original policies and bases.
+Worker completion, assembly, PR merge, independent integration verification and
+human acceptance are separate. Only the coordinator updates authoritative reports.
 
 Outer-loop taste review alone need not block local integration. Missing hardware
 evidence blocks progress that depends on it. An integration outside the selected

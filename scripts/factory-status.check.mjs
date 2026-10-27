@@ -123,13 +123,13 @@ test('concise reporting fields are validated and cannot survive a newer result a
   assert.deepEqual(completed.remaining, ['Review and merge this change.']);
   assert.equal(completed.evidence[0].available, false);
   api.record('code-action', {
-    status: 'integrated',
-    evidence: 'Combined checks passed after merge.',
+    status: 'blocked',
+    evidence: 'PR delivery proof still required.',
     verified_revision: git('rev-parse', 'HEAD'),
     checks_passed: true,
   });
   const integrated = JSON.parse(run('--json')).tasks[0];
-  assert.equal(integrated.result, 'Combined checks passed after merge.');
+  assert.equal(integrated.result, 'PR delivery proof still required.');
   assert.doesNotMatch(integrated.remaining.join(' '), /merge this change/);
 });
 

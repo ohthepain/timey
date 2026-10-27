@@ -1,7 +1,7 @@
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
-import { workerPrompt, integrationPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
+import { workerPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
 import { digest as digestReport } from './factory-ui/common.mjs';
 import { beginReconciliation } from './factory-ui/reconcile.mjs';
 import { test } from 'node:test';
@@ -166,9 +166,9 @@ test('a claimed successful integration cannot bypass independent verification', 
   const { runId } = service.start(service.preflight(action.id, 'integrate').token, true);
   const run = await settle(service, runId);
   assert.equal(run.status, 'blocked');
-  assert.match(run.summary, /Required check failed/);
+  assert.match(run.summary, /issue-delivery-config/);
   assert.equal(api.inspect().registry.actions[0].status, 'completed');
-  assert.equal(existsSync(join(root, '.issues/factory-integration.lock')), true);
+  assert.equal(existsSync(join(root, '.issues/factory-integration.lock')), false);
   await assert.rejects(
     checkCandidate(root, git('rev-parse', 'HEAD'), join(service.store.directory, run.id)),
     /Required check failed/
@@ -327,7 +327,7 @@ test('installed transport client starts and resumes one chat without model overr
 
 test('worker and integration assignments explain grouped native permissions without granting them', () => {
   const action = { id: 'action', basis: { head: 'base' }, worker_prompt: 'Implement', scope: 'Scoped change' };
-  for (const prompt of [workerPrompt(action, []), integrationPrompt(action, {})]) {
+  for (const prompt of [workerPrompt(action, [])]) {
     assert.ok(prompt.includes(workerPermissionGuidance));
     assert.match(prompt, /request_permissions/);
     assert.match(prompt, /do not force require_escalated for each script/);
@@ -1071,10 +1071,12 @@ function completedWorkFixture(t) {
       dead_code: { workspace_diagnostics: [] },
     }) + '\n'
   );
+  const factoryLog = join(root, '.issues/factory-fixture.log');
+  writeFileSync(factoryLog, 'ℹ tests 1\nℹ pass 1\nℹ fail 0\nℹ skipped 0\n');
   const summaries = ['verification', 'step'].map((checkpoint) => {
     const path = join(root, '.issues', checkpoint + '.json');
     const checks = (checkpoint === 'step' ? ['fallow'] : ['fallow', 'factory', 'typecheck', 'tests', 'build']).map(
-      (name) => ({ name, passed: true, exit: 0, log })
+      (name) => ({ name, passed: true, exit: 0, log: name === 'factory' ? factoryLog : log })
     );
     writeFileSync(
       path,
@@ -1916,12 +1918,14 @@ test('implementation checklist stays in Verify when the issue advances to Commit
     'reviewFileProblems',
     'progressControls',
     'latestReviewResult',
+    'issueDeliveryCard',
     source + ';return currentStageContent;'
   )(
     () => '<checklist>Saved passed and skipped steps</checklist>',
     () => '<file-problems/>',
     () => '<progress/>',
-    () => '<result/>'
+    () => '<result/>',
+    () => ''
   );
   const issue = { implementation: { record: { steps: [{ name: 'Saved step' }] } } };
   assert.match(render(issue, { role: 'ready-to-verify' }), /<checklist>/);
@@ -2321,12 +2325,17 @@ test('older final-review issue with an integrated commit can be accepted without
   );
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'automatic' }]);
   finishCodeFixture(api, action.id, git('rev-parse', 'HEAD'), 'Existing checked fix.');
-  api.record(action.id, {
-    status: 'integrated',
-    checks_passed: true,
-    verified_revision: git('rev-parse', 'HEAD'),
-    evidence: 'Integrated and checked before this UI existed.',
-  });
+  const history = api.inspect().registry;
+  Object.assign(
+    history.actions.find((a) => a.id === action.id),
+    {
+      status: 'integrated',
+      checks_passed: true,
+      verified_revision: git('rev-parse', 'HEAD'),
+      evidence: 'Integrated and checked before this UI existed.',
+    }
+  );
+  writeFileSync(join(root, '.issues/factory.json'), JSON.stringify(history));
   const snapshot = service.snapshot();
   assert.equal(snapshot.issues[0].lifecycle_history, undefined);
   assert.deepEqual(service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), { state: 'closed' });
@@ -3909,32 +3918,25 @@ test('known idle startup resumes its exact chat after restart; active or used ch
 });
 
 for (const change of ['none', 'dirty', 'candidate']) {
-  test(`delayed integration startup rechecks approved inputs (${change}) before dispatch`, async (t) => {
+  test(`server assembly rechecks saved inputs (${change}) and opens no integration chat`, async (t) => {
     const { api, proposal, service, git, root } = fixture(t);
     const action = completedIntegrationFixture(api, proposal, git, 'fixture');
-    let opened;
-    service.codex.start = () =>
-      new Promise((resolve) => {
-        opened = resolve;
-      });
+    const selection = service.preflight(action.id, 'integrate');
     let dispatches = 0;
-    service.runTurn = async () => {
+    service.codex.start = async () => {
       dispatches++;
+      throw Error('No integration chat');
     };
-    const { runId } = service.start(service.preflight(action.id, 'integrate').token, true);
-    await Promise.resolve();
-    assert.equal(dispatches, 0);
     changeIntegrationFixture(change, root, action);
-    opened('original-integration-chat');
-    for (let i = 0; i < 10; i++) await Promise.resolve();
-    const run = service.store.runs.find((r) => r.id === runId);
-    assert.equal(run.threadId, 'original-integration-chat');
-    assert.equal(dispatches, change === 'none' ? 1 : 0);
-    if (change !== 'none') {
+    if (change !== 'none') assert.throws(() => service.start(selection.token, true), /changed/);
+    else {
+      const { runId } = service.start(selection.token, true);
+      const run = await settle(service, runId);
+      assert.equal(run.kind, 'assembly');
       assert.equal(run.status, 'blocked');
-      assert.match(run.summary, /inputs changed/);
+      assert.match(run.summary, /issue-delivery-config/);
     }
-    assert.equal(service.store.runs.length, 1);
+    assert.equal(dispatches, 0);
   });
 }
 
@@ -4041,13 +4043,18 @@ test('an already integrated action resumes bookkeeping without another Codex tur
   const { root, git, api, proposal, service } = fixture(t);
   const action = completedIntegrationFixture(api, proposal, git, 'verified result');
   const revision = git('rev-parse', 'HEAD');
-  api.record(action.id, {
-    status: 'integrated',
-    verified_revision: revision,
-    checks_passed: true,
-    human_approved: true,
-    evidence: 'Checked integration fixture',
-  });
+  const history = api.inspect().registry;
+  Object.assign(
+    history.actions.find((a) => a.id === action.id),
+    {
+      status: 'integrated',
+      verified_revision: revision,
+      checks_passed: true,
+      human_approved: true,
+      evidence: 'Checked integration fixture',
+    }
+  );
+  writeFileSync(join(root, '.issues/factory.json'), JSON.stringify(history));
   const run = service.store.add(action, 'integration', revision);
   service.store.update(run, {
     status: 'blocked',

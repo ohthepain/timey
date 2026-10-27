@@ -101,8 +101,9 @@ function integration(action) {
   return {
     kind: 'integrate',
     actionId: action.id,
-    title: 'Review integration',
-    summary: 'Review this exact candidate and integrate it only after the required checks and approval.',
+    title: 'Review issue contribution',
+    summary:
+      'Review and assemble this contribution on its issue branch. Open one PR after the complete issue passes its checks.',
   };
 }
 function unavailable(reason) {

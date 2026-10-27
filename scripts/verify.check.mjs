@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
-import { fallowAuditScope } from './verify.mjs';
+import { fallowAuditScope } from './verify-scope.mjs';
 
 test('fallow audit scope narrows to one path', () => {
   assert.equal(fallowAuditScope(['scripts/factory-ui/http.mjs']), 'scripts/factory-ui/http.mjs');
@@ -46,7 +46,7 @@ function auditFixture(t, extraFiles = {}) {
   writeFileSync(join(root, 'pnpm-lock.yaml'), readFileSync('pnpm-lock.yaml'));
   writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/*.mjs"]}\n');
   mkdirSync(join(root, 'scripts'));
-  for (const name of ['verify.mjs', 'verify-process.mjs', 'audit-result.mjs'])
+  for (const name of ['verify.mjs', 'verify-scope.mjs', 'verify-process.mjs', 'audit-result.mjs'])
     writeFileSync(join(root, 'scripts', name), readFileSync(join('scripts', name)));
   writeFileSync(join(root, 'index.js'), 'console.log("baseline");\n');
   for (const [name, content] of Object.entries(extraFiles)) writeFileSync(join(root, name), content);

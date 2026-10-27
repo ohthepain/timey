@@ -1,3 +1,4 @@
+import { validateAssembledStart } from '../issue-delivery-records.mjs';
 import { readPriorities, priorityView } from './priorities.mjs';
 import { closureReasons } from './closure-reasons.mjs';
 import { issueInputs } from '../factory-inputs.mjs';
@@ -89,6 +90,13 @@ export function describeLaunch(queue, action) {
     )
   )
     return 'Issue already claimed by another saved action.';
+  if (action.dependencies.some((id) => queue.actions.find((a) => a.id === id)?.status === 'assembled')) {
+    try {
+      validateAssembledStart(queue.root, action, { actions: queue.actions });
+    } catch (error) {
+      return error.message;
+    }
+  }
   return launchFreshness(queue, action);
 }
 function launchFreshness(queue, action) {

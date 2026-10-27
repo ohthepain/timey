@@ -1624,10 +1624,37 @@
           )
           .join('');
       }
+      function issueDeliveryCard(issue) {
+        const d = issue.issueDelivery;
+        if (!d) return '';
+        const operations =
+          d.state === 'verified'
+            ? ['refresh']
+            : d.merge
+              ? ['verify', 'reconcile']
+              : d.pr
+                ? ['refresh', 'merge', 'reconcile']
+                : ['open', 'reconcile'];
+        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(d.state)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><p>Candidate: ${esc(d.candidate)}<br>Tested target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} reviewed contribution(s). ${d.readiness ? 'Completion review retained.' : 'Complete the issue and attach its completion manifest before opening.'}</p>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : '<label>Completion manifest <input type="file" accept="application/json" data-delivery-manifest></label>'}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ open: 'Open completed issue PR', refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Reconcile saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>Remote merge, verified integration and your final acceptance are separate.</p></section>`;
+      }
+      async function issueDeliveryAction(kind, input) {
+        const preview = await request('issue-delivery-preflight', { kind, input });
+        const d = preview.delivery;
+        const text = `${kind} issue pull request?\nCandidate: ${d?.candidate || ''}\nTarget: ${d?.targetRevision || ''}\nContributions: ${d?.contributions.map((c) => c.actionId).join(', ') || ''}\n${preview.requiresApproval ? 'Your approval covers this exact aggregate and target.' : ''}`;
+        if (!window.confirm(text)) return;
+        await request('issue-delivery-start', { token: preview.token, humanApproved: preview.requiresApproval });
+      }
       function currentStageContent(issue, step) {
         if (issue.implementation && step.role === 'ready-to-verify')
-          return implementationChecklist(issue) + reviewFileProblems(issue) + progressControls(issue);
-        return latestReviewResult(issue) + reviewFileProblems(issue) + progressControls(issue);
+          return (
+            issueDeliveryCard(issue) +
+            implementationChecklist(issue) +
+            reviewFileProblems(issue) +
+            progressControls(issue)
+          );
+        return (
+          issueDeliveryCard(issue) + latestReviewResult(issue) + reviewFileProblems(issue) + progressControls(issue)
+        );
       }
       const checkLabels = {
         passed: 'Passed',
@@ -2430,14 +2457,33 @@
               $('approve').disabled = false;
               $('confirm').showModal();
             });
+        document
+          .querySelectorAll('[data-delivery-kind]')
+          .forEach(
+            (button) =>
+              (button.onclick = () =>
+                act(() => issueDeliveryAction(button.dataset.deliveryKind, { issueId: button.dataset.deliveryIssue })))
+          );
+        document.querySelectorAll('[data-delivery-manifest]').forEach(
+          (input) =>
+            (input.onchange = () =>
+              act(async () => {
+                const issue = data.issues.find((i) => location.hash.includes(i.id));
+                if (!issue || !input.files[0]) throw Error('Select this issue and a completion manifest.');
+                await issueDeliveryAction('ready', {
+                  issueId: issue.id,
+                  manifest: JSON.parse(await input.files[0].text()),
+                });
+              }))
+        );
         if ($('search')) bindQueueFilters();
       }
       async function select(actionId, kind) {
         selection = await request('preflight', { actionId, kind });
         const a = selection.action;
         $('selection').innerHTML =
-          `<h2>${kind === 'launch' ? 'Start this worker?' : 'Integrate these changes?'}</h2><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration policy: ${esc(mergeLabel(a.merge))}</p><p>Target: ${esc(data.root)}</p><p>Current revision: ${esc(selection.head)}</p>${kind === 'integrate' ? `<p>Candidate: ${esc(a.worker_revision)}</p><details><summary>Review candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details><p>A separate coordinator chat will integrate this candidate and run the required checks. A failed check stops completion and keeps the result for review.</p>` : '<p>Codex starts one chat in a separate checkout. No other workers or integrations start automatically.</p>'}<details><summary>Human input reviewed for this action</summary><pre>${esc(JSON.stringify(selection.guards, null, 2))}</pre></details>${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
-        $('approve').textContent = kind === 'launch' ? 'Start worker' : 'Start integration';
+          `<h2>${kind === 'launch' ? 'Start this worker?' : 'Assemble this issue contribution?'}</h2><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration policy: ${esc(mergeLabel(a.merge))}</p><p>Target: ${esc(data.root)}</p><p>Current revision: ${esc(selection.head)}</p>${kind === 'integrate' ? `<p>Candidate: ${esc(a.worker_revision)}</p><details><summary>Review candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details><p>The server will assemble this candidate on the issue branch and run the required checks. A failed check stops completion and keeps the result for review.</p>` : '<p>Codex starts one chat in a separate checkout. No other workers or integrations start automatically.</p>'}<details><summary>Human input reviewed for this action</summary><pre>${esc(JSON.stringify(selection.guards, null, 2))}</pre></details>${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
+        $('approve').textContent = kind === 'launch' ? 'Start worker' : 'Assemble contribution';
         $('approve').disabled = selection.requiresApproval;
         if (selection.requiresApproval)
           $('human-approval').onchange = () => {
