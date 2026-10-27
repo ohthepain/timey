@@ -126,9 +126,11 @@ completed, not skipped. Unknown historical sources stay unknown.
 
 ## Closing without a fix
 
-An explicit user decision may close an idle issue as Won’t Do, Duplicate, Cannot
-Reproduce, Not Enough Information, or No Longer Relevant. Record the configured
-reason and details without passing checks, completing skipped work or claiming
-acceptance. Fixed closure still requires the normal final review and acceptance.
+An explicit user decision may close an issue that has no work currently running
+as Won’t Do, Duplicate, Cannot Reproduce, Not Enough Information, or No Longer
+Relevant. Record the configured reason and details without passing checks,
+completing skipped work, reviewing a finished worker result, or claiming
+acceptance. Fixed closure still requires the normal final review, acceptance,
+and review of any outstanding worker result.
 Project-specific reasons live in the Closed reasons table in
 `.issues/triage-labels.md`; `fixed` retains its acceptance meaning.

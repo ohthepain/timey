@@ -3292,6 +3292,42 @@ test('an implementation-stage prerequisite is launched and reviewed without send
   assert.equal(service.snapshot().issues[0].state, 'implement');
 });
 
+test('closing without a fix leaves an unreviewed worker result in place', (t) => {
+  const { service, root, api, proposal } = fixture(t);
+  writeFileSync(
+    join(root, '.issues/triage-labels.md'),
+    '| Role | State | Next |\n| ready-for-repro | investigate | final |\n| ready-to-close | final | closed |\n| closed | closed | — |\n'
+  );
+  writeFileSync(join(root, '.issues/20261022-one.md'), '---\nid: 20261022-one\nstate: final\n---\n# One issue\n');
+  const [action] = api.recommend([proposal]);
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'worker', hostId: 'local' });
+  api.record(action.id, { status: 'completed', evidence: 'Read the file.' });
+  const basis = service.snapshot().issues[0].decisionBasis;
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'final', 'close', basis, '', 'fixed'),
+    /Finish reviewing the outstanding worker result/
+  );
+  assert.equal(service.snapshot().issues[0].state, 'final');
+  assert.deepEqual(service.decideIssue('20261022-one', 'final', 'close', basis, 'Not worth it.', 'wont-do'), {
+    state: 'closed',
+  });
+  assert.equal(api.inspect().registry.actions[0].status, 'completed');
+});
+
+test('work still running blocks closing without a fix', (t) => {
+  const { service, api, proposal } = fixture(t);
+  const [action] = api.recommend([proposal]);
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'worker', hostId: 'local' });
+  const basis = service.snapshot().issues[0].decisionBasis;
+  assert.throws(
+    () => service.decideIssue('20261022-one', 'investigate', 'close', basis, 'Stop.', 'wont-do'),
+    /Wait for the current work/
+  );
+  assert.equal(service.snapshot().issues[0].state, 'investigate');
+});
+
 test('a real planning question explains the missing decision and resumes planning after the actual answer', async (t) => {
   const { service, root } = lifecycleFixture(t);
   startIssueLifecycle(service);

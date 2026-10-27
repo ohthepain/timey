@@ -920,10 +920,13 @@ optionally add details or the duplicate issue ID. The project’s editable
 `.issues/triage-labels.md` defines the reasons in a Closed reasons table with
 ID, Label and Meaning columns. Older projects use the standard reasons until
 they add that section. The stable `fixed` ID always means verified, accepted
-work and retains final-review checks. All other reasons close idle work without
-claiming implementation, passing checks or acceptance. Active work must finish
-first. The report records the reason, label, time and optional details, and the
-page shows them after closure. Reopening preserves the decision in history.
+work and retains final-review checks. All other reasons close work that is not
+currently running, without claiming implementation, passing checks, acceptance,
+or review of a finished worker result. Work that is still starting or running
+must finish first. Accepting the issue as Fixed still requires that outstanding
+result to be reviewed. The report records the reason, label, time and optional
+details, and the page shows them after closure. Reopening preserves the decision
+in history.
 Changed reports or reason lists invalidate an open decision; duplicate submissions
 cannot close twice. This explicit user disposition is separate from automatic
 Progress, which still cannot close issues.

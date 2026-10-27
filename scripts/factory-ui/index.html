@@ -1915,7 +1915,7 @@
           const final = data.lifecycle.some((stage) => stage.state === issue.state && stage.role === 'ready-to-close');
           const choices = data.closureReasons.filter((choice) => final || choice.id !== 'fixed');
           $('selection').innerHTML =
-            `<h2>Close this issue</h2><p>Choose why you are closing it. Reasons other than Fixed leave unfinished work and checks as they are.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}">${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`;
+            `<h2>Close this issue</h2><p>Choose why you are closing it. Reasons other than Fixed leave unfinished work, including an unreviewed worker result, as they are. Fixed still requires that review.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}">${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`;
           $('approve').textContent = 'Close issue';
           $('approve').disabled = choices.length === 0;
           $('confirm').showModal();

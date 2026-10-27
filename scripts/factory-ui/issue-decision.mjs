@@ -16,7 +16,7 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
   const role = queue.lifecycle.find((s) => s.state === state).role;
   requireThat(typeof reason === 'string' && reason.length <= 4000, 'Keep the reason under 4,000 characters.');
   const { choice, dismissed } = closureChoice(queue, role, kind, resolution);
-  checkIdle(service, queue, issue);
+  checkIdle(service, queue, issue, { kind, dismissed });
   const target = decisionTarget(queue, role, kind, dismissed);
   const action = { issues: [id] };
   const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target });
@@ -94,13 +94,21 @@ function recordDecision(service, queue, issue, run, result, evidence, target, ba
   return { state: target };
 }
 
-function checkIdle(service, queue, issue) {
+function checkIdle(service, queue, issue, decision) {
   requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for this issue’s current work to finish before closing.');
   const actions = queue.actions.filter((a) => a.issues.includes(issue.id));
   requireThat(
-    !actions.some((a) => ['reserved', 'setup', 'running', 'completed'].includes(a.status)),
-    'Finish reviewing the outstanding worker result first.'
+    !actions.some((a) => ['reserved', 'setup', 'running'].includes(a.status)),
+    'Wait for the current work to finish before closing this issue.'
   );
+  // A finished result can stay unreviewed when the user is not accepting a fix.
+  if (decision.kind === 'close' && !decision.dismissed) {
+    const finished = actions.find((a) => a.status === 'completed');
+    requireThat(
+      !finished,
+      `Finish reviewing the outstanding worker result${finished?.title ? ` “${finished.title}”` : ''} before accepting this issue as fixed.`
+    );
+  }
   requireThat(
     !service.store.runs.some((r) => r.issueId === issue.id && ['preparing', 'running', 'checking'].includes(r.status)),
     'Wait for the current issue action to finish.'
