@@ -1,3 +1,4 @@
+import { assembledContribution, verifiedIssueDelivery, validateAssembledStart } from './issue-delivery-records.mjs';
 import { issueInputs } from './factory-inputs.mjs';
 import { readProgress, completionBasis } from './factory-progress.mjs';
 import { recordStatusSummary } from './factory-status.mjs';
@@ -128,7 +129,9 @@ function validateDependencies(action, data, find) {
   for (const dependency of action.dependencies) {
     const prior = find(data, dependency);
     assert(
-      ['integrated', 'reconciled'].includes(prior.status) || inspectsResult(action, prior),
+      ['integrated', 'reconciled'].includes(prior.status) ||
+        inspectsResult(action, prior) ||
+        (prior.status === 'assembled' && action.start),
       `Dependency not reconciled/integrated: ${dependency}`
     );
   }
@@ -166,16 +169,18 @@ function copyChatReference(action, reference) {
   }
 }
 
-function validateIntegration(action, update, git) {
-  assert(action.merge !== 'none', 'Action has no integration authority.');
-  assert(action.merge !== 'human-first' || update.human_approved === true, 'Record actual prior human merge approval.');
-  assert(
-    update.verified_revision === git('rev-parse', 'HEAD').trim(),
-    'Integration evidence must name the current HEAD.'
-  );
-  assert(update.checks_passed === true, 'Integration needs passed relevant checks, not just worker completion.');
-  assert(typeof action.worker_revision === 'string', 'Record the completed worker revision before integration.');
-  git('merge-base', '--is-ancestor', action.worker_revision, 'HEAD');
+function validateIntegration(action, update, root) {
+  for (const issueId of action.issues) {
+    const delivery = verifiedIssueDelivery(root, issueId);
+    assert(
+      delivery.contributions.some((c) => c.actionId === action.id),
+      'The verified PR does not contain this action.'
+    );
+    assert(
+      update.verified_revision === delivery.merge.revision,
+      'Record the independently verified remote merge revision.'
+    );
+  }
 }
 
 function recordCodeCompletion(action, update) {
@@ -187,9 +192,10 @@ function recordCodeCompletion(action, update) {
   action.worker_revision = update.worker_revision;
 }
 
-function validateResultStatus(action, update, git) {
+function validateResultStatus(action, update, git, root) {
   const validators = new Map([
-    ['integrated', () => validateIntegration(action, update, git)],
+    ['integrated', () => validateIntegration(action, update, root)],
+    ['assembled', () => assembledContribution(root, action)],
     ['completed', () => recordCodeCompletion(action, update)],
     [
       'reconciled',
@@ -388,6 +394,8 @@ export function factory(project) {
           'Commit or isolate source changes before starting a worktree from HEAD.'
         );
         validateDependencies(action, data, find);
+        if (action.dependencies.some((id) => find(data, id).status === 'assembled'))
+          validateAssembledStart(root, action, data);
         const conflict = data.actions.find((entry) => claimsIssue(entry, action));
         assert(!conflict, `Issue already claimed by action ${conflict?.id}.`);
         const current = reports();
@@ -430,7 +438,8 @@ export function factory(project) {
           setup: ['blocked', 'failed', 'cancelled'],
           running: ['completed', 'blocked', 'failed'],
           blocked: ['running', 'completed', 'failed', 'cancelled'],
-          completed: ['integrated', 'reconciled', 'blocked'],
+          completed: ['assembled', 'reconciled', 'blocked'],
+          assembled: ['integrated', 'blocked'],
           failed: ['cancelled'],
           recommended: ['cancelled'],
         };
@@ -442,7 +451,7 @@ export function factory(project) {
           typeof update.evidence === 'string' && update.evidence.trim(),
           'Record an evidence pointer or specific failure reason.'
         );
-        validateResultStatus(action, update, git);
+        validateResultStatus(action, update, git, root);
         recordStatusSummary(action, update);
         recordOperation(
           action,
@@ -450,6 +459,7 @@ export function factory(project) {
           update.authorization || { kind: 'coordinator', operation: 'record' }
         );
         Object.assign(action, { status: update.status, evidence: update.evidence, updated: new Date().toISOString() });
+        if (update.status === 'assembled') action.assembly = update.assembly;
         if (update.status === 'integrated') action.verified_revision = update.verified_revision;
         return action;
       });

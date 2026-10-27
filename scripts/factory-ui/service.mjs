@@ -1,10 +1,12 @@
+import { IssueDelivery } from '../issue-delivery.mjs';
+import { proof } from '../issue-delivery-store.mjs';
 import { createIssueChats } from './issue-chat.mjs';
 import { conversationPrompt } from './conversation-context.mjs';
 import { stageSource } from './stage-source.mjs';
 import { startChat } from './chat-start.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
-import { recordIntegratedIssues, completeDeliveryRun, resumeDelivery } from './delivery-integration.mjs';
+import { resumeDelivery } from './delivery-integration.mjs';
 
 import { createSiteReviews } from './site-review.mjs';
 import { createDiscussions } from './discussion.mjs';
@@ -25,7 +27,6 @@ import { CodexConnection } from './codex.mjs';
 import { RunStore } from './runs.mjs';
 import { checkCandidate } from './checks.mjs';
 import {
-  integrationPrompt,
   workerPrompt,
   workerPermissionGuidance,
   workerResultSchema,
@@ -68,6 +69,10 @@ export class FactoryUI {
     this.api = factory(this.root);
     this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
     this.intents = new Map();
+    this.deliveries = new IssueDelivery(this.root, {
+      check: (...args) => this.check(...args),
+      guard: (...args) => this.guard(...args),
+    });
     this.discussions = createDiscussions(this);
     this.issueChats = createIssueChats(this);
     this.siteReviews = createSiteReviews(this);
@@ -104,6 +109,7 @@ export class FactoryUI {
     return {
       ...issue,
       readiness,
+      issueDelivery: this.deliveries.inspect(issue.id),
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
       lifecycle,
@@ -233,7 +239,7 @@ export class FactoryUI {
   }
   launch({ queue, action }) {
     this.api.reserve(action.id, runAuthorization(this, action, 'worker'));
-    const run = this.store.add(action, 'worker', action.basis.head);
+    const run = this.store.add(action, 'worker', action.start?.revision || action.basis.head);
     this.api.attach(action.id, { clientThreadId: `factory-ui:${run.id}` });
     this.perform(run, () => this.prepareWorker(run, action, queue));
     return { runId: run.id };
@@ -243,7 +249,15 @@ export class FactoryUI {
     mkdirSync(join(this.store.directory, 'workers'), { recursive: true });
     requireThat(!existsSync(checkout), 'Worker checkout already exists. Reconcile it instead of recreating it.');
     this.store.update(run, { checkout });
-    git(this.root, 'worktree', 'add', '-b', `codex/factory-${action.id}`, checkout, action.basis.head);
+    git(
+      this.root,
+      'worktree',
+      'add',
+      '-b',
+      `codex/factory-${action.id}`,
+      checkout,
+      action.start?.revision || action.basis.head
+    );
     const threadId = await startChat(this, run, checkout);
     this.store.update(run, { threadId });
     this.api.attach(action.id, { threadId, hostId: 'codex-cli' });
@@ -257,30 +271,22 @@ export class FactoryUI {
     );
   }
   integrate({ queue, action, humanApproved }) {
-    const lock = join(this.root, '.issues/factory-integration.lock');
-    mkdirSync(lock);
-    const run = this.store.add(action, 'integration', queue.head);
-    this.store.update(run, { checkout: this.root, humanApproved });
-    writeJson(join(lock, 'owner.json'), {
-      runId: run.id,
-      actionId: action.id,
-      pid: process.pid,
-      candidate: run.candidate,
-      base: run.base,
-    });
+    const run = this.store.add(action, 'assembly', queue.head);
+    const reviewPath = join(this.store.directory, run.id + '-assembly-review.json');
+    writeJson(reviewPath, { action, target: queue.head, humanApproved, evidence: action.evidence });
     this.perform(run, async () => {
-      const threadId = await startChat(this, run, this.root);
-      this.store.update(run, { threadId });
-      const current = currentAction(this.root, action.id);
-      const actual = [current.queue.head, current.queue.sourceClean, current.action];
-      const expected = [run.base, true, action];
-      requireThat(
-        JSON.stringify(actual) === JSON.stringify(expected),
-        'The approved integration inputs changed while the chat opened. Review the current candidate and target.'
-      );
-      this.requireLock(run);
-      this.guard(this.root, current.action, 'merge', current.queue.head);
-      await this.runTurn(run, integrationPrompt(current.action, run));
+      const existing = this.deliveries.inspect(action.issues[0]);
+      const result = await this.deliveries.operate('assemble', {
+        issueId: action.issues[0],
+        actionId: action.id,
+        expectedCandidate: existing?.candidate || action.basis.head,
+        review: proof(reviewPath),
+      });
+      this.store.update(run, {
+        status: 'completed',
+        summary: 'Contribution assembled on the issue branch. Issue completion and PR delivery remain separate.',
+        result,
+      });
     });
     return { runId: run.id };
   }
@@ -300,8 +306,8 @@ export class FactoryUI {
     if (result.outcome !== 'completed') return this.unfinished(run, result);
     const { action } = currentAction(this.root, run.actionId);
     this.store.update(run, { status: 'checking', summary: 'Checking the returned result independently.' });
-    if (run.kind === 'integration') await this.finishIntegration(run, action, result);
-    else await this.finishWorker(run, action, result);
+    requireThat(run.kind !== 'integration', 'Reconcile historical integration without another model-executed merge.');
+    await this.finishWorker(run, action, result);
   }
   unfinished(run, result) {
     this.store.update(run, { status: result.outcome, summary: result.summary, result });
@@ -323,27 +329,6 @@ export class FactoryUI {
     }
     this.api.record(action.id, update);
     this.store.update(run, { status: 'completed', summary: result.summary, result });
-  }
-  async finishIntegration(run, action, result) {
-    requireThat(action.worker_revision === run.candidate, 'The candidate changed during integration.');
-    git(this.root, 'merge-base', '--is-ancestor', run.candidate, 'HEAD');
-    const checked = await this.check(this.root, run.base, join(this.store.directory, run.id));
-    requireThat(
-      JSON.stringify(currentAction(this.root, action.id).action) === JSON.stringify(action),
-      'The saved action changed during verification. Review it again.'
-    );
-    this.guard(this.root, action, 'record-integration', checked.head);
-    this.store.update(run, { deliveryCheck: checked, deliveryResult: result });
-    this.api.record(action.id, {
-      status: 'integrated',
-      verified_revision: checked.head,
-      checks_passed: true,
-      human_approved: run.humanApproved,
-      authorization: run.authorization,
-      evidence: `UI manual integration. Candidate ${run.candidate}; target start ${run.base}. Coordinator review: ${JSON.stringify(result)}. Independent combined checks: ${JSON.stringify(checked)}.`,
-    });
-    recordIntegratedIssues(this, action, run, checked, result);
-    completeDeliveryRun(this, run, result, checked.head);
   }
   perform(run, task) {
     Promise.resolve()
@@ -387,6 +372,10 @@ export class FactoryUI {
     const run = this.store.runs.find((r) => r.id === id);
     this.validateResume(run, id, text);
     const { action, queue } = currentAction(this.root, run.actionId);
+    requireThat(
+      run.kind !== 'integration' || action.status === 'integrated',
+      'Historical direct integration cannot resume new merges. Reconcile it before issue PR delivery.'
+    );
     if (completedIntegration(run, action)) return resumeDelivery(this, run, action);
     this.guard(this.root, action, run.kind === 'worker' ? operation(action) : 'merge', queue.head);
     if (run.kind === 'integration') this.requireLock(run);

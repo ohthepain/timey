@@ -109,3 +109,18 @@ before continuing under an approved plan. It is separate from a comment or appro
 The relative urgency of an issue, independent of its lifecycle stage. The
 project’s ordered Issue Priorities list defines adjacent levels and colors;
 issues without a saved value use Major. A priority change does not complete work.
+
+**Issue delivery**:
+One issue's reviewed contributions assembled on a stable branch, completed through
+one pull request. Its remote merge and independently verified integration are
+separate from final human judgment and acceptance.
+
+**Assembled contribution**:
+An independently checked worker result retained on its issue branch with its
+original base, scope, authority and merge policy. Assembly releases its worker
+claim; it does not deliver code to the target branch.
+
+**Completion manifest**:
+The coordinator's evidence-backed review of every item in the approved issue
+plan, the exact aggregate candidate, all contributions and required local checks.
+Further issue work or changed evidence invalidates readiness to open the PR.

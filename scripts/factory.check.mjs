@@ -144,23 +144,17 @@ test('worker completion does not close issues or establish integration', (t) => 
     evidence: 'Worker report: checks passed in isolation.',
     worker_revision: git('rev-parse', 'HEAD'),
   });
-  assert.throws(() => api.record(action.id, { status: 'integrated', evidence: 'No target checks.' }), /current HEAD/);
-  assert.throws(
-    () =>
-      api.record(action.id, {
-        status: 'integrated',
-        evidence: 'Failed target check.',
-        verified_revision: git('rev-parse', 'HEAD'),
-        checks_passed: false,
-      }),
-    /passed relevant checks/
-  );
-  api.record(action.id, {
-    status: 'integrated',
-    evidence: 'Relevant checks on the integrated revision passed.',
-    verified_revision: git('rev-parse', 'HEAD'),
-    checks_passed: true,
-  });
+  for (const checks_passed of [false, true])
+    assert.throws(
+      () =>
+        api.record(action.id, {
+          status: 'integrated',
+          evidence: 'Caller assertion cannot replace PR proof.',
+          verified_revision: git('rev-parse', 'HEAD'),
+          checks_passed,
+        }),
+      /Invalid action transition/
+    );
   assert.match(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), /state: in-progress/);
 });
 
@@ -207,8 +201,8 @@ test('completed work permits explicit downstream review; merge policy remains en
     verified_revision: git('rev-parse', 'HEAD'),
     checks_passed: true,
   };
-  assert.throws(() => api.record(implementation.id, update), /human merge approval/);
-  assert.equal(api.record(implementation.id, { ...update, human_approved: true }).status, 'integrated');
+  assert.throws(() => api.record(implementation.id, update), /Invalid action transition/);
+  assert.throws(() => api.record(implementation.id, { ...update, human_approved: true }), /Invalid action transition/);
 });
 
 test('missing registry recovery restores known worker IDs and overlapping claims', (t) => {

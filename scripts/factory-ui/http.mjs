@@ -1,3 +1,4 @@
+import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
 import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
@@ -55,6 +56,8 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
+    '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
@@ -114,8 +117,7 @@ async function respond(service, request, response, token, port) {
   authorize(request, token, port);
   response.setHeader('Content-Type', 'application/json');
   if (request.method === 'GET') return readResource(service, request, response, token);
-  if (request.method === 'POST')
-    return response.end(JSON.stringify(await postedAction(service, request, token)));
+  if (request.method === 'POST') return response.end(JSON.stringify(await postedAction(service, request, token)));
   response.statusCode = 405;
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }

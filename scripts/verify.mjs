@@ -1,3 +1,4 @@
+import { fallowAuditScope } from './verify-scope.mjs';
 import { runVerificationProcess } from './verify-process.mjs';
 import { execFileSync } from 'node:child_process';
 import {
@@ -28,6 +29,8 @@ const baseIndex = args.indexOf('--base');
 // repository-local Git variables into the disposable clone or child checks.
 const sourceEnv = { ...process.env };
 const isolatedEnv = { ...sourceEnv };
+// Nested verifier checks must execute their factory suite, not inherit node:test's runner marker.
+delete isolatedEnv.NODE_TEST_CONTEXT;
 const localVariables = execFileSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' }).trim().split('\n');
 for (const key of localVariables) delete isolatedEnv[key];
 for (const key of Object.keys(isolatedEnv)) if (/^GIT_CONFIG_(KEY|VALUE)_/.test(key)) delete isolatedEnv[key];
@@ -99,19 +102,6 @@ function workspacePackages(directory) {
     if (match) packages.push(match[1]);
   }
   return packages;
-}
-export function fallowAuditScope(changedFiles) {
-  if (changedFiles.length === 0) return null;
-  if (changedFiles.length === 1) return changedFiles[0];
-  const parts = changedFiles.map((file) => file.split('/'));
-  const minDepth = Math.min(...parts.map((segments) => segments.length));
-  const common = [];
-  for (let index = 0; index < minDepth - 1; index++) {
-    const segment = parts[0][index];
-    if (parts.every((segments) => segments[index] === segment)) common.push(segment);
-    else break;
-  }
-  return common.length ? common.join('/') : '.';
 }
 
 function copySourceFile(name) {

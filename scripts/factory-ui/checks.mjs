@@ -47,6 +47,14 @@ function validateRequiredChecks(summary) {
 }
 function validateCommand(check) {
   requireThat(check.passed && check.exit === 0, 'A required command failed.');
+  if (check.name === 'factory') {
+    const raw = readFileSync(check.log, 'utf8');
+    requireThat(/(?:ℹ|#) tests [1-9][0-9]*\b/.test(raw), 'Factory evidence must establish actual test execution.');
+    requireThat(
+      !/recursive.*node:test|Skipping.*execution|skip(ped)? test execution/i.test(raw),
+      'Factory evidence contains skipped recursive execution.'
+    );
+  }
   if (check.name !== 'fallow') return;
   const [stdout, ...stderr] = readFileSync(check.log, 'utf8').split(/\r?\n/);
   const result = assessAudit({ status: check.exit, stdout, stderr: stderr.join('\n') });

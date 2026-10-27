@@ -109,3 +109,9 @@ starting work; Save and continue uses that same updated record immediately.
 The next assessment reads the saved answers and respects recorded initial skips,
 then presents any required exact-plan approval. A saved interview alone does not
 approve implementation, finish the role or grant final acceptance.
+
+## Issue PR delivery
+
+Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
+review, publication, recovery and server-enforced merge gates. New delivery uses
+one PR per complete issue. Historical records retain their original meaning.

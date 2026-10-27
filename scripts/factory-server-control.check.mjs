@@ -41,7 +41,7 @@ function trackingRequest(value, nextPhase) {
     const phase = typeof nextPhase === 'function' ? nextPhase(path) : nextPhase;
     return { ...value, phase };
   };
-  return { calls, finish, request };
+  return { calls, finish: () => finish(), request };
 }
 function project(t) {
   const { root, git } = gitFixture(t, 'factory-restart-');

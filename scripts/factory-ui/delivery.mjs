@@ -1,3 +1,4 @@
+import { verifiedIssueDelivery } from '../issue-delivery-records.mjs';
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
@@ -114,7 +115,10 @@ function applyDelivery(root, input, path, guard) {
     issue.state === input.expectedState && digest(issue.content) === input.reportDigest,
     'The issue changed before finalization. Refresh its evidence and request.'
   );
-  const receipt = saved || retainDelivery(root, input, fingerprint, issue);
+  const prDelivery = verifiedIssueDelivery(root, issue.id);
+  requireThat(input.revision === prDelivery.merge.revision, 'Finalize the independently verified PR merge revision.');
+  const receipt =
+    saved || retainDelivery(root, { ...input, pr: prDelivery.pr, mergedResult: prDelivery.merge }, fingerprint, issue);
   validateSource(receipt);
   receipt.evidence.forEach(requireEvidence);
   const { steps, target } = completedStages(queue, issue);

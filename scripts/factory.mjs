@@ -1,3 +1,4 @@
+import { IssueDelivery } from './issue-delivery.mjs';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -7,8 +8,13 @@ import { factory, readFactoryRegistry } from './factory-ledger.mjs';
 import { statusOutput } from './factory-status.mjs';
 export { factory };
 
-function runCommand(project, argv) {
+export async function runCommand(project, argv, delivery = new IssueDelivery(project)) {
   const [command, ...args] = argv;
+  if (command === 'issue-delivery') {
+    const [kind, issueId, path] = args;
+    if (kind === 'inspect') return delivery.inspect(issueId);
+    return delivery.operate(kind, { ...(path ? JSON.parse(readFileSync(path, 'utf8')) : {}), issueId });
+  }
   // The listing path bypasses the coordinator parser and registry entirely.
   const reads = new Map([
     ['issues', () => listIssues(project, args)],
@@ -57,7 +63,7 @@ function recordIssueWork(project, operation, path) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const result = runCommand(process.cwd(), process.argv.slice(2));
+    const result = await runCommand(process.cwd(), process.argv.slice(2));
     console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
   } catch (error) {
     console.error(error.message);

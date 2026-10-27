@@ -1,3 +1,4 @@
+import { DeliveryStore } from './issue-delivery-store.mjs';
 import { mkdirSync, writeFileSync, readFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
@@ -46,6 +47,8 @@ export function deliveryFixture(t) {
       dead_code: { workspace_diagnostics: [] },
     }) + '\n'
   );
+  const factoryLog = join(source.root, '.issues/factory.log');
+  writeFileSync(factoryLog, 'ℹ tests 1\nℹ pass 1\nℹ fail 0\nℹ skipped 0\n');
   const verification = ['verification', 'step'].map((checkpoint) => {
     const path = join(source.root, '.issues/' + checkpoint + '.json');
     const names = checkpoint === 'step' ? ['fallow'] : ['fallow', 'factory', 'typecheck', 'tests', 'build'];
@@ -57,7 +60,7 @@ export function deliveryFixture(t) {
         snapshot_tree: tree,
         passed: true,
         changed_files: [],
-        checks: names.map((name) => ({ name, passed: true, exit: 0, log })),
+        checks: names.map((name) => ({ name, passed: true, exit: 0, log: name === 'factory' ? factoryLog : log })),
       })
     );
     return path;
@@ -77,5 +80,12 @@ export function deliveryFixture(t) {
     ],
     authorization: { path: log, sha256: digest(readFileSync(log)) },
   };
+  // Historical delivery compatibility tests start with retained verified PR proof.
+  const store = new DeliveryStore(queue.root, input.issueId);
+  store.save({ state: 'preparing-fixture' });
+  const pr = { id: 'fixture-pr', url: 'https://github.com/fixture/timey/pull/1' };
+  const merge = { revision, tree };
+  const integration = store.retain('fixture-integration', { pr, merge, evidence: [] });
+  store.save({ state: 'verified', pr, merge, integration });
   return { queue, source, input };
 }

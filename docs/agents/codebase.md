@@ -311,3 +311,11 @@ actual polling function.
 Browser MIDI and transport classes import the `events` package directly. Keep it
 as an explicit root dependency so pnpm does not resolve these imports to an
 unsupported Node built-in during browser builds.
+
+Issue delivery is owned by `scripts/issue-delivery.mjs`, with immutable records and
+locks in `issue-delivery-store.mjs`, local evidence/merge policy in
+`issue-delivery-policy.mjs`, ledger receipt guards in `issue-delivery-records.mjs`
+and GitHub transport in `issue-delivery-provider.mjs`. The CLI and UI delivery
+handlers share these operations; `issue-delivery-fixture.mjs` supplies deterministic
+protocol proof only. See [the delivery contract](issue-delivery.md) and
+[ADR 0004](../adr/0004-issue-pr-delivery.md).

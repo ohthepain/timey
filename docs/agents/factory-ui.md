@@ -3,7 +3,7 @@
 Run `pnpm run factory:ui -- --project /absolute/path/to/timey` from a checkout
 containing this adapter. Open the printed loopback URL. The project must already
 have its local issue queue and factory registry; the UI never initializes or
-replaces either. The selected checkout is the integration target, so choose the
+replaces either. The selected checkout owns the issue records and delivery configuration, so choose the
 authoritative project rather than an old worker checkout. In live mode the
 server serves `scripts/factory-ui/` from that project path when present, and
 restart handoffs relaunch through the project's `scripts/factory-ui.mjs` entry.
@@ -612,8 +612,7 @@ Chat creation has a soft 30-second deadline. After it expires, the run says that
 Codex is taking longer and is waiting for the original request. The connection
 retains that exact RPC instead of discarding its response or creating another
 chat. A late response records the exact chat ID durably before the original
-assignment continues. Integration rechecks the candidate, approved target,
-cleanliness, lock and human guards after startup; stale inputs stop the merge.
+assignment continues. New contribution assembly runs on the server through the shared issue-delivery operations; it opens no integration chat. Candidate, scope and evidence freshness remain server guards.
 Read-only assessments, evidence reviews, readiness and plan reviews use the same
 startup handling, retaining their read-only sandbox.
 
@@ -758,8 +757,7 @@ Start disposable review servers with `--preview --authoritative-url URL`.
 Their header links to the real issue, and site-review writes are rejected.
 Live review receipts retain the issue project and mode alongside the candidate.
 
-Successful UI integration now finalizes eligible issues through the shared
-`scripts/factory-ui/delivery.mjs` owner. For a separate delivery checkout, invoke
+After independent verification of the remote PR merge, finalize eligible issues through the shared `scripts/factory-ui/delivery.mjs` owner. New finalization requires that verified PR receipt; worker or assembly completion is insufficient. For a separate delivery checkout, invoke
 `pnpm run factory -- finalize-delivery /absolute/manifest.json` from the issue
 project using the UI source's `scripts/factory.mjs` when that project lacks it.
 This records existing integrated work; it performs no merge, deployment or acceptance.
@@ -949,3 +947,9 @@ Arrows disable at either end and while saving. Writes serialize with other queue
 writes, preserve current report content, record the priority change and timestamp,
 and reject stale priority/configuration choices. They change no stage, test result
 or acceptance and start no work. Existing queue ordering is retained.
+
+## Issue PR delivery
+
+Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
+review, publication, recovery and server-enforced merge gates. New delivery uses
+one PR per complete issue. Historical records retain their original meaning.
