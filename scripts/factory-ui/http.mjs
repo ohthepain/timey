@@ -110,7 +110,7 @@ export function createFactoryServer(service, options = {}) {
 }
 
 async function respond(service, request, response, token, port) {
-  if (isPage(request)) return page(response, token, port);
+  if (isPage(request)) return page(service, response, token, port);
   authorize(request, token, port);
   response.setHeader('Content-Type', 'application/json');
   if (request.method === 'GET') return readResource(service, request, response, token);
@@ -119,7 +119,7 @@ async function respond(service, request, response, token, port) {
   response.statusCode = 405;
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }
-function page(response, token, port) {
+function page(service, response, token, port) {
   response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   response.end(readFileSync(join(uiDirectory(service), 'index.html')));
