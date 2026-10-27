@@ -6,9 +6,43 @@ import { spawn } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { serverControl } from './factory-ui/server-control.mjs';
+import { factoryEntry, uiDirectory } from './factory-ui/ui-source.mjs';
 import { JSDOM } from 'jsdom';
 
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
+function loadServerControlDom(html = '<header></header>') {
+  const dom = new JSDOM(html, { runScripts: 'outside-only' });
+  dom.window.eval(
+    readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') + '\nwindow.controls = serverControlUI;'
+  );
+  return dom;
+}
+function idleServerControl(overrides = {}) {
+  return {
+    actions: 0,
+    chats: 0,
+    approvals: 0,
+    locks: [],
+    phase: 'idle',
+    supported: true,
+    pauseSupported: true,
+    pid: 1,
+    ...overrides,
+  };
+}
+function trackingRequest(value, nextPhase) {
+  const calls = [];
+  let finish;
+  const request = async (path) => {
+    calls.push(path);
+    await new Promise((resolve) => {
+      finish = resolve;
+    });
+    const phase = typeof nextPhase === 'function' ? nextPhase(path) : nextPhase;
+    return { ...value, phase };
+  };
+  return { calls, finish, request };
+}
 function project(t) {
   const { root, git } = gitFixture(t, 'factory-restart-');
   mkdirSync(join(root, '.issues/factory-ui'), { recursive: true });
@@ -193,29 +227,10 @@ test('No new actions pauses dispatch without restarting and can be turned off', 
 });
 
 test('header toggle shows immediate feedback and reconnects without erasing a draft', async () => {
-  const dom = new JSDOM('<header></header><textarea>keep this draft</textarea>', { runScripts: 'outside-only' });
-  dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') + '\nwindow.controls = serverControlUI;'
-  );
-  const value = {
-    actions: 1,
-    chats: 0,
-    approvals: 0,
-    locks: [],
-    phase: 'idle',
-    supported: true,
-    pauseSupported: true,
-    pid: 1,
-  };
-  const calls = [];
-  let finish;
-  dom.window.controls.show(value, async (path) => {
-    calls.push(path);
-    await new Promise((resolve) => {
-      finish = resolve;
-    });
-    return { ...value, phase: path === 'server-pause' ? 'paused' : 'idle' };
-  });
+  const dom = loadServerControlDom('<header></header><textarea>keep this draft</textarea>');
+  const value = idleServerControl({ actions: 1 });
+  const { calls, finish, request } = trackingRequest(value, (path) => (path === 'server-pause' ? 'paused' : 'idle'));
+  dom.window.controls.show(value, request);
   assert.match(dom.window.document.querySelector('[data-server-count]').textContent, /1 action running/);
   const toggle = dom.window.document.querySelector('[data-server-toggle]');
   toggle.click();
@@ -236,5 +251,28 @@ test('header toggle shows immediate feedback and reconnects without erasing a dr
   await dom.window.controls.reconnect(async () => ({ ...value, actions: 0, pid: 2 }));
   assert.equal(dom.window.document.querySelector('textarea').value, 'keep this draft');
   assert.match(dom.window.document.querySelector('[data-server-message]').textContent, /Server restarted/);
+  dom.window.close();
+});
+
+test('live factory UI reads browser assets from the project path', () => {
+  const service = { root: resolve('.'), reviewMode: 'live' };
+  assert.equal(uiDirectory(service), resolve('scripts/factory-ui'));
+  assert.equal(factoryEntry(service), resolve('scripts/factory-ui.mjs'));
+});
+
+test('header restart requests server-restart and hides when unsupported', async () => {
+  const dom = loadServerControlDom();
+  const value = idleServerControl();
+  const { calls, finish, request } = trackingRequest(value, 'draining');
+  dom.window.controls.show(value, request);
+  const restart = dom.window.document.querySelector('[data-server-restart]');
+  assert.equal(restart.hidden, false);
+  restart.click();
+  assert.equal(restart.disabled, true);
+  assert.deepEqual(calls, ['server-restart']);
+  finish();
+  await delay(0);
+  dom.window.controls.show({ ...value, supported: false }, async () => value);
+  assert.equal(dom.window.document.querySelector('[data-server-restart]').hidden, true);
   dom.window.close();
 });

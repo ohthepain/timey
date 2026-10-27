@@ -4,15 +4,17 @@ import { join } from 'node:path';
 import { cleanEnvironment } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { progressBasis } from './next-action.mjs';
+import { factoryEntry } from './ui-source.mjs';
 
 export function handoffRestart(service, server) {
   const port = server.address().port;
   const log = join(service.store.directory, 'server-restart.log');
   const fd = openSync(log, 'a', 0o600);
+  const entry = factoryEntry(service);
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [process.argv[1], '--project', service.root, '--port', String(port), '--after-pid', String(process.pid)],
+      [entry, '--project', service.root, '--port', String(port), '--after-pid', String(process.pid)],
       { cwd: process.cwd(), env: cleanEnvironment(), detached: true, stdio: ['ignore', fd, fd] }
     );
     closeSync(fd);

@@ -1107,7 +1107,10 @@
             refreshPending = false;
           }
         } catch (e) {
-          if (await serverControlUI.reconnect(request)) return;
+          if (await serverControlUI.reconnect(request)) {
+            $('connection').textContent = 'Reconnecting after server restart…';
+            return;
+          }
           $('error').textContent = e.message;
           $('connection').textContent = 'Connection needs attention';
         } finally {

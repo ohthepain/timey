@@ -14,7 +14,7 @@
   "framework": [
     {
       "name": "factory-tooling",
-      "entryPoints": ["scripts/*.mjs"],
+      "entryPoints": ["scripts/*.mjs", "scripts/factory-ui/*-ui.js"],
       "entryPointRole": "support",
       "toolingDependencies": ["fallow", "yaml"],
       "detection": {

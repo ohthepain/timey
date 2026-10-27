@@ -1,4 +1,4 @@
-import { canResumeLifecycle, stopLifecycle } from './lifecycle-stop.mjs';
+import { canResumeLifecycle, isRetriableLifecycleFailure, stopLifecycle } from './lifecycle-stop.mjs';
 import { randomUUID } from 'node:crypto';
 import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
@@ -21,6 +21,10 @@ export function startLifecycle(service, input) {
   let record = service.lifecycleRuns[input.issueId];
   prepareLegacyResume(record);
   requireResumeChange(service, record, queue);
+  if (record && isRetriableLifecycleFailure(service, record)) {
+    record.attempts = [];
+    record.recoveryContexts = [];
+  }
   if (!record)
     record = {
       id: randomUUID(),

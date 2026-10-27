@@ -6,12 +6,11 @@ import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
 import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { requireThat } from './common.mjs';
-
-const directory = dirname(fileURLToPath(import.meta.url));
+import { uiDirectory } from './ui-source.mjs';
 async function body(request) {
   let text = '';
   for await (const chunk of request) {
@@ -123,7 +122,7 @@ async function respond(service, request, response, token, port) {
 function page(response, token, port) {
   response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
-  response.end(readFileSync(join(directory, 'index.html')));
+  response.end(readFileSync(join(uiDirectory(service), 'index.html')));
 }
 function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
@@ -157,15 +156,15 @@ async function temporaryAction(action) {
 
 function readResource(service, request, response, owner) {
   const scripts = {
-    '/server-control-ui.js': new URL('./server-control-ui.js', import.meta.url),
-    '/queue-lifecycle-ui.js': new URL('./queue-lifecycle-ui.js', import.meta.url),
-    '/issue-chat-ui.js': new URL('./issue-chat-ui.js', import.meta.url),
-    '/site-review-ui.js': new URL('./site-review-ui.js', import.meta.url),
-    '/discussion-ui.js': new URL('./discussion-ui.js', import.meta.url),
+    '/server-control-ui.js': 'server-control-ui.js',
+    '/queue-lifecycle-ui.js': 'queue-lifecycle-ui.js',
+    '/issue-chat-ui.js': 'issue-chat-ui.js',
+    '/site-review-ui.js': 'site-review-ui.js',
+    '/discussion-ui.js': 'discussion-ui.js',
   };
   if (Object.hasOwn(scripts, request.url)) {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-    return response.end(readFileSync(scripts[request.url]));
+    return response.end(readFileSync(join(uiDirectory(service), basename(scripts[request.url]))));
   }
   return read(service, request, response, owner);
 }

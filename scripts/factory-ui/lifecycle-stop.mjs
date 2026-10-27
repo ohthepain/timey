@@ -50,7 +50,19 @@ function remainingWork(run) {
   return run.result?.remaining || [];
 }
 
+const retriableLifecycleFailure =
+  /(?:initialize|turn\/start|thread\/resume) did not respond|Codex disconnected|Chat startup is uncertain/;
+
+export function isRetriableLifecycleFailure(service, record) {
+  if (record?.status !== 'blocked' || !retriableLifecycleFailure.test(record.summary || '')) return false;
+  if (!record.childRunId) return true;
+  const child = service.store.runs.find((run) => run.id === record.childRunId);
+  if (!child) return true;
+  return child.status === 'blocked' && !child.threadId;
+}
+
 export function canResumeLifecycle(service, record, queue, issue, runs) {
+  if (isRetriableLifecycleFailure(service, record)) return true;
   const basis = lifecycleWorkBasis(queue, issue, record);
   if (record.stopBasis !== basis) return true;
   const choice = nextProgress(queue, issue, runs || service.store.list(service.codex.requests));

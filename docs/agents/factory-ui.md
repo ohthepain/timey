@@ -4,8 +4,10 @@ Run `pnpm run factory:ui -- --project /absolute/path/to/timey` from a checkout
 containing this adapter. Open the printed loopback URL. The project must already
 have its local issue queue and factory registry; the UI never initializes or
 replaces either. The selected checkout is the integration target, so choose the
-authoritative project rather than an old worker checkout. Use `--port NUMBER`
-only when a fixed local port is needed.
+authoritative project rather than an old worker checkout. In live mode the
+server serves `scripts/factory-ui/` from that project path when present, and
+restart handoffs relaunch through the project's `scripts/factory-ui.mjs` entry.
+Use `--port NUMBER` only when a fixed local port is needed.
 
 The queue and issue screens read actual reports and the dispatch ledger through
 the existing factory helper. Each queue refresh projects saved run history once
@@ -898,11 +900,12 @@ normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
 
-The separate server-restart API remains available to deployment and maintenance:
-it drains current work, permission replies, temporary chats and coordinator locks
-before handing the installed listener to a replacement on the same port. It
-installs no build. Saved chats, pending questions and progress remain in the
-project, and the browser reconnects without erasing drafts.
+**Restart server** in the header uses the same restart path as deployment and
+maintenance: it drains current work, permission replies, temporary chats and
+coordinator locks before handing the installed listener to a replacement on the
+same port. It installs no build. Saved chats, pending questions and progress
+remain in the project, and the browser reconnects without erasing drafts. The
+button is hidden on preview copies and while a restart is already in progress.
 
 The header displays the last four characters of the server's reported startup
 commit, with the full hash and source path in its tooltip. Unknown revisions

@@ -7,11 +7,15 @@ const serverControlUI = (() => {
     requestedPause = null;
   function panel() {
     let element = document.getElementById('server-controls');
+    if (element && !element.querySelector('[data-server-restart]')) {
+      element.remove();
+      element = null;
+    }
     if (element) return element;
     element = document.createElement('span');
     element.id = 'server-controls';
     element.innerHTML =
-      '<span data-server-count role="status"></span> <label class="actions-switch"><input type="checkbox" role="switch" data-server-toggle> <span>No new actions</span></label> <small data-server-message role="status"></small>';
+      '<span data-server-count role="status"></span> <button type="button" data-server-restart>Restart server</button> <label class="actions-switch"><input type="checkbox" role="switch" data-server-toggle> <span>No new actions</span></label> <small data-server-message role="status"></small>';
     document.querySelector('header').append(element);
     return element;
   }
@@ -31,9 +35,16 @@ const serverControlUI = (() => {
       requestedPause = toggle.checked;
       void change(toggle.checked ? 'server-pause' : 'server-cancel-restart', request);
     };
+    const restart = element.querySelector('[data-server-restart]');
+    restart.hidden = !state.supported;
+    restart.disabled = restartUnavailable();
+    restart.onclick = () => void change('server-restart', request);
   }
   function toggleUnavailable() {
     return busy || state.phase === 'restarting' || !state.pauseSupported;
+  }
+  function restartUnavailable() {
+    return busy || !state.supported || ['draining', 'restarting'].includes(state.phase);
   }
   function pausedMessage(value) {
     return value.actions ? 'Finishing current actions. New work is paused.' : 'No actions running. New work is paused.';
