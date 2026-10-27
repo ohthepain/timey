@@ -58,6 +58,7 @@ async function mutation(service, path, value, owner) {
   const routes = {
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
+    '/api/verification-retry': () => service.retryVerification(value),
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),

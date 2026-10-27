@@ -61,6 +61,14 @@ function belongsToLifecycle(record, queue, run) {
   );
 }
 export async function handleLifecycleFailure(service, record, run) {
+  if (run.verification?.status === 'failed') {
+    stopLifecycle(
+      service,
+      record,
+      'Implementation finished. Verification needs attention; use the retry controls in Verify.'
+    );
+    return false;
+  }
   if (blockedHumanInput(service, record)) return false;
   const eligible = canContinueFailedWork(record, run);
   if (eligible) return continueFailedWork(service, record, run);

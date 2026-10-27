@@ -1644,16 +1644,42 @@
         if (!window.confirm(text)) return;
         await request('issue-delivery-start', { token: preview.token, humanApproved: preview.requiresApproval });
       }
+      function verificationRecovery(issue) {
+        const recovery = issue.verificationRecovery;
+        if (!recovery) return '';
+        const disabled = recovery.busy || busy ? 'disabled' : '';
+        return `<section class="card verification-recovery"><h4>Verification needs attention</h4><p>Implementation is finished. A check failed; this may be outside this issue. You can fix it separately, then retry here.</p><p role="status">${esc(recovery.error || 'Checking the existing work…')}</p><p>Working branch: <code>${esc(recovery.branch)}</code><br>Checkout: <code>${esc(recovery.checkout)}</code></p><button data-verification-retry="${esc(issue.id)}" ${disabled}>${recovery.busy ? 'Checking…' : 'Retry verification'}</button><label>Branch containing the fix<select id="verification-branch-${esc(issue.id)}" ${disabled}><option value="">Choose a branch…</option>${recovery.branches.map((b) => `<option value="${esc(b.ref)}" data-revision="${esc(b.revision)}">${esc(b.name)} · ${esc(b.revision.slice(0, 7))} · ${esc(b.subject)}${b.ref.startsWith('refs/remotes/') ? ' (fetched remote)' : ''}${b.name === recovery.branch ? ' (current)' : ''}</option>`).join('')}</select></label><p>Update brings all changes from the selected branch into this working branch, then checks the combined result. It does not restart implementation or approve the other issue. Remote branches show the last fetched version.</p><button data-verification-update="${esc(issue.id)}" ${disabled}>Update from branch and retry</button></section>`;
+      }
+      async function retryIssueVerification(button, update) {
+        const id = update ? button.dataset.verificationUpdate : button.dataset.verificationRetry;
+        const issue = data.issues.find((i) => i.id === id);
+        const recovery = issue.verificationRecovery;
+        const selected = $('verification-branch-' + id)?.selectedOptions[0];
+        if (update && !selected?.value) throw Error('Choose the branch containing the fix.');
+        button.disabled = true;
+        button.textContent = update ? 'Updating and checking…' : 'Checking…';
+        await request('verification-retry', {
+          issueId: id,
+          runId: recovery.runId,
+          basis: recovery.basis,
+          ...(update ? { branch: selected.value, branchRevision: selected.dataset.revision } : {}),
+        });
+      }
       function currentStageContent(issue, step) {
         if (issue.implementation && step.role === 'ready-to-verify')
           return (
+            verificationRecovery(issue) +
             issueDeliveryCard(issue) +
             implementationChecklist(issue) +
             reviewFileProblems(issue) +
             progressControls(issue)
           );
         return (
-          issueDeliveryCard(issue) + latestReviewResult(issue) + reviewFileProblems(issue) + progressControls(issue)
+          verificationRecovery(issue) +
+          issueDeliveryCard(issue) +
+          latestReviewResult(issue) +
+          reviewFileProblems(issue) +
+          progressControls(issue)
         );
       }
       const checkLabels = {
@@ -2424,6 +2450,12 @@
                 text: $('lifecycle-answer-' + button.dataset.lifecycleAnswer)?.value || '',
               })
             );
+        });
+        document.querySelectorAll('[data-verification-retry]').forEach((button) => {
+          button.onclick = () => act(() => retryIssueVerification(button, false));
+        });
+        document.querySelectorAll('[data-verification-update]').forEach((button) => {
+          button.onclick = () => act(() => retryIssueVerification(button, true));
         });
         document.querySelectorAll('[data-lifecycle-pause]').forEach((button) => {
           button.onclick = () => act(() => request('lifecycle-pause', { issueId: button.dataset.lifecyclePause }));

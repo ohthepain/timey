@@ -1,3 +1,4 @@
+import { failedVerification, verificationView, retryVerification } from './verification-recovery.mjs';
 import { IssueDelivery } from '../issue-delivery.mjs';
 import { proof } from '../issue-delivery-store.mjs';
 import { createIssueChats } from './issue-chat.mjs';
@@ -109,6 +110,7 @@ export class FactoryUI {
     return {
       ...issue,
       readiness,
+      verificationRecovery: verificationView(this, queue, issue),
       issueDelivery: this.deliveries.inspect(issue.id),
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
@@ -298,14 +300,21 @@ export class FactoryUI {
       conversationPrompt(this, run, prompt),
       workerResultSchema
     );
-    const result = JSON.parse(text);
+    let result = JSON.parse(text);
     requireThat(
       ['completed', 'blocked', 'failed'].includes(result.outcome) && typeof result.summary === 'string',
       'Worker returned an invalid result.'
     );
-    if (result.outcome !== 'completed') return this.unfinished(run, result);
     const { action } = currentAction(this.root, run.actionId);
-    this.store.update(run, { status: 'checking', summary: 'Checking the returned result independently.' });
+    if (
+      run.kind === 'worker' &&
+      action.kind === 'implement' &&
+      result.implementation_complete &&
+      result.outcome !== 'completed'
+    )
+      result = { ...result, reported_outcome: result.outcome, outcome: 'completed' };
+    if (result.outcome !== 'completed') return this.unfinished(run, result);
+    this.store.update(run, { status: 'checking', summary: 'Checking the returned result independently.', result });
     requireThat(run.kind !== 'integration', 'Reconcile historical integration without another model-executed merge.');
     await this.finishWorker(run, action, result);
   }
@@ -318,11 +327,20 @@ export class FactoryUI {
         authorization: run.authorization,
       });
   }
+  retryVerification(input) {
+    return retryVerification(this, input, (id) => continueLifecycleAfter(this, id));
+  }
   async finishWorker(run, action, result) {
     const update = { status: 'completed', evidence: JSON.stringify(result), authorization: run.authorization };
     if (codeAction(action)) {
       const folder = join(this.store.directory, run.id);
-      const checked = await this.check(run.checkout, run.base, folder);
+      let checked;
+      try {
+        checked = await this.check(run.checkout, run.base, folder);
+      } catch (error) {
+        failedVerification(this, run, action, result, error);
+        throw error;
+      }
       git(run.checkout, 'merge-base', '--is-ancestor', run.base, checked.head);
       update.worker_revision = checked.head;
       update.evidence += ` Independent checks: ${JSON.stringify(checked)}`;

@@ -319,3 +319,11 @@ and GitHub transport in `issue-delivery-provider.mjs`. The CLI and UI delivery
 handlers share these operations; `issue-delivery-fixture.mjs` supplies deterministic
 protocol proof only. See [the delivery contract](issue-delivery.md) and
 [ADR 0004](../adr/0004-issue-pr-delivery.md).
+
+`factory-ui/verification-recovery.mjs` retains completed implementation across
+failed independent checks, records the transition into Verify, and owns explicit
+retries and branch updates in isolated checkouts. It retains selection receipts,
+original bases and approval boundaries; it starts no model chats. `checks.mjs`
+uses the summary paths returned by each verifier command rather than scanning
+shared evidence for unrelated reports. `verify-scope.mjs` is safe for tests to
+import; importing the verifier CLI starts verification.

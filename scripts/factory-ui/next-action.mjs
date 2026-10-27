@@ -31,6 +31,10 @@ export function nextProgress(queue, issue, runs) {
   if (invalid) return invalid;
   const pending = runs.find((run) => isPending(run) && belongsToIssue(queue, issue, run));
   if (pending) return unavailable('The selected action is in progress. Its chat and results appear below.');
+  if (runs.some((r) => belongsToIssue(queue, issue, r) && r.verification?.status === 'failed'))
+    return unavailable(
+      'Verification failed. Fix it separately, then retry in Verify or update from a selected branch.'
+    );
   const stopped = stoppedReconciliation(queue, issue, runs);
   if (stopped) return stopped;
   return stageWork(queue, issue, stage, runs);

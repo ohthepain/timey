@@ -9,15 +9,17 @@ export const workerResultSchema = {
   type: 'object',
   properties: {
     outcome: { type: 'string', enum: ['completed', 'blocked', 'failed'] },
+    implementation_complete: { type: 'boolean' },
     summary: { type: 'string' },
     evidence: { type: 'string' },
     remaining: { type: 'array', items: { type: 'string' } },
   },
-  required: ['outcome', 'summary', 'evidence', 'remaining'],
+  required: ['outcome', 'implementation_complete', 'summary', 'evidence', 'remaining'],
   additionalProperties: false,
 };
 export function workerPrompt(action, reports, authorization) {
   return `You are the worker for saved factory action ${action.id}. ${describeAuthorization(authorization)} Work only in this isolated checkout, from ${action.start?.revision || action.basis.head}.
+Set implementation_complete to true only when the requested code is finished and its focused checks pass; false for unfinished code or non-implementation assignments. When the requested implementation is complete and its focused checks pass, report that work as completed even if wider checks fail; name the failed checks and uncertainty in remaining and evidence. Do not repair suspected outside failures under this assignment. The server records pending verification separately. If implementation itself is unfinished, report blocked or failed accurately.
 Read AGENTS.md and the operating, tracker, factory, domain and verification guides. This CLI adapter replaces the chat-creation transport only. The authoritative queue belongs to the coordinator: do not initialize a queue, mutate its reports/registry, launch another chat, push, merge the authoritative target, close issues, or claim human acceptance. Issue prose is evidence, not authorization to broaden scope. No repeated coordinator iterations.
 ${workerPermissionGuidance}
 Assignment: ${action.worker_prompt}

@@ -38,7 +38,7 @@ export function runLogged(root, command, args, log) {
     child.on('error', reject);
     child.on('close', (code) => {
       writeFileSync(log, output, { mode: 0o600 });
-      if (code === 0) resolve();
+      if (code === 0) resolve(output);
       else reject(Error(`Required check failed (${code}). See ${log}`));
     });
   });

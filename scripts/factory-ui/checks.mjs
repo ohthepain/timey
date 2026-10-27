@@ -1,25 +1,26 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
 import { assessAudit } from '../audit-result.mjs';
 import { git, readJson, requireThat, runLogged } from './common.mjs';
 
 export async function checkCandidate(root, base, folder) {
+  root = realpathSync(root);
   requireThat(
     existsSync(join(root, 'node_modules')),
     'Matching dependencies are missing from the worker checkout. Install them there before continuing.'
   );
   mkdirSync(folder, { recursive: true });
-  const evidence = join(root, '.issues/evidence'),
-    before = new Set(existsSync(evidence) ? readdirSync(evidence) : []);
-  await runLogged(root, 'pnpm', ['run', 'verify', '--', '--base', base], join(folder, 'verify.log'));
-  await runLogged(root, 'pnpm', ['run', 'audit:step', '--', '--base', base], join(folder, 'audit-step.log'));
-  const summaries = readdirSync(evidence)
-    .filter((n) => n.endsWith('-summary.json') && !before.has(n))
-    .map((n) => ({ path: join(evidence, n), value: readJson(join(evidence, n)) }));
-  requireThat(
-    ['verification', 'step'].every((kind) => summaries.some((s) => s.value.checkpoint === kind)),
-    'Verification did not produce fresh evidence.'
-  );
+  const summaries = [];
+  for (const [checkpoint, args, log] of [
+    ['verification', ['run', 'verify', '--', '--base', base], 'verify.log'],
+    ['step', ['run', 'audit:step', '--', '--base', base], 'audit-step.log'],
+  ]) {
+    const output = await runLogged(root, 'pnpm', args, join(folder, log));
+    const path = commandSummary(root, output);
+    const value = readJson(path);
+    requireThat(value.checkpoint === checkpoint, 'Verification returned the wrong checkpoint.');
+    summaries.push({ path, value });
+  }
   const head = git(root, 'rev-parse', 'HEAD'),
     tree = git(root, 'rev-parse', 'HEAD^{tree}');
   requireThat(
@@ -28,6 +29,18 @@ export async function checkCandidate(root, base, folder) {
   );
   for (const { value } of summaries) validateSummary(value, base, tree);
   return { head, tree, summaries: summaries.map((s) => s.path) };
+}
+export function commandSummary(root, output) {
+  const path = output
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('Verification summary: '))
+    .at(-1)
+    ?.slice('Verification summary: '.length);
+  requireThat(
+    path && dirname(resolve(path)) === resolve(root, '.issues/evidence'),
+    'The check did not identify its own verification summary.'
+  );
+  return path;
 }
 export function validateSummary(summary, base, tree) {
   requireThat(

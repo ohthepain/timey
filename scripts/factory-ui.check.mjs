@@ -1919,12 +1919,14 @@ test('implementation checklist stays in Verify when the issue advances to Commit
     'progressControls',
     'latestReviewResult',
     'issueDeliveryCard',
+    'verificationRecovery',
     source + ';return currentStageContent;'
   )(
     () => '<checklist>Saved passed and skipped steps</checklist>',
     () => '<file-problems/>',
     () => '<progress/>',
     () => '<result/>',
+    () => '',
     () => ''
   );
   const issue = { implementation: { record: { steps: [{ name: 'Saved step' }] } } };

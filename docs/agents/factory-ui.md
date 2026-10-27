@@ -5,8 +5,9 @@ containing this adapter. Open the printed loopback URL. The project must already
 have its local issue queue and factory registry; the UI never initializes or
 replaces either. The selected checkout owns the issue records and delivery configuration, so choose the
 authoritative project rather than an old worker checkout. In live mode the
-server serves `scripts/factory-ui/` from that project path when present, and
-restart handoffs relaunch through the project's `scripts/factory-ui.mjs` entry.
+server uses browser assets and the restart entry from the installed adapter
+checkout. Updating code uses managed deployment with exact passing verification,
+HTML and authenticated queue probes; restart refuses changed installed source.
 Use `--port NUMBER` only when a fixed local port is needed.
 
 The queue and issue screens read actual reports and the dispatch ledger through
@@ -953,3 +954,30 @@ or acceptance and start no work. Existing queue ordering is retained.
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
+
+## Verification recovery
+
+Implementation completion is separate from wider verification. A worker that has
+finished its requested code and focused checks returns `implementation_complete`.
+If independent checks fail, retain the implementation/result/chat, record Implement
+as completed and move to the configured Verify stage. This records no passed check,
+commit-stage completion, integration, acceptance or closure. Custom stages are
+preserved; there is no direct jump over a configured intermediate stage.
+
+Verify explains the failed check, uncertainty, current branch and checkout.
+**Retry verification** reruns checks on the existing code, including unchanged code.
+**Update from branch and retry** merges all changes from an explicitly selected
+local or last-fetched remote branch into the isolated worker checkout, then checks
+the combined result against the original starting revision. Selecting a branch
+approves that update only; exact-candidate PR/human approval stays separate. Changed
+branch tips, changed issue records, active work and dirty/conflicted checkouts reject
+stale actions with a concrete explanation. Conflicts remain for manual resolution.
+No other issue or formal repair ticket is required, and no implementation chat is
+restarted. Failed retries remain in Verify, with another explicit retry available;
+automatic progress pauses instead of repeating checks or assigning outside repairs.
+A successful retry resumes approved progress while retaining pending human input.
+
+Each verification command prints its exact summary path. Candidate checking uses
+only those command-owned verification and step summaries, retaining strict
+base/tree/raw-log validation. Concurrent commit-hook or other-issue evidence is
+not evidence for that command and cannot make it fail or pass.

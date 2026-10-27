@@ -29,8 +29,6 @@ const baseIndex = args.indexOf('--base');
 // repository-local Git variables into the disposable clone or child checks.
 const sourceEnv = { ...process.env };
 const isolatedEnv = { ...sourceEnv };
-// Nested verifier checks must execute their factory suite, not inherit node:test's runner marker.
-delete isolatedEnv.NODE_TEST_CONTEXT;
 const localVariables = execFileSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' }).trim().split('\n');
 for (const key of localVariables) delete isolatedEnv[key];
 for (const key of Object.keys(isolatedEnv)) if (/^GIT_CONFIG_(KEY|VALUE)_/.test(key)) delete isolatedEnv[key];
@@ -176,6 +174,7 @@ try {
 } finally {
   report.passed = !failure;
   writeFileSync(join(reportDir, `${stamp}-summary.json`), JSON.stringify(report, null, 2) + '\n');
+  console.log('Verification summary: ' + join(reportDir, `${stamp}-summary.json`));
   rmSync(snapshot, { recursive: true, force: true });
 }
 process.exitCode = failure ? 1 : 0;
