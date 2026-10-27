@@ -327,3 +327,13 @@ original bases and approval boundaries; it starts no model chats. `checks.mjs`
 uses the summary paths returned by each verifier command rather than scanning
 shared evidence for unrelated reports. `verify-scope.mjs` is safe for tests to
 import; importing the verifier CLI starts verification.
+
+`factory-ui/integration-recovery.mjs` recovers already-merged historical work during
+approved lifecycle progress and owns the explicit recovery retry. It validates
+command-owned reports, retains blocked reasons and resumes partial bookkeeping.
+`factory-legacy-integration.mjs` validates the original run/reservation, current
+Git ancestry, exact reports and human guards for the ledger's narrow historical
+completion operation; normal record transitions retain the PR-delivery requirement.
+
+`integration-reservation.mjs` supplies read-only eligibility for older stopped
+coordinators. It enables Continue without changing queue state or clearing locks.

@@ -981,3 +981,31 @@ Each verification command prints its exact summary path. Candidate checking uses
 only those command-owned verification and step summaries, retaining strict
 base/tree/raw-log validation. Concurrent commit-hook or other-issue evidence is
 not evidence for that command and cannot make it fail or pass.
+
+## Interrupted integration bookkeeping
+
+The issue coordinator checks a saved integration reservation before asking for new
+work. If the candidate is already in the project, it reads only the reports named
+by that integration's own verification and step commands. Matching current-tree,
+original-base and raw-check evidence permits finishing the ledger and stage update
+without a chat, worker restart or another merge. The existing lock, candidate,
+authorization and operation-specific human guards remain required. A partial
+registry update resumes only the unfinished bookkeeping. Polling and queue reads
+remain inert; recovery runs as part of approved Progress.
+
+Older commands without summary markers use their recorded Fallow log paths to
+identify their own reports. Other commands' reports are never selected by scanning
+the shared evidence folder. Changed source, missing evidence, another live owner,
+a changed candidate or missing approval leaves the original work and reservation
+intact, with a concrete explanation and **Retry finishing integration**. That
+explicit retry can run verification on the existing merged code if fresh evidence
+is needed. It never merges, starts an implementation or grants human approval.
+Repeated automatic attempts against unchanged inputs are suppressed. Maintenance
+pauses prevent a successful recovery from dispatching further work.
+
+Historical local integrations have a dedicated ledger compatibility operation.
+It requires the original server-owned integration run and reservation, the saved
+candidate/base, full verification and step reports, and the existing human policy.
+It records a historical completion, not a PR. Ordinary new integration transitions
+still require verified issue PR delivery. Unknown or unrelated reservations are
+left for their owning issue; they are never deleted to unblock another issue.

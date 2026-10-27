@@ -1,3 +1,4 @@
+import { integrationReservation } from './integration-reservation.mjs';
 import { nextProgress } from './next-action.mjs';
 import { readQueue } from './data.mjs';
 import { digest } from './common.mjs';
@@ -62,6 +63,7 @@ export function isRetriableLifecycleFailure(service, record) {
 }
 
 export function canResumeLifecycle(service, record, queue, issue, runs) {
+  if (!record.integrationRecovery && integrationReservation(service, record.issueId, queue)) return true;
   if (isRetriableLifecycleFailure(service, record)) return true;
   const basis = lifecycleWorkBasis(queue, issue, record);
   if (record.stopBasis !== basis) return true;

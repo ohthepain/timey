@@ -1,3 +1,4 @@
+import { recoverPendingIntegration } from './integration-recovery.mjs';
 import { continuationChoice, checkContinuation, resumeContinuation } from './lifecycle-continuation.mjs';
 import { planProgress } from './progress.mjs';
 import { lifecycleWorkBasis, stopLifecycle } from './lifecycle-stop.mjs';
@@ -23,6 +24,8 @@ async function lifecycleTick(service, record) {
   const queue = readQueue(service.root),
     issue = queue.issues.find((i) => i.id === record.issueId);
   requireThat(issue, 'This issue no longer exists.');
+  const recovered = await recoverPendingIntegration(service, record);
+  if (recovered) return recovered === 'recovered';
   if (finishedLifecycle(service, record, queue, issue)) return false;
   if (!record.assessed) {
     await assessLifecycle(service, record, queue, issue);

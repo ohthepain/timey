@@ -31,11 +31,20 @@ export async function checkCandidate(root, base, folder) {
   return { head, tree, summaries: summaries.map((s) => s.path) };
 }
 export function commandSummary(root, output) {
-  const path = output
+  let path = output
     .split(/\r?\n/)
     .filter((line) => line.startsWith('Verification summary: '))
     .at(-1)
     ?.slice('Verification summary: '.length);
+  if (!path) {
+    const legacy = [...output.matchAll(/^PASS fallow: (.+)-fallow\.log$/gm)]
+      .map((match) => match[1] + '-summary.json')
+      .filter(
+        (candidate) => dirname(resolve(candidate)) === resolve(root, '.issues/evidence') && existsSync(candidate)
+      );
+    requireThat(legacy.length === 1, 'The check did not identify its own verification summary.');
+    path = legacy[0];
+  }
   requireThat(
     path && dirname(resolve(path)) === resolve(root, '.issues/evidence'),
     'The check did not identify its own verification summary.'

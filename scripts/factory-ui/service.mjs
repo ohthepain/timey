@@ -1,3 +1,4 @@
+import { retryIntegrationRecovery } from './integration-recovery.mjs';
 import { failedVerification, verificationView, retryVerification } from './verification-recovery.mjs';
 import { IssueDelivery } from '../issue-delivery.mjs';
 import { proof } from '../issue-delivery-store.mjs';
@@ -164,6 +165,9 @@ export class FactoryUI {
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);
+  }
+  retryIntegrationRecovery(input) {
+    return retryIntegrationRecovery(this, input, (id) => continueLifecycleAfter(this, id));
   }
   startLifecycle(input) {
     return startLifecycle(this, input);

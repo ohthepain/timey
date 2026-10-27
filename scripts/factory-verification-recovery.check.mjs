@@ -267,7 +267,7 @@ test('candidate verification ignores a concurrent commit-hook report and retains
   const tool = join(root, '.issues/tools/pnpm');
   writeFileSync(
     tool,
-    `#!/usr/bin/env node\nimport fs from 'node:fs';\nconst root=${JSON.stringify(root)};const value=${JSON.stringify(template)};const step=process.argv.includes('audit:step');value.checkpoint=step?'step':'verification';const path=root+'/.issues/evidence/'+value.checkpoint+'-owned-summary.json';fs.writeFileSync(path,JSON.stringify(value));fs.writeFileSync(root+'/.issues/evidence/unrelated-commit-summary.json',JSON.stringify({...value,checkpoint:'commit',base:'unrelated-base',passed:false}));console.log('Verification summary: '+path);\n`,
+    `#!/usr/bin/env node\nimport fs from 'node:fs';\nconst root=${JSON.stringify(root)};const value=${JSON.stringify(template)};const step=process.argv.includes('audit:step');value.checkpoint=step?'step':'verification';const path=root+'/.issues/evidence/'+value.checkpoint+'-owned-summary.json';const raw=path.replace('-summary.json','-fallow.log');fs.copyFileSync(value.checks.find(c=>c.name==='fallow').log,raw);value.checks.find(c=>c.name==='fallow').log=raw;fs.writeFileSync(path,JSON.stringify(value));fs.writeFileSync(root+'/.issues/evidence/unrelated-commit-summary.json',JSON.stringify({...value,checkpoint:'commit',base:'unrelated-base',passed:false}));console.log(fs.existsSync(root+'/.issues/legacy-output')?'PASS fallow: '+raw:'Verification summary: '+path);\n`,
     { mode: 0o755 }
   );
   const previous = process.env.PATH;
@@ -277,6 +277,9 @@ test('candidate verification ignores a concurrent commit-hook report and retains
     assert.equal(result.summaries.length, 2);
     assert.ok(result.summaries.every((p) => p.includes('-owned-summary.json')));
     assert.equal(result.head, template.base);
+    writeFileSync(join(root, '.issues/legacy-output'), 'older verifier');
+    const legacy = await checkCandidate(root, template.base, join(root, '.issues/legacy-check-output'));
+    assert.deepEqual(legacy.summaries, result.summaries);
   } finally {
     process.env.PATH = previous;
   }

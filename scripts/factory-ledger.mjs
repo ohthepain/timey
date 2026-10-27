@@ -1,3 +1,4 @@
+import { historicalIntegration } from './factory-legacy-integration.mjs';
 import { assembledContribution, verifiedIssueDelivery, validateAssembledStart } from './issue-delivery-records.mjs';
 import { issueInputs } from './factory-inputs.mjs';
 import { readProgress, completionBasis } from './factory-progress.mjs';
@@ -427,6 +428,21 @@ export function factory(project) {
         copyChatReference(action, reference);
         if (reference.threadId) delete action.clientThreadId;
         action.status = reference.threadId ? 'running' : 'setup';
+        return action;
+      });
+    },
+    reconcileHistoricalIntegration(id, runId, checked) {
+      return mutate((data) => {
+        const action = find(data, id);
+        assert(action.status === 'completed', 'Historical reconciliation requires the saved completed candidate.');
+        const receipt = historicalIntegration(root, action, runId, checked);
+        action.status = 'integrated';
+        action.verified_revision = checked.head;
+        action.legacy_integration = receipt;
+        action.evidence =
+          'Reconciled an already merged historical integration without another merge. ' + JSON.stringify(receipt);
+        action.updated = new Date().toISOString();
+        recordOperation(action, 'reconcile-historical-integration', receipt.authorization);
         return action;
       });
     },

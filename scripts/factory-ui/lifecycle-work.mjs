@@ -1,3 +1,4 @@
+import { recoverPendingIntegration } from './integration-recovery.mjs';
 import { planAuthorization } from '../factory-authorization.mjs';
 import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
 import { saveLifecycle, lifecycleEvent } from './lifecycle-store.mjs';
@@ -61,6 +62,10 @@ function belongsToLifecycle(record, queue, run) {
   );
 }
 export async function handleLifecycleFailure(service, record, run) {
+  if (run.kind === 'integration') {
+    const result = await recoverPendingIntegration(service, record);
+    if (result) return result === 'recovered';
+  }
   if (run.verification?.status === 'failed') {
     stopLifecycle(
       service,
