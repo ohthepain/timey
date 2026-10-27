@@ -66,10 +66,24 @@ function nonempty(value) {
 function validatePlannedSkip(queue, issue, state) {
   const stage = queue.lifecycle.find((s) => s.state === state);
   requireThat(stage?.role !== 'closed', 'The route cannot skip explicit acceptance.');
+  // Repeated capture history is not a new request to bypass today's policy.
+  if (historicalSkip(queue, issue, state)) return;
   requireThat(
     skipAllowed(queue, issue, state),
     `${stage?.name || state} is required by project policy and cannot be planned as a skip. If its work already exists, record its completion instead.`
   );
+}
+function historicalSkip(queue, issue, state) {
+  if (state === issue.state || stageOutcome(issue, state)?.outcome !== 'skipped') return false;
+  const links = new Map(queue.lifecycle.map((stage) => [stage.state, stage.next]));
+  const seen = new Set([state]);
+  let next = links.get(state);
+  while (next && !seen.has(next)) {
+    if (next === issue.state) return true;
+    seen.add(next);
+    next = links.get(next);
+  }
+  return false;
 }
 export function savedRoute(issue, runs) {
   const review = runs.findLast((r) => r.savedRoutes?.some((route) => route.issueId === issue.id));
