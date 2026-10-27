@@ -87,3 +87,21 @@ locks. An actual failed check remains failed. Repair it separately, then retry;
 a changed source result must go through normal review rather than being silently
 accepted as the old candidate. This mechanism neither publishes nor merges a PR,
 and does not repeat historical target integrations.
+
+### Verification handoff
+
+A saved same-issue `verify` task with `merge: none` may automatically bind to the
+exact retained issue candidate under its current approved plan. The ledger owns
+this metadata update and revalidates plan approval, contribution receipts, clean
+branch identity, dependency membership and ancestry before reservation. It records
+a `verification-only` purpose with the actual plan receipt; it never fabricates a
+human `start-assembled-work` approval. Implementation still requires that separate
+exact human approval. A verification task cannot borrow this handoff to write or
+deliver code, consume another issue's assembly, or silently use a newer candidate.
+
+Lifecycle Continue performs this handoff before any replan, then starts the saved
+verification assignment. The assignment retains its original comparison bases;
+its starting candidate is not a replacement comparison base. Failed launch
+eligibility is shown as the concrete blocker instead of “Review finished.” Changes
+to the saved issue checkout are relevant retry inputs; unrelated queue changes
+remain irrelevant. Binding creates no worker/chat/worktree and performs no merge.

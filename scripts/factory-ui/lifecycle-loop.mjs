@@ -88,6 +88,8 @@ function stopAtFinal(service, record, role) {
 function selectLifecycleWork(service, queue, issue, record) {
   const continuation = continuationChoice(service, record, queue);
   if (continuation) return continuation;
+  const handoff = nextProgress(queue, issue, service.store.list(service.codex.requests));
+  if (handoff.kind === 'bind-verification') return handoff;
   if (record.replan) return { kind: 'replan', title: 'Finding the next unfinished task.' };
   const checklist = checklistView(queue, issue, service.store.list(service.codex.requests));
   if (needsPlanCheck(queue, issue, checklist))
@@ -125,11 +127,12 @@ async function coveredLifecycleAction(service, record, queue, choice) {
   return !lifecycleActionNeedsHuman(service, record, choice, action);
 }
 function checkSelectedScope(service, record, action, choice) {
+  if (choice.kind === 'bind-verification') return true;
   if (choice.kind === 'resume') return checkContinuation(service, record);
   return action ? checkLifecycleScope(service, record, action) : true;
 }
 function lifecycleActionNeedsHuman(service, record, choice, action) {
-  if (!action) return false;
+  if (!action || choice.kind === 'bind-verification') return false;
   const operation =
     choice.kind === 'integrate' ? 'merge' : { review: 'investigate', retro: 'investigate' }[action.kind] || action.kind;
   return pauseForHuman(service, record, operation, {}, action);

@@ -1,3 +1,4 @@
+import { verificationStart } from './issue-verification-start.mjs';
 import { historicalIntegration } from './factory-legacy-integration.mjs';
 import { assembledContribution, verifiedIssueDelivery, validateAssembledStart } from './issue-delivery-records.mjs';
 import { issueInputs } from './factory-inputs.mjs';
@@ -382,6 +383,21 @@ export function factory(project) {
         });
         data.actions.push(...batch);
         return batch;
+      });
+    },
+    bindVerification(id, expectedRevision, authorization = { kind: 'coordinator', operation: 'bind-verification' }) {
+      return mutate((data) => {
+        const action = find(data, id);
+        assert(action.status === 'recommended', 'Only a pending verification task can receive a handoff.');
+        assert(recommendationFresh(action, data), 'The verification task changed. Review its current inputs.');
+        assert(!data.actions.some((entry) => claimsIssue(entry, action)), 'This issue already has active work.');
+        const start = verificationStart(root, action, data, expectedRevision);
+        if (JSON.stringify(action.start) === JSON.stringify(start)) return action;
+        action.start = start;
+        action.scope_basis = scopeBasis(action, data);
+        action.updated = new Date().toISOString();
+        recordOperation(action, 'bind-verification', authorization);
+        return action;
       });
     },
     reserve(id, authorization = { kind: 'coordinator', operation: 'launch' }) {

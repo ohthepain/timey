@@ -1,3 +1,4 @@
+import { verificationHandoff } from './verification-handoff.mjs';
 import { savedRoute } from './lifecycle.mjs';
 import { skipAllowed } from './skip-policy.mjs';
 import { describeLaunch } from './data.mjs';
@@ -73,6 +74,8 @@ function chooseWork(queue, issue, runs) {
   const actions = queue.actions.filter((a) => a.issues.includes(issue.id));
   const waiting = actions.find((a) => ['reserved', 'setup', 'running', 'blocked', 'completed'].includes(a.status));
   if (waiting) return existingWork(waiting, runs);
+  const handoff = verificationHandoff(queue, issue, actions);
+  if (handoff) return handoff;
   const recommended = actions.find((a) => a.status === 'recommended' && !describeLaunch(queue, a));
   if (recommended)
     return { kind: 'launch', actionId: recommended.id, title: 'Start recommended work', summary: recommended.scope };
@@ -183,6 +186,8 @@ function uncommittedBlock(queue) {
 }
 
 function blockedRecommendation(queue, actions) {
-  if (queue.sourceClean) return null;
-  return actions.some((action) => action.status === 'recommended') ? uncommittedBlock(queue) : null;
+  const recommended = actions.find((action) => action.status === 'recommended');
+  if (!recommended) return null;
+  if (!queue.sourceClean) return uncommittedBlock(queue);
+  return unavailable(describeLaunch(queue, recommended));
 }

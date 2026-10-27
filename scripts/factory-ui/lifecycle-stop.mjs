@@ -1,3 +1,4 @@
+import { verificationBranchBasis } from './verification-handoff.mjs';
 import { deliveryConfigBasis, needsDeliverySetupRecovery } from './delivery-setup.mjs';
 import { integrationReservation } from './integration-reservation.mjs';
 import { nextProgress } from './next-action.mjs';
@@ -8,13 +9,14 @@ import { saveLifecycle } from './lifecycle-store.mjs';
 export function lifecycleWorkBasis(queue, issue, record) {
   const actions = queue.actions
     .filter((a) => a.issues.includes(issue.id))
-    .map((a) => ({ kind: a.kind, status: a.status, scope: a.scope, revision: a.worker_revision }));
+    .map((a) => ({ kind: a.kind, status: a.status, scope: a.scope, revision: a.worker_revision, start: a.start }));
   return digest(
     JSON.stringify({
       head: queue.head,
       source: queue.snapshot.worktree,
       state: issue.state,
       continuation_protocol: 1,
+      issueVerification: verificationBranchBasis(queue, issue),
       deliveryConfig: actions.some((a) => ['implement', 'integrate'].includes(a.kind) && a.status === 'completed')
         ? deliveryConfigBasis(queue.root)
         : null,
@@ -73,5 +75,8 @@ export function canResumeLifecycle(service, record, queue, issue, runs) {
   const basis = lifecycleWorkBasis(queue, issue, record);
   if (record.stopBasis !== basis) return true;
   const choice = nextProgress(queue, issue, runs || service.store.list(service.codex.requests));
-  return choice.kind === 'save-review' && !record.attempts.includes(basis + ':save-review');
+  return (
+    ['save-review', 'bind-verification', 'launch'].includes(choice.kind) &&
+    !record.attempts.includes(basis + ':' + choice.kind)
+  );
 }

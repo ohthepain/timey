@@ -1,3 +1,4 @@
+import { bindVerification } from './verification-handoff.mjs';
 import { assemblyRecoveryView, retryAssembly } from './assembly-recovery.mjs';
 import { retryIntegrationRecovery } from './integration-recovery.mjs';
 import { failedVerification, verificationView, retryVerification } from './verification-recovery.mjs';
@@ -182,6 +183,9 @@ export class FactoryUI {
   }
   retryAssembly(input) {
     return retryAssembly(this, input, (id) => continueLifecycleAfter(this, id));
+  }
+  bindVerification(actionId, candidate) {
+    return bindVerification(this, actionId, candidate);
   }
   progressPreflight(id, state) {
     return prepareProgress(this, id, state);

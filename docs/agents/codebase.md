@@ -344,3 +344,10 @@ in-issue input. `assembly-recovery.mjs` owns stopped-operation explanations and
 stale-safe retries. `scripts/issue-delivery-assembly.mjs` retains/reuses the exact
 merged assembly before verification. The delivery service still owns locking,
 guards, contribution records and all remote effects.
+
+`scripts/issue-verification-start.mjs` validates the narrow approved-plan start for
+verification of assembled same-issue work. The ledger's `bindVerification` method
+records it atomically. `scripts/factory-ui/verification-handoff.mjs` selects that
+handoff, records its existing plan authority and supplies issue-branch retry inputs.
+The ordinary launch guards and worker transport still execute the saved task;
+implementation-start approval requirements remain separate.

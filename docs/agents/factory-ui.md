@@ -1020,3 +1020,14 @@ The issue displays stopped assembly failures and **Retry existing operation**.
 Clicks show immediate feedback, reject stale requests, and reuse the existing
 assembly run and saved merged tree. Checks can be retried without another worker,
 repeat review loop or repeat merge. See [delivery recovery](issue-delivery.md#missing-settings-and-stopped-checks).
+
+### Verification of an existing issue branch
+
+Continue automatically connects a saved verification task to its exact assembled
+issue revision under the current approved plan, then launches that task without
+another planning review. It does not restart implementation or repeat a merge.
+The Verify role shows actual launch blockers instead of a generic finished-review
+message. The saved issue checkout and candidate are part of Continue freshness,
+so resolving its local blocker enables another attempt. This check-only handoff
+cannot authorize implementation or cross-issue work; see
+[verification handoff](issue-delivery.md#verification-handoff).
