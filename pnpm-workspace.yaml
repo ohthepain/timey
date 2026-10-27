@@ -1,0 +1,19 @@
+packages:
+  - src/server/auth-runtime
+
+# Script runs must not reinstall. A commit hook and the exported verifier share the
+# checkout's node_modules and compare the lockfile byte for byte.
+verifyDepsBeforeRun: false
+
+allowBuilds:
+  '@parcel/watcher': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+
+permissions:
+  drizzle-kit:
+    skills: false
+  fallow:
+    skills: false

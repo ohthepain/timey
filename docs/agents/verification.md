@@ -2,20 +2,21 @@
 
 ## Commands and evidence
 
-Use npm and the checked-in `package-lock.json`. `.nvmrc` pins the local runtime;
-`package.json` declares supported Node versions. Run `npm ci` in a clean checkout.
+Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
+`package.json` declares supported Node versions and the pnpm version in
+`packageManager`. Run `pnpm install --frozen-lockfile` in a clean checkout.
 
-| Command                            | What it establishes                                                                                                    |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `npm run test:factory`             | Ledger, live UI/CLI boundaries, verifier dispatch/isolation, and audit-result checks using disposable Git repositories |
-| `npm run typecheck`                | TypeScript compiler result; report existing failures explicitly                                                        |
-| `npm test`                         | Mock-backed Vitest behavior; recorder CSVs and backups use per-test temporary directories                              |
-| `npm run build`                    | Production compilation, not runtime or device behavior                                                                 |
-| `npm run audit:diff -- --base REF` | Fallow audit on changed files in an exported working snapshot (same new-only gate as other checkpoints)              |
-| `npm run audit:step -- --base REF` | Required audit before declaring an implementation step complete, even without a commit                                 |
-| `npm run audit:staged`             | Exact index snapshot audit; unstaged fixes cannot hide staged findings                                                 |
-| `npm run verify -- --base REF`     | Changed-file formatting, factory checks, types, tests, build, and Fallow; runs all and fails if any fails              |
-| `npm run format-check`             | Repository-wide formatting, including inherited drift                                                                  |
+| Command                             | What it establishes                                                                                                    |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run test:factory`             | Ledger, live UI/CLI boundaries, verifier dispatch/isolation, and audit-result checks using disposable Git repositories |
+| `pnpm run typecheck`                | TypeScript compiler result; report existing failures explicitly                                                        |
+| `pnpm test`                         | Mock-backed Vitest behavior; recorder CSVs and backups use per-test temporary directories                              |
+| `pnpm run build`                    | Production compilation, not runtime or device behavior                                                                 |
+| `pnpm run audit:diff -- --base REF` | Fallow audit on changed files in an exported working snapshot (same new-only gate as other checkpoints)                |
+| `pnpm run audit:step -- --base REF` | Required audit before declaring an implementation step complete, even without a commit                                 |
+| `pnpm run audit:staged`             | Exact index snapshot audit; unstaged fixes cannot hide staged findings                                                 |
+| `pnpm run verify -- --base REF`     | Changed-file formatting, factory checks, types, tests, build, and Fallow; runs all and fails if any fails              |
+| `pnpm run format-check`             | Repository-wide formatting, including inherited drift                                                                  |
 
 Recorder tests create a unique directory under the system temporary directory for
 each test and remove it in teardown, including after assertion failures. Replay
@@ -30,16 +31,18 @@ original pass/fail and separate audit-channel assessment. Evidence stays under
 `.issues/evidence/` with a JSON summary and per-command logs. Preserve relevant
 results in the tracked effort plan before a fresh-worktree handoff. Reports identify
 base and snapshot mode; a failed or unavailable check remains a failure/blocker.
-The aggregate verifier invokes `npm run test:factory` inside that export so its
+The aggregate verifier invokes `pnpm run test:factory` inside that export so its
 factory coverage follows the package entry point. A factory failure fails the
 aggregate result while the other required checks still run and report separately.
 
-Install the checked-in staged Fallow hook with `npm run hooks:install`. It refuses
+Install the checked-in staged Fallow hook with `pnpm run hooks:install`. It refuses
 to replace another hooks directory. It runs the audit on the index snapshot before
-commit; it does not imply all tests passed. Run relevant checks as well. Fallow is
-pinned to 3.35.0. Checkpoint paths invoke
-`npx --no-install --offline fallow audit --base <resolved-commit> --format json`
-in the exported snapshot, using the existing local dependency and `.fallowrc.json`
+commit; it does not imply all tests passed. Run relevant checks as well. When the
+caller does not have node on `PATH` (GUI Git clients do not load nvm), the hook
+adds the `.nvmrc` Node bin, then Homebrew, and runs the staged audit with that
+node. Fallow is pinned to 3.35.0. Checkpoint paths invoke the installed binary,
+`fallow audit --base <resolved-commit> --format json`, in the exported snapshot,
+using the existing local dependency and `.fallowrc.json`
 `audit.gate: new-only`. Commits and step completion fail only on findings
 **introduced** since the base revision in changed files; inherited issues in those
 files do not block. They never use the always-successful `review` mode or download
@@ -65,7 +68,7 @@ retain strict validation and cannot infer empty scope from a saved tool report.
 
 Before a commit, the pre-commit hook audits the exact staged snapshot against
 HEAD. Before declaring an implementation step complete, including an uncommitted
-step, run `npm run audit:step -- --base <step-start-commit>`. Use the recorded
+step, run `pnpm run audit:step -- --base <step-start-commit>`. Use the recorded
 starting revision, not the new HEAD after committing (which could hide that step's
 changes). Full `verify -- --base REF` uses the same new-only audit in addition to
 its other checks. A successful audit does not establish type/build/device success.
@@ -103,7 +106,7 @@ issues/evidence to distinguish inherited failures from new ones.
 
 ## Hands and eyes
 
-Run `npm run dev -- --host 127.0.0.1 --port 3000`, save server logs outside tracked
+Run `pnpm run dev -- --host 127.0.0.1 --port 3000`, save server logs outside tracked
 source, and inspect readiness before opening the app. Use a free port rather than
 replacing another server. The home page is the initial smoke path; check actual
 rendered controls, browser console/network failures, and navigation. An HTTP 200
@@ -123,14 +126,14 @@ verdict. Mocked MIDI cannot establish acoustic or physical-device timing.
 
 ## Authentication foundation
 
-Run `npm run test:auth` for the actual app HTTP/session and disposable PostgreSQL
+Run `pnpm run test:auth` for the actual app HTTP/session and disposable PostgreSQL
 proof; see [setup and coverage](../../AUTH_SETUP.md). This creates its own cluster,
 owners and databases under a unique temporary evidence directory and retains
 commands, assertions and dumps. Existing Compose databases are not targets.
 Database-session acceptance and profile recovery are exercised independently of
 designated-admin authorization and other pending cutover work.
 
-Run `npm run test:auth -- --browser` for the separate app-native `/auth/` screen
+Run `pnpm run test:auth -- --browser` for the separate app-native `/auth/` screen
 slice against that uniquely isolated PostgreSQL cluster and local SMTP capture.
 This uses actual signup/login/reset forms in two browser sessions, validates
 remember-me/reload/logout cookies and password-reset delivery, expiry, reuse,
@@ -143,7 +146,7 @@ work, deletion behavior, human UX approval or live SES delivery.
 The verifier links each declared workspace's installed dependency directory into
 the exported snapshot, preserving workspace dependency resolution without changing source
 or audit gates. Both application and auth use the approved Zod 4 pin; older framework
-packages retain their declared nested dependencies. Use matching `npm ci` dependencies before verification.
+packages retain their declared nested dependencies. Use matching `pnpm install --frozen-lockfile` dependencies before verification.
 
 ## Human checks
 
@@ -175,7 +178,7 @@ specified. Final acceptance is separate, explicit, and as late as possible.
 
 ## Private practice slice
 
-Run `npm run test:auth -- --practice` for real server-function and rendered
+Run `pnpm run test:auth -- --practice` for real server-function and rendered
 transport checks with two users in uniquely disposable PostgreSQL. It reuses the
 foundation fixture infrastructure without rerunning the completed foundation and
 screen investigations. Inspect `practice-assertions.json`, `practice-commands.json`,
@@ -189,7 +192,7 @@ and final human judgment remain separate obligations.
 
 ## Method/module write slice
 
-Run `npm run test:auth -- --content` for real server-function/API requests and
+Run `pnpm run test:auth -- --content` for real server-function/API requests and
 rendered existing creation/edit controls with two users in uniquely disposable
 PostgreSQL. Retain `content-commands.json`, `content-assertions.json`, SQL logs,
 application logs and `output/playwright/` in the printed directory. The fixture
@@ -204,7 +207,7 @@ acceptance remain outside this slice.
 
 ## Beat creation/copy slice
 
-Run `npm run test:auth -- --beats`, then the separate `--content` and `--practice`
+Run `pnpm run test:auth -- --beats`, then the separate `--content` and `--practice`
 regressions. The new proof covers owner creation, public-source copy into an owned
 module, no-destination recovery, forged fields and sessions, expired/revoked sessions,
 profile failure/retry, account switching, concurrent destination ownership changes,
@@ -216,7 +219,7 @@ Existing-beat editing, deletion, Admin enforcement, retirement and human judgmen
 
 ## Existing-beat editing slice
 
-Run `npm run test:auth -- --edit-beats` for real server-function/API and rendered
+Run `pnpm run test:auth -- --edit-beats` for real server-function/API and rendered
 editing checks in uniquely disposable PostgreSQL with two users. Run `--beats`,
 `--content` and `--practice` separately as regressions. Retain the printed absolute
 directory's `beat-edit-commands.json`, `beat-edit-assertions.json`, SQL logs,
@@ -233,7 +236,7 @@ final human judgment remain separate obligations.
 
 ## Ordinary-author deletion verification
 
-Run `npm run test:auth -- --delete-content`, followed by `--edit-beats`, `--beats`,
+Run `pnpm run test:auth -- --delete-content`, followed by `--edit-beats`, `--beats`,
 `--content` and `--practice`. Retain the printed absolute directory's
 `deletion-assertions.json`, `deletion-commands.json`, SQL logs, application logs and
 `output/playwright/`. The proof uses two users, actual compiled server-function/API
@@ -246,7 +249,7 @@ Designated-admin enforcement, retirement, integration and human judgment remain 
 
 ## Workflow compatibility
 
-Run `npm run test:workflow` while changing issue decisions or evidence freshness.
+Run `pnpm run test:workflow` while changing issue decisions or evidence freshness.
 This shared suite uses disposable queues, the actual decision handler and installed
 human-input guard. Its fixture also supplies delivery tests. Full `test:factory`
 and `verify` include it; use the focused command during editing before final checks.
@@ -267,7 +270,7 @@ for an issue-local decision.
 
 ## Persistent issue chat checks
 
-Run `npm run test:chat` for the shared issue conversation: disk persistence and
+Run `pnpm run test:chat` for the shared issue conversation: disk persistence and
 native identity reuse, issue separation, bounded history and full retrospective
 context, comments during active work, idempotent transport retries, response
 failures, current-question routing, revision checkpoints and DOM draft/focus safety.

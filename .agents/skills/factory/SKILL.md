@@ -12,7 +12,7 @@ manual actions. Preserve the existing explicit-only invocation policy.
 
 ## Status: `$factory status [ACTION_ID ...]`
 
-Run `npm run --silent factory -- status` and display its generated Markdown
+Run `pnpm run --silent factory -- status` and display its generated Markdown
 directly. Pass `--json` only when JSON is requested or needed for coordination.
 Action IDs or unique prefixes narrow the output; `--details` requires exactly
 one action and returns its full saved record. Read full records/reports/evidence
@@ -22,7 +22,7 @@ without initializing or repairing them. Stop after displaying status.
 
 ## List: `$factory issues`
 
-Run `npm run factory -- issues --output ABSOLUTE_UNIQUE.html` using the chat's
+Run `pnpm run factory -- issues --output ABSOLUTE_UNIQUE.html` using the chat's
 writable visualization directory; pass supported `--state`/`--sort` options.
 Display the returned file directly with the installed issues skill's inline
 renderer (`visualize{"path":"/absolute/path.html"}`). This branch uses the
@@ -35,11 +35,11 @@ second listing implementation. Stop after displaying the result.
 Read `docs/agents/operating.md`, `issue-tracker.md`, and `verification.md` before
 coordinating work.
 
-1. Start with `npm run --silent factory -- status --json` for saved results and
+1. Start with `pnpm run --silent factory -- status --json` for saved results and
    chat references. Use those references for compact worker snapshots rather
    than rediscovering known chats. Load full action records only for changed or
    relevant outcomes; status text alone is not evidence review.
-   Run `npm run factory --` with any selected issue IDs as arguments when queue
+   Run `pnpm run factory --` with any selected issue IDs as arguments when queue
    evaluation needs report content. Save the full inspection to a temporary JSON
    file and extract the needed reports instead of printing all prompts/history.
    Use the
@@ -48,12 +48,12 @@ coordinating work.
    Inspect outside blockers, explaining any proposed scope expansion for human
    selection. Read the tracked effort plan and relevant
    reports. With a missing registry, discover existing worker chats and reconcile
-   known action IDs. Restore discovered workers with `npm run factory -- recover FILE`;
+   known action IDs. Restore discovered workers with `pnpm run factory -- recover FILE`;
    use an absolute temporary JSON file and retain original IDs, issue IDs, kind,
    merge policy, status, ready/pending chat references, and `recovery_evidence`.
    Completed code recovery must preserve `worker_revision`; if unknown, recover
    the worker as blocked until its exact result commit can be established.
-   Use `npm run factory -- init` only after confirming no workers need recovery.
+   Use `pnpm run factory -- init` only after confirming no workers need recovery.
    If the queue itself is absent, initialize it with the installed setup-local-issues
    skill and apply this repo's policy before inspection. Do not reset damaged state
    or erase uncertain reservations.
@@ -68,7 +68,7 @@ coordinating work.
 4. Save tracked effort-plan updates first. Commit only coordinator-owned documentation
    changes under the repo policy when needed for a clean launch revision; preserve
    unrelated edits and report that they block launch. Then save recommendations
-   with `npm run factory -- recommend /absolute/tmp/actions.json` when worker actions
+   with `pnpm run factory -- recommend /absolute/tmp/actions.json` when worker actions
    are appropriate. With only human input or waiting work, save no empty action
    batch and present the applicable choices instead.
    The input is an array of `{kind,title,scope,reason,verification,worker_prompt,
@@ -105,7 +105,7 @@ or merge, and does not automatically initiate another decision iteration.
 
 Read the tracker/verification policy and the installed issues skill's human-input
 instructions and protocol. Resolve the selected IDs (or the queue when omitted)
-through `npm run factory -- [ISSUE_ID ...]` without performing another decision
+through `pnpm run factory -- [ISSUE_ID ...]` without performing another decision
 iteration. Read fresh requests/checks and discuss the actionable selected input in
 this chat. Use the installed guarded helper and each projected source's owner
 handler for responses. Preserve partial answers, deferral and per-request outcomes;
@@ -138,7 +138,7 @@ For each selected action:
    skill's human-input protocol and helper for declared operation-specific gates,
    alongside semantic report review; the ledger's legacy human_checks guard alone
    does not establish readiness for new input metadata.
-2. Run `npm run factory -- reserve ACTION_ID`. It refuses stale recommendations,
+2. Run `pnpm run factory -- reserve ACTION_ID`. It refuses stale recommendations,
    dirty source, overlapping active issues, and duplicate launches. Preserve
    unrelated work rather than committing it to get past this guard.
 3. Discover the app tools, call `list_projects`, and match this repo. Call
@@ -152,7 +152,7 @@ For each selected action:
    not mutate the authoritative queue, launch other chats, auto-push, or close
    issues. Return results in the worker's final response; cross-chat reporting
    messages require their own human authorization.
-5. Run `npm run factory -- attach ACTION_ID /absolute/tmp/reference.json` with
+5. Run `pnpm run factory -- attach ACTION_ID /absolute/tmp/reference.json` with
    `{threadId,hostId}` for a ready chat or `{clientThreadId}` for pending setup.
    On uncertain launch/attach failure retain the reservation and reconcile;
    never create a replacement chat speculatively. Missing tools are a blocker,
@@ -202,7 +202,7 @@ For issue-step completion or implementation-plan findings, read
 with the same formats. Reuse current shared check receipts; never rerun a review
 just to create UI history. Worker completion alone still does not advance an issue.
 
-Use `npm run factory -- record ACTION_ID /absolute/tmp/result.json` for lifecycle
+Use `pnpm run factory -- record ACTION_ID /absolute/tmp/result.json` for lifecycle
 records: `{status,evidence}`. Completion never edits issue state. For `integrated`,
 also provide `verified_revision` equal to current HEAD and `checks_passed: true`
 only after reviewing actual integrated checks. This is an assertion requiring

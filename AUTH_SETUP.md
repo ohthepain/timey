@@ -12,7 +12,7 @@ Keep unrelated content callers on their existing authentication path until their
 
 ## Install and configure
 
-Use the Node version in `.nvmrc`, `npm ci`, then `npm exec --no -- prisma generate`.
+Use the Node version in `.nvmrc`, `pnpm install --frozen-lockfile`, then `pnpm exec prisma generate`.
 Application and auth now use Zod 4.6.7 under the explicit follow-up approval.
 The auth workspace retains the server runtime boundary. Older framework packages
 keep their own required Zod 3 dependencies; these are separate, unresolved audit findings.
@@ -50,8 +50,8 @@ verified target, connect as the auth migration owner and run:
 
 ```sh
 psql "$AUTH_DATABASE_URL" -v ON_ERROR_STOP=1 -f auth/schemas.sql
-npm run auth:migrate
-npm exec --no -- prisma migrate deploy
+pnpm run auth:migrate
+pnpm exec prisma migrate deploy
 ```
 
 `auth/schemas.sql` creates only the two auth-owned schemas under the connected owner;
@@ -61,7 +61,7 @@ checks these denials. Use separately scoped runtime credentials when deploying;
 this work provisions no real roles, databases, AWS resources or external mail.
 Never run Prisma reset or Drizzle push against an existing installation as setup.
 
-To append an auth schema change, edit `auth/schema.ts`, run `npm run auth:generate`,
+To append an auth schema change, edit `auth/schema.ts`, run `pnpm run auth:generate`,
 review the generated SQL/snapshot and check them in together. `auth/drizzle.config.ts`
 limits generation to auth and stores history in `auth_migrations.__drizzle_migrations`.
 Prisma owns its existing domain migrations and `_prisma_migrations`. Keep the auth
@@ -134,13 +134,13 @@ as permission to run domain operations that require a provisioned profile.
 Install local PostgreSQL tools (`initdb`, `pg_ctl`, `psql`, `pg_dump`), then run:
 
 ```sh
-npm run test:auth
+pnpm run test:auth
 # Same fixture plus actual rendered screen/cookie/mail checks:
-npm run test:auth -- --browser
+pnpm run test:auth -- --browser
 ```
 
 For a browser or compiled-server-function check against the same disposable data,
-run `npm run test:auth -- --pause-for-browser`. After the HTTP/provisioning assertions,
+run `pnpm run test:auth -- --pause-for-browser`. After the HTTP/provisioning assertions,
 the runner prints the loopback URL and waits for Enter before stopping its processes.
 Use the printed target; do not point writes at an existing database.
 
@@ -185,7 +185,7 @@ this candidate's prerelease approval does not waive those advisories.
 
 ## Private practice verification
 
-Run `npm run test:auth -- --practice` for this slice. It reuses fixture setup,
+Run `pnpm run test:auth -- --practice` for this slice. It reuses fixture setup,
 creates one uniquely isolated PostgreSQL database and runs `scripts/practice-browser.py`
 through the actual application's browser modules and compiled server functions.
 It skips the completed foundation/migration and auth-screen investigations.
@@ -201,7 +201,7 @@ this slice changes no dependency pins and grants no risk acceptance.
 
 ## Method/module write verification
 
-Run `npm run test:auth -- --content` for the bounded method/module slice. This
+Run `pnpm run test:auth -- --content` for the bounded method/module slice. This
 creates one unique PostgreSQL database, runs the actual app and drives
 `scripts/content-browser.py` through the Playwright CLI. It skips completed
 foundation/screens investigations. Run `--practice` separately for the private
@@ -248,7 +248,7 @@ precision limitation above are unchanged.
 
 ## Beat creation and copy verification
 
-Run `npm run test:auth -- --beats` for actual server-function and `/api/beats` PUT
+Run `pnpm run test:auth -- --beats` for actual server-function and `/api/beats` PUT
 creation requests, rendered creation/copy controls and disposable two-user PostgreSQL.
 Inspect the printed absolute directory's `beat-assertions.json`, `beat-commands.json`,
 SQL logs, application log and `output/playwright/` browser console/network results.
@@ -279,7 +279,7 @@ authorization. No existing database or volume is reset by these checks.
 
 ## Existing-beat editing verification
 
-Run `npm run test:auth -- --edit-beats`, then the separate `--beats`, `--content`
+Run `pnpm run test:auth -- --edit-beats`, then the separate `--beats`, `--content`
 and `--practice` regressions. The editing proof uses actual compiled
 `saveBeatServerFn` requests, the existing-ID `/api/beats` PUT branch and rendered
 `BeatViewer`/`BeatEditor` controls with two users in a uniquely disposable
@@ -321,7 +321,7 @@ above remain unresolved and are not waived by this proof.
 
 ## Ordinary-author deletion verification
 
-Run `npm run test:auth -- --delete-content`, then `--edit-beats`, `--beats`,
+Run `pnpm run test:auth -- --delete-content`, then `--edit-beats`, `--beats`,
 `--content` and `--practice` separately. Each uses uniquely disposable PostgreSQL,
 two browser accounts and actual compiled server functions/API requests. Retain
 `deletion-assertions.json`, `deletion-commands.json`, SQL logs, application logs and

@@ -12,7 +12,7 @@ Neither operation means user acceptance.
 
 ## Read current progress
 
-`npm run factory -- inspect` includes `progress`, keyed by full issue ID, alongside
+`pnpm run factory -- inspect` includes `progress`, keyed by full issue ID, alongside
 reports and assignments. It contains the issue coordinator's current status, plan
 approval, outstanding question and saved activity. Read it before proposing work.
 If that coordinator is active, inspect its work rather than starting a competing
@@ -31,7 +31,7 @@ ledger or unknown lock is a diagnostic, never permission to reset it.
 After reviewing the linked implementation plan and actual evidence, run:
 
 ```sh
-npm run factory -- record-checks /absolute/tmp/checks.json
+pnpm run factory -- record-checks /absolute/tmp/checks.json
 ```
 
 The JSON contains `issue_id`, `expected_state`, `revision`, `report_sha256`,
@@ -54,7 +54,7 @@ readable. Changed requirements, plan, source or evidence invalidate old results.
 After reviewing the current stage's actual exit conditions, run:
 
 ```sh
-npm run factory -- complete /absolute/tmp/completion.json
+pnpm run factory -- complete /absolute/tmp/completion.json
 ```
 
 The envelope contains `issue_id`, `expected_state`, `revision`, `report_sha256`,

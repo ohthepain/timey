@@ -1,4 +1,28 @@
 #!/bin/sh
 set -eu
 cd "$(git rev-parse --show-toplevel)"
-npm run audit:staged
+
+# GUI Git clients such as SourceTree do not source the shell profile, so nvm
+# and Homebrew are missing from PATH. Use the Node version pinned for this repo.
+if ! command -v node >/dev/null 2>&1; then
+  nvm_dir="${NVM_DIR:-$HOME/.nvm}"
+  if [ -f .nvmrc ]; then
+    version=$(tr -d '[:space:]' < .nvmrc)
+    case "$version" in
+      v*) node_bin="$nvm_dir/versions/node/$version/bin" ;;
+      *) node_bin="$nvm_dir/versions/node/v$version/bin" ;;
+    esac
+    if [ -d "$node_bin" ]; then
+      PATH="$node_bin:$PATH"
+    fi
+  fi
+  PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+  export PATH
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node was not found. Install the version in .nvmrc." >&2
+  exit 1
+fi
+
+node scripts/verify.mjs --staged --audit-only

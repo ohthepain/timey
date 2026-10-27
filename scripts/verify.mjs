@@ -83,6 +83,23 @@ async function run(name, command, commandArgs) {
   );
   recordCheck(name, [command, ...commandArgs], result);
 }
+function workspacePackages(directory) {
+  const file = join(directory, 'pnpm-workspace.yaml');
+  if (!existsSync(file)) return [];
+  const packages = [];
+  let inPackages = false;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (/^packages:\s*$/.test(line)) {
+      inPackages = true;
+      continue;
+    }
+    if (!inPackages) continue;
+    if (/^\S/.test(line)) break;
+    const match = line.match(/^\s+-\s+['"]?([^'"#\s]+)['"]?\s*$/);
+    if (match) packages.push(match[1]);
+  }
+  return packages;
+}
 function copySourceFile(name) {
   const source = join(root, name),
     destination = join(snapshot, name);
@@ -108,17 +125,23 @@ try {
       copySourceFile(name);
     }
   }
-  if (
-    readFileSync(join(snapshot, 'package-lock.json'), 'utf8') !== readFileSync(join(root, 'package-lock.json'), 'utf8')
-  ) {
+  const lockfile = 'pnpm-lock.yaml';
+  const installedLock = join(root, lockfile);
+  const snapshotLock = join(snapshot, lockfile);
+  if (!existsSync(installedLock)) {
+    throw Error(`Missing ${lockfile} in the checkout. Run pnpm install before verification.`);
+  }
+  if (!existsSync(snapshotLock)) {
+    throw Error(`${lockfile} is not staged. Stage ${lockfile} so this commit matches the installed dependencies.`);
+  }
+  if (readFileSync(snapshotLock, 'utf8') !== readFileSync(installedLock, 'utf8')) {
     throw Error(
       'Snapshot lockfile differs from installed checkout. Install matching dependencies before verification.'
     );
   }
   symlinkSync(join(root, 'node_modules'), join(snapshot, 'node_modules'), 'dir');
   // Workspace-local dependency versions must follow the exported source too.
-  const manifest = JSON.parse(readFileSync(join(snapshot, 'package.json'), 'utf8'));
-  for (const workspace of manifest.workspaces ?? []) {
+  for (const workspace of workspacePackages(snapshot)) {
     const installed = join(root, workspace, 'node_modules');
     if (existsSync(installed)) symlinkSync(installed, join(snapshot, workspace, 'node_modules'), 'dir');
   }
@@ -126,27 +149,20 @@ try {
   report.snapshot_tree = git(snapshot, 'write-tree').trim();
   report.changed_files = git(snapshot, 'diff', '--cached', '--name-only', '-z', base).split('\0').filter(Boolean);
   const bin = (name) => join(root, 'node_modules', '.bin', name);
-  const fallowArgs = [
-    '--no-install',
-    '--offline',
-    'fallow',
-    'audit',
-    '--base',
-    base,
-    '--format',
-    'json',
-  ];
+  // Tests may substitute the pinned binary without changing node_modules.
+  const fallowCommand = isolatedEnv.TIMEY_FALLOW_COMMAND || bin('fallow');
+  const fallowArgs = ['audit', '--base', base, '--format', 'json'];
   if (report.changed_files.length === 0) fallowArgs.push('--gate', 'all');
-  await run('fallow', 'npx', fallowArgs);
+  await run('fallow', fallowCommand, fallowArgs);
   if (!auditOnly) {
     const changed = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
       .split('\0')
       .filter(Boolean);
     if (changed.length) await run('format-changed', bin('prettier'), ['--check', '--ignore-unknown', ...changed]);
-    await run('factory', 'npm', ['run', 'test:factory']);
+    await run('factory', 'pnpm', ['run', 'test:factory']);
     await run('typecheck', bin('tsc'), ['--noEmit']);
     await run('tests', bin('vitest'), ['run']);
-    await run('build', 'npm', ['run', 'build']);
+    await run('build', 'pnpm', ['run', 'build']);
   }
 } catch (error) {
   failure = true;

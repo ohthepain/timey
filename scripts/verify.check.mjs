@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
-import { delimiter, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
 
 test('staged audit sees the index even when unstaged changes hide an unused file', (t) => {
@@ -32,7 +32,7 @@ function auditFixture(t, extraFiles = {}) {
       scripts: { 'audit:staged': 'node scripts/verify.mjs --staged --audit-only' },
     })
   );
-  writeFileSync(join(root, 'package-lock.json'), readFileSync('package-lock.json'));
+  writeFileSync(join(root, 'pnpm-lock.yaml'), readFileSync('pnpm-lock.yaml'));
   writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/*.mjs"]}\n');
   mkdirSync(join(root, 'scripts'));
   for (const name of ['verify.mjs', 'verify-process.mjs', 'audit-result.mjs'])
@@ -58,6 +58,18 @@ function auditSummary(root) {
     .at(-1);
   return JSON.parse(readFileSync(join(evidence, name), 'utf8'));
 }
+
+test('staged audit names an unstaged lockfile', (t) => {
+  const { root, git } = auditFixture(t);
+  git('rm', '--cached', '-q', '--', 'pnpm-lock.yaml');
+  const result = spawnSync(process.execPath, [resolve('scripts/verify.mjs'), '--staged', '--audit-only'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /pnpm-lock.yaml is not staged/);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ENOENT/);
+});
 
 test('real empty working and index snapshots record no unrelated analysis', (t) => {
   const { root, run } = auditFixture(t);
@@ -88,16 +100,15 @@ test('a compact tool report cannot hide exported untracked additions or deletion
     attribution: { gate: 'all' },
     summary: { dead_code_issues: 0, complexity_findings: 0, duplication_clone_groups: 0 },
   };
-  writeFileSync(
-    join(tools, 'npx'),
-    '#!/usr/bin/env node\nconsole.log(' + JSON.stringify(JSON.stringify(compact)) + ');\n',
-    { mode: 0o755 }
-  );
+  const fallowCommand = join(tools, 'fallow');
+  writeFileSync(fallowCommand, '#!/usr/bin/env node\nconsole.log(' + JSON.stringify(JSON.stringify(compact)) + ');\n', {
+    mode: 0o755,
+  });
   const run = (mode = '--step') =>
     spawnSync(process.execPath, [resolve('scripts/verify.mjs'), mode, '--audit-only', '--base', 'HEAD'], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...process.env, PATH: tools + delimiter + process.env.PATH },
+      env: { ...process.env, TIMEY_FALLOW_COMMAND: fallowCommand },
     });
   assert.equal(run().status, 0, 'independently empty export permits the pinned compact fixture report');
   writeFileSync(join(root, 'new.js'), 'console.log("untracked");\n');

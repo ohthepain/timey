@@ -26,9 +26,9 @@ without searching for it again. Status is a saved observation, not a live check 
 permission to launch, merge or accept an issue.
 
 ```sh
-npm run factory -- status
-npm run factory -- status --json
-npm run factory -- status ACTION_ID --details
+pnpm run factory -- status
+pnpm run factory -- status --json
+pnpm run factory -- status ACTION_ID --details
 ```
 
 Add full action IDs or unique action-ID prefixes to narrow the summary. Full saved
@@ -92,7 +92,7 @@ policy; a flag or timestamp cannot establish an answer or human evidence.
 
 ## Code and coordinator responsibilities
 
-`npm run factory --` returns a read-only inspection with `focus_issue_ids` for
+`pnpm run factory --` returns a read-only inspection with `focus_issue_ids` for
 the whole queue. Add issue IDs to narrow that focus. Dependency context stays in
 the inspection; it does not expand the assignment. The inspection also includes shared issue progress, plan approval and outstanding
 questions; consult these before proposing overlapping work. The coordinator evaluates
@@ -101,7 +101,7 @@ meaning, grouping, evidence and priorities and saves recommendations.
 For listing, run:
 
 ```sh
-npm run factory -- issues --output /absolute/writable/visualization/issues-unique.html
+pnpm run factory -- issues --output /absolute/writable/visualization/issues-unique.html
 ```
 
 This calls the installed `.agents/skills/issues/scripts/list-issues.mjs` directly
@@ -125,7 +125,7 @@ Read [operating rules](operating.md) for ownership, launch and integration polic
 ## Local UI adapter
 
 The [local factory UI](factory-ui.md) is an alternative front door for the same
-queue and ledger. `npm run factory:ui -- --project /absolute/project` serves the
+queue and ledger. `pnpm run factory:ui -- --project /absolute/project` serves the
 queue and issue screens locally. This adapter uses the installed Codex CLI
 app-server transport instead of native chat creation. Scope, ownership, human
 gates and verification policy remain enforced. The issue screen’s lifecycle

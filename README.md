@@ -3,13 +3,13 @@
 ## To build and run locally:
 
 ```sh
-npm ci
-npm run dev
+pnpm install --frozen-lockfile
+pnpm run dev
 ```
 
-Use npm and `package-lock.json`; `.nvmrc` pins the local Node runtime.
-Run `npm run hooks:install` once per checkout to enable the staged Fallow audit.
-Run `npm run verify` for isolated checks and evidence under `.issues/evidence/`.
+Use pnpm and `pnpm-lock.yaml`; `.nvmrc` pins the local Node runtime. `package.json` `packageManager` pins the pnpm version. If Corepack rejects that pnpm release with a signature error, update Corepack (`npm install -g corepack@latest`) and activate the pinned version.
+Run `pnpm run hooks:install` once per checkout to enable the staged Fallow audit.
+Run `pnpm run verify` for isolated checks and evidence under `.issues/evidence/`.
 Existing typecheck failures remain visible; see [verification](docs/agents/verification.md).
 
 Invoke `$factory` in Codex to evaluate the local queue and recommend actions.

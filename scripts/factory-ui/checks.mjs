@@ -11,8 +11,8 @@ export async function checkCandidate(root, base, folder) {
   mkdirSync(folder, { recursive: true });
   const evidence = join(root, '.issues/evidence'),
     before = new Set(existsSync(evidence) ? readdirSync(evidence) : []);
-  await runLogged(root, 'npm', ['run', 'verify', '--', '--base', base], join(folder, 'verify.log'));
-  await runLogged(root, 'npm', ['run', 'audit:step', '--', '--base', base], join(folder, 'audit-step.log'));
+  await runLogged(root, 'pnpm', ['run', 'verify', '--', '--base', base], join(folder, 'verify.log'));
+  await runLogged(root, 'pnpm', ['run', 'audit:step', '--', '--base', base], join(folder, 'audit-step.log'));
   const summaries = readdirSync(evidence)
     .filter((n) => n.endsWith('-summary.json') && !before.has(n))
     .map((n) => ({ path: join(evidence, n), value: readJson(join(evidence, n)) }));

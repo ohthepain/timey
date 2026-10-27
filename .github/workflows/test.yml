@@ -16,14 +16,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Verify snapshot
         env:
@@ -32,7 +35,7 @@ jobs:
           if [ -z "$AUDIT_BASE" ] || ! git rev-parse --verify "$AUDIT_BASE^{commit}" >/dev/null 2>&1; then
             AUDIT_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"
           fi
-          npm run verify -- --base "$AUDIT_BASE"
+          pnpm run verify -- --base "$AUDIT_BASE"
 
       - name: Preserve verification evidence
         if: always()

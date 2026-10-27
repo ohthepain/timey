@@ -1,6 +1,6 @@
 # Local factory UI
 
-Run `npm run factory:ui -- --project /absolute/path/to/timey` from a checkout
+Run `pnpm run factory:ui -- --project /absolute/path/to/timey` from a checkout
 containing this adapter. Open the printed loopback URL. The project must already
 have its local issue queue and factory registry; the UI never initializes or
 replaces either. The selected checkout is the integration target, so choose the
@@ -504,7 +504,7 @@ Workspace-write chats route execution permission requests through Codex's native
 automatic approval reviewer (`approvalsReviewer: auto_review`). The workspace
 sandbox and on-request approval policy remain enabled. The reviewer evaluates
 the actual command and the chat's authorized assignment; a command is not trusted
-merely because it runs npm, Python or Playwright. This covers eligible local
+merely because it runs pnpm, Python or Playwright. This covers eligible local
 database/browser tests that need process or shared-memory access beyond native
 file/network grants. Read-only chats explicitly retain human approval review.
 No global settings, blanket shell rules or automatic acceptance are installed.
@@ -748,7 +748,7 @@ when the issue reaches Verify; they are not re-requested against the project HEA
 
 ## Delivery finalization and runtime identity
 
-`npm run factory -- runtime http://127.0.0.1:PORT` identifies the running UI's
+`pnpm run factory -- runtime http://127.0.0.1:PORT` identifies the running UI's
 source checkout, revision, branch, authoritative issue project and live/preview
 mode. Continue using `factory issues` or the installed `issues` skill to list
 issues; runtime identity is additional context, not another issue list.
@@ -758,7 +758,7 @@ Live review receipts retain the issue project and mode alongside the candidate.
 
 Successful UI integration now finalizes eligible issues through the shared
 `scripts/factory-ui/delivery.mjs` owner. For a separate delivery checkout, invoke
-`npm run factory -- finalize-delivery /absolute/manifest.json` from the issue
+`pnpm run factory -- finalize-delivery /absolute/manifest.json` from the issue
 project using the UI source's `scripts/factory.mjs` when that project lacks it.
 This records existing integrated work; it performs no merge, deployment or acceptance.
 If a `url` is supplied, the command checks the running server's identity first.
@@ -813,7 +813,7 @@ Verification and commit operations continue to require current source checks.
 After committing and verifying a candidate, run:
 
 ```sh
-npm run factory:deploy -- --checkout /absolute/verified/checkout --project /absolute/queue/project --url http://127.0.0.1:52995 --verification /absolute/verification-summary.json --base FULL_START_COMMIT
+pnpm run factory:deploy -- --checkout /absolute/verified/checkout --project /absolute/queue/project --url http://127.0.0.1:52995 --verification /absolute/verification-summary.json --base FULL_START_COMMIT
 ```
 
 This switches the local listener to an already committed checkout; it performs no
@@ -882,7 +882,7 @@ show an error. Stale issue, route or policy versions are rejected. Other route
 choices and historical outcomes remain intact. Saving a choice starts no work and
 does not complete a stage or authorize acceptance.
 
-`npm run test:factory` includes disposable lifecycle fixtures for route persistence,
+`pnpm run test:factory` includes disposable lifecycle fixtures for route persistence,
 stale writes, protected roles, active-progress choices, disk-failure rollback and
 HTTP authorization. Browser evidence separately checks rendering and interaction;
 synthetic activity and provider failures establish no provider availability or
