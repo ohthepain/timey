@@ -1,3 +1,5 @@
+import { beginCompletionReview } from './completion-review.mjs';
+import { requestPublication } from './pr-publication.mjs';
 import { bindVerification } from './verification-handoff.mjs';
 import { assemblyRecoveryView, retryAssembly } from './assembly-recovery.mjs';
 import { retryIntegrationRecovery } from './integration-recovery.mjs';
@@ -183,6 +185,12 @@ export class FactoryUI {
   }
   retryAssembly(input) {
     return retryAssembly(this, input, (id) => continueLifecycleAfter(this, id));
+  }
+  prepareCompletion(issueId) {
+    return beginCompletionReview(this, issueId);
+  }
+  requestPublication(issueId) {
+    return requestPublication(this, issueId);
   }
   bindVerification(actionId, candidate) {
     return bindVerification(this, actionId, candidate);

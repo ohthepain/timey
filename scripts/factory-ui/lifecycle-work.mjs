@@ -63,6 +63,10 @@ function belongsToLifecycle(record, queue, run) {
   );
 }
 export async function handleLifecycleFailure(service, record, run) {
+  if (run.kind === 'completion-review') {
+    stopLifecycle(service, record, run.summary);
+    return false;
+  }
   if (run.kind === 'assembly') {
     stopLifecycle(service, record, assemblyBlockReason(run.summary));
     return false;

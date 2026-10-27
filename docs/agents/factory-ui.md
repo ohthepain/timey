@@ -1031,3 +1031,16 @@ message. The saved issue checkout and candidate are part of Continue freshness,
 so resolving its local blocker enables another attempt. This check-only handoff
 cannot authorize implementation or cross-issue work; see
 [verification handoff](issue-delivery.md#verification-handoff).
+
+### Automatic completion record
+
+The issue's pull-request card explains the next operation in ordinary language and
+uses Continue. It has no JSON upload control. After active work finishes and is
+reconciled, Progress runs a focused completion review against the existing issue
+candidate and actual evidence. It compiles and saves the internal completion
+record through the shared delivery validator, then requests only the actual
+publication approval required by the operating policy. Real scope questions are
+answered inline; ordinary unfinished technical work is shown without a fake
+question. Failed or stale proof never becomes a passing readiness assertion.
+After publication, the saved PR link and check/merge controls remain available;
+the coordinator does not return to a planning loop or claim issue acceptance.

@@ -1627,15 +1627,25 @@
       function issueDeliveryCard(issue) {
         const d = issue.issueDelivery;
         if (!d) return '';
-        const operations =
-          d.state === 'verified'
+        const active = ['running', 'answering'].includes(issue.lifecycle?.status);
+        const operations = !d.pr
+          ? []
+          : d.state === 'verified'
             ? ['refresh']
             : d.merge
               ? ['verify', 'reconcile']
-              : d.pr
-                ? ['refresh', 'merge', 'reconcile']
-                : ['open', 'reconcile'];
-        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(d.state)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><p>Candidate: ${esc(d.candidate)}<br>Tested target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} reviewed contribution(s). ${d.readiness ? 'Completion review retained.' : 'Complete the issue and attach its completion manifest before opening.'}</p>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : '<label>Completion manifest <input type="file" accept="application/json" data-delivery-manifest></label>'}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ open: 'Open completed issue PR', refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Reconcile saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>Remote merge, verified integration and your final acceptance are separate.</p></section>`;
+              : ['refresh', 'merge', 'reconcile'];
+        const status = d.pr
+          ? d.state === 'verified'
+            ? 'Merged and checked'
+            : 'Pull request is open'
+          : d.readiness
+            ? 'Ready to open the pull request'
+            : 'Preparing the pull request';
+        const next = d.readiness
+          ? 'The completed work and check results have been reviewed. Publication is the next step.'
+          : 'After verification, the coordinator will check the approved plan against the finished code and test results, then prepare the pull request. You do not need to upload anything.';
+        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(status)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><details><summary>Code version and review details</summary><p>Candidate: ${esc(d.candidate)}<br>Tested target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} reviewed contribution(s).</p></details>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : `<p>${esc(next)}</p>${!issue.lifecycle?.input ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || issue.lifecycle?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : 'Continue toward pull request'}</button>` : ''}`}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Check the saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>Opening or merging the pull request does not accept or close the issue.</p></section>`;
       }
       async function issueDeliveryAction(kind, input) {
         const preview = await request('issue-delivery-preflight', { kind, input });
@@ -2058,7 +2068,8 @@
           (stage?.role === 'ready-to-prototype' && input
             ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
             : '');
-        const canStart = !input && !issue.assemblyRecovery && stage?.role !== 'ready-to-close';
+        const canStart =
+          !input && !record?.deliveryWaiting && !issue.assemblyRecovery && stage?.role !== 'ready-to-close';
         return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
@@ -2131,6 +2142,10 @@
         const approve = `<button class="primary" ${common} data-decision="approve">${input.type === 'integration' ? 'Approve these changes and continue' : 'Approve plan and continue'}</button>`;
         if (input.type === 'plan')
           return `<p>${esc(input.plan.summary)}</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
+        if (input.type === 'publication') {
+          const approved = record.publicationApproval?.identity === input.identity;
+          return `<p>${approved ? 'Publication was approved. Retry will continue the saved operation and avoid creating a duplicate pull request.' : 'Open a pull request with these changes?'}</p><p><strong>${esc(input.repository)}</strong>: <code>${esc(input.source)}</code> → <code>${esc(input.target)}</code></p><p>This publishes only this issue branch to GitHub at commit <code>${esc(input.candidate)}</code>. It does not merge into ${esc(input.target)} or close the issue.</p><button class="primary" ${common} data-decision="${approved ? 'retry' : 'approve'}">${approved ? 'Retry opening pull request' : 'Publish branch and open pull request'}</button>`;
+        }
         if (input.type === 'integration')
           return `<p>Candidate <code>${esc(input.candidate)}</code> will be added to revision <code>${esc(input.target)}</code>. This plan requires your review before integration.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
         if (!['questions', 'worker', 'human', 'scope', 'delivery-setup'].includes(input.type)) return '';
@@ -2529,18 +2544,6 @@
               (button.onclick = () =>
                 act(() => issueDeliveryAction(button.dataset.deliveryKind, { issueId: button.dataset.deliveryIssue })))
           );
-        document.querySelectorAll('[data-delivery-manifest]').forEach(
-          (input) =>
-            (input.onchange = () =>
-              act(async () => {
-                const issue = data.issues.find((i) => location.hash.includes(i.id));
-                if (!issue || !input.files[0]) throw Error('Select this issue and a completion manifest.');
-                await issueDeliveryAction('ready', {
-                  issueId: issue.id,
-                  manifest: JSON.parse(await input.files[0].text()),
-                });
-              }))
-        );
         if ($('search')) bindQueueFilters();
       }
       async function select(actionId, kind) {

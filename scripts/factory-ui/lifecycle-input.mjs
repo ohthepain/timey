@@ -1,3 +1,4 @@
+import { publishIssue } from './pr-publication.mjs';
 import { answerDeliverySetup } from './delivery-setup.mjs';
 import { appendReview } from './review-result.mjs';
 import { readFileSync } from 'node:fs';
@@ -10,6 +11,7 @@ import { answerHumanRequirement } from './lifecycle-human.mjs';
 export async function respondLifecycle(service, record, input) {
   if (['plan', 'questions', 'scope'].includes(record.input.type)) requireAnswerIdle(service, record);
   const handlers = {
+    publication: () => publishIssue(service, record, input),
     'delivery-setup': () => answerDeliverySetup(service, record, input),
     plan: () => approveLifecyclePlan(service, record, input),
     questions: () => recordLifecycleAnswers(service, record, input),

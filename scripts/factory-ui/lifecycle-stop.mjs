@@ -1,3 +1,4 @@
+import { completionBranchBasis } from './completion-choice.mjs';
 import { verificationBranchBasis } from './verification-handoff.mjs';
 import { deliveryConfigBasis, needsDeliverySetupRecovery } from './delivery-setup.mjs';
 import { integrationReservation } from './integration-reservation.mjs';
@@ -17,6 +18,7 @@ export function lifecycleWorkBasis(queue, issue, record) {
       state: issue.state,
       continuation_protocol: 1,
       issueVerification: verificationBranchBasis(queue, issue),
+      completion: completionBranchBasis(queue, issue),
       deliveryConfig: actions.some((a) => ['implement', 'integrate'].includes(a.kind) && a.status === 'completed')
         ? deliveryConfigBasis(queue.root)
         : null,
@@ -76,7 +78,7 @@ export function canResumeLifecycle(service, record, queue, issue, runs) {
   if (record.stopBasis !== basis) return true;
   const choice = nextProgress(queue, issue, runs || service.store.list(service.codex.requests));
   return (
-    ['save-review', 'bind-verification', 'launch'].includes(choice.kind) &&
+    ['save-review', 'bind-verification', 'launch', 'completion-review', 'publish-issue-pr'].includes(choice.kind) &&
     !record.attempts.includes(basis + ':' + choice.kind)
   );
 }

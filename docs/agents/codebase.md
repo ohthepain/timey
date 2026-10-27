@@ -351,3 +351,13 @@ records it atomically. `scripts/factory-ui/verification-handoff.mjs` selects tha
 handoff, records its existing plan authority and supplies issue-branch retry inputs.
 The ordinary launch guards and worker transport still execute the saved task;
 implementation-start approval requirements remain separate.
+
+`scripts/factory-ui/completion-review.mjs` selects and runs issue completion
+reviews, compiles evidence-backed manifests and retains their normal delivery
+validation. `pr-publication.mjs` presents and records the exact publication
+approval, rejects stale results and delegates remote effects to the existing
+idempotent delivery operations. Both use lifecycle progress; the browser supplies
+no completion manifest or invented evidence hashes.
+`completion-choice.mjs` keeps read-only delivery selection and freshness inputs
+separate from review execution, avoiding a dependency from queue decisions back
+into lifecycle model calls.

@@ -105,3 +105,35 @@ its starting candidate is not a replacement comparison base. Failed launch
 eligibility is shown as the concrete blocker instead of “Review finished.” Changes
 to the saved issue checkout are relevant retry inputs; unrelated queue changes
 remain irrelevant. Binding creates no worker/chat/worktree and performs no merge.
+
+### Coordinator completion review
+
+Lifecycle Progress prepares completion records itself after the selected issue's
+work has been reconciled. The UI never asks the person to create or upload a
+manifest. A read-only coordinator review matches every nonempty approved-plan item
+to actual source and supporting project files. The server supplies candidate and
+contribution identities, hashes the reviewed files, and passes the resulting
+record through the existing `ready` operation. Missing/failed evidence, wrong
+bases or trees, unfinished actions and changed scope still block readiness.
+Passing tests alone does not establish that the approved feature is complete.
+
+The review is issue-scoped and serializes with existing result recording. A
+changed report, plan, contribution or proof cannot silently reuse its approval.
+An incomplete review asks only a specific real decision, permission or human
+observation; an ordinary technical gap is reported as unfinished work, without an
+answer box requesting a file or routine technical bookkeeping. Continuation goes
+to this completion review rather than another general planning iteration.
+
+Opening a PR publishes the issue branch. Existing lifecycle plan consent does not
+grant pushes ([operating policy](operating.md#local-ui-transport)). Once readiness
+is established, the UI shows the exact repository, issue branch, target and commit
+for publication approval. It retains that actual approval and rejects a changed
+tuple before publication. The shared durable PR intents still recover partial
+publication without duplicate PRs. After opening, the PR link and existing
+check/merge controls are shown; no automatic acceptance or closure is inferred.
+Manual CLI `ready` input remains supported for compatibility, using the same
+validation, but is not a user-facing upload workflow.
+A failed publication retry reuses the exact retained human approval when its tuple
+and evidence are unchanged; it does not ask for the same permission again. The
+provider discovery and immutable intents still determine whether an existing PR
+must be reconnected instead of created.

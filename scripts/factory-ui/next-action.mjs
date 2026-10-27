@@ -1,3 +1,4 @@
+import { completionChoice } from './completion-choice.mjs';
 import { verificationHandoff } from './verification-handoff.mjs';
 import { savedRoute } from './lifecycle.mjs';
 import { skipAllowed } from './skip-policy.mjs';
@@ -36,6 +37,8 @@ export function nextProgress(queue, issue, runs) {
     return unavailable(
       'Verification failed. Fix it separately, then retry in Verify or update from a selected branch.'
     );
+  const completion = completionChoice(queue, issue);
+  if (completion) return completion;
   const stopped = stoppedReconciliation(queue, issue, runs);
   if (stopped) return stopped;
   return stageWork(queue, issue, stage, runs);

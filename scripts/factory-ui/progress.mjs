@@ -67,6 +67,8 @@ export function triggerProgress(service, token, humanApproved) {
 }
 function dispatchProgress(service, queue, issue, choice, humanApproved) {
   const handlers = {
+    'completion-review': () => service.prepareCompletion(issue.id),
+    'publish-issue-pr': () => service.requestPublication(issue.id),
     'bind-verification': () => service.bindVerification(choice.actionId, choice.candidate),
     'skip-stage': () => beginPlannedSkip(service, queue, issue),
     commit: () => beginCommit(service, queue, issue),

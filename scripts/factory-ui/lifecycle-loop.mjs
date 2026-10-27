@@ -1,3 +1,4 @@
+import { completionChoice } from './completion-choice.mjs';
 import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs';
 import { recoverPendingIntegration } from './integration-recovery.mjs';
 import { continuationChoice, checkContinuation, resumeContinuation } from './lifecycle-continuation.mjs';
@@ -22,6 +23,15 @@ export async function runLifecycle(service, record) {
 }
 async function lifecycleTick(service, record) {
   if (pauseRequested(service, record)) return false;
+  if (record.deliveryPublished) {
+    saveLifecycle(service, record, {
+      status: 'paused',
+      deliveryWaiting: true,
+      summary:
+        'The pull request is open. Its checks and merge controls are shown below. The issue remains open for review.',
+    });
+    return false;
+  }
   const queue = readQueue(service.root),
     issue = queue.issues.find((i) => i.id === record.issueId);
   requireThat(issue, 'This issue no longer exists.');
@@ -39,6 +49,7 @@ async function lifecycleTick(service, record) {
 function finishedLifecycle(service, record, queue, issue) {
   const role = queue.lifecycle.find((s) => s.state === issue.state).role;
   if (!['ready-to-close', 'closed'].includes(role)) return false;
+  if (role !== 'closed' && completionChoice(queue, issue)) return false;
   stopAtFinal(service, record, role);
   return true;
 }
@@ -89,7 +100,7 @@ function selectLifecycleWork(service, queue, issue, record) {
   const continuation = continuationChoice(service, record, queue);
   if (continuation) return continuation;
   const handoff = nextProgress(queue, issue, service.store.list(service.codex.requests));
-  if (handoff.kind === 'bind-verification') return handoff;
+  if (['bind-verification', 'completion-review', 'publish-issue-pr'].includes(handoff.kind)) return handoff;
   if (record.replan) return { kind: 'replan', title: 'Finding the next unfinished task.' };
   const checklist = checklistView(queue, issue, service.store.list(service.codex.requests));
   if (needsPlanCheck(queue, issue, checklist))
