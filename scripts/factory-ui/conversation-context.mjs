@@ -45,7 +45,8 @@ function boundedContext(timeline) {
   return messages;
 }
 function currentWorkflow(service, id) {
-  return service.lifecycleRuns?.[id] || null;
+  const record = service.lifecycleRuns?.[id];
+  return record ? Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'scopeChecks')) : null;
 }
 
 function conversationIssues(queue, run) {

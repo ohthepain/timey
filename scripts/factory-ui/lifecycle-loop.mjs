@@ -1,3 +1,4 @@
+import { directTaskChoice, saveDirectTask } from './direct-task.mjs';
 import { completionChoice } from './completion-choice.mjs';
 import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs';
 import { recoverPendingIntegration } from './integration-recovery.mjs';
@@ -97,6 +98,8 @@ function stopAtFinal(service, record, role) {
   });
 }
 function selectLifecycleWork(service, queue, issue, record) {
+  const direct = directTaskChoice(service, record, queue, issue);
+  if (direct) return direct;
   const continuation = continuationChoice(service, record, queue);
   if (continuation) return continuation;
   const handoff = nextProgress(queue, issue, service.store.list(service.codex.requests));
@@ -154,6 +157,7 @@ function startLifecycleWork(service, record, queue, issue, choice) {
     return service.checkImplementation(issue.id, issue.state, choice.path, progressBasis(queue));
   if (choice.kind === 'integrate') return startLifecycleIntegration(service, record, choice);
   const handler = {
+    'save-direct-task': () => saveDirectTask(service, record),
     resume: () => resumeContinuation(service, record),
     replan: () => restartPlanning(service, record, queue, issue),
   }[choice.kind];

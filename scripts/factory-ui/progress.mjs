@@ -1,3 +1,4 @@
+import { combinedContext, applyCombinedCompletion } from './combined-completion.mjs';
 import { beginPlannedSkip } from './stage-skip.mjs';
 import { readWorkerReview } from './worker-review.mjs';
 import { applyLifecyclePlanning } from './lifecycle-planning.mjs';
@@ -136,6 +137,7 @@ async function freshWorkerReview(service, run, { queue, issue, action, worker, g
     reviewBasis: progressBasis(queue),
     instructions,
     approvedFiles,
+    completionContext: combinedContext(service, issue, action),
     summary: 'Reviewing the existing result and its actual evidence.',
   });
   const result = await readWorkerReview(
@@ -153,7 +155,12 @@ async function freshWorkerReview(service, run, { queue, issue, action, worker, g
     guards
   );
   if (!recordReviewResult(service, run, result)) return;
-  const latest = await inspectWorker(service.codex, service.root, { ...action, threadId: worker.threadId });
+  const latest = await inspectWorker(
+    service.codex,
+    service.root,
+    { ...action, threadId: worker.threadId },
+    service.store.runs
+  );
   requireThat(
     latest.turnId === worker.turnId,
     'The worker changed during review. Review its latest result before recording.'
@@ -185,6 +192,7 @@ async function applySavedReview(service, queue, issue, action, worker, run, prev
     workerTurnId: worker.turnId,
     instructions: previous.instructions,
     result,
+    completionContext: previous.completionContext,
     checkpoint: previous.checkpoint,
     summary: 'Saving the completed review. Its inputs and supporting files are unchanged.',
   });
@@ -195,7 +203,13 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
   let candidate = null;
   if (['implement', 'integrate'].includes(action.kind))
     candidate = await service.check(worker.cwd, action.basis.head, join(service.store.directory, run.id));
-  if (candidate) git(worker.cwd, 'merge-base', '--is-ancestor', action.basis.head, candidate.head);
+  if (candidate) {
+    git(worker.cwd, 'merge-base', '--is-ancestor', action.basis.head, candidate.head);
+    requireThat(
+      !action.worker_revision || candidate.head === action.worker_revision,
+      'The worker candidate changed after its review.'
+    );
+  }
   requireThat(
     progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The project or saved work changed during review. No reviewed result was applied; refresh and reconcile.'
@@ -207,6 +221,12 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
     savedRoute(issue, service.store.runs).map((step) => [step.state, step.source])
   );
   appendReview(service.root, issue, result, { ...run, skipSources }, evidence, target);
+  try {
+    await applyCombinedCompletion(service, run, result);
+  } catch (error) {
+    service.store.update(run, { completionError: error.message });
+    throw error;
+  }
 }
 function recordWorker(service, action, worker, result, evidence, candidate, authorization) {
   const note = `Coordinator evidence review: ${result.summary}. ${JSON.stringify(evidence)}. Remaining: ${JSON.stringify(result.remaining)}`;

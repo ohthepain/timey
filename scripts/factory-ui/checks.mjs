@@ -1,7 +1,9 @@
+import { candidateInput, retainedCandidate, retainCandidate } from './candidate-cache.mjs';
+import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { assessAudit } from '../audit-result.mjs';
-import { git, readJson, requireThat, runLogged } from './common.mjs';
+import { git, readJson, requireThat, runLogged, digest } from './common.mjs';
 
 export async function checkCandidate(root, base, folder) {
   root = realpathSync(root);
@@ -9,6 +11,11 @@ export async function checkCandidate(root, base, folder) {
     existsSync(join(root, 'node_modules')),
     'Matching dependencies are missing from the worker checkout. Install them there before continuing.'
   );
+  const treeBefore = git(root, 'rev-parse', 'HEAD^{tree}'),
+    resolvedBase = git(root, 'rev-parse', base);
+  const input = candidateInput(root, resolvedBase, digest(readFileSync(fileURLToPath(import.meta.url))));
+  const retained = retainedCandidate(root, input, (value) => validateSummary(value, resolvedBase, treeBefore));
+  if (retained) return retained;
   mkdirSync(folder, { recursive: true });
   const summaries = [];
   for (const [checkpoint, args, log] of [
@@ -28,7 +35,10 @@ export async function checkCandidate(root, base, folder) {
     'The checked checkout has uncommitted source changes.'
   );
   for (const { value } of summaries) validateSummary(value, base, tree);
-  return { head, tree, summaries: summaries.map((s) => s.path) };
+  const result = { head, tree, summaries: summaries.map((s) => s.path) };
+  if (input === candidateInput(root, resolvedBase, digest(readFileSync(fileURLToPath(import.meta.url)))))
+    retainCandidate(root, input, result);
+  return result;
 }
 export function commandSummary(root, output) {
   let path = output

@@ -2472,7 +2472,10 @@ function lifecycleTransport(root, calls, threads, proposal) {
     requests: new Map(),
     ready: async () => {},
     close() {},
-    resume: async (id) => calls.push({ resume: id }),
+    resume: async (id, cwd, mode) => {
+      threads.set(id, { ...threads.get(id), cwd, mode });
+      calls.push({ resume: id, cwd, mode });
+    },
     start: async (cwd, mode) => {
       const id = 'chat-' + threads.size;
       threads.set(id, { cwd, mode });
@@ -2481,13 +2484,23 @@ function lifecycleTransport(root, calls, threads, proposal) {
     },
     turn: async (id, cwd, prompt, schema) => {
       calls.push({ turn: id, prompt });
-      return JSON.stringify(lifecycleResponse(root, schema, proposal));
+      const result = JSON.stringify(lifecycleResponse(root, schema, proposal));
+      const thread = threads.get(id);
+      thread.turns ||= [];
+      thread.turns.push({
+        id: 'turn-' + thread.turns.length,
+        status: 'completed',
+        items: [{ type: 'agentMessage', text: result }],
+      });
+      return result;
     },
     call: async (method, params) => {
-      if (method === 'thread/read') return { thread: { id: params.threadId, cwd: threads.get(params.threadId).cwd } };
+      if (method === 'thread/read')
+        return { thread: { id: params.threadId, cwd: threads.get(params.threadId).cwd, status: { type: 'idle' } } };
       assert.equal(method, 'thread/turns/list');
+      const turns = threads.get(params.threadId).turns;
       return {
-        data: [
+        data: turns?.slice().reverse().slice(0, params.limit) || [
           {
             id: 'finished-turn',
             status: 'completed',
@@ -2570,7 +2583,8 @@ test('one approved lifecycle run saves, launches, reviews and advances to explic
   assert.equal(record.status, 'finished', record.summary);
   assert.equal(service.snapshot().issues[0].state, 'final');
   assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
-  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 0);
+  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
   assert.match(readFileSync(join(service.root, '.issues/20261022-one.md'), 'utf8'), /Implementation plan approved/);
   assert.equal(record.input, null);
 });
@@ -2641,7 +2655,9 @@ test('approved continuation resumes the same worker before reviewing its new res
   assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
   assert.equal(worker.threadId, 'existing-worker');
   assert.equal(service.store.runs.find((r) => r.id === worker.id).authorization.kind, 'approved-plan');
-  const work = calls.findIndex((c) => c.turn === 'existing-worker');
+  const work = calls.findIndex(
+    (c) => c.turn === 'existing-worker' && c.prompt?.startsWith('Continue only the original saved assignment.')
+  );
   const review = calls.findIndex((c) => c.prompt?.includes('Perform one coordinator evidence review'));
   assert.ok(work >= 0 && review > work);
   assert.match(calls[work].prompt, /bounded correction already approved/);
@@ -3721,7 +3737,9 @@ test('approved lifecycle actions retain plan authorization without claiming a ne
   assert.equal(action.authorization.kind, 'approved-plan');
   assert.equal(action.operations[0].authorization.plan_sha256, worker.authorization.plan_sha256);
   assert.equal(worker.authorization.plan_sha256, service.lifecycleRuns['20261022-one'].approval.sha256);
-  const prompt = calls.find((c) => c.turn === worker.threadId).prompt;
+  const prompt = calls.find(
+    (c) => c.turn === worker.threadId && c.prompt?.includes('You are the worker for saved factory action')
+  ).prompt;
   assert.match(prompt, /under the approved plan/);
   assert.doesNotMatch(prompt, /human explicitly chose Start worker/i);
   const note = service.snapshot().issues[0].content;
@@ -4210,4 +4228,30 @@ test('a queue snapshot projects run history once while dispatch still reads curr
   assert.equal(calls, 1, 'a blocked issue must reuse the snapshot history');
   assert.equal(canResumeLifecycle(service, record, queue, issue), false);
   assert.equal(calls, 2, 'dispatch without a snapshot must still read current runs');
+});
+
+test('a simple approved lifecycle uses its clarification task without another planning conversation', async (t) => {
+  const { service, calls, api, proposal } = lifecycleFixture(t);
+  const turn = service.codex.turn;
+  service.codex.turn = async (...args) => {
+    const result = JSON.parse(await turn(...args));
+    if (args[3].properties.clarification_complete) {
+      result.direct_task = proposal;
+      result.direct_routes = [];
+    }
+    return JSON.stringify(result);
+  };
+  startIssueLifecycle(service);
+  const waiting = await finishLifecycle(service);
+  assert.equal(waiting.status, 'waiting');
+  assert.equal(api.inspect().registry.actions.length, 0);
+  await service.answerLifecycle({ issueId: waiting.issueId, updated: waiting.updated, decision: 'approve' });
+  const done = await finishLifecycle(service);
+  assert.equal(done.status, 'finished', done.summary);
+  assert.equal(api.inspect().registry.actions.length, 1);
+  assert.equal(
+    calls.some((c) => c.prompt?.includes('Perform one read-only factory queue review')),
+    false
+  );
+  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 0);
 });

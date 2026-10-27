@@ -369,3 +369,14 @@ verification-only starts and approved-plan repair starts against the issue branc
 Stream fragments append immediately to the existing per-run log; the full run
 history is checkpointed at most once per second during streaming and immediately
 for state transitions. Reload replays the uncheckpointed complete log records.
+
+[Issue execution](issue-execution.md) owns the short-path and reuse contracts.
+`issue-work-chat.mjs` selects the primary conversation without replacing uncertain
+work; `direct-task.mjs` saves approved assessment tasks through existing guards.
+`scope-coverage.mjs` retains input-specific scope decisions; `candidate-cache.mjs`
+validates immutable automated evidence before reuse. `combined-completion.mjs`
+applies final independent review findings through `completion-contract.mjs` and
+the original delivery validator.
+
+`worker-turn.mjs` pins assignment results and selects them from a shared chat;
+`worker-history.mjs` validates their original checkout and recorded candidate.

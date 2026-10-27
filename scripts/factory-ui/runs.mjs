@@ -75,6 +75,9 @@ export class RunStore {
       'item/autoApprovalReview/completed',
     ];
     if (!events.includes(message.method)) return;
+    if (message.method === 'turn/started') run.completedTurnId = null;
+    if (message.method === 'turn/completed' && message.params?.turn?.status === 'completed')
+      run.completedTurnId = message.params.turn.id;
     const item = { at: new Date().toISOString(), ...redactValue(message) };
     const path = join(this.directory, `${run.id}.jsonl`);
     if (!Number.isSafeInteger(run.streamOffset)) run.streamOffset = existsSync(path) ? statSync(path).size : 0;

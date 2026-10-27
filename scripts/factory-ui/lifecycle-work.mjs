@@ -63,7 +63,7 @@ function belongsToLifecycle(record, queue, run) {
   );
 }
 export async function handleLifecycleFailure(service, record, run) {
-  if (run.kind === 'completion-review') {
+  if (run.kind === 'completion-review' || run.completionError) {
     stopLifecycle(service, record, run.summary);
     return false;
   }

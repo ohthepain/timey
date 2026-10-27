@@ -1,3 +1,5 @@
+import { pinWorkerTurn } from './worker-turn.mjs';
+import { issueWorkChat } from './issue-work-chat.mjs';
 import { beginCompletionReview } from './completion-review.mjs';
 import { requestPublication } from './pr-publication.mjs';
 import { bindVerification } from './verification-handoff.mjs';
@@ -281,7 +283,10 @@ export class FactoryUI {
       checkout,
       action.start?.revision || action.basis.head
     );
-    const threadId = await startChat(this, run, checkout);
+    const threadId =
+      action.issues.length === 1
+        ? await issueWorkChat(this, run, action.issues[0], checkout)
+        : await startChat(this, run, checkout);
     this.store.update(run, { threadId });
     this.api.attach(action.id, { threadId, hostId: 'codex-cli' });
     await this.runTurn(
@@ -335,6 +340,7 @@ export class FactoryUI {
       conversationPrompt(this, run, prompt),
       workerResultSchema
     );
+    await pinWorkerTurn(this, run, text);
     let result = JSON.parse(text);
     requireThat(
       ['completed', 'blocked', 'failed'].includes(result.outcome) && typeof result.summary === 'string',
@@ -486,7 +492,9 @@ export class FactoryUI {
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
     this.store.update(run, evaluationMetadata(queue, selected, basis));
     this.perform(run, async () => {
-      const threadId = await startChat(this, run, this.root, 'read-only');
+      const threadId = issueId
+        ? await issueWorkChat(this, run, issueId, this.root, 'read-only')
+        : await startChat(this, run, this.root, 'read-only');
       this.store.update(run, { threadId, status: 'running' });
       const result = JSON.parse(
         await this.codex.turn(

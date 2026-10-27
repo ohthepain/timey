@@ -1058,3 +1058,7 @@ scope and human guards without another queue evaluation. The issue shows its
 concrete task title. Readiness and publication remain separate from acceptance.
 Live output stays durable in the per-run log while history snapshots are batched;
 restarting replays uncheckpointed output without duplicating it.
+
+[Issue execution](issue-execution.md) defines the primary chat, approved short
+path, unchanged-check reuse and combined final review. Independent reviews and
+operation-specific approvals remain separate from work chat reuse.
