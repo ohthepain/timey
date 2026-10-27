@@ -361,3 +361,11 @@ no completion manifest or invented evidence hashes.
 `completion-choice.mjs` keeps read-only delivery selection and freshness inputs
 separate from review execution, avoiding a dependency from queue decisions back
 into lifecycle model calls.
+
+`factory-ui/completion-repair.mjs` turns a completion finding into one durable,
+plan-linked repair recommendation. `issue-verification-start.mjs` validates both
+verification-only starts and approved-plan repair starts against the issue branch.
+`factory-ui/run-stream.mjs` restores output after the last history checkpoint.
+Stream fragments append immediately to the existing per-run log; the full run
+history is checkpointed at most once per second during streaming and immediately
+for state transitions. Reload replays the uncheckpointed complete log records.

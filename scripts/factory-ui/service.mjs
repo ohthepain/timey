@@ -547,6 +547,7 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.store.flush();
     this.discussions.close();
     this.issueChats.close();
     this.codex.close();

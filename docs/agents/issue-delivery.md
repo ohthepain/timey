@@ -55,7 +55,7 @@ New direct target delivery assertions are rejected. Read historical records with
 their original limitations; do not manufacture PRs for older results. An assembled
 implementation dependency requires `start: {issueId,revision,approval:{path,sha256}}`
 and an actual human receipt with operation `start-assembled-work` for that exact
-issue/revision. Workers start from that recorded revision; their original base is
+issue/revision, unless the narrowly scoped approved-plan repair path below applies. Workers start from that recorded revision; their original base is
 never replaced by a later target. Cross-issue consumption is blocked. Grouped
 candidates require separately authorized and reviewed allocations before assembly;
 copying the whole candidate into multiple issue PRs is rejected.
@@ -95,8 +95,9 @@ exact retained issue candidate under its current approved plan. The ledger owns
 this metadata update and revalidates plan approval, contribution receipts, clean
 branch identity, dependency membership and ancestry before reservation. It records
 a `verification-only` purpose with the actual plan receipt; it never fabricates a
-human `start-assembled-work` approval. Implementation still requires that separate
-exact human approval. A verification task cannot borrow this handoff to write or
+human `start-assembled-work` approval. Other implementation requires that separate
+exact human approval; the approved-plan completion-repair path below instead
+uses its actual existing plan receipt and exact validated candidate. A verification task cannot borrow this handoff to write or
 deliver code, consume another issue's assembly, or silently use a newer candidate.
 
 Lifecycle Continue performs this handoff before any replan, then starts the saved
@@ -143,3 +144,13 @@ A failed publication retry reuses the exact retained human approval when its tup
 and evidence are unchanged; it does not ask for the same permission again. The
 provider discovery and immutable intents still determine whether an existing PR
 must be reconnected instead of created.
+
+Completion findings can include one bounded repair linked to numbered approved
+plan items. The coordinator saves it directly as an implementation recommendation
+with the completion-review ID, exact issue candidate and contribution dependencies.
+The start is backed by the existing human plan receipt, never a fabricated
+approval of a new revision. Launch rechecks that branch, plan, contribution proofs
+and integration policy. A human-first contribution keeps human-first policy.
+Normal scope and human guards still run before dispatch. Passing completion and
+an unanswered decision cannot also dispatch a repair. Older unstructured findings
+retain the single bounded recovery path; new reviews return the task themselves.

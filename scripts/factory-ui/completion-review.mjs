@@ -1,3 +1,4 @@
+import { repairSchema, saveCompletionRepair } from './completion-repair.mjs';
 import { completionChoice } from './completion-choice.mjs';
 import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
 import { realpathSync, statSync } from 'node:fs';
@@ -13,6 +14,7 @@ const completionReviewSchema = {
   additionalProperties: false,
   properties: {
     complete: { type: 'boolean' },
+    repair: repairSchema,
     summary: { type: 'string', maxLength: 1500 },
     question: { type: 'string', maxLength: 1000 },
     criteria: {
@@ -35,7 +37,7 @@ const completionReviewSchema = {
       },
     },
   },
-  required: ['complete', 'summary', 'question', 'criteria', 'verification', 'additionalVerification'],
+  required: ['complete', 'repair', 'summary', 'question', 'criteria', 'verification', 'additionalVerification'],
 };
 function identity(context, delivery) {
   return digest(
@@ -80,7 +82,8 @@ export function beginCompletionReview(service, issueId) {
         identity(current, saved) === original,
         'The issue or its saved results changed during completion review. Continue to review the current result.'
       );
-      if (!review.result.complete) return incompleteReview(service, record, run, review.result);
+      if (!review.result.complete) return incompleteReview(service, record, run, review.result, current, saved);
+      requireThat(!review.result.repair, 'A completion review cannot pass with unfinished repair work.');
       requireThat(!review.result.question.trim(), 'A completion review cannot pass while a decision is unanswered.');
       const manifest = compileCompletion(service.root, saved, context.plan, review);
       const result = await service.deliveries.operate('ready', { issueId, manifest });
@@ -97,7 +100,7 @@ export function beginCompletionReview(service, issueId) {
   return { runId: run.id };
 }
 function completionPrompt(context, delivery) {
-  return `Keep explanations short and return evidence paths, never file contents. Prepare the completion record for ONLY ${context.issue.id}. This is a semantic review of finished work, not a planning iteration or permission to implement. Read the exact approved plan, actual source at ${delivery.checkout}, retained contribution receipts and RAW check evidence. Use the issue conversation for decisions and actual evidence references. Do not rerun assignments or tests, edit source, launch workers, merge, publish, accept or close. Return complete:true ONLY if the entire pre-publication implementation requested by the approved plan is actually done. Passing tests alone does not establish that. Preserve real missing work and human obligations; never fabricate observations or treat fixtures as live-provider proof. Do not ask the person to write JSON, collect internal logs, run technical checks or 'ask the coordinator'. If an actual scope, permission or human decision is missing, ask that one concrete question in plain language; otherwise leave question empty and explain the specific unfinished task in summary. Each nonempty approved-plan line needs an exact description and supporting EXISTING absolute project-file paths in criteria. Return full, step and staged summary paths covering the exact tree and original base in verification; differing contribution bases require separate additionalVerification entries. Failed, missing, altered, wrong-tree or wrong-base evidence must not pass. Keep final judgment and acceptance separate from technical readiness. Approved plan: ${JSON.stringify(context.plan)}. Issue: ${JSON.stringify(context.issue)}. Delivery: ${JSON.stringify(delivery)}. Selected actions: ${JSON.stringify(context.queue.actions.filter((a) => a.issues.includes(context.issue.id)))}.`;
+  return `Keep explanations short and return evidence paths, never file contents. Prepare the completion record for ONLY ${context.issue.id}. This is a semantic review of finished work, not a planning iteration or permission to implement. Read the exact approved plan, actual source at ${delivery.checkout}, retained contribution receipts and RAW check evidence. Use the issue conversation for decisions and actual evidence references. Do not rerun assignments or tests, edit source, launch workers, merge, publish, accept or close. Return complete:true ONLY if the entire pre-publication implementation requested by the approved plan is actually done. Passing tests alone does not establish that. Preserve real missing work and human obligations; never fabricate observations or treat fixtures as live-provider proof. Do not ask the person to write JSON, collect internal logs, run technical checks or 'ask the coordinator'. If an actual scope, permission or human decision is missing, ask that one concrete question in plain language; otherwise leave question empty and return repair with one concrete bounded implementation task, the one-based approved plan item numbers it finishes, instructions, rationale and expected verification. This task is saved directly by the coordinator and launched only through existing plan-scope and human guards. Return repair:null when complete or when an actual decision is needed. Diagnose real provider capability early; preserve its restrictions and never substitute fixture success for a working real adapter. Each nonempty approved-plan line needs an exact description and supporting EXISTING absolute project-file paths in criteria. Return full, step and staged summary paths covering the exact tree and original base in verification; differing contribution bases require separate additionalVerification entries. Failed, missing, altered, wrong-tree or wrong-base evidence must not pass. Keep final judgment and acceptance separate from technical readiness. Approved plan: ${JSON.stringify(context.plan)}. Issue: ${JSON.stringify(context.issue)}. Delivery: ${JSON.stringify(delivery)}. Selected actions: ${JSON.stringify(context.queue.actions.filter((a) => a.issues.includes(context.issue.id)))}.`;
 }
 function projectProof(root, path) {
   requireThat(typeof path === 'string' && isAbsolute(path), 'Completion evidence must name an existing project file.');
@@ -135,11 +138,13 @@ function compileCompletion(root, delivery, plan, review) {
     additionalVerification,
   };
 }
-function incompleteReview(service, record, run, result) {
+function incompleteReview(service, record, run, result, context, delivery) {
   const question = result.question.trim();
+  requireThat(!question || !result.repair, 'Answer the decision before saving dependent repair work.');
   requireThat(!question || question.endsWith('?'), 'The completion review must ask a real, specific question.');
   service.store.update(run, { status: 'completed', result, summary: result.summary });
   if (question)
     saveLifecycle(service, record, { status: 'waiting', summary: result.summary, input: { type: 'scope', question } });
+  else if (result.repair) saveCompletionRepair(service, record, run, result, context, delivery);
   else if (!recoverReviewFailure(service, record, run)) stopLifecycle(service, record, result.summary);
 }

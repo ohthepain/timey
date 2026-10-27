@@ -90,7 +90,10 @@ export function describeLaunch(queue, action) {
     )
   )
     return 'Issue already claimed by another saved action.';
-  if (action.dependencies.some((id) => queue.actions.find((a) => a.id === id)?.status === 'assembled')) {
+  if (
+    action.start?.purpose === 'approved-plan-repair' ||
+    action.dependencies.some((id) => queue.actions.find((a) => a.id === id)?.status === 'assembled')
+  ) {
     try {
       validateAssembledStart(queue.root, action, { actions: queue.actions });
     } catch (error) {

@@ -1051,3 +1051,10 @@ saved completion stops from older servers. Recovery attempts are retained per
 relevant input, and a repeated unchanged failure stops with its actual reason.
 Repair recommendations take precedence over the Commit action; completed work
 and merge receipts remain intact. Genuine scope questions still require an answer.
+
+A completion review that finds approved implementation still missing returns a
+bounded repair task directly. Progress saves and dispatches it through the normal
+scope and human guards without another queue evaluation. The issue shows its
+concrete task title. Readiness and publication remain separate from acceptance.
+Live output stays durable in the per-run log while history snapshots are batched;
+restarting replays uncheckpointed output without duplicating it.

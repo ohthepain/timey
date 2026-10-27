@@ -411,7 +411,10 @@ export function factory(project) {
           'Commit or isolate source changes before starting a worktree from HEAD.'
         );
         validateDependencies(action, data, find);
-        if (action.dependencies.some((id) => find(data, id).status === 'assembled'))
+        if (
+          action.start?.purpose === 'approved-plan-repair' ||
+          action.dependencies.some((id) => find(data, id).status === 'assembled')
+        )
           validateAssembledStart(root, action, data);
         const conflict = data.actions.find((entry) => claimsIssue(entry, action));
         assert(!conflict, `Issue already claimed by action ${conflict?.id}.`);

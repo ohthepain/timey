@@ -41,6 +41,7 @@ async function fixture(t, response) {
   service.lifecycleRuns[f.issueId] = record;
   const result = {
     complete: true,
+    repair: null,
     summary: 'The approved work is complete.',
     question: '',
     criteria: f.content.split('\n').map((description) => ({ description, evidence: [f.review.path] })),
@@ -320,4 +321,110 @@ test('repair work at Commit is saved and selected before the commit action', asy
   const choice = nextProgress(queue, issue, []);
   assert.equal(choice.kind, 'launch');
   assert.equal(choice.actionId, 'repair');
+});
+
+test('a completion review saves its bounded repair directly without another evaluation', async (t) => {
+  const f = await fixture(t, (r) => ({
+    ...r,
+    complete: false,
+    summary: 'Finish provider checks.',
+    question: '',
+    repair: {
+      title: 'Finish provider checks',
+      scope: 'Read real provider check status',
+      reason: 'Plan item remains unfinished',
+      verification: 'Exercise the real provider contract and preserve failed checks',
+      instruction: 'Finish only the missing check-status behavior.',
+      planItems: [1],
+    },
+  }));
+  const { runId } = f.service.prepareCompletion(f.issueId);
+  await settle(f.service, runId);
+  const queue = readQueue(f.root),
+    action = queue.actions.find((a) => a.completionReview === runId);
+  assert.ok(action, 'The finding must become a saved task without another review');
+  assert.equal(action.status, 'recommended');
+  assert.equal(action.start.revision, f.delivery.inspect(f.issueId).candidate);
+  assert.equal(action.start.purpose, 'approved-plan-repair');
+  assert.equal(f.record.replan, false);
+  assert.equal(
+    f.service.store.runs.some((r) => r.kind === 'evaluation'),
+    false
+  );
+  assert.equal(nextProgress(queue, queue.issues[0], []).kind, 'launch');
+});
+
+test('repair tasks preserve scope and cannot launch against changed candidates', async (t) => {
+  const f = await fixture(t, (r) => ({
+    ...r,
+    complete: false,
+    summary: 'A bounded repair is needed.',
+    question: '',
+    repair: {
+      title: 'Repair',
+      scope: 'Only missing behavior',
+      reason: 'Approved work unfinished',
+      verification: 'Relevant tests',
+      instruction: 'Implement missing behavior',
+      planItems: [1],
+    },
+  }));
+  const { runId } = f.service.prepareCompletion(f.issueId);
+  await settle(f.service, runId);
+  const queue = readQueue(f.root),
+    action = queue.actions.find((a) => a.completionReview === runId);
+  const { validateAssembledStart } = await import('./issue-delivery-records.mjs');
+  assert.equal(validateAssembledStart(f.root, action, { actions: queue.actions }), action.start.revision);
+  assert.throws(
+    () => validateAssembledStart(f.root, { ...action, issues: ['another'] }, { actions: queue.actions }),
+    /Only verification|another issue|older plan|changed/
+  );
+  const { DeliveryStore } = await import('./issue-delivery-store.mjs'),
+    store = new DeliveryStore(f.root, f.issueId);
+  store.save({ ...store.read(), candidate: 'a'.repeat(40) });
+  assert.throws(() => validateAssembledStart(f.root, action, { actions: queue.actions }), /branch changed/);
+  assert.equal(f.provider.state().creates, 0);
+});
+
+test('stream fragments stay durable without rewriting the complete history for every fragment', async (t) => {
+  const { RunStore } = await import('./factory-ui/runs.mjs');
+  const f = await fixture(t),
+    store = new RunStore(f.root);
+  const run = store.add({ id: 'stream' }, 'worker', f.base);
+  store.update(run, { threadId: 'stream-chat', status: 'running' });
+  const saved = readFileSync(store.path, 'utf8');
+  store.event({
+    method: 'item/agentMessage/delta',
+    params: { threadId: 'stream-chat', itemId: 'message', delta: 'New output' },
+  });
+  assert.equal(readFileSync(store.path, 'utf8'), saved, 'Delta must not synchronously rewrite all historical runs');
+  const reloaded = new RunStore(f.root),
+    recovered = reloaded.runs.find((r) => r.id === run.id);
+  assert.match(
+    JSON.stringify(recovered.output),
+    /New output/,
+    'Unflushed output must survive a restart from its durable stream log'
+  );
+  store.save();
+  const again = new RunStore(f.root).runs.find((r) => r.id === run.id);
+  assert.equal(again.output[0].text, 'New output', 'Recovery must not duplicate output');
+});
+
+test('a real question remains answerable when its review also describes dependent work', async (t) => {
+  const f = await fixture(t);
+  const { applyLifecyclePlanning } = await import('./factory-ui/lifecycle-planning.mjs');
+  const result = {
+    next_action: 'question',
+    summary: 'Provider configuration needs a decision.',
+    human_question: {
+      question: 'May we enable the merge queue?',
+      why: 'The real provider requires configuration.',
+      expected: 'Approve or decline the configuration change.',
+    },
+    recommendations: [{ kind: 'implement', issues: [f.issueId], scope: 'Dependent work' }],
+  };
+  assert.equal(applyLifecyclePlanning(f.service, readQueue(f.root).issues[0], result), true);
+  assert.equal(f.record.status, 'waiting');
+  assert.match(f.record.input.questions[0].question, /merge queue/);
+  assert.equal(readQueue(f.root).actions.filter((a) => a.status === 'recommended').length, 0);
 });
