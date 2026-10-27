@@ -18,9 +18,8 @@ launches workers or starts another iteration. See [operating rules](docs/agents/
 Use `$factory integrate ACTION_ID` to explicitly finalize a completed worker's
 code under its saved merge policy; this is separate from queue evaluation.
 
-The [authentication foundation setup](AUTH_SETUP.md) documents separate auth/domain
-ownership, migrations and the disposable PostgreSQL/HTTP proof. Existing application
-callers still use Keycloak pending the coordinated auth/admin cutover.
+The [authentication foundation setup](AUTH_SETUP.md) documents Better Auth,
+separate auth/domain ownership, migrations and the disposable PostgreSQL/HTTP proof.
 
 ## Issues
 

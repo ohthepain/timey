@@ -21,18 +21,6 @@
         "type": "fileExists",
         "pattern": "scripts/**/*.mjs"
       }
-    },
-    {
-      "name": "keycloak-theme",
-      "entryPoints": [
-        "keycloak-theme/login/resources/js/login.js",
-        "keycloak-theme/login/resources/css/login.css"
-      ],
-      "entryPointRole": "support",
-      "detection": {
-        "type": "fileExists",
-        "pattern": "keycloak-theme/login/resources/**"
-      }
     }
   ]
 }

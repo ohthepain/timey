@@ -110,10 +110,10 @@ rendered controls, browser console/network failures, and navigation. An HTTP 200
 or a screenshot alone does not establish hydration or interaction behavior.
 
 Database-backed/authenticated paths require configured local services. Compose
-defines Postgres and Keycloak; inspect readiness with `docker compose ps` and logs.
-The Prisma datasource needs `DATABASE_URL`; Compose uses `DB_USER`/`DB_PASSWORD`.
-Browser identity settings are `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, and
-`VITE_KEYCLOAK_CLIENT_ID`. Use supplied local configuration, never print secrets or
+defines Postgres; inspect readiness with `docker compose ps` and logs. The Prisma
+datasource needs `DATABASE_URL`; Better Auth needs `AUTH_DATABASE_URL`, `BETTER_AUTH_URL`,
+and `BETTER_AUTH_SECRET` (see [AUTH_SETUP.md](../../AUTH_SETUP.md)). Compose uses
+`DB_USER`/`DB_PASSWORD`. Use supplied local configuration, never print secrets or
 reset persistent volumes as a recovery step. Document unavailable credentials or
 services instead of substituting mock-backed evidence for real integration.
 
@@ -128,7 +128,7 @@ proof; see [setup and coverage](../../AUTH_SETUP.md). This creates its own clust
 owners and databases under a unique temporary evidence directory and retains
 commands, assertions and dumps. Existing Compose databases are not targets.
 Database-session acceptance and profile recovery are exercised independently of
-the still-pending application authorization/admin cutover.
+designated-admin authorization and other pending cutover work.
 
 Run `npm run test:auth -- --browser` for the separate app-native `/auth/` screen
 slice against that uniquely isolated PostgreSQL cluster and local SMTP capture.
@@ -138,7 +138,7 @@ old-password rejection and all-session revocation. It retains screenshots,
 console/network output, assertions and command exits under the fixture directory.
 See [setup](../../AUTH_SETUP.md) for browser prerequisites and partial-rollout
 limits. Screen success does not establish domain authorization, coordinated admin
-work, deletion behavior, Keycloak retirement, human UX approval or live SES delivery.
+work, deletion behavior, human UX approval or live SES delivery.
 
 The verifier links each declared workspace's installed dependency directory into
 the exported snapshot, preserving workspace dependency resolution without changing source
@@ -182,11 +182,10 @@ screen investigations. Inspect `practice-assertions.json`, `practice-commands.js
 application logs and `output/playwright/` in the printed absolute directory.
 Rejections must correspond to real server requests; JavaScript/import failures
 are test failures, not proof of authentication rejection. Retain SQL before/after
-snapshots for rollback and unrelated-history checks. Report expected rejection
-statuses, legacy Keycloak/MIDI diagnostics and unexpected errors separately.
-See [partial cutover boundaries](../../AUTH_SETUP.md#private-practice-verification).
-Content authorization, designated Admin behavior, content deletion, Keycloak
-retirement, hardware timing and final human judgment remain separate obligations.
+snapshots for rollback and unrelated-history checks. Report expected rejection statuses, unrelated MIDI diagnostics and unexpected errors
+separately. See [partial cutover boundaries](../../AUTH_SETUP.md#private-practice-verification).
+Content authorization, designated Admin behavior, content deletion, hardware timing
+and final human judgment remain separate obligations.
 
 ## Method/module write slice
 

@@ -12,8 +12,6 @@
     "format-check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "setup-keycloak": "sh ./scripts/setup-keycloak-realm.sh",
-    "export:realm": "sh ./scripts/export_realm.sh ./keycloak-theme/realm-export.json",
     "typecheck": "tsc --noEmit",
     "factory": "node scripts/factory.mjs",
     "test:factory": "node --test scripts/factory-server-control.check.mjs scripts/factory-lifecycle.check.mjs scripts/factory.check.mjs scripts/factory-interface.check.mjs scripts/factory-status.check.mjs scripts/verify.check.mjs scripts/audit-result.check.mjs scripts/factory-ui.check.mjs scripts/factory-discussion.check.mjs scripts/factory-delivery.check.mjs scripts/factory-workflow.check.mjs scripts/factory-deploy.check.mjs scripts/factory-refresh.check.mjs scripts/factory-chat.check.mjs",
@@ -31,13 +29,12 @@
     "test:chat": "node --test scripts/factory-chat.check.mjs"
   },
   "dependencies": {
-    "@prisma/client": "6.19.3",
+    "@prisma/client": "^6.11.1",
     "@tanstack/react-router": "1.114.29",
     "@tanstack/react-router-devtools": "1.114.29",
     "@tanstack/react-start": "1.114.29",
     "drizzle-orm": "1.0.0-rc.5",
     "immer": "10.1.1",
-    "keycloak-js": "26.2.0",
     "pg": "8.16.3",
     "react": "19.0.0",
     "react-dom": "19.0.0",

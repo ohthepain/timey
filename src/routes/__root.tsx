@@ -7,7 +7,6 @@ import { seo } from '~/utils/seo';
 import { useState } from 'react';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
-import { KeycloakProvider } from '~/contexts/KeycloakContext';
 import { AppHeader } from '~/components/AppHeader';
 import { SettingsModal } from '~/components/SettingsModal';
 import { useRestoreLastUrl } from '~/hooks/useRestoreLastUrl';
@@ -47,30 +46,28 @@ function RootComponent() {
   const [showMetronomeSettings, setShowMetronomeSettings] = useState(false);
 
   return (
-    <KeycloakProvider>
-      <html>
-        <head>
-          <HeadContent />
-        </head>
-        <body>
-          <AppHeader onOpenMetronome={() => setShowMetronomeSettings(true)} onOpenMidi={() => setShowMidiPopup(true)} />
-          <hr />
-          <SettingsModal
-            open={showMetronomeSettings}
-            onClose={() => setShowMetronomeSettings(false)}
-            overlayClassName="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
-            panelClassName="bg-white p-4 rounded shadow-lg relative"
-          >
-            <MetronomeMidiSettings />
-          </SettingsModal>
-          <SettingsModal open={showMidiPopup} onClose={() => setShowMidiPopup(false)} title="MIDI Settings">
-            <MidiSelector />
-          </SettingsModal>
-          <Outlet />
-          <TanStackRouterDevtools position="bottom-right" />
-          <Scripts />
-        </body>
-      </html>
-    </KeycloakProvider>
+    <html>
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        <AppHeader onOpenMetronome={() => setShowMetronomeSettings(true)} onOpenMidi={() => setShowMidiPopup(true)} />
+        <hr />
+        <SettingsModal
+          open={showMetronomeSettings}
+          onClose={() => setShowMetronomeSettings(false)}
+          overlayClassName="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+          panelClassName="bg-white p-4 rounded shadow-lg relative"
+        >
+          <MetronomeMidiSettings />
+        </SettingsModal>
+        <SettingsModal open={showMidiPopup} onClose={() => setShowMidiPopup(false)} title="MIDI Settings">
+          <MidiSelector />
+        </SettingsModal>
+        <Outlet />
+        <TanStackRouterDevtools position="bottom-right" />
+        <Scripts />
+      </body>
+    </html>
   );
 }

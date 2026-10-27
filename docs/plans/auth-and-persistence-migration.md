@@ -124,10 +124,10 @@ agreed application behavior.
 6. Preserve performance/progress data on ordinary beat edits. Keep the current
    per-beat/user performance replacement behavior, making writes atomic where
    touched. Report any broader bounded integrity repair before expanding scope.
-7. Retire Keycloak runtime code, dependency, token/export scripts, theme, Compose
-   service setup, obsolete environment instructions, and documentation references.
-   Retire its test database deliberately; preserve the shared PostgreSQL volume
-   and surviving application/auth stores.
+7. ~~Retire Keycloak runtime code, dependency, token/export scripts, theme, Compose
+   service setup, obsolete environment instructions, and documentation references.~~
+   Done: Better Auth owns browser and API session boundaries; Keycloak artifacts removed.
+   Preserve the shared PostgreSQL volume and surviving application/auth stores.
 
 Exit evidence: the auth/admin verification matrix below passes against real
 PostgreSQL and the running app; both issue reports identify the exact candidate

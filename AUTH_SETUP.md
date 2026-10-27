@@ -4,7 +4,7 @@ This is a partial application cutover in the coordinated authentication/admin mi
 Private progress and recorded performances use validated Better Auth sessions.
 Method/module creation and editing also use validated Better Auth sessions.
 Beat creation and public-beat copying now also use validated Better Auth sessions.
-Existing-beat editing and moves now use validated Better Auth sessions. Ordinary-author deletion now uses the same boundary; the legacy login/menu remains. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
+Existing-beat editing and moves now use validated Better Auth sessions. Ordinary-author deletion now uses the same boundary. The app header uses the Better Auth client for sign-in and sign-out. The `/auth/login`, `/auth/signup`, `/auth/forgot-password`,
 `/auth/reset-password` and `/auth/session` screens exercise Better Auth directly.
 Use [the approved plan](docs/plans/auth-and-persistence-migration.md)
 for the remaining coordinated permissions and retirement work.
@@ -173,7 +173,7 @@ old-password rejection, new-password login and all prior session revocation.
 Database assertions and same-cookie profile failure/recovery supplement those
 screen interactions. Console/network logs and desktop/mobile screenshots are
 retained under `output/playwright/` in the fixture directory. Expected rejection
-responses and legacy Keycloak/MIDI diagnostics must be reported separately from
+responses and unrelated MIDI diagnostics must be reported separately from
 new-screen failures. Capture is not live SES evidence.
 
 The approved prerelease conversion limitation remains: historical v0 journals keep
@@ -236,13 +236,12 @@ forged ownership/token/role fields, missing/expired/revoked/forged cookies, fail
 profile provisioning and retry, concurrent ownership changes, public reads,
 rendered create/edit controls, permission errors and account switching.
 
-Method/module deletion is covered by the separate deletion slice below. Legacy user APIs and
-`ensureKeycloakUser`/`withAuth` remain for later work. Beat creation/copy and
-existing-beat edits/moves are covered by the separate slices below. Deferred
-paths do not establish Better Auth enforcement.
+Method/module deletion is covered by the separate deletion slice below. Legacy user APIs may
+still need coordinated cutover; server helpers use `requireDomainUser` through `withAuth`.
+Beat creation/copy and existing-beat edits/moves are covered by the separate slices below.
 The browser Admin toggle still grants no trusted method/module authority; trusted
 admin designation and beat exceptions remain unimplemented. Public browsing and
-anonymous local practice stay available. Keycloak retirement, remaining ORM replacement, exact-candidate integration approval,
+anonymous local practice stay available. Remaining ORM replacement, exact-candidate integration approval,
 combined verification, human UX judgment and acceptance are separate obligations.
 Dependency pins, 44 reported vulnerabilities, build warnings and the migration
 precision limitation above are unchanged.
@@ -274,9 +273,9 @@ The picker lists the signed-in user's modules, offers existing method/module
 creation controls when none exist, and can refresh destinations after returning.
 Account changes unmount creation drafts and copy selections through the existing
 validated session observer. Anonymous public reading and local practice remain.
-Ordinary-author deletion has a separate proof below. Designated Admin enforcement, remaining Prisma
-replacement and Keycloak retirement are deferred; this is not complete beat
-mutation authorization. No existing database or volume is reset by these checks.
+Ordinary-author deletion has a separate proof below. Designated Admin enforcement and
+remaining Prisma replacement are deferred; this is not complete beat mutation
+authorization. No existing database or volume is reset by these checks.
 
 ## Existing-beat editing verification
 
@@ -315,8 +314,7 @@ rendered editor continues to edit within its current module.
 
 This is ordinary-author enforcement only. The agreed designated-admin exception
 is **not implemented**: non-owner admins cannot edit through these paths yet.
-Trusted roles, restricted toggle visibility and Keycloak
-retirement remain coordinated follow-ups. This slice does not complete beat
+Trusted roles and restricted toggle visibility remain coordinated follow-ups. This slice does not complete beat
 authorization, the approved plan, integration, human UX judgment or acceptance.
 Dependency audit failures, build warnings and migration limitations documented
 above remain unresolved and are not waived by this proof.
@@ -351,5 +349,5 @@ is cleared for removed modules; ModuleProgress.currentMethodId stores a Method I
 so surviving rows pointing at a removed method are cleared. Parent/sibling progress
 survives deletion of a child. Responses contain only success, never private history.
 
-Designated-admin authorization, Keycloak retirement, combined verification,
-integration, human UX judgment and acceptance remain separate.
+Designated-admin authorization, combined verification, integration, human UX
+judgment and acceptance remain separate.

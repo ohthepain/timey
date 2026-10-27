@@ -12,9 +12,9 @@ configuration; this map explains responsibilities and the useful starting points
 | Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                                                                                    | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
 | Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                                                                                       | Practice hierarchy and recorded performance                                                                                                                                                                         |
 | Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                                                                                                         | Repository calls, server operations, relational storage                                                                                                                                                             |
-| Authentication           | `src/contexts/KeycloakContext.tsx`, `src/config/keycloak.ts`, `src/utils/authenticatedServerFn.ts`                                                                                   | Browser identity and protected server access                                                                                                                                                                        |
+| Authentication           | `src/server/auth-runtime/client.ts`, `src/components/auth/UserMenu.tsx`, `LoginButton.tsx`, `src/utils/authenticatedServerFn.ts`                                                     | Better Auth browser client (`/api/auth`), header sign-in/menu, cookie-backed `withAuth` via `requireDomainUser`                                                                                                   |
 | Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                            | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
-| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                               | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit; deferred content paths retain Keycloak                                                                  |
+| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                               | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit                                                                                                        |
 | Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                                                                                             | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
 | Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue focus/listing, ledger CLI, saved progress, manual decisions and guarded worker dispatch                                                                                                                       |
 
@@ -63,18 +63,18 @@ Update this map when responsibilities, boundaries, or starting points change.
 
 The [authentication foundation](../../AUTH_SETUP.md) owns `/api/auth/$` and
 `/api/session`; private progress/performance functions use `requireDomainUser`,
-and method/module create/edit plus beat create/copy/edit operations use `requireDomainUser`; deferred user paths retain legacy helpers until their coordinated cutover. Profile creation uses the trusted auth primary key and blocks
+and method/module create/edit plus beat create/copy/edit operations use `requireDomainUser`. Profile creation uses the trusted auth primary key and blocks
 dependent domain work on failure. Auth and Prisma clients have no shared transaction.
 The [ownership decision](../adr/0002-auth-domain-ownership.md) records migration boundaries.
 
-The `/auth/$screen` routes use the browser-only `auth-runtime/client.ts`; they do
-not import auth configuration, PostgreSQL or SMTP. `auth-runtime/mail.ts` supplies
-server-owned SMTP reset delivery. `authDestination` constrains browser return
-paths and `urlPersistence` leaves explicit auth navigation alone. These screens
-do not replace server authorization or the app-wide Keycloak content context. `scripts/auth-fixture.py --browser` runs the existing foundation checks
-plus rendered interactions through `auth-browser.py` and loopback SMTP capture.
+The `/auth/$screen` routes and header auth UI use the browser-only `auth-runtime/client.ts`; they do not import auth
+configuration, PostgreSQL or SMTP. `auth-runtime/mail.ts` supplies server-owned SMTP reset
+delivery. `authDestination` constrains browser return paths and `urlPersistence` leaves
+explicit auth navigation alone. These screens do not replace server authorization.
+`scripts/auth-fixture.py --browser` runs the existing foundation checks plus rendered
+interactions through `auth-browser.py` and loopback SMTP capture.
 
-Private practice uses `PracticeSession` (mounted beside the legacy Login button),
+Private practice uses `PracticeSession` (mounted beside the header sign-in control),
 `state/privatePractice.ts`, `useBeatPractice` and the module route's progress hook.
 The navigation store holds the current practice cache owner and generation; late
 responses are discarded after identity changes. `BeatRecorder.savePerformance`

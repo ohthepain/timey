@@ -1,7 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ domain: vi.fn(), legacy: vi.fn(), create: vi.fn(), update: vi.fn() }));
+const mocks = vi.hoisted(() => ({ domain: vi.fn(), create: vi.fn(), update: vi.fn() }));
 vi.mock('~/server/domain-session', () => ({ requireDomainUser: mocks.domain }));
-vi.mock('~/lib/ensureKeycloakUser', () => ({ requireKeycloakUser: mocks.legacy }));
 vi.mock('~/repositories/beatRepository', () => ({
   beatRepository: { createBeat: mocks.create, updateBeat: mocks.update },
 }));
@@ -25,7 +24,6 @@ it('creation rejects authority fields and passes only validated session authorsh
   expect(mocks.create).not.toHaveBeenCalled();
   expect((await put(input)).status).toBe(200);
   expect(mocks.create.mock.calls[0][1]).toBe('trusted');
-  expect(mocks.legacy).not.toHaveBeenCalled();
 });
 it('creation propagates invalid session and ownership responses', async () => {
   mocks.domain.mockRejectedValueOnce(new Response('Authentication required', { status: 401 }));
@@ -36,7 +34,6 @@ it('creation propagates invalid session and ownership responses', async () => {
 it('existing editing uses only the validated session and rejects forged claims', async () => {
   mocks.update.mockResolvedValue({ id: 'existing' });
   expect((await put({ ...input, id: 'existing' })).status).toBe(200);
-  expect(mocks.legacy).not.toHaveBeenCalled();
   expect(mocks.update.mock.calls[0][2]).toBe('trusted');
   expect((await put({ ...input, id: 'existing', authorId: 'forged' })).status).toBe(400);
 });

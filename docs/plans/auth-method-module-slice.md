@@ -28,7 +28,7 @@ before integration. The coordinator must independently review that candidate.
 
 Do not advance the whole issue or infer acceptance from this slice. Beat
 creation/copy/edit/delete, trusted Admin designation/permissions, transactional
-content/history deletion, Keycloak retirement and the later ORM replacement remain.
+content/history deletion and the later ORM replacement remain.
 The 44 dependency vulnerabilities (including five critical), build warnings,
 unconfigured Fallow architecture/policy detectors and migration timestamp
 precision limitation are retained. Exact-candidate human-first integration
