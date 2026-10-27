@@ -878,6 +878,11 @@ The server follows configured Next links and the existing skip policy: enhanceme
 investigation, optional prototypes and commit recording when commits are disabled.
 Required roles and acceptance cannot be skipped. Choices can change during active
 Progress only while the selected role remains future and has no recorded outcome.
+A reviewed route may repeat an earlier recorded skip without treating it as a
+new skip request under current policy. This requires a valid skipped outcome
+since the last reopening and configured Next links leading from that stage to
+the current stage. It preserves the historical outcome and its original source;
+current and future required stages remain protected.
 A saving indicator prevents duplicate clicks; failures retain the saved value and
 show an error. Stale issue, route or policy versions are rejected. Other route
 choices and historical outcomes remain intact. Saving a choice starts no work and

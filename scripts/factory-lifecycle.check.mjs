@@ -8,6 +8,58 @@ import { createFactoryServer } from './factory-ui/http.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { toggleRoute, routeBasis } from './factory-ui/route-toggle.mjs';
 import { queueResponse } from './factory-ui/queue-response.mjs';
+import { validateRoutes } from './factory-ui/lifecycle.mjs';
+
+test('captured historical skips do not block an implementation route or authorize new required skips', (t) => {
+  const { root, report } = lifecycleFixture(t);
+  const original = readFileSync(report, 'utf8');
+  writeFileSync(report, original.replace('state: clarify', 'state: implement'));
+  const queue = readQueue(root),
+    issue = queue.issues[0];
+  const recorded = {
+    state: 'clarify',
+    outcome: 'skipped',
+    source: { kind: 'original-report' },
+    reason: 'The original report bounds the requested outcome.',
+    at: '2026-10-27T14:00:55.597Z',
+    evidence: [report],
+  };
+  issue.lifecycle_history = [recorded];
+  const routes = [
+    {
+      issueId: issue.id,
+      steps: [
+        { state: 'clarify', decision: 'skip', reason: 'Preserve the recorded capture skip.' },
+        { state: 'implement', decision: 'take', reason: 'Implement the approved plan.' },
+      ],
+    },
+  ];
+  const validate = () => validateRoutes(queue, routes, issue.id);
+  assert.deepEqual(validate(), routes);
+  assert.deepEqual(issue.lifecycle_history, [recorded]);
+  assert.equal(readFileSync(report, 'utf8'), original.replace('state: clarify', 'state: implement'));
+  for (const history of [
+    [],
+    [{ ...recorded, evidence: [] }],
+    [{ ...recorded, outcome: 'completed' }],
+    [recorded, { outcome: 'reopened' }],
+  ]) {
+    issue.lifecycle_history = history;
+    assert.throws(validate, /Clarify is required/);
+  }
+  issue.lifecycle_history = [recorded];
+  queue.lifecycle.unshift({ state: 'intake', next: 'clarify', role: 'custom' });
+  for (const state of ['clarify', 'intake']) {
+    issue.state = state;
+    assert.throws(validate, /Clarify is required/);
+  }
+  issue.state = 'implement';
+  for (const state of ['implement', 'verify', 'final', 'closed']) {
+    issue.lifecycle_history = [{ ...recorded, state }];
+    routes[0].steps = [{ state, decision: 'skip', reason: 'Must remain protected.' }];
+    assert.throws(validate, /required|explicit acceptance/);
+  }
+});
 
 function lifecycleFixture(t) {
   const { root, git } = gitFixture(t, 'timey-lifecycle-');
