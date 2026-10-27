@@ -337,3 +337,10 @@ completion operation; normal record transitions retain the PR-delivery requireme
 
 `integration-reservation.mjs` supplies read-only eligibility for older stopped
 coordinators. It enables Continue without changing queue state or clearing locks.
+
+Delivery setup recovery lives in `scripts/factory-ui/delivery-setup.mjs`; it applies
+matching human target decisions and connects them to lifecycle freshness and
+in-issue input. `assembly-recovery.mjs` owns stopped-operation explanations and
+stale-safe retries. `scripts/issue-delivery-assembly.mjs` retains/reuses the exact
+merged assembly before verification. The delivery service still owns locking,
+guards, contribution records and all remote effects.

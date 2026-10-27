@@ -1,3 +1,4 @@
+import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs';
 import { recoverPendingIntegration } from './integration-recovery.mjs';
 import { continuationChoice, checkContinuation, resumeContinuation } from './lifecycle-continuation.mjs';
 import { planProgress } from './progress.mjs';
@@ -24,6 +25,8 @@ async function lifecycleTick(service, record) {
   const queue = readQueue(service.root),
     issue = queue.issues.find((i) => i.id === record.issueId);
   requireThat(issue, 'This issue no longer exists.');
+  recoverDeliverySetup(service, record);
+  if (record.status !== 'running') return false;
   const recovered = await recoverPendingIntegration(service, record);
   if (recovered) return recovered === 'recovered';
   if (finishedLifecycle(service, record, queue, issue)) return false;
@@ -142,6 +145,7 @@ function startLifecycleWork(service, record, queue, issue, choice) {
   return handler ? handler() : startSelectedProgress(service, issue);
 }
 function startLifecycleIntegration(service, record, choice) {
+  if (!ensureDeliverySetup(service, record)) return {};
   const preview = service.preflight(choice.actionId, 'integrate');
   if (preview.requiresApproval) {
     service.intents.delete(preview.token);

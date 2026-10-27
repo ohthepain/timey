@@ -2009,6 +2009,11 @@
         if (!recovery) return '';
         return `<section class="card"><h4>Finish recording the existing integration</h4><p>The changes and existing merge are kept. ${esc(recovery.reason)}</p><p>Retry first checks saved evidence. If new checks are needed, it runs them on the existing merged code. It will not restart implementation or merge again.</p><button data-integration-recovery="${esc(issue.id)}" data-recovery-updated="${esc(record.updated)}" ${busy || record.status === 'running' ? 'disabled' : ''}>${record.status === 'running' ? 'Checking existing result…' : 'Retry finishing integration'}</button></section>`;
       }
+      function assemblyRecoveryPanel(issue) {
+        const recovery = issue.assemblyRecovery;
+        if (!recovery) return '';
+        return `<section class="card"><h4>Finish the existing operation</h4><p>${esc(recovery.reason)}</p><details><summary>Failure details</summary><pre class="prose">${esc(recovery.detail)}</pre>${recovery.output ? `<pre class="prose">${esc(recovery.output)}</pre>` : ''}${recovery.checkout ? `<p>Saved issue branch: <code>${esc(recovery.checkout)}</code></p>` : ''}${recovery.log ? `<p>Check log: <code>${esc(recovery.log)}</code></p>` : ''}</details><p>Retry uses the saved work. It will not restart implementation or repeat the original merge. A changed source result still needs review.</p><button class="primary" data-assembly-retry="${esc(issue.id)}" data-retry-run="${esc(recovery.runId)}" data-retry-updated="${esc(recovery.updated)}" ${busy ? 'disabled' : ''}>Retry existing operation</button></section>`;
+      }
       function lifecyclePanel(issue) {
         const record = issue.lifecycle;
         const stage = data.lifecycle.find((s) => s.state === issue.state);
@@ -2053,8 +2058,8 @@
           (stage?.role === 'ready-to-prototype' && input
             ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
             : '');
-        const canStart = !input && stage?.role !== 'ready-to-close';
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${integrationRecoveryPanel(issue, record)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        const canStart = !input && !issue.assemblyRecovery && stage?.role !== 'ready-to-close';
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -2128,7 +2133,7 @@
           return `<p>${esc(input.plan.summary)}</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
         if (input.type === 'integration')
           return `<p>Candidate <code>${esc(input.candidate)}</code> will be added to revision <code>${esc(input.target)}</code>. This plan requires your review before integration.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
-        if (!['questions', 'worker', 'human', 'scope'].includes(input.type)) return '';
+        if (!['questions', 'worker', 'human', 'scope', 'delivery-setup'].includes(input.type)) return '';
         const question =
           input.type === 'questions'
             ? input.questions
@@ -2140,7 +2145,7 @@
             : input.request?.prompt === record.summary || input.question === record.summary
               ? ''
               : `<p>${esc(input.request?.prompt || input.question)}</p>`;
-        return `${question}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
+        return `${question}${input.expected ? `<p>${esc(input.expected)}</p>` : ''}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
       }
       function liveStepWork(issue, stage) {
         return data.runs
@@ -2455,6 +2460,18 @@
                 text: $('lifecycle-answer-' + button.dataset.lifecycleAnswer)?.value || '',
               })
             );
+        });
+        document.querySelectorAll('[data-assembly-retry]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              button.disabled = true;
+              button.textContent = 'Continuing existing work…';
+              await request('assembly-retry', {
+                issueId: button.dataset.assemblyRetry,
+                runId: button.dataset.retryRun,
+                updated: button.dataset.retryUpdated,
+              });
+            });
         });
         document.querySelectorAll('[data-integration-recovery]').forEach((button) => {
           button.onclick = () =>

@@ -1,3 +1,4 @@
+import { deliveryConfigBasis, needsDeliverySetupRecovery } from './delivery-setup.mjs';
 import { integrationReservation } from './integration-reservation.mjs';
 import { nextProgress } from './next-action.mjs';
 import { readQueue } from './data.mjs';
@@ -14,6 +15,9 @@ export function lifecycleWorkBasis(queue, issue, record) {
       source: queue.snapshot.worktree,
       state: issue.state,
       continuation_protocol: 1,
+      deliveryConfig: actions.some((a) => ['implement', 'integrate'].includes(a.kind) && a.status === 'completed')
+        ? deliveryConfigBasis(queue.root)
+        : null,
       grilling: issue.stage_grilling,
       input: record.latestAnswer?.sha256,
       plan: record.plan?.sha256,
@@ -63,6 +67,7 @@ export function isRetriableLifecycleFailure(service, record) {
 }
 
 export function canResumeLifecycle(service, record, queue, issue, runs) {
+  if (needsDeliverySetupRecovery(service, record)) return true;
   if (!record.integrationRecovery && integrationReservation(service, record.issueId, queue)) return true;
   if (isRetriableLifecycleFailure(service, record)) return true;
   const basis = lifecycleWorkBasis(queue, issue, record);

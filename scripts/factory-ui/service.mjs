@@ -1,3 +1,4 @@
+import { assemblyRecoveryView, retryAssembly } from './assembly-recovery.mjs';
 import { retryIntegrationRecovery } from './integration-recovery.mjs';
 import { failedVerification, verificationView, retryVerification } from './verification-recovery.mjs';
 import { IssueDelivery } from '../issue-delivery.mjs';
@@ -112,6 +113,7 @@ export class FactoryUI {
       ...issue,
       readiness,
       verificationRecovery: verificationView(this, queue, issue),
+      assemblyRecovery: assemblyRecoveryView(this, issue, lifecycle),
       issueDelivery: this.deliveries.inspect(issue.id),
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
@@ -177,6 +179,9 @@ export class FactoryUI {
   }
   pauseLifecycle(input) {
     return pauseLifecycle(this, input);
+  }
+  retryAssembly(input) {
+    return retryAssembly(this, input, (id) => continueLifecycleAfter(this, id));
   }
   progressPreflight(id, state) {
     return prepareProgress(this, id, state);
@@ -277,9 +282,23 @@ export class FactoryUI {
     );
   }
   integrate({ queue, action, humanApproved }) {
-    const run = this.store.add(action, 'assembly', queue.head);
+    const previous = this.store.runs.findLast(
+      (r) =>
+        r.kind === 'assembly' &&
+        r.actionId === action.id &&
+        r.candidate === action.worker_revision &&
+        r.base === queue.head &&
+        r.status === 'blocked'
+    );
+    const run = previous || this.store.add(action, 'assembly', queue.head);
+    this.store.connected.add(run.id);
+    this.store.update(run, {
+      status: 'checking',
+      summary: 'Checking the existing issue contribution. No implementation is restarting.',
+    });
     const reviewPath = join(this.store.directory, run.id + '-assembly-review.json');
-    writeJson(reviewPath, { action, target: queue.head, humanApproved, evidence: action.evidence });
+    if (!existsSync(reviewPath))
+      writeJson(reviewPath, { action, target: queue.head, humanApproved, evidence: action.evidence });
     this.perform(run, async () => {
       const existing = this.deliveries.inspect(action.issues[0]);
       const result = await this.deliveries.operate('assemble', {

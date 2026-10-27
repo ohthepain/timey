@@ -1009,3 +1009,14 @@ candidate/base, full verification and step reports, and the existing human polic
 It records a historical completion, not a PR. Ordinary new integration transitions
 still require verified issue PR delivery. Unknown or unrelated reservations are
 left for their owning issue; they are never deleted to unblock another issue.
+
+### Delivery setup and assembly retry
+
+Lifecycle Progress saves missing pull-request settings from an actual matching
+human target answer, or asks for that branch directly in the issue. The server
+uses the configured Git origin; the browser supplies no repository identity.
+Saved answers are decisions, not proof of passing checks or permission to publish.
+The issue displays stopped assembly failures and **Retry existing operation**.
+Clicks show immediate feedback, reject stale requests, and reuse the existing
+assembly run and saved merged tree. Checks can be retried without another worker,
+repeat review loop or repeat merge. See [delivery recovery](issue-delivery.md#missing-settings-and-stopped-checks).

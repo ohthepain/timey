@@ -166,7 +166,7 @@ test('a claimed successful integration cannot bypass independent verification', 
   const { runId } = service.start(service.preflight(action.id, 'integrate').token, true);
   const run = await settle(service, runId);
   assert.equal(run.status, 'blocked');
-  assert.match(run.summary, /issue-delivery-config/);
+  assert.match(run.summary, /Pull request settings are missing/);
   assert.equal(api.inspect().registry.actions[0].status, 'completed');
   assert.equal(existsSync(join(root, '.issues/factory-integration.lock')), false);
   await assert.rejects(
@@ -2846,6 +2846,10 @@ test('a real required decision is answered inside the issue and resolved through
 
 test('human-first integration pauses inline and refuses approval after the candidate target changes', async (t) => {
   const { service, api, proposal, git, root } = lifecycleFixture(t);
+  writeFileSync(
+    join(root, '.issues/issue-delivery-config.json'),
+    JSON.stringify({ provider: 'github', repository: 'fixture/timey', remote: 'origin', target: 'main' })
+  );
   startIssueLifecycle(service);
   const initial = await finishLifecycle(service);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
@@ -3936,7 +3940,7 @@ for (const change of ['none', 'dirty', 'candidate']) {
       const run = await settle(service, runId);
       assert.equal(run.kind, 'assembly');
       assert.equal(run.status, 'blocked');
-      assert.match(run.summary, /issue-delivery-config/);
+      assert.match(run.summary, /Pull request settings are missing/);
     }
     assert.equal(dispatches, 0);
   });

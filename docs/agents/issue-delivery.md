@@ -65,3 +65,25 @@ result, assembly, completion, observation and integration files and an atomicall
 replaced current index. Missing/tampered proof blocks with the relevant path.
 Both front doors share these operations. Native evaluation/launch remain separate
 manual operations and single-issue lifecycle Progress retains its scope boundary.
+
+## Missing settings and stopped checks
+
+The issue coordinator applies an explicit saved target-branch answer before
+assembly when project delivery settings are absent. It uses the actual GitHub
+origin identity and a matching human answer receipt, retains the receipt hash in
+the settings, and never replaces existing settings or infers a target from the
+checked-out branch. Older single-question `dev`/`main` answers are recognized only
+for that exact repository and issue. Otherwise it asks a concrete target question
+in the issue; answering saves the setting and continues the existing operation.
+
+A failed assembly stops with the actual failure and an explicit retry action,
+without asking a model to review the same failure again. Retry rejects stale or
+duplicate clicks and rechecks current authority. Assembly retains the merged HEAD
+before checking it; an unchanged retry checks that HEAD without invoking merge
+again. Interrupted older assemblies are recoverable only from the exact worker
+commit or exact two-parent merge including the saved base. Changed or dirty source
+and conflicts require reconciliation; retries never discard changes or unknown
+locks. An actual failed check remains failed. Repair it separately, then retry;
+a changed source result must go through normal review rather than being silently
+accepted as the old candidate. This mechanism neither publishes nor merges a PR,
+and does not repeat historical target integrations.

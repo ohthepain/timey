@@ -1,3 +1,4 @@
+import { answerDeliverySetup } from './delivery-setup.mjs';
 import { appendReview } from './review-result.mjs';
 import { readFileSync } from 'node:fs';
 import { readQueue } from './data.mjs';
@@ -9,6 +10,7 @@ import { answerHumanRequirement } from './lifecycle-human.mjs';
 export async function respondLifecycle(service, record, input) {
   if (['plan', 'questions', 'scope'].includes(record.input.type)) requireAnswerIdle(service, record);
   const handlers = {
+    'delivery-setup': () => answerDeliverySetup(service, record, input),
     plan: () => approveLifecyclePlan(service, record, input),
     questions: () => recordLifecycleAnswers(service, record, input),
     integration: () => approveLifecycleIntegration(service, record, input),

@@ -1,3 +1,4 @@
+import { assemblyBlockReason } from './assembly-recovery.mjs';
 import { recoverPendingIntegration } from './integration-recovery.mjs';
 import { planAuthorization } from '../factory-authorization.mjs';
 import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
@@ -62,6 +63,10 @@ function belongsToLifecycle(record, queue, run) {
   );
 }
 export async function handleLifecycleFailure(service, record, run) {
+  if (run.kind === 'assembly') {
+    stopLifecycle(service, record, assemblyBlockReason(run.summary));
+    return false;
+  }
   if (run.kind === 'integration') {
     const result = await recoverPendingIntegration(service, record);
     if (result) return result === 'recovered';
