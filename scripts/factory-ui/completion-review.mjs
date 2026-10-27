@@ -1,5 +1,5 @@
 import { completionChoice } from './completion-choice.mjs';
-import { stopLifecycle } from './lifecycle-stop.mjs';
+import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
 import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, sep } from 'node:path';
 import { proof } from '../issue-delivery-store.mjs';
@@ -141,5 +141,5 @@ function incompleteReview(service, record, run, result) {
   service.store.update(run, { status: 'completed', result, summary: result.summary });
   if (question)
     saveLifecycle(service, record, { status: 'waiting', summary: result.summary, input: { type: 'scope', question } });
-  else stopLifecycle(service, record, result.summary);
+  else if (!recoverReviewFailure(service, record, run)) stopLifecycle(service, record, result.summary);
 }

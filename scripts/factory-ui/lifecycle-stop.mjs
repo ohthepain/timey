@@ -70,7 +70,15 @@ export function isRetriableLifecycleFailure(service, record) {
   return child.status === 'blocked' && !child.threadId;
 }
 
+export function incompleteCompletion(service, record, queue, issue) {
+  const run = service.store.runs.find((r) => r.id === record.childRunId);
+  if (run?.kind !== 'completion-review' || run.status !== 'completed' || run.result?.complete !== false) return null;
+  if (run.result.question?.trim()) return null;
+  const basis = lifecycleWorkBasis(queue, issue, record);
+  return record.recoveryContexts?.includes(basis) ? null : run;
+}
 export function canResumeLifecycle(service, record, queue, issue, runs) {
+  if (incompleteCompletion(service, record, queue, issue)) return true;
   if (needsDeliverySetupRecovery(service, record)) return true;
   if (!record.integrationRecovery && integrationReservation(service, record.issueId, queue)) return true;
   if (isRetriableLifecycleFailure(service, record)) return true;

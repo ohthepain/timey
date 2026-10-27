@@ -100,8 +100,9 @@ function selectLifecycleWork(service, queue, issue, record) {
   const continuation = continuationChoice(service, record, queue);
   if (continuation) return continuation;
   const handoff = nextProgress(queue, issue, service.store.list(service.codex.requests));
-  if (['bind-verification', 'completion-review', 'publish-issue-pr'].includes(handoff.kind)) return handoff;
+  if (handoff.kind === 'bind-verification') return handoff;
   if (record.replan) return { kind: 'replan', title: 'Finding the next unfinished task.' };
+  if (['completion-review', 'publish-issue-pr'].includes(handoff.kind)) return handoff;
   const checklist = checklistView(queue, issue, service.store.list(service.codex.requests));
   if (needsPlanCheck(queue, issue, checklist))
     return { kind: 'check-plan', path: checklist.path, title: 'Checking the implementation steps.' };

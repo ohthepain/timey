@@ -37,6 +37,8 @@ export function nextProgress(queue, issue, runs) {
     return unavailable(
       'Verification failed. Fix it separately, then retry in Verify or update from a selected branch.'
     );
+  const savedWork = reviewFollowup(queue, issue, runs);
+  if (savedWork?.kind === 'save-review') return savedWork;
   const completion = completionChoice(queue, issue);
   if (completion) return completion;
   const stopped = stoppedReconciliation(queue, issue, runs);
@@ -44,6 +46,8 @@ export function nextProgress(queue, issue, runs) {
   return stageWork(queue, issue, stage, runs);
 }
 function stageWork(queue, issue, stage, runs) {
+  const choice = chooseWork(queue, issue, runs);
+  if (stage.role === 'ready-for-commit' && choice.kind !== 'plan') return choice;
   if (stage.role === 'ready-for-commit')
     return {
       kind: 'commit',
@@ -51,7 +55,6 @@ function stageWork(queue, issue, stage, runs) {
       summary:
         'Record the existing verified commit and continue to the next step. No new chat or behavior review is needed.',
     };
-  const choice = chooseWork(queue, issue, runs);
   return plannedSkipChoice(queue, issue, stage, runs, choice) || stageFollowup(queue, issue, stage, runs, choice);
 }
 function plannedSkipChoice(queue, issue, stage, runs, choice) {

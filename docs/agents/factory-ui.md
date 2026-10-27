@@ -1044,3 +1044,10 @@ answered inline; ordinary unfinished technical work is shown without a fake
 question. Failed or stale proof never becomes a passing readiness assertion.
 After publication, the saved PR link and check/merge controls remain available;
 the coordinator does not return to a planning loop or claim issue acceptance.
+
+An incomplete completion review automatically hands technical findings to one
+bounded repair-selection attempt within the approved plan. Continue also recovers
+saved completion stops from older servers. Recovery attempts are retained per
+relevant input, and a repeated unchanged failure stops with its actual reason.
+Repair recommendations take precedence over the Commit action; completed work
+and merge receipts remain intact. Genuine scope questions still require an answer.

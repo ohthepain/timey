@@ -121,8 +121,14 @@ The review is issue-scoped and serializes with existing result recording. A
 changed report, plan, contribution or proof cannot silently reuse its approval.
 An incomplete review asks only a specific real decision, permission or human
 observation; an ordinary technical gap is reported as unfinished work, without an
-answer box requesting a file or routine technical bookkeeping. Continuation goes
-to this completion review rather than another general planning iteration.
+answer box requesting a file or routine technical bookkeeping. A technical gap
+hands its retained findings to one bounded repair-selection attempt under the
+approved plan, ahead of another completion review. Saved stops from older servers
+expose Continue for that same recovery. The recovery is remembered for the relevant
+inputs so unchanged failures cannot create an endless planning loop. Repair
+recommendations are saved and dispatched before Commit, preserving the issue
+candidate, original bases and completed contributions. Scope decisions still stop
+for an actual answer; readiness, publication and merge guards are unchanged.
 
 Opening a PR publishes the issue branch. Existing lifecycle plan consent does not
 grant pushes ([operating policy](operating.md#local-ui-transport)). Once readiness

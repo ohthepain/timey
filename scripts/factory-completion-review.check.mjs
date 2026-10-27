@@ -100,7 +100,8 @@ test('a real decision is asked inline, while a technical gap produces no fake qu
     }));
     const { runId } = f.service.prepareCompletion(f.issueId);
     await settle(f.service, runId);
-    assert.equal(f.record.status, question ? 'waiting' : 'blocked');
+    assert.equal(f.record.status, question ? 'waiting' : 'running');
+    if (!question) assert.equal(f.record.replan, true);
     assert.equal(f.record.input?.question || '', question);
     assert.equal(f.delivery.inspect(f.issueId).readiness, null);
     assert.equal(f.provider.state().creates, 0);
@@ -239,4 +240,84 @@ test('the PR card has Continue instead of an upload, and publication retries do 
   assert.equal(retry.window.document.querySelector('button').textContent, 'Retry opening pull request');
   assert.equal(retry.window.document.querySelector('button').dataset.decision, 'retry');
   retry.window.close();
+});
+
+test('an incomplete completion review leaves Continue available for one bounded recovery, including saved stops', async (t) => {
+  const f = await fixture(t, (r) => ({
+    ...r,
+    complete: false,
+    summary: 'GitHub checks remain unfinished.',
+    question: '',
+  }));
+  const { runId } = f.service.prepareCompletion(f.issueId);
+  await settle(f.service, runId);
+  const { canResumeLifecycle, stopLifecycle, lifecycleWorkBasis } = await import('./factory-ui/lifecycle-stop.mjs');
+  stopLifecycle(f.service, f.record, 'GitHub checks remain unfinished.');
+  const queue = readQueue(f.root);
+  f.record.recoveryContexts = []; // Saved stop created by the previous backend.
+  f.record.replan = false;
+  f.record.attempts.push(lifecycleWorkBasis(queue, queue.issues[0], f.record) + ':completion-review');
+  assert.equal(canResumeLifecycle(f.service, f.record, queue, queue.issues[0]), true);
+  const { recoverReviewFailure } = await import('./factory-ui/lifecycle-stop.mjs');
+  const run = f.service.store.runs.find((r) => r.id === runId);
+  assert.equal(recoverReviewFailure(f.service, f.record, run), true);
+  assert.equal(recoverReviewFailure(f.service, f.record, run), false);
+  assert.equal(canResumeLifecycle(f.service, f.record, queue, queue.issues[0]), false);
+  assert.equal(f.record.lastFailure.runId, runId);
+});
+
+test('incomplete completion review selects repair planning instead of repeating the completion review', async (t) => {
+  const f = await fixture(t, (r) => ({
+    ...r,
+    complete: false,
+    summary: 'GitHub checks remain unfinished.',
+    question: '',
+  }));
+  const { runId } = f.service.prepareCompletion(f.issueId);
+  await settle(f.service, runId);
+  let evaluations = 0;
+  f.service.evaluate = (_basis, issueId) => {
+    evaluations++;
+    assert.equal(issueId, f.issueId);
+    assert.match(f.record.lastFailure.summary, /GitHub checks remain unfinished/);
+    f.record.pauseRequested = true;
+    return {};
+  };
+  const { runLifecycle } = await import('./factory-ui/lifecycle-loop.mjs');
+  await runLifecycle(f.service, f.record);
+  assert.equal(evaluations, 1);
+  assert.equal(f.service.store.runs.filter((r) => r.kind === 'completion-review').length, 1);
+  assert.equal(f.provider.state().creates, 0);
+});
+
+test('repair work at Commit is saved and selected before the commit action', async (t) => {
+  const f = await fixture(t),
+    queue = readQueue(f.root),
+    issue = queue.issues[0];
+  queue.lifecycle.find((s) => s.state === issue.state).role = 'ready-for-commit';
+  const { reviewInput } = await import('./factory-ui/review-followup.mjs');
+  const recommendation = {
+    id: 'repair',
+    issues: [f.issueId],
+    kind: 'implement',
+    merge: 'automatic',
+    dependencies: [],
+    status: 'recommended',
+    scope: 'Finish GitHub checks',
+    basis: queue.snapshot,
+  };
+  const evaluation = {
+    id: 'repair-review',
+    kind: 'evaluation',
+    issueId: issue.id,
+    issueState: issue.state,
+    status: 'completed',
+    reviewInput: reviewInput(queue, issue),
+    result: { recommendations: [recommendation], routes: [] },
+  };
+  assert.equal(nextProgress(queue, issue, [evaluation]).kind, 'save-review');
+  queue.actions.push(recommendation);
+  const choice = nextProgress(queue, issue, []);
+  assert.equal(choice.kind, 'launch');
+  assert.equal(choice.actionId, 'repair');
 });
