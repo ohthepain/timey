@@ -43,12 +43,15 @@ adds the `.nvmrc` Node bin, then Homebrew, and runs the staged audit with that
 node. Fallow is pinned to 3.35.0. Checkpoint paths invoke the installed binary,
 `fallow audit --base <resolved-commit> --format json`, in the exported snapshot,
 using the existing local dependency and `.fallowrc.json`
-`audit.gate: new-only`. Commits and step completion fail only on findings
-**introduced** since the base revision in changed files; inherited issues in those
-files do not block. They never use the always-successful `review` mode or download
-another binary. Changed files are analyzed in full; line-only diff filtering must
-not hide introduced findings elsewhere in those files. For a stricter manual check
-(all findings in changed files), run Fallow with `--gate all` yourself.
+`audit.gate: new-only`. The helper passes one Fallow `PATH` derived from the Git changed-file list (a single
+file, their common directory prefix, or `.` when changes span unrelated roots) so
+reported findings stay scoped to the diff instead of defaulting to the whole tree. Fallow may still build a project graph for import
+resolution; the verdict uses only **introduced** findings in those changed files.
+Inherited issues there do not block. They never use the always-successful
+`review` mode or download another binary. Each changed file is analyzed in full;
+line-only diff filtering must not hide introduced findings elsewhere in those
+files. For a stricter manual check (all findings in changed files), run Fallow
+with `--gate all` yourself.
 An empty diff is not evidence that new uncommitted files were audited: the snapshot
 helper stages its exported files before computing the diff. Sources, index, and
 queue of the original checkout are not modified by verification.

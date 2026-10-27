@@ -4,6 +4,17 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
+import { fallowAuditScope } from './verify.mjs';
+
+test('fallow audit scope narrows to one path', () => {
+  assert.equal(fallowAuditScope(['scripts/factory-ui/http.mjs']), 'scripts/factory-ui/http.mjs');
+  assert.equal(
+    fallowAuditScope(['scripts/factory-ui/http.mjs', 'scripts/factory-ui/lifecycle-stop.mjs']),
+    'scripts/factory-ui'
+  );
+  assert.equal(fallowAuditScope(['index.js', 'new-dead.js']), '.');
+  assert.equal(fallowAuditScope(['docs/agents/factory-ui.md', 'scripts/a.mjs']), '.');
+});
 
 test('staged audit sees the index even when unstaged changes hide an unused file', (t) => {
   const { root, git } = auditFixture(t);

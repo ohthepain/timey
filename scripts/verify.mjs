@@ -100,6 +100,20 @@ function workspacePackages(directory) {
   }
   return packages;
 }
+export function fallowAuditScope(changedFiles) {
+  if (changedFiles.length === 0) return null;
+  if (changedFiles.length === 1) return changedFiles[0];
+  const parts = changedFiles.map((file) => file.split('/'));
+  const minDepth = Math.min(...parts.map((segments) => segments.length));
+  const common = [];
+  for (let index = 0; index < minDepth - 1; index++) {
+    const segment = parts[0][index];
+    if (parts.every((segments) => segments[index] === segment)) common.push(segment);
+    else break;
+  }
+  return common.length ? common.join('/') : '.';
+}
+
 function copySourceFile(name) {
   const source = join(root, name),
     destination = join(snapshot, name);
@@ -153,6 +167,7 @@ try {
   const fallowCommand = isolatedEnv.TIMEY_FALLOW_COMMAND || bin('fallow');
   const fallowArgs = ['audit', '--base', base, '--format', 'json'];
   if (report.changed_files.length === 0) fallowArgs.push('--gate', 'all');
+  else fallowArgs.push(fallowAuditScope(report.changed_files));
   await run('fallow', fallowCommand, fallowArgs);
   if (!auditOnly) {
     const changed = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
