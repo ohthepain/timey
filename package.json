@@ -34,6 +34,7 @@
     "@tanstack/react-router-devtools": "1.114.29",
     "@tanstack/react-start": "1.114.29",
     "drizzle-orm": "1.0.0-rc.5",
+    "events": "3.3.0",
     "immer": "10.1.1",
     "pg": "8.16.3",
     "react": "19.0.0",

@@ -99,14 +99,14 @@ export class FactoryUI {
   issueView(queue, issue, runs, owner) {
     const readiness = readinessView(queue, issue, runs);
     const { choice: progress } = resolveNextAction(queue, issue, runs);
-    const { stageStates, queueLifecycle } = issueLifecycleView(queue, issue, runs, readiness);
-    const lifecycle = this.lifecycleStatus(queue, issue, runs);
+    const lifecycle = visibleLifecycle(this.lifecycleStatus(queue, issue, runs), progress);
+    const { stageStates, queueLifecycle } = issueLifecycleView(queue, { ...issue, lifecycle }, runs, readiness);
     return {
       ...issue,
       readiness,
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
-      lifecycle: visibleLifecycle(lifecycle, progress),
+      lifecycle,
       latestResult: latestResult(queue, issue, runs, progress),
       stageStates,
       queueLifecycle,

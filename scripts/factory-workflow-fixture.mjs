@@ -29,6 +29,7 @@ export function deliveryFixture(t) {
     join(queue.root, '.issues/20261025-one.md'),
     '---\nid: 20261025-one\nstate: verify\n---\nActual issue\n'
   );
+  writeFileSync(join(queue.root, '.issues/preferences.json'), JSON.stringify({ commit: true }));
   factory(queue.root).init();
   const revision = source.git('rev-parse', 'HEAD'),
     tree = source.git('rev-parse', 'HEAD^{tree}');

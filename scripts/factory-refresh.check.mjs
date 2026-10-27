@@ -34,6 +34,7 @@ function refreshFixture(t) {
     'render',
     'isBusy',
     'serverControlUI',
+    'issueRoute',
     'let data,refreshing=false,refreshPending=false;\n' +
       html.slice(start, end).replace('!busy', '!isBusy()') +
       ';return refresh;'
@@ -53,7 +54,8 @@ function refreshFixture(t) {
       });
     },
     () => busy,
-    dom.window.serverControlUI
+    dom.window.serverControlUI,
+    () => ({ id: 'one' })
   );
   return {
     refresh,

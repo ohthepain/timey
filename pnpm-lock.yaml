@@ -181,6 +181,9 @@ importers:
       drizzle-orm:
         specifier: 1.0.0-rc.5
         version: 1.0.0-rc.5(@types/pg@8.15.5)(pg@8.16.3)(zod@4.6.7)
+      events:
+        specifier: 3.3.0
+        version: 3.3.0
       immer:
         specifier: 10.1.1
         version: 10.1.1
