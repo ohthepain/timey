@@ -1,3 +1,6 @@
+import { recommendationRefresh } from './recommendation-refresh.mjs';
+import { completionChoice } from './completion-choice.mjs';
+import { verificationHandoff } from './verification-handoff.mjs';
 import { savedRoute } from './lifecycle.mjs';
 import { skipAllowed } from './skip-policy.mjs';
 import { describeLaunch } from './data.mjs';
@@ -31,11 +34,35 @@ export function nextProgress(queue, issue, runs) {
   if (invalid) return invalid;
   const pending = runs.find((run) => isPending(run) && belongsToIssue(queue, issue, run));
   if (pending) return unavailable('The selected action is in progress. Its chat and results appear below.');
+  if (
+    runs.some(
+      (r, index) =>
+        belongsToIssue(queue, issue, r) &&
+        r.verification?.status === 'failed' &&
+        !runs
+          .slice(index + 1)
+          .some((later) => later.actionId === r.actionId && later.verification?.status === 'passed') &&
+        !queue.actions.some(
+          (a) =>
+            a.id === r.actionId &&
+            ['assembled', 'integrated', 'reconciled', 'superseded', 'cancelled'].includes(a.status)
+        )
+    )
+  )
+    return unavailable(
+      'Verification failed. Fix it separately, then retry in Verify or update from a selected branch.'
+    );
+  const savedWork = reviewFollowup(queue, issue, runs);
+  if (savedWork?.kind === 'save-review') return savedWork;
+  const completion = completionChoice(queue, issue);
+  if (completion) return completion;
   const stopped = stoppedReconciliation(queue, issue, runs);
   if (stopped) return stopped;
   return stageWork(queue, issue, stage, runs);
 }
 function stageWork(queue, issue, stage, runs) {
+  const choice = chooseWork(queue, issue, runs);
+  if (stage.role === 'ready-for-commit' && choice.kind !== 'plan') return choice;
   if (stage.role === 'ready-for-commit')
     return {
       kind: 'commit',
@@ -43,7 +70,6 @@ function stageWork(queue, issue, stage, runs) {
       summary:
         'Record the existing verified commit and continue to the next step. No new chat or behavior review is needed.',
     };
-  const choice = chooseWork(queue, issue, runs);
   return plannedSkipChoice(queue, issue, stage, runs, choice) || stageFollowup(queue, issue, stage, runs, choice);
 }
 function plannedSkipChoice(queue, issue, stage, runs, choice) {
@@ -69,11 +95,13 @@ function chooseWork(queue, issue, runs) {
   const actions = queue.actions.filter((a) => a.issues.includes(issue.id));
   const waiting = actions.find((a) => ['reserved', 'setup', 'running', 'blocked', 'completed'].includes(a.status));
   if (waiting) return existingWork(waiting, runs);
+  const handoff = verificationHandoff(queue, issue, actions);
+  if (handoff) return handoff;
   const recommended = actions.find((a) => a.status === 'recommended' && !describeLaunch(queue, a));
   if (recommended)
     return { kind: 'launch', actionId: recommended.id, title: 'Start recommended work', summary: recommended.scope };
   return (
-    blockedRecommendation(queue, actions) || {
+    blockedRecommendation(queue, issue, actions) || {
       kind: 'plan',
       title: 'Recommend the next action',
       summary:
@@ -178,7 +206,9 @@ function uncommittedBlock(queue) {
   };
 }
 
-function blockedRecommendation(queue, actions) {
-  if (queue.sourceClean) return null;
-  return actions.some((action) => action.status === 'recommended') ? uncommittedBlock(queue) : null;
+function blockedRecommendation(queue, issue, actions) {
+  const recommended = actions.find((action) => action.status === 'recommended');
+  if (!recommended) return null;
+  if (!queue.sourceClean) return uncommittedBlock(queue);
+  return recommendationRefresh(queue, issue, recommended) || unavailable(describeLaunch(queue, recommended));
 }

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { decisionView, listIssues } from './factory-interface.mjs';
 import { factory, readFactoryRegistry } from './factory-ledger.mjs';
 import { statusOutput } from './factory-status.mjs';
+import { readRuntime } from './factory-ui/runtime.mjs';
 export { factory };
 
 export async function runCommand(project, argv, delivery = new IssueDelivery(project)) {
@@ -18,7 +19,7 @@ export async function runCommand(project, argv, delivery = new IssueDelivery(pro
   // The listing path bypasses the coordinator parser and registry entirely.
   const reads = new Map([
     ['issues', () => listIssues(project, args)],
-    ['runtime', () => readRuntimeCommand(args)],
+    ['runtime', () => readRuntime(args[0])],
   ]);
   if (reads.has(command)) return reads.get(command)();
   if (['human', 'launch', 'both', 'integrate'].includes(command))
@@ -50,7 +51,6 @@ export async function runCommand(project, argv, delivery = new IssueDelivery(pro
   ]);
   return commands.has(command) ? commands.get(command)() : decisionView(api.inspect(), argv);
 }
-
 function recordIssueWork(project, operation, path) {
   const helper = fileURLToPath(new URL('./factory-record.mjs', import.meta.url));
   return JSON.parse(
@@ -69,12 +69,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.error(error.message);
     process.exitCode = 1;
   }
-}
-
-function readRuntimeCommand(args) {
-  return JSON.parse(
-    execFileSync(process.execPath, [fileURLToPath(new URL('./factory-runtime.mjs', import.meta.url)), args[0]], {
-      encoding: 'utf8',
-    })
-  );
 }

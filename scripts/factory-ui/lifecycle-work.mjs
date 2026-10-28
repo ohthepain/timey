@@ -1,3 +1,5 @@
+import { assemblyBlockReason } from './assembly-recovery.mjs';
+import { recoverPendingIntegration } from './integration-recovery.mjs';
 import { planAuthorization } from '../factory-authorization.mjs';
 import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
 import { saveLifecycle, lifecycleEvent } from './lifecycle-store.mjs';
@@ -61,6 +63,31 @@ function belongsToLifecycle(record, queue, run) {
   );
 }
 export async function handleLifecycleFailure(service, record, run) {
+  if (run.recovery?.code === 'WORKFLOW_INPUT_CHANGED' && run.recovery.owner === 'coordinator') {
+    if (recoverReviewFailure(service, record, run)) return true;
+    stopLifecycle(service, record, run.summary);
+    return false;
+  }
+  if (run.kind === 'completion-review' || run.completionError) {
+    stopLifecycle(service, record, run.summary);
+    return false;
+  }
+  if (run.kind === 'assembly') {
+    stopLifecycle(service, record, assemblyBlockReason(run.summary));
+    return false;
+  }
+  if (run.kind === 'integration') {
+    const result = await recoverPendingIntegration(service, record);
+    if (result) return result === 'recovered';
+  }
+  if (run.verification?.status === 'failed') {
+    stopLifecycle(
+      service,
+      record,
+      'Implementation finished. Verification needs attention; use the retry controls in Verify.'
+    );
+    return false;
+  }
   if (blockedHumanInput(service, record)) return false;
   const eligible = canContinueFailedWork(record, run);
   if (eligible) return continueFailedWork(service, record, run);

@@ -41,7 +41,7 @@ export async function connectWorker(service, id, state, basis, link) {
     originalAssignment(thread, action),
     'This chat did not start with the selected assignment. Choose the chat that did this task.'
   );
-  const worker = await inspectWorker(service.codex, service.root, { ...action, threadId });
+  const worker = await inspectWorker(service.codex, service.root, { ...action, threadId }, service.store.runs);
   requireThat(
     progressBasis(readQueue(service.root)) === basis,
     'The issue changed while finding the chat. Refresh and try again.'

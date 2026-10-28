@@ -7,7 +7,7 @@ export async function observeRuntime(url, expected) {
   const http = [],
     start = Date.now();
   try {
-    const runtime = await readRuntime(url, (event) => http.push(event));
+    const runtime = await readRuntime(url, (event) => http.push(event), true);
     const mismatches = Object.keys(expected).filter((key) => runtime[key] !== expected[key]);
     return {
       ...attempt(start, expected, http),

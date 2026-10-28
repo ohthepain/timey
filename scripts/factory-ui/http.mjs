@@ -25,7 +25,10 @@ function authenticated(request, token, port) {
 }
 function authorize(request, token, port) {
   requireThat(request.headers.host === `127.0.0.1:${port}`, 'Use the local URL printed by this server.');
-  requireThat(authenticated(request, token, port), 'Open the factory page before requesting its data.');
+  requireThat(
+    authenticated(request, token, port),
+    'This page session expired, possibly because the local server restarted. Reload this page and try again. No action was performed.'
+  );
   if (request.method === 'POST') {
     requireThat(
       request.headers.origin === `http://127.0.0.1:${port}`,
@@ -56,10 +59,14 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
     '/api/issue-capture': () => service.captures.save(value),
+    '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
+    '/api/verification-retry': () => service.retryVerification(value),
     '/api/issue-chat-send': () => service.issueChats.send(value),
+    '/api/issue-chat-stop': () => service.issueChats.stop(value),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),
@@ -135,6 +142,7 @@ function read(service, request, response, owner) {
     '/api/issue-chat': () =>
       service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
+    '/api/issue-report': () => service.readSavedReport(url.searchParams.get('issue')),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
     '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),

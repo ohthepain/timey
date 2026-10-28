@@ -134,3 +134,7 @@ input is shown and answered in the issue; the same run continues afterward.
 Opening or refreshing the UI starts nothing. Native `/factory` commands retain
 the separate manual steps above. Independent combined checks and operation-specific
 human guards apply in both workflows.
+
+The UI's [issue execution](issue-execution.md) reuses the issue's primary chat and
+unchanged check evidence. This changes conversation/decision overhead, not the
+required verification or operation-specific approval policies above.

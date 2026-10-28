@@ -22,7 +22,11 @@ export function lifecycleView(service, issue) {
   return interruptedView(service, issue, record);
 }
 function interruptedView(service, issue, record) {
-  if (record.status === 'running' && !service.lifecycleTasks.has(issue.id))
+  if (
+    record.status === 'running' &&
+    !service.lifecycleTasks.has(issue.id) &&
+    !service.integrationRecoveries?.has(issue.id)
+  )
     return {
       ...record,
       status: 'paused',

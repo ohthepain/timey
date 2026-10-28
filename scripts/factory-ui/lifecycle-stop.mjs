@@ -1,3 +1,7 @@
+import { completionBranchBasis } from './completion-choice.mjs';
+import { verificationBranchBasis } from './verification-handoff.mjs';
+import { deliveryConfigBasis, needsDeliverySetupRecovery } from './delivery-setup.mjs';
+import { integrationReservation } from './integration-reservation.mjs';
 import { nextProgress } from './next-action.mjs';
 import { readQueue } from './data.mjs';
 import { digest } from './common.mjs';
@@ -6,13 +10,18 @@ import { saveLifecycle } from './lifecycle-store.mjs';
 export function lifecycleWorkBasis(queue, issue, record) {
   const actions = queue.actions
     .filter((a) => a.issues.includes(issue.id))
-    .map((a) => ({ kind: a.kind, status: a.status, scope: a.scope, revision: a.worker_revision }));
+    .map((a) => ({ kind: a.kind, status: a.status, scope: a.scope, revision: a.worker_revision, start: a.start }));
   return digest(
     JSON.stringify({
       head: queue.head,
       source: queue.snapshot.worktree,
       state: issue.state,
       continuation_protocol: 1,
+      issueVerification: verificationBranchBasis(queue, issue),
+      completion: completionBranchBasis(queue, issue),
+      deliveryConfig: actions.some((a) => ['implement', 'integrate'].includes(a.kind) && a.status === 'completed')
+        ? deliveryConfigBasis(queue.root)
+        : null,
       grilling: issue.stage_grilling,
       input: record.latestAnswer?.sha256,
       plan: record.plan?.sha256,
@@ -41,7 +50,7 @@ export function recoverReviewFailure(service, record, run) {
     replan: true,
     summary:
       'The previous review could not advance this step. Finding the actual unfinished task instead of repeating that review.',
-    lastFailure: { runId: run.id, summary: run.summary, remaining: remainingWork(run) },
+    lastFailure: { runId: run.id, summary: run.summary, remaining: remainingWork(run), recovery: run.recovery || null },
   });
   return true;
 }
@@ -61,10 +70,29 @@ export function isRetriableLifecycleFailure(service, record) {
   return child.status === 'blocked' && !child.threadId;
 }
 
+export function incompleteCompletion(service, record, queue, issue) {
+  const run = service.store.runs.find((r) => r.id === record.childRunId);
+  if (run?.kind !== 'completion-review' || run.status !== 'completed' || run.result?.complete !== false) return null;
+  if (run.result.question?.trim()) return null;
+  const basis = lifecycleWorkBasis(queue, issue, record);
+  return record.recoveryContexts?.includes(basis) ? null : run;
+}
 export function canResumeLifecycle(service, record, queue, issue, runs) {
+  if (incompleteCompletion(service, record, queue, issue)) return true;
+  if (needsDeliverySetupRecovery(service, record)) return true;
+  if (!record.integrationRecovery && integrationReservation(service, record.issueId, queue)) return true;
   if (isRetriableLifecycleFailure(service, record)) return true;
   const basis = lifecycleWorkBasis(queue, issue, record);
   if (record.stopBasis !== basis) return true;
   const choice = nextProgress(queue, issue, runs || service.store.list(service.codex.requests));
-  return choice.kind === 'save-review' && !record.attempts.includes(basis + ':save-review');
+  return (
+    [
+      'save-review',
+      'refresh-recommendation',
+      'bind-verification',
+      'launch',
+      'completion-review',
+      'publish-issue-pr',
+    ].includes(choice.kind) && !record.attempts.includes(basis + ':' + choice.kind)
+  );
 }

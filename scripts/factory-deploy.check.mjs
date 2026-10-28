@@ -108,6 +108,18 @@ test('deployment refuses dirty candidates and coordinator work without stopping 
   writeFileSync(join(f.source.root, 'code.js'), 'unfinished work\n');
   await assert.rejects(deployFactory(f.options), /Commit and verify/);
   f.source.git('checkout', '--', 'code.js');
+  const saved = readFileSync(f.options.verification, 'utf8');
+  const summary = JSON.parse(saved);
+  for (const invalid of [
+    { ...summary, passed: false },
+    { ...summary, snapshot_tree: 'different-tree' },
+    { ...summary, checks: summary.checks.filter((check) => check.name !== 'build') },
+  ]) {
+    writeFileSync(f.options.verification, JSON.stringify(invalid));
+    await assert.rejects(deployFactory(f.options), /Evidence does not match|check is missing or failed/);
+    assert.equal((await readRuntime(f.url)).pid, before.pid);
+  }
+  writeFileSync(f.options.verification, saved);
   mkdirSync(join(f.queue.root, '.issues/factory-progress.lock'));
   await assert.rejects(deployFactory(f.options), /coordinator operation/);
   assert.equal((await readRuntime(f.url)).pid, before.pid);
@@ -198,9 +210,11 @@ const probeIdentity = {
 function probeResponse(request, response, identity = probeIdentity) {
   if (request.url === '/') {
     response.setHeader('Set-Cookie', 'session=DO-NOT-RETAIN');
-    return response.end('fixture page');
+    response.setHeader('Content-Type', 'text/html');
+    return response.end('<!doctype html><div id="app"></div>');
   }
   response.setHeader('Content-Type', 'application/json');
+  if (request.url === '/api/queue') return response.end(JSON.stringify({ issues: [] }));
   response.end(JSON.stringify({ ...identity, token: 'DO-NOT-RETAIN' }));
 }
 async function probe(url) {
@@ -269,7 +283,8 @@ function diagnosticListener() {
   const port=Number(process.argv[process.argv.indexOf('--port')+1]);
   const server=diagnosticHTTP((request,response)=>{
     if(boot===2){response.statusCode=503;return response.end('DO-NOT-RETAIN');}
-    if(request.url==='/'){response.setHeader('Set-Cookie','session=DO-NOT-RETAIN');return response.end('fixture page');}
+    if(request.url==='/'){response.setHeader('Content-Type','text/html');response.setHeader('Set-Cookie','session=DO-NOT-RETAIN');return response.end('<!doctype html><div id="app"></div>');}
+    if(request.url==='/api/queue'){response.setHeader('Content-Type','application/json');return response.end(JSON.stringify({issues:[]}));}
     response.setHeader('Content-Type','application/json');
     response.end(JSON.stringify({pid:process.pid,checkout:'wrong-checkout',revision:'wrong-revision',project:'wrong-project',mode:'preview',sourceChanged:true,secret:'DO-NOT-RETAIN'}));
   });
@@ -365,3 +380,24 @@ function retainDeploymentEvidence(path) {
   for (const suffix of ['', '.readiness.json', '.log']) cpSync(path + suffix, join(retained, basename(path) + suffix));
   console.log('Retained deployment readiness evidence: ' + retained);
 }
+
+test('matching runtime identity cannot pass deployment with an error page or unusable queue', async (t) => {
+  for (const failure of ['error-page', 'queue-http', 'queue-shape']) {
+    const url = await runtimeProbeFixture(t, (request, response) => {
+      if (failure === 'error-page' && request.url === '/') {
+        response.setHeader('Content-Type', 'application/json');
+        return response.end('{"error":"service is not defined"}');
+      }
+      if (request.url === '/api/queue') {
+        response.setHeader('Content-Type', 'application/json');
+        if (failure === 'queue-http') response.statusCode = 500;
+        return response.end('{}');
+      }
+      return probeResponse(request, response);
+    });
+    const result = await probe(url);
+    assert.equal(result.ready, false, failure);
+    assert.equal(result.observation.outcome, 'read-failed');
+    assert.equal(JSON.stringify(result).includes('service is not defined'), false);
+  }
+});

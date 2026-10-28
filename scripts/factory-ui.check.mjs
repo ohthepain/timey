@@ -10,7 +10,7 @@ import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeF
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { gitFixture } from './git-fixture.mjs';
-import { factory } from './factory.mjs';
+import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
@@ -70,6 +70,7 @@ function transport(t, service) {
     if(m.method==='initialize')send({id:m.id,result:{userAgent:'fixture'}});
     if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'fixture-thread'}}});
     if(m.method==='thread/resume')send({id:m.id,result:{thread:{id:m.params.threadId}}});
+    if(m.method==='thread/name/set')send({id:m.id,result:{}});
     if(m.method==='turn/start'){send({id:m.id,result:{turn:{id:'turn'}}});
       send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(m.params.outputSchema.properties.recommendations?{summary:'One suggestion',recommendations:[{kind:'investigate',title:'Read source',scope:'One file',reason:'Find answer',verification:'Read source',worker_prompt:'Read source.js only',merge:'none',dependencies:[],issues:['20261022-one']}]}:{outcome:'completed',summary:'Read the file.',evidence:'source.js contains 42',remaining:[]})}}});
       send({method:'turn/completed',params:{threadId:m.params.threadId,turn:{status:'completed'}}});}
@@ -166,7 +167,7 @@ test('a claimed successful integration cannot bypass independent verification', 
   const { runId } = service.start(service.preflight(action.id, 'integrate').token, true);
   const run = await settle(service, runId);
   assert.equal(run.status, 'blocked');
-  assert.match(run.summary, /issue-delivery-config/);
+  assert.match(run.summary, /Pull request settings are missing/);
   assert.equal(api.inspect().registry.actions[0].status, 'completed');
   assert.equal(existsSync(join(root, '.issues/factory-integration.lock')), false);
   await assert.rejects(
@@ -180,6 +181,13 @@ test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => 
   const { url, page } = await httpFixture(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
+  const expired = await fetch(url + '/api/lifecycle-answer', {
+    method: 'POST',
+    headers: { origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' },
+    body: '{}',
+  });
+  assert.equal(expired.status, 400);
+  assert.match((await expired.json()).error, /session expired.*Reload this page.*No action was performed/);
   assert.equal((await fetch(url + '/api/queue', { headers: { cookie } })).status, 200);
   assert.equal(existsSync(join(root, '.issues/factory-ui-server.lock')), false);
   const options = {
@@ -1447,6 +1455,61 @@ test('the plan viewer reads actual project plans without changing issue records'
   assert.equal(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), before);
 });
 
+test('saved report reads full fresh Markdown for only the selected issue without mutations', (t) => {
+  const { service, root, api } = fixture(t);
+  const path = join(root, '.issues/20261022-one.md');
+  const original = readFileSync(path, 'utf8'),
+    registry = JSON.stringify(api.inspect().registry);
+  writeFileSync(join(root, '.issues/20261022-two.md'), original.replaceAll('20261022-one', '20261022-two'));
+  assert.deepEqual(service.readSavedReport('20261022-one'), { path: '.issues/20261022-one.md', content: original });
+  const changed = original + '\n<script>window.reportExecuted = true</script> & <img src=x onerror=alert(1)>\n';
+  writeFileSync(path, changed);
+  assert.equal(service.readSavedReport('20261022-one').content, changed);
+  assert.equal(service.readSavedReport('20261022-two').content, original.replaceAll('20261022-one', '20261022-two'));
+  assert.equal(readFileSync(path, 'utf8'), changed);
+  assert.equal(JSON.stringify(api.inspect().registry), registry);
+});
+
+test('saved report rejects paths, absent files, wrong identity, symlinks and non-regular files', (t) => {
+  const { service, root } = fixture(t);
+  for (const id of [null, '', '../outside', '20261022-one.md', '/tmp/report', 'one/two', '..', '%2e%2e%2foutside'])
+    assert.throws(() => service.readSavedReport(id), /valid saved issue ID/);
+  assert.throws(() => service.readSavedReport('missing'), /report is missing/);
+  const path = join(root, '.issues/20261022-one.md'),
+    original = readFileSync(path, 'utf8');
+  writeFileSync(path, original.replace('20261022-one', '20261022-two'));
+  assert.throws(() => service.readSavedReport('20261022-one'), /does not belong/);
+  writeFileSync(path, 'No frontmatter');
+  assert.throws(() => service.readSavedReport('20261022-one'), /does not belong/);
+  unlinkSync(path);
+  writeFileSync(join(root, 'outside.md'), original);
+  symlinkSync(join(root, 'outside.md'), path);
+  assert.throws(() => service.readSavedReport('20261022-one'), /cannot be a symlink/);
+  unlinkSync(path);
+  writeFileSync(join(root, '.issues/real.md'), original);
+  symlinkSync(join(root, '.issues/real.md'), path);
+  assert.throws(() => service.readSavedReport('20261022-one'), /cannot be a symlink/);
+  unlinkSync(path);
+  mkdirSync(path);
+  assert.throws(() => service.readSavedReport('20261022-one'), /regular Markdown file/);
+});
+
+test('saved report resource requires authentication and leaves the plans-only resource intact', async (t) => {
+  const { service, root } = fixture(t);
+  const { url, page } = await httpFixture(t, service);
+  const headers = { cookie: page.headers.get('set-cookie').split(';')[0] };
+  assert.equal((await fetch(url + '/api/issue-report?issue=20261022-one')).status, 400);
+  const response = await fetch(url + '/api/issue-report?issue=20261022-one', { headers });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).content, readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'));
+  for (const query of ['issue=../outside', 'issue=missing', 'path=.issues/20261022-one.md'])
+    assert.equal((await fetch(url + '/api/issue-report?' + query, { headers })).status, 400);
+  assert.equal((await fetch(url + '/api/document?path=.issues/20261022-one.md', { headers })).status, 400);
+  mkdirSync(join(root, 'docs/plans'), { recursive: true });
+  writeFileSync(join(root, 'docs/plans/example.md'), '# Example plan');
+  assert.equal((await fetch(url + '/api/document?path=docs/plans/example.md', { headers })).status, 200);
+});
+
 function implementationFixture(t) {
   const setup = fixture(t),
     { root, git, service } = setup;
@@ -2000,12 +2063,14 @@ test('implementation checklist stays in Verify when the issue advances to Commit
     'progressControls',
     'latestReviewResult',
     'issueDeliveryCard',
+    'verificationRecovery',
     source + ';return currentStageContent;'
   )(
     () => '<checklist>Saved passed and skipped steps</checklist>',
     () => '<file-problems/>',
     () => '<progress/>',
     () => '<result/>',
+    () => '',
     () => ''
   );
   const issue = { implementation: { record: { steps: [{ name: 'Saved step' }] } } };
@@ -2551,7 +2616,10 @@ function lifecycleTransport(root, calls, threads, proposal) {
     requests: new Map(),
     ready: async () => {},
     close() {},
-    resume: async (id) => calls.push({ resume: id }),
+    resume: async (id, cwd, mode) => {
+      threads.set(id, { ...threads.get(id), cwd, mode });
+      calls.push({ resume: id, cwd, mode });
+    },
     start: async (cwd, mode) => {
       const id = 'chat-' + threads.size;
       threads.set(id, { cwd, mode });
@@ -2560,13 +2628,23 @@ function lifecycleTransport(root, calls, threads, proposal) {
     },
     turn: async (id, cwd, prompt, schema) => {
       calls.push({ turn: id, prompt });
-      return JSON.stringify(lifecycleResponse(root, schema, proposal));
+      const result = JSON.stringify(lifecycleResponse(root, schema, proposal));
+      const thread = threads.get(id);
+      thread.turns ||= [];
+      thread.turns.push({
+        id: 'turn-' + thread.turns.length,
+        status: 'completed',
+        items: [{ type: 'agentMessage', text: result }],
+      });
+      return result;
     },
     call: async (method, params) => {
-      if (method === 'thread/read') return { thread: { id: params.threadId, cwd: threads.get(params.threadId).cwd } };
+      if (method === 'thread/read')
+        return { thread: { id: params.threadId, cwd: threads.get(params.threadId).cwd, status: { type: 'idle' } } };
       assert.equal(method, 'thread/turns/list');
+      const turns = threads.get(params.threadId).turns;
       return {
-        data: [
+        data: turns?.slice().reverse().slice(0, params.limit) || [
           {
             id: 'finished-turn',
             status: 'completed',
@@ -2649,7 +2727,8 @@ test('one approved lifecycle run saves, launches, reviews and advances to explic
   assert.equal(record.status, 'finished', record.summary);
   assert.equal(service.snapshot().issues[0].state, 'final');
   assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
-  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 0);
+  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
   assert.match(readFileSync(join(service.root, '.issues/20261022-one.md'), 'utf8'), /Implementation plan approved/);
   assert.equal(record.input, null);
 });
@@ -2720,7 +2799,9 @@ test('approved continuation resumes the same worker before reviewing its new res
   assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
   assert.equal(worker.threadId, 'existing-worker');
   assert.equal(service.store.runs.find((r) => r.id === worker.id).authorization.kind, 'approved-plan');
-  const work = calls.findIndex((c) => c.turn === 'existing-worker');
+  const work = calls.findIndex(
+    (c) => c.turn === 'existing-worker' && c.prompt?.startsWith('Continue only the original saved assignment.')
+  );
   const review = calls.findIndex((c) => c.prompt?.includes('Perform one coordinator evidence review'));
   assert.ok(work >= 0 && review > work);
   assert.match(calls[work].prompt, /bounded correction already approved/);
@@ -2925,6 +3006,10 @@ test('a real required decision is answered inside the issue and resolved through
 
 test('human-first integration pauses inline and refuses approval after the candidate target changes', async (t) => {
   const { service, api, proposal, git, root } = lifecycleFixture(t);
+  writeFileSync(
+    join(root, '.issues/issue-delivery-config.json'),
+    JSON.stringify({ provider: 'github', repository: 'fixture/timey', remote: 'origin', target: 'main' })
+  );
   startIssueLifecycle(service);
   const initial = await finishLifecycle(service);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
@@ -3203,6 +3288,43 @@ async function activityScreen(t) {
   return { window: dom.window, snapshot };
 }
 
+test('saved report control belongs on the issue page and displays escaped full content in the named dialog', async (t) => {
+  const { window } = await activityScreen(t);
+  const document = window.document,
+    calls = [];
+  const content = '---\nid: 20261022-one\n---\n<script>window.reportExecuted=true</script><img src=x onerror=alert(1)>';
+  window.fetch = async (path) => {
+    calls.push(path);
+    return { ok: true, json: async () => ({ path: '.issues/20261022-one.md', content }) };
+  };
+  document.getElementById('plan').showModal = function () {
+    this.open = true;
+  };
+  document.getElementById('plan').close = function () {
+    this.open = false;
+  };
+  const button = document.querySelector('[data-open-report]');
+  assert.equal(button.textContent, 'Open saved report');
+  assert.equal(button.dataset.openReport, '20261022-one');
+  button.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(document.querySelector('[data-open-report]'), button);
+  assert.deepEqual(calls, ['/api/issue-report?issue=20261022-one']);
+  assert.equal(document.getElementById('plan').getAttribute('aria-labelledby'), 'plan-title');
+  assert.equal(document.getElementById('plan-title').textContent, 'Saved issue report');
+  assert.equal(document.getElementById('plan-path').textContent, '.issues/20261022-one.md');
+  assert.equal(document.getElementById('plan-content').textContent, content);
+  assert.equal(document.getElementById('plan-content').querySelector('script,img'), null);
+  assert.equal(window.reportExecuted, undefined);
+  document.getElementById('close-plan').click();
+  assert.equal(document.getElementById('plan').open, false);
+  window.fetch = async () => ({ ok: false, json: async () => ({ error: 'The saved issue report is missing.' }) });
+  button.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(document.getElementById('error').textContent, /report is missing/);
+  assert.equal(document.getElementById('plan').open, false);
+});
+
 async function approvalScreen(t) {
   const view = await activityScreen(t);
   view.snapshot.runs.find((r) => r.id === 'live').approvals = [
@@ -3267,6 +3389,53 @@ test('failed approval shows the error and restores an enabled button for retry',
   assert.equal(button.disabled, false);
   assert.equal(button.textContent, 'Allow for this chat');
   assert.match(window.document.getElementById('error').textContent, /Approval could not be saved/);
+});
+
+test('publication failures stay beside both approval controls through rendering and clear on explicit retry', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.conversation = { issueId: '20261022-one', messages: [] };
+  snapshot.issues[0].lifecycle = {
+    status: 'waiting',
+    updated: 'publication-request',
+    events: [],
+    input: { type: 'publication', repository: 'fixture/timey', source: 'issue/one', target: 'dev', candidate: 'saved' },
+  };
+  let posts = 0,
+    retry;
+  window.fetch = async (path) => {
+    if (path.endsWith('/lifecycle-answer')) {
+      posts++;
+      if (posts === 2)
+        return new Promise((resolve) => {
+          retry = resolve;
+        });
+      return { ok: false, json: async () => ({ error: 'Reload this page and try again. No action was performed.' }) };
+    }
+    return { ok: true, json: async () => ({ messages: [] }) };
+  };
+  window.screenTest.show(snapshot);
+  const buttons = () => [...window.document.querySelectorAll('[data-lifecycle-answer]')];
+  assert.equal(buttons().length, 2);
+  buttons()[0].click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (const button of buttons()) {
+    assert.equal(button.disabled, false);
+    assert.equal(button.nextElementSibling?.getAttribute('role'), 'alert');
+    assert.match(button.nextElementSibling.textContent, /Reload this page/);
+  }
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
+  buttons()[1].click();
+  buttons()[0].click();
+  assert.equal(posts, 2, 'Only the explicit retry sends another request');
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
+  assert.ok(buttons().every((button) => button.disabled));
+  retry({ ok: false, json: async () => ({ error: 'Publication is unavailable.' }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
+  snapshot.issues[0].lifecycle.updated = 'replacement-request';
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
 });
 
 test('native permission screen explains chat scope and actual read, write and network access', async (t) => {
@@ -3798,7 +3967,9 @@ test('approved lifecycle actions retain plan authorization without claiming a ne
   assert.equal(action.authorization.kind, 'approved-plan');
   assert.equal(action.operations[0].authorization.plan_sha256, worker.authorization.plan_sha256);
   assert.equal(worker.authorization.plan_sha256, service.lifecycleRuns['20261022-one'].approval.sha256);
-  const prompt = calls.find((c) => c.turn === worker.threadId).prompt;
+  const prompt = calls.find(
+    (c) => c.turn === worker.threadId && c.prompt?.includes('You are the worker for saved factory action')
+  ).prompt;
   assert.match(prompt, /under the approved plan/);
   assert.doesNotMatch(prompt, /human explicitly chose Start worker/i);
   const note = service.snapshot().issues[0].content;
@@ -4017,7 +4188,7 @@ for (const change of ['none', 'dirty', 'candidate']) {
       const run = await settle(service, runId);
       assert.equal(run.kind, 'assembly');
       assert.equal(run.status, 'blocked');
-      assert.match(run.summary, /issue-delivery-config/);
+      assert.match(run.summary, /Pull request settings are missing/);
     }
     assert.equal(dispatches, 0);
   });
@@ -4098,13 +4269,7 @@ test('runtime identifies the issue project separately from UI source and run det
   assert.equal(runtime.project, service.root);
   assert.notEqual(runtime.checkout, root);
   assert.equal(runtime.mode, 'preview');
-  const { execFile } = await import('node:child_process');
-  const command = resolve('scripts/factory.mjs');
-  const cli = await new Promise((done, reject) =>
-    execFile(process.execPath, [command, 'runtime', url], { cwd: '/private/tmp' }, (error, stdout) =>
-      error ? reject(error) : done(JSON.parse(stdout))
-    )
-  );
+  const cli = await runCommand('/private/tmp', ['runtime', url]);
   assert.equal(cli.project, service.root);
   const queue = await (await fetch(url + '/api/queue', { headers })).json();
   assert.doesNotMatch(JSON.stringify(queue), /FULL_TRANSCRIPT_CANARY|PRIVATE_INSTRUCTIONS/);
@@ -4287,4 +4452,30 @@ test('a queue snapshot projects run history once while dispatch still reads curr
   assert.equal(calls, 1, 'a blocked issue must reuse the snapshot history');
   assert.equal(canResumeLifecycle(service, record, queue, issue), false);
   assert.equal(calls, 2, 'dispatch without a snapshot must still read current runs');
+});
+
+test('a simple approved lifecycle uses its clarification task without another planning conversation', async (t) => {
+  const { service, calls, api, proposal } = lifecycleFixture(t);
+  const turn = service.codex.turn;
+  service.codex.turn = async (...args) => {
+    const result = JSON.parse(await turn(...args));
+    if (args[3].properties.clarification_complete) {
+      result.direct_task = proposal;
+      result.direct_routes = [];
+    }
+    return JSON.stringify(result);
+  };
+  startIssueLifecycle(service);
+  const waiting = await finishLifecycle(service);
+  assert.equal(waiting.status, 'waiting');
+  assert.equal(api.inspect().registry.actions.length, 0);
+  await service.answerLifecycle({ issueId: waiting.issueId, updated: waiting.updated, decision: 'approve' });
+  const done = await finishLifecycle(service);
+  assert.equal(done.status, 'finished', done.summary);
+  assert.equal(api.inspect().registry.actions.length, 1);
+  assert.equal(
+    calls.some((c) => c.prompt?.includes('Perform one read-only factory queue review')),
+    false
+  );
+  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 0);
 });

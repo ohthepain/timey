@@ -5,10 +5,12 @@ const issueChatUI = (() => {
     latest = null,
     api = null,
     after = null;
-  let log, draft, mode, status, pending, toggle, body, historyButton;
+  let log, draft, mode, status, pending, toggle, body, historyButton, stop;
   let sending = new Set(),
     requestKey = null,
     requestId = null;
+  const stopping = new Set(),
+    stopErrors = new Map();
   let focusedBeforeRender = null,
     renderedMessages = '',
     historyComplete = false;
@@ -105,6 +107,12 @@ const issueChatUI = (() => {
         void submit();
       }
     };
+    stop = node('button', 'Stop');
+    stop.type = 'button';
+    stop.setAttribute('aria-label', 'Stop response');
+    stop.onclick = (event) => {
+      if (event.isTrusted) void stopResponse();
+    };
     form.append(draft, send);
     mode = node('select');
     mode.setAttribute('aria-label', 'Send as');
@@ -127,7 +135,7 @@ const issueChatUI = (() => {
       'small',
       'Saved on this issue. Roles share its history; implementation and independent review keep separate execution contexts.'
     );
-    body.append(historyButton, log, pending, form, mode, status, notice);
+    body.append(historyButton, log, pending, form, stop, mode, status, notice);
     section.append(toggle, body);
     return section;
   }
@@ -139,7 +147,11 @@ const issueChatUI = (() => {
     renderPending(inputHtml);
     const issue = latest.issues.find((entry) => entry.id === current);
     syncReplyMode(issue.lifecycle);
-    if (!sending.has(current)) status.textContent = chatStatus(conversation);
+    stop.hidden = !conversation.responseId;
+    stop.disabled = stopping.has(current);
+    stop.textContent = stop.disabled ? 'Stopping…' : 'Stop';
+    stop.dataset.responseId = conversation.responseId || '';
+    if (!sending.has(current)) status.textContent = responseStatus(conversation);
     if (follow) log.scrollTop = log.scrollHeight;
   }
   function selectedConversation(data, id) {
@@ -203,6 +215,33 @@ const issueChatUI = (() => {
     if (['responding', 'attention'].includes(conversation.status))
       return 'The previous response stopped. Your messages are saved; send another message to reconnect.';
     return '';
+  }
+  function responseStatus(conversation) {
+    const error = stopErrors.get(current);
+    if (error && error.messageId === conversation.responseId) return error.text;
+    stopErrors.delete(current);
+    return chatStatus(conversation);
+  }
+  async function stopResponse() {
+    const issueId = current,
+      messageId = stop.dataset.responseId;
+    if (!messageId || stopping.has(issueId)) return;
+    stopping.add(issueId);
+    stopErrors.delete(issueId);
+    stop.disabled = true;
+    status.textContent = 'Stopping the current response…';
+    try {
+      await api('issue-chat-stop', { issueId, messageId });
+      await after();
+    } catch (error) {
+      stopErrors.set(issueId, { messageId, text: error.message });
+    } finally {
+      stopping.delete(issueId);
+      if (current === issueId) {
+        stop.disabled = false;
+        status.textContent = responseStatus(selectedConversation(latest, issueId));
+      }
+    }
   }
   async function submit() {
     if (sending.has(current) || !draft.value.trim()) return;

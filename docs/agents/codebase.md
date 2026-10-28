@@ -151,6 +151,11 @@ validated existing conversations and the original ledger attach operation.
 `factory-ui/plan-document.mjs` reads Markdown plans for the issue screen’s document
 viewer, restricted to canonical regular files under the selected project’s docs/plans.
 
+`factory-ui/report-document.mjs` reads the full current saved report by issue ID from
+the authoritative project queue, requiring a contained regular file with matching
+frontmatter identity and rejecting symlinks. Its authenticated issue-report resource
+shares the escaped read-only dialog without widening the plans-only resource.
+
 `factory-ui/plan-outline.mjs` locates issue-linked implementation plans and original
 work sections/version groups. `plan-check-schema.mjs` describes the bounded
 read-only review; `plan-review.mjs` records its guarded findings. `plan-checks.mjs`
@@ -201,6 +206,10 @@ existing chats for bounded corrections. See the UI guide for consent boundaries.
 requests. `lifecycle-planning.mjs` separates actual human questions from unfinished
 work and stopped operations. `lifecycle-stop.mjs` owns the meaningful-work fingerprint
 and bounded planning recovery, so administrative notes cannot reset a failed review.
+`recommendation-refresh.mjs` offers and executes approved-plan recovery for unused
+stale recommendations. `data.mjs` supplies structured launch blockers; the ledger
+checks expected proposal identity and staleness atomically before retirement.
+The lifecycle replans unfinished work, preserving normal replacement scope checks.
 The browser retains keyed expansion, draft and scroll state around live refreshes.
 
 `scripts/factory-ledger.mjs` owns assignment inspection and guarded ledger
@@ -268,7 +277,9 @@ that history with role results and actual answer receipts without rewriting thos
 owners. `conversation-context.mjs` supplies selected-issue context and full timeline
 snapshots to execution/review turns. `issue-chat-runtime.mjs` keeps the conversational
 model read-only and separate from worker/review connections; `issue-chat-ui.js`
-preserves the composer while polling role updates. `scripts/factory-chat.check.mjs`
+preserves the composer while polling role updates. Stop uses the current message ID
+and the dedicated connection’s exact native turn; lifecycle and worker connections
+are outside its cancellation path. `scripts/factory-chat.check.mjs`
 checks persistence, provenance, routing, isolation, pagination and UI drafts.
 
 Queue lifecycle squares read the strip from `issueLifecycleView` on each issue snapshot.
@@ -326,3 +337,76 @@ initial routing (`capture-routing.mjs`) and exclusive recoverable publication.
 `issue-capture-ui.js` owns the persistent dialog, draft identity and toast outside
 the list's replaceable DOM. HTTP dispatch retains existing mutation guards; this
 boundary calls no worker or lifecycle dispatch. See [factory UI](factory-ui.md#create-an-issue-from-the-list).
+
+`factory-ui/verification-recovery.mjs` retains completed implementation across
+failed independent checks, records the transition into Verify, and owns explicit
+retries and branch updates in isolated checkouts. It retains selection receipts,
+original bases and approval boundaries; it starts no model chats. `checks.mjs`
+uses the summary paths returned by each verifier command rather than scanning
+shared evidence for unrelated reports. `verify-scope.mjs` is safe for tests to
+import; importing the verifier CLI starts verification.
+
+`factory-ui/integration-recovery.mjs` recovers already-merged historical work during
+approved lifecycle progress and owns the explicit recovery retry. It validates
+command-owned reports, retains blocked reasons and resumes partial bookkeeping.
+`factory-legacy-integration.mjs` validates the original run/reservation, current
+Git ancestry, exact reports and human guards for the ledger's narrow historical
+completion operation; normal record transitions retain the PR-delivery requirement.
+
+`integration-reservation.mjs` supplies read-only eligibility for older stopped
+coordinators. It enables Continue without changing queue state or clearing locks.
+
+Delivery setup recovery lives in `scripts/factory-ui/delivery-setup.mjs`; it applies
+matching human target decisions and connects them to lifecycle freshness and
+in-issue input. `assembly-recovery.mjs` owns stopped-operation explanations and
+stale-safe retries. `scripts/issue-delivery-assembly.mjs` retains/reuses the exact
+merged assembly before verification. The delivery service still owns locking,
+guards, contribution records and all remote effects.
+
+`scripts/issue-verification-start.mjs` validates the narrow approved-plan start for
+verification of assembled same-issue work. The ledger's `bindVerification` method
+records it atomically. `scripts/factory-ui/verification-handoff.mjs` selects that
+handoff, records its existing plan authority and supplies issue-branch retry inputs.
+The ordinary launch guards and worker transport still execute the saved task;
+implementation-start approval requirements remain separate.
+
+`scripts/factory-ui/completion-review.mjs` selects and runs issue completion
+reviews, compiles evidence-backed manifests and retains their normal delivery
+validation. `pr-publication.mjs` presents and records the exact publication
+approval, rejects stale results and delegates remote effects to the existing
+idempotent delivery operations. Both use lifecycle progress; the browser supplies
+no completion manifest or invented evidence hashes.
+`completion-choice.mjs` keeps read-only delivery selection and freshness inputs
+separate from review execution, avoiding a dependency from queue decisions back
+into lifecycle model calls.
+Completion routing and server readiness use `completionStage` in
+`scripts/issue-delivery-policy.mjs`. This shared role-based policy lets assembled
+Implement candidates reach pre-publication review without first requiring target
+integration. Stage advancement, custom-stage obligations and publication/merge
+permissions remain separate gates.
+
+`factory-ui/completion-repair.mjs` turns a completion finding into one durable,
+plan-linked repair recommendation. `issue-verification-start.mjs` validates both
+verification-only starts and approved-plan repair starts against the issue branch.
+`factory-ui/run-stream.mjs` restores output after the last history checkpoint.
+Stream fragments append immediately to the existing per-run log; the full run
+history is checkpointed at most once per second during streaming and immediately
+for state transitions. Reload replays the uncheckpointed complete log records.
+
+[Issue execution](issue-execution.md) owns the short-path and reuse contracts.
+`issue-work-chat.mjs` selects the primary conversation without replacing uncertain
+work; `direct-task.mjs` saves approved assessment tasks through existing guards.
+`scope-coverage.mjs` retains input-specific scope decisions; `candidate-cache.mjs`
+validates immutable automated evidence before reuse. `combined-completion.mjs`
+applies final independent review findings through `completion-contract.mjs` and
+the original delivery validator.
+
+`worker-turn.mjs` pins assignment results and selects them from a shared chat;
+`worker-history.mjs` validates their original checkout and recorded candidate.
+
+`factory-ui/evidence-staging.mjs` retains declared supplemental artifacts and
+resolves contribution-bound indexes for completion compilation. It does not
+interpret logs as a pass. `verify-preflight.mjs` checks installed dependencies and
+actual listener capability before checks; `verify-process.mjs` owns cancellation
+of its child group. `factory-ui/input-change.mjs` compares captured input hashes
+and reports coordinator-owned recovery without changing approval policy.

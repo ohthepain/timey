@@ -79,8 +79,16 @@ export function actionFingerprint(queue, action) {
   );
 }
 export function describeLaunch(queue, action) {
-  if (!queue.registryPresent) return 'The dispatch registry is missing. Reconcile it in the coordinator chat.';
-  if (action.status !== 'recommended') return `This action is ${action.status}; do not launch it again.`;
+  return launchProblem(queue, action)?.message || null;
+}
+export function launchProblem(queue, action) {
+  if (!queue.registryPresent)
+    return {
+      code: 'registry-missing',
+      message: 'The dispatch registry is missing. Reconcile it in the coordinator chat.',
+    };
+  if (action.status !== 'recommended')
+    return { code: 'already-started', message: `This action is ${action.status}; do not launch it again.` };
   if (
     queue.actions.some(
       (a) =>
@@ -89,24 +97,31 @@ export function describeLaunch(queue, action) {
         a.issues.some((id) => action.issues.includes(id))
     )
   )
-    return 'Issue already claimed by another saved action.';
-  if (action.dependencies.some((id) => queue.actions.find((a) => a.id === id)?.status === 'assembled')) {
+    return { code: 'issue-claimed', message: 'Issue already claimed by another saved action.' };
+  if (
+    action.start?.purpose === 'approved-plan-repair' ||
+    action.dependencies.some((id) => queue.actions.find((a) => a.id === id)?.status === 'assembled')
+  ) {
     try {
       validateAssembledStart(queue.root, action, { actions: queue.actions });
     } catch (error) {
-      return error.message;
+      return { code: 'assembled-start', message: error.message };
     }
   }
   return launchFreshness(queue, action);
 }
 function launchFreshness(queue, action) {
-  if (!queue.sourceClean) return 'The project has uncommitted changes. Preserve them before launching.';
+  if (!queue.sourceClean)
+    return {
+      code: 'uncommitted-changes',
+      message: 'The project has uncommitted changes. Preserve them before launching.',
+    };
   if (
     action.scope_basis
       ? action.scope_basis !== scopedActionBasis(queue, action)
       : JSON.stringify(action.basis) !== JSON.stringify(queue.snapshot)
   )
-    return 'This recommendation is out of date. Review the queue again.';
+    return { code: 'stale-recommendation', message: 'This recommendation is out of date. Review the queue again.' };
   return null;
 }
 

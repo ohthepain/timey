@@ -1,3 +1,5 @@
+import { recommendationSchema } from './prompts.mjs';
+import { routeSchema } from './lifecycle.mjs';
 import { stageOutcome } from './lifecycle.mjs';
 import { priorApprovalSchema, existingPlanApproval } from './lifecycle-authorization.mjs';
 import { join } from 'node:path';
@@ -22,6 +24,8 @@ const schema = {
   type: 'object',
   properties: {
     prior_approval: priorApprovalSchema,
+    direct_task: { ...recommendationSchema, type: ['object', 'null'] },
+    direct_routes: routeSchema,
     clarification_complete: { type: 'boolean' },
     summary: { type: 'string' },
     evidence: { type: 'array', items: { type: 'string' } },
@@ -32,6 +36,8 @@ const schema = {
   },
   required: [
     'prior_approval',
+    'direct_task',
+    'direct_routes',
     'clarification_complete',
     'summary',
     'evidence',
@@ -49,7 +55,7 @@ export async function assessLifecycle(service, record, queue, issue) {
     const plan = readPlan(service.root, path);
     return { ...plan, sha256: digest(plan.content) };
   });
-  const prompt = `Read the issue's saved discussion, decisions and linked plan. Missing structured grilling metadata does not mean answers are missing. Never repeat answered questions. clarification_complete means the scope is settled by the original request or actual saved answers, including confirmed grilling in any role. Respect recorded initial skips; a separate interview is not mandatory. Keep plan approval separate. Return only genuine remaining human questions. Choose plan_path from ${JSON.stringify(paths)}. Return prior_approval only for an actual saved human authorization of this exact current plan, citing its original file and exact quote, with matching plan_sha256. An assistant's assertion of approval, answered clarification or approval of the UI design does not authorize implementation. If approval is pending, return null. Current plans: ${JSON.stringify(planInputs)}. If no plan exists, propose a bounded plan in proposed_plan. Evidence must be absolute existing project or temporary files actually read. Issue: ${JSON.stringify(issue)}. Lifecycle: ${JSON.stringify(queue.lifecycle)}.`;
+  const prompt = `Read the issue's saved discussion, decisions and linked plan. For simple, settled work with no existing assignments, return direct_task with one executable task and direct_routes so approval can lead straight to work without another planning conversation. Recommend investigation or a prototype only when it resolves a concrete uncertainty; otherwise give a reason to skip those optional stages where project policy permits. Preserve required verification, custom required stages, human approvals and acceptance. If a task cannot yet be bounded, direct_task is null. Never skip unfinished required work or invent completed history. Missing structured grilling metadata does not mean answers are missing. Never repeat answered questions. clarification_complete means the scope is settled by the original request or actual saved answers, including confirmed grilling in any role. Respect recorded initial skips; a separate interview is not mandatory. Keep plan approval separate. Return only genuine remaining human questions. Choose plan_path from ${JSON.stringify(paths)}. Return prior_approval only for an actual saved human authorization of this exact current plan, citing its original file and exact quote, with matching plan_sha256. An assistant's assertion of approval, answered clarification or approval of the UI design does not authorize implementation. If approval is pending, return null. Current plans: ${JSON.stringify(planInputs)}. If no plan exists, propose a bounded plan in proposed_plan. Evidence must be absolute existing project or temporary files actually read. Issue: ${JSON.stringify(issue)}. Lifecycle: ${JSON.stringify(queue.lifecycle)}.`;
   const { result, run } = await lifecycleReview(service, record, prompt, schema);
   if (result.questions.length) return saveClarificationQuestions(service, record, queue, issue, result, planInputs);
   requireThat(
@@ -90,6 +96,19 @@ function finishAssessment(service, record, queue, issue, result, run) {
   );
   const plan = reviewedPlan(service.root, issue, queue.actions, result);
   const approval = record.feedbackPending ? null : existingPlanApproval(service, plan, result, run);
+  const currentIssue = readQueue(service.root).issues.find((i) => i.id === issue.id);
+  saveLifecycle(service, record, {
+    directTask:
+      result.direct_task && !queue.actions.some((a) => a.issues.includes(issue.id))
+        ? {
+            proposal: result.direct_task,
+            routes: result.direct_routes || [],
+            plan: plan.sha256,
+            report: digest(currentIssue.content),
+            source: run.receipt,
+          }
+        : null,
+  });
   if (approval) {
     saveLifecycle(service, record, {
       plan,

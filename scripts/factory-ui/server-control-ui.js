@@ -95,7 +95,8 @@ const serverControlUI = (() => {
     if (!expecting) return false;
     beginReconnect();
     try {
-      await fetch('/', { cache: 'no-store' });
+      const page = await fetch('/', { cache: 'no-store' });
+      if (!page.ok) throw Error('The restarted page is unavailable.');
       const current = await request('server-status');
       if (current.pid !== previousPid) {
         expecting = false;
