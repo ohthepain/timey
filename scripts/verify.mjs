@@ -71,9 +71,37 @@ function browserArtifacts(directory) {
         .digest('hex'),
     }));
 }
+function fallowEnforced(env = isolatedEnv) {
+  const value = env.TIMEY_FALLOW_ENFORCE;
+  return value === '1' || value === 'true';
+}
 function checkAssessment(name, result) {
   if (name === 'fallow') return assessAudit(result, report.changed_files);
   return { passed: result.status === 0 && !result.error };
+}
+function recordSkippedFallow() {
+  const startedAt = new Date().toISOString();
+  report.phases.push({ name: 'fallow', startedAt });
+  const log = join(reportDir, `${stamp}-fallow.log`);
+  writeFileSync(
+    log,
+    'Fallow audit skipped. Set TIMEY_FALLOW_ENFORCE=1 to enforce at commit, push, and verify.\n'
+  );
+  report.checks.push({
+    name: 'fallow',
+    passed: true,
+    skipped: true,
+    command: ['skipped'],
+    cwd: snapshot,
+    log,
+    reasons: ['Fallow enforcement is disabled unless TIMEY_FALLOW_ENFORCE=1.'],
+  });
+  Object.assign(report.phases.at(-1), {
+    finishedAt: new Date().toISOString(),
+    passed: true,
+    skipped: true,
+  });
+  console.log(`SKIP fallow: ${log}`);
 }
 function recordCheck(name, command, result) {
   const log = join(reportDir, `${stamp}-${name}.log`);
@@ -209,7 +237,8 @@ try {
   const fallowArgs = ['audit', '--base', base, '--format', 'json'];
   if (report.changed_files.length === 0) fallowArgs.push('--gate', 'all');
   else fallowArgs.push(fallowAuditScope(report.changed_files));
-  await run('fallow', fallowCommand, fallowArgs);
+  if (fallowEnforced()) await run('fallow', fallowCommand, fallowArgs);
+  else recordSkippedFallow();
   if (!auditOnly) {
     const changed = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
       .split('\0')

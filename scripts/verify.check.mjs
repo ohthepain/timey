@@ -33,7 +33,11 @@ test('staged audit sees the index even when unstaged changes hide an unused file
   writeFileSync(join(root, 'index.js'), 'import { extra } from "./extra.js";\nconsole.log(extra);\n');
   const before = git('diff', '--binary', 'HEAD');
   const script = resolve('scripts/verify.mjs');
-  const staged = spawnSync(process.execPath, [script, '--staged', '--audit-only'], { cwd: root, encoding: 'utf8' });
+  const staged = spawnSync(process.execPath, [script, '--staged', '--audit-only'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, TIMEY_FALLOW_ENFORCE: '1' },
+  });
   assert.equal(staged.status, 1, staged.stdout + staged.stderr);
   assert.match(staged.stdout, /FAIL fallow/);
   const working = spawnSync(process.execPath, [script, '--audit-only'], { cwd: root, encoding: 'utf8' });
@@ -73,6 +77,7 @@ function auditFixture(t, extraFiles = {}) {
     spawnSync(process.execPath, [resolve('scripts/verify.mjs'), '--audit-only', ...args], {
       cwd: root,
       encoding: 'utf8',
+      env: { ...process.env, TIMEY_FALLOW_ENFORCE: '1' },
     });
   return { root, git, run };
 }
@@ -135,7 +140,7 @@ test('a compact tool report cannot hide exported untracked additions or deletion
     spawnSync(process.execPath, [resolve('scripts/verify.mjs'), mode, '--audit-only', '--base', 'HEAD'], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...process.env, TIMEY_FALLOW_COMMAND: fallowCommand },
+      env: { ...process.env, TIMEY_FALLOW_COMMAND: fallowCommand, TIMEY_FALLOW_ENFORCE: '1' },
     });
   assert.equal(run().status, 0, 'independently empty export permits the pinned compact fixture report');
   writeFileSync(join(root, 'new.js'), 'console.log("untracked");\n');
@@ -277,7 +282,23 @@ test('step and commit audits block only introduced findings in changed files', (
   assert.match(introduced.stdout, /FAIL fallow/);
 });
 
-test('real pre-commit hook isolates Git environment and preserves the source index on failure', (t) => {
+test('real pre-commit hook skips Fallow by default', (t) => {
+  const { root, git } = auditFixture(t);
+  git('config', 'core.hooksPath', resolve('.githooks'));
+  writeFileSync(join(root, 'new-dead.js'), 'export const orphan = 1;\n');
+  git('add', '.');
+  const beforeHead = git('rev-parse', 'HEAD');
+  const result = spawnSync('git', ['commit', '-qm', 'hook probe'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_INDEX_FILE: join(root, '.git/index') },
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /SKIP fallow/);
+  assert.notEqual(git('rev-parse', 'HEAD'), beforeHead);
+});
+
+test('pre-commit hook blocks introduced dead code when TIMEY_FALLOW_ENFORCE=1', (t) => {
   const { root, git } = auditFixture(t);
   git('config', 'core.hooksPath', resolve('.githooks'));
   writeFileSync(join(root, 'new-dead.js'), 'export const orphan = 1;\n');
@@ -285,13 +306,13 @@ test('real pre-commit hook isolates Git environment and preserves the source ind
   const beforeHead = git('rev-parse', 'HEAD');
   const beforeEntries = git('ls-files', '--stage');
   const beforeDiff = git('diff', '--cached', '--binary');
-  const commit = () =>
-    spawnSync('git', ['commit', '-qm', 'hook probe'], {
+  const commit = (message) =>
+    spawnSync('git', ['commit', '-qm', message], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...process.env, GIT_INDEX_FILE: join(root, '.git/index') },
+      env: { ...process.env, GIT_INDEX_FILE: join(root, '.git/index'), TIMEY_FALLOW_ENFORCE: '1' },
     });
-  const failed = commit();
+  const failed = commit('hook probe');
   assert.notEqual(failed.status, 0, failed.stdout + failed.stderr);
   assert.match(failed.stdout + failed.stderr, /FAIL fallow/);
   assert.equal(git('rev-parse', 'HEAD'), beforeHead);
@@ -299,7 +320,7 @@ test('real pre-commit hook isolates Git environment and preserves the source ind
   assert.equal(git('diff', '--cached', '--binary'), beforeDiff);
   writeFileSync(join(root, 'index.js'), 'import { orphan } from "./new-dead.js";\nconsole.log(orphan);\n');
   git('add', '.');
-  const passed = commit();
+  const passed = commit('hook probe fixed');
   assert.equal(passed.status, 0, passed.stdout + passed.stderr);
   assert.notEqual(git('rev-parse', 'HEAD'), beforeHead);
 });
