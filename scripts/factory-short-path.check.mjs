@@ -6,6 +6,7 @@ import { deliveryScenario } from './issue-delivery-scenario.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { digest, writeJson } from './factory-ui/common.mjs';
+import { CodexConnection } from './factory-ui/codex.mjs';
 
 async function setup(t) {
   const f = await deliveryScenario(t),
@@ -28,6 +29,7 @@ test('one primary issue chat is reused across checkouts while active or uncertai
     return 'primary';
   };
   f.service.codex.call = async () => ({ thread: { status: { type: 'idle' } } });
+  f.service.codex.ready = async () => {};
   f.service.codex.resume = async (...args) => resumes.push(args);
   const first = f.service.store.add({ id: 'first' }, 'worker', f.base);
   assert.equal(await issueWorkChat(f.service, first, f.issueId, f.root), 'primary');
@@ -45,11 +47,37 @@ test('one primary issue chat is reused across checkouts while active or uncertai
   await assert.rejects(issueWorkChat(f.service, third, f.issueId, f.root), /unknown/);
   assert.equal(starts, 1);
 });
+test('a cold connection resumes the saved primary chat without creating a replacement', async (t) => {
+  const f = await setup(t),
+    { issueWorkChat } = await import('./factory-ui/issue-work-chat.mjs');
+  const cli = join(f.root, '.issues/cold-cli.mjs'),
+    log = join(f.root, '.issues/cold-rpc.jsonl');
+  writeFileSync(
+    cli,
+    `import {createInterface} from 'node:readline';
+    import {appendFileSync} from 'node:fs';
+    createInterface({input:process.stdin}).on('line',line=>{
+      const m=JSON.parse(line); appendFileSync(${JSON.stringify(log)},JSON.stringify(m.method)+'\\n');
+      if(m.id===undefined)return;
+      const result=m.method==='thread/read'?{thread:{id:'saved-primary',status:{type:'idle'}}}:{};
+      process.stdout.write(JSON.stringify(m.method==='thread/start'?{id:m.id,error:{message:'No replacement chats'}}:{id:m.id,result})+'\\n');
+    });`
+  );
+  f.service.codex = new CodexConnection({ command: process.execPath, args: [cli] });
+  f.record.workThreadId = 'saved-primary';
+  const run = f.service.store.add({ id: 'resume-after-restart' }, 'worker', f.base);
+  assert.equal(await issueWorkChat(f.service, run, f.issueId, f.root), 'saved-primary');
+  const methods = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(methods, ['initialize', 'initialized', 'thread/read', 'thread/resume']);
+  assert.equal(run.reusedIssueChat, true);
+});
+
 test('unchanged positive scope checks are reused, but changes to scope or approval evidence are not', async (t) => {
   const f = await setup(t),
     { checkLifecycleScope } = await import('./factory-ui/lifecycle-review.mjs');
   let turns = 0;
   f.service.codex.start = async () => 'primary';
+  f.service.codex.ready = async () => {};
   f.service.codex.call = async () => ({ thread: { status: { type: 'idle' } } });
   f.service.codex.resume = async () => {};
   f.service.codex.turn = async () => {

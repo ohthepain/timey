@@ -27,6 +27,7 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
     'This issue chat is still working. Wait for its current action; no replacement chat was created.'
   );
   let response;
+  await service.codex.ready();
   try {
     response = await service.codex.call('thread/read', { threadId, includeTurns: false });
   } catch (error) {

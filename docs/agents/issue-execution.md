@@ -8,6 +8,9 @@ worker chat when adopting older records; never replace an active or uncertain ch
 Each assignment retains its exact result turn and original checkout even when
 later roles reply in the same chat. Grouped manual assignments retain their own conversations. Temporary discussion
 is unchanged. Required independent evidence reviews use a separate read-only chat.
+After a server restart, initialize the Codex connection before reading the saved
+primary chat's status. Reuse still requires a known idle chat; initialization
+does not create a replacement chat or start a turn.
 
 For settled simple work, clarification may return one executable task and its
 route alongside the plan. Save the task only after the exact human plan approval,
