@@ -53,6 +53,28 @@ function fixture(t, options = {}) {
   t.after(() => service.close());
   return { root, git, api, proposal, service };
 }
+function verifiedRoute(service) {
+  service.store.runs.push({
+    id: 'explicit-verified-route',
+    kind: 'route-choice',
+    status: 'completed',
+    events: [],
+    savedRoutes: [
+      {
+        issueId: '20261022-one',
+        steps: [
+          {
+            state: '@integration',
+            decision: 'take',
+            reason: 'Explicitly retain verified delivery.',
+            source: { kind: 'user' },
+          },
+        ],
+      },
+    ],
+  });
+  service.store.save();
+}
 async function settle(service, id) {
   for (let n = 0; n < 200; n++) {
     if (!service.store.connected.has(id)) return service.store.runs.find((r) => r.id === id);
@@ -126,16 +148,17 @@ test('failed worker setup retains one claim and blocks duplicate dispatch', asyn
 
 test('manual integration requires exact candidate approval and never follows worker completion', (t) => {
   const { api, proposal, service, git } = fixture(t);
+  verifiedRoute(service);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
   api.reserve(action.id);
   api.attach(action.id, { threadId: 'old', hostId: 'native' });
   api.record(action.id, { status: 'completed', worker_revision: git('rev-parse', 'HEAD'), evidence: 'fixture result' });
-  assert.equal(service.store.runs.length, 0);
+  assert.equal(service.store.runs.filter((r) => r.kind !== 'route-choice').length, 0);
   const selection = service.preflight(action.id, 'integrate');
   assert.equal(selection.requiresApproval, true);
   assert.throws(() => service.start(selection.token, false), /Explicit approval/);
   assert.equal(api.inspect().registry.actions[0].status, 'completed');
-  assert.equal(service.store.runs.length, 0);
+  assert.equal(service.store.runs.filter((r) => r.kind !== 'route-choice').length, 0);
 });
 
 test('Codex approval responses are bound to the pending chat', (t) => {
@@ -509,13 +532,14 @@ test('a review that tries to close the issue records neither completion nor acce
 
 test('Progress launches exactly the selected saved recommendation and integration still needs separate approval', async (t) => {
   const { api, proposal, service, git } = fixture(t);
+  verifiedRoute(service);
   transport(t, service);
   const [action] = api.recommend([proposal]);
   const selection = service.progressPreflight('20261022-one', 'investigate');
   assert.equal(selection.choice.actionId, action.id);
   const { runId } = service.progressStart(selection.token);
   assert.equal((await settle(service, runId)).status, 'completed');
-  assert.equal(service.store.runs.length, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind !== 'route-choice').length, 1);
   assert.equal(api.inspect().registry.actions[0].status, 'completed');
   api.record(action.id, { status: 'reconciled', evidence: 'Investigation reviewed independently.' });
   const [code] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
@@ -531,7 +555,7 @@ test('Progress launches exactly the selected saved recommendation and integratio
   assert.equal(integration.requiresApproval, true);
   assert.throws(() => service.progressStart(integration.token, false), /Explicit approval/);
   assert.equal(api.inspect().registry.actions.find((a) => a.id === code.id).status, 'completed');
-  assert.equal(service.store.runs.length, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind !== 'route-choice').length, 1);
 });
 
 test('a pending human decision blocks the proposed stage advance even when the model reports success', async (t) => {
@@ -704,7 +728,7 @@ test('routes save separately from execution, survive restart, and do not invent 
   const issue = restarted.snapshot().issues[0];
   assert.equal(issue.stageStates.implement.label, 'Planned');
   assert.equal(issue.stageStates.experiment.status, 'planned-skip');
-  assert.equal(issue.stageStates.final.label, 'Not decided');
+  assert.equal(issue.stageStates.final.label, 'Planned to skip');
   assert.equal(api.inspect().registry.actions.length, 1);
   assert.equal(api.inspect().registry.actions[0].status, 'setup');
   assert.equal(api.inspect().reports[0].metadata.lifecycle_history, undefined);
@@ -913,8 +937,11 @@ test('an explicitly required prototype cannot be skipped by an old route recomme
 test('invalid routes are rejected before saving any assignments', (t) => {
   const { root, service, api } = pendingReview(t);
   assert.throws(
-    () => saveRouteFixture(service, root, [{ state: 'closed', decision: 'skip', reason: 'No acceptance' }]),
-    /cannot skip explicit acceptance/
+    () =>
+      saveRouteFixture(service, root, [
+        { state: 'implement', decision: 'skip', reason: 'Unfinished required implementation' },
+      ]),
+    /required by project policy/
   );
   assert.equal(api.inspect().registry.actions.length, 1);
 });
@@ -1007,6 +1034,7 @@ test('an old blocked review does not mark a later stage blocked', async (t) => {
 
 test('integration approval is shown as a current requirement; checking never integrates or creates a chat', async (t) => {
   const { service, api, proposal, git } = fixture(t);
+  verifiedRoute(service);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
   finishCodeFixture(api, action.id, git('rev-parse', 'HEAD'), 'Fixture code candidate');
   const result = await checkNow(service);
@@ -3020,6 +3048,7 @@ test('human-first integration pauses inline and refuses approval after the candi
     join(root, '.issues/issue-delivery-config.json'),
     JSON.stringify({ provider: 'github', repository: 'fixture/timey', remote: 'origin', target: 'main' })
   );
+  verifiedRoute(service);
   startIssueLifecycle(service);
   const initial = await finishLifecycle(service);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
@@ -3297,6 +3326,36 @@ async function activityScreen(t) {
   dom.window.screenTest.show(snapshot);
   return { window: dom.window, snapshot };
 }
+
+test('a handed-off draft PR shows manual ownership without merge or maintenance controls', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const issue = snapshot.issues[0];
+  issue.lifecycle = {
+    status: 'finished',
+    deliveryHandoff: true,
+    summary: 'Handed off for manual repair and merge.',
+    events: [],
+  };
+  issue.issueDelivery = {
+    mode: 'draft-handoff',
+    state: 'handed-off',
+    source: 'factory/issue-one',
+    target: 'dev',
+    candidate: 'candidate',
+    targetRevision: 'base',
+    contributions: [],
+    pr: { url: 'https://github.com/fixture/timey/pull/1', draft: true },
+  };
+  window.screenTest.show(snapshot);
+  const card = window.document.querySelector('[aria-label="Issue pull request"]');
+  assert.match(card.textContent, /Handed off for manual repair and merge/);
+  assert.match(card.textContent, /Acceptance and closure remain outstanding/);
+  assert.equal(card.querySelector('a').href, issue.issueDelivery.pr.url);
+  assert.equal(window.document.querySelectorAll('[data-delivery-kind], [data-lifecycle-start]').length, 0);
+  issue.issueDelivery.mode = 'verified-delivery';
+  window.screenTest.show(snapshot);
+  assert.ok(window.document.querySelector('[data-delivery-kind="merge"]'));
+});
 
 test('saved report control belongs on the issue page and displays escaped full content in the named dialog', async (t) => {
   const { window } = await activityScreen(t);

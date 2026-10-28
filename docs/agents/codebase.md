@@ -421,3 +421,12 @@ candidate assets, and retains CLI logs and screenshots. `verify.mjs` invokes it
 before the other behavior/type/build checks and records artifact hashes in the
 full summary. `factory-ui/checks.mjs`, candidate caching and issue delivery retain
 and validate this browser evidence against the same candidate tree.
+
+Default delivery routing lives in `scripts/factory-ui/delivery-mode.mjs`, which
+preserves saved route decisions and supplies post-PR skip defaults. Worker runs
+freeze their delivery mode at launch. `handoff-checks.mjs` retains one attempt per
+unchanged candidate, including failures. `scripts/issue-draft-handoff.mjs` prepares
+the manual handoff report; shared delivery publication retains provider identity
+and recovery guards. `pr-publication.mjs` finishes Progress at a draft handoff;
+verified delivery still uses the existing completion and merge protocol. See
+[the default handoff contract](issue-delivery.md#default-draft-pr-handoff).

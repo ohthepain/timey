@@ -1643,24 +1643,30 @@
         const d = issue.issueDelivery;
         if (!d) return '';
         const active = ['running', 'answering'].includes(issue.lifecycle?.status);
-        const operations = !d.pr
-          ? []
-          : d.state === 'verified'
-            ? ['refresh']
-            : d.merge
-              ? ['verify', 'reconcile']
-              : ['refresh', 'merge', 'reconcile'];
+        const handoff = d.mode === 'draft-handoff';
+        const operations =
+          handoff || !d.pr
+            ? []
+            : d.state === 'verified'
+              ? ['refresh']
+              : d.merge
+                ? ['verify', 'reconcile']
+                : ['refresh', 'merge', 'reconcile'];
         const status = d.pr
-          ? d.state === 'verified'
-            ? 'Merged and checked'
-            : 'Pull request is open'
+          ? handoff
+            ? 'Handed off for manual repair and merge'
+            : d.state === 'verified'
+              ? 'Merged and checked'
+              : 'Pull request is open'
           : d.readiness
             ? 'Ready to open the pull request'
             : 'Preparing the pull request';
-        const next = d.readiness
-          ? 'The completed work and check results have been reviewed. Publication is the next step.'
-          : 'After verification, the coordinator will check the approved plan against the finished code and test results, then prepare the pull request. You do not need to upload anything.';
-        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(status)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><details><summary>Code version and review details</summary><p>Candidate: ${esc(d.candidate)}<br>Tested target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} reviewed contribution(s).</p></details>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : `<p>${esc(next)}</p>${!issue.lifecycle?.input ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || issue.lifecycle?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : 'Continue toward pull request'}</button>` : ''}`}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Check the saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>Opening or merging the pull request does not accept or close the issue.</p></section>`;
+        const next = handoff
+          ? 'Prepare a draft PR with actual check results and remaining work. Passing checks are not required; you handle repair and merge manually.'
+          : d.readiness
+            ? 'The completed work and check results have been reviewed. Publication is the next step.'
+            : 'After verification, the coordinator will check the approved plan against the finished code and test results, then prepare the pull request. You do not need to upload anything.';
+        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(status)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><details><summary>Code version and review details</summary><p>Candidate: ${esc(d.candidate)}<br>Original target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} retained contribution(s).</p></details>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : `<p>${esc(next)}</p>${!issue.lifecycle?.input ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || issue.lifecycle?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : 'Continue toward pull request'}</button>` : ''}`}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Check the saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>${handoff ? 'Factory work ends at this draft PR. No automatic repair, rebase or CI maintenance follows. Acceptance and closure remain outstanding.' : 'Opening or merging the pull request does not accept or close the issue.'}</p></section>`;
       }
       async function issueDeliveryAction(kind, input) {
         const preview = await request('issue-delivery-preflight', { kind, input });
@@ -2064,19 +2070,21 @@
             (run.issueId === issue.id ||
               data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
         );
-        const title = blocker
-          ? 'Uncommitted changes'
-          : record?.status === 'answering'
-            ? 'Saving your answer'
-            : active
-              ? 'Working on this issue'
-              : input
-                ? 'Your input is needed'
-                : stopped
-                  ? 'Progress stopped'
-                  : stage?.role === 'ready-to-close'
-                    ? 'Ready for final review'
-                    : 'Move this issue forward';
+        const title = record?.deliveryHandoff
+          ? 'Handed off for manual repair and merge'
+          : blocker
+            ? 'Uncommitted changes'
+            : record?.status === 'answering'
+              ? 'Saving your answer'
+              : active
+                ? 'Working on this issue'
+                : input
+                  ? 'Your input is needed'
+                  : stopped
+                    ? 'Progress stopped'
+                    : stage?.role === 'ready-to-close'
+                      ? 'Ready for final review'
+                      : 'Move this issue forward';
         const summary = blocker
           ? issue.progress.summary
           : record?.status === 'answering'
@@ -2094,7 +2102,11 @@
             ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
             : '');
         const canStart =
-          !input && !record?.deliveryWaiting && !issue.assemblyRecovery && stage?.role !== 'ready-to-close';
+          !input &&
+          !record?.deliveryHandoff &&
+          !record?.deliveryWaiting &&
+          !issue.assemblyRecovery &&
+          stage?.role !== 'ready-to-close';
         return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events

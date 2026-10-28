@@ -76,7 +76,11 @@ test('handoff retains the exact assembly and approved plan, allowing only the sa
   assert.equal(f.api.inspect().registry.actions.find((a) => a.id === action.id).status, 'reserved');
   assert.equal(f.queue.git('rev-parse', 'HEAD'), before);
   assert.equal(f.queue.git('-C', d.checkout, 'rev-parse', 'HEAD'), d.candidate);
-  assert.equal(f.service.store.runs.length, 0, 'Binding starts no chat or worktree');
+  assert.equal(
+    f.service.store.runs.filter((r) => r.kind !== 'route-choice').length,
+    0,
+    'Binding starts no chat or worktree'
+  );
 });
 
 test('a changed assembly or plan blocks the handoff without replacing the original work', async (t) => {

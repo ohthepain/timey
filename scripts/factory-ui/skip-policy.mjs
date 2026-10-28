@@ -1,9 +1,9 @@
+import { handoffStage } from './delivery-mode.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export function skipAllowed(queue, issue, state) {
-  if (state === '@integration')
-    return queue.actions.filter((a) => codeForIssue(a, issue)).every((a) => a.status === 'integrated');
+  if (handoffStage(state === '@integration' ? { state } : queue.lifecycle.find((s) => s.state === state))) return true;
   const role = queue.lifecycle.find((s) => s.state === state)?.role;
   return optionalRole(queue, issue, role);
 }
@@ -15,7 +15,4 @@ function optionalRole(queue, issue, role) {
 function commitDisabled(queue, role) {
   if (role !== 'ready-for-commit') return false;
   return JSON.parse(readFileSync(join(queue.root, '.issues/preferences.json'), 'utf8')).commit === false;
-}
-function codeForIssue(action, issue) {
-  return action.issues.includes(issue.id) && ['implement', 'integrate'].includes(action.kind);
 }

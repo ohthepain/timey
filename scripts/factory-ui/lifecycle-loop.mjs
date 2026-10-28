@@ -1,3 +1,4 @@
+import { draftAssembly } from './delivery-mode.mjs';
 import { directTaskChoice, saveDirectTask } from './direct-task.mjs';
 import { completionChoice } from './completion-choice.mjs';
 import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs';
@@ -26,10 +27,12 @@ async function lifecycleTick(service, record) {
   if (pauseRequested(service, record)) return false;
   if (record.deliveryPublished) {
     saveLifecycle(service, record, {
-      status: 'paused',
-      deliveryWaiting: true,
-      summary:
-        'The pull request is open. Its checks and merge controls are shown below. The issue remains open for review.',
+      status: record.deliveryHandoff ? 'finished' : 'paused',
+      input: null,
+      deliveryWaiting: !record.deliveryHandoff,
+      summary: record.deliveryHandoff
+        ? 'Handed off for manual repair and merge. The draft PR is open; the issue remains unaccepted and open.'
+        : 'The pull request is open. Its checks and merge controls are shown below. The issue remains open for review.',
     });
     return false;
   }
@@ -148,6 +151,7 @@ function checkSelectedScope(service, record, action, choice) {
 }
 function lifecycleActionNeedsHuman(service, record, choice, action) {
   if (!action || ['bind-verification', 'refresh-recommendation'].includes(choice.kind)) return false;
+  if (choice.kind === 'integrate' && draftAssembly(readQueue(service.root), action)) return false;
   const operation =
     choice.kind === 'integrate' ? 'merge' : { review: 'investigate', retro: 'investigate' }[action.kind] || action.kind;
   return pauseForHuman(service, record, operation, {}, action);

@@ -2,6 +2,13 @@
 
 ## Commands and evidence
 
+For default [draft PR handoff](issue-delivery.md#default-draft-pr-handoff), attempt
+relevant checks once per changed candidate and retain failures or unavailable
+checks as such. They do not block the handoff or trigger a repair loop. Passing
+verification, fixed closure and the explicitly selected verified-delivery route
+retain the gates below. A handed-off assignment may contain incomplete code;
+never describe that result as verified implementation.
+
 Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions and the pnpm version in
 `packageManager`. Run `pnpm install --frozen-lockfile` in a clean checkout.

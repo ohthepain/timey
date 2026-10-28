@@ -78,6 +78,7 @@ export function incompleteCompletion(service, record, queue, issue) {
   return record.recoveryContexts?.includes(basis) ? null : run;
 }
 export function canResumeLifecycle(service, record, queue, issue, runs) {
+  if (record.deliveryHandoff && record.deliveryPublished) return false;
   if (incompleteCompletion(service, record, queue, issue)) return true;
   if (needsDeliverySetupRecovery(service, record)) return true;
   if (!record.integrationRecovery && integrationReservation(service, record.issueId, queue)) return true;

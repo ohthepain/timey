@@ -11,14 +11,17 @@ export function issueLifecycleView(queue, issue, runs, readiness) {
 }
 
 function buildStageStates(queue, issue, runs, readiness) {
-  const route = savedRoute(issue, runs);
+  const route = savedRoute(issue, runs, queue);
   return Object.fromEntries([
     ...queue.lifecycle.map((stage) => [stage.state, describeStage(stage, queue, issue, runs, route, readiness)]),
     [
       '@integration',
       stageOutcome(issue, '@integration')
         ? recordedOutcome(stageOutcome(issue, '@integration'), queue.lifecycle)
-        : null,
+        : futureStage(
+            route.find((s) => s.state === '@integration'),
+            queue.lifecycle
+          ),
     ],
   ]);
 }

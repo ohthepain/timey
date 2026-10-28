@@ -1,3 +1,4 @@
+import { deliveryMode, draftHandoff } from './delivery-mode.mjs';
 import { completionReviewSchema, completionPrompt, compileCompletion } from './completion-contract.mjs';
 import { saveCompletionRepair } from './completion-repair.mjs';
 import { completionChoice } from './completion-choice.mjs';
@@ -25,7 +26,8 @@ export function beginCompletionReview(service, issueId) {
     completionChoice(context.queue, context.issue)?.kind === 'completion-review',
     'Finish the current issue work before preparing its pull request.'
   );
-  service.guard(service.root, { issues: [issueId] }, 'verify', delivery.candidate);
+  const handoff = deliveryMode(context.queue, context.issue, undefined, delivery.mode) === draftHandoff;
+  if (!handoff) service.guard(service.root, { issues: [issueId] }, 'verify', delivery.candidate);
   const lock = acquireReviewLock(service.root),
     record = service.lifecycleRuns[issueId];
   const run = service.store.add({ id: 'completion-review', issueId }, 'completion-review', delivery.candidate);
@@ -39,6 +41,15 @@ export function beginCompletionReview(service, issueId) {
   const original = identity(context, delivery);
   service.perform(run, async () => {
     try {
+      if (handoff) {
+        const result = await service.deliveries.operate('handoff', { issueId });
+        service.store.update(run, {
+          status: 'completed',
+          result,
+          summary: 'Draft PR handoff prepared with actual check results and remaining work.',
+        });
+        return;
+      }
       const review = await lifecycleReview(
         service,
         record,

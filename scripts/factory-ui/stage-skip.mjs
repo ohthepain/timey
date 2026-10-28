@@ -28,7 +28,7 @@ export function beginPlannedSkip(service, queue, issue) {
 }
 function recordPlannedSkip(service, queue, issue, run) {
   const stage = queue.lifecycle.find((item) => item.state === issue.state);
-  const step = savedRoute(issue, service.store.runs).find(
+  const step = savedRoute(issue, service.store.runs, queue).find(
     (item) => item.state === issue.state && item.decision === 'skip'
   );
   requireThat(step, 'Save a reason for skipping this optional stage before continuing.');
@@ -80,7 +80,7 @@ function saveDeferredRecommendations(service, review, issueId) {
   if (review?.deferredRecommendations?.length) {
     const current = readQueue(service.root);
     const issue = current.issues.find((item) => item.id === issueId);
-    const skipNext = savedRoute(issue, service.store.runs).some(
+    const skipNext = savedRoute(issue, service.store.runs, current).some(
       (step) => step.state === issue.state && step.decision === 'skip'
     );
     // Take the launch fingerprint only after the entire validated skip chain.
