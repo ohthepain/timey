@@ -1,3 +1,4 @@
+import { refreshRecommendation } from './recommendation-refresh.mjs';
 import { combinedContext, applyCombinedCompletion } from './combined-completion.mjs';
 import { beginPlannedSkip } from './stage-skip.mjs';
 import { readWorkerReview } from './worker-review.mjs';
@@ -70,6 +71,7 @@ function dispatchProgress(service, queue, issue, choice, humanApproved) {
   const handlers = {
     'completion-review': () => service.prepareCompletion(issue.id),
     'publish-issue-pr': () => service.requestPublication(issue.id),
+    'refresh-recommendation': () => refreshRecommendation(service, issue.id, choice.actionId),
     'bind-verification': () => service.bindVerification(choice.actionId, choice.candidate),
     'skip-stage': () => beginPlannedSkip(service, queue, issue),
     commit: () => beginCommit(service, queue, issue),

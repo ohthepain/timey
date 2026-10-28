@@ -86,7 +86,13 @@ export function canResumeLifecycle(service, record, queue, issue, runs) {
   if (record.stopBasis !== basis) return true;
   const choice = nextProgress(queue, issue, runs || service.store.list(service.codex.requests));
   return (
-    ['save-review', 'bind-verification', 'launch', 'completion-review', 'publish-issue-pr'].includes(choice.kind) &&
-    !record.attempts.includes(basis + ':' + choice.kind)
+    [
+      'save-review',
+      'refresh-recommendation',
+      'bind-verification',
+      'launch',
+      'completion-review',
+      'publish-issue-pr',
+    ].includes(choice.kind) && !record.attempts.includes(basis + ':' + choice.kind)
   );
 }

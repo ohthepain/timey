@@ -468,6 +468,18 @@ export function factory(project) {
     record(id, update) {
       return mutate((data) => {
         const action = find(data, id);
+        if (update.expected_recommendation) {
+          assert(
+            update.status === 'cancelled' &&
+              action.status === 'recommended' &&
+              action.issues.length === 1 &&
+              !action.threadId &&
+              !action.clientThreadId &&
+              digest(JSON.stringify(action)) === update.expected_recommendation &&
+              !recommendationFresh(action, data),
+            'The unused stale recommendation changed. Refresh before retiring it.'
+          );
+        }
         const transitions = {
           reserved: ['blocked', 'failed', 'cancelled'],
           setup: ['blocked', 'failed', 'cancelled'],

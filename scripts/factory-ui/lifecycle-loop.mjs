@@ -103,7 +103,7 @@ function selectLifecycleWork(service, queue, issue, record) {
   const continuation = continuationChoice(service, record, queue);
   if (continuation) return continuation;
   const handoff = nextProgress(queue, issue, service.store.list(service.codex.requests));
-  if (handoff.kind === 'bind-verification') return handoff;
+  if (['bind-verification', 'refresh-recommendation'].includes(handoff.kind)) return handoff;
   if (record.replan) return { kind: 'replan', title: 'Finding the next unfinished task.' };
   if (['completion-review', 'publish-issue-pr'].includes(handoff.kind)) return handoff;
   const checklist = checklistView(queue, issue, service.store.list(service.codex.requests));
@@ -142,12 +142,12 @@ async function coveredLifecycleAction(service, record, queue, choice) {
   return !lifecycleActionNeedsHuman(service, record, choice, action);
 }
 function checkSelectedScope(service, record, action, choice) {
-  if (choice.kind === 'bind-verification') return true;
+  if (['bind-verification', 'refresh-recommendation'].includes(choice.kind)) return true;
   if (choice.kind === 'resume') return checkContinuation(service, record);
   return action ? checkLifecycleScope(service, record, action) : true;
 }
 function lifecycleActionNeedsHuman(service, record, choice, action) {
-  if (!action || choice.kind === 'bind-verification') return false;
+  if (!action || ['bind-verification', 'refresh-recommendation'].includes(choice.kind)) return false;
   const operation =
     choice.kind === 'integrate' ? 'merge' : { review: 'investigate', retro: 'investigate' }[action.kind] || action.kind;
   return pauseForHuman(service, record, operation, {}, action);

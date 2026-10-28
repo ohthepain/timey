@@ -1,3 +1,4 @@
+import { recommendationRefresh } from './recommendation-refresh.mjs';
 import { completionChoice } from './completion-choice.mjs';
 import { verificationHandoff } from './verification-handoff.mjs';
 import { savedRoute } from './lifecycle.mjs';
@@ -86,7 +87,7 @@ function chooseWork(queue, issue, runs) {
   if (recommended)
     return { kind: 'launch', actionId: recommended.id, title: 'Start recommended work', summary: recommended.scope };
   return (
-    blockedRecommendation(queue, actions) || {
+    blockedRecommendation(queue, issue, actions) || {
       kind: 'plan',
       title: 'Recommend the next action',
       summary:
@@ -191,9 +192,9 @@ function uncommittedBlock(queue) {
   };
 }
 
-function blockedRecommendation(queue, actions) {
+function blockedRecommendation(queue, issue, actions) {
   const recommended = actions.find((action) => action.status === 'recommended');
   if (!recommended) return null;
   if (!queue.sourceClean) return uncommittedBlock(queue);
-  return unavailable(describeLaunch(queue, recommended));
+  return recommendationRefresh(queue, issue, recommended) || unavailable(describeLaunch(queue, recommended));
 }

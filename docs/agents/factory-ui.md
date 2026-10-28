@@ -561,6 +561,22 @@ with this dispatcher capability; it grants no scope or completion by itself.
 Queue reviews remain read-only; continuation execution belongs to the approved
 issue lifecycle loop, separately from the native factory command loop.
 
+## Refreshing stale recommendations
+
+Continue recovers a stale, unlaunched same-issue recommendation under the current
+approved plan. It retires the unused proposal with its original scope, base and
+authorization history retained, then replans only unfinished work from current
+inputs. It never updates the old fingerprint to make a stale assignment launchable.
+The replacement passes the normal scope review, human-input and launch guards;
+a changed plan or expanded scope still requires the actual human decision.
+
+Reads only offer recovery. The explicit Continue action performs retirement under
+the ledger lock, checking the exact expected proposal and that it is still stale,
+unclaimed and unbound. Grouped proposals, existing chats/reservations, dirty source,
+missing approval and invalid assembly handoffs retain their concrete blockers.
+Completed, reconciled and assembled work is preserved. Relevant recovery attempts
+are bounded by the normal lifecycle fingerprint; notes do not reset it.
+
 ## Questions, failures and forward progress
 
 Focused planning distinguishes unfinished work, completed-work bookkeeping, an
