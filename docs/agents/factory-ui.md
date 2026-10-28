@@ -963,3 +963,31 @@ or acceptance and start no work. Existing queue ordering is retained.
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
+
+## Create an issue from the list
+
+**Create issue** accepts one required description. Save asks the configured model
+to derive titles, separate independent outcomes and assess initial routing.
+Numbered steps for one problem stay together. Reports preserve the exact original
+description and relevant excerpt, use ask autonomy and record each initial skipped
+stage with its own reason and original-report source. Required custom stages stay
+in the route. Capture starts no investigation, worker or lifecycle Progress.
+
+Save stays on the list with its filters and reading position. A persistent toast
+links to every captured issue, including issues hidden by current filters. Opening
+a link starts no work. Cancel before submission writes no report. While saving,
+the controls disable; closing a request cannot undo a publication. Errors retain
+the description and retry identity, including across reloads in this browser tab.
+Retry the same draft to recover a lost response or partial publication. A changed
+description with that identity is rejected; Cancel starts a fresh draft. Success
+links survive a failed list refresh.
+
+Capture uses the existing local HTTP, preview, server ownership, pause and draining
+guards. Provider assessment holds no queue lock. Publication uses the common
+queue lock, exclusive report creation and a durable receipt under
+`.issues/factory-ui/captures/`. Same-identity retries return the original IDs; new
+explicit submissions may contain identical wording. Existing reports and the
+factory ledger remain untouched. Uncertain locks or changed partial reports need
+reconciliation. Provider/profile restrictions fail closed, with no model fallback.
+Descriptions go to the configured provider under its account policies; local
+ephemeral runtime cleanup establishes no provider-retention guarantee.

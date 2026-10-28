@@ -299,3 +299,24 @@ when its original readiness observations were not retained.
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
+
+## Issue capture checks
+
+Run `node --test scripts/factory-capture.check.mjs` for disposable reports and real
+HTTP capture requests, including mapped routing, skip reasons, preserved original
+wording, independent outcomes, collisions, concurrent/replayed submissions, partial
+publication recovery, provider/output failures, local guards and zero work launches.
+The aggregate factory suite includes these checks.
+
+Run `node scripts/factory-capture-browser.mjs` for actual rendered keyboard/cancel,
+polling and draft preservation, provider-error retry, filtered/scrolled list and
+one/multiple toast navigation at desktop and narrow widths. It uses the installed
+Playwright CLI and a deterministic assessor against a uniquely disposable queue.
+The printed evidence directory retains `commands.json`, assertions and
+`output/playwright/` logs/screenshots. Protocol fixtures establish no model access.
+Run `node scripts/factory-capture-provider.mjs` separately to check the real
+configured provider with synthetic single-bug/numbered-step and distinct-feature
+requests. It retains generated reports/results in the printed temporary directory,
+uses the existing login/model and fails closed for unsupported configuration.
+Neither command targets the authoritative queue or starts factory work. Required
+full verification and saved-start step/staged checkpoints still apply.

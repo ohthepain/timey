@@ -58,6 +58,7 @@ async function mutation(service, path, value, owner) {
   const routes = {
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
+    '/api/issue-capture': () => service.captures.save(value),
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
@@ -163,6 +164,7 @@ function readResource(service, request, response, owner) {
     '/issue-chat-ui.js': 'issue-chat-ui.js',
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',
+    '/issue-capture-ui.js': 'issue-capture-ui.js',
   };
   if (Object.hasOwn(scripts, request.url)) {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');

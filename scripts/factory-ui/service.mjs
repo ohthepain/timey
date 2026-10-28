@@ -1,3 +1,4 @@
+import { createCaptures } from './issue-capture.mjs';
 import { IssueDelivery } from '../issue-delivery.mjs';
 import { proof } from '../issue-delivery-store.mjs';
 import { createIssueChats } from './issue-chat.mjs';
@@ -73,6 +74,7 @@ export class FactoryUI {
       check: (...args) => this.check(...args),
       guard: (...args) => this.guard(...args),
     });
+    this.captures = createCaptures(this, options.capture);
     this.discussions = createDiscussions(this);
     this.issueChats = createIssueChats(this);
     this.siteReviews = createSiteReviews(this);
