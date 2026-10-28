@@ -11,6 +11,9 @@ is unchanged. Required independent evidence reviews use a separate read-only cha
 After a server restart, initialize the Codex connection before reading the saved
 primary chat's status. Reuse still requires a known idle chat; initialization
 does not create a replacement chat or start a turn.
+For a native `notLoaded` status, resume that exact chat without a turn, then read
+its loaded status and require idle before dispatch. Busy and unknown states stay
+blocked; loading a saved chat never permits a replacement or parallel assignment.
 
 For settled simple work, clarification may return one executable task and its
 route alongside the plan. Save the task only after the exact human plan approval,

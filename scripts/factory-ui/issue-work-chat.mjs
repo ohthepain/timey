@@ -26,20 +26,7 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
     !service.store.runs.some((r) => r.id !== run.id && r.threadId === threadId && service.store.connected.has(r.id)),
     'This issue chat is still working. Wait for its current action; no replacement chat was created.'
   );
-  let response;
-  await service.codex.ready();
-  try {
-    response = await service.codex.call('thread/read', { threadId, includeTurns: false });
-  } catch (error) {
-    if (!error.message.includes(threadId) || !/\bis archived\b/.test(error.message)) throw error;
-    await service.codex.unarchive(threadId);
-    response = await service.codex.call('thread/read', { threadId, includeTurns: false });
-  }
-  const { thread } = response;
-  requireThat(
-    thread?.status?.type === 'idle',
-    'The issue chat is busy or its state is unknown. Reconnect it before continuing; no replacement chat was created.'
-  );
+  const unloaded = await loadSavedChat(service.codex, threadId, cwd, sandbox);
   if (previous?.threadId === threadId && !previous.resultTurnId) {
     const completed = previous.events?.findLast(
       (e) => e.method === 'turn/completed' && e.params?.turn?.status === 'completed'
@@ -55,8 +42,30 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
       issueWorkChat: true,
     });
   }
-  await service.codex.resume(threadId, cwd, sandbox);
+  if (!unloaded) await service.codex.resume(threadId, cwd, sandbox);
   service.store.update(run, { threadId, reusedIssueChat: true });
   saveLifecycle(service, record, { workThreadId: threadId, assessmentThreadId: threadId });
   return threadId;
+}
+
+async function loadSavedChat(cli, threadId, cwd, sandbox) {
+  await cli.ready();
+  let response;
+  try {
+    response = await cli.call('thread/read', { threadId, includeTurns: false });
+  } catch (error) {
+    if (!error.message.includes(threadId) || !/\bis archived\b/.test(error.message)) throw error;
+    await cli.unarchive(threadId);
+    response = await cli.call('thread/read', { threadId, includeTurns: false });
+  }
+  const unloaded = response.thread?.status?.type === 'notLoaded';
+  if (unloaded) {
+    await cli.resume(threadId, cwd, sandbox);
+    response = await cli.call('thread/read', { threadId, includeTurns: false });
+  }
+  requireThat(
+    response.thread?.status?.type === 'idle',
+    'The issue chat is busy or its state is unknown. Reconnect it before continuing; no replacement chat was created.'
+  );
+  return unloaded;
 }

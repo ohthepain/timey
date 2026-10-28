@@ -56,10 +56,12 @@ test('a cold connection resumes the saved primary chat without creating a replac
     cli,
     `import {createInterface} from 'node:readline';
     import {appendFileSync} from 'node:fs';
+    let loaded=false;
     createInterface({input:process.stdin}).on('line',line=>{
       const m=JSON.parse(line); appendFileSync(${JSON.stringify(log)},JSON.stringify(m.method)+'\\n');
       if(m.id===undefined)return;
-      const result=m.method==='thread/read'?{thread:{id:'saved-primary',status:{type:'idle'}}}:{};
+      if(m.method==='thread/resume')loaded=true;
+      const result=m.method==='thread/read'?{thread:{id:'saved-primary',status:{type:loaded?'idle':'notLoaded'}}}:{};
       process.stdout.write(JSON.stringify(m.method==='thread/start'?{id:m.id,error:{message:'No replacement chats'}}:{id:m.id,result})+'\\n');
     });`
   );
@@ -68,8 +70,33 @@ test('a cold connection resumes the saved primary chat without creating a replac
   const run = f.service.store.add({ id: 'resume-after-restart' }, 'worker', f.base);
   assert.equal(await issueWorkChat(f.service, run, f.issueId, f.root), 'saved-primary');
   const methods = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(methods, ['initialize', 'initialized', 'thread/read', 'thread/resume']);
+  assert.deepEqual(methods, ['initialize', 'initialized', 'thread/read', 'thread/resume', 'thread/read']);
   assert.equal(run.reusedIssueChat, true);
+});
+
+test('loading a saved chat still refuses busy or uncertain native state', async (t) => {
+  for (const state of ['active', 'notLoaded', 'unknown']) {
+    await t.test(state, async (t) => {
+      const f = await setup(t),
+        { issueWorkChat } = await import('./factory-ui/issue-work-chat.mjs');
+      f.record.workThreadId = 'saved-primary';
+      let reads = 0,
+        resumes = 0;
+      f.service.codex.ready = async () => {};
+      f.service.codex.call = async () => ({ thread: { status: { type: reads++ ? state : 'notLoaded' } } });
+      f.service.codex.resume = async (id) => {
+        assert.equal(id, 'saved-primary');
+        resumes++;
+      };
+      f.service.codex.start = async () => {
+        throw Error('No replacement chat');
+      };
+      const run = f.service.store.add({ id: 'guarded-resume' }, 'worker', f.base);
+      await assert.rejects(issueWorkChat(f.service, run, f.issueId, f.root), /busy or its state is unknown/);
+      assert.equal(resumes, 1);
+      assert.equal(run.threadId, undefined);
+    });
+  }
 });
 
 test('unchanged positive scope checks are reused, but changes to scope or approval evidence are not', async (t) => {
