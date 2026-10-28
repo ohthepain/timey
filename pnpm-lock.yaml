@@ -230,6 +230,9 @@ importers:
       '@testing-library/user-event':
         specifier: 14.6.1
         version: 14.6.1(@testing-library/dom@10.4.0)
+      '@timey/local-issues':
+        specifier: file:vendor/timey-local-issues-1.0.0.tgz
+        version: file:vendor/timey-local-issues-1.0.0.tgz
       '@types/node':
         specifier: 22.13.14
         version: 22.13.14
@@ -1875,6 +1878,11 @@ packages:
     engines: {node: '>=12', npm: '>=6'}
     peerDependencies:
       '@testing-library/dom': '>=7.21.4'
+
+  '@timey/local-issues@file:vendor/timey-local-issues-1.0.0.tgz':
+    resolution: {integrity: sha512-JyR2ok7EBvJURtPgfQGYeIefdn5/kM1KqaKFAtAam5orR1pfqmowyqRCKc9iiwCEvaPDY477ME3vSAhlFvyM6g==, tarball: file:vendor/timey-local-issues-1.0.0.tgz}
+    version: 1.0.0
+    engines: {node: '>=22'}
 
   '@tsconfig/node10@1.0.11':
     resolution: {integrity: sha512-DcRjDCujK/kCk/cUe8Xz8ZSpm8mS3mNNpta+jGCA6USEDfktlNvm1+IuZ9eTcDbNk41BHwpHHeW+N1lKCz4zOw==}
@@ -6236,6 +6244,8 @@ snapshots:
   '@testing-library/user-event@14.6.1(@testing-library/dom@10.4.0)':
     dependencies:
       '@testing-library/dom': 10.4.0
+
+  '@timey/local-issues@file:vendor/timey-local-issues-1.0.0.tgz': {}
 
   '@tsconfig/node10@1.0.11': {}
 

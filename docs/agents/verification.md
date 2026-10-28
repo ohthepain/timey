@@ -6,6 +6,15 @@ Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions and the pnpm version in
 `packageManager`. Run `pnpm install --frozen-lockfile` in a clean checkout.
 
+The local issue helpers are a pinned development dependency packaged in
+[`vendor/`](../../vendor/README.md). The relative `.agents/skills/issues` link
+resolves through that installed package; verification and CI require no personal
+skill checkout. Its original human-input protocol and integrity manifest are
+unchanged. Install the frozen dependencies before running factory checks.
+Symbolic links remain in the exported snapshot and audit scope; their link
+metadata is not passed to Prettier, which rejects symbolic-link paths. Changed
+regular target files retain their own formatting checks.
+
 | Command                             | What it establishes                                                                                                    |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `pnpm run test:factory`             | Ledger, live UI/CLI boundaries, verifier dispatch/isolation, and audit-result checks using disposable Git repositories |

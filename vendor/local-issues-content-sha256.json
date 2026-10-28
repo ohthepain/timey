@@ -1,0 +1,16 @@
+{
+  "LICENSE": "5b996bcb5d1e7b9ba6f5a38a0809d8e7db2dea794e9e5a69cb5d7ed27338663d",
+  "SKILL.md": "b5943175eb5bd68fe6f1591d043bad33700d9d2790bd7fb7336786ae51cf4e8d",
+  "agents/openai.yaml": "9cc788e91f82141d4cbff805ba0291c732a7f3957487b16dd868847c11443d48",
+  "assets/issue-table.html": "60e4eab14396b94be660f4eea902eacbae3fe507532b27291c38d3dbcf091824",
+  "package.json": "c86bee8d7ba1d5e909d642349fee647a3e6b1771fd766f53063e67b7ced3a2a8",
+  "references/human-input.md": "7ab552a139cfb6bcea1f3b4126f82e6d2a9b2defd12dbfb93e302da632df5b77",
+  "references/interactive-table.md": "181a04432ccc5c87a96ea9e5156296bf0cc6cfc4043a02a915616120863c601a",
+  "references/queue.md": "4b93465b0de2102c75add7b86dfd9c13cc451331a141c7f275dc95ef686419ef",
+  "scripts/YAML-LICENSE": "5bba27375d93e9119f76c1015f7672cf9ad5f70952296e0842fb2243d6376869",
+  "scripts/human-input-version.json": "ef855c1514dd19a09139f5b5ffb1d3bfbf649ed919f7a8e4682cef673a36266a",
+  "scripts/human-input.mjs": "9169987fdd3b40a30d3de8cf17dd3cae7cd925f370ed8c938159346a36c5cd02",
+  "scripts/list-issues.mjs": "570596a654f0dca2b8f29198ed24d962c86ddcdcd7e746febada17e3db03eadf",
+  "scripts/render_table.py": "85b52bb20194dc95460c72dd20b0aa09579e2454aad01e4d4204b4b0ca4e069d",
+  "triage-labels.md": "27420d4c40be20dd2f2d238f72a6a1a460e6d79e683c25c2504638300205daa0"
+}

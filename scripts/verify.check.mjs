@@ -217,8 +217,20 @@ test('interface dispatch sentinel', () => {
     const summary = JSON.parse(readFileSync(join(evidence, summaryPath), 'utf8'));
     return { result, summary, factory: summary.checks.find((check) => check.name === 'factory') };
   };
-  return { run, interfacePath, interfaceCheck };
+  return { root, run, interfacePath, interfaceCheck };
 }
+
+test('formatting handles changed symbolic links while still checking changed target source', (t) => {
+  const { root, run } = aggregateFixture(t);
+  symlinkSync('index.js', join(root, 'helper-link'));
+  const { result, summary } = run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.ok(summary.changed_files.includes('helper-link'));
+  const formatting = summary.checks.find((check) => check.name === 'format-changed');
+  assert.equal(formatting.passed, true);
+  assert.ok(formatting.command.includes('index.js'));
+  assert.equal(formatting.command.includes('helper-link'), false);
+});
 
 test('aggregate verification dispatches the package factory suite in an isolated export', (t) => {
   const { run, interfacePath, interfaceCheck } = aggregateFixture(t);
