@@ -11,7 +11,8 @@ const issueChatUI = (() => {
     requestId = null;
   const stopping = new Set(),
     stopErrors = new Map();
-  let focusedBeforeRender = null,
+  let viewBeforeRender = null,
+    focusedBeforeRender = null,
     renderedMessages = '',
     historyComplete = false;
   const drafts = new Map(),
@@ -36,11 +37,19 @@ const issueChatUI = (() => {
     slot.replaceWith(panel);
     update(selectedConversation(data, id), inputHtml);
     restoreChatFocus();
+    if (viewBeforeRender) {
+      draft.setSelectionRange(...viewBeforeRender.caret);
+      draft.scrollTop = viewBeforeRender.draftTop;
+      draft.scrollLeft = viewBeforeRender.draftLeft;
+      restoreSelection(viewBeforeRender.selection);
+    }
+    viewBeforeRender = null;
   }
   function selectIssue(id) {
     if (id === current) return;
     remember();
     current = id;
+    viewBeforeRender = null;
     messages.clear();
     renderedMessages = '';
     historyComplete = false;
@@ -140,7 +149,10 @@ const issueChatUI = (() => {
     return section;
   }
   function update(conversation = {}, inputHtml) {
-    const follow = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    const reading = viewBeforeRender?.reading || {
+      top: log.scrollTop,
+      follow: log.scrollHeight - log.scrollTop - log.clientHeight < 40,
+    };
     mergeMessages(conversation);
     renderHistory();
     historyButton.hidden = historyComplete || !conversation.hasMore;
@@ -152,7 +164,7 @@ const issueChatUI = (() => {
     stop.textContent = stop.disabled ? 'Stopping…' : 'Stop';
     stop.dataset.responseId = conversation.responseId || '';
     if (!sending.has(current)) status.textContent = responseStatus(conversation);
-    if (follow) log.scrollTop = log.scrollHeight;
+    log.scrollTop = reading.follow ? log.scrollHeight : reading.top;
   }
   function selectedConversation(data, id) {
     const page = data.conversation;
@@ -297,8 +309,42 @@ const issueChatUI = (() => {
       historyButton.disabled = false;
     }
   }
+  function captureSelection() {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !log.contains(selection.anchorNode) || !log.contains(selection.focusNode))
+      return null;
+    const offset = (node, end) => {
+      const range = document.createRange();
+      range.selectNodeContents(log);
+      range.setEnd(node, end);
+      return range.toString().length;
+    };
+    return [offset(selection.anchorNode, selection.anchorOffset), offset(selection.focusNode, selection.focusOffset)];
+  }
+  function restoreSelection(saved) {
+    if (!saved) return;
+    const point = (offset) => {
+      const walker = document.createTreeWalker(log, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (offset <= node.length) return [node, offset];
+        offset -= node.length;
+      }
+      return [log, log.childNodes.length];
+    };
+    window.getSelection().setBaseAndExtent(...point(saved[0]), ...point(saved[1]));
+  }
   function beforeRender() {
     focusedBeforeRender = panel?.contains(document.activeElement) ? document.activeElement : null;
+    viewBeforeRender = panel?.isConnected
+      ? {
+          reading: { top: log.scrollTop, follow: log.scrollHeight - log.scrollTop - log.clientHeight < 40 },
+          draftTop: draft.scrollTop,
+          draftLeft: draft.scrollLeft,
+          caret: [draft.selectionStart, draft.selectionEnd, draft.selectionDirection],
+          selection: captureSelection(),
+        }
+      : null;
   }
   return { mount, beforeRender };
 })();

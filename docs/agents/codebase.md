@@ -211,6 +211,11 @@ stale recommendations. `data.mjs` supplies structured launch blockers; the ledge
 checks expected proposal identity and staleness atomically before retirement.
 The lifecycle replans unfinished work, preserving normal replacement scope checks.
 The browser retains keyed expansion, draft and scroll state around live refreshes.
+Conversation state is captured before DOM replacement, including reading position,
+textarea scroll/caret and selected conversation text. Readers at the bottom keep
+following new output; readers above it keep their position. Other issue text panels
+restore internal scroll after focus and caret restoration. The rendered regression
+is `scripts/factory-browser-refresh.mjs`.
 
 `scripts/factory-ledger.mjs` owns assignment inspection and guarded ledger
 transitions; `factory.mjs` is its command entry point. `factory-progress.mjs` owns
