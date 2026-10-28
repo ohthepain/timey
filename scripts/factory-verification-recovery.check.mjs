@@ -49,6 +49,8 @@ function fixture(t) {
   service.store.update(run, {
     checkout: worker,
     threadId: 'original-chat',
+    sourceBranch: 'refs/heads/target',
+    resultTurnId: 'implementation-turn',
     result: {
       outcome: 'completed',
       summary: 'Implementation finished',
@@ -86,6 +88,10 @@ test('finished implementation moves to Verify on failed checks and can retry unc
   await failVerification(f);
   assert.match(readFileSync(f.report, 'utf8'), /state: verify/);
   assert.equal(f.run.result.outcome, 'completed');
+  assert.equal(
+    verificationView(f.service, readQueue(f.root), readQueue(f.root).issues[0]).defaultBranch,
+    'refs/heads/target'
+  );
   assert.equal(f.run.verification.status, 'failed');
   const original = f.run.threadId;
   let checks = 0;
@@ -174,7 +180,7 @@ test('a failed retry stays in Verify and can be retried again without any automa
   assert.equal(f.service.store.runs.length, 1);
 });
 
-test('merge conflicts remain available for manual repair and never restart a worker or change the project branch', async (t) => {
+test('unavailable conflict resolution preserves the owned merge for an explicit retry and never changes the project branch', async (t) => {
   const f = fixture(t);
   await failVerification(f);
   writeFileSync(join(f.worker, 'code.js'), 'worker edit\n');
@@ -186,6 +192,9 @@ test('merge conflicts remain available for manual repair and never restart a wor
   f.git('commit', '-qm', 'outside edit');
   const revision = f.git('rev-parse', 'HEAD');
   f.git('checkout', 'target');
+  f.service.codex.ready = async () => {
+    throw Error('Resolution unavailable');
+  };
   f.service.retryVerification({ ...input(f), branch: 'refs/heads/outside-conflict', branchRevision: revision });
   await f.service.verificationTasks.get(f.run.id);
   assert.equal(f.run.verification.status, 'failed');
@@ -226,6 +235,7 @@ test('Verify recovery UI names the checkout, uncertainty, branch scope and both 
     branch: 'worker',
     busy: false,
     error: 'An outside check failed',
+    defaultBranch: 'refs/heads/manual-fix',
     branches: [
       { ref: 'refs/heads/manual-fix', name: 'manual-fix', revision: 'a'.repeat(40), subject: 'Manual repair' },
       {
@@ -243,6 +253,12 @@ test('Verify recovery UI names the checkout, uncertainty, branch scope and both 
   assert.match(text, /all changes/);
   assert.equal(dom.window.document.querySelectorAll('select option').length, 3);
   assert.match(text, /fetched remote/);
+  assert.equal(dom.window.document.querySelector('select').value, view.defaultBranch);
+  assert.equal(
+    dom.window.document.querySelector('[data-verification-update]').previousElementSibling.querySelector('select')
+      .value,
+    view.defaultBranch
+  );
   assert.equal(dom.window.document.querySelector('[data-verification-retry]').disabled, false);
   assert.equal(dom.window.document.querySelector('[data-verification-update]').disabled, false);
   assert.match(render({ id: 'one', verificationRecovery: { ...view, busy: true } }), /Checking…/);
@@ -284,3 +300,155 @@ test('candidate verification ignores a concurrent commit-hook report and retains
     process.env.PATH = previous;
   }
 });
+
+test('Codex resolves an owned merge in the existing chat, preserves original evidence and verifies the combined commit', async (t) => {
+  const f = fixture(t);
+  await failVerification(f);
+  writeFileSync(join(f.worker, 'code.js'), 'worker edit\n');
+  f.git('-C', f.worker, 'add', 'code.js');
+  f.git('-C', f.worker, 'commit', '-qm', 'worker edit');
+  f.git('checkout', '-b', 'conflict-fix');
+  writeFileSync(join(f.root, 'code.js'), 'incoming edit\n');
+  f.git('add', 'code.js');
+  f.git('commit', '-qm', 'incoming edit');
+  const revision = f.git('rev-parse', 'HEAD');
+  f.git('checkout', 'target');
+  const originalHead = f.git('-C', f.worker, 'rev-parse', 'HEAD');
+  let turns = 0,
+    checks = 0;
+  f.service.codex.ready = async () => {};
+  f.service.codex.resume = async (id, cwd, sandbox) => {
+    assert.equal(id, 'original-chat');
+    assert.equal(cwd, f.worker);
+    assert.equal(sandbox, 'workspace-write');
+  };
+  f.service.codex.call = async () => ({ thread: { status: { type: 'idle' } } });
+  f.service.codex.turn = async (id, cwd, prompt) => {
+    turns++;
+    assert.equal(id, 'original-chat');
+    assert.match(prompt, /do not commit/);
+    assert.match(prompt, /original base/);
+    writeFileSync(join(cwd, 'code.js'), 'worker and incoming edit\n');
+    f.git('-C', cwd, 'add', 'code.js');
+    return JSON.stringify({ outcome: 'completed', summary: 'Both behaviors preserved' });
+  };
+  f.service.check = async (cwd, base) => {
+    checks++;
+    assert.equal(base, f.run.base);
+    assert.equal(readFileSync(join(cwd, 'code.js'), 'utf8'), 'worker and incoming edit\n');
+    assert.equal(f.git('-C', cwd, 'rev-parse', 'HEAD^1'), originalHead);
+    assert.equal(f.git('-C', cwd, 'rev-parse', 'HEAD^2'), revision);
+    return { head: f.git('-C', cwd, 'rev-parse', 'HEAD'), summaries: [] };
+  };
+  // First attempt cannot reach Codex; the next explicit click resumes exactly that merge.
+  const ready = f.service.codex.ready;
+  f.service.codex.ready = async () => {
+    throw Error('Connection unavailable');
+  };
+  f.service.retryVerification({ ...input(f), branch: 'refs/heads/conflict-fix', branchRevision: revision });
+  await f.service.verificationTasks.get(f.run.id);
+  assert.equal(turns, 0);
+  assert.equal(checks, 0);
+  f.service.codex.ready = ready;
+  f.service.retryVerification({ ...input(f), branch: 'refs/heads/conflict-fix', branchRevision: revision });
+  await f.service.verificationTasks.get(f.run.id);
+  assert.equal(f.run.verification.status, 'passed', f.run.verification.error);
+  assert.equal(turns, 1);
+  assert.equal(checks, 1);
+  assert.equal(f.run.resultTurnId, 'implementation-turn');
+  assert.equal(f.git('rev-parse', 'target'), f.run.base);
+  assert.equal(f.service.store.runs.length, 1);
+});
+
+test('a foreign pending merge is never adopted by the recovery action', async (t) => {
+  const f = fixture(t);
+  await failVerification(f);
+  writeFileSync(join(f.worker, 'code.js'), 'worker\n');
+  f.git('-C', f.worker, 'commit', '-am', 'worker edit');
+  f.git('checkout', '-b', 'foreign');
+  writeFileSync(join(f.root, 'code.js'), 'incoming\n');
+  f.git('commit', '-am', 'incoming edit');
+  const revision = f.git('rev-parse', 'HEAD');
+  f.git('checkout', 'target');
+  assert.throws(() => f.git('-C', f.worker, 'merge', '--no-edit', revision));
+  assert.throws(
+    () => f.service.retryVerification({ ...input(f), branch: 'refs/heads/foreign', branchRevision: revision }),
+    /uncommitted changes/
+  );
+});
+
+test('worker preparation records its source branch before a later project branch switch', async (t) => {
+  const f = fixture(t);
+  f.service.api.attach = () => {};
+  f.service.runTurn = async () => {};
+  f.service.codex.start = async () => 'prepared-chat';
+  f.service.codex.call = async () => ({});
+  await f.service.prepareWorker(f.run, { ...f.action, basis: { head: f.run.base } }, readQueue(f.root));
+  assert.equal(f.run.sourceBranch, 'refs/heads/target');
+  f.git('checkout', '-b', 'later-project-branch');
+  assert.equal(f.run.sourceBranch, 'refs/heads/target');
+});
+
+test('legacy workers use the current project branch without inventing a historical source', async (t) => {
+  const f = fixture(t);
+  await failVerification(f);
+  f.service.store.update(f.run, { sourceBranch: null });
+  const q = readQueue(f.root);
+  assert.equal(verificationView(f.service, q, q.issues[0]).defaultBranch, 'refs/heads/target');
+  assert.equal(f.run.sourceBranch, null);
+});
+
+for (const scenario of ['busy chat', 'outside-scope edit', 'human decision']) {
+  test('conflict recovery stops safely for ' + scenario, async (t) => {
+    const f = fixture(t);
+    await failVerification(f);
+    writeFileSync(join(f.worker, 'code.js'), 'worker edit\n');
+    f.git('-C', f.worker, 'commit', '-am', 'worker edit');
+    f.git('checkout', '-b', 'incoming');
+    writeFileSync(join(f.root, 'code.js'), 'incoming edit\n');
+    f.git('commit', '-am', 'incoming edit');
+    const revision = f.git('rev-parse', 'HEAD');
+    f.git('checkout', 'target');
+    const before = f.git('-C', f.worker, 'rev-parse', 'HEAD');
+    let resumed = 0,
+      checked = 0,
+      turns = 0;
+    f.service.codex.ready = async () => {};
+    f.service.codex.resume = async () => {
+      resumed++;
+    };
+    f.service.codex.call = async () => ({ thread: { status: { type: scenario === 'busy chat' ? 'active' : 'idle' } } });
+    f.service.codex.turn = async (_id, cwd) => {
+      turns++;
+      if (scenario === 'outside-scope edit') {
+        writeFileSync(join(cwd, 'feature.js'), 'unapproved replacement\n');
+        writeFileSync(join(cwd, 'code.js'), 'resolved\n');
+        f.git('-C', cwd, 'add', 'code.js', 'feature.js');
+      }
+      return JSON.stringify({
+        outcome: scenario === 'human decision' ? 'blocked' : 'completed',
+        summary: 'Choose the intended behavior',
+      });
+    };
+    f.service.check = async () => {
+      checked++;
+    };
+    f.service.retryVerification({ ...input(f), branch: 'refs/heads/incoming', branchRevision: revision });
+    await f.service.verificationTasks.get(f.run.id);
+    assert.equal(f.run.verification.status, 'failed');
+    assert.equal(checked, 0);
+    assert.equal(f.git('-C', f.worker, 'rev-parse', 'HEAD'), before);
+    if (scenario === 'busy chat') {
+      assert.equal(resumed, 0);
+      assert.equal(turns, 0);
+    }
+    assert.match(
+      f.run.verification.error,
+      scenario === 'busy chat'
+        ? /busy/
+        : scenario === 'outside-scope edit'
+          ? /outside the permitted/
+          : /Choose the intended behavior/
+    );
+  });
+}

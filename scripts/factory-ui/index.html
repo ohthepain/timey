@@ -1673,7 +1673,9 @@
         const recovery = issue.verificationRecovery;
         if (!recovery) return '';
         const disabled = recovery.busy || busy ? 'disabled' : '';
-        return `<section class="card verification-recovery"><h4>Verification needs attention</h4><p>Implementation is finished. A check failed; this may be outside this issue. You can fix it separately, then retry here.</p><p role="status">${esc(recovery.error || 'Checking the existing work…')}</p><p>Working branch: <code>${esc(recovery.branch)}</code><br>Checkout: <code>${esc(recovery.checkout)}</code></p><button data-verification-retry="${esc(issue.id)}" ${disabled}>${recovery.busy ? 'Checking…' : 'Retry verification'}</button><label>Branch containing the fix<select id="verification-branch-${esc(issue.id)}" ${disabled}><option value="">Choose a branch…</option>${recovery.branches.map((b) => `<option value="${esc(b.ref)}" data-revision="${esc(b.revision)}">${esc(b.name)} · ${esc(b.revision.slice(0, 7))} · ${esc(b.subject)}${b.ref.startsWith('refs/remotes/') ? ' (fetched remote)' : ''}${b.name === recovery.branch ? ' (current)' : ''}</option>`).join('')}</select></label><p>Update brings all changes from the selected branch into this working branch, then checks the combined result. It does not restart implementation or approve the other issue. Remote branches show the last fetched version.</p><button data-verification-update="${esc(issue.id)}" ${disabled}>Update from branch and retry</button></section>`;
+        verificationRecovery.choices ||= new Map();
+        const selected = verificationRecovery.choices.get(issue.id) ?? recovery.defaultBranch;
+        return `<section class="card verification-recovery"><h4>Verification needs attention</h4><p>Implementation is finished. A check failed; this may be outside this issue. You can fix it separately, then retry here.</p><p role="status">${esc(recovery.error || 'Checking the existing work…')}</p><p>Working branch: <code>${esc(recovery.branch)}</code><br>Checkout: <code>${esc(recovery.checkout)}</code></p><button data-verification-retry="${esc(issue.id)}" ${disabled}>${recovery.busy ? 'Checking…' : 'Retry verification'}</button><p>Update brings all changes from the selected branch into this working branch. Codex resolves merge conflicts in the existing issue chat, then the combined result is checked. Publication, merging into the project branch and acceptance remain separate. Remote branches show the last fetched version.</p><label>Branch containing the fix<select id="verification-branch-${esc(issue.id)}" ${disabled}><option value="">Choose a branch…</option>${recovery.branches.map((b) => `<option value="${esc(b.ref)}" data-revision="${esc(b.revision)}" ${b.ref === selected ? 'selected' : ''}>${esc(b.name)} · ${esc(b.revision.slice(0, 7))} · ${esc(b.subject)}${b.ref.startsWith('refs/remotes/') ? ' (fetched remote)' : ''}${b.name === recovery.branch ? ' (current)' : ''}</option>`).join('')}</select></label><button data-verification-update="${esc(issue.id)}" ${disabled}>Update from branch and retry</button></section>`;
       }
       async function retryIssueVerification(button, update) {
         const id = update ? button.dataset.verificationUpdate : button.dataset.verificationRetry;
@@ -2529,6 +2531,10 @@
         });
         document.querySelectorAll('[data-verification-retry]').forEach((button) => {
           button.onclick = () => act(() => retryIssueVerification(button, false));
+        });
+        document.querySelectorAll('[id^="verification-branch-"]').forEach((select) => {
+          select.onchange = () =>
+            verificationRecovery.choices.set(select.id.slice('verification-branch-'.length), select.value);
         });
         document.querySelectorAll('[data-verification-update]').forEach((button) => {
           button.onclick = () => act(() => retryIssueVerification(button, true));

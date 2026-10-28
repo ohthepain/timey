@@ -49,7 +49,7 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
   return nameIssueChat(service, run, threadId);
 }
 
-async function loadSavedChat(cli, threadId, cwd, sandbox) {
+export async function loadSavedChat(cli, threadId, cwd, sandbox) {
   await cli.ready();
   let response;
   try {

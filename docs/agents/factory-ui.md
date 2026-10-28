@@ -1043,12 +1043,24 @@ Verify explains the failed check, uncertainty, current branch and checkout.
 **Retry verification** reruns checks on the existing code, including unchanged code.
 **Update from branch and retry** merges all changes from an explicitly selected
 local or last-fetched remote branch into the isolated worker checkout, then checks
-the combined result against the original starting revision. Selecting a branch
+the combined result against the original starting revision. The selector sits directly
+above this action and defaults to the source branch recorded when the worker was
+created. Older workers without a recorded source default to the project’s current
+branch; detached or unavailable branches leave an explicit choice. An explicit
+selection survives polling during the current page session. Selecting a branch
 approves that update only; exact-candidate PR/human approval stays separate. Changed
-branch tips, changed issue records, active work and dirty/conflicted checkouts reject
-stale actions with a concrete explanation. Conflicts remain for manual resolution.
-No other issue or formal repair ticket is required, and no implementation chat is
-restarted. Failed retries remain in Verify, with another explicit retry available;
+branch tips, changed issue records, active work and unrelated dirty/conflicted
+checkouts reject stale actions with a concrete explanation. For conflicts from
+this run’s recorded branch update, the action makes one bounded Codex resolution
+attempt in the existing issue chat. It preserves the original implementation
+turn, checks the exact merge identity and limits edits to conflicted files (plus
+the lockfile for package conflicts). The server commits the staged resolution
+through its configured audit hook, then independently checks the combined result.
+A retry can resume that same pending merge; it cannot adopt another merge.
+Unresolved decisions, unavailable chats, failed hooks or verification stay visible
+and require another explicit action; there is no automatic retry loop. Publication,
+project-branch integration and acceptance remain separate. No other issue or
+formal repair ticket is required, and implementation is not repeated. Failed retries remain in Verify, with another explicit retry available;
 automatic progress pauses instead of repeating checks or assigning outside repairs.
 A successful retry resumes approved progress while retaining pending human input.
 

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { appendCompletion } from '../factory-completion.mjs';
 import { readQueue, currentAction } from './data.mjs';
 import { digest, git, requireThat, writeJson } from './common.mjs';
+import { pendingBranchMerge, updateVerificationBranch } from './verification-merge.mjs';
 
 export function failedVerification(service, run, action, result, error) {
   const head = git(run.checkout, 'rev-parse', 'HEAD');
@@ -66,6 +67,7 @@ export function verificationView(service, queue, issue) {
     runId: run.id,
     checkout: run.checkout,
     branch: git(run.checkout, 'branch', '--show-current'),
+    defaultBranch: run.sourceBranch || git(service.root, 'rev-parse', '--symbolic-full-name', 'HEAD'),
     status: run.verification.status,
     error: run.verification.error,
     head,
@@ -119,7 +121,7 @@ export function retryVerification(service, input, after) {
     'Use the isolated worker checkout, not the project branch.'
   );
   requireThat(
-    !git(run.checkout, 'status', '--porcelain'),
+    !git(run.checkout, 'status', '--porcelain') || Boolean(input.branch && pendingBranchMerge(service, run, input)),
     'This branch has uncommitted changes or merge conflicts. Resolve and commit them in ' +
       run.checkout +
       ', then retry.'
@@ -168,24 +170,7 @@ export function retryVerification(service, input, after) {
 async function executeRetry(service, run, action, branch) {
   try {
     if (branch) {
-      const receipt = join(service.store.directory, run.id + '-branch-update-' + Date.now() + '.json');
-      writeJson(receipt, {
-        actor: 'human',
-        operation: 'update-branch-and-retry',
-        actionId: action.id,
-        from: git(run.checkout, 'rev-parse', 'HEAD'),
-        selectedBranch: branch.ref,
-        selectedRevision: branch.revision,
-        originalBase: run.base,
-        at: new Date().toISOString(),
-        grantsAcceptance: false,
-      });
-      service.store.update(run, { verification: { ...run.verification, updateReceipt: receipt } });
-      requireThat(
-        git(run.checkout, 'rev-parse', branch.ref) === branch.revision,
-        'The selected branch moved. Refresh and select it again.'
-      );
-      git(run.checkout, 'merge', '--no-edit', branch.revision);
+      await updateVerificationBranch(service, run, action, branch);
       service.store.update(run, {
         verification: { ...run.verification, merged: { ref: branch.ref, revision: branch.revision } },
       });

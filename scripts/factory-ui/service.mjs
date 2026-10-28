@@ -280,7 +280,10 @@ export class FactoryUI {
     const checkout = join(this.store.directory, 'workers', action.id);
     mkdirSync(join(this.store.directory, 'workers'), { recursive: true });
     requireThat(!existsSync(checkout), 'Worker checkout already exists. Reconcile it instead of recreating it.');
-    this.store.update(run, { checkout });
+    this.store.update(run, {
+      checkout,
+      sourceBranch: git(this.root, 'rev-parse', '--symbolic-full-name', 'HEAD'),
+    });
     git(
       this.root,
       'worktree',

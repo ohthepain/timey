@@ -341,7 +341,10 @@ boundary calls no worker or lifecycle dispatch. See [factory UI](factory-ui.md#c
 `factory-ui/verification-recovery.mjs` retains completed implementation across
 failed independent checks, records the transition into Verify, and owns explicit
 retries and branch updates in isolated checkouts. It retains selection receipts,
-original bases and approval boundaries; it starts no model chats. `checks.mjs`
+original bases, recorded source-branch defaults and approval boundaries.
+`verification-merge.mjs` owns merge identity checks and a bounded conflict-resolution
+turn in the existing issue chat, retaining the original implementation turn before
+independent checks. It does not create replacement chats or publish/accept work. `checks.mjs`
 uses the summary paths returned by each verifier command rather than scanning
 shared evidence for unrelated reports. `verify-scope.mjs` is safe for tests to
 import; importing the verifier CLI starts verification.
