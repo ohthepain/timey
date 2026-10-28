@@ -160,6 +160,7 @@ function readResource(service, request, response, owner) {
   const scripts = {
     '/server-control-ui.js': 'server-control-ui.js',
     '/queue-lifecycle-ui.js': 'queue-lifecycle-ui.js',
+    '/queue-sort-ui.js': 'queue-sort-ui.js',
     '/issue-chat-ui.js': 'issue-chat-ui.js',
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',

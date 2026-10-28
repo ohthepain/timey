@@ -28,6 +28,23 @@ and report notes provide history where it exists; missing historical transitions
 are not reconstructed. Unmatched assignment kinds stay visible under Other work.
 New lifecycle stages use the same step layout without requiring another screen.
 
+## Queue sorting
+
+The queue defaults to latest progress first. The sort selector also offers lifecycle
+progress, creation time, completion time and required human input; direction can be
+reversed. New modes start highest/newest/required first. Missing dates stay last
+in both directions, with ascending issue ID breaking ties. Filters and sorting
+remain selected during live refreshes.
+
+Progress ranks the furthest configured stage actually started, following Next
+links; planned and skipped stages alone do not count as starts. Last progress
+includes saved stage events, worker activity and results within a stage. Polling
+creates no activity timestamp. Completion uses recorded entry into Final review,
+excluding closure without a fix. Missing historical dates remain unknown. Human
+input includes actionable requests, connected approvals and final acceptance;
+deferred requests and future prerequisites do not count. Sorting is presentation
+only and does not change readiness or grant authority.
+
 ## Lifecycle Progress
 
 The lifecycle header has one **Progress** button. Pressing it opts into continued

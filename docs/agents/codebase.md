@@ -319,3 +319,7 @@ and GitHub transport in `issue-delivery-provider.mjs`. The CLI and UI delivery
 handlers share these operations; `issue-delivery-fixture.mjs` supplies deterministic
 protocol proof only. See [the delivery contract](issue-delivery.md) and
 [ADR 0004](../adr/0004-issue-pr-delivery.md).
+
+Queue sort values are projected from saved records in `factory-ui/queue-sort.mjs`
+before transport trims run events. `queue-sort-ui.js` owns presentation ordering
+and accessible controls; neither path writes lifecycle or human-input records.

@@ -1044,6 +1044,7 @@
     </dialog>
     <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
+    <script src="/queue-sort-ui.js"></script>
     <script src="/issue-chat-ui.js"></script>
     <script src="/discussion-ui.js"></script>
     <script src="/site-review-ui.js"></script>
@@ -1338,16 +1339,19 @@
         focusedStageRoute = location.hash;
       }
       let queueRouteMessage = '';
-      const queueFilters = { search: '', stage: '', showClosed: false };
+      const queueFilters = { search: '', stage: '', showClosed: false, sort: 'lastProgress', direction: 'desc' };
       function closedIssueState(state) {
         return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
       }
       function queueIssues() {
-        return data.issues.filter(
-          (issue) =>
-            (queueFilters.showClosed || !closedIssueState(issue.state)) &&
-            (!queueFilters.stage || issue.state === queueFilters.stage) &&
-            JSON.stringify(issue).toLowerCase().includes(queueFilters.search.toLowerCase())
+        return queueSortUI.sort(
+          data.issues.filter(
+            (issue) =>
+              (queueFilters.showClosed || !closedIssueState(issue.state)) &&
+              (!queueFilters.stage || issue.state === queueFilters.stage) &&
+              JSON.stringify(issue).toLowerCase().includes(queueFilters.search.toLowerCase())
+          ),
+          queueFilters
         );
       }
       function bindQueueFilters() {
@@ -1361,6 +1365,7 @@
           queueLifecycleUI.restore($('issues'));
           bindPriorities();
         };
+        queueSortUI.bind(queueFilters, filter);
         queueLifecycleUI.bind($('issues'));
         $('search').oninput = filter;
         $('stage').onchange = () => {
@@ -1376,7 +1381,7 @@
         const counts = data.lifecycle
           .map((s) => `<span>${esc(s.name)} <b>${data.issues.filter((i) => i.state === s.state).length}</b></span>`)
           .join(' · ');
-        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label>${queueSortUI.controls(queueFilters)}<button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
