@@ -56,7 +56,13 @@ function auditFixture(t, extraFiles = {}) {
   writeFileSync(join(root, 'pnpm-lock.yaml'), readFileSync('pnpm-lock.yaml'));
   writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/*.mjs"]}\n');
   mkdirSync(join(root, 'scripts'));
-  for (const name of ['verify.mjs', 'verify-scope.mjs', 'verify-process.mjs', 'audit-result.mjs'])
+  for (const name of [
+    'verify.mjs',
+    'verify-scope.mjs',
+    'verify-process.mjs',
+    'verify-preflight.mjs',
+    'audit-result.mjs',
+  ])
     writeFileSync(join(root, 'scripts', name), readFileSync(join('scripts', name)));
   writeFileSync(join(root, 'index.js'), 'console.log("baseline");\n');
   for (const [name, content] of Object.entries(extraFiles)) writeFileSync(join(root, name), content);
@@ -303,4 +309,52 @@ test('a real zero-exit Fallow warning blocks the step checkpoint', (t) => {
   assert.equal(check.exit, 0);
   assert.equal(check.passed, false);
   assert.ok(check.reasons.some((reason) => reason.includes('warning')));
+  assert.equal(auditSummary(root).phases.find((phase) => phase.name === 'fallow').passed, false);
+});
+
+test('execution preflight checks actual localhost access and exact installed dependency locks', async (t) => {
+  const { listenerPreflight, dependencyPreflight } = await import('./verify-preflight.mjs');
+  const { root } = auditFixture(t);
+  await listenerPreflight();
+  assert.doesNotThrow(() => dependencyPreflight(root, root, []));
+  assert.throws(() => dependencyPreflight(root, root, ['missing-workspace']), /workspace dependencies missing/);
+  writeFileSync(join(root, 'pnpm-lock.yaml'), 'changed lock');
+  assert.throws(() => dependencyPreflight(root, root, []), /do not match/);
+});
+
+test('cancelling verification stops only its owned process group and retains failure', async (t) => {
+  const { runVerificationProcess } = await import('./verify-process.mjs');
+  const { root } = gitFixture(t, 'verify-cancel-');
+  const signal = new AbortController();
+  const task = runVerificationProcess(
+    process.execPath,
+    ['-e', 'setInterval(()=>{},1000)'],
+    { signal: signal.signal },
+    join(root, 'check.log')
+  );
+  signal.abort();
+  const result = await task;
+  assert.notEqual(result.status, 0);
+  assert.match(result.error, /cancelled/);
+  assert.ok(result.pid);
+  assert.throws(() => process.kill(result.pid, 0), /ESRCH/);
+  const cancelled = await runVerificationProcess(
+    process.execPath,
+    ['-e', 'throw Error("must not start")'],
+    { signal: signal.signal },
+    join(root, 'not-started.log')
+  );
+  assert.equal(cancelled.pid, undefined);
+  assert.match(cancelled.error, /cancelled/);
+});
+
+test('listener refusal stops preflight with an actionable environment error', async () => {
+  const { EventEmitter } = await import('node:events');
+  const { listenerPreflight } = await import('./verify-preflight.mjs');
+  const server = new EventEmitter();
+  server.listen = () => queueMicrotask(() => server.emit('error', { code: 'EPERM' }));
+  await assert.rejects(
+    listenerPreflight(() => server),
+    (error) => error.code === 'PREFLIGHT_LISTENER' && /127.0.0.1/.test(error.message)
+  );
 });

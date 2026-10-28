@@ -1,6 +1,7 @@
-import { recordActivity, activityForRun, redactValue } from './activity.mjs';
+import { retainStreamEvent, recoverStream } from './run-stream.mjs';
+import { activityForRun, redactValue } from './activity.mjs';
 import { approvalOptions } from './approval-options.mjs';
-import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, appendFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readJson, writeJson } from './common.mjs';
@@ -18,8 +19,15 @@ export class RunStore {
     if (history.version !== 1) throw Error('Unsupported UI history. Reconcile it before proceeding.');
     this.runs = history.runs;
     if (!Array.isArray(this.runs)) throw Error('Damaged UI run history. Reconcile it; do not reset it.');
+    for (const run of this.runs.filter((r) => ['preparing', 'running', 'checking'].includes(r.status)))
+      recoverStream(run, join(this.directory, `${run.id}.jsonl`));
+  }
+  flush() {
+    if (this.streamSave) this.save();
   }
   save() {
+    clearTimeout(this.streamSave);
+    this.streamSave = null;
     mkdirSync(this.directory, { recursive: true });
     writeJson(this.path, { version: 1, runs: this.runs });
   }
@@ -34,6 +42,7 @@ export class RunStore {
       status: 'preparing',
       created: new Date().toISOString(),
       events: [],
+      streamOffset: 0,
       summary: 'Preparing the conversation.',
     };
     this.runs.push(run);
@@ -61,17 +70,24 @@ export class RunStore {
       'turn/started',
       'turn/completed',
       'ui/approval',
+      'ui/transportPhase',
       'ui/unsupportedRequest',
       'item/autoApprovalReview/started',
       'item/autoApprovalReview/completed',
     ];
     if (!events.includes(message.method)) return;
+    if (message.method === 'turn/started') run.completedTurnId = null;
+    if (message.method === 'turn/completed' && message.params?.turn?.status === 'completed')
+      run.completedTurnId = message.params.turn.id;
     const item = { at: new Date().toISOString(), ...redactValue(message) };
-    recordActivity(run, item);
-    appendFileSync(join(this.directory, `${run.id}.jsonl`), JSON.stringify(item) + '\n', { mode: 0o600 });
-    run.events.push(item);
-    if (run.events.length > 150) run.events.shift();
-    this.save();
+    const path = join(this.directory, `${run.id}.jsonl`);
+    if (!Number.isSafeInteger(run.streamOffset)) run.streamOffset = existsSync(path) ? statSync(path).size : 0;
+    const line = JSON.stringify(item) + '\n';
+    appendFileSync(path, line, { mode: 0o600 });
+    run.streamOffset += Buffer.byteLength(line);
+    retainStreamEvent(run, item);
+    if (!message.method.endsWith('/delta') && !message.method.endsWith('/outputDelta')) return this.save();
+    if (!this.streamSave) this.streamSave = setTimeout(() => this.save(), 1000).unref();
   }
   list(approvals) {
     return this.runs.map((run) => ({

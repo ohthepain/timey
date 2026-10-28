@@ -1,3 +1,4 @@
+import { validateVerificationStart } from './issue-verification-start.mjs';
 import { join } from 'node:path';
 import { readJson, requireThat, digest } from './factory-ui/common.mjs';
 import { evidence, DeliveryStore } from './issue-delivery-store.mjs';
@@ -39,6 +40,8 @@ export function verifiedIssueDelivery(root, issueId) {
 }
 export function validateAssembledStart(root, action, data) {
   const start = action.start;
+  if (['verification-only', 'approved-plan-repair'].includes(start?.purpose))
+    return validateVerificationStart(root, action, data);
   requireThat(
     start?.issueId && start?.revision && start?.approval,
     'An assembled dependency needs an exact approved issue-branch starting revision.'

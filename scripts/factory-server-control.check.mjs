@@ -1,10 +1,12 @@
+import { createServer as createHTTPServer } from 'node:http';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, cpSync, symlinkSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
+import { handoffRestart } from './factory-ui/restart-process.mjs';
 import { serverControl } from './factory-ui/server-control.mjs';
 import { factoryEntry, uiDirectory } from './factory-ui/ui-source.mjs';
 import { JSDOM } from 'jsdom';
@@ -131,8 +133,9 @@ async function replacement(url, oldPid) {
   while (Date.now() < deadline) {
     try {
       const headers = await session(url);
-      const value = await (await fetch(url + '/api/server-status', { headers })).json();
-      if (value.pid !== oldPid) return value;
+      const response = await fetch(url + '/api/server-status', { headers });
+      const value = await response.json();
+      if (response.ok && Number.isInteger(value.pid) && value.pid !== oldPid && value.phase === 'idle') return value;
     } catch {
       /* Wait for the listener to change. */
     }
@@ -162,10 +165,25 @@ test('real restart changes the listener PID and preserves existing chat and prog
     },
   });
   writeFileSync(progress, ledger);
-  const child = spawn(process.execPath, [resolve('scripts/factory-ui.mjs'), '--project', root, '--port', '0'], {
-    cwd: process.cwd(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const installed = gitFixture(t, 'restart-installed-');
+  installed.root = realpathSync(installed.root);
+  cpSync(resolve('scripts'), join(installed.root, 'scripts'), { recursive: true });
+  writeFileSync(join(installed.root, 'package.json'), '{"type":"module"}');
+  writeFileSync(join(installed.root, '.gitignore'), 'node_modules\n');
+  symlinkSync(resolve('node_modules'), join(installed.root, 'node_modules'), 'dir');
+  installed.git('add', '.');
+  installed.git('commit', '-qm', 'Installed factory');
+  mkdirSync(join(root, 'scripts/factory-ui'), { recursive: true });
+  writeFileSync(join(root, 'scripts/factory-ui/index.html'), 'wrong-project-assets');
+  writeFileSync(join(root, 'scripts/factory-ui.mjs'), 'process.exit(42);');
+  const child = spawn(
+    process.execPath,
+    [join(installed.root, 'scripts/factory-ui.mjs'), '--project', root, '--port', '0'],
+    {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+  );
   let newPid = null;
   t.after(() => {
     child.kill('SIGTERM');
@@ -179,10 +197,9 @@ test('real restart changes the listener PID and preserves existing chat and prog
       if (match) done(match[1]);
     });
     child.once('error', fail);
-    child.once('exit', (code) => {
-      if (code) fail(Error('Fixture server exited: ' + code));
-    });
+    child.once('exit', (code) => fail(Error('Fixture server exited before readiness: ' + code)));
   });
+  assert.match(await (await fetch(url)).text(), /<div id="app"/);
   const headers = await session(url);
   const denied = await fetch(url + '/api/server-restart', {
     method: 'POST',
@@ -247,15 +264,15 @@ test('header toggle shows immediate feedback and reconnects without erasing a dr
   await delay(0);
   assert.deepEqual(calls, ['server-pause', 'server-cancel-restart']);
   dom.window.controls.show({ ...value, phase: 'draining' }, async () => value);
-  dom.window.fetch = async () => ({});
+  dom.window.fetch = async () => ({ ok: true });
   await dom.window.controls.reconnect(async () => ({ ...value, actions: 0, pid: 2 }));
   assert.equal(dom.window.document.querySelector('textarea').value, 'keep this draft');
   assert.match(dom.window.document.querySelector('[data-server-message]').textContent, /Server restarted/);
   dom.window.close();
 });
 
-test('live factory UI reads browser assets from the project path', () => {
-  const service = { root: resolve('.'), reviewMode: 'live' };
+test('restart and browser assets stay with the installed backend even when the issue project has its own UI', () => {
+  const service = { root: '/different/issue-project', reviewMode: 'live' };
   assert.equal(uiDirectory(service), resolve('scripts/factory-ui'));
   assert.equal(factoryEntry(service), resolve('scripts/factory-ui.mjs'));
 });
@@ -275,4 +292,28 @@ test('header restart requests server-restart and hides when unsupported', async 
   dom.window.controls.show({ ...value, supported: false }, async () => value);
   assert.equal(dom.window.document.querySelector('[data-server-restart]').hidden, true);
   dom.window.close();
+});
+
+test('restart rejects source updates before opening a replacement process', () => {
+  const service = { runtimeIdentity: { revision: 'not-the-installed-revision' } };
+  assert.throws(() => handoffRestart(service, {}), /Deploy a clean, verified checkout/);
+});
+
+test('restart readiness ignores an HTTP error rather than mistaking a missing PID for a replacement', async (t) => {
+  let reads = 0;
+  const server = createHTTPServer((request, response) => {
+    response.setHeader('Set-Cookie', 'fixture=session');
+    if (request.url === '/') return response.end('fixture');
+    response.setHeader('Content-Type', 'application/json');
+    if (++reads === 1) {
+      response.statusCode = 400;
+      return response.end(JSON.stringify({ error: 'Handoff in progress' }));
+    }
+    return response.end(JSON.stringify({ pid: 2, phase: 'idle' }));
+  });
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const ready = await replacement('http://127.0.0.1:' + server.address().port, 1);
+  assert.equal(ready.pid, 2);
+  assert.equal(reads, 2);
 });

@@ -1,3 +1,5 @@
+import { publishIssue } from './pr-publication.mjs';
+import { answerDeliverySetup } from './delivery-setup.mjs';
 import { appendReview } from './review-result.mjs';
 import { readFileSync } from 'node:fs';
 import { readQueue } from './data.mjs';
@@ -9,6 +11,8 @@ import { answerHumanRequirement } from './lifecycle-human.mjs';
 export async function respondLifecycle(service, record, input) {
   if (['plan', 'questions', 'scope'].includes(record.input.type)) requireAnswerIdle(service, record);
   const handlers = {
+    publication: () => publishIssue(service, record, input),
+    'delivery-setup': () => answerDeliverySetup(service, record, input),
     plan: () => approveLifecyclePlan(service, record, input),
     questions: () => recordLifecycleAnswers(service, record, input),
     integration: () => approveLifecycleIntegration(service, record, input),
@@ -32,6 +36,8 @@ function approveLifecyclePlan(service, record, input) {
     record.input = { type: 'plan', plan: record.plan };
     throw Error('The plan changed. Review its latest version before approving.');
   }
+  const directCurrent =
+    record.directTask?.report === digest(readQueue(service.root).issues.find((i) => i.id === record.issueId).content);
   const receipt = retainAnswer(service, record, {
     type: 'plan-approval',
     plan: record.plan,
@@ -49,7 +55,15 @@ function approveLifecyclePlan(service, record, input) {
     record,
     `Implementation plan approved\n\nPlan: ${record.plan.path || 'Saved proposed plan'}\nContent hash: ${record.plan.sha256}\nApproval record: ${receipt}\n\nProgress may complete this plan. Required human decisions and final acceptance remain separate.`
   );
-  saveLifecycle(service, record, { feedbackPending: null });
+  saveLifecycle(service, record, {
+    feedbackPending: null,
+    directTask: directCurrent
+      ? {
+          ...record.directTask,
+          report: digest(readQueue(service.root).issues.find((i) => i.id === record.issueId).content),
+        }
+      : null,
+  });
   lifecycleEvent(service, record, 'You approved the implementation plan. Continuing.');
 }
 function requestPlanChange(service, record, input) {

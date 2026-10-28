@@ -1,3 +1,4 @@
+import { completionReviewSchema, completionPrompt } from './completion-contract.mjs';
 import { conversationPrompt } from './conversation-context.mjs';
 import { mkdirSync } from 'node:fs';
 import { redactValue } from './activity.mjs';
@@ -12,7 +13,11 @@ export async function readWorkerReview(service, run, queue, issue, action, worke
   mkdirSync(join(service.store.directory, run.id), { recursive: true });
   writeJson(receipt, redactValue(selected));
   service.store.update(run, { workerResultPath: receipt });
-  const prompt = reviewPrompt(queue, issue, action, { ...selected, resultPath: receipt }, guards);
+  let prompt = reviewPrompt(queue, issue, action, { ...selected, resultPath: receipt }, guards);
+  if (run.completionContext)
+    prompt +=
+      '\nAlso assess issue completion in this same independent review. Keep outcome about the selected assignment, and return completion separately for the whole approved implementation. Return completion:null if its evidence cannot yet be assessed. ' +
+      completionPrompt(run.completionContext.context, run.completionContext.delivery);
   const result = await readResult(service, run, prompt);
   if (!citesTranscript(result, transcriptPath)) return result;
   service.store.update(run, {
@@ -32,7 +37,21 @@ export async function readWorkerReview(service, run, queue, issue, action, worke
 }
 function readResult(service, run, prompt) {
   return service.codex
-    .turn(run.threadId, service.root, conversationPrompt(service, run, prompt), reviewSchema)
+    .turn(
+      run.threadId,
+      service.root,
+      conversationPrompt(service, run, prompt),
+      run.completionContext
+        ? {
+            ...reviewSchema,
+            properties: {
+              ...reviewSchema.properties,
+              completion: { ...completionReviewSchema, type: ['object', 'null'] },
+            },
+            required: [...reviewSchema.required, 'completion'],
+          }
+        : reviewSchema
+    )
     .then(JSON.parse);
 }
 function citesTranscript(result, path) {

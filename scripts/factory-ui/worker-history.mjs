@@ -1,3 +1,4 @@
+import { selectedWorkerTurn } from './worker-turn.mjs';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { git, requireThat } from './common.mjs';
@@ -9,23 +10,29 @@ export async function inspectWorker(cli, root, action, runs = []) {
     : await findWorker(cli, root, action, runs);
   requireThat(thread.id !== undefined, 'Codex did not return a ready chat ID.');
   requireThat(commonGit(thread.cwd) === commonGit(root), 'The worker chat belongs to another project.');
-  const page = await cli.call('thread/turns/list', {
-    threadId: thread.id,
-    limit: 1,
-    sortDirection: 'desc',
-    itemsView: 'summary',
-  });
+  const saved = runs.findLast((r) => r.kind === 'worker' && r.actionId === action.id && r.threadId === thread.id);
   requireThat(
-    page.data?.length === 1,
-    'The existing chat has no recorded result. Reconcile it rather than relaunching.'
+    !saved?.issueWorkChat || saved.resultTurnId,
+    'The shared issue chat needs this assignment’s exact saved turn. Reconnect it without starting another chat.'
   );
-  const turn = page.data[0];
+  const turn = await selectedWorkerTurn(cli, thread.id, saved?.resultTurnId);
+  const cwd = saved?.resultTurnId ? saved.checkout : thread.cwd;
+  requireThat(commonGit(cwd) === commonGit(root), 'The saved worker checkout belongs to another project.');
+  if (saved?.resultTurnId) {
+    const expected = action.worker_revision || saved.resultRevision;
+    requireThat(
+      expected &&
+        git(cwd, 'rev-parse', 'HEAD') === expected &&
+        (!action.worker_revision || !git(cwd, 'status', '--porcelain')),
+      'The selected assignment checkout changed after its result. Preserve and reconcile its changes before review.'
+    );
+  }
   if (turn.status !== 'completed') return { pending: true, threadId: thread.id, status: turn.status };
   const messages = turn.items.filter((item) => item.type === 'agentMessage').map((item) => item.text);
   requireThat(messages.length > 0, 'The completed turn has no result message. Reconcile the existing chat.');
   return {
     threadId: thread.id,
-    cwd: thread.cwd,
+    cwd,
     turnId: turn.id,
     status: turn.status,
     messages,
@@ -37,7 +44,7 @@ async function findWorker(cli, root, action, runs) {
     ...new Set(
       runs
         .filter((r) => r.actionId === action.id)
-        .map((r) => r.workerThreadId)
+        .map((r) => r.workerThreadId || (r.kind === 'worker' && r.resultTurnId ? r.threadId : null))
         .filter(Boolean)
     ),
   ];
@@ -45,7 +52,11 @@ async function findWorker(cli, root, action, runs) {
     ids.map(async (threadId) => (await cli.call('thread/read', { threadId })).thread)
   );
   const known = attempts.filter((r) => r.status === 'fulfilled').map((r) => r.value);
-  const confirmed = known.filter((thread) => originalAssignment(thread, action));
+  const confirmed = known.filter(
+    (thread) =>
+      originalAssignment(thread, action) ||
+      runs.some((r) => r.kind === 'worker' && r.actionId === action.id && r.resultTurnId && r.threadId === thread.id)
+  );
   if (confirmed.length === 1) return confirmed[0];
   const matches = await workerCandidates(cli, root, action);
   requireThat(

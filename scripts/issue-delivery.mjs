@@ -1,3 +1,4 @@
+import { assembleExisting } from './issue-delivery-assembly.mjs';
 import { linkDeliveryDependencies } from './issue-delivery-dependencies.mjs';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -32,7 +33,12 @@ export class IssueDelivery {
     const queue = readQueue(this.root),
       issue = queue.issues.find((i) => i.id === issueId);
     requireThat(issue, 'Select an existing issue.');
-    const config = readJson(join(this.root, '.issues/issue-delivery-config.json'));
+    const configPath = join(this.root, '.issues/issue-delivery-config.json');
+    requireThat(
+      existsSync(configPath),
+      'Pull request settings are missing. Choose a target branch in this issue to save them and continue.'
+    );
+    const config = readJson(configPath);
     requireThat(
       config.provider === 'github' && /^[\w.-]+\/[\w.-]+$/.test(config.repository),
       'Configure an explicit GitHub repository.'
@@ -103,7 +109,6 @@ export class IssueDelivery {
       this.recordAssembly(action, recorded, store);
       return delivery;
     }
-    candidateUnchanged(delivery);
     requireThat(
       delivery.candidate === input.expectedCandidate,
       'The issue branch advanced; review its current candidate.'
@@ -121,12 +126,7 @@ export class IssueDelivery {
       review: input.review,
     };
     store.retain('assembly-' + action.id + '-intent', intent);
-    try {
-      git(delivery.checkout, 'merge', '--no-edit', action.worker_revision);
-    } catch (error) {
-      error.preserveLock = true;
-      throw error;
-    }
+    assembleExisting(store, delivery, intent);
     linkDeliveryDependencies(this.root, delivery.checkout);
     const checks = await this.checkBases(
       delivery.checkout,

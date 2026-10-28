@@ -355,3 +355,29 @@ test('assembly receipt recovery releases its claim without rerunning the merge o
   assert.equal(restarted.inspect(f.issueId).candidate, saved);
   assert.equal(readQueue(f.root).actions.find((a) => a.id === action.id).status, 'assembled');
 });
+
+test('a failed assembly check retries the saved merge exactly once without another merge command', async (t) => {
+  const f = await deliveryScenario(t);
+  const existing = f.delivery.inspect(f.issueId);
+  const action = addAction(f.queue, f.issueId, existing.candidate, 'retry-checks');
+  const input = { issueId: f.issueId, actionId: action.id, expectedCandidate: existing.candidate, review: f.review };
+  const trace = join(f.root, '.issues/git-trace.log');
+  const previousTrace = process.env.GIT_TRACE;
+  process.env.GIT_TRACE = trace;
+  t.after(() => {
+    if (previousTrace === undefined) delete process.env.GIT_TRACE;
+    else process.env.GIT_TRACE = previousTrace;
+  });
+  f.delivery.check = async () => {
+    throw Error('Required check failed: external fixture problem');
+  };
+  await assert.rejects(f.delivery.operate('assemble', input), /external fixture/);
+  const merged = f.queue.git('-C', existing.checkout, 'rev-parse', 'HEAD');
+  const merges = () => (readFileSync(trace, 'utf8').match(/built-in: git .*\bmerge --no-edit/g) || []).length;
+  assert.equal(merges(), 1);
+  const restarted = new IssueDelivery(f.root, { provider: f.provider, check: fixtureDeliveryCheck, guard: () => [] });
+  await restarted.operate('assemble', input);
+  assert.equal(merges(), 1);
+  assert.equal(f.queue.git('-C', existing.checkout, 'rev-parse', 'HEAD'), merged);
+  assert.equal(readQueue(f.root).actions.find((a) => a.id === action.id).status, 'assembled');
+});

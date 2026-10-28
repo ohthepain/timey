@@ -33,10 +33,8 @@ function askNextQuestion(service, record, result) {
     question.why?.trim() && question.expected?.trim(),
     'Explain why the answer is needed and what to supply.'
   );
-  requireThat(
-    !result.recommendations.length,
-    'A question must be answered before recommending work that depends on it.'
-  );
+  // Keep proposed dependent work as evidence, without saving or dispatching it.
+
   const issue = readQueue(service.root).issues.find((i) => i.id === record.issueId);
   saveLifecycle(service, record, {
     status: 'waiting',
