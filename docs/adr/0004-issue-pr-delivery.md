@@ -1,5 +1,9 @@
 # Deliver completed issues through pull requests
 
+[ADR 0005](0005-draft-pr-handoff.md) supersedes the default completion and
+publication policy below. The verified-delivery protocol and provider limitations
+remain applicable when that route is explicitly selected.
+
 The approved policy is one PR per complete issue, opened after work finishes,
 with factory merging permitted after required checks pass. Server-owned operations
 assemble independently reviewed contributions, retain completion and publication

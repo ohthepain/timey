@@ -1,3 +1,6 @@
+import { prepareDraftHandoff, requireDraftHandoff, draftHandoffBody } from './issue-draft-handoff.mjs';
+import { deliveryMode, draftHandoff } from './factory-ui/delivery-mode.mjs';
+import { checkHandoff } from './factory-ui/handoff-checks.mjs';
 import { assembleExisting } from './issue-delivery-assembly.mjs';
 import { linkDeliveryDependencies } from './issue-delivery-dependencies.mjs';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -57,7 +60,7 @@ export class IssueDelivery {
   }
   async operate(kind, input) {
     requireThat(
-      ['assemble', 'ready', 'open', 'refresh', 'merge', 'reconcile', 'verify'].includes(kind),
+      ['assemble', 'handoff', 'ready', 'open', 'refresh', 'merge', 'reconcile', 'verify'].includes(kind),
       'Unknown issue delivery operation.'
     );
     const store = new DeliveryStore(this.root, input.issueId);
@@ -75,6 +78,7 @@ export class IssueDelivery {
     git(this.root, 'worktree', 'add', '-b', source, checkout, action.start?.revision || action.basis.head);
     return store.save({
       version: 1,
+      mode: deliveryMode(context.queue, issue),
       issueId: issue.id,
       repository: config.repository,
       remote: config.remote,
@@ -114,7 +118,7 @@ export class IssueDelivery {
       'The issue branch advanced; review its current candidate.'
     );
     evidence(input.review);
-    this.guard(this.root, action, 'merge', delivery.candidate);
+    if (delivery.mode !== draftHandoff) this.guard(this.root, action, 'merge', delivery.candidate);
     const intent = {
       actionId: action.id,
       before: delivery.candidate,
@@ -124,15 +128,19 @@ export class IssueDelivery {
       issues: action.issues,
       authorization: action.authorization,
       review: input.review,
+      findings: action.evidence || '',
     };
     store.retain('assembly-' + action.id + '-intent', intent);
     assembleExisting(store, delivery, intent);
     linkDeliveryDependencies(this.root, delivery.checkout);
-    const checks = await this.checkBases(
-      delivery.checkout,
-      [delivery.originalBase, intent.originalBase],
-      join(store.directory, 'checks-' + action.id)
-    );
+    const checks =
+      delivery.mode === draftHandoff
+        ? await this.handoffChecks(delivery, store, action)
+        : await this.checkBases(
+            delivery.checkout,
+            [delivery.originalBase, intent.originalBase],
+            join(store.directory, 'checks-' + action.id)
+          );
     const checked = checks.checked;
     requireThat(checked.head === git(delivery.checkout, 'rev-parse', 'HEAD'), 'The checked assembly changed.');
     const current = this.context(input.issueId);
@@ -146,6 +154,7 @@ export class IssueDelivery {
       candidate: checked.head,
       tree: checked.tree,
       evidence: [input.review, ...checks.evidence],
+      ...(delivery.mode === draftHandoff ? { handoffCheck: checked } : {}),
     };
     const receipt = store.retain('assembly-' + action.id, contribution);
     contribution.receipt = receipt;
@@ -165,13 +174,37 @@ export class IssueDelivery {
     if (action.status === 'assembled') return;
     factory(this.root).record(action.id, {
       status: 'assembled',
-      evidence: 'Verified issue-branch assembly: ' + store.path,
+      evidence: 'Issue-branch contribution retained; check results are recorded separately: ' + store.path,
       assembly: contribution.receipt,
     });
+  }
+  handoff(store, context) {
+    return prepareDraftHandoff(this, store, context);
+  }
+  async handoffChecks(delivery, store, action) {
+    let worker;
+    try {
+      worker = JSON.parse(action.evidence.split(' Independent checks: ')[0]).handoffChecks;
+    } catch {}
+    if (worker?.head === git(delivery.checkout, 'rev-parse', 'HEAD') && worker.base === delivery.originalBase) {
+      worker.evidence.forEach((entry) => evidence(entry));
+      return { checked: worker, evidence: worker.evidence };
+    }
+    const checked = await checkHandoff(
+      this.check,
+      delivery.checkout,
+      delivery.originalBase,
+      join(store.directory, 'checks-' + action.id)
+    );
+    return { checked, evidence: checked.evidence };
   }
   ready(store, context, input) {
     const delivery = store.read();
     requireThat(delivery && !delivery.pr, 'Collect the issue contributions before completion review.');
+    requireThat(
+      deliveryMode(context.queue, context.issue, undefined, delivery.mode) !== draftHandoff,
+      'Use handoff to prepare this draft PR; verified completion is a separate route.'
+    );
     candidateUnchanged(delivery);
     currentContributions(context.queue, delivery);
     this.guard(
@@ -188,10 +221,17 @@ export class IssueDelivery {
     return store.save({
       ...delivery,
       state: 'ready',
+      mode: 'verified-delivery',
       readiness: { basis: context.basis, evidence: [...retained, manifest], manifest: input.manifest },
     });
   }
   requireReady(context, delivery) {
+    if (delivery?.mode)
+      requireThat(
+        deliveryMode(context.queue, context.issue, undefined, delivery.mode) === delivery.mode,
+        'The selected delivery route changed. Prepare the current route.'
+      );
+    if (delivery?.readiness?.kind === draftHandoff) return requireDraftHandoff(context, delivery);
     requireThat(
       delivery?.readiness && delivery.readiness.basis === context.basis,
       'Issue completion evidence is missing or stale.'
@@ -206,7 +246,7 @@ export class IssueDelivery {
     this.requireReady(context, delivery);
     if (delivery.pr) return this.refresh(store, context);
     const request = this.request(delivery);
-    for (const contribution of delivery.contributions)
+    for (const contribution of delivery.mode === draftHandoff ? [] : delivery.contributions)
       this.guard(
         this.root,
         { id: contribution.actionId, issues: contribution.issues, worker_revision: delivery.candidate },
@@ -233,10 +273,17 @@ export class IssueDelivery {
         pr.target === delivery.target,
       'The discovered PR is closed or has a different identity.'
     );
-    return store.save({ ...delivery, state: 'open', pr });
+    return store.save({ ...delivery, state: delivery.mode === draftHandoff ? 'handed-off' : 'open', pr });
   }
   request(delivery) {
     return {
+      ...(delivery.mode === draftHandoff
+        ? {
+            mode: draftHandoff,
+            draft: true,
+            body: delivery.readiness?.report ? draftHandoffBody(delivery.readiness.report) : '',
+          }
+        : {}),
       repository: delivery.repository,
       remote: delivery.remote,
       issueId: delivery.issueId,
@@ -258,6 +305,7 @@ export class IssueDelivery {
   }
   async merge(store, context, input) {
     const delivery = store.read();
+    requireThat(delivery?.mode !== draftHandoff, 'This draft PR was handed off for manual repair and merge.');
     this.requireReady(context, delivery);
     requireThat(delivery.pr && !delivery.merge, 'Reconcile an already merged result instead of merging again.');
     const request = this.request(delivery);
@@ -305,6 +353,7 @@ export class IssueDelivery {
     const delivery = store.read();
     requireThat(delivery, 'There is no saved delivery to reconcile.');
     if (!delivery.pr) return this.open(store, context);
+    if (delivery.mode === draftHandoff) return delivery;
     const found = await this.provider.findMerge(this.request(delivery), delivery.pr);
     requireThat(found.length <= 1, 'Ambiguous merge identity; preserve the operation.');
     if (found.length) {
@@ -316,6 +365,7 @@ export class IssueDelivery {
   }
   async verify(store, context) {
     const delivery = store.read();
+    requireThat(delivery?.mode !== draftHandoff, 'This draft PR is owned by the manual workflow.');
     if (delivery?.state === 'verified') {
       evidence(delivery.integration);
       readJson(delivery.integration.path).evidence.forEach(evidence);

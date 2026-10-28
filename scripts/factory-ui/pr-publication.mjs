@@ -39,7 +39,12 @@ export async function publishIssue(service, record, input) {
   saveLifecycle(service, record, {
     input: null,
     deliveryPublished: result.pr,
-    summary: 'The pull request is open. Its checks and merge controls are shown below.',
+    deliveryHandoff: result.mode === 'draft-handoff',
+    ...(result.mode === 'draft-handoff' ? { status: 'finished', deliveryWaiting: false } : {}),
+    summary:
+      result.mode === 'draft-handoff'
+        ? 'Handed off for manual repair and merge. The draft PR is open; acceptance and closure remain outstanding.'
+        : 'The pull request is open. Its checks and merge controls are shown below.',
   });
 }
 

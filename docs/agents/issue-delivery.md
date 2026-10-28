@@ -1,5 +1,47 @@
 # Issue pull request delivery
 
+The default factory outcome is a **draft PR handoff for manual repair and merge**.
+Integrate (`@integration`), Final review and Closed are planned as skipped where
+no explicit take/skip decision exists. These skips end factory responsibility;
+they never advance the report to Closed or record acceptance. Existing explicit
+routes, PRs and running worker assignments retain their recorded meaning.
+
+## Default draft PR handoff
+
+Implement within the approved scope, attempt relevant checks once for each changed
+candidate, retain their actual results, and preserve a committed candidate.
+Failures, unavailable checks, incomplete behavior and conflicts with the remote
+target do not block publication. Clean source, candidate identity, contribution
+scope, approved-plan identity and durable operation recovery still apply. Internal
+conflicts combining contributions retain the checkout for explicit reconciliation.
+
+A draft handoff progress commit may retain a failed audit. Record the failed hook
+or saved-base checkpoint before using a hook-free progress commit for that partial
+candidate. This exception applies only to the draft handoff route; it never turns
+a failing audit into a pass or changes the audit rules.
+
+1. `assemble` retains each completed assignment on the issue branch with its real
+   check outcome. An assignment can be handed off with implementation incomplete.
+2. `handoff ISSUE_ID` prepares the report from the approved plan, contribution
+   findings, check results and human obligations. Progress performs this operation
+   directly without a semantic completion-review or repair loop. Unstarted, failed
+   or blocked tasks are disclosed as remaining work; active workers and unretained
+   completed contributions still block publication. Custom and earlier stages
+   retain their gates. Reuse unchanged check attempts, including failures.
+3. After exact publication approval, `open` creates the issue's one draft PR. Its
+   description discloses check results, incomplete work and unverified obligations.
+   A moving target does not require a rebase or new verification to open this PR.
+4. Save `handed-off` delivery state and finish Progress. Keep the issue report open
+   at its current state, visibly handed off for manual repair and merge. Automatic
+   repair, rebase, CI maintenance, merge, final review and closure stop here.
+   Further work needs an explicit revision request.
+
+## Explicit verified delivery route
+
+An explicit decision to take integration, final review or closure retains the
+verified delivery workflow below. Older delivery records retain their original
+meaning. These verification and merge gates are separate from default handoff.
+
 Use the shared server operations in `scripts/issue-delivery.mjs` through either
 `factory issue-delivery OPERATION ISSUE_ID [INPUT.json]` or the issue UI. Inspection
 reads saved state only. Mutations are explicit coordinator operations under the
@@ -12,7 +54,7 @@ from branch names or supplied by the browser. The production adapter uses `gh`
 and the existing Git credential setup. Live access and publication remain guarded
 operations. Reading this guide or running fixtures authorizes neither.
 
-The operation sequence is:
+For an explicitly selected verified delivery, the operation sequence is:
 
 1. `assemble`: input `actionId`, `expectedCandidate` and independently reviewed
    `review: {path,sha256}`. Merge the exact completed contribution into the stable
@@ -107,7 +149,7 @@ eligibility is shown as the concrete blocker instead of “Review finished.” C
 to the saved issue checkout are relevant retry inputs; unrelated queue changes
 remain irrelevant. Binding creates no worker/chat/worktree and performs no merge.
 
-### Coordinator completion review
+### Coordinator completion review for verified delivery
 
 Lifecycle Progress prepares completion records itself after the selected issue's
 work has been reconciled. An assembled candidate is eligible from the mapped
@@ -143,7 +185,7 @@ grant pushes ([operating policy](operating.md#local-ui-transport)). Once readine
 is established, the UI shows the exact repository, issue branch, target and commit
 for publication approval. It retains that actual approval and rejects a changed
 tuple before publication. The shared durable PR intents still recover partial
-publication without duplicate PRs. After opening, the PR link and existing
+publication without duplicate PRs. After opening a verified-delivery PR, the PR link and existing
 check/merge controls are shown; no automatic acceptance or closure is inferred.
 Manual CLI `ready` input remains supported for compatibility, using the same
 validation, but is not a user-facing upload workflow.

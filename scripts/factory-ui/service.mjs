@@ -1,3 +1,5 @@
+import { deliveryMode, draftHandoff, draftAssembly } from './delivery-mode.mjs';
+import { checkHandoff } from './handoff-checks.mjs';
 import { createCaptures } from './issue-capture.mjs';
 import { stageWorkerArtifacts } from './evidence-staging.mjs';
 import { pinWorkerTurn } from './worker-turn.mjs';
@@ -214,7 +216,10 @@ export class FactoryUI {
     requireThat(['launch', 'integrate'].includes(kind), 'Unknown operation.');
     const { queue, action } = currentAction(this.root, id);
     this.validateOperation(queue, action, kind);
-    const guards = this.guard(this.root, action, kind === 'launch' ? operation(action) : 'merge', queue.head);
+    const handoff = kind === 'integrate' && draftAssembly(queue, action);
+    const guards = handoff
+      ? []
+      : this.guard(this.root, action, kind === 'launch' ? operation(action) : 'merge', queue.head);
     const token = randomUUID();
     this.intents.set(token, { id, kind, fingerprint: actionFingerprint(queue, action), expires: Date.now() + 600000 });
     return {
@@ -224,7 +229,7 @@ export class FactoryUI {
       head: queue.head,
       guards,
       diff: kind === 'integrate' ? git(this.root, 'diff', action.basis.head, action.worker_revision) : null,
-      requiresApproval: kind === 'integrate' && action.merge === 'human-first',
+      requiresApproval: !handoff && kind === 'integrate' && action.merge === 'human-first',
     };
   }
   validateOperation(queue, action, kind) {
@@ -259,8 +264,9 @@ export class FactoryUI {
       'The project, report or action changed. Review it again.'
     );
     this.validateOperation(queue, action, intent.kind);
-    this.guard(this.root, action, intent.kind === 'launch' ? operation(action) : 'merge', queue.head);
-    if (needsApproval(action, intent.kind))
+    const handoff = intent.kind === 'integrate' && draftAssembly(queue, action);
+    if (!handoff) this.guard(this.root, action, intent.kind === 'launch' ? operation(action) : 'merge', queue.head);
+    if (!handoff && needsApproval(action, intent.kind))
       requireThat(humanApproved === true, 'Explicit approval of these exact changes is required.');
     return { queue, action, kind: intent.kind, humanApproved };
   }
@@ -272,6 +278,10 @@ export class FactoryUI {
   launch({ queue, action }) {
     this.api.reserve(action.id, runAuthorization(this, action, 'worker'));
     const run = this.store.add(action, 'worker', action.start?.revision || action.basis.head);
+    const issue = queue.issues.find((i) => i.id === action.issues[0]);
+    this.store.update(run, {
+      deliveryMode: action.issues.length === 1 ? deliveryMode(queue, issue, this.store.runs) : 'verified-delivery',
+    });
     this.api.attach(action.id, { clientThreadId: `factory-ui:${run.id}` });
     this.perform(run, () => this.prepareWorker(run, action, queue));
     return { runId: run.id };
@@ -304,7 +314,8 @@ export class FactoryUI {
       workerPrompt(
         action,
         queue.issues.filter((r) => action.issues.includes(r.id)),
-        run.authorization
+        run.authorization,
+        run.deliveryMode
       )
     );
   }
@@ -372,6 +383,8 @@ export class FactoryUI {
       result.outcome !== 'completed'
     )
       result = { ...result, reported_outcome: result.outcome, outcome: 'completed' };
+    if (run.deliveryMode === draftHandoff && codeAction(action))
+      result = { ...result, reported_outcome: result.reported_outcome || result.outcome, outcome: 'completed' };
     if (result.outcome !== 'completed') return this.unfinished(run, result);
     this.store.update(run, { status: 'checking', summary: 'Checking the returned result independently.', result });
     requireThat(run.kind !== 'integration', 'Reconcile historical integration without another model-executed merge.');
@@ -395,12 +408,21 @@ export class FactoryUI {
       const folder = join(this.store.directory, run.id);
       let checked;
       try {
-        checked = await this.check(run.checkout, run.base, folder);
+        checked =
+          run.deliveryMode === draftHandoff
+            ? await checkHandoff(this.check, run.checkout, run.base, folder)
+            : await this.check(run.checkout, run.base, folder);
       } catch (error) {
         failedVerification(this, run, action, result, error);
         throw error;
       }
       git(run.checkout, 'merge-base', '--is-ancestor', run.base, checked.head);
+      if (run.deliveryMode === draftHandoff)
+        result = {
+          ...result,
+          handoffChecks: checked,
+          remaining: [...(result.remaining || []), ...(checked.failure ? [checked.failure] : [])],
+        };
       result = { ...result, retainedArtifacts: stageWorkerArtifacts(this.root, action, checked, result.artifacts) };
       update.evidence = JSON.stringify(result);
       update.worker_revision = checked.head;

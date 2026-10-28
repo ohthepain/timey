@@ -426,3 +426,12 @@ and validate this browser evidence against the same candidate tree.
 `codex.mjs` errors and retained `activity.mjs` output. Issue output shows explicit
 connected/idle status; retryable progress keeps its stopped reason and next action
 as separate fields rather than substituting a generic availability message.
+
+Default delivery routing lives in `scripts/factory-ui/delivery-mode.mjs`, which
+preserves saved route decisions and supplies post-PR skip defaults. Worker runs
+freeze their delivery mode at launch. `handoff-checks.mjs` retains one attempt per
+unchanged candidate, including failures. `scripts/issue-draft-handoff.mjs` prepares
+the manual handoff report; shared delivery publication retains provider identity
+and recovery guards. `pr-publication.mjs` finishes Progress at a draft handoff;
+verified delivery still uses the existing completion and merge protocol. See
+[the default handoff contract](issue-delivery.md#default-draft-pr-handoff).

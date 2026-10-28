@@ -4,7 +4,7 @@ export function stageSource(issue, run) {
   if (userSkip(run)) return { kind: 'user' };
   return { kind: 'stage', state: run.issueState || issue.state };
 }
-const labels = { 'original-report': 'Original report', user: 'User' };
+const labels = { 'original-report': 'Original report', user: 'User', 'project-default': 'Project default' };
 export function sourceLabel(source, stages) {
   if (!source) return 'Source not recorded';
   if (source.kind === 'stage') return decidingStage(source.state, stages);
