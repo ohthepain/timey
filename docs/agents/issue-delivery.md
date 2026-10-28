@@ -110,7 +110,14 @@ remain irrelevant. Binding creates no worker/chat/worktree and performs no merge
 ### Coordinator completion review
 
 Lifecycle Progress prepares completion records itself after the selected issue's
-work has been reconciled. The UI never asks the person to create or upload a
+work has been reconciled. An assembled candidate is eligible from the mapped
+Implement role as well as Verify, Commit and final review; delivery does not
+require advancing the issue first or already merging that candidate into the
+target. The UI and server completion validation share this stage policy. This
+review does not advance a stage, skip a custom stage, approve publication, enable
+provider merging or record post-merge verification. Earlier clarification,
+investigation, prototype and current custom stages keep their own gates.
+The UI never asks the person to create or upload a
 manifest. A read-only coordinator review matches every nonempty approved-plan item
 to actual source and supporting project files. The server supplies candidate and
 contribution identities, hashes the reviewed files, and passes the resulting

@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
-import { approvedPlan, issueBasis } from '../issue-delivery-policy.mjs';
+import { approvedPlan, issueBasis, completionStage } from '../issue-delivery-policy.mjs';
 import { DeliveryStore, evidence } from '../issue-delivery-store.mjs';
 import { readJson, git } from './common.mjs';
 
@@ -8,12 +8,7 @@ const unfinished = new Set(['recommended', 'reserved', 'setup', 'running', 'bloc
 export function completionChoice(queue, issue) {
   const delivery = new DeliveryStore(queue.root, issue.id).read();
   if (!delivery || delivery.pr || delivery.state === 'verified') return null;
-  if (
-    !['ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(
-      queue.lifecycle.find((s) => s.state === issue.state)?.role
-    )
-  )
-    return null;
+  if (!completionStage(queue, issue)) return null;
   if (queue.actions.some((a) => a.issues.includes(issue.id) && unfinished.has(a.status))) return null;
   return readyRecord(queue, issue, delivery)
     ? {

@@ -365,6 +365,11 @@ no completion manifest or invented evidence hashes.
 `completion-choice.mjs` keeps read-only delivery selection and freshness inputs
 separate from review execution, avoiding a dependency from queue decisions back
 into lifecycle model calls.
+Completion routing and server readiness use `completionStage` in
+`scripts/issue-delivery-policy.mjs`. This shared role-based policy lets assembled
+Implement candidates reach pre-publication review without first requiring target
+integration. Stage advancement, custom-stage obligations and publication/merge
+permissions remain separate gates.
 
 `factory-ui/completion-repair.mjs` turns a completion finding into one durable,
 plan-linked repair recommendation. `issue-verification-start.mjs` validates both

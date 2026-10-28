@@ -428,3 +428,108 @@ test('a real question remains answerable when its review also describes dependen
   assert.match(f.record.input.questions[0].question, /merge queue/);
   assert.equal(readQueue(f.root).actions.filter((a) => a.status === 'recommended').length, 0);
 });
+
+async function implementationStage(f, state = 'implement') {
+  const { writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const labels = join(f.root, '.issues/triage-labels.md');
+  writeFileSync(
+    labels,
+    `| Role | State | Next |\n| ready-to-fix | ${state} | verify |\n` +
+      readFileSync(labels, 'utf8').split('\n').slice(1).join('\n')
+  );
+  const report = join(f.root, '.issues', f.issueId + '.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state: verify', 'state: ' + state));
+}
+
+for (const state of ['implement', 'custom-implementation-name']) {
+  test(`Continue reviews the assembled candidate directly from ${state} and reaches publication approval`, async (t) => {
+    const f = await fixture(t);
+    await implementationStage(f, state);
+    const { lifecycleWorkBasis, canResumeLifecycle } = await import('./factory-ui/lifecycle-stop.mjs');
+    const queue = readQueue(f.root),
+      issue = queue.issues[0];
+    f.record.status = 'blocked';
+    f.record.stopBasis = lifecycleWorkBasis(queue, issue, f.record);
+    const candidate = f.delivery.inspect(f.issueId).candidate;
+    assert.equal(nextProgress(queue, issue, []).kind, 'completion-review');
+    assert.equal(canResumeLifecycle(f.service, f.record, queue, issue), true);
+    const { runId } = f.service.prepareCompletion(f.issueId);
+    assert.equal((await settle(f.service, runId)).status, 'completed');
+    assert.equal(f.delivery.inspect(f.issueId).state, 'ready');
+    assert.equal(f.delivery.inspect(f.issueId).candidate, candidate);
+    assert.equal(readQueue(f.root).issues[0].state, state, 'Review does not advance stages');
+    f.service.requestPublication(f.issueId);
+    assert.equal(f.record.input.type, 'publication');
+    assert.equal(f.record.input.candidate, candidate);
+    assert.equal(f.provider.state().creates, 0, 'Actual publication still requires approval');
+    assert.equal(
+      f.service.store.runs.some((r) => r.kind === 'worker' || r.kind === 'assembly'),
+      false
+    );
+  });
+}
+
+for (const role of ['ready-for-grilling', 'ready-for-repro', 'ready-to-prototype', 'custom', 'closed']) {
+  test(`assembled code does not bypass a current ${role} stage`, async (t) => {
+    const f = await fixture(t);
+    await implementationStage(f);
+    const { writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const labels = join(f.root, '.issues/triage-labels.md');
+    writeFileSync(labels, readFileSync(labels, 'utf8').replace('ready-to-fix | implement', role + ' | implement'));
+    assert.throws(() => f.service.prepareCompletion(f.issueId), /Finish the current issue work/);
+    assert.equal(f.service.store.runs.length, 0);
+  });
+}
+
+test('unfinished work and failed evidence still block completion from Implement', async (t) => {
+  const f = await fixture(t),
+    { factory } = await import('./factory-ledger.mjs');
+  await implementationStage(f);
+  const [action] = factory(f.root).recommend([
+    {
+      kind: 'verify',
+      merge: 'none',
+      issues: [f.issueId],
+      dependencies: [],
+      title: 'Pending check',
+      scope: 'Pending',
+      reason: 'test',
+      verification: 'test',
+      worker_prompt: 'test',
+    },
+  ]);
+  assert.throws(() => f.service.prepareCompletion(f.issueId), /Finish the current issue work/);
+  factory(f.root).record(action.id, { status: 'cancelled', evidence: 'Unused fixture task' });
+  const { writeJson } = await import('./factory-ui/common.mjs');
+  const proof = f.checked.summaries[0];
+  writeJson(proof, { ...JSON.parse(readFileSync(proof)), passed: false });
+  const { runId } = f.service.prepareCompletion(f.issueId);
+  assert.equal((await settle(f.service, runId)).status, 'blocked');
+  assert.equal(f.delivery.inspect(f.issueId).readiness, null);
+  assert.equal(f.provider.state().creates, 0);
+});
+
+test('resumed Continue reaches completion review and publication approval from a stopped Implement record', async (t) => {
+  const f = await fixture(t);
+  await implementationStage(f, 'in-progress');
+  const { runLifecycle } = await import('./factory-ui/lifecycle-loop.mjs');
+  const { lifecycleWorkBasis } = await import('./factory-ui/lifecycle-stop.mjs');
+  const queue = readQueue(f.root),
+    issue = queue.issues[0];
+  f.record.stopBasis = lifecycleWorkBasis(queue, issue, f.record);
+  f.record.attempts.push(f.record.stopBasis + ':plan');
+  f.record.replan = false;
+  await runLifecycle(f.service, f.record);
+  assert.equal(f.record.status, 'waiting');
+  assert.equal(f.record.input.type, 'publication');
+  assert.equal(f.provider.state().creates, 0);
+  assert.equal(f.queue.git('rev-parse', 'HEAD'), f.base, 'Target remains unchanged');
+  assert.notEqual(f.delivery.inspect(f.issueId).candidate, f.base, 'Review uses the undelivered candidate');
+  assert.equal(readQueue(f.root).issues[0].state, 'in-progress');
+  assert.equal(
+    f.service.store.runs.some((r) => ['worker', 'assembly'].includes(r.kind)),
+    false
+  );
+});
