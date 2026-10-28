@@ -1,5 +1,13 @@
 # Issue execution
 
+Single-issue chats use the exact current issue title as their native chat name.
+Creation and primary-chat reuse refresh that name from the authoritative report;
+changing lifecycle roles keeps the issue name. Independent issue review chats
+use the same title while retaining their separate identities and permissions.
+Queue-wide and grouped chats without one issue keep their existing naming.
+Rename failures are retained on the run and do not stop approved work, replace a
+chat, change its permissions or dispatch another turn.
+
 Lifecycle Progress keeps one primary work chat per issue across clarification,
 planning, investigation, implementation and verification assignments. Resume that
 chat at the selected task's exact isolated checkout and sandbox. Retain separate

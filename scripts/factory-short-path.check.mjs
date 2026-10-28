@@ -22,22 +22,30 @@ async function setup(t) {
 test('one primary issue chat is reused across checkouts while active or uncertain work blocks replacement', async (t) => {
   const f = await setup(t),
     { issueWorkChat } = await import('./factory-ui/issue-work-chat.mjs');
+  const report = join(f.root, '.issues', f.issueId + '.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state:', 'title: Sort the queue\nstate:'));
   let starts = 0,
-    resumes = [];
+    resumes = [],
+    names = [];
   f.service.codex.start = async () => {
     starts++;
     return 'primary';
   };
-  f.service.codex.call = async () => ({ thread: { status: { type: 'idle' } } });
+  f.service.codex.call = async (method, params) => {
+    if (method === 'thread/name/set') names.push(params.name);
+    return { thread: { status: { type: 'idle' } } };
+  };
   f.service.codex.ready = async () => {};
   f.service.codex.resume = async (...args) => resumes.push(args);
   const first = f.service.store.add({ id: 'first' }, 'worker', f.base);
   assert.equal(await issueWorkChat(f.service, first, f.issueId, f.root), 'primary');
   f.service.store.update(first, { threadId: 'primary', status: 'completed' });
   f.service.store.connected.delete(first.id);
+  writeFileSync(report, readFileSync(report, 'utf8').replace('Sort the queue', 'Updated issue title'));
   const second = f.service.store.add({ id: 'second' }, 'worker', f.base);
   assert.equal(await issueWorkChat(f.service, second, f.issueId, '/new-checkout'), 'primary');
   assert.equal(starts, 1);
+  assert.deepEqual(names, ['Sort the queue', 'Updated issue title']);
   assert.equal(resumes[0][1], '/new-checkout');
   const third = f.service.store.add({ id: 'third' }, 'worker', f.base);
   await assert.rejects(issueWorkChat(f.service, third, f.issueId, f.root), /still working/);
@@ -46,10 +54,20 @@ test('one primary issue chat is reused across checkouts while active or uncertai
   f.service.codex.call = async () => ({ thread: { status: { type: 'unknown' } } });
   await assert.rejects(issueWorkChat(f.service, third, f.issueId, f.root), /unknown/);
   assert.equal(starts, 1);
+  f.service.codex.call = async (method) => {
+    if (method === 'thread/name/set') throw Error('Rename unavailable');
+    return { thread: { status: { type: 'idle' } } };
+  };
+  const fourth = f.service.store.add({ id: 'fourth' }, 'worker', f.base);
+  assert.equal(await issueWorkChat(f.service, fourth, f.issueId, f.root), 'primary');
+  assert.equal(fourth.chatTitle.status, 'failed');
+  assert.equal(starts, 1, 'a failed rename must not create a replacement');
 });
 test('a cold connection resumes the saved primary chat without creating a replacement', async (t) => {
   const f = await setup(t),
     { issueWorkChat } = await import('./factory-ui/issue-work-chat.mjs');
+  const report = join(f.root, '.issues', f.issueId + '.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state:', 'title: Sort the queue\nstate:'));
   const cli = join(f.root, '.issues/cold-cli.mjs'),
     log = join(f.root, '.issues/cold-rpc.jsonl');
   writeFileSync(
@@ -70,8 +88,16 @@ test('a cold connection resumes the saved primary chat without creating a replac
   const run = f.service.store.add({ id: 'resume-after-restart' }, 'worker', f.base);
   assert.equal(await issueWorkChat(f.service, run, f.issueId, f.root), 'saved-primary');
   const methods = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(methods, ['initialize', 'initialized', 'thread/read', 'thread/resume', 'thread/read']);
+  assert.deepEqual(methods, [
+    'initialize',
+    'initialized',
+    'thread/read',
+    'thread/resume',
+    'thread/read',
+    'thread/name/set',
+  ]);
   assert.equal(run.reusedIssueChat, true);
+  assert.equal(run.chatTitle.status, 'named');
 });
 
 test('loading a saved chat still refuses busy or uncertain native state', async (t) => {

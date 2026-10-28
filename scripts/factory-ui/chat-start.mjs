@@ -1,11 +1,14 @@
 import { saveLifecycle } from './lifecycle-store.mjs';
 import { requireThat } from './common.mjs';
+import { nameIssueChat } from './chat-name.mjs';
 
 // Persist the exact response identity before dispatch, sharing one request per run.
 export function startChat(service, run, cwd, sandbox = 'workspace-write') {
   service.chatStartTasks ||= new Map();
   if (service.chatStartTasks.has(run.id)) return service.chatStartTasks.get(run.id);
-  const task = openChat(service, run, cwd, sandbox).finally(() => service.chatStartTasks.delete(run.id));
+  const task = openChat(service, run, cwd, sandbox)
+    .then((threadId) => nameIssueChat(service, run, threadId))
+    .finally(() => service.chatStartTasks.delete(run.id));
   service.chatStartTasks.set(run.id, task);
   return task;
 }

@@ -70,6 +70,7 @@ function transport(t, service) {
     if(m.method==='initialize')send({id:m.id,result:{userAgent:'fixture'}});
     if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'fixture-thread'}}});
     if(m.method==='thread/resume')send({id:m.id,result:{thread:{id:m.params.threadId}}});
+    if(m.method==='thread/name/set')send({id:m.id,result:{}});
     if(m.method==='turn/start'){send({id:m.id,result:{turn:{id:'turn'}}});
       send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(m.params.outputSchema.properties.recommendations?{summary:'One suggestion',recommendations:[{kind:'investigate',title:'Read source',scope:'One file',reason:'Find answer',verification:'Read source',worker_prompt:'Read source.js only',merge:'none',dependencies:[],issues:['20261022-one']}]}:{outcome:'completed',summary:'Read the file.',evidence:'source.js contains 42',remaining:[]})}}});
       send({method:'turn/completed',params:{threadId:m.params.threadId,turn:{status:'completed'}}});}

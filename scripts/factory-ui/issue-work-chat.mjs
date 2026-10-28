@@ -1,11 +1,12 @@
 import { selectedWorkerTurn } from './worker-turn.mjs';
 import { startChat } from './chat-start.mjs';
+import { nameIssueChat } from './chat-name.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import { requireThat, git } from './common.mjs';
 
 export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'workspace-write') {
   const record = service.lifecycleRuns[issueId];
-  if (record) service.store.update(run, { issueWorkChat: true });
+  service.store.update(run, { issueId, ...(record ? { issueWorkChat: true } : {}) });
   if (!record) return startChat(service, run, cwd, sandbox);
   const actions = record.workThreadId ? [] : service.api.inspect().registry?.actions || [];
   const previous = service.store.runs.findLast(
@@ -45,7 +46,7 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
   if (!unloaded) await service.codex.resume(threadId, cwd, sandbox);
   service.store.update(run, { threadId, reusedIssueChat: true });
   saveLifecycle(service, record, { workThreadId: threadId, assessmentThreadId: threadId });
-  return threadId;
+  return nameIssueChat(service, run, threadId);
 }
 
 async function loadSavedChat(cli, threadId, cwd, sandbox) {
