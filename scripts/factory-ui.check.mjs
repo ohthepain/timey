@@ -1162,11 +1162,21 @@ function completedWorkFixture(t) {
   );
   const factoryLog = join(root, '.issues/factory-fixture.log');
   writeFileSync(factoryLog, 'ℹ tests 1\nℹ pass 1\nℹ fail 0\nℹ skipped 0\n');
+  const browserLog = join(root, '.issues/browser-fixture.log');
+  writeFileSync(browserLog, 'PASS browser scenario: fixture\n');
   const summaries = ['verification', 'step'].map((checkpoint) => {
     const path = join(root, '.issues', checkpoint + '.json');
-    const checks = (checkpoint === 'step' ? ['fallow'] : ['fallow', 'factory', 'typecheck', 'tests', 'build']).map(
-      (name) => ({ name, passed: true, exit: 0, log: name === 'factory' ? factoryLog : log })
-    );
+    const checks = (
+      checkpoint === 'step' ? ['fallow'] : ['fallow', 'browser', 'factory', 'typecheck', 'tests', 'build']
+    ).map((name) => ({
+      name,
+      passed: true,
+      exit: 0,
+      log: name === 'browser' ? browserLog : name === 'factory' ? factoryLog : log,
+      ...(name === 'browser'
+        ? { artifacts: [{ path: browserLog, sha256: digestReport(readFileSync(browserLog)) }] }
+        : {}),
+    }));
     writeFileSync(
       path,
       JSON.stringify({
