@@ -49,6 +49,7 @@ import { issueLifecycleView } from './lifecycle-view.mjs';
 import { latestResult, reviewInput, savedReviewInput, reviewSaveCurrent } from './review-followup.mjs';
 import { validateRoutes } from './lifecycle.mjs';
 import { readPlan } from './plan-document.mjs';
+import { readSavedReport } from './report-document.mjs';
 import { findConnection, connectWorker } from './worker-connection.mjs';
 import { decideIssue } from './issue-decision.mjs';
 import { resolveNextAction } from './next-action.mjs';
@@ -136,6 +137,9 @@ export class FactoryUI {
     const record = lifecycleView(this, issue);
     if (!record) return null;
     return { ...record, canResume: canResumeLifecycle(this, record, queue, issue, runs) };
+  }
+  readSavedReport(id) {
+    return readSavedReport(this.root, id);
   }
   readPlan(path) {
     return readPlan(this.root, path);
