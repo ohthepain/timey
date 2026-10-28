@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, lstatSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { digest, git, requireThat, writeJson } from './common.mjs';
 import { selectedWorkerTurn } from './worker-turn.mjs';
@@ -66,9 +66,14 @@ function conflicts(checkout) {
 }
 function unchangedFiles(checkout, allowed) {
   const paths = git(checkout, 'ls-files', '-z').split('\0').filter(Boolean);
-  return paths
-    .filter((p) => !allowed.has(p))
-    .map((p) => [p, existsSync(join(checkout, p)) ? digest(readFileSync(join(checkout, p))) : null]);
+  return paths.filter((p) => !allowed.has(p)).map((p) => [p, fileIdentity(join(checkout, p))]);
+}
+function fileIdentity(path) {
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (!stat) return null;
+  if (stat.isSymbolicLink()) return ['symlink', readlinkSync(path)];
+  if (stat.isDirectory()) return ['directory', stat.mode];
+  return ['file', stat.mode, digest(readFileSync(path))];
 }
 async function resolveMerge(service, run, branch) {
   const before = git(run.checkout, 'rev-parse', 'HEAD');

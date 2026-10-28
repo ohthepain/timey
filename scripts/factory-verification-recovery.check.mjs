@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
@@ -13,6 +13,9 @@ function fixture(t) {
   f.git('branch', '-m', 'target');
   writeFileSync(join(f.root, '.gitignore'), '.issues/\n');
   writeFileSync(join(f.root, 'code.js'), 'base\n');
+  mkdirSync(join(f.root, 'shared-skill'));
+  writeFileSync(join(f.root, 'shared-skill/SKILL.md'), 'Shared instructions\n');
+  symlinkSync('shared-skill', join(f.root, 'skill-link'));
   f.git('add', '.');
   f.git('commit', '-qm', 'base');
   mkdirSync(join(f.root, '.issues'));
