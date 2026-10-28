@@ -5,8 +5,9 @@ containing this adapter. Open the printed loopback URL. The project must already
 have its local issue queue and factory registry; the UI never initializes or
 replaces either. The selected checkout owns the issue records and delivery configuration, so choose the
 authoritative project rather than an old worker checkout. In live mode the
-server serves `scripts/factory-ui/` from that project path when present, and
-restart handoffs relaunch through the project's `scripts/factory-ui.mjs` entry.
+server uses browser assets and the restart entry from the installed adapter
+checkout. Updating code uses managed deployment with exact passing verification,
+HTML and authenticated queue probes; restart refuses changed installed source.
 Use `--port NUMBER` only when a fixed local port is needed.
 
 The queue and issue screens read actual reports and the dispatch ledger through
@@ -320,7 +321,13 @@ their neutral colour and help text retain the missing-history distinction. Curre
 assignments and old reviews are grouped under Task details and earlier reviews,
 with a notice that old instructions may have been superseded. Final-only human
 checks stay collapsed until needed. Plan references in saved reports/assignments
-open a read-only document viewer restricted to project Markdown plans. The current
+open a read-only document viewer restricted to project Markdown plans. Each issue
+page also offers **Open saved report**, which reads its current complete Markdown
+(including frontmatter) from the authoritative queue and shows its project-relative
+path in the same accessible dialog. Report content is displayed as text. The
+authenticated report resource accepts only an issue ID, rejects symlinks and
+non-regular files, and reports missing or invalid reports without changing files,
+assignments or lifecycle state. The plans-only resource remains separate. The current
 step keeps Progress available without a separate readiness check. Saved
 implementation results remain visible as the issue advances.
 
@@ -583,6 +590,22 @@ with this dispatcher capability; it grants no scope or completion by itself.
 Queue reviews remain read-only; continuation execution belongs to the approved
 issue lifecycle loop, separately from the native factory command loop.
 
+## Refreshing stale recommendations
+
+Continue recovers a stale, unlaunched same-issue recommendation under the current
+approved plan. It retires the unused proposal with its original scope, base and
+authorization history retained, then replans only unfinished work from current
+inputs. It never updates the old fingerprint to make a stale assignment launchable.
+The replacement passes the normal scope review, human-input and launch guards;
+a changed plan or expanded scope still requires the actual human decision.
+
+Reads only offer recovery. The explicit Continue action performs retirement under
+the ledger lock, checking the exact expected proposal and that it is still stale,
+unclaimed and unbound. Grouped proposals, existing chats/reservations, dirty source,
+missing approval and invalid assembly handoffs retain their concrete blockers.
+Completed, reconciled and assembled work is preserved. Relevant recovery attempts
+are bounded by the normal lifecycle fingerprint; notes do not reset it.
+
 ## Questions, failures and forward progress
 
 Focused planning distinguishes unfinished work, completed-work bookkeeping, an
@@ -629,10 +652,18 @@ Approval buttons acknowledge a click immediately: the clicked control is disable
 and shows Approving… while the request is sent. Approved. Continuing… appears only
 after the server accepts the request, while the updated queue is loading. Stable
 request/issue-answer keys preserve that feedback across redraws, preventing a
-stale approval from being submitted twice. Failed requests show the error and
-restore the control for retry. Negative replies and answers use Sending…/Sent…
+stale approval from being submitted twice. Failed requests show an alert beside
+each copy of that exact request's control and restore it for explicit retry.
+The alert survives redraws and clears on retry or a replacement request. An
+expired page session explains that a reload is needed; no write is automatically
+replayed after reconnecting. Negative replies and answers use Sending…/Sent…
 instead of claiming approval. This feedback changes no permission or acceptance
 rules.
+
+Publication preflight checks each contributing action's real identity and scope
+against the exact assembled candidate and target, just as merge preflight does.
+The issue ID is not an action ID. Publication still requires its separate explicit
+approval and never supplies merge or final acceptance approval.
 
 ## Slow chat startup
 
@@ -690,6 +721,13 @@ integration approvals retain their exact candidate/plan checks, and closure rema
 an explicit final decision. Implementation stays in isolated worker checkouts;
 independent review stays in separate read-only chats and checks raw proof. Those
 roles receive the selected issue conversation as context, never expanded permission.
+
+**Stop** cancels only the issue assistant's current response for the selected issue.
+It preserves saved messages, earlier output and received partial text, and leaves
+queued comments available for their normal responses. It never stops lifecycle
+Progress or workers, answers questions or grants approval. A stale Stop cannot
+cancel a newer response; a response that finishes first is retained normally.
+Connection or cancellation failures remain visible so you can refresh and retry.
 
 Message IDs make transport retries idempotent. Responses are serialized per issue,
 while comments can continue arriving. A failed response retains the user message
@@ -986,3 +1024,182 @@ or acceptance and start no work. Existing queue ordering is retained.
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
+
+## Create an issue from the list
+
+**Create issue** accepts one required description. Save asks the configured model
+to derive titles, separate independent outcomes and assess initial routing.
+Numbered steps for one problem stay together. Reports preserve the exact original
+description and relevant excerpt, use ask autonomy and record each initial skipped
+stage with its own reason and original-report source. Required custom stages stay
+in the route. Capture starts no investigation, worker or lifecycle Progress.
+
+Save stays on the list with its filters and reading position. A persistent toast
+links to every captured issue, including issues hidden by current filters. Opening
+a link starts no work. Cancel before submission writes no report. While saving,
+the controls disable; closing a request cannot undo a publication. Errors retain
+the description and retry identity, including across reloads in this browser tab.
+Retry the same draft to recover a lost response or partial publication. A changed
+description with that identity is rejected; Cancel starts a fresh draft. Success
+links survive a failed list refresh.
+
+Capture uses the existing local HTTP, preview, server ownership, pause and draining
+guards. Provider assessment holds no queue lock. Publication uses the common
+queue lock, exclusive report creation and a durable receipt under
+`.issues/factory-ui/captures/`. Same-identity retries return the original IDs; new
+explicit submissions may contain identical wording. Existing reports and the
+factory ledger remain untouched. Uncertain locks or changed partial reports need
+reconciliation. Provider/profile restrictions fail closed, with no model fallback.
+Descriptions go to the configured provider under its account policies; local
+ephemeral runtime cleanup establishes no provider-retention guarantee.
+
+## Verification recovery
+
+Implementation completion is separate from wider verification. A worker that has
+finished its requested code and focused checks returns `implementation_complete`.
+If independent checks fail, retain the implementation/result/chat, record Implement
+as completed and move to the configured Verify stage. This records no passed check,
+commit-stage completion, integration, acceptance or closure. Custom stages are
+preserved; there is no direct jump over a configured intermediate stage.
+
+Verify explains the failed check, uncertainty, current branch and checkout.
+**Retry verification** reruns checks on the existing code, including unchanged code.
+**Update from branch and retry** merges all changes from an explicitly selected
+local or last-fetched remote branch into the isolated worker checkout, then checks
+the combined result against the original starting revision. Full verification
+includes fresh registered browser interactions on that combined source before
+independent completion review; old pre-merge browser logs do not satisfy the new
+required browser check. See [browser verification](verification.md#browser-behavior-on-the-combined-candidate). The selector sits directly
+above this action and defaults to the source branch recorded when the worker was
+created. Older workers without a recorded source default to the project’s current
+branch; detached or unavailable branches leave an explicit choice. An explicit
+selection survives polling during the current page session. Selecting a branch
+approves that update only; exact-candidate PR/human approval stays separate. Changed
+branch tips, changed issue records, active work and unrelated dirty/conflicted
+checkouts reject stale actions with a concrete explanation. For conflicts from
+this run’s recorded branch update, the action makes one bounded Codex resolution
+attempt in the existing issue chat. It preserves the original implementation
+turn, checks the exact merge identity and limits edits to conflicted files (plus
+the lockfile for package conflicts). The server commits the staged resolution
+through its configured audit hook, then independently checks the combined result.
+A retry can resume that same pending merge; it cannot adopt another merge.
+Unresolved decisions, unavailable chats, failed hooks or verification stay visible
+and require another explicit action; there is no automatic retry loop. Publication,
+project-branch integration and acceptance remain separate. No other issue or
+formal repair ticket is required, and implementation is not repeated. Failed retries remain in Verify, with another explicit retry available;
+automatic progress pauses instead of repeating checks or assigning outside repairs.
+A successful retry resumes approved progress while retaining pending human input.
+
+Each verification command prints its exact summary path. Candidate checking uses
+only those command-owned verification and step summaries, retaining strict
+base/tree/raw-log validation. Concurrent commit-hook or other-issue evidence is
+not evidence for that command and cannot make it fail or pass.
+
+## Interrupted integration bookkeeping
+
+The issue coordinator checks a saved integration reservation before asking for new
+work. If the candidate is already in the project, it reads only the reports named
+by that integration's own verification and step commands. Matching current-tree,
+original-base and raw-check evidence permits finishing the ledger and stage update
+without a chat, worker restart or another merge. The existing lock, candidate,
+authorization and operation-specific human guards remain required. A partial
+registry update resumes only the unfinished bookkeeping. Polling and queue reads
+remain inert; recovery runs as part of approved Progress.
+
+Older commands without summary markers use their recorded Fallow log paths to
+identify their own reports. Other commands' reports are never selected by scanning
+the shared evidence folder. Changed source, missing evidence, another live owner,
+a changed candidate or missing approval leaves the original work and reservation
+intact, with a concrete explanation and **Retry finishing integration**. That
+explicit retry can run verification on the existing merged code if fresh evidence
+is needed. It never merges, starts an implementation or grants human approval.
+Repeated automatic attempts against unchanged inputs are suppressed. Maintenance
+pauses prevent a successful recovery from dispatching further work.
+
+Historical local integrations have a dedicated ledger compatibility operation.
+It requires the original server-owned integration run and reservation, the saved
+candidate/base, full verification and step reports, and the existing human policy.
+It records a historical completion, not a PR. Ordinary new integration transitions
+still require verified issue PR delivery. Unknown or unrelated reservations are
+left for their owning issue; they are never deleted to unblock another issue.
+
+### Delivery setup and assembly retry
+
+Lifecycle Progress saves missing pull-request settings from an actual matching
+human target answer, or asks for that branch directly in the issue. The server
+uses the configured Git origin; the browser supplies no repository identity.
+Saved answers are decisions, not proof of passing checks or permission to publish.
+The issue displays stopped assembly failures and **Retry existing operation**.
+Clicks show immediate feedback, reject stale requests, and reuse the existing
+assembly run and saved merged tree. Checks can be retried without another worker,
+repeat review loop or repeat merge. See [delivery recovery](issue-delivery.md#missing-settings-and-stopped-checks).
+
+### Verification of an existing issue branch
+
+Continue automatically connects a saved verification task to its exact assembled
+issue revision under the current approved plan, then launches that task without
+another planning review. It does not restart implementation or repeat a merge.
+The Verify role shows actual launch blockers instead of a generic finished-review
+message. The saved issue checkout and candidate are part of Continue freshness,
+so resolving its local blocker enables another attempt. This check-only handoff
+cannot authorize implementation or cross-issue work; see
+[verification handoff](issue-delivery.md#verification-handoff).
+
+### Automatic completion record
+
+The issue's pull-request card explains the next operation in ordinary language and
+uses Continue. It has no JSON upload control. After active work finishes and is
+reconciled, Progress runs a focused completion review against the existing issue
+candidate and actual evidence. It compiles and saves the internal completion
+record through the shared delivery validator, then requests only the actual
+publication approval required by the operating policy. Real scope questions are
+answered inline; ordinary unfinished technical work is shown without a fake
+question. Failed or stale proof never becomes a passing readiness assertion.
+After publication, the saved PR link and check/merge controls remain available;
+the coordinator does not return to a planning loop or claim issue acceptance.
+
+An incomplete completion review automatically hands technical findings to one
+bounded repair-selection attempt within the approved plan. Continue also recovers
+saved completion stops from older servers. Recovery attempts are retained per
+relevant input, and a repeated unchanged failure stops with its actual reason.
+Repair recommendations take precedence over the Commit action; completed work
+and merge receipts remain intact. Genuine scope questions still require an answer.
+
+A completion review that finds approved implementation still missing returns a
+bounded repair task directly. Progress saves and dispatches it through the normal
+scope and human guards without another queue evaluation. The issue shows its
+concrete task title. Readiness and publication remain separate from acceptance.
+Live output stays durable in the per-run log while history snapshots are batched;
+restarting replays uncheckpointed output without duplicating it.
+
+[Issue execution](issue-execution.md) defines the primary chat, approved short
+path, unchanged-check reuse and combined final review. Independent reviews and
+operation-specific approvals remain separate from work chat reuse.
+
+## Question wording
+
+User-facing questions should read like one engineer talking to another. Ask for
+the concrete decision first, then explain why it is needed and what approving,
+declining or waiting means for that action. Explain necessary technical terms
+and describe any proposed expansion of the approved work separately. Keep the
+existing response fields, answer routing and approval requirements: clearer
+wording grants no additional authority. Existing saved discussions retain their
+original wording.
+
+## Combined Clarify and capture grilling
+
+The project setting in `factory.config.json` combines Clarify and Investigate into
+one Clarify stage. Legacy state names remain storage aliases; their reports and
+history are preserved. Active investigations keep their assignment and chat, then
+feed their findings into Clarify. Diagnostic assessment can inspect code and run
+focused checks before plan approval, with source kept read-only. Approval still
+belongs to the user and covers intended outcome and scope. Ordinary commits do
+not restart the interview; technical plan changes can stay within that approval.
+
+Create issue offers **Grill me after creation**, off by default. With it selected,
+the server first saves all reports, then sends an explicit grilling request to
+each saved issue conversation. A single saved issue opens automatically; when
+capture separates multiple issues, the first opens and the toast links to all of
+them. Stable conversation message IDs prevent duplicate grilling on capture retry
+or server restart. Conversation failures leave the issue saved and report the
+problem. This option starts discussion, not lifecycle execution or implementation.

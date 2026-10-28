@@ -6,8 +6,18 @@ Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions and the pnpm version in
 `packageManager`. Run `pnpm install --frozen-lockfile` in a clean checkout.
 
+The local issue helpers are a pinned development dependency packaged in
+[`vendor/`](../../vendor/README.md). The relative `.agents/skills/issues` link
+resolves through that installed package; verification and CI require no personal
+skill checkout. Its original human-input protocol and integrity manifest are
+unchanged. Install the frozen dependencies before running factory checks.
+Symbolic links remain in the exported snapshot and audit scope; their link
+metadata is not passed to Prettier, which rejects symbolic-link paths. Changed
+regular target files retain their own formatting checks.
+
 | Command                             | What it establishes                                                                                                    |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run test:browser`             | Headless Chromium interactions against candidate UI assets with disposable data; retained logs and screenshots         |
 | `pnpm run test:factory`             | Ledger, live UI/CLI boundaries, verifier dispatch/isolation, and audit-result checks using disposable Git repositories |
 | `pnpm run typecheck`                | TypeScript compiler result; report existing failures explicitly                                                        |
 | `pnpm test`                         | Mock-backed Vitest behavior; recorder CSVs and backups use per-test temporary directories                              |
@@ -299,3 +309,89 @@ when its original readiness observations were not retained.
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
+
+## Issue capture checks
+
+Run `node --test scripts/factory-capture.check.mjs` for disposable reports and real
+HTTP capture requests, including mapped routing, skip reasons, preserved original
+wording, independent outcomes, collisions, concurrent/replayed submissions, partial
+publication recovery, provider/output failures, local guards and zero work launches.
+The aggregate factory suite includes these checks.
+
+Run `node scripts/factory-capture-browser.mjs` for actual rendered keyboard/cancel,
+polling and draft preservation, provider-error retry, filtered/scrolled list and
+one/multiple toast navigation at desktop and narrow widths. It uses the installed
+Playwright CLI and a deterministic assessor against a uniquely disposable queue.
+The printed evidence directory retains `commands.json`, assertions and
+`output/playwright/` logs/screenshots. Protocol fixtures establish no model access.
+Run `node scripts/factory-capture-provider.mjs` separately to check the real
+configured provider with synthetic single-bug/numbered-step and distinct-feature
+requests. It retains generated reports/results in the printed temporary directory,
+uses the existing login/model and fails closed for unsupported configuration.
+Neither command targets the authoritative queue or starts factory work. Required
+full verification and saved-start step/staged checkpoints still apply.
+
+## Execution preflight and recovery
+
+Before any verification command runs, the exporter checks the installed pnpm lock
+against the exported lock and requires dependencies for each declared workspace.
+It resolves the immutable comparison commit and exported tree in the clone. Full
+verification also opens and closes an actual localhost listener before running the
+suite, so a sandbox refusal is an immediate environment failure with no claimed
+checks. Audit-only checkpoints do not require networking. Preflight never grants
+permissions or installs dependencies automatically.
+
+Summaries retain execution phase timestamps and owned command PIDs. Cancellation
+stops the runner's own child process group, retains a failed summary and starts no
+remaining checks. Concurrent checks for the same checkout and candidate share the
+running independent check; conflicting candidates wait instead of starting an
+obsolete second run. Existing independent proof reuse still validates exact inputs
+and retained file hashes, including dependency lock identities. Cache diagnostics
+record a key and hit/miss reason without environment contents.
+
+Planning and review retain hashed input descriptions. A changed-input failure
+identifies the changed source, report, action or policy file and assigns recovery
+to the coordinator. Approved lifecycle Progress gets one recovery per unchanged
+work basis through the existing scope and approval guards. It preserves previous
+results; it does not authorize broader work, waive verification or infer missing
+human decisions. A superseded failure cannot override later passing verification
+for the same assignment or a checked, assembled contribution. Codex transport
+receipts record request/reply/wait/finish timing without prompts or credentials;
+uncertain creation still requires discovery of the original chat.
+
+## Browser behavior on the combined candidate
+
+Full verification runs `test:browser` near the start, before the factory/type/unit/build
+checks. It serves the exported candidate’s actual UI assets with disposable data,
+using the pinned Playwright CLI and Chromium, then closes its owned browser session
+and listener. Install its browser with `pnpm exec playwright-cli install-browser chromium`
+(`--with-deps` in Linux CI). Missing tooling or failed interactions fail verification.
+No production issue writes, provider calls, publication or acceptance occur.
+
+Keep repeatable UI scenarios as `scripts/factory-browser-*.mjs`, exporting an async
+function that exercises the page and returns passing assertions. Implement adds
+the issue’s interactions; Verify executes them again on the combined source. The
+legacy sorting pilot’s existing `scripts/factory-queue.check.mjs` registers its
+retained browser replay in `scripts/browser-scenarios/queue-sorting.mjs`; missing
+sort controls fail that replay rather than skipping it. This migrates its original
+14 browser assertions without repeating implementation.
+
+Raw logs, replay sources and screenshots live beside each verification summary,
+with content hashes. Required browser proof is part of the exact-tree verification
+summary and delivery evidence, including cached evidence validation. Source/tree,
+dependency or runner changes invalidate the existing candidate check key; altered
+artifacts cannot be reused. Older summaries without browser checks no longer
+establish current delivery readiness. An unchanged candidate may reuse intact
+exact-input proof; merging changed code requires new interactions. Human usability
+judgment and actual provider/hardware evidence remain separate.
+
+## Combined Clarify checks
+
+`node --test scripts/factory-clarify.check.mjs` exercises old state aliases,
+preserved active investigations and custom stages, diagnostic authority before
+approval, pending answers across commits, retained plan approvals and explicit,
+idempotent capture grilling. These are disposable protocol tests, not evidence
+of live model availability. Full factory verification includes them.
+`factory-browser-clarify.mjs` exercises the candidate's rendered capture switch,
+its off default, retained retry choice and navigation to the saved issue through
+the standard browser verifier with a disposable API response.

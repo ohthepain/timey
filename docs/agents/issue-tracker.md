@@ -25,6 +25,16 @@ Record durable terminology and architecture decisions using
 
 The queue remains locally excluded from Git.
 
+## Combined Clarify adapter
+
+The tracked `factory.config.json` enables one factory Clarify stage for both intent
+and technical investigation. Keep the shared `.issues/triage-labels.md` identifiers
+intact: the factory maps the former investigation state to Clarify at read time,
+so existing reports, history, questions and active assignments retain their bytes
+and original meaning. Do not delete or rename the shared Investigate role to make
+the factory view match. Projects without the setting retain the legacy lifecycle.
+Custom stages and their required work remain in the projected route.
+
 ## Factory policy overrides
 
 For this repo, [verification](verification.md) defines separate human evidence

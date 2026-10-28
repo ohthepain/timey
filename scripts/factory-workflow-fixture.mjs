@@ -48,10 +48,12 @@ export function deliveryFixture(t) {
     }) + '\n'
   );
   const factoryLog = join(source.root, '.issues/factory.log');
-  writeFileSync(factoryLog, 'ℹ tests 1\nℹ pass 1\nℹ fail 0\nℹ skipped 0\n');
+  writeFileSync(factoryLog, 'ℹ tests 1\nℹ pass 1\nℹ fail 0\nℹ skipped 0\nPASS browser scenario: fixture\n');
+  const browserLog = join(source.root, '.issues', 'browser.log');
+  writeFileSync(browserLog, 'PASS browser scenario: fixture\n');
   const verification = ['verification', 'step'].map((checkpoint) => {
     const path = join(source.root, '.issues/' + checkpoint + '.json');
-    const names = checkpoint === 'step' ? ['fallow'] : ['fallow', 'factory', 'typecheck', 'tests', 'build'];
+    const names = checkpoint === 'step' ? ['fallow'] : ['fallow', 'browser', 'factory', 'typecheck', 'tests', 'build'];
     writeFileSync(
       path,
       JSON.stringify({
@@ -60,7 +62,15 @@ export function deliveryFixture(t) {
         snapshot_tree: tree,
         passed: true,
         changed_files: [],
-        checks: names.map((name) => ({ name, passed: true, exit: 0, log: name === 'factory' ? factoryLog : log })),
+        checks: names.map((name) => ({
+          name,
+          passed: true,
+          exit: 0,
+          log: name === 'browser' ? browserLog : name === 'factory' ? factoryLog : log,
+          ...(name === 'browser'
+            ? { artifacts: [{ path: browserLog, sha256: digest(readFileSync(browserLog)) }] }
+            : {}),
+        })),
       })
     );
     return path;

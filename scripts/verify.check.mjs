@@ -56,7 +56,13 @@ function auditFixture(t, extraFiles = {}) {
   writeFileSync(join(root, 'pnpm-lock.yaml'), readFileSync('pnpm-lock.yaml'));
   writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/*.mjs"]}\n');
   mkdirSync(join(root, 'scripts'));
-  for (const name of ['verify.mjs', 'verify-scope.mjs', 'verify-process.mjs', 'audit-result.mjs'])
+  for (const name of [
+    'verify.mjs',
+    'verify-scope.mjs',
+    'verify-process.mjs',
+    'verify-preflight.mjs',
+    'audit-result.mjs',
+  ])
     writeFileSync(join(root, 'scripts', name), readFileSync(join('scripts', name)));
   writeFileSync(join(root, 'index.js'), 'console.log("baseline");\n');
   for (const [name, content] of Object.entries(extraFiles)) writeFileSync(join(root, name), content);
@@ -161,6 +167,7 @@ function aggregateFixture(t) {
   const manifestPath = join(root, 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   manifest.scripts['test:factory'] = 'node --test scripts/factory-interface.check.mjs';
+  manifest.scripts['test:browser'] = 'node index.js';
   manifest.scripts.build = 'node index.js';
   writeFileSync(manifestPath, JSON.stringify(manifest));
   writeFileSync(join(root, 'tsconfig.json'), '{"compilerOptions":{"skipLibCheck":true},"files":["index.ts"]}\n');
@@ -217,8 +224,20 @@ test('interface dispatch sentinel', () => {
     const summary = JSON.parse(readFileSync(join(evidence, summaryPath), 'utf8'));
     return { result, summary, factory: summary.checks.find((check) => check.name === 'factory') };
   };
-  return { run, interfacePath, interfaceCheck };
+  return { root, run, interfacePath, interfaceCheck };
 }
+
+test('formatting handles changed symbolic links while still checking changed target source', (t) => {
+  const { root, run } = aggregateFixture(t);
+  symlinkSync('index.js', join(root, 'helper-link'));
+  const { result, summary } = run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.ok(summary.changed_files.includes('helper-link'));
+  const formatting = summary.checks.find((check) => check.name === 'format-changed');
+  assert.equal(formatting.passed, true);
+  assert.ok(formatting.command.includes('index.js'));
+  assert.equal(formatting.command.includes('helper-link'), false);
+});
 
 test('aggregate verification dispatches the package factory suite in an isolated export', (t) => {
   const { run, interfacePath, interfaceCheck } = aggregateFixture(t);
@@ -229,7 +248,7 @@ test('aggregate verification dispatches the package factory suite in an isolated
   assert.match(readFileSync(failed.factory.log, 'utf8'), /deliberate interface failure/);
   assert.deepEqual(
     failed.summary.checks.map((check) => check.name),
-    ['fallow', 'format-changed', 'factory', 'typecheck', 'tests', 'build']
+    ['fallow', 'format-changed', 'browser', 'factory', 'typecheck', 'tests', 'build']
   );
   writeFileSync(interfacePath, interfaceCheck);
   const passed = run();
@@ -303,4 +322,65 @@ test('a real zero-exit Fallow warning blocks the step checkpoint', (t) => {
   assert.equal(check.exit, 0);
   assert.equal(check.passed, false);
   assert.ok(check.reasons.some((reason) => reason.includes('warning')));
+  assert.equal(auditSummary(root).phases.find((phase) => phase.name === 'fallow').passed, false);
+});
+
+test('execution preflight checks actual localhost access and exact installed dependency locks', async (t) => {
+  const { listenerPreflight, dependencyPreflight } = await import('./verify-preflight.mjs');
+  const { root } = auditFixture(t);
+  await listenerPreflight();
+  assert.doesNotThrow(() => dependencyPreflight(root, root, []));
+  assert.throws(() => dependencyPreflight(root, root, ['missing-workspace']), /workspace dependencies missing/);
+  writeFileSync(join(root, 'pnpm-lock.yaml'), 'changed lock');
+  assert.throws(() => dependencyPreflight(root, root, []), /do not match/);
+});
+
+test('cancelling verification stops only its owned process group and retains failure', async (t) => {
+  const { runVerificationProcess } = await import('./verify-process.mjs');
+  const { root } = gitFixture(t, 'verify-cancel-');
+  const signal = new AbortController();
+  const task = runVerificationProcess(
+    process.execPath,
+    ['-e', 'setInterval(()=>{},1000)'],
+    { signal: signal.signal },
+    join(root, 'check.log')
+  );
+  signal.abort();
+  const result = await task;
+  assert.notEqual(result.status, 0);
+  assert.match(result.error, /cancelled/);
+  assert.ok(result.pid);
+  assert.throws(() => process.kill(result.pid, 0), /ESRCH/);
+  const cancelled = await runVerificationProcess(
+    process.execPath,
+    ['-e', 'throw Error("must not start")'],
+    { signal: signal.signal },
+    join(root, 'not-started.log')
+  );
+  assert.equal(cancelled.pid, undefined);
+  assert.match(cancelled.error, /cancelled/);
+});
+
+test('listener refusal stops preflight with an actionable environment error', async () => {
+  const { EventEmitter } = await import('node:events');
+  const { listenerPreflight } = await import('./verify-preflight.mjs');
+  const server = new EventEmitter();
+  server.listen = () => queueMicrotask(() => server.emit('error', { code: 'EPERM' }));
+  await assert.rejects(
+    listenerPreflight(() => server),
+    (error) => error.code === 'PREFLIGHT_LISTENER' && /127.0.0.1/.test(error.message)
+  );
+});
+
+test('browser interaction failures block aggregate verification while remaining checks still run', (t) => {
+  const { root, run } = aggregateFixture(t);
+  const path = join(root, 'package.json');
+  const manifest = JSON.parse(readFileSync(path, 'utf8'));
+  manifest.scripts['test:browser'] = 'node -e "throw Error(\'browser interaction regression\')"';
+  writeFileSync(path, JSON.stringify(manifest));
+  const { result, summary } = run();
+  assert.equal(result.status, 1);
+  assert.equal(summary.checks.find((check) => check.name === 'browser').passed, false);
+  assert.equal(summary.checks.find((check) => check.name === 'factory').passed, true);
+  assert.equal(summary.checks.find((check) => check.name === 'build').passed, true);
 });

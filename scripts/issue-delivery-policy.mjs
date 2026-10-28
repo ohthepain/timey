@@ -31,7 +31,10 @@ export function checkedEvidence(paths, base, tree, staged = false) {
     'Full verification, saved-base step and applicable staged audits are required.'
   );
   for (const { value } of summaries) validateSummary(value, base, tree);
-  return summaries.flatMap(({ path, value }) => [proof(path), ...value.checks.map((check) => proof(check.log))]);
+  return summaries.flatMap(({ path, value }) => [
+    proof(path),
+    ...value.checks.flatMap((check) => [proof(check.log), ...(check.artifacts || []).map((file) => proof(file.path))]),
+  ]);
 }
 export function currentContributions(queue, delivery) {
   for (const contribution of delivery.contributions) {
@@ -55,6 +58,10 @@ export function candidateUnchanged(delivery) {
     'The issue candidate tree changed.'
   );
 }
+export function completionStage(queue, issue) {
+  const role = queue.lifecycle.find((s) => s.state === issue.state)?.role;
+  return ['ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(role);
+}
 export function completionManifest(queue, issue, delivery, manifest, plan) {
   requireThat(
     manifest.plan === plan.sha256 && manifest.candidate === delivery.candidate,
@@ -73,11 +80,7 @@ export function completionManifest(queue, issue, delivery, manifest, plan) {
     ),
     'Unfinished issue work blocks completion.'
   );
-  const role = queue.lifecycle.find((s) => s.state === issue.state)?.role;
-  requireThat(
-    ['ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(role),
-    'Finish the implementation or custom stage before opening the issue PR.'
-  );
+  requireThat(completionStage(queue, issue), 'Finish the implementation or custom stage before opening the issue PR.');
   const criteria = plan.content.split('\n').filter((line) => line.trim());
   requireThat(
     manifest.criteria?.length === criteria.length,

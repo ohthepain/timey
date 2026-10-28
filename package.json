@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "factory": "node scripts/factory.mjs",
-    "test:factory": "node --test scripts/factory-queue-sort.check.mjs scripts/issue-delivery.check.mjs scripts/factory-server-control.check.mjs scripts/factory-lifecycle.check.mjs scripts/factory.check.mjs scripts/factory-interface.check.mjs scripts/factory-status.check.mjs scripts/verify.check.mjs scripts/audit-result.check.mjs scripts/factory-ui.check.mjs scripts/factory-discussion.check.mjs scripts/factory-delivery.check.mjs scripts/factory-workflow.check.mjs scripts/factory-deploy.check.mjs scripts/factory-refresh.check.mjs scripts/factory-chat.check.mjs",
+    "test:factory": "node --test scripts/factory-queue-sort.check.mjs scripts/factory-clarify.check.mjs scripts/factory-capture.check.mjs scripts/factory-evidence-staging.check.mjs scripts/issue-delivery.check.mjs scripts/factory-server-control.check.mjs scripts/factory-lifecycle.check.mjs scripts/factory.check.mjs scripts/factory-interface.check.mjs scripts/factory-status.check.mjs scripts/verify.check.mjs scripts/audit-result.check.mjs scripts/factory-ui.check.mjs scripts/factory-discussion.check.mjs scripts/factory-delivery.check.mjs scripts/factory-workflow.check.mjs scripts/factory-deploy.check.mjs scripts/factory-refresh.check.mjs scripts/factory-chat.check.mjs scripts/factory-verification-recovery.check.mjs scripts/factory-integration-recovery.check.mjs scripts/factory-delivery-setup.check.mjs scripts/factory-verification-handoff.check.mjs scripts/factory-stale-refresh.check.mjs scripts/factory-completion-review.check.mjs scripts/factory-short-path.check.mjs",
     "verify": "node scripts/verify.mjs",
     "audit:diff": "node scripts/verify.mjs --audit-only",
     "audit:staged": "node scripts/verify.mjs --staged --audit-only",
@@ -26,7 +26,8 @@
     "factory:ui": "node scripts/factory-ui.mjs",
     "test:workflow": "node --test scripts/factory-workflow.check.mjs",
     "factory:deploy": "node scripts/factory-deploy.mjs",
-    "test:chat": "node --test scripts/factory-chat.check.mjs"
+    "test:chat": "node --test scripts/factory-chat.check.mjs",
+    "test:browser": "node scripts/factory-browser.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.11.1",
@@ -49,9 +50,11 @@
     "zustand": "5.0.3"
   },
   "devDependencies": {
+    "@playwright/cli": "0.1.22",
     "@testing-library/jest-dom": "6.6.3",
     "@testing-library/react": "16.3.0",
     "@testing-library/user-event": "14.6.1",
+    "@timey/local-issues": "file:vendor/timey-local-issues-1.0.0.tgz",
     "@types/node": "22.13.14",
     "@types/nodemailer": "7.0.3",
     "@types/pg": "8.15.5",

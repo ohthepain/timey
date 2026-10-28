@@ -1,5 +1,9 @@
 # Human input and grilling are separate from lifecycle
 
+[ADR 0006](0006-combine-clarification-and-investigation.md) combines the factory
+Clarify and Investigate stages. The independent human-input model below remains
+in force.
+
 Decision accepted on 2026-10-23; implementation pending. Track pending human input
 and completed grilling independently of lifecycle position and Matt Pocock triage
 classification: an issue can need different human contributions at different

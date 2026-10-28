@@ -6,9 +6,10 @@ export function runtimeInfo(service) {
   if (service.runtimeIdentity)
     return {
       ...service.runtimeIdentity,
-      sourceChanged: git(source, 'rev-parse', 'HEAD') !== service.runtimeIdentity.revision,
+      sourceChanged: git(source, 'rev-parse', 'HEAD') !== service.runtimeIdentity.revision || sourceDirty(),
     };
   return {
+    sourceChanged: sourceDirty(),
     pid: process.pid,
     project: service.root,
     checkout: git(source, 'rev-parse', '--show-toplevel'),
@@ -18,7 +19,10 @@ export function runtimeInfo(service) {
     authoritativeUrl: service.authoritativeUrl || null,
   };
 }
-export async function readRuntime(address, observe = () => {}) {
+function sourceDirty() {
+  return Boolean(git(source, 'status', '--porcelain', '--untracked-files=all'));
+}
+export async function readRuntime(address, observe = () => {}, site = false) {
   const url = new URL(address);
   requireThat(
     url.protocol === 'http:' && url.hostname === '127.0.0.1' && !url.username && !url.password,
@@ -31,6 +35,13 @@ export async function readRuntime(address, observe = () => {}) {
     observe
   );
   requireThat(page.ok, 'The factory page is unavailable.');
+  if (site) {
+    const html = await page.text();
+    requireThat(
+      page.headers.get('content-type')?.includes('text/html') && /<div\s+id=["']app["']/.test(html),
+      'The factory page did not return the issue interface.'
+    );
+  }
   const cookie = page.headers
     .getSetCookie()
     .map((value) => value.split(';')[0])
@@ -46,7 +57,21 @@ export async function readRuntime(address, observe = () => {}) {
     observe
   );
   requireThat(response.ok, 'This server does not expose runtime identity.');
-  return { ...(await response.json()), url: url.origin };
+  const identity = await response.json();
+  if (site) await checkQueue(url.origin, cookie, observe);
+  return { ...identity, url: url.origin };
+}
+
+async function checkQueue(origin, cookie, observe) {
+  const response = await runtimeRequest(
+    origin + '/api/queue',
+    { headers: { cookie }, signal: AbortSignal.timeout(10000), redirect: 'error' },
+    'queue',
+    observe
+  );
+  requireThat(response.ok, 'The issue queue is unavailable.');
+  const queue = await response.json();
+  requireThat(Array.isArray(queue.issues), 'The issue queue returned an invalid response.');
 }
 
 async function runtimeRequest(url, options, phase, observe) {

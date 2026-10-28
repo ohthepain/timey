@@ -31,7 +31,8 @@ export function serverControl(service, restart) {
       'factory-integration.lock',
     ].filter((name) => existsSync(join(service.root, '.issues', name)));
     return {
-      actions: Math.max(connected.size, nativeActions(service.codex)) + controllers.length,
+      actions:
+        Math.max(connected.size, nativeActions(service.codex)) + controllers.length + (service.captures?.active || 0),
       chats: service.discussions.sessions.size,
       approvals: service.codex.requests.size,
       locks,

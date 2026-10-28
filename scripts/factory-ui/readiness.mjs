@@ -151,6 +151,7 @@ export function reviewOperation(queue, issue) {
     {
       'ready-for-commit': 'commit',
       'ready-for-repro': 'investigate',
+      'ready-for-grilling': 'investigate',
       'ready-to-fix': 'implement',
       'ready-to-prototype': 'prototype',
     }[role] || 'verify'

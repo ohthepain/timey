@@ -1,4 +1,14 @@
 import { queueHumanInput } from './queue-human-input.mjs';
+import { createCaptures } from './issue-capture.mjs';
+import { stageWorkerArtifacts } from './evidence-staging.mjs';
+import { pinWorkerTurn } from './worker-turn.mjs';
+import { issueWorkChat } from './issue-work-chat.mjs';
+import { beginCompletionReview } from './completion-review.mjs';
+import { requestPublication } from './pr-publication.mjs';
+import { bindVerification } from './verification-handoff.mjs';
+import { assemblyRecoveryView, retryAssembly } from './assembly-recovery.mjs';
+import { retryIntegrationRecovery } from './integration-recovery.mjs';
+import { failedVerification, verificationView, retryVerification } from './verification-recovery.mjs';
 import { IssueDelivery } from '../issue-delivery.mjs';
 import { proof } from '../issue-delivery-store.mjs';
 import { createIssueChats } from './issue-chat.mjs';
@@ -41,6 +51,7 @@ import { issueLifecycleView } from './lifecycle-view.mjs';
 import { latestResult, reviewInput, savedReviewInput, reviewSaveCurrent } from './review-followup.mjs';
 import { validateRoutes } from './lifecycle.mjs';
 import { readPlan } from './plan-document.mjs';
+import { readSavedReport } from './report-document.mjs';
 import { findConnection, connectWorker } from './worker-connection.mjs';
 import { decideIssue } from './issue-decision.mjs';
 import { resolveNextAction } from './next-action.mjs';
@@ -74,6 +85,7 @@ export class FactoryUI {
       check: (...args) => this.check(...args),
       guard: (...args) => this.guard(...args),
     });
+    this.captures = createCaptures(this, options.capture);
     this.discussions = createDiscussions(this);
     this.issueChats = createIssueChats(this);
     this.siteReviews = createSiteReviews(this);
@@ -113,6 +125,8 @@ export class FactoryUI {
       ...issue,
       humanInputView,
       readiness,
+      verificationRecovery: verificationView(this, queue, issue),
+      assemblyRecovery: assemblyRecoveryView(this, issue, lifecycle),
       issueDelivery,
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
@@ -129,6 +143,9 @@ export class FactoryUI {
     const record = lifecycleView(this, issue);
     if (!record) return null;
     return { ...record, canResume: canResumeLifecycle(this, record, queue, issue, runs) };
+  }
+  readSavedReport(id) {
+    return readSavedReport(this.root, id);
   }
   readPlan(path) {
     return readPlan(this.root, path);
@@ -167,6 +184,9 @@ export class FactoryUI {
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);
   }
+  retryIntegrationRecovery(input) {
+    return retryIntegrationRecovery(this, input, (id) => continueLifecycleAfter(this, id));
+  }
   startLifecycle(input) {
     return startLifecycle(this, input);
   }
@@ -175,6 +195,18 @@ export class FactoryUI {
   }
   pauseLifecycle(input) {
     return pauseLifecycle(this, input);
+  }
+  retryAssembly(input) {
+    return retryAssembly(this, input, (id) => continueLifecycleAfter(this, id));
+  }
+  prepareCompletion(issueId) {
+    return beginCompletionReview(this, issueId);
+  }
+  requestPublication(issueId) {
+    return requestPublication(this, issueId);
+  }
+  bindVerification(actionId, candidate) {
+    return bindVerification(this, actionId, candidate);
   }
   progressPreflight(id, state) {
     return prepareProgress(this, id, state);
@@ -252,7 +284,10 @@ export class FactoryUI {
     const checkout = join(this.store.directory, 'workers', action.id);
     mkdirSync(join(this.store.directory, 'workers'), { recursive: true });
     requireThat(!existsSync(checkout), 'Worker checkout already exists. Reconcile it instead of recreating it.');
-    this.store.update(run, { checkout });
+    this.store.update(run, {
+      checkout,
+      sourceBranch: git(this.root, 'rev-parse', '--symbolic-full-name', 'HEAD'),
+    });
     git(
       this.root,
       'worktree',
@@ -262,7 +297,10 @@ export class FactoryUI {
       checkout,
       action.start?.revision || action.basis.head
     );
-    const threadId = await startChat(this, run, checkout);
+    const threadId =
+      action.issues.length === 1
+        ? await issueWorkChat(this, run, action.issues[0], checkout)
+        : await startChat(this, run, checkout);
     this.store.update(run, { threadId });
     this.api.attach(action.id, { threadId, hostId: 'codex-cli' });
     await this.runTurn(
@@ -275,9 +313,31 @@ export class FactoryUI {
     );
   }
   integrate({ queue, action, humanApproved }) {
-    const run = this.store.add(action, 'assembly', queue.head);
+    const previous = this.store.runs.findLast(
+      (r) =>
+        r.kind === 'assembly' &&
+        r.actionId === action.id &&
+        r.candidate === action.worker_revision &&
+        r.base === queue.head &&
+        r.status === 'blocked'
+    );
+    const run = previous || this.store.add(action, 'assembly', queue.head);
+    this.store.connected.add(run.id);
+    this.store.update(run, {
+      status: 'checking',
+      summary: 'Checking the existing issue contribution. No implementation is restarting.',
+    });
     const reviewPath = join(this.store.directory, run.id + '-assembly-review.json');
-    writeJson(reviewPath, { action, target: queue.head, humanApproved, evidence: action.evidence });
+    if (!existsSync(reviewPath))
+      writeJson(reviewPath, {
+        action,
+        target: queue.head,
+        humanApproved,
+        evidence: action.evidence,
+        retainedArtifacts:
+          this.store.runs.findLast((r) => r.actionId === action.id && r.status === 'completed' && r.retainedArtifacts)
+            ?.retainedArtifacts || null,
+      });
     this.perform(run, async () => {
       const existing = this.deliveries.inspect(action.issues[0]);
       const result = await this.deliveries.operate('assemble', {
@@ -302,14 +362,22 @@ export class FactoryUI {
       conversationPrompt(this, run, prompt),
       workerResultSchema
     );
-    const result = JSON.parse(text);
+    await pinWorkerTurn(this, run, text);
+    let result = JSON.parse(text);
     requireThat(
       ['completed', 'blocked', 'failed'].includes(result.outcome) && typeof result.summary === 'string',
       'Worker returned an invalid result.'
     );
-    if (result.outcome !== 'completed') return this.unfinished(run, result);
     const { action } = currentAction(this.root, run.actionId);
-    this.store.update(run, { status: 'checking', summary: 'Checking the returned result independently.' });
+    if (
+      run.kind === 'worker' &&
+      action.kind === 'implement' &&
+      result.implementation_complete &&
+      result.outcome !== 'completed'
+    )
+      result = { ...result, reported_outcome: result.outcome, outcome: 'completed' };
+    if (result.outcome !== 'completed') return this.unfinished(run, result);
+    this.store.update(run, { status: 'checking', summary: 'Checking the returned result independently.', result });
     requireThat(run.kind !== 'integration', 'Reconcile historical integration without another model-executed merge.');
     await this.finishWorker(run, action, result);
   }
@@ -322,12 +390,23 @@ export class FactoryUI {
         authorization: run.authorization,
       });
   }
+  retryVerification(input) {
+    return retryVerification(this, input, (id) => continueLifecycleAfter(this, id));
+  }
   async finishWorker(run, action, result) {
     const update = { status: 'completed', evidence: JSON.stringify(result), authorization: run.authorization };
     if (codeAction(action)) {
       const folder = join(this.store.directory, run.id);
-      const checked = await this.check(run.checkout, run.base, folder);
+      let checked;
+      try {
+        checked = await this.check(run.checkout, run.base, folder);
+      } catch (error) {
+        failedVerification(this, run, action, result, error);
+        throw error;
+      }
       git(run.checkout, 'merge-base', '--is-ancestor', run.base, checked.head);
+      result = { ...result, retainedArtifacts: stageWorkerArtifacts(this.root, action, checked, result.artifacts) };
+      update.evidence = JSON.stringify(result);
       update.worker_revision = checked.head;
       update.evidence += ` Independent checks: ${JSON.stringify(checked)}`;
     }
@@ -338,7 +417,12 @@ export class FactoryUI {
     Promise.resolve()
       .then(task)
       .catch((error) => {
-        this.store.update(run, { status: 'blocked', summary: error.message, ...fileFailure(error) });
+        this.store.update(run, {
+          status: 'blocked',
+          summary: error.message,
+          recovery: error.recovery || null,
+          ...fileFailure(error),
+        });
         if (run.kind === 'worker') {
           const { action } = currentAction(this.root, run.actionId);
           if (['running', 'setup', 'reserved'].includes(action.status)) {
@@ -437,7 +521,9 @@ export class FactoryUI {
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
     this.store.update(run, evaluationMetadata(queue, selected, basis));
     this.perform(run, async () => {
-      const threadId = await startChat(this, run, this.root, 'read-only');
+      const threadId = issueId
+        ? await issueWorkChat(this, run, issueId, this.root, 'read-only')
+        : await startChat(this, run, this.root, 'read-only');
       this.store.update(run, { threadId, status: 'running' });
       const result = JSON.parse(
         await this.codex.turn(
@@ -498,6 +584,7 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.store.flush();
     this.discussions.close();
     this.issueChats.close();
     this.codex.close();

@@ -1,3 +1,4 @@
+import { clarificationState } from './clarify-policy.mjs';
 const actionRoles = {
   investigate: 'ready-for-repro',
   prototype: 'ready-to-prototype',
@@ -14,8 +15,15 @@ function linkedStage(action, stage, kind) {
 }
 
 export function sameStage(queue, issue, run) {
-  if (run.issueState) return run.issueState === issue.state;
+  if (run.issueState) return clarificationState(queue, run.issueState) === issue.state;
   const action = queue.actions.find((a) => a.id === run.actionId);
   const stage = queue.lifecycle.find((s) => s.state === issue.state);
+  if (
+    queue.lifecycleAliases &&
+    Object.keys(queue.lifecycleAliases).length &&
+    action?.kind === 'investigate' &&
+    stage?.role === 'ready-for-grilling'
+  )
+    return true;
   return linkedStage(action, stage, run.kind);
 }

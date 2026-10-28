@@ -1031,10 +1031,10 @@
       <div id="error" role="alert"></div>
       <div id="app"></div>
     </main>
-    <dialog id="plan">
+    <dialog id="plan" aria-labelledby="plan-title" aria-describedby="plan-path">
       <h2 id="plan-title">Implementation plan</h2>
       <p id="plan-path" class="muted"></p>
-      <button id="close-plan">Close plan</button>
+      <button id="close-plan">Close document</button>
       <pre id="plan-content" class="prose" style="white-space: pre-wrap; overflow-wrap: anywhere"></pre>
     </dialog>
     <dialog id="confirm">
@@ -1042,6 +1042,7 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
+    <script src="/issue-capture-ui.js"></script>
     <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
     <script src="/queue-sort-ui.js"></script>
@@ -1098,6 +1099,7 @@
           if (
             refreshPending &&
             !busy &&
+            !document.getElementById('create-issue-dialog')?.open &&
             !$('confirm').open &&
             !$('plan').open &&
             !document.querySelector(':popover-open') &&
@@ -1170,8 +1172,21 @@
       }
       function applyApprovalFeedback() {
         document.querySelectorAll('[data-answer], [data-lifecycle-answer], #approve').forEach((button) => {
+          if (button.nextElementSibling?.classList.contains('approval-feedback')) button.nextElementSibling.remove();
           const state = approvalStates.get(approvalKey(button));
           if (!state) return;
+          if (state.error) {
+            button.disabled = false;
+            button.textContent = state.text;
+            button.removeAttribute('aria-busy');
+            if (button.id === 'approve') return;
+            const feedback = document.createElement('p');
+            feedback.className = 'error approval-feedback';
+            feedback.setAttribute('role', 'alert');
+            feedback.textContent = state.error;
+            button.after(feedback);
+            return;
+          }
           button.disabled = true;
           button.textContent = state.text;
           button.setAttribute('aria-busy', String(!state.accepted));
@@ -1192,7 +1207,7 @@
             state.text = approval ? 'Approved. Continuing…' : 'Sent. Continuing…';
             applyApprovalFeedback();
           } catch (error) {
-            approvalStates.delete(key);
+            approvalStates.set(key, { text: original, error: error.message });
             button.textContent = original;
             button.removeAttribute('aria-busy');
             throw error;
@@ -1381,7 +1396,7 @@
         const counts = data.lifecycle
           .map((s) => `<span>${esc(s.name)} <b>${data.issues.filter((i) => i.state === s.state).length}</b></span>`)
           .join(' · ');
-        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label>${queueSortUI.controls(queueFilters)}<button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label>${queueSortUI.controls(queueFilters)}<button id="create-issue" type="button">Create issue</button><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -1632,15 +1647,25 @@
       function issueDeliveryCard(issue) {
         const d = issue.issueDelivery;
         if (!d) return '';
-        const operations =
-          d.state === 'verified'
+        const active = ['running', 'answering'].includes(issue.lifecycle?.status);
+        const operations = !d.pr
+          ? []
+          : d.state === 'verified'
             ? ['refresh']
             : d.merge
               ? ['verify', 'reconcile']
-              : d.pr
-                ? ['refresh', 'merge', 'reconcile']
-                : ['open', 'reconcile'];
-        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(d.state)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><p>Candidate: ${esc(d.candidate)}<br>Tested target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} reviewed contribution(s). ${d.readiness ? 'Completion review retained.' : 'Complete the issue and attach its completion manifest before opening.'}</p>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : '<label>Completion manifest <input type="file" accept="application/json" data-delivery-manifest></label>'}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ open: 'Open completed issue PR', refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Reconcile saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>Remote merge, verified integration and your final acceptance are separate.</p></section>`;
+              : ['refresh', 'merge', 'reconcile'];
+        const status = d.pr
+          ? d.state === 'verified'
+            ? 'Merged and checked'
+            : 'Pull request is open'
+          : d.readiness
+            ? 'Ready to open the pull request'
+            : 'Preparing the pull request';
+        const next = d.readiness
+          ? 'The completed work and check results have been reviewed. Publication is the next step.'
+          : 'After verification, the coordinator will check the approved plan against the finished code and test results, then prepare the pull request. You do not need to upload anything.';
+        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(status)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><details><summary>Code version and review details</summary><p>Candidate: ${esc(d.candidate)}<br>Tested target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} reviewed contribution(s).</p></details>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : `<p>${esc(next)}</p>${!issue.lifecycle?.input ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || issue.lifecycle?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : 'Continue toward pull request'}</button>` : ''}`}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Check the saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>Opening or merging the pull request does not accept or close the issue.</p></section>`;
       }
       async function issueDeliveryAction(kind, input) {
         const preview = await request('issue-delivery-preflight', { kind, input });
@@ -1649,16 +1674,44 @@
         if (!window.confirm(text)) return;
         await request('issue-delivery-start', { token: preview.token, humanApproved: preview.requiresApproval });
       }
+      function verificationRecovery(issue) {
+        const recovery = issue.verificationRecovery;
+        if (!recovery) return '';
+        const disabled = recovery.busy || busy ? 'disabled' : '';
+        verificationRecovery.choices ||= new Map();
+        const selected = verificationRecovery.choices.get(issue.id) ?? recovery.defaultBranch;
+        return `<section class="card verification-recovery"><h4>Verification needs attention</h4><p>Implementation is finished. A check failed; this may be outside this issue. You can fix it separately, then retry here.</p><p role="status">${esc(recovery.error || 'Checking the existing work…')}</p><p>Working branch: <code>${esc(recovery.branch)}</code><br>Checkout: <code>${esc(recovery.checkout)}</code></p><button data-verification-retry="${esc(issue.id)}" ${disabled}>${recovery.busy ? 'Checking…' : 'Retry verification'}</button><p>Update brings all changes from the selected branch into this working branch. Codex resolves merge conflicts in the existing issue chat, then the combined result is checked. Publication, merging into the project branch and acceptance remain separate. Remote branches show the last fetched version.</p><label>Branch containing the fix<select id="verification-branch-${esc(issue.id)}" ${disabled}><option value="">Choose a branch…</option>${recovery.branches.map((b) => `<option value="${esc(b.ref)}" data-revision="${esc(b.revision)}" ${b.ref === selected ? 'selected' : ''}>${esc(b.name)} · ${esc(b.revision.slice(0, 7))} · ${esc(b.subject)}${b.ref.startsWith('refs/remotes/') ? ' (fetched remote)' : ''}${b.name === recovery.branch ? ' (current)' : ''}</option>`).join('')}</select></label><button data-verification-update="${esc(issue.id)}" ${disabled}>Update from branch and retry</button></section>`;
+      }
+      async function retryIssueVerification(button, update) {
+        const id = update ? button.dataset.verificationUpdate : button.dataset.verificationRetry;
+        const issue = data.issues.find((i) => i.id === id);
+        const recovery = issue.verificationRecovery;
+        const selected = $('verification-branch-' + id)?.selectedOptions[0];
+        if (update && !selected?.value) throw Error('Choose the branch containing the fix.');
+        button.disabled = true;
+        button.textContent = update ? 'Updating and checking…' : 'Checking…';
+        await request('verification-retry', {
+          issueId: id,
+          runId: recovery.runId,
+          basis: recovery.basis,
+          ...(update ? { branch: selected.value, branchRevision: selected.dataset.revision } : {}),
+        });
+      }
       function currentStageContent(issue, step) {
         if (issue.implementation && step.role === 'ready-to-verify')
           return (
+            verificationRecovery(issue) +
             issueDeliveryCard(issue) +
             implementationChecklist(issue) +
             reviewFileProblems(issue) +
             progressControls(issue)
           );
         return (
-          issueDeliveryCard(issue) + latestReviewResult(issue) + reviewFileProblems(issue) + progressControls(issue)
+          verificationRecovery(issue) +
+          issueDeliveryCard(issue) +
+          latestReviewResult(issue) +
+          reviewFileProblems(issue) +
+          progressControls(issue)
         );
       }
       const checkLabels = {
@@ -1832,6 +1885,14 @@
           .join(' ');
         return `${links ? `<div class="toolbar">${links}</div>` : ''}<details><summary>Task details and earlier reviews</summary><p class="muted">These are saved records. Earlier instructions may describe work that has since finished.</p>${content}</details>`;
       }
+      async function openSavedReport(id) {
+        $('error').textContent = '';
+        const report = await request('issue-report?issue=' + encodeURIComponent(id));
+        $('plan-title').textContent = 'Saved issue report';
+        $('plan-path').textContent = report.path;
+        $('plan-content').textContent = report.content;
+        $('plan').showModal();
+      }
       async function openPlan(path) {
         const plan = await request('document?path=' + encodeURIComponent(path));
         $('plan-title').textContent = plan.content.match(/^# (.+)/m)?.[1] || 'Project plan';
@@ -1983,6 +2044,16 @@
         return '';
       }
       const lifecycleDrafts = new Map();
+      function integrationRecoveryPanel(issue, record) {
+        const recovery = record?.integrationRecovery;
+        if (!recovery) return '';
+        return `<section class="card"><h4>Finish recording the existing integration</h4><p>The changes and existing merge are kept. ${esc(recovery.reason)}</p><p>Retry first checks saved evidence. If new checks are needed, it runs them on the existing merged code. It will not restart implementation or merge again.</p><button data-integration-recovery="${esc(issue.id)}" data-recovery-updated="${esc(record.updated)}" ${busy || record.status === 'running' ? 'disabled' : ''}>${record.status === 'running' ? 'Checking existing result…' : 'Retry finishing integration'}</button></section>`;
+      }
+      function assemblyRecoveryPanel(issue) {
+        const recovery = issue.assemblyRecovery;
+        if (!recovery) return '';
+        return `<section class="card"><h4>Finish the existing operation</h4><p>${esc(recovery.reason)}</p><details><summary>Failure details</summary><pre class="prose">${esc(recovery.detail)}</pre>${recovery.output ? `<pre class="prose">${esc(recovery.output)}</pre>` : ''}${recovery.checkout ? `<p>Saved issue branch: <code>${esc(recovery.checkout)}</code></p>` : ''}${recovery.log ? `<p>Check log: <code>${esc(recovery.log)}</code></p>` : ''}</details><p>Retry uses the saved work. It will not restart implementation or repeat the original merge. A changed source result still needs review.</p><button class="primary" data-assembly-retry="${esc(issue.id)}" data-retry-run="${esc(recovery.runId)}" data-retry-updated="${esc(recovery.updated)}" ${busy ? 'disabled' : ''}>Retry existing operation</button></section>`;
+      }
       function lifecyclePanel(issue) {
         const record = issue.lifecycle;
         const stage = data.lifecycle.find((s) => s.state === issue.state);
@@ -2027,8 +2098,9 @@
           (stage?.role === 'ready-to-prototype' && input
             ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
             : '');
-        const canStart = !input && stage?.role !== 'ready-to-close';
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        const canStart =
+          !input && !record?.deliveryWaiting && !issue.assemblyRecovery && stage?.role !== 'ready-to-close';
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -2099,10 +2171,14 @@
         const textarea = `<label>Your answer<textarea id="lifecycle-answer-${esc(issue.id)}" data-draft-key="${esc(draftKey)}" rows="4">${esc(lifecycleDrafts.get(draftKey) || '')}</textarea></label>`;
         const approve = `<button class="primary" ${common} data-decision="approve">${input.type === 'integration' ? 'Approve these changes and continue' : 'Approve plan and continue'}</button>`;
         if (input.type === 'plan')
-          return `<p>${esc(input.plan.summary)}</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
+          return `<p>Shall we carry out this plan?</p><p>${esc(input.plan.summary)}</p><p>Approval lets work continue within this plan. Required checks and separate human decisions still apply. To change the plan before work continues, use Request changes.</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
+        if (input.type === 'publication') {
+          const approved = record.publicationApproval?.identity === input.identity;
+          return `<p>${approved ? 'Publication was approved. Retry will continue the saved operation and avoid creating a duplicate pull request.' : 'Open a pull request with these changes?'}</p><p><strong>${esc(input.repository)}</strong>: <code>${esc(input.source)}</code> → <code>${esc(input.target)}</code></p><p>This publishes only this issue branch to GitHub at commit <code>${esc(input.candidate)}</code>. It does not merge into ${esc(input.target)} or close the issue.</p><button class="primary" ${common} data-decision="${approved ? 'retry' : 'approve'}">${approved ? 'Retry opening pull request' : 'Publish branch and open pull request'}</button>`;
+        }
         if (input.type === 'integration')
-          return `<p>Candidate <code>${esc(input.candidate)}</code> will be added to revision <code>${esc(input.target)}</code>. This plan requires your review before integration.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
-        if (!['questions', 'worker', 'human', 'scope'].includes(input.type)) return '';
+          return `<p>Shall we add these changes to the issue branch?</p><p>Review commit <code>${esc(input.candidate)}</code> against revision <code>${esc(input.target)}</code> below. Approval allows this integration to continue; final acceptance remains separate. Leave this request unanswered to keep integration paused.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
+        if (!['questions', 'worker', 'human', 'scope', 'delivery-setup'].includes(input.type)) return '';
         const question =
           input.type === 'questions'
             ? input.questions
@@ -2114,7 +2190,7 @@
             : input.request?.prompt === record.summary || input.question === record.summary
               ? ''
               : `<p>${esc(input.request?.prompt || input.question)}</p>`;
-        return `${question}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
+        return `${question}${input.expected ? `<p>${esc(input.expected)}</p>` : ''}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}<p>Send your answer to continue with this request. If you need more time, leave it unanswered; work that needs this answer stays paused.</p>${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
       }
       function liveStepWork(issue, stage) {
         return data.runs
@@ -2170,7 +2246,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2203,7 +2279,7 @@
         return location.hash + '|' + group + '|' + names.join('|');
       }
       function rememberView() {
-        if (!viewMemory.route) return;
+        if (viewMemory.route === null) return;
         document.querySelectorAll('#app details:not([data-temporary] *)').forEach((element) => {
           if (element.dataset.viewTouched === 'true') viewMemory.expanded[element.dataset.viewKey] = element.open;
         });
@@ -2357,6 +2433,7 @@
         );
       }
       function bind() {
+        issueCaptureUI.bind(request, refresh);
         document.querySelectorAll('[data-review-file]').forEach(
           (button) =>
             (button.onclick = () =>
@@ -2401,6 +2478,10 @@
         document
           .querySelectorAll('[data-plan-decision]')
           .forEach((button) => (button.onclick = () => selectPlanDecision(button)));
+        document.querySelectorAll('[data-open-report]').forEach((button) => {
+          button.onclick = () =>
+            openSavedReport(button.dataset.openReport).catch((error) => ($('error').textContent = error.message));
+        });
         document.querySelectorAll('[data-open-plan]').forEach((button) => {
           button.onclick = () => act(() => openPlan(button.dataset.openPlan));
         });
@@ -2429,6 +2510,39 @@
                 text: $('lifecycle-answer-' + button.dataset.lifecycleAnswer)?.value || '',
               })
             );
+        });
+        document.querySelectorAll('[data-assembly-retry]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              button.disabled = true;
+              button.textContent = 'Continuing existing work…';
+              await request('assembly-retry', {
+                issueId: button.dataset.assemblyRetry,
+                runId: button.dataset.retryRun,
+                updated: button.dataset.retryUpdated,
+              });
+            });
+        });
+        document.querySelectorAll('[data-integration-recovery]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              button.disabled = true;
+              button.textContent = 'Checking existing result…';
+              await request('integration-recovery-retry', {
+                issueId: button.dataset.integrationRecovery,
+                updated: button.dataset.recoveryUpdated,
+              });
+            });
+        });
+        document.querySelectorAll('[data-verification-retry]').forEach((button) => {
+          button.onclick = () => act(() => retryIssueVerification(button, false));
+        });
+        document.querySelectorAll('[id^="verification-branch-"]').forEach((select) => {
+          select.onchange = () =>
+            verificationRecovery.choices.set(select.id.slice('verification-branch-'.length), select.value);
+        });
+        document.querySelectorAll('[data-verification-update]').forEach((button) => {
+          button.onclick = () => act(() => retryIssueVerification(button, true));
         });
         document.querySelectorAll('[data-lifecycle-pause]').forEach((button) => {
           button.onclick = () => act(() => request('lifecycle-pause', { issueId: button.dataset.lifecyclePause }));
@@ -2469,18 +2583,6 @@
               (button.onclick = () =>
                 act(() => issueDeliveryAction(button.dataset.deliveryKind, { issueId: button.dataset.deliveryIssue })))
           );
-        document.querySelectorAll('[data-delivery-manifest]').forEach(
-          (input) =>
-            (input.onchange = () =>
-              act(async () => {
-                const issue = data.issues.find((i) => location.hash.includes(i.id));
-                if (!issue || !input.files[0]) throw Error('Select this issue and a completion manifest.');
-                await issueDeliveryAction('ready', {
-                  issueId: issue.id,
-                  manifest: JSON.parse(await input.files[0].text()),
-                });
-              }))
-        );
         if ($('search')) bindQueueFilters();
       }
       async function select(actionId, kind) {

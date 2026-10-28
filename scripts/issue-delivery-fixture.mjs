@@ -1,6 +1,6 @@
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { git, readJson, writeJson } from './factory-ui/common.mjs';
+import { git, readJson, writeJson, digest } from './factory-ui/common.mjs';
 
 // Deterministic protocol evidence only. These summaries do not prove app checks.
 export async function fixtureDeliveryCheck(root, base, folder) {
@@ -21,17 +21,26 @@ export async function fixtureDeliveryCheck(root, base, folder) {
     }) + '\n'
   );
   const factoryLog = join(folder, 'factory.log');
-  writeFileSync(factoryLog, 'ℹ tests 1\nℹ pass 1\nℹ fail 0\nℹ skipped 0\n');
+  writeFileSync(factoryLog, 'ℹ tests 1\nℹ pass 1\nℹ fail 0\nℹ skipped 0\nPASS browser scenario: fixture\n');
+  const browserLog = join(folder, 'browser.log');
+  writeFileSync(browserLog, 'PASS browser scenario: fixture\n');
   const summaries = ['verification', 'step', 'commit'].map((checkpoint) => {
     const path = join(folder, checkpoint + '.json');
-    const names = checkpoint === 'verification' ? ['fallow', 'factory', 'typecheck', 'tests', 'build'] : ['fallow'];
+    const names =
+      checkpoint === 'verification' ? ['fallow', 'browser', 'factory', 'typecheck', 'tests', 'build'] : ['fallow'];
     writeJson(path, {
       checkpoint,
       base,
       snapshot_tree: tree,
       changed_files: [],
       passed: true,
-      checks: names.map((name) => ({ name, passed: true, exit: 0, log: name === 'factory' ? factoryLog : log })),
+      checks: names.map((name) => ({
+        name,
+        passed: true,
+        exit: 0,
+        log: name === 'browser' ? browserLog : name === 'factory' ? factoryLog : log,
+        ...(name === 'browser' ? { artifacts: [{ path: browserLog, sha256: digest(readFileSync(browserLog)) }] } : {}),
+      })),
     });
     return path;
   });
