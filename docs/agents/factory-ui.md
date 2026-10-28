@@ -90,7 +90,12 @@ Saving that route does not advance the issue or claim the stage was completed.
 Progress records the saved reason as **Skipped**, checks the configured next stage
 and human advance requirements, then continues. Existing unfinished work takes
 precedence over a skip. An issue-focused implementation recommendation following
-that skip is saved after the transition so its freshness checks use the new stage.
+those skips stays deferred until the complete consecutive skip chain is recorded,
+then is saved with the final stage's launch inputs. Before each skip, Progress
+checks the retained review against current report, source, policy and dependency
+inputs. Only its own validated transition updates that retained review; external
+changes still require review. This preserves the approved task without changing
+its scope or weakening launch freshness checks.
 A stopped review rejected by the former current-stage skip restriction can reuse
 its still-current result through Continue without repeating the investigation.
 

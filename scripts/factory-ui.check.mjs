@@ -743,6 +743,87 @@ test('a current optional stage can be planned and skipped before implementation 
   assert.throws(() => service.progressStart(preview.token), /expired/);
 });
 
+test('consecutive approved skips keep the task deferred until its launch inputs are final', async (t) => {
+  const { root, service, api, proposal } = fixture(t);
+  prototypePath(root);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace('grill_later: false', 'grill_later: false\ncategory: enhancement')
+  );
+  const run = saveRouteFixture(
+    service,
+    root,
+    [
+      { state: 'investigate', decision: 'skip', reason: 'An enhancement needs no reproduction.' },
+      { state: 'experiment', decision: 'skip', reason: 'The design is settled.' },
+    ],
+    [{ ...proposal, kind: 'implement', merge: 'automatic' }]
+  );
+  service.guard = () => [];
+  service.codex.start = async () => {
+    throw Error('No model is needed to preserve the approved task');
+  };
+  const skip = async (state) => {
+    const preview = service.progressPreflight('20261022-one', state);
+    const result = await settle(service, service.progressStart(preview.token).runId);
+    assert.equal(result.status, 'completed', result.summary);
+  };
+  await skip('investigate');
+  const intermediateActions = api.inspect().registry.actions.length;
+  service.store.reload();
+  const intermediateDeferred = service.store.runs.find((r) => r.id === run.id).deferredRecommendations;
+  await skip('experiment');
+  const snapshot = service.snapshot();
+  assert.equal(snapshot.issues[0].state, 'implement');
+  assert.equal(snapshot.issues[0].lifecycle_history.length, 2);
+  assert.equal(snapshot.actions.length, 1);
+  assert.equal(snapshot.actions[0].launchBlocked, null);
+  assert.equal(snapshot.issues[0].progress.kind, 'launch');
+  assert.equal(intermediateActions, 0, 'do not fingerprint the task before another planned skip');
+  assert.equal(intermediateDeferred.length, 1);
+});
+
+test('external changes between approved skips still block the deferred task', async (t) => {
+  for (const change of ['report', 'source', 'policy', 'dependency']) {
+    await t.test(change, async (t) => {
+      const { root, service, api, proposal } = fixture(t);
+      prototypePath(root);
+      const report = join(root, '.issues/20261022-one.md');
+      writeFileSync(
+        report,
+        readFileSync(report, 'utf8').replace('grill_later: false', 'grill_later: false\ncategory: enhancement')
+      );
+      saveRouteFixture(
+        service,
+        root,
+        [
+          { state: 'investigate', decision: 'skip', reason: 'Enhancement.' },
+          { state: 'experiment', decision: 'skip', reason: 'Settled design.' },
+        ],
+        [{ ...proposal, kind: 'implement', merge: 'automatic' }]
+      );
+      service.guard = () => [];
+      const first = service.progressPreflight('20261022-one', 'investigate');
+      assert.equal((await settle(service, service.progressStart(first.token).runId)).status, 'completed');
+      if (change === 'report') writeFileSync(report, readFileSync(report, 'utf8') + '\nChanged scope.\n');
+      if (change === 'source') writeFileSync(join(root, 'source.js'), 'export const answer = 43;\n');
+      if (change === 'policy') writeFileSync(join(root, '.issues/preferences.json'), '{"commit":false}');
+      if (change === 'dependency') api.recommend([{ ...proposal, scope: 'New prerequisite' }]);
+      const before = readFileSync(report, 'utf8');
+      const second = service.progressPreflight('20261022-one', 'experiment');
+      const result = await settle(service, service.progressStart(second.token).runId);
+      assert.equal(result.status, 'blocked');
+      assert.match(result.summary, /saved recommendation changed/);
+      assert.equal(readFileSync(report, 'utf8'), before);
+      assert.equal(
+        api.inspect().registry.actions.some((a) => a.kind === 'implement'),
+        false
+      );
+    });
+  }
+});
+
 test('a stopped current-skip review can resume by saving its existing result without replanning', (t) => {
   const { root, service, proposal } = fixture(t);
   prototypePath(root);

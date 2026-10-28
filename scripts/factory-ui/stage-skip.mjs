@@ -65,7 +65,7 @@ function recordPlannedSkip(service, queue, issue, run) {
     'The issue changed while recording the skip. Refresh and review the current route.'
   );
   appendReview(service.root, issue, result, run, evidence, stage.next);
-  saveDeferredRecommendations(service, review);
+  saveDeferredRecommendations(service, review, issue.id);
   service.store.update(run, { status: 'completed', summary: result.summary, result, evidence });
 }
 
@@ -76,14 +76,19 @@ function checkDeferredReview(review, queue, issue) {
     'The saved recommendation changed before the stage skip. Review the current issue first.'
   );
 }
-function saveDeferredRecommendations(service, review) {
+function saveDeferredRecommendations(service, review, issueId) {
   if (review?.deferredRecommendations?.length) {
-    const actions = service.api.recommend(review.deferredRecommendations);
     const current = readQueue(service.root);
+    const issue = current.issues.find((item) => item.id === issueId);
+    const skipNext = savedRoute(issue, service.store.runs).some(
+      (step) => step.state === issue.state && step.decision === 'skip'
+    );
+    // Take the launch fingerprint only after the entire validated skip chain.
+    const actions = skipNext ? [] : service.api.recommend(review.deferredRecommendations);
     service.store.update(review, {
       savedActions: actions.map((action) => action.id),
-      deferredRecommendations: null,
-      savedReviewInput: savedReviewInput(current, review, []),
+      deferredRecommendations: skipNext ? review.deferredRecommendations : null,
+      savedReviewInput: savedReviewInput(current, review, actions),
     });
   }
 }
