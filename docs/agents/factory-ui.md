@@ -1043,7 +1043,10 @@ Verify explains the failed check, uncertainty, current branch and checkout.
 **Retry verification** reruns checks on the existing code, including unchanged code.
 **Update from branch and retry** merges all changes from an explicitly selected
 local or last-fetched remote branch into the isolated worker checkout, then checks
-the combined result against the original starting revision. The selector sits directly
+the combined result against the original starting revision. Full verification
+includes fresh registered browser interactions on that combined source before
+independent completion review; old pre-merge browser logs do not satisfy the new
+required browser check. See [browser verification](verification.md#browser-behavior-on-the-combined-candidate). The selector sits directly
 above this action and defaults to the source branch recorded when the worker was
 created. Older workers without a recorded source default to the project’s current
 branch; detached or unavailable branches leave an explicit choice. An explicit

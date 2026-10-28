@@ -630,3 +630,8 @@ test('changed-input recovery has a coordinator owner, exact changed input and on
   assert.equal(f.record.status, 'blocked');
   assert.equal(f.provider.state().creates, 0);
 });
+
+test('completion review declares every response property required for the provider schema', async () => {
+  const { completionReviewSchema } = await import('./factory-ui/completion-contract.mjs');
+  assert.deepEqual([...completionReviewSchema.required].sort(), Object.keys(completionReviewSchema.properties).sort());
+});

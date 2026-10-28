@@ -17,6 +17,7 @@ regular target files retain their own formatting checks.
 
 | Command                             | What it establishes                                                                                                    |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run test:browser`             | Headless Chromium interactions against candidate UI assets with disposable data; retained logs and screenshots         |
 | `pnpm run test:factory`             | Ledger, live UI/CLI boundaries, verifier dispatch/isolation, and audit-result checks using disposable Git repositories |
 | `pnpm run typecheck`                | TypeScript compiler result; report existing failures explicitly                                                        |
 | `pnpm test`                         | Mock-backed Vitest behavior; recorder CSVs and backups use per-test temporary directories                              |
@@ -357,3 +358,29 @@ human decisions. A superseded failure cannot override later passing verification
 for the same assignment or a checked, assembled contribution. Codex transport
 receipts record request/reply/wait/finish timing without prompts or credentials;
 uncertain creation still requires discovery of the original chat.
+
+## Browser behavior on the combined candidate
+
+Full verification runs `test:browser` near the start, before the factory/type/unit/build
+checks. It serves the exported candidate’s actual UI assets with disposable data,
+using the pinned Playwright CLI and Chromium, then closes its owned browser session
+and listener. Install its browser with `pnpm exec playwright-cli install-browser chromium`
+(`--with-deps` in Linux CI). Missing tooling or failed interactions fail verification.
+No production issue writes, provider calls, publication or acceptance occur.
+
+Keep repeatable UI scenarios as `scripts/factory-browser-*.mjs`, exporting an async
+function that exercises the page and returns passing assertions. Implement adds
+the issue’s interactions; Verify executes them again on the combined source. The
+legacy sorting pilot’s existing `scripts/factory-queue.check.mjs` registers its
+retained browser replay in `scripts/browser-scenarios/queue-sorting.mjs`; missing
+sort controls fail that replay rather than skipping it. This migrates its original
+14 browser assertions without repeating implementation.
+
+Raw logs, replay sources and screenshots live beside each verification summary,
+with content hashes. Required browser proof is part of the exact-tree verification
+summary and delivery evidence, including cached evidence validation. Source/tree,
+dependency or runner changes invalidate the existing candidate check key; altered
+artifacts cannot be reused. Older summaries without browser checks no longer
+establish current delivery readiness. An unchanged candidate may reuse intact
+exact-input proof; merging changed code requires new interactions. Human usability
+judgment and actual provider/hardware evidence remain separate.

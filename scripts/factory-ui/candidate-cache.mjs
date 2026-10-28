@@ -33,7 +33,10 @@ export function retainedCandidate(root, key, validate) {
 }
 export function retainCandidate(root, key, result) {
   if (!key) return;
-  const paths = result.summaries.flatMap((path) => [path, ...readJson(path).checks.map((c) => c.log)]);
+  const paths = result.summaries.flatMap((path) => [
+    path,
+    ...readJson(path).checks.flatMap((c) => [c.log, ...(c.artifacts || []).map((a) => a.path)]),
+  ]);
   const evidence = [...new Set(paths)].map((path) => ({ path, sha256: digest(readFileSync(path)) }));
   const directory = join(root, '.issues/candidate-checks');
   mkdirSync(directory, { recursive: true });

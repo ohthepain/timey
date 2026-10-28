@@ -10,13 +10,14 @@ import {
   mkdtempSync,
   readFileSync,
   readlinkSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { assessAudit } from './audit-result.mjs';
 
 // Analyze an exported snapshot: unstaged edits cannot mask a staged audit finding,
@@ -59,6 +60,17 @@ const cancellation = new AbortController();
 const cancel = () => cancellation.abort();
 process.on('SIGINT', cancel);
 process.on('SIGTERM', cancel);
+function browserArtifacts(directory) {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { recursive: true })
+    .filter((name) => lstatSync(join(directory, name)).isFile())
+    .map((name) => ({
+      path: join(directory, name),
+      sha256: createHash('sha256')
+        .update(readFileSync(join(directory, name)))
+        .digest('hex'),
+    }));
+}
 function checkAssessment(name, result) {
   if (name === 'fallow') return assessAudit(result, report.changed_files);
   return { passed: result.status === 0 && !result.error };
@@ -77,6 +89,7 @@ function recordCheck(name, command, result) {
     command,
     cwd: snapshot,
     log,
+    ...(name === 'browser' ? { artifacts: browserArtifacts(join(reportDir, stamp + '-browser')) } : {}),
     pid: result.pid,
     startedAt: result.startedAt,
     finishedAt: result.finishedAt,
@@ -99,7 +112,10 @@ async function run(name, command, commandArgs) {
       cwd: snapshot,
       signal: cancellation.signal,
       encoding: 'utf8',
-      env: isolatedEnv,
+      env:
+        name === 'browser'
+          ? { ...isolatedEnv, TIMEY_BROWSER_OUTPUT: join(reportDir, stamp + '-browser') }
+          : isolatedEnv,
     },
     join(reportDir, `${stamp}-${name}.log`)
   );
@@ -207,6 +223,7 @@ try {
         '-e',
         'console.log("No changed regular files require formatting; symbolic-link metadata remains in audit scope.")',
       ]);
+    await run('browser', 'pnpm', ['run', 'test:browser']);
     await run('factory', 'pnpm', ['run', 'test:factory']);
     await run('typecheck', bin('tsc'), ['--noEmit']);
     await run('tests', bin('vitest'), ['run']);

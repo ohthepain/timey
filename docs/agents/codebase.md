@@ -413,3 +413,11 @@ interpret logs as a pass. `verify-preflight.mjs` checks installed dependencies a
 actual listener capability before checks; `verify-process.mjs` owns cancellation
 of its child group. `factory-ui/input-change.mjs` compares captured input hashes
 and reports coordinator-owned recovery without changing approval policy.
+
+Browser verification uses `scripts/factory-browser.mjs` and its
+`browser-fixture.mjs` disposable data server. It discovers tracked
+`factory-browser-*.mjs` scenarios and the legacy sorting replay, reads actual
+candidate assets, and retains CLI logs and screenshots. `verify.mjs` invokes it
+before the other behavior/type/build checks and records artifact hashes in the
+full summary. `factory-ui/checks.mjs`, candidate caching and issue delivery retain
+and validate this browser evidence against the same candidate tree.

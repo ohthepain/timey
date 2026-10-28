@@ -167,6 +167,7 @@ function aggregateFixture(t) {
   const manifestPath = join(root, 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   manifest.scripts['test:factory'] = 'node --test scripts/factory-interface.check.mjs';
+  manifest.scripts['test:browser'] = 'node index.js';
   manifest.scripts.build = 'node index.js';
   writeFileSync(manifestPath, JSON.stringify(manifest));
   writeFileSync(join(root, 'tsconfig.json'), '{"compilerOptions":{"skipLibCheck":true},"files":["index.ts"]}\n');
@@ -247,7 +248,7 @@ test('aggregate verification dispatches the package factory suite in an isolated
   assert.match(readFileSync(failed.factory.log, 'utf8'), /deliberate interface failure/);
   assert.deepEqual(
     failed.summary.checks.map((check) => check.name),
-    ['fallow', 'format-changed', 'factory', 'typecheck', 'tests', 'build']
+    ['fallow', 'format-changed', 'browser', 'factory', 'typecheck', 'tests', 'build']
   );
   writeFileSync(interfacePath, interfaceCheck);
   const passed = run();
@@ -369,4 +370,17 @@ test('listener refusal stops preflight with an actionable environment error', as
     listenerPreflight(() => server),
     (error) => error.code === 'PREFLIGHT_LISTENER' && /127.0.0.1/.test(error.message)
   );
+});
+
+test('browser interaction failures block aggregate verification while remaining checks still run', (t) => {
+  const { root, run } = aggregateFixture(t);
+  const path = join(root, 'package.json');
+  const manifest = JSON.parse(readFileSync(path, 'utf8'));
+  manifest.scripts['test:browser'] = 'node -e "throw Error(\'browser interaction regression\')"';
+  writeFileSync(path, JSON.stringify(manifest));
+  const { result, summary } = run();
+  assert.equal(result.status, 1);
+  assert.equal(summary.checks.find((check) => check.name === 'browser').passed, false);
+  assert.equal(summary.checks.find((check) => check.name === 'factory').passed, true);
+  assert.equal(summary.checks.find((check) => check.name === 'build').passed, true);
 });

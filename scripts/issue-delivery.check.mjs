@@ -413,3 +413,27 @@ test('a failed assembly check retries the saved merge exactly once without anoth
   assert.equal(f.queue.git('-C', existing.checkout, 'rev-parse', 'HEAD'), merged);
   assert.equal(readQueue(f.root).actions.find((a) => a.id === action.id).status, 'assembled');
 });
+
+test('browser evidence is required and its retained artifacts cannot change before delivery', async (t) => {
+  const f = await deliveryScenario(t),
+    d = f.delivery.inspect(f.issueId);
+  const checked = await fixtureDeliveryCheck(d.checkout, f.base, join(f.root, '.issues/browser-gate'));
+  const summary = readJson(checked.summaries[0]);
+  const browser = summary.checks.find((check) => check.name === 'browser');
+  assert.throws(
+    () =>
+      validateSummary(
+        { ...summary, checks: summary.checks.filter((check) => check.name !== 'browser') },
+        f.base,
+        d.tree
+      ),
+    /required check/
+  );
+  assert.throws(
+    () => validateSummary({ ...summary, snapshot_tree: '0'.repeat(40) }, f.base, d.tree),
+    /exact candidate/
+  );
+  validateSummary(summary, f.base, d.tree);
+  writeFileSync(browser.artifacts[0].path, 'PASS browser scenario: altered artifact\n');
+  assert.throws(() => validateSummary(summary, f.base, d.tree), /Browser evidence changed/);
+});

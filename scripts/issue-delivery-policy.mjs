@@ -31,7 +31,10 @@ export function checkedEvidence(paths, base, tree, staged = false) {
     'Full verification, saved-base step and applicable staged audits are required.'
   );
   for (const { value } of summaries) validateSummary(value, base, tree);
-  return summaries.flatMap(({ path, value }) => [proof(path), ...value.checks.map((check) => proof(check.log))]);
+  return summaries.flatMap(({ path, value }) => [
+    proof(path),
+    ...value.checks.flatMap((check) => [proof(check.log), ...(check.artifacts || []).map((file) => proof(file.path))]),
+  ]);
 }
 export function currentContributions(queue, delivery) {
   for (const contribution of delivery.contributions) {

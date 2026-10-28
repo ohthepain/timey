@@ -26,7 +26,8 @@
     "factory:ui": "node scripts/factory-ui.mjs",
     "test:workflow": "node --test scripts/factory-workflow.check.mjs",
     "factory:deploy": "node scripts/factory-deploy.mjs",
-    "test:chat": "node --test scripts/factory-chat.check.mjs"
+    "test:chat": "node --test scripts/factory-chat.check.mjs",
+    "test:browser": "node scripts/factory-browser.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.11.1",
@@ -49,6 +50,7 @@
     "zustand": "5.0.3"
   },
   "devDependencies": {
+    "@playwright/cli": "0.1.22",
     "@testing-library/jest-dom": "6.6.3",
     "@testing-library/react": "16.3.0",
     "@testing-library/user-event": "14.6.1",

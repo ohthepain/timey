@@ -104,7 +104,7 @@ export function validateSummary(summary, base, tree) {
   for (const check of summary.checks) validateCommand(check);
 }
 function validateRequiredChecks(summary) {
-  const required = ['fallow', 'factory', 'typecheck', 'tests', 'build'];
+  const required = ['fallow', 'browser', 'factory', 'typecheck', 'tests', 'build'];
   if (summary.changed_files.length) required.push('format-changed');
   requireThat(
     required.every((n) => summary.checks.some((c) => c.name === n && c.passed)),
@@ -113,6 +113,15 @@ function validateRequiredChecks(summary) {
 }
 function validateCommand(check) {
   requireThat(check.passed && check.exit === 0, 'A required command failed.');
+  if (check.name === 'browser') {
+    requireThat(
+      /PASS browser scenario:/.test(readFileSync(check.log, 'utf8')),
+      'Browser evidence must establish actual interaction execution.'
+    );
+    requireThat(check.artifacts?.length, 'Browser artifacts are missing.');
+    for (const file of check.artifacts)
+      requireThat(digest(readFileSync(file.path)) === file.sha256, 'Browser evidence changed: ' + file.path);
+  }
   if (check.name === 'factory') {
     const raw = readFileSync(check.log, 'utf8');
     requireThat(/(?:ℹ|#) tests [1-9][0-9]*\b/.test(raw), 'Factory evidence must establish actual test execution.');
