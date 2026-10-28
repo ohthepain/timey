@@ -1,8 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { gitFixture } from './git-fixture.mjs';
 import { fallowAuditScope } from './verify-scope.mjs';
 
@@ -277,9 +287,13 @@ test('real pre-commit hook isolates Git environment and preserves the source ind
 
 test('a real zero-exit Fallow warning blocks the step checkpoint', (t) => {
   const { root, run } = auditFixture(t);
+  const outside = mkdtempSync(join(tmpdir(), 'fallow-outside-'));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const entry = join(outside, 'issues.html');
+  writeFileSync(entry, '<!doctype html><title>External command entry fixture</title>');
   const file = join(root, 'package.json');
   const manifest = JSON.parse(readFileSync(file, 'utf8'));
-  manifest.scripts.outside = 'open /tmp/issues.html';
+  manifest.scripts.outside = 'open ' + JSON.stringify(entry);
   writeFileSync(file, JSON.stringify(manifest));
   const result = run('--step', '--base', 'HEAD');
   assert.equal(result.status, 1, result.stdout + result.stderr);
