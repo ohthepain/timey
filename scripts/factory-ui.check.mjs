@@ -4573,3 +4573,18 @@ test('connected native work shows activity without inventing a lifecycle pause c
   assert.match(panel.textContent, /Working on this issue/);
   assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
 });
+
+test('a real pending question stays prominent even while its issue chat is connected', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].lifecycle = {
+    status: 'waiting',
+    input: { type: 'scope', question: 'Which behavior should be preserved?' },
+    summary: 'A decision is needed.',
+    events: [],
+  };
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Your input is needed/);
+  assert.match(panel.textContent, /Which behavior should be preserved/);
+  assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
+});

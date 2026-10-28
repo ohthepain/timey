@@ -2055,12 +2055,13 @@
         if (stage?.role === 'closed') return '';
         const active =
           ['running', 'answering'].includes(record?.status) ||
-          data.runs.some(
-            (run) =>
-              run.connected &&
-              (run.issueId === issue.id ||
-                data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
-          );
+          (!record?.input &&
+            data.runs.some(
+              (run) =>
+                run.connected &&
+                (run.issueId === issue.id ||
+                  data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+            ));
         const child =
           data.runs.find(
             (run) =>
