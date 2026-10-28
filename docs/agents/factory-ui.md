@@ -629,10 +629,18 @@ Approval buttons acknowledge a click immediately: the clicked control is disable
 and shows Approving… while the request is sent. Approved. Continuing… appears only
 after the server accepts the request, while the updated queue is loading. Stable
 request/issue-answer keys preserve that feedback across redraws, preventing a
-stale approval from being submitted twice. Failed requests show the error and
-restore the control for retry. Negative replies and answers use Sending…/Sent…
+stale approval from being submitted twice. Failed requests show an alert beside
+each copy of that exact request's control and restore it for explicit retry.
+The alert survives redraws and clears on retry or a replacement request. An
+expired page session explains that a reload is needed; no write is automatically
+replayed after reconnecting. Negative replies and answers use Sending…/Sent…
 instead of claiming approval. This feedback changes no permission or acceptance
 rules.
+
+Publication preflight checks each contributing action's real identity and scope
+against the exact assembled candidate and target, just as merge preflight does.
+The issue ID is not an action ID. Publication still requires its separate explicit
+approval and never supplies merge or final acceptance approval.
 
 ## Slow chat startup
 

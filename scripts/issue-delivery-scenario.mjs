@@ -6,7 +6,7 @@ import { digest, writeJson, readJson } from './factory-ui/common.mjs';
 import { proof } from './issue-delivery-store.mjs';
 import { IssueDelivery } from './issue-delivery.mjs';
 import { FixtureDeliveryProvider, fixtureDeliveryCheck } from './issue-delivery-fixture.mjs';
-export async function deliveryScenario(t, merge = 'automatic') {
+export async function deliveryScenario(t, merge = 'automatic', actionId = 'one') {
   const { queue } = deliveryFixture(t),
     root = queue.root;
   rmSync(join(root, '.issues/issue-deliveries'), { recursive: true, force: true });
@@ -30,7 +30,7 @@ export async function deliveryScenario(t, merge = 'automatic') {
   });
   const provider = new FixtureDeliveryProvider(root, join(root, '.issues/provider.json'), base);
   const delivery = new IssueDelivery(root, { provider, check: fixtureDeliveryCheck, guard: () => [] });
-  const action = addAction(queue, issueId, base, 'one', merge);
+  const action = addAction(queue, issueId, base, actionId, merge);
   const review = proof(approval);
   await delivery.operate('assemble', { issueId, actionId: action.id, expectedCandidate: base, review });
   return { queue, root, issueId, base, provider, delivery, review, content };

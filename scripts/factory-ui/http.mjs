@@ -25,7 +25,10 @@ function authenticated(request, token, port) {
 }
 function authorize(request, token, port) {
   requireThat(request.headers.host === `127.0.0.1:${port}`, 'Use the local URL printed by this server.');
-  requireThat(authenticated(request, token, port), 'Open the factory page before requesting its data.');
+  requireThat(
+    authenticated(request, token, port),
+    'This page session expired, possibly because the local server restarted. Reload this page and try again. No action was performed.'
+  );
   if (request.method === 'POST') {
     requireThat(
       request.headers.origin === `http://127.0.0.1:${port}`,

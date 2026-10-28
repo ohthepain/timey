@@ -206,12 +206,13 @@ export class IssueDelivery {
     this.requireReady(context, delivery);
     if (delivery.pr) return this.refresh(store, context);
     const request = this.request(delivery);
-    this.guard(
-      this.root,
-      { id: delivery.issueId, issues: [delivery.issueId], worker_revision: delivery.candidate },
-      'merge',
-      delivery.targetRevision
-    );
+    for (const contribution of delivery.contributions)
+      this.guard(
+        this.root,
+        { id: contribution.actionId, issues: contribution.issues, worker_revision: delivery.candidate },
+        'merge',
+        delivery.targetRevision
+      );
     store.save({ ...delivery, state: 'opening' });
     await store.effect(
       'publish',

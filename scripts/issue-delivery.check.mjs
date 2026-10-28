@@ -14,6 +14,38 @@ import { validateAssembledStart } from './issue-delivery-records.mjs';
 import { proof } from './issue-delivery-store.mjs';
 import { validateSummary } from './factory-ui/checks.mjs';
 import { GitHubDeliveryProvider } from './issue-delivery-provider.mjs';
+import { humanGuard } from './factory-ui/guard.mjs';
+
+test('publication validates the real human-input guard with each contribution identity and the aggregate candidate', async (t) => {
+  const actionId = '1aab9d36-846c-4e84-809b-993404a37f9a';
+  const f = await deliveryScenario(t, 'automatic', actionId);
+  const first = f.delivery.inspect(f.issueId);
+  const secondId = '4682b3a8-e7d0-4aab-baae-724787d7fff0';
+  addAction(f.queue, f.issueId, first.candidate, secondId);
+  await f.delivery.operate('assemble', {
+    issueId: f.issueId,
+    actionId: secondId,
+    expectedCandidate: first.candidate,
+    review: f.review,
+  });
+  await ready(f);
+  const calls = [];
+  f.delivery.guard = (...args) => {
+    calls.push(args);
+    return humanGuard(...args);
+  };
+  await f.delivery.operate('open', { issueId: f.issueId });
+  assert.equal(f.provider.state().creates, 1);
+  assert.deepEqual(
+    calls.map((call) => call[1].id),
+    [actionId, secondId]
+  );
+  for (const call of calls) {
+    assert.equal(call[1].worker_revision, f.delivery.inspect(f.issueId).candidate);
+    assert.equal(call[2], 'merge');
+    assert.equal(call[3], f.base);
+  }
+});
 
 test('sequential issue contributions release claims, retain original bases and open one PR only after completion', async (t) => {
   const f = await deliveryScenario(t);

@@ -1169,8 +1169,21 @@
       }
       function applyApprovalFeedback() {
         document.querySelectorAll('[data-answer], [data-lifecycle-answer], #approve').forEach((button) => {
+          if (button.nextElementSibling?.classList.contains('approval-feedback')) button.nextElementSibling.remove();
           const state = approvalStates.get(approvalKey(button));
           if (!state) return;
+          if (state.error) {
+            button.disabled = false;
+            button.textContent = state.text;
+            button.removeAttribute('aria-busy');
+            if (button.id === 'approve') return;
+            const feedback = document.createElement('p');
+            feedback.className = 'error approval-feedback';
+            feedback.setAttribute('role', 'alert');
+            feedback.textContent = state.error;
+            button.after(feedback);
+            return;
+          }
           button.disabled = true;
           button.textContent = state.text;
           button.setAttribute('aria-busy', String(!state.accepted));
@@ -1191,7 +1204,7 @@
             state.text = approval ? 'Approved. Continuing…' : 'Sent. Continuing…';
             applyApprovalFeedback();
           } catch (error) {
-            approvalStates.delete(key);
+            approvalStates.set(key, { text: original, error: error.message });
             button.textContent = original;
             button.removeAttribute('aria-busy');
             throw error;

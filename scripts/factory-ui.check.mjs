@@ -181,6 +181,13 @@ test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => 
   const { url, page } = await httpFixture(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
+  const expired = await fetch(url + '/api/lifecycle-answer', {
+    method: 'POST',
+    headers: { origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' },
+    body: '{}',
+  });
+  assert.equal(expired.status, 400);
+  assert.match((await expired.json()).error, /session expired.*Reload this page.*No action was performed/);
   assert.equal((await fetch(url + '/api/queue', { headers: { cookie } })).status, 200);
   assert.equal(existsSync(join(root, '.issues/factory-ui-server.lock')), false);
   const options = {
@@ -3380,6 +3387,53 @@ test('failed approval shows the error and restores an enabled button for retry',
   assert.equal(button.disabled, false);
   assert.equal(button.textContent, 'Allow for this chat');
   assert.match(window.document.getElementById('error').textContent, /Approval could not be saved/);
+});
+
+test('publication failures stay beside both approval controls through rendering and clear on explicit retry', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.conversation = { issueId: '20261022-one', messages: [] };
+  snapshot.issues[0].lifecycle = {
+    status: 'waiting',
+    updated: 'publication-request',
+    events: [],
+    input: { type: 'publication', repository: 'fixture/timey', source: 'issue/one', target: 'dev', candidate: 'saved' },
+  };
+  let posts = 0,
+    retry;
+  window.fetch = async (path) => {
+    if (path.endsWith('/lifecycle-answer')) {
+      posts++;
+      if (posts === 2)
+        return new Promise((resolve) => {
+          retry = resolve;
+        });
+      return { ok: false, json: async () => ({ error: 'Reload this page and try again. No action was performed.' }) };
+    }
+    return { ok: true, json: async () => ({ messages: [] }) };
+  };
+  window.screenTest.show(snapshot);
+  const buttons = () => [...window.document.querySelectorAll('[data-lifecycle-answer]')];
+  assert.equal(buttons().length, 2);
+  buttons()[0].click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (const button of buttons()) {
+    assert.equal(button.disabled, false);
+    assert.equal(button.nextElementSibling?.getAttribute('role'), 'alert');
+    assert.match(button.nextElementSibling.textContent, /Reload this page/);
+  }
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
+  buttons()[1].click();
+  buttons()[0].click();
+  assert.equal(posts, 2, 'Only the explicit retry sends another request');
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
+  assert.ok(buttons().every((button) => button.disabled));
+  retry({ ok: false, json: async () => ({ error: 'Publication is unavailable.' }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
+  snapshot.issues[0].lifecycle.updated = 'replacement-request';
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
 });
 
 test('native permission screen explains chat scope and actual read, write and network access', async (t) => {
