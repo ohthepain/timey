@@ -4670,6 +4670,8 @@ test('issue Git identity follows unfinished work, assembly and live HEAD without
   assert.equal(issueGit(snapshot, issue).revision, git('rev-parse', 'HEAD'));
   snapshot.actions[0].status = 'assembled';
   assert.deepEqual(issueGit(snapshot, issue), { unavailable: true });
+  snapshot.actions[0].status = 'reconciled';
+  assert.deepEqual(issueGit(snapshot, issue), { unavailable: true });
   issue.issueDelivery.checkout = root;
   assert.equal(issueGit(snapshot, issue).branch, 'codex/issue-work');
   git('checkout', '--detach');
