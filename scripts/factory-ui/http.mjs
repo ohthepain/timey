@@ -137,6 +137,7 @@ function read(service, request, response, owner) {
     '/api/issue-chat': () =>
       service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
+    '/api/issue-report': () => service.readSavedReport(url.searchParams.get('issue')),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
     '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),

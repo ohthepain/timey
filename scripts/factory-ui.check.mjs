@@ -1448,6 +1448,61 @@ test('the plan viewer reads actual project plans without changing issue records'
   assert.equal(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), before);
 });
 
+test('saved report reads full fresh Markdown for only the selected issue without mutations', (t) => {
+  const { service, root, api } = fixture(t);
+  const path = join(root, '.issues/20261022-one.md');
+  const original = readFileSync(path, 'utf8'),
+    registry = JSON.stringify(api.inspect().registry);
+  writeFileSync(join(root, '.issues/20261022-two.md'), original.replaceAll('20261022-one', '20261022-two'));
+  assert.deepEqual(service.readSavedReport('20261022-one'), { path: '.issues/20261022-one.md', content: original });
+  const changed = original + '\n<script>window.reportExecuted = true</script> & <img src=x onerror=alert(1)>\n';
+  writeFileSync(path, changed);
+  assert.equal(service.readSavedReport('20261022-one').content, changed);
+  assert.equal(service.readSavedReport('20261022-two').content, original.replaceAll('20261022-one', '20261022-two'));
+  assert.equal(readFileSync(path, 'utf8'), changed);
+  assert.equal(JSON.stringify(api.inspect().registry), registry);
+});
+
+test('saved report rejects paths, absent files, wrong identity, symlinks and non-regular files', (t) => {
+  const { service, root } = fixture(t);
+  for (const id of [null, '', '../outside', '20261022-one.md', '/tmp/report', 'one/two', '..', '%2e%2e%2foutside'])
+    assert.throws(() => service.readSavedReport(id), /valid saved issue ID/);
+  assert.throws(() => service.readSavedReport('missing'), /report is missing/);
+  const path = join(root, '.issues/20261022-one.md'),
+    original = readFileSync(path, 'utf8');
+  writeFileSync(path, original.replace('20261022-one', '20261022-two'));
+  assert.throws(() => service.readSavedReport('20261022-one'), /does not belong/);
+  writeFileSync(path, 'No frontmatter');
+  assert.throws(() => service.readSavedReport('20261022-one'), /does not belong/);
+  unlinkSync(path);
+  writeFileSync(join(root, 'outside.md'), original);
+  symlinkSync(join(root, 'outside.md'), path);
+  assert.throws(() => service.readSavedReport('20261022-one'), /cannot be a symlink/);
+  unlinkSync(path);
+  writeFileSync(join(root, '.issues/real.md'), original);
+  symlinkSync(join(root, '.issues/real.md'), path);
+  assert.throws(() => service.readSavedReport('20261022-one'), /cannot be a symlink/);
+  unlinkSync(path);
+  mkdirSync(path);
+  assert.throws(() => service.readSavedReport('20261022-one'), /regular Markdown file/);
+});
+
+test('saved report resource requires authentication and leaves the plans-only resource intact', async (t) => {
+  const { service, root } = fixture(t);
+  const { url, page } = await httpFixture(t, service);
+  const headers = { cookie: page.headers.get('set-cookie').split(';')[0] };
+  assert.equal((await fetch(url + '/api/issue-report?issue=20261022-one')).status, 400);
+  const response = await fetch(url + '/api/issue-report?issue=20261022-one', { headers });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).content, readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'));
+  for (const query of ['issue=../outside', 'issue=missing', 'path=.issues/20261022-one.md'])
+    assert.equal((await fetch(url + '/api/issue-report?' + query, { headers })).status, 400);
+  assert.equal((await fetch(url + '/api/document?path=.issues/20261022-one.md', { headers })).status, 400);
+  mkdirSync(join(root, 'docs/plans'), { recursive: true });
+  writeFileSync(join(root, 'docs/plans/example.md'), '# Example plan');
+  assert.equal((await fetch(url + '/api/document?path=docs/plans/example.md', { headers })).status, 200);
+});
+
 function implementationFixture(t) {
   const setup = fixture(t),
     { root, git, service } = setup;
@@ -3223,6 +3278,43 @@ async function activityScreen(t) {
   dom.window.screenTest.show(snapshot);
   return { window: dom.window, snapshot };
 }
+
+test('saved report control belongs on the issue page and displays escaped full content in the named dialog', async (t) => {
+  const { window } = await activityScreen(t);
+  const document = window.document,
+    calls = [];
+  const content = '---\nid: 20261022-one\n---\n<script>window.reportExecuted=true</script><img src=x onerror=alert(1)>';
+  window.fetch = async (path) => {
+    calls.push(path);
+    return { ok: true, json: async () => ({ path: '.issues/20261022-one.md', content }) };
+  };
+  document.getElementById('plan').showModal = function () {
+    this.open = true;
+  };
+  document.getElementById('plan').close = function () {
+    this.open = false;
+  };
+  const button = document.querySelector('[data-open-report]');
+  assert.equal(button.textContent, 'Open saved report');
+  assert.equal(button.dataset.openReport, '20261022-one');
+  button.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(document.querySelector('[data-open-report]'), button);
+  assert.deepEqual(calls, ['/api/issue-report?issue=20261022-one']);
+  assert.equal(document.getElementById('plan').getAttribute('aria-labelledby'), 'plan-title');
+  assert.equal(document.getElementById('plan-title').textContent, 'Saved issue report');
+  assert.equal(document.getElementById('plan-path').textContent, '.issues/20261022-one.md');
+  assert.equal(document.getElementById('plan-content').textContent, content);
+  assert.equal(document.getElementById('plan-content').querySelector('script,img'), null);
+  assert.equal(window.reportExecuted, undefined);
+  document.getElementById('close-plan').click();
+  assert.equal(document.getElementById('plan').open, false);
+  window.fetch = async () => ({ ok: false, json: async () => ({ error: 'The saved issue report is missing.' }) });
+  button.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(document.getElementById('error').textContent, /report is missing/);
+  assert.equal(document.getElementById('plan').open, false);
+});
 
 async function approvalScreen(t) {
   const view = await activityScreen(t);

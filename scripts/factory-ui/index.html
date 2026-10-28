@@ -1031,10 +1031,10 @@
       <div id="error" role="alert"></div>
       <div id="app"></div>
     </main>
-    <dialog id="plan">
+    <dialog id="plan" aria-labelledby="plan-title" aria-describedby="plan-path">
       <h2 id="plan-title">Implementation plan</h2>
       <p id="plan-path" class="muted"></p>
-      <button id="close-plan">Close plan</button>
+      <button id="close-plan">Close document</button>
       <pre id="plan-content" class="prose" style="white-space: pre-wrap; overflow-wrap: anywhere"></pre>
     </dialog>
     <dialog id="confirm">
@@ -1863,6 +1863,14 @@
           .join(' ');
         return `${links ? `<div class="toolbar">${links}</div>` : ''}<details><summary>Task details and earlier reviews</summary><p class="muted">These are saved records. Earlier instructions may describe work that has since finished.</p>${content}</details>`;
       }
+      async function openSavedReport(id) {
+        $('error').textContent = '';
+        const report = await request('issue-report?issue=' + encodeURIComponent(id));
+        $('plan-title').textContent = 'Saved issue report';
+        $('plan-path').textContent = report.path;
+        $('plan-content').textContent = report.content;
+        $('plan').showModal();
+      }
       async function openPlan(path) {
         const plan = await request('document?path=' + encodeURIComponent(path));
         $('plan-title').textContent = plan.content.match(/^# (.+)/m)?.[1] || 'Project plan';
@@ -2216,7 +2224,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2447,6 +2455,10 @@
         document
           .querySelectorAll('[data-plan-decision]')
           .forEach((button) => (button.onclick = () => selectPlanDecision(button)));
+        document.querySelectorAll('[data-open-report]').forEach((button) => {
+          button.onclick = () =>
+            openSavedReport(button.dataset.openReport).catch((error) => ($('error').textContent = error.message));
+        });
         document.querySelectorAll('[data-open-plan]').forEach((button) => {
           button.onclick = () => act(() => openPlan(button.dataset.openPlan));
         });

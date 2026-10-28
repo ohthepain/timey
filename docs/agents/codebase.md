@@ -151,6 +151,11 @@ validated existing conversations and the original ledger attach operation.
 `factory-ui/plan-document.mjs` reads Markdown plans for the issue screen’s document
 viewer, restricted to canonical regular files under the selected project’s docs/plans.
 
+`factory-ui/report-document.mjs` reads the full current saved report by issue ID from
+the authoritative project queue, requiring a contained regular file with matching
+frontmatter identity and rejecting symlinks. Its authenticated issue-report resource
+shares the escaped read-only dialog without widening the plans-only resource.
+
 `factory-ui/plan-outline.mjs` locates issue-linked implementation plans and original
 work sections/version groups. `plan-check-schema.mjs` describes the bounded
 read-only review; `plan-review.mjs` records its guarded findings. `plan-checks.mjs`

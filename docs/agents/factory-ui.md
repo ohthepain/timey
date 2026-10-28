@@ -298,7 +298,13 @@ their neutral colour and help text retain the missing-history distinction. Curre
 assignments and old reviews are grouped under Task details and earlier reviews,
 with a notice that old instructions may have been superseded. Final-only human
 checks stay collapsed until needed. Plan references in saved reports/assignments
-open a read-only document viewer restricted to project Markdown plans. The current
+open a read-only document viewer restricted to project Markdown plans. Each issue
+page also offers **Open saved report**, which reads its current complete Markdown
+(including frontmatter) from the authoritative queue and shows its project-relative
+path in the same accessible dialog. Report content is displayed as text. The
+authenticated report resource accepts only an issue ID, rejects symlinks and
+non-regular files, and reports missing or invalid reports without changing files,
+assignments or lifecycle state. The plans-only resource remains separate. The current
 step keeps Progress available without a separate readiness check. Saved
 implementation results remain visible as the issue advances.
 
