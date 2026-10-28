@@ -18,7 +18,7 @@ const policy = {
   acceptance_role: 'ready-to-close',
   closed_role: 'closed',
 };
-export function inspectHumanInput(root, action, operation, head, transition = {}) {
+export function inspectHumanInput(root, action, operation, head, transition = {}, adapterFacts = []) {
   const helper = join(root, '.agents/skills/issues/scripts/human-input.mjs');
   const manifest = JSON.parse(
     readFileSync(join(root, '.agents/skills/issues/scripts/human-input-version.json'), 'utf8')
@@ -44,7 +44,7 @@ export function inspectHumanInput(root, action, operation, head, transition = {}
       issue_ids: action.issues,
       scope_ids: ['*'],
       policy,
-      adapter_facts: [],
+      adapter_facts: adapterFacts,
       semantic_reviews: [],
     };
     if (['merge', 'record-integration'].includes(operation))
@@ -56,14 +56,19 @@ export function inspectHumanInput(root, action, operation, head, transition = {}
       };
     const path = join(temp, 'context.json');
     writeFileSync(path, JSON.stringify(context));
-    const result = JSON.parse(
-      execFileSync(process.execPath, [helper, 'read', '--project', root, '--context', path], {
+    let output;
+    try {
+      output = execFileSync(process.execPath, [helper, 'read', '--project', root, '--context', path], {
         encoding: 'utf8',
         env: cleanEnvironment(),
         maxBuffer: 8 * 1024 * 1024,
-      })
-    );
-    return { helper, context, result };
+      });
+    } catch (error) {
+      // View diagnostics describe unavailable input; they do not waive dispatch checks.
+      if (operation !== 'view' || error.status !== 4 || !error.stdout) throw error;
+      output = error.stdout;
+    }
+    return { helper, context, result: JSON.parse(output) };
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

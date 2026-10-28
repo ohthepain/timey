@@ -45,6 +45,12 @@ input includes actionable requests, connected approvals and final acceptance;
 deferred requests and future prerequisites do not count. Sorting is presentation
 only and does not change readiness or grant authority.
 
+Human-input sorting uses the shared reader's current availability and deferral
+overlays, including revision-bound readiness prerequisites. Deferred or upcoming
+requests do not count as actionable input; their requirements still block affected
+work. Connected worker approvals and current lifecycle questions remain visible.
+Final acceptance is projected from recorded finished work, not a stage name alone.
+
 ## Lifecycle Progress
 
 The lifecycle header has one **Progress** button. Pressing it opts into continued

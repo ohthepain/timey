@@ -1,3 +1,4 @@
+import { queueHumanInput } from './queue-human-input.mjs';
 import { IssueDelivery } from '../issue-delivery.mjs';
 import { proof } from '../issue-delivery-store.mjs';
 import { createIssueChats } from './issue-chat.mjs';
@@ -106,10 +107,13 @@ export class FactoryUI {
     const { choice: progress } = resolveNextAction(queue, issue, runs);
     const lifecycle = visibleLifecycle(this.lifecycleStatus(queue, issue, runs), progress);
     const { stageStates, queueLifecycle } = issueLifecycleView(queue, { ...issue, lifecycle }, runs, readiness);
+    const issueDelivery = this.deliveries.inspect(issue.id);
+    const humanInputView = queueHumanInput(queue, { ...issue, issueDelivery });
     return {
       ...issue,
+      humanInputView,
       readiness,
-      issueDelivery: this.deliveries.inspect(issue.id),
+      issueDelivery,
       decisionBasis: decisionBasis(queue, issue),
       progressBasis: reviewInput(queue, issue),
       lifecycle,

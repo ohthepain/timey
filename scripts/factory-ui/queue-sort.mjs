@@ -66,26 +66,10 @@ function completionTime(issue, history, final) {
 }
 function needsHumanInput(issue, runs, stages) {
   if (stages.some((stage) => stage.state === issue.state && stage.role === 'closed')) return false;
-  if (issue.queueLifecycle?.roles.some((role) => role.waiting)) return true;
   if (runs.some((run) => run.connected && run.approvals?.length)) return true;
   if (issue.lifecycle?.status === 'waiting' && issue.lifecycle.input && issue.lifecycle.input.type !== 'retry')
     return true;
-  const final = stages.some((stage) => stage.state === issue.state && stage.role === 'ready-to-close');
-  if (final) return true;
-  if ((issue.human_checks || []).some((check) => check.status !== 'passed' && check.blocks !== 'closure')) return true;
-  return (issue.human_input?.requests || []).some(
-    (request) => ['pending', 'in-progress'].includes(request.status) && prerequisitesMet(request, issue)
+  return (issue.humanInputView?.requests || []).some(
+    (request) => request.availability === 'now' && request.disposition === 'active' && !request.valid_outcome
   );
-}
-function prerequisitesMet(request, issue) {
-  return (request.prerequisites || []).every((prerequisite) => {
-    const [kind, id] = prerequisite.source_key.split(':');
-    const source =
-      kind === 'human_input'
-        ? issue.human_input.requests.find((entry) => entry.id === id)
-        : kind === 'human_checks'
-          ? issue.human_checks?.find((entry) => entry.id === id)
-          : null;
-    return source?.status === prerequisite.condition && ['resolved', 'passed'].includes(prerequisite.condition);
-  });
 }

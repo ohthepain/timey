@@ -1,5 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import YAML from 'yaml';
+import { deliveryFixture } from './factory-workflow-fixture.mjs';
+import { queueHumanInput } from './factory-ui/queue-human-input.mjs';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { queueSortValues } from './factory-ui/queue-sort.mjs';
@@ -71,9 +76,14 @@ test('creation and completion retain missing dates, use final-review entry and e
   );
 });
 
-test('human input includes questions, connected approvals, manual checks and final acceptance', () => {
-  assert.equal(queueSortValues(base(), issue({ state: 'review' })).humanInput, 1);
-  assert.equal(queueSortValues(base(), issue({ state: 'closed' })).humanInput, 0);
+test('human input uses projected availability and live workflow questions', () => {
+  assert.equal(
+    queueSortValues(
+      base(),
+      issue({ state: 'closed', humanInputView: { requests: [{ availability: 'now', disposition: 'active' }] } })
+    ).humanInput,
+    0
+  );
   assert.equal(
     queueSortValues(base(), issue({ lifecycle: { status: 'waiting', input: { type: 'plan-approval' } } })).humanInput,
     1
@@ -87,31 +97,125 @@ test('human input includes questions, connected approvals, manual checks and fin
   assert.equal(queueSortValues(queue, issue()).humanInput, 1);
   queue.runs[0].connected = false;
   assert.equal(queueSortValues(queue, issue()).humanInput, 0);
-  assert.equal(
-    queueSortValues(base(), issue({ human_checks: [{ status: 'pending', blocks: 'dependent-work' }] })).humanInput,
-    1
-  );
-  assert.equal(
-    queueSortValues(base(), issue({ human_checks: [{ status: 'pending', blocks: 'closure' }] })).humanInput,
-    0
-  );
-  const selected = issue({
-    human_input: {
-      requests: [
-        { id: 'first', status: 'deferred', prerequisites: [] },
-        {
-          id: 'second',
-          status: 'pending',
-          prerequisites: [{ source_key: 'human_input:first', condition: 'resolved' }],
-        },
-      ],
-    },
+  for (const availability of ['upcoming', 'unknown', 'deferred'])
+    assert.equal(
+      queueSortValues(base(), issue({ humanInputView: { requests: [{ availability, disposition: 'active' }] } }))
+        .humanInput,
+      0
+    );
+});
+
+test('shared reader resolves readiness prerequisites and revision-bound deferrals without changing reports', (t) => {
+  const f = deliveryFixture(t);
+  const id = f.input.issueId;
+  const queue = { ...base(), root: f.queue.root, head: f.queue.git('rev-parse', 'HEAD') };
+  const selected = { id, state: 'verify', content: '' };
+  const report = join(queue.root, '.issues', id + '.md');
+  const scope = { id: 'main', revision: 1 };
+  const request = (prerequisites = []) => ({
+    id: 'decision',
+    kind: 'decision',
+    prompt: 'Choose',
+    expected: 'Answer',
+    scope,
+    prerequisites,
+    blocks: [],
+    events: [],
+    status: 'pending',
+    outcome: null,
   });
-  assert.equal(queueSortValues(base(), selected).humanInput, 0);
-  selected.human_input.requests[0].status = 'resolved';
-  assert.equal(queueSortValues(base(), selected).humanInput, 1);
-  selected.human_input.requests[1].status = 'resolved';
-  assert.equal(queueSortValues(base(), selected).humanInput, 0);
+  const metadata = {
+    id,
+    state: 'verify',
+    human_input: { version: 1, scopes: [{ ...scope, basis_refs: ['issue'] }], requests: [], overlays: [] },
+    human_checks: [
+      { id: 'device', kind: 'evidence', status: 'passed', blocks: 'dependent-work', evidence_refs: ['observed'] },
+    ],
+  };
+  const project = () => {
+    writeFileSync(report, '---\n' + YAML.stringify(metadata, { aliasDuplicateObjects: false }) + '---\n');
+    const before = readFileSync(report, 'utf8');
+    const view = queueHumanInput(queue, { ...selected, ...metadata });
+    assert.equal(readFileSync(report, 'utf8'), before);
+    return view;
+  };
+  const delivery = {
+    candidate: 'c',
+    tree: 't',
+    contributions: [{ candidate: 'c', tree: 't', receipt: { path: 'assembly-proof' } }],
+    readiness: { manifest: 'checked' },
+  };
+  for (const condition of ['work-ready', 'evidence-ready', 'candidate-ready']) {
+    metadata.human_input.requests = [request([{ source_key: 'human_checks:device', condition }])];
+    assert.equal(project().requests.find((r) => r.source_key === 'human_input:decision').availability, 'upcoming');
+    selected.issueDelivery = delivery;
+    assert.equal(project().requests.find((r) => r.source_key === 'human_input:decision').availability, 'now');
+    selected.issueDelivery = { ...delivery, contributions: [] };
+    assert.equal(project().requests.find((r) => r.source_key === 'human_input:decision').availability, 'upcoming');
+    delete selected.issueDelivery;
+  }
+  metadata.human_input.requests = [request([{ source_key: 'human_checks:device', condition: 'passed' }])];
+  assert.equal(project().requests[0].availability, 'now');
+  metadata.human_checks[0].status = 'failed';
+  assert.equal(project().requests[0].availability, 'upcoming');
+  metadata.human_checks[0].status = 'passed';
+  const first = {
+    ...request(),
+    id: 'first',
+    status: 'resolved',
+    outcome: {
+      type: 'human-answer',
+      actor: 'human',
+      delegation: null,
+      summary: 'Settled',
+      evidence_refs: ['answer'],
+      scope,
+      covers: ['first'],
+    },
+  };
+  metadata.human_input.requests = [first, request([{ source_key: 'human_input:first', condition: 'resolved' }])];
+  assert.equal(project().requests[1].availability, 'now');
+  first.outcome = null;
+  assert.equal(project().requests[1].availability, 'upcoming', 'bare resolved status supplies no answer');
+  metadata.human_input.requests = [request([{ source_key: 'human_checks:missing', condition: 'passed' }])];
+  assert.equal(project().requests[0].availability, 'upcoming');
+  metadata.human_input.requests = [request()];
+  metadata.human_input.requests[0].status = 'deferred';
+  assert.equal(project().requests[0].availability, 'deferred');
+  metadata.human_input.requests[0].status = 'pending';
+  assert.equal(project().requests[0].availability, 'now');
+  metadata.human_input.requests = [];
+  metadata.human_checks[0].status = 'pending';
+  const check = project().requests[0];
+  metadata.human_input.overlays = [
+    { source_key: check.source_key, source_revision: check.source_revision, status: 'deferred', events: [] },
+  ];
+  let view = project();
+  assert.equal(view.requests[0].availability, 'deferred');
+  assert.equal(queueSortValues(queue, { ...selected, humanInputView: view }).humanInput, 0);
+  metadata.human_input.overlays[0].status = 'active';
+  assert.equal(project().requests[0].availability, 'now');
+  metadata.human_input.overlays[0].status = 'deferred';
+  metadata.human_checks[0].revision = 'changed';
+  view = project();
+  assert.equal(view.requests[0].availability, 'now');
+  assert.ok(view.diagnostics.some((d) => d.code === 'STALE_OVERLAY'));
+  metadata.human_checks = [];
+  metadata.human_input.overlays = [];
+  metadata.state = 'review';
+  metadata.lifecycle_history = [{ state: 'work', next: 'review', outcome: 'completed', revision: queue.head }];
+  view = project();
+  const acceptance = view.requests.find((r) => r.source_key === 'acceptance:issue');
+  assert.ok(acceptance);
+  metadata.human_input.overlays = [
+    { source_key: acceptance.source_key, source_revision: acceptance.source_revision, status: 'deferred', events: [] },
+  ];
+  assert.equal(project().requests[0].availability, 'deferred');
+  metadata.human_input.overlays[0].status = 'active';
+  assert.equal(project().requests[0].availability, 'now');
+  selected.issueDelivery = { ...delivery, state: 'collecting' };
+  metadata.human_input.overlays = [];
+  assert.equal(project().requests.length, 0, 'unfinished delivery is not actionable acceptance');
 });
 
 function browserFixture(t) {
@@ -182,6 +286,16 @@ test('all five controls order actual queue rows, preserve filters and selection 
     select('queue-sort', mode);
     assert.deepEqual(ids(), expected);
   }
+  select('queue-direction', 'asc');
+  assert.deepEqual(ids(), ['b', 'a']);
+  fixture.replace(
+    fixture.issues.map((entry) => ({
+      ...entry,
+      queueSort: { ...entry.queueSort, humanInput: entry.id === 'b' ? 1 : 0 },
+    }))
+  );
+  assert.deepEqual(ids(), ['a', 'b']);
+  assert.equal(document.getElementById('queue-sort').value, 'humanInput');
   select('queue-sort', 'lastProgress');
   select('queue-direction', 'asc');
   assert.deepEqual(ids(), ['a', 'b']);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { cpSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
@@ -86,6 +86,10 @@ function lifecycleFixture(t) {
     report,
     '---\nid: 20261026-one\ntitle: Lifecycle fixture\nstate: clarify\ncategory: enhancement\ngrill_later: false\n---\nOriginal report\n'
   );
+  const helper = join(root, '.agents/skills/issues/scripts');
+  mkdirSync(helper, { recursive: true });
+  for (const name of ['human-input.mjs', 'human-input-version.json'])
+    cpSync(resolve('.agents/skills/issues/scripts', name), join(helper, name));
   const service = new FactoryUI(root);
   t.after(() => service.close());
   const input = (target = 'prototype') => {

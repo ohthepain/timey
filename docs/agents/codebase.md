@@ -323,3 +323,8 @@ protocol proof only. See [the delivery contract](issue-delivery.md) and
 Queue sort values are projected from saved records in `factory-ui/queue-sort.mjs`
 before transport trims run events. `queue-sort-ui.js` owns presentation ordering
 and accessible controls; neither path writes lifecycle or human-input records.
+
+Queue human-input sorting consumes the shared reader's availability and revision-bound
+deferral projection through `factory-ui/queue-human-input.mjs`. Saved delivery
+contributions supply readiness facts; unavailable facts remain unavailable. This
+read-only presentation does not change dispatch checks or human results.
