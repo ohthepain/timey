@@ -35,5 +35,17 @@ evidence rather than making issues repeat completed work.
 This revises the choice in [ADR 0001](0001-human-input-separate-from-lifecycle.md)
 to retain a separate clarification stage; its distinction between human input,
 grilling and lifecycle position remains applicable. The user confirmed these
-design decisions on 2026-10-28. Implementation is pending; this accepted design
-does not claim that the lifecycle has changed or authorize production changes.
+design decisions and authorized implementation on 2026-10-28.
+
+The factory enables this behavior through `factory.config.json`. Its adapter
+presents and executes one Clarify stage while retaining the shared queue's
+original role/state identifiers as compatibility aliases. Reports, history,
+answers and running assignments are not rewritten to manufacture completion.
+Clarify can execute focused diagnostics with read-only source access before
+implementation approval. Working plan adjustments are compared with the approved
+outcome and scope; the original human approval remains the authority.
+
+The Create issue dialog also offers an off-by-default **Grill me after creation**
+switch. Selecting it saves the issues first, routes them to Clarify and starts
+grilling in each saved issue conversation. Capture retries use stable message
+identities and never grant implementation approval.

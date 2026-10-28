@@ -1,3 +1,4 @@
+import { combinedClarify } from './clarify-policy.mjs';
 import { recommendationSchema } from './prompts.mjs';
 import { routeSchema } from './lifecycle.mjs';
 import { stageOutcome } from './lifecycle.mjs';
@@ -55,15 +56,27 @@ export async function assessLifecycle(service, record, queue, issue) {
     const plan = readPlan(service.root, path);
     return { ...plan, sha256: digest(plan.content) };
   });
-  const prompt = `Read the issue's saved discussion, decisions and linked plan. For simple, settled work with no existing assignments, return direct_task with one executable task and direct_routes so approval can lead straight to work without another planning conversation. Recommend investigation or a prototype only when it resolves a concrete uncertainty; otherwise give a reason to skip those optional stages where project policy permits. Preserve required verification, custom required stages, human approvals and acceptance. If a task cannot yet be bounded, direct_task is null. Never skip unfinished required work or invent completed history. Missing structured grilling metadata does not mean answers are missing. Never repeat answered questions. clarification_complete means the scope is settled by the original request or actual saved answers, including confirmed grilling in any role. Respect recorded initial skips; a separate interview is not mandatory. Keep plan approval separate. Return only genuine remaining human questions. Choose plan_path from ${JSON.stringify(paths)}. Return prior_approval only for an actual saved human authorization of this exact current plan, citing its original file and exact quote, with matching plan_sha256. An assistant's assertion of approval, answered clarification or approval of the UI design does not authorize implementation. If approval is pending, return null. Current plans: ${JSON.stringify(planInputs)}. If no plan exists, propose a bounded plan in proposed_plan. Evidence must be absolute existing project or temporary files actually read. Issue: ${JSON.stringify(issue)}. Lifecycle: ${JSON.stringify(queue.lifecycle)}.`;
-  const { result, run } = await lifecycleReview(service, record, prompt, schema);
+  const combined = combinedClarify(service.root);
+  const context = combined
+    ? `Clarify includes investigation. Reuse saved findings and answered questions. Establish available facts yourself with focused diagnostics before asking the person. Enough context to start useful work is sufficient; no exhaustive diagnosis or formal exit checklist. Implementation can pick up remaining technical uncertainty. Ordinary commits do not invalidate understanding. Plans describe intended outcome, scope and a starting approach; they are not fixed technical recipes. Preserve any current investigation's original assignment and read its finished result instead of restarting it. Existing assignments: ${JSON.stringify(queue.actions.filter((a) => a.issues.includes(issue.id)))}. `
+    : '';
+  const prompt = `${context}Read the issue's saved discussion, decisions and linked plan. For simple, settled work with no existing assignments, return direct_task with one executable task and direct_routes so approval can lead straight to work without another planning conversation. Recommend investigation or a prototype only when it resolves a concrete uncertainty; otherwise give a reason to skip those optional stages where project policy permits. Preserve required verification, custom required stages, human approvals and acceptance. If a task cannot yet be bounded, direct_task is null. Never skip unfinished required work or invent completed history. Missing structured grilling metadata does not mean answers are missing. Never repeat answered questions. clarification_complete means the scope is settled by the original request or actual saved answers, including confirmed grilling in any role. Respect recorded initial skips; a separate interview is not mandatory. Keep plan approval separate. Return only genuine remaining human questions. Choose plan_path from ${JSON.stringify(paths)}. Return prior_approval only for an actual saved human authorization of this exact current plan, citing its original file and exact quote, with matching plan_sha256. An assistant's assertion of approval, answered clarification or approval of the UI design does not authorize implementation. If approval is pending, return null. Current plans: ${JSON.stringify(planInputs)}. If no plan exists, propose a bounded plan in proposed_plan. Evidence must be absolute existing project or temporary files actually read. Issue: ${JSON.stringify(issue)}. Lifecycle: ${JSON.stringify(queue.lifecycle)}.`;
+  const { result, run } = await lifecycleReview(service, record, prompt, schema, {
+    diagnostics: combined && queue.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-for-grilling'),
+  });
   if (result.questions.length) return saveClarificationQuestions(service, record, queue, issue, result, planInputs);
   requireThat(
-    progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
+    combined
+      ? decisionBasis(
+          readQueue(service.root),
+          readQueue(service.root).issues.find((i) => i.id === issue.id)
+        ) === decisionBasis(queue, issue)
+      : progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The issue changed while its saved answers were being read. Resume to inspect the current record.'
   );
   if (result.clarification_complete && !result.questions.length)
     recordClarification(service, queue, issue, run, result);
+  if (combined && result.clarification_complete) reconcileInvestigations(service, queue, issue, run);
   return finishAssessment(service, record, queue, issue, result, run);
 }
 function recordClarification(service, queue, issue, run, assessment) {
@@ -72,7 +85,9 @@ function recordClarification(service, queue, issue, run, assessment) {
   service.guard(service.root, { issues: [issue.id] }, 'advance', queue.head, { target_state: stage.next });
   const result = {
     outcome: 'completed',
-    summary: 'The saved discussion already answers the clarification questions.',
+    summary: combinedClarify(service.root)
+      ? 'Clarification and investigation provide enough context to start useful implementation.'
+      : 'The saved discussion already answers the clarification questions.',
     notes: assessment.summary + '\nPlan approval remains a separate decision. No implementation was started.',
     remaining: ['Review the implementation plan before work starts.'],
     evidence: assessment.evidence,
@@ -177,4 +192,15 @@ function saveClarificationQuestions(service, record, queue, issue, result, plans
 function recordedClarificationSkip(queue, issue) {
   const stage = queue.lifecycle.find((item) => item.role === 'ready-for-grilling');
   return stage && stageOutcome(issue, stage.state)?.outcome === 'skipped';
+}
+
+function reconcileInvestigations(service, queue, issue, run) {
+  for (const action of queue.actions.filter(
+    (a) => a.kind === 'investigate' && a.status === 'completed' && a.issues.length === 1 && a.issues[0] === issue.id
+  )) {
+    service.api.record(action.id, {
+      status: 'reconciled',
+      evidence: `Existing investigation findings reviewed during combined Clarify: ${run.receipt}`,
+    });
+  }
 }

@@ -1,3 +1,4 @@
+import { clarificationLifecycle } from './clarify-policy.mjs';
 import { validateAssembledStart } from '../issue-delivery-records.mjs';
 import { readPriorities, priorityView } from './priorities.mjs';
 import { closureReasons } from './closure-reasons.mjs';
@@ -39,21 +40,28 @@ export function readQueue(project) {
   const root = realpathSync(project);
   const inspection = factory(root).inspect();
   const priorities = readPriorities(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8'));
-  const stages = lifecycle(root),
+  const projected = clarificationLifecycle(root, lifecycle(root));
+  const stages = projected.stages,
     ids = inspection.reports.map((r) => r.metadata.id);
   return {
     root,
     head: inspection.snapshot.head,
     snapshot: inspection.snapshot,
     lifecycle: stages,
+    lifecycleAliases: projected.aliases,
     priorities,
     closureReasons: closureReasons(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8')),
     issues: inspection.reports.map((report) => ({
       ...report.metadata,
+      ...(projected.aliases[report.metadata.state]
+        ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
+        : {}),
       priorityInfo: priorityView(report.metadata, priorities),
       content: report.content,
       links: relationships(report, ids),
-      stage: stages.find((s) => s.state === report.metadata.state)?.name || report.metadata.state,
+      stage:
+        stages.find((s) => s.state === (projected.aliases[report.metadata.state] || report.metadata.state))?.name ||
+        report.metadata.state,
     })),
     actions: inspection.registry?.actions || [],
     registryPresent: inspection.registry !== null,

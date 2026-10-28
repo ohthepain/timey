@@ -4,7 +4,6 @@ import { requireThat } from './common.mjs';
 
 const required = [
   'ready-for-grilling',
-  'ready-for-repro',
   'ready-to-fix',
   'ready-to-verify',
   'ready-for-commit',
@@ -15,11 +14,16 @@ export function validateCaptureLifecycle(stages) {
   requireThat(stages.length > 0, 'The capture lifecycle is missing.');
   const states = new Set(stages.map((s) => s.state));
   requireThat(states.size === stages.length, 'The lifecycle repeats a state.');
+  const combined = stages.some((s) => s.combinedClarify === true);
+  const hasInvestigation = stages.some((s) => s.role === 'ready-for-repro');
+  if (!combined) requireThat(hasInvestigation, 'Invalid lifecycle mapping for ready-for-repro.');
+  if (hasInvestigation)
+    requireThat(stages.filter((s) => s.role === 'ready-for-repro').length === 1, 'The lifecycle repeats Investigate.');
   for (const role of required)
     requireThat(stages.filter((s) => s.role === role).length === 1, `Invalid lifecycle mapping for ${role}.`);
   requireThat(stages.filter((s) => s.role === 'ready-to-prototype').length <= 1, 'The lifecycle repeats Prototype.');
   requireThat(
-    stages.every((s) => [...required, 'ready-to-prototype', 'custom'].includes(s.role)),
+    stages.every((s) => [...required, 'ready-for-repro', 'ready-to-prototype', 'custom'].includes(s.role)),
     'Unknown lifecycle role.'
   );
   const path = [],
@@ -43,9 +47,9 @@ export function validateCaptureLifecycle(stages) {
   const order = path.filter((s) => s.role !== 'custom').map((s) => s.role);
   const expected = [
     required[0],
-    required[1],
+    ...(hasInvestigation ? ['ready-for-repro'] : []),
     ...(order.includes('ready-to-prototype') ? ['ready-to-prototype'] : []),
-    ...required.slice(2),
+    ...required.slice(1),
   ];
   requireThat(JSON.stringify(order) === JSON.stringify(expected), 'The lifecycle roles are out of progression.');
   return path;
@@ -53,18 +57,24 @@ export function validateCaptureLifecycle(stages) {
 
 export function captureRoute(stages, proposal) {
   const path = validateCaptureLifecycle(stages);
-  const target = path.findIndex((s) => s.role === proposal.initialRole);
+  const combined = path.some((s) => s.combinedClarify === true);
+  const initialRole =
+    combined && proposal.initialRole === 'ready-for-repro' ? 'ready-for-grilling' : proposal.initialRole;
+  const target = path.findIndex((s) => s.role === initialRole);
   requireThat(target >= 0, 'The proposed capture stage is not configured.');
-  const reasons = new Map(proposal.skips.map((s) => [s.role, s.reason]));
-  requireThat(reasons.size === proposal.skips.length, 'The capture assessment repeats a skip.');
+  const applicable = combined
+    ? proposal.skips.filter((s) => s.role !== 'ready-for-repro' && s.role !== initialRole)
+    : proposal.skips;
+  const reasons = new Map(applicable.map((s) => [s.role, s.reason]));
+  requireThat(reasons.size === applicable.length, 'The capture assessment repeats a skip.');
   const bypassed = path.slice(0, target);
   requireThat(
-    proposal.skips.every((s) => bypassed.some((p) => p.role === s.role)),
+    applicable.every((s) => bypassed.some((p) => p.role === s.role)),
     'The assessment skips a stage outside its initial route.'
   );
   if (bypassed.some((s) => s.role === 'ready-for-repro'))
     requireThat(proposal.reproduction !== 'required', 'Required investigation cannot be skipped.');
-  if (proposal.category === 'bug')
+  if (!combined && proposal.category === 'bug')
     requireThat(
       proposal.reproduction !== 'inapplicable',
       'A bug needs investigation or an explicit declined reproduction reason.'
@@ -97,5 +107,9 @@ export function captureLifecycle(root) {
   return legacy ? rows.map((row, i) => ({ ...row, next: rows[i + 1]?.state || '—' })) : rows;
 }
 function legacyStage([, state, exit]) {
-  return { state, role: [...required, 'ready-to-prototype'].includes(state) ? state : 'custom', exit };
+  return {
+    state,
+    role: [...required, 'ready-for-repro', 'ready-to-prototype'].includes(state) ? state : 'custom',
+    exit,
+  };
 }

@@ -1,3 +1,4 @@
+import { combinedClarify } from './clarify-policy.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -8,6 +9,7 @@ export function skipAllowed(queue, issue, state) {
   return optionalRole(queue, issue, role);
 }
 function optionalRole(queue, issue, role) {
+  if (role === 'ready-for-grilling') return combinedClarify(queue.root);
   if (role === 'ready-to-prototype') return issue.prototype_required !== true;
   if (role === 'ready-for-repro') return issue.category === 'enhancement';
   return commitDisabled(queue, role);

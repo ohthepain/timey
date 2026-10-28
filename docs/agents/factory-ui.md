@@ -1162,3 +1162,21 @@ and describe any proposed expansion of the approved work separately. Keep the
 existing response fields, answer routing and approval requirements: clearer
 wording grants no additional authority. Existing saved discussions retain their
 original wording.
+
+## Combined Clarify and capture grilling
+
+The project setting in `factory.config.json` combines Clarify and Investigate into
+one Clarify stage. Legacy state names remain storage aliases; their reports and
+history are preserved. Active investigations keep their assignment and chat, then
+feed their findings into Clarify. Diagnostic assessment can inspect code and run
+focused checks before plan approval, with source kept read-only. Approval still
+belongs to the user and covers intended outcome and scope. Ordinary commits do
+not restart the interview; technical plan changes can stay within that approval.
+
+Create issue offers **Grill me after creation**, off by default. With it selected,
+the server first saves all reports, then sends an explicit grilling request to
+each saved issue conversation. A single saved issue opens automatically; when
+capture separates multiple issues, the first opens and the toast links to all of
+them. Stable conversation message IDs prevent duplicate grilling on capture retry
+or server restart. Conversation failures leave the issue saved and report the
+problem. This option starts discussion, not lifecycle execution or implementation.

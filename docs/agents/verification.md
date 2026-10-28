@@ -384,3 +384,14 @@ artifacts cannot be reused. Older summaries without browser checks no longer
 establish current delivery readiness. An unchanged candidate may reuse intact
 exact-input proof; merging changed code requires new interactions. Human usability
 judgment and actual provider/hardware evidence remain separate.
+
+## Combined Clarify checks
+
+`node --test scripts/factory-clarify.check.mjs` exercises old state aliases,
+preserved active investigations and custom stages, diagnostic authority before
+approval, pending answers across commits, retained plan approvals and explicit,
+idempotent capture grilling. These are disposable protocol tests, not evidence
+of live model availability. Full factory verification includes them.
+`factory-browser-clarify.mjs` exercises the candidate's rendered capture switch,
+its off default, retained retry choice and navigation to the saved issue through
+the standard browser verifier with a disposable API response.

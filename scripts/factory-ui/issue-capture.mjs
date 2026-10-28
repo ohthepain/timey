@@ -1,3 +1,5 @@
+import { clarificationLifecycle } from './clarify-policy.mjs';
+import { startCaptureGrilling } from './capture-grilling.mjs';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, linkSync, unlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,7 +10,9 @@ import { captureRoute, validateCaptureLifecycle, captureLifecycle } from './capt
 import { readQueue } from './data.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
 
-const requestSchema = z.object({ requestId: z.uuid(), description: z.string().min(1).max(24000) }).strict();
+const requestSchema = z
+  .object({ requestId: z.uuid(), description: z.string().min(1).max(24000), grill: z.boolean().default(false) })
+  .strict();
 const receiptSchema = z
   .object({
     version: z.literal(1),
@@ -52,19 +56,21 @@ export function createCaptures(service, options = {}) {
     const pending = tasks.get(input.requestId);
     if (pending) {
       requireThat(
-        pending.description === input.description,
+        pending.description === input.description && pending.grill === input.grill,
         'This submission identity belongs to another description.'
       );
       return pending.promise;
     }
-    const promise = perform(input).finally(() => tasks.delete(input.requestId));
-    tasks.set(input.requestId, { description: input.description, promise });
+    const promise = perform(input)
+      .then((result) => (input.grill ? startCaptureGrilling(service, input, result) : result))
+      .finally(() => tasks.delete(input.requestId));
+    tasks.set(input.requestId, { description: input.description, grill: input.grill, promise });
     return promise;
   }
   async function perform(input) {
     const directory = join(service.root, '.issues/factory-ui/captures');
     const file = join(directory, input.requestId + '.json');
-    const hash = digest(input.description);
+    const hash = captureHash(input);
     const previous = readReceipt(file, hash);
     if (previous?.complete) return response(previous);
     const before = captureQueue(service.root);
@@ -115,7 +121,10 @@ function readReceipt(file, hash) {
 }
 function policyBasis(root) {
   return digest(
-    ['triage-labels.md', 'preferences.json'].map((name) => readFileSync(join(root, '.issues', name), 'utf8')).join('\0')
+    ['triage-labels.md', 'preferences.json']
+      .map((name) => readFileSync(join(root, '.issues', name), 'utf8'))
+      .join('\0') +
+      (existsSync(join(root, 'factory.config.json')) ? readFileSync(join(root, 'factory.config.json'), 'utf8') : '')
   );
 }
 function locked(root, operation) {
@@ -141,7 +150,10 @@ function allocate(queue, input, assessment, basis, random) {
       input.description.includes(proposal.excerpt),
       'The assessment did not preserve an exact original excerpt.'
     );
-    const route = captureRoute(queue.lifecycle, proposal);
+    const route = captureRoute(
+      queue.lifecycle,
+      input.grill ? { ...proposal, initialRole: 'ready-for-grilling', skips: [] } : proposal
+    );
     const id = allocateId(queue.root, at, ids, random);
     const evidence = [{ path: join(queue.root, '.issues', id + '.md') }];
     const metadata = {
@@ -178,7 +190,7 @@ function allocate(queue, input, assessment, basis, random) {
       '\n';
     return { id, title: proposal.title, state: route.state, content };
   });
-  return { version: 1, requestId: input.requestId, hash: digest(input.description), basis, reports, complete: false };
+  return { version: 1, requestId: input.requestId, hash: captureHash(input), basis, reports, complete: false };
 }
 function allocateId(root, at, ids, random) {
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -209,6 +221,10 @@ function response(receipt) {
 
 function captureQueue(root) {
   const queue = readQueue(root);
-  queue.lifecycle = captureLifecycle(root);
+  queue.lifecycle = clarificationLifecycle(root, captureLifecycle(root)).stages;
   return queue;
+}
+
+function captureHash(input) {
+  return digest(input.grill ? JSON.stringify([input.description, true]) : input.description);
 }

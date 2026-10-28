@@ -1,3 +1,4 @@
+import { combinedClarify } from './clarify-policy.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { approvedPlan } from '../issue-delivery-policy.mjs';
@@ -29,7 +30,7 @@ export function scopeInput(service, record, action, evaluator) {
       plan,
       evaluator,
       report: queue.issues.find((i) => i.id === record.issueId).content,
-      source: [queue.head, queue.snapshot.worktree],
+      source: combinedClarify(service.root) ? null : [queue.head, queue.snapshot.worktree],
       answer: record.latestAnswer
         ? { ...record.latestAnswer, actual: digest(readFileSync(record.latestAnswer.path)) }
         : null,

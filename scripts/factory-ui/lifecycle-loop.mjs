@@ -1,3 +1,5 @@
+import { combinedClarify } from './clarify-policy.mjs';
+import { approvePlanAdaptation } from './plan-adaptation.mjs';
 import { directTaskChoice, saveDirectTask } from './direct-task.mjs';
 import { completionChoice } from './completion-choice.mjs';
 import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs';
@@ -41,6 +43,20 @@ async function lifecycleTick(service, record) {
   const recovered = await recoverPendingIntegration(service, record);
   if (recovered) return recovered === 'recovered';
   if (finishedLifecycle(service, record, queue, issue)) return false;
+  if (!record.assessed && combinedClarify(service.root)) {
+    if (await waitLifecycleWork(service, record, queue)) return record.status === 'running';
+    const active = queue.actions.some(
+      (a) => a.issues.includes(issue.id) && ['running', 'reserved', 'setup'].includes(a.status)
+    );
+    if (active) {
+      stopLifecycle(
+        service,
+        record,
+        'The existing assignment is still active. Its findings will be reused when it finishes; no replacement was started.'
+      );
+      return false;
+    }
+  }
   if (!record.assessed) {
     await assessLifecycle(service, record, queue, issue);
     return record.status === 'running';
@@ -75,10 +91,11 @@ async function chooseAndExecute(service, record, queue, issue) {
   record.attempts.push(fingerprint);
   return executeLifecycleWork(service, record, queue, issue, selected);
 }
-function approvedPlan(service, record) {
+async function approvedPlan(service, record) {
   const current = record.plan.path ? readPlan(service.root, record.plan.path) : record.plan;
   const sha256 = digest(current.content);
   if (record.approval?.sha256 === sha256) return true;
+  if (combinedClarify(service.root) && (await approvePlanAdaptation(service, record, current, sha256))) return true;
   const plan = {
     ...current,
     sha256,
@@ -138,7 +155,7 @@ async function finishLifecycleAction(service, record, started) {
 async function coveredLifecycleAction(service, record, queue, choice) {
   const action = queue.actions.find((a) => a.id === choice.actionId);
   if (!(await checkSelectedScope(service, record, action, choice))) return false;
-  if (!approvedPlan(service, record)) return false;
+  if (!(await approvedPlan(service, record))) return false;
   return !lifecycleActionNeedsHuman(service, record, choice, action);
 }
 function checkSelectedScope(service, record, action, choice) {
@@ -193,7 +210,9 @@ function startSelectedProgress(service, issue) {
 }
 
 async function continueApprovedLifecycle(service, record, queue, issue) {
-  if (!approvedPlan(service, record)) return false;
-  if (await waitLifecycleWork(service, record, queue)) return record.status === 'running';
+  const combined = combinedClarify(service.root);
+  if (combined && (await waitLifecycleWork(service, record, queue))) return record.status === 'running';
+  if (!(await approvedPlan(service, record))) return false;
+  if (!combined && (await waitLifecycleWork(service, record, queue))) return record.status === 'running';
   return chooseAndExecute(service, record, queue, issue);
 }

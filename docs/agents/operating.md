@@ -21,6 +21,27 @@ If this chat still has work or unanswered questions, explain what remains.
 Offer closing as a suggestion for the user; issue acceptance remains a separate
 decision.
 
+## Clarify
+
+With `factory.config.json` set to `clarification: "combined"`, Clarify combines
+human questions, code inspection and focused diagnostics before implementation
+approval. Establish available facts before asking the person; continue independent
+investigation while waiting for answers. Use judgment about when enough context
+exists to start useful implementation, which can resolve remaining uncertainty.
+A well-defined report can bypass Clarify with its reason recorded, including a bug.
+
+Reuse earlier findings and answers across commits. A new revision alone does not
+invalidate understanding. Implementation-plan approval covers outcome and scope;
+technical approach and sequencing can adapt. A changed working plan is checked
+against that scope without inventing a new human approval. Actual scope changes
+or revision requests still require the person's decision. Keep verification tied
+to its actual candidate; understanding is not a claim that changed code passed tests.
+
+The factory maps legacy investigation states into Clarify without rewriting
+reports or running assignments. Existing investigations finish before their
+findings are reused. The original shared queue table remains available for helper
+compatibility; its Investigate role is not a second factory step.
+
 ## Manual control
 
 The [factory interface](factory.md) defines queue-wide, issue-focused, listing

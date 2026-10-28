@@ -1,3 +1,4 @@
+import { clarificationState } from './clarify-policy.mjs';
 import { recommendationRefresh } from './recommendation-refresh.mjs';
 import { completionChoice } from './completion-choice.mjs';
 import { verificationHandoff } from './verification-handoff.mjs';
@@ -88,7 +89,7 @@ function isPending(run) {
   return ['preparing', 'running', 'checking'].includes(run.status);
 }
 function belongsToIssue(queue, issue, run) {
-  if (run.issueId === issue.id) return run.issueState === issue.state;
+  if (run.issueId === issue.id) return clarificationState(queue, run.issueState) === issue.state;
   return queue.actions.some((action) => action.id === run.actionId && action.issues.includes(issue.id));
 }
 function chooseWork(queue, issue, runs) {
