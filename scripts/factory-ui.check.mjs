@@ -10,7 +10,7 @@ import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeF
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { gitFixture } from './git-fixture.mjs';
-import { factory } from './factory.mjs';
+import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
@@ -4267,13 +4267,7 @@ test('runtime identifies the issue project separately from UI source and run det
   assert.equal(runtime.project, service.root);
   assert.notEqual(runtime.checkout, root);
   assert.equal(runtime.mode, 'preview');
-  const { execFile } = await import('node:child_process');
-  const command = resolve('scripts/factory.mjs');
-  const cli = await new Promise((done, reject) =>
-    execFile(process.execPath, [command, 'runtime', url], { cwd: '/private/tmp' }, (error, stdout) =>
-      error ? reject(error) : done(JSON.parse(stdout))
-    )
-  );
+  const cli = await runCommand('/private/tmp', ['runtime', url]);
   assert.equal(cli.project, service.root);
   const queue = await (await fetch(url + '/api/queue', { headers })).json();
   assert.doesNotMatch(JSON.stringify(queue), /FULL_TRANSCRIPT_CANARY|PRIVATE_INSTRUCTIONS/);
