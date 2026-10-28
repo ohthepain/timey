@@ -62,6 +62,7 @@ async function mutation(service, path, value, owner) {
     '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
     '/api/verification-retry': () => service.retryVerification(value),
     '/api/issue-chat-send': () => service.issueChats.send(value),
+    '/api/issue-chat-stop': () => service.issueChats.stop(value),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),

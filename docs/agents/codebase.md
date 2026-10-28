@@ -272,7 +272,9 @@ that history with role results and actual answer receipts without rewriting thos
 owners. `conversation-context.mjs` supplies selected-issue context and full timeline
 snapshots to execution/review turns. `issue-chat-runtime.mjs` keeps the conversational
 model read-only and separate from worker/review connections; `issue-chat-ui.js`
-preserves the composer while polling role updates. `scripts/factory-chat.check.mjs`
+preserves the composer while polling role updates. Stop uses the current message ID
+and the dedicated connection’s exact native turn; lifecycle and worker connections
+are outside its cancellation path. `scripts/factory-chat.check.mjs`
 checks persistence, provenance, routing, isolation, pagination and UI drafts.
 
 Queue lifecycle squares read the strip from `issueLifecycleView` on each issue snapshot.

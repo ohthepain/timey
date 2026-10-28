@@ -685,6 +685,13 @@ an explicit final decision. Implementation stays in isolated worker checkouts;
 independent review stays in separate read-only chats and checks raw proof. Those
 roles receive the selected issue conversation as context, never expanded permission.
 
+**Stop** cancels only the issue assistant's current response for the selected issue.
+It preserves saved messages, earlier output and received partial text, and leaves
+queued comments available for their normal responses. It never stops lifecycle
+Progress or workers, answers questions or grants approval. A stale Stop cannot
+cancel a newer response; a response that finishes first is retained normally.
+Connection or cancellation failures remain visible so you can refresh and retry.
+
 Message IDs make transport retries idempotent. Responses are serialized per issue,
 while comments can continue arriving. A failed response retains the user message
 and displays an error; an uncertain native startup is not silently replaced. A

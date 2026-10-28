@@ -190,13 +190,14 @@ export class CodexConnection {
     const turn = { resolve, reject, text: '', id: null };
     this.turns.set(threadId, turn);
     try {
-      const started = await this.call('turn/start', {
+      turn.started = this.call('turn/start', {
         threadId,
         cwd,
         approvalsReviewer: this.approvalReviewers.get(threadId),
         input: [{ type: 'text', text: prompt }, ...extraInput],
         outputSchema,
       });
+      const started = await turn.started;
       if (this.turns.get(threadId) === turn) turn.id = started.turn.id;
     } catch (error) {
       this.turns.delete(threadId);
