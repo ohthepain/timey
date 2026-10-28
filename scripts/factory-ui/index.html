@@ -2141,13 +2141,13 @@
         const textarea = `<label>Your answer<textarea id="lifecycle-answer-${esc(issue.id)}" data-draft-key="${esc(draftKey)}" rows="4">${esc(lifecycleDrafts.get(draftKey) || '')}</textarea></label>`;
         const approve = `<button class="primary" ${common} data-decision="approve">${input.type === 'integration' ? 'Approve these changes and continue' : 'Approve plan and continue'}</button>`;
         if (input.type === 'plan')
-          return `<p>${esc(input.plan.summary)}</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
+          return `<p>Shall we carry out this plan?</p><p>${esc(input.plan.summary)}</p><p>Approval lets work continue within this plan. Required checks and separate human decisions still apply. To change the plan before work continues, use Request changes.</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
         if (input.type === 'publication') {
           const approved = record.publicationApproval?.identity === input.identity;
           return `<p>${approved ? 'Publication was approved. Retry will continue the saved operation and avoid creating a duplicate pull request.' : 'Open a pull request with these changes?'}</p><p><strong>${esc(input.repository)}</strong>: <code>${esc(input.source)}</code> → <code>${esc(input.target)}</code></p><p>This publishes only this issue branch to GitHub at commit <code>${esc(input.candidate)}</code>. It does not merge into ${esc(input.target)} or close the issue.</p><button class="primary" ${common} data-decision="${approved ? 'retry' : 'approve'}">${approved ? 'Retry opening pull request' : 'Publish branch and open pull request'}</button>`;
         }
         if (input.type === 'integration')
-          return `<p>Candidate <code>${esc(input.candidate)}</code> will be added to revision <code>${esc(input.target)}</code>. This plan requires your review before integration.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
+          return `<p>Shall we add these changes to the issue branch?</p><p>Review commit <code>${esc(input.candidate)}</code> against revision <code>${esc(input.target)}</code> below. Approval allows this integration to continue; final acceptance remains separate. Leave this request unanswered to keep integration paused.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
         if (!['questions', 'worker', 'human', 'scope', 'delivery-setup'].includes(input.type)) return '';
         const question =
           input.type === 'questions'
@@ -2160,7 +2160,7 @@
             : input.request?.prompt === record.summary || input.question === record.summary
               ? ''
               : `<p>${esc(input.request?.prompt || input.question)}</p>`;
-        return `${question}${input.expected ? `<p>${esc(input.expected)}</p>` : ''}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
+        return `${question}${input.expected ? `<p>${esc(input.expected)}</p>` : ''}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}<p>Send your answer to continue with this request. If you need more time, leave it unanswered; work that needs this answer stays paused.</p>${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
       }
       function liveStepWork(issue, stage) {
         return data.runs

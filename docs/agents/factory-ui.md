@@ -1088,3 +1088,13 @@ restarting replays uncheckpointed output without duplicating it.
 [Issue execution](issue-execution.md) defines the primary chat, approved short
 path, unchanged-check reuse and combined final review. Independent reviews and
 operation-specific approvals remain separate from work chat reuse.
+
+## Question wording
+
+User-facing questions should read like one engineer talking to another. Ask for
+the concrete decision first, then explain why it is needed and what approving,
+declining or waiting means for that action. Explain necessary technical terms
+and describe any proposed expansion of the approved work separately. Keep the
+existing response fields, answer routing and approval requirements: clearer
+wording grants no additional authority. Existing saved discussions retain their
+original wording.
