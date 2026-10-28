@@ -50,7 +50,7 @@ export function recoverReviewFailure(service, record, run) {
     replan: true,
     summary:
       'The previous review could not advance this step. Finding the actual unfinished task instead of repeating that review.',
-    lastFailure: { runId: run.id, summary: run.summary, remaining: remainingWork(run) },
+    lastFailure: { runId: run.id, summary: run.summary, remaining: remainingWork(run), recovery: run.recovery || null },
   });
   return true;
 }

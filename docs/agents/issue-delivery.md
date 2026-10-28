@@ -161,3 +161,22 @@ and integration policy. A human-first contribution keeps human-first policy.
 Normal scope and human guards still run before dispatch. Passing completion and
 an unanswered decision cannot also dispatch a repair. Older unstructured findings
 retain the single bounded recovery path; new reviews return the task themselves.
+
+### Retained supplemental evidence
+
+Workers declare supplemental reports and raw browser/provider logs as `artifacts`
+with absolute paths and SHA-256 hashes. After independent candidate checks, the
+coordinator copies these regular files into its content-addressed evidence store
+and binds the index to the action, issue scope, original base and worker candidate.
+An independent coordinator review can also retain its checked supporting files.
+The assembly review carries this index forward. Staging establishes retained bytes,
+not a passing test or semantic completion.
+
+Completion review keeps verifier summaries in `verification` and supplemental
+files in `supportingArtifacts` or the relevant criterion. The compiler maps only
+previously declared artifacts to durable project files. Older mixed lists are
+separated mechanically when the contribution has a retained artifact declaration;
+unknown external paths fail with their specific path. Legacy prose remains readable
+but grants no permission to import arbitrary files. Missing or altered retained
+files, symlinks, changed contribution identity and failed or mismatched verifier
+proof still block readiness. Publication and acceptance remain separate decisions.

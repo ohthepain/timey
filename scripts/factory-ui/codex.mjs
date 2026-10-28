@@ -14,12 +14,20 @@ export class CodexConnection {
     this.turns = new Map();
     this.approvalReviewers = new Map();
     this.serial = 0;
+    this.phases = [];
+  }
+  phase(phase, method, threadId = null) {
+    const entry = { phase, method, threadId, at: new Date().toISOString() };
+    this.phases.push(entry);
+    this.phases = this.phases.slice(-80);
+    this.onEvent({ method: 'ui/transportPhase', params: entry });
   }
   async ready() {
     if (!this.starting) this.starting = this.connect();
     return this.starting;
   }
   async connect() {
+    this.phase('connecting', 'initialize');
     this.child = spawn(this.command, this.args, { env: cleanEnvironment(), stdio: ['pipe', 'pipe', 'pipe'] });
     this.child.on('error', (error) => this.fail(error));
     this.child.on('exit', () =>
@@ -32,6 +40,7 @@ export class CodexConnection {
       capabilities: { experimentalApi: false },
     });
     this.send({ method: 'initialized' });
+    this.phase('connected', 'initialize');
     return initialized;
   }
   send(value) {
@@ -40,7 +49,9 @@ export class CodexConnection {
   call(method, params, onSlow = null) {
     return new Promise((resolve, reject) => {
       const id = ++this.serial;
+      this.phase('requested', method, params.threadId);
       const timer = setTimeout(() => {
+        this.phase('waiting', method, params.threadId);
         if (onSlow) {
           onSlow();
           return; // Creation is uncertain: retain the exact request until its reply or disconnect.
@@ -48,7 +59,7 @@ export class CodexConnection {
         this.pending.delete(id);
         reject(Error(`${method} did not respond. Do not retry a creation without reconciliation.`));
       }, 30000);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, method, threadId: params.threadId });
       this.send({ id, method, params });
     });
   }
@@ -67,6 +78,7 @@ export class CodexConnection {
     const pending = this.pending.get(message.id);
     if (!pending) return;
     clearTimeout(pending.timer);
+    this.phase(message.error ? 'rejected' : 'replied', pending.method, pending.threadId);
     this.pending.delete(message.id);
     if (message.error) pending.reject(Error(message.error.message));
     else pending.resolve(message.result);
@@ -113,6 +125,7 @@ export class CodexConnection {
     const params = message.params;
     if (message.method === 'item/completed') this.captureMessage(params.item, turn);
     if (message.method !== 'turn/completed') return;
+    this.phase('finished', 'turn/completed', params.threadId);
     this.turns.delete(params.threadId);
     this.clearRequests(params.threadId);
     if (params.turn.status === 'completed') turn.resolve(turn.text);

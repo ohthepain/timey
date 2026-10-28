@@ -1,3 +1,5 @@
+import { assertCurrentInputs, captureInputs } from './input-change.mjs';
+import { stageWorkerArtifacts } from './evidence-staging.mjs';
 import { refreshRecommendation } from './recommendation-refresh.mjs';
 import { combinedContext, applyCombinedCompletion } from './combined-completion.mjs';
 import { beginPlannedSkip } from './stage-skip.mjs';
@@ -137,6 +139,7 @@ async function freshWorkerReview(service, run, { queue, issue, action, worker, g
     workerThreadId: worker.threadId,
     workerTurnId: worker.turnId,
     reviewBasis: progressBasis(queue),
+    inputDetails: captureInputs(queue, issue.id),
     instructions,
     approvedFiles,
     completionContext: combinedContext(service, issue, action),
@@ -196,6 +199,7 @@ async function applySavedReview(service, queue, issue, action, worker, run, prev
     result,
     completionContext: previous.completionContext,
     checkpoint: previous.checkpoint,
+    inputDetails: previous.inputDetails || captureInputs(queue, issue.id),
     summary: 'Saving the completed review. Its inputs and supporting files are unchanged.',
   });
   await applyReview(service, queue, issue, action, worker, run, result, evidence);
@@ -212,12 +216,23 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
       'The worker candidate changed after its review.'
     );
   }
-  requireThat(
-    progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
+  assertCurrentInputs(
+    run.inputDetails || captureInputs(queue, issue.id),
+    readQueue(service.root),
+    issue.id,
     'The project or saved work changed during review. No reviewed result was applied; refresh and reconcile.'
   );
   const target = reviewedTransition(service, queue, issue, action, result);
   service.guard(service.root, action, reviewOperation(queue, issue), queue.head);
+  if (candidate)
+    service.store.update(run, {
+      retainedArtifacts: stageWorkerArtifacts(
+        service.root,
+        action,
+        candidate,
+        evidence.filter((e) => !e.kind)
+      ),
+    });
   recordWorker(service, action, worker, result, evidence, candidate, run.authorization);
   const skipSources = Object.fromEntries(
     savedRoute(issue, service.store.runs).map((step) => [step.state, step.source])
@@ -269,9 +284,12 @@ function reconcileWithoutAssignment(service, queue, issue, result) {
 }
 
 export function planProgress(service, queue, issue) {
+  const originalInputs = captureInputs(queue, issue.id);
   return service.evaluate(progressBasis(queue), issue.id, (result) => {
-    requireThat(
-      progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
+    assertCurrentInputs(
+      originalInputs,
+      readQueue(service.root),
+      issue.id,
       'The issue changed during planning. No continuation was dispatched.'
     );
     return continueExistingWork(service, queue, issue, result);

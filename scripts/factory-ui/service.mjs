@@ -1,3 +1,4 @@
+import { stageWorkerArtifacts } from './evidence-staging.mjs';
 import { pinWorkerTurn } from './worker-turn.mjs';
 import { issueWorkChat } from './issue-work-chat.mjs';
 import { beginCompletionReview } from './completion-review.mjs';
@@ -315,7 +316,15 @@ export class FactoryUI {
     });
     const reviewPath = join(this.store.directory, run.id + '-assembly-review.json');
     if (!existsSync(reviewPath))
-      writeJson(reviewPath, { action, target: queue.head, humanApproved, evidence: action.evidence });
+      writeJson(reviewPath, {
+        action,
+        target: queue.head,
+        humanApproved,
+        evidence: action.evidence,
+        retainedArtifacts:
+          this.store.runs.findLast((r) => r.actionId === action.id && r.status === 'completed' && r.retainedArtifacts)
+            ?.retainedArtifacts || null,
+      });
     this.perform(run, async () => {
       const existing = this.deliveries.inspect(action.issues[0]);
       const result = await this.deliveries.operate('assemble', {
@@ -383,6 +392,8 @@ export class FactoryUI {
         throw error;
       }
       git(run.checkout, 'merge-base', '--is-ancestor', run.base, checked.head);
+      result = { ...result, retainedArtifacts: stageWorkerArtifacts(this.root, action, checked, result.artifacts) };
+      update.evidence = JSON.stringify(result);
       update.worker_revision = checked.head;
       update.evidence += ` Independent checks: ${JSON.stringify(checked)}`;
     }
@@ -393,7 +404,12 @@ export class FactoryUI {
     Promise.resolve()
       .then(task)
       .catch((error) => {
-        this.store.update(run, { status: 'blocked', summary: error.message, ...fileFailure(error) });
+        this.store.update(run, {
+          status: 'blocked',
+          summary: error.message,
+          recovery: error.recovery || null,
+          ...fileFailure(error),
+        });
         if (run.kind === 'worker') {
           const { action } = currentAction(this.root, run.actionId);
           if (['running', 'setup', 'reserved'].includes(action.status)) {

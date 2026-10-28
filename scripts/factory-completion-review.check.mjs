@@ -533,3 +533,100 @@ test('resumed Continue reaches completion review and publication approval from a
     false
   );
 });
+
+test('legacy mixed evidence is staged and compiled without rerunning completed work or approving publication', async (t) => {
+  const f = await fixture(t);
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { proof, DeliveryStore } = await import('./issue-delivery-store.mjs');
+  const { stageWorkerArtifacts } = await import('./factory-ui/evidence-staging.mjs');
+  const temp = mkdtempSync(join(tmpdir(), 'completion-support-'));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const path = join(temp, 'browser.log');
+  writeFileSync(path, 'Actual retained scenario output.');
+  const store = new DeliveryStore(f.root, f.issueId),
+    delivery = store.read(),
+    contribution = delivery.contributions[0];
+  const index = stageWorkerArtifacts(
+    f.root,
+    { id: contribution.actionId, issues: contribution.issues, basis: { head: contribution.originalBase } },
+    { head: contribution.workerRevision, tree: delivery.tree },
+    [proof(path)]
+  );
+  const review = store.retain('artifact-review', {
+    action: { evidence: JSON.stringify({ retainedArtifacts: index }) },
+  });
+  const retained = { ...contribution, review, evidence: [...contribution.evidence, review] };
+  retained.receipt = store.retain('artifact-assembly', retained);
+  store.save({ ...delivery, contributions: [retained] });
+  rmSync(temp, { recursive: true });
+  f.result.verification.push(path);
+  f.result.criteria[0].evidence.push(path);
+  let checks = 0;
+  f.service.check = async () => {
+    checks++;
+    throw Error('Must not repeat implementation checks.');
+  };
+  const { runId } = f.service.prepareCompletion(f.issueId);
+  assert.equal((await settle(f.service, runId)).status, 'completed');
+  const ready = store.read();
+  assert.equal(ready.state, 'ready');
+  assert.equal(ready.readiness.manifest.verification.length, f.checked.summaries.length - 1);
+  assert.ok(ready.readiness.manifest.criteria[0].evidence.some((e) => e.path.includes('/artifacts/')));
+  assert.equal(checks, 0);
+  assert.equal(f.provider.state().creates, 0);
+  f.service.requestPublication(f.issueId);
+  assert.equal(f.record.input.type, 'publication');
+  const queue = readQueue(f.root);
+  const failed = {
+    issueId: f.issueId,
+    issueState: queue.issues[0].state,
+    actionId: contribution.actionId,
+    status: 'blocked',
+    verification: { status: 'failed' },
+  };
+  assert.equal(
+    nextProgress(queue, queue.issues[0], [failed]).kind,
+    'publish-issue-pr',
+    'Historical failure cannot override independently checked assembly/readiness'
+  );
+});
+
+test('unregistered temporary completion evidence cannot be imported by a reviewer', async (t) => {
+  const f = await fixture(t);
+  f.result.verification.push('/private/tmp/unregistered-worker-secret.log');
+  const { runId } = f.service.prepareCompletion(f.issueId),
+    run = await settle(f.service, runId);
+  assert.equal(run.status, 'blocked');
+  assert.match(run.summary, /unregistered-worker-secret.log/);
+  assert.equal(f.delivery.inspect(f.issueId).readiness, null);
+  assert.equal(f.record.input, undefined);
+  assert.equal(f.provider.state().creates, 0);
+});
+
+test('changed-input recovery has a coordinator owner, exact changed input and one attempt per basis', async (t) => {
+  const f = await fixture(t);
+  const { assertCurrentInputs } = await import('./factory-ui/input-change.mjs');
+  const { handleLifecycleFailure } = await import('./factory-ui/lifecycle-work.mjs');
+  const { appendFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const before = readQueue(f.root);
+  appendFileSync(join(f.root, '.issues', f.issueId + '.md'), '\nChanged scope.\n');
+  let recovery;
+  assert.throws(
+    () => assertCurrentInputs(before, readQueue(f.root), f.issueId, 'Review changed.'),
+    (error) => {
+      recovery = error.recovery;
+      assert.deepEqual(recovery.changedInputs, ['reports:' + f.issueId]);
+      assert.equal(recovery.owner, 'coordinator');
+      return true;
+    }
+  );
+  const run = { id: 'changed-input-review', kind: 'completion-review', recovery, summary: 'Review changed.' };
+  assert.equal(await handleLifecycleFailure(f.service, f.record, run), true);
+  assert.equal(f.record.replan, true);
+  assert.equal(await handleLifecycleFailure(f.service, f.record, run), false);
+  assert.equal(f.record.status, 'blocked');
+  assert.equal(f.provider.state().creates, 0);
+});

@@ -4,6 +4,9 @@ import { join } from 'node:path';
 
 // Decision inputs exclude unrelated queue entries, never the selected work's source or policy.
 export function issueInputs(root, snapshot, reports, actions, ids, dependencies = []) {
+  return hash(JSON.stringify(issueInputDetails(root, snapshot, reports, actions, ids, dependencies)));
+}
+export function issueInputDetails(root, snapshot, reports, actions, ids, dependencies = []) {
   const selected = dependencyScope(reports, actions, ids, dependencies);
   const text =
     selected.reports.map((r) => r.content).join('\n') + selected.actions.map((a) => a.worker_prompt).join('\n');
@@ -13,7 +16,7 @@ export function issueInputs(root, snapshot, reports, actions, ids, dependencies 
     path,
     existsSync(join(root, path)) ? hash(readFileSync(join(root, path))) : null,
   ]);
-  return hash(JSON.stringify({ head: snapshot.head, worktree: snapshot.worktree, ...selected, files }));
+  return { head: snapshot.head, worktree: snapshot.worktree, ...selected, files };
 }
 function hash(value) {
   return createHash('sha256').update(value).digest('hex');

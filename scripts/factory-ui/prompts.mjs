@@ -13,6 +13,16 @@ export const workerResultSchema = {
     summary: { type: 'string' },
     evidence: { type: 'string' },
     remaining: { type: 'array', items: { type: 'string' } },
+    artifacts: {
+      type: 'array',
+      maxItems: 128,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { path: { type: 'string' }, sha256: { type: 'string' } },
+        required: ['path', 'sha256'],
+      },
+    },
   },
   required: ['outcome', 'implementation_complete', 'summary', 'evidence', 'remaining'],
   additionalProperties: false,
@@ -28,7 +38,7 @@ Assignment: ${action.worker_prompt}
 Scope: ${action.scope}
 Expected verification: ${action.verification}
 Commit preference is true for code work. Install matching dependencies as needed. Run the required strict saved-base Fallow checkpoint before committing or completion; no exemptions, weaker rules or later comparison base. Preserve logs. If intended behavior, authorization, credentials or a required human check blocks the assignment, report blocked with a concrete question. Stop after this one assignment.
-Return structured outcome, summary, actual evidence paths/command results, and remaining human obligations. A completed model turn is not integration or acceptance. The coordinator independently checks a code candidate before recording completion.
+Return structured outcome, summary, actual evidence paths/command results, and remaining human obligations. Declare supplemental browser/provider reports and raw logs in artifacts as absolute path and SHA-256 pairs (at most 128 files, each at most 16 MB, total at most 64 MB). Use regular files without symlinks under this project or temporary work folders. The coordinator retains these bytes before completion review; this does not establish a pass. Keep verifier summary paths in evidence, separate from supplemental artifacts. A completed model turn is not integration or acceptance. The coordinator independently checks a code candidate before recording completion.
 Bounded issue snapshots:\n${JSON.stringify(
     reports.map((r) => ({ id: r.id, content: r.content })),
     null,

@@ -389,3 +389,10 @@ the original delivery validator.
 
 `worker-turn.mjs` pins assignment results and selects them from a shared chat;
 `worker-history.mjs` validates their original checkout and recorded candidate.
+
+`factory-ui/evidence-staging.mjs` retains declared supplemental artifacts and
+resolves contribution-bound indexes for completion compilation. It does not
+interpret logs as a pass. `verify-preflight.mjs` checks installed dependencies and
+actual listener capability before checks; `verify-process.mjs` owns cancellation
+of its child group. `factory-ui/input-change.mjs` compares captured input hashes
+and reports coordinator-owned recovery without changing approval policy.

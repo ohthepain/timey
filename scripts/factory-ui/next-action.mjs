@@ -34,7 +34,21 @@ export function nextProgress(queue, issue, runs) {
   if (invalid) return invalid;
   const pending = runs.find((run) => isPending(run) && belongsToIssue(queue, issue, run));
   if (pending) return unavailable('The selected action is in progress. Its chat and results appear below.');
-  if (runs.some((r) => belongsToIssue(queue, issue, r) && r.verification?.status === 'failed'))
+  if (
+    runs.some(
+      (r, index) =>
+        belongsToIssue(queue, issue, r) &&
+        r.verification?.status === 'failed' &&
+        !runs
+          .slice(index + 1)
+          .some((later) => later.actionId === r.actionId && later.verification?.status === 'passed') &&
+        !queue.actions.some(
+          (a) =>
+            a.id === r.actionId &&
+            ['assembled', 'integrated', 'reconciled', 'superseded', 'cancelled'].includes(a.status)
+        )
+    )
+  )
     return unavailable(
       'Verification failed. Fix it separately, then retry in Verify or update from a selected branch.'
     );

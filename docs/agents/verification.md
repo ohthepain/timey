@@ -299,3 +299,31 @@ when its original readiness observations were not retained.
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
+
+## Execution preflight and recovery
+
+Before any verification command runs, the exporter checks the installed pnpm lock
+against the exported lock and requires dependencies for each declared workspace.
+It resolves the immutable comparison commit and exported tree in the clone. Full
+verification also opens and closes an actual localhost listener before running the
+suite, so a sandbox refusal is an immediate environment failure with no claimed
+checks. Audit-only checkpoints do not require networking. Preflight never grants
+permissions or installs dependencies automatically.
+
+Summaries retain execution phase timestamps and owned command PIDs. Cancellation
+stops the runner's own child process group, retains a failed summary and starts no
+remaining checks. Concurrent checks for the same checkout and candidate share the
+running independent check; conflicting candidates wait instead of starting an
+obsolete second run. Existing independent proof reuse still validates exact inputs
+and retained file hashes, including dependency lock identities. Cache diagnostics
+record a key and hit/miss reason without environment contents.
+
+Planning and review retain hashed input descriptions. A changed-input failure
+identifies the changed source, report, action or policy file and assigns recovery
+to the coordinator. Approved lifecycle Progress gets one recovery per unchanged
+work basis through the existing scope and approval guards. It preserves previous
+results; it does not authorize broader work, waive verification or infer missing
+human decisions. A superseded failure cannot override later passing verification
+for the same assignment or a checked, assembled contribution. Codex transport
+receipts record request/reply/wait/finish timing without prompts or credentials;
+uncertain creation still requires discovery of the original chat.

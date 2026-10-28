@@ -63,6 +63,11 @@ function belongsToLifecycle(record, queue, run) {
   );
 }
 export async function handleLifecycleFailure(service, record, run) {
+  if (run.recovery?.code === 'WORKFLOW_INPUT_CHANGED' && run.recovery.owner === 'coordinator') {
+    if (recoverReviewFailure(service, record, run)) return true;
+    stopLifecycle(service, record, run.summary);
+    return false;
+  }
   if (run.kind === 'completion-review' || run.completionError) {
     stopLifecycle(service, record, run.summary);
     return false;

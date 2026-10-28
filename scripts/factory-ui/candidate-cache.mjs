@@ -13,6 +13,9 @@ export function candidateInput(root, base, runner) {
       executable: process.execPath,
       environment: digest(JSON.stringify(Object.entries(process.env).sort())),
       modules: digest(readFileSync(modules)),
+      locks: ['pnpm-lock.yaml', 'node_modules/.pnpm/lock.yaml'].map((path) =>
+        existsSync(join(root, path)) ? digest(readFileSync(join(root, path))) : null
+      ),
       runner,
     })
   );

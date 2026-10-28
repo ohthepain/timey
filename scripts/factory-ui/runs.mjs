@@ -70,6 +70,7 @@ export class RunStore {
       'turn/started',
       'turn/completed',
       'ui/approval',
+      'ui/transportPhase',
       'ui/unsupportedRequest',
       'item/autoApprovalReview/started',
       'item/autoApprovalReview/completed',
