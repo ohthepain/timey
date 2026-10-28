@@ -1,4 +1,5 @@
 import { approvalActivity } from './approval-activity.mjs';
+import { turnFailure } from './turn-failure.mjs';
 
 const maxText = 100000;
 const sensitiveName = /(?:secret|password|token|credential|private_key|access_key)/i;
@@ -28,14 +29,21 @@ function redactObject(value, secrets) {
   return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, redactTree(child, secrets)]));
 }
 export function activityForRun(run) {
-  if (run.output) return run.output;
-  const history = { output: [] };
-  for (const event of run.events) recordActivity(history, event);
+  const history = { output: (run.output || []).map((entry) => ({ ...entry })) };
+  for (const event of run.events || [])
+    if (!run.output || event.method === 'turn/completed') recordActivity(history, event);
   return history.output;
 }
 export function recordActivity(run, event) {
   initializeActivity(run);
   const params = eventParams(event);
+  if (event.method === 'turn/completed' && params.turn?.status === 'failed')
+    recordItem(
+      run,
+      { type: 'agentMessage', id: 'failure-' + params.turn.id, status: 'failed', text: turnFailure(params.turn) },
+      event.at,
+      event.method
+    );
   const approval = approvalActivity(event);
   if (approval) recordItem(run, approval, event.at, event.method);
   if (['item/started', 'item/completed'].includes(event.method)) recordItem(run, params.item, event.at, event.method);

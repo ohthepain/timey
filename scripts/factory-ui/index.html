@@ -2053,8 +2053,21 @@
         const record = issue.lifecycle;
         const stage = data.lifecycle.find((s) => s.state === issue.state);
         if (stage?.role === 'closed') return '';
-        const active = ['running', 'answering'].includes(record?.status);
-        const child = data.runs.find((r) => r.id === record?.childRunId);
+        const active =
+          ['running', 'answering'].includes(record?.status) ||
+          data.runs.some(
+            (run) =>
+              run.connected &&
+              (run.issueId === issue.id ||
+                data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+          );
+        const child =
+          data.runs.find(
+            (run) =>
+              run.connected &&
+              (run.issueId === issue.id ||
+                data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+          ) || data.runs.find((r) => r.id === record?.childRunId);
         const input = record?.input?.type === 'retry' ? null : record?.input;
         const blocker = !active && !input ? issue.progress?.blocker : null;
         const stopped = record?.status === 'blocked' || record?.legacyRetry || record?.input?.type === 'retry';
@@ -2073,7 +2086,9 @@
               : input
                 ? 'Your input is needed'
                 : stopped
-                  ? 'Progress stopped'
+                  ? record?.canResume && !blocker
+                    ? 'Ready to continue'
+                    : 'Progress stopped'
                   : stage?.role === 'ready-to-close'
                     ? 'Ready for final review'
                     : 'Move this issue forward';
@@ -2095,7 +2110,7 @@
             : '');
         const canStart =
           !input && !record?.deliveryWaiting && !issue.assemblyRecovery && stage?.role !== 'ready-to-close';
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -2151,8 +2166,18 @@
           )
           .join('\n\n');
       }
+      function outputStatus(issue) {
+        const runs = data.runs.filter(
+          (run) =>
+            run.issueId === issue.id ||
+            data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+        );
+        if (runs.some((run) => run.connected))
+          return 'Work is connected. Output appears as messages and commands arrive.';
+        return 'No action is running. Output below is saved history, not live activity.';
+      }
       function lifecycleActivity(issue) {
-        return `<div class="activity-toolbar"><strong>Live output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${esc(activityText(issue) || 'No output recorded yet.')}</pre><p class="muted">Recent output is kept for each chat. Scroll up to read; Follow latest returns to new output.</p>`;
+        return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${esc(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p>`;
       }
       function lifecycleInput(issue, record) {
         const input = record.input;
@@ -2363,9 +2388,11 @@
           const run = data.runs.find((r) => r.id === element.dataset.liveHealth);
           element.outerHTML = liveHealth(run);
         }
+        const status = document.querySelector('[data-output-status]');
+        if (status) status.textContent = outputStatus(issue);
         rememberOutput();
         const saved = viewMemory.logs.get(location.hash);
-        const text = activityText(issue) || 'No output recorded yet.';
+        const text = activityText(issue) || outputStatus(issue);
         if (output.textContent !== text) output.textContent = text;
         output.scrollTop = saved?.follow ? output.scrollHeight : saved?.top || 0;
       }

@@ -1,7 +1,7 @@
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
-import { workerPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
+import { workerPrompt, workerPermissionGuidance, workerResultSchema } from './factory-ui/prompts.mjs';
 import { digest as digestReport } from './factory-ui/common.mjs';
 import { beginReconciliation } from './factory-ui/reconcile.mjs';
 import { test } from 'node:test';
@@ -3529,6 +3529,9 @@ test('activity screen shows the current step and preserves expanded details, nat
 
 test('a stopped technical review has no answer box and does not repeat its explanation', async (t) => {
   const { window, snapshot } = await activityScreen(t);
+  snapshot.runs.forEach((run) => {
+    run.connected = false;
+  });
   const summary = 'Implementation is unfinished; no completed step can be recorded.';
   snapshot.issues[0].lifecycle = {
     status: 'blocked',
@@ -4488,4 +4491,85 @@ test('a simple approved lifecycle uses its clarification task without another pl
     false
   );
   assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 0);
+});
+
+test('retryable stops retain the concrete cause and name the next action', async () => {
+  const { visibleStoppedReason } = await import('./factory-ui/service.mjs');
+  const record = { status: 'blocked', canResume: true, summary: 'The existing issue chat could not reconnect.' };
+  const view = visibleStoppedReason(record, {
+    title: 'Continue existing worker',
+    summary: 'Retry the saved assignment in its existing checkout.',
+  });
+  assert.equal(view.summary, record.summary);
+  assert.match(view.resumeSummary, /Continue existing worker/);
+  assert.equal(record.resumeSummary, undefined);
+});
+
+test('idle issue output explains that nothing is running and preserves the stopped reason', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.runs = [];
+  snapshot.issues[0].lifecycle = {
+    status: 'blocked',
+    canResume: true,
+    summary: 'The existing issue chat could not reconnect.',
+    resumeSummary: 'Next: Continue existing worker.',
+    events: [],
+  };
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Ready to continue/);
+  assert.match(panel.textContent, /No action is running/);
+  assert.match(panel.textContent, /could not reconnect/);
+  assert.match(panel.textContent, /Next: Continue existing worker/);
+  assert.doesNotMatch(panel.textContent, /kept for each chat/);
+});
+
+test('terminal provider failures appear in live and retained issue output', async () => {
+  const { activityForRun, recordActivity } = await import('./factory-ui/activity.mjs');
+  const event = {
+    at: '2026-10-28T15:39:00Z',
+    method: 'turn/completed',
+    params: {
+      turn: {
+        id: 'failed-turn',
+        status: 'failed',
+        error: {
+          message: JSON.stringify({
+            error: { message: "Invalid schema: Missing 'artifacts'.", code: 'invalid_json_schema' },
+          }),
+        },
+      },
+    },
+  };
+  const live = { events: [], output: [] };
+  recordActivity(live, event);
+  assert.match(live.output.at(-1).text, /Missing 'artifacts'/);
+  assert.doesNotMatch(live.output.at(-1).text, /"error"/);
+  const retained = activityForRun({ output: [], events: [event] });
+  assert.match(retained.at(-1).text, /Missing 'artifacts'/);
+});
+
+test('worker response schema includes every property required by the provider', () => {
+  assert.deepEqual([...workerResultSchema.required].sort(), Object.keys(workerResultSchema.properties).sort());
+});
+
+test('a connected issue action overrides an older blocked controller in the displayed status', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].lifecycle.status = 'blocked';
+  snapshot.issues[0].lifecycle.summary = 'Earlier attempt stopped.';
+  snapshot.runs[0].summary = 'Collecting browser console evidence.';
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Working on this issue/);
+  assert.match(panel.textContent, /Collecting browser console evidence/);
+  assert.doesNotMatch(panel.textContent, /Progress stopped/);
+});
+
+test('connected native work shows activity without inventing a lifecycle pause control', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].lifecycle = null;
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Working on this issue/);
+  assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
 });

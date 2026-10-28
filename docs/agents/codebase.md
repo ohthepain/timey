@@ -421,3 +421,8 @@ candidate assets, and retains CLI logs and screenshots. `verify.mjs` invokes it
 before the other behavior/type/build checks and records artifact hashes in the
 full summary. `factory-ui/checks.mjs`, candidate caching and issue delivery retain
 and validate this browser evidence against the same candidate tree.
+
+`factory-ui/turn-failure.mjs` formats structured provider failures for both
+`codex.mjs` errors and retained `activity.mjs` output. Issue output shows explicit
+connected/idle status; retryable progress keeps its stopped reason and next action
+as separate fields rather than substituting a generic availability message.

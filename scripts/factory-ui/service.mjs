@@ -661,12 +661,13 @@ function visibleLifecycle(record, progress) {
   if (record.status !== 'blocked') return record;
   return visibleStoppedReason(record, progress);
 }
-function visibleStoppedReason(record, progress) {
+export function visibleStoppedReason(record, progress) {
   if (progress.blocker) return { ...record, summary: progress.summary };
   if (record.canResume)
     return {
       ...record,
-      summary: 'New information is available. Continue will check the saved work and take the next step.',
+      summary: record.summary || 'No action is currently running.',
+      resumeSummary: `Next: ${progress.title || 'Review the saved work'}. ${progress.summary || ''}`,
     };
   return record;
 }

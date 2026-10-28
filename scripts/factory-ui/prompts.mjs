@@ -24,7 +24,7 @@ export const workerResultSchema = {
       },
     },
   },
-  required: ['outcome', 'implementation_complete', 'summary', 'evidence', 'remaining'],
+  required: ['outcome', 'implementation_complete', 'summary', 'evidence', 'remaining', 'artifacts'],
   additionalProperties: false,
 };
 export function workerPrompt(action, reports, authorization) {

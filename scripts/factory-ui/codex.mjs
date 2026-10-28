@@ -1,4 +1,6 @@
 import { approvalReply } from './approval-options.mjs';
+import { turnFailure } from './turn-failure.mjs';
+import { redactValue } from './activity.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { cleanEnvironment, requireThat } from './common.mjs';
@@ -129,7 +131,7 @@ export class CodexConnection {
     this.turns.delete(params.threadId);
     this.clearRequests(params.threadId);
     if (params.turn.status === 'completed') turn.resolve(turn.text);
-    else turn.reject(Error('Codex turn ' + params.turn.status + '. Review its progress before continuing.'));
+    else turn.reject(Error(redactValue(turnFailure(params.turn))));
   }
   captureMessage(item, turn) {
     if (item?.type === 'agentMessage') turn.text = item.text;

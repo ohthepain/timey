@@ -1162,3 +1162,15 @@ and describe any proposed expansion of the approved work separately. Keep the
 existing response fields, answer routing and approval requirements: clearer
 wording grants no additional authority. Existing saved discussions retain their
 original wording.
+
+### Stopped progress and issue output
+
+Retryable stops retain their concrete failure reason and show the next saved
+action separately. A retry being available does not mean work is running. A
+connected issue action takes precedence over an older blocked controller in the
+visible status. The output panel names the issue, reports whether any action is
+connected, and updates this state alongside streamed messages and commands.
+Provider turn failures are retained in issue output, including failures before
+any command or assistant message. Structured provider errors are unwrapped and
+redacted; private reasoning is never displayed. Old retained turn failures are
+also rendered without rewriting their records.
