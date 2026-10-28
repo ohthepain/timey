@@ -12,7 +12,7 @@ export function reviewedTransition(service, queue, issue, action, result) {
   requireThat(queue.sourceClean, 'Preserve uncommitted source changes before advancing the issue.');
   checkImplementationExit(service, queue, issue);
   const path = transitionPath(queue, issue, skipped, result.next_state);
-  validateSkips(queue, issue, skipped, savedRoute(issue, service.store.runs));
+  validateSkips(queue, issue, skipped, savedRoute(issue, service.store.runs, queue));
   for (const target of path)
     service.guard(service.root, { ...action, issues: [issue.id] }, 'advance', queue.head, { target_state: target });
   return result.next_state;

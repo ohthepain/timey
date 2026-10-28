@@ -27,6 +27,7 @@ export function browserFixture(root) {
     created,
     updated,
     content: 'Browser fixture only',
+    workingGit: id === 'b' ? { branch: 'codex/example-work', revision: '12345678' + 'a'.repeat(32) } : null,
     links: { parent: [], related: [], depends: [] },
     stage: state,
     priorityInfo: { ...(priorities[index] || { name: 'Unknown', color: '#888888' }), index, basis: 'fixture' },

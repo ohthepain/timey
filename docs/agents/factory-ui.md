@@ -19,6 +19,13 @@ stage, worker completion and code integration. Links use the report's Parent,
 Blocked by and Related sections; reverse links are computed from those explicit
 references. Reports are displayed as escaped text, never executable HTML.
 
+Under the issue number, the issue screen shows the working checkout's current
+branch and short HEAD commit, with the full hash available on hover. It uses
+unfinished worker work first, then the assembled issue branch, then the last
+worker checkout. Detached or unavailable checkouts and issues without assigned
+work are labeled explicitly. Only the selected issue's Git identity is read
+on refresh; the running server's branch is never substituted.
+
 The issue screen shows every configured lifecycle stage as a numbered expandable
 step. The current stage opens by default. Saved assignments and worker results
 appear under their matching stage; worker commits and manual integration have
@@ -223,16 +230,19 @@ Queue/issue reviews propose `routes`: issue ID and current/future steps with exa
 state, `take`/`skip`/`undecided` and a reason. `@integration` names the separate
 manual integration step. Routes are only persisted as `savedRoutes` in the review
 run after saving recommendations and route, either manually or within approved lifecycle Progress. A route-only review can be
-saved without adding an assignment. Missing plans say Not decided; later saved
-plans replace earlier future plans, without changing historical outcomes.
+saved without adding an assignment. Missing decisions for integration, Final review and Closed use the project
+default skip. Other missing plans say Not decided. Later partial plans preserve
+earlier explicit decisions and historical outcomes.
 
 A saved route is not authority to skip required work. Reviewed advancement follows
 every configured Next link and may record a saved planned skip only when policy
 permits it: optional prototype, investigation for an enhancement, or commit when
 commits are explicitly disabled. Every target gets its own fresh human advance
 guard. Required verification, custom stages, acceptance and closure are not
-bypassed. A planned integration skip is rejected if unintegrated code work exists
-or is being recommended. Skipped events need reviewed reasons and actual evidence.
+bypassed. Integration, final review and closure may be planned as skipped for
+the draft PR handoff; these choices stop factory work rather than recording
+integration, acceptance or closure. Skipped events need reviewed reasons and
+actual evidence.
 
 ## Action checks
 
@@ -1203,3 +1213,26 @@ capture separates multiple issues, the first opens and the toast links to all of
 them. Stable conversation message IDs prevent duplicate grilling on capture retry
 or server restart. Conversation failures leave the issue saved and report the
 problem. This option starts discussion, not lifecycle execution or implementation.
+
+### Stopped progress and issue output
+
+Retryable stops retain their concrete failure reason and show the next saved
+action separately. A retry being available does not mean work is running. A
+connected issue action takes precedence over an older blocked controller in the
+visible status. The output panel names the issue, reports whether any action is
+connected, and updates this state alongside streamed messages and commands.
+Provider turn failures are retained in issue output, including failures before
+any command or assistant message. Structured provider errors are unwrapped and
+redacted; private reasoning is never displayed. Old retained turn failures are
+also rendered without rewriting their records.
+
+## Default stopping point
+
+[Draft PR handoff](issue-delivery.md#default-draft-pr-handoff) is the default route.
+Undecided integration, Final review and Closed roles display Planned to skip;
+explicit choices remain intact. A skip of Closed means the factory stops before
+closure. It never records acceptance or changes the report to Closed. On this
+route check failures and unfinished work are retained in the draft PR description,
+Progress finishes at publication, and the delivery card shows the manual handoff
+without automatic merge or check-maintenance controls. The verified delivery
+controls remain available for explicitly selected routes.

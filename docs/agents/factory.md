@@ -140,5 +140,6 @@ Their selection scope and control loops remain separate.
 ## Issue PR delivery
 
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
-review, publication, recovery and server-enforced merge gates. New delivery uses
-one PR per complete issue. Historical records retain their original meaning.
+review, publication, recovery and server-enforced merge gates. Default delivery uses
+one draft PR per issue and ends at manual handoff, including failed checks and
+unfinished implementation. Explicit verified-delivery routes retain their gates. Historical records retain their original meaning.

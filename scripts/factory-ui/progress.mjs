@@ -1,3 +1,5 @@
+import { deliveryMode, draftHandoff } from './delivery-mode.mjs';
+import { checkHandoff } from './handoff-checks.mjs';
 import { assertCurrentInputs, captureInputs } from './input-change.mjs';
 import { stageWorkerArtifacts } from './evidence-staging.mjs';
 import { refreshRecommendation } from './recommendation-refresh.mjs';
@@ -152,7 +154,7 @@ async function freshWorkerReview(service, run, { queue, issue, action, worker, g
       ...queue,
       file_permissions: approvedFiles,
       instruction_inputs: instructions,
-      planned_route: savedRoute(issue, service.store.runs),
+      planned_route: savedRoute(issue, service.store.runs, queue),
     },
     issue,
     action,
@@ -208,7 +210,10 @@ async function applySavedReview(service, queue, issue, action, worker, run, prev
 async function applyReview(service, queue, issue, action, worker, run, result, evidence) {
   let candidate = null;
   if (['implement', 'integrate'].includes(action.kind))
-    candidate = await service.check(worker.cwd, action.basis.head, join(service.store.directory, run.id));
+    candidate =
+      deliveryMode(queue, issue, service.store.runs) === draftHandoff
+        ? await checkHandoff(service.check, worker.cwd, action.basis.head, join(service.store.directory, run.id))
+        : await service.check(worker.cwd, action.basis.head, join(service.store.directory, run.id));
   if (candidate) {
     git(worker.cwd, 'merge-base', '--is-ancestor', action.basis.head, candidate.head);
     requireThat(
@@ -222,7 +227,9 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
     issue.id,
     'The project or saved work changed during review. No reviewed result was applied; refresh and reconcile.'
   );
-  const target = reviewedTransition(service, queue, issue, action, result);
+  const handoff = candidate && deliveryMode(queue, issue, service.store.runs) === draftHandoff;
+  const target = handoff ? null : reviewedTransition(service, queue, issue, action, result);
+  if (handoff) result = { ...result, next_state: null, skipped_steps: [] };
   service.guard(service.root, action, reviewOperation(queue, issue), queue.head);
   if (candidate)
     service.store.update(run, {
@@ -235,7 +242,7 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
     });
   recordWorker(service, action, worker, result, evidence, candidate, run.authorization);
   const skipSources = Object.fromEntries(
-    savedRoute(issue, service.store.runs).map((step) => [step.state, step.source])
+    savedRoute(issue, service.store.runs, queue).map((step) => [step.state, step.source])
   );
   appendReview(service.root, issue, result, { ...run, skipSources }, evidence, target);
   try {
@@ -252,7 +259,7 @@ function recordWorker(service, action, worker, result, evidence, candidate, auth
   if (current.status !== 'completed')
     service.api.record(action.id, {
       status: 'completed',
-      evidence: note,
+      evidence: candidate?.evidence ? JSON.stringify({ ...result, handoffChecks: candidate }) : note,
       authorization,
       ...candidateUpdate(candidate),
     });

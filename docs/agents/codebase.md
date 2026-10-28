@@ -258,6 +258,8 @@ finalization; `delivery-integration.mjs` invokes it after checked UI integration
 `factory-delivery.mjs` exposes the separate-checkout coordinator command.
 `factory-ui/runtime.mjs` and `factory-runtime.mjs` identify the running UI source
 and issue project. `factory-ui/queue-response.mjs` projects bounded polling data;
+`factory-ui/issue-git.mjs` reads the selected issue's working branch and HEAD
+from its worker or delivery checkout, independently of the server source;
 full saved runs remain available through the authenticated on-demand endpoint.
 
 `scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;
@@ -441,3 +443,17 @@ through the diagnostic branch of `lifecycle-review.mjs` before plan approval.
 `capture-grilling.mjs` starts opt-in post-capture conversations through the existing
 persistent chat owner after durable creation; capture identities deduplicate retries.
 See [ADR 0006](../adr/0006-combine-clarification-and-investigation.md).
+
+`factory-ui/turn-failure.mjs` formats structured provider failures for both
+`codex.mjs` errors and retained `activity.mjs` output. Issue output shows explicit
+connected/idle status; retryable progress keeps its stopped reason and next action
+as separate fields rather than substituting a generic availability message.
+
+Default delivery routing lives in `scripts/factory-ui/delivery-mode.mjs`, which
+preserves saved route decisions and supplies post-PR skip defaults. Worker runs
+freeze their delivery mode at launch. `handoff-checks.mjs` retains one attempt per
+unchanged candidate, including failures. `scripts/issue-draft-handoff.mjs` prepares
+the manual handoff report; shared delivery publication retains provider identity
+and recovery guards. `pr-publication.mjs` finishes Progress at a draft handoff;
+verified delivery still uses the existing completion and merge protocol. See
+[the default handoff contract](issue-delivery.md#default-draft-pr-handoff).

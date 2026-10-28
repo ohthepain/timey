@@ -6,7 +6,7 @@ import { digest, writeJson, readJson } from './factory-ui/common.mjs';
 import { proof } from './issue-delivery-store.mjs';
 import { IssueDelivery } from './issue-delivery.mjs';
 import { FixtureDeliveryProvider, fixtureDeliveryCheck } from './issue-delivery-fixture.mjs';
-export async function deliveryScenario(t, merge = 'automatic', actionId = 'one') {
+export async function deliveryScenario(t, merge = 'automatic', actionId = 'one', mode = 'verified-delivery') {
   const { queue } = deliveryFixture(t),
     root = queue.root;
   rmSync(join(root, '.issues/issue-deliveries'), { recursive: true, force: true });
@@ -28,6 +28,33 @@ export async function deliveryScenario(t, merge = 'automatic', actionId = 'one')
     plan: { content, sha256: digest(content) },
     approval: { sha256: digest(content), receipt: approval },
   });
+  if (mode === 'verified-delivery') {
+    const directory = join(root, '.issues/factory-ui');
+    writeJson(join(directory, 'runs.json'), {
+      version: 1,
+      runs: [
+        {
+          id: 'explicit-delivery-route',
+          kind: 'route-choice',
+          status: 'completed',
+          events: [],
+          savedRoutes: [
+            {
+              issueId,
+              steps: [
+                {
+                  state: '@integration',
+                  decision: 'take',
+                  reason: 'Exercise the explicitly selected verified delivery workflow.',
+                  source: { kind: 'user' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  }
   const provider = new FixtureDeliveryProvider(root, join(root, '.issues/provider.json'), base);
   const delivery = new IssueDelivery(root, { provider, check: fixtureDeliveryCheck, guard: () => [] });
   const action = addAction(queue, issueId, base, actionId, merge);

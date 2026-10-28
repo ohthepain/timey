@@ -42,7 +42,10 @@ and judgment checks; [operating rules](operating.md) define manual evaluation an
 launches. These explicit repo rules override the shared queue contract where it
 requires all manual verification before every local commit. Passed relevant
 automated checks permit local progress commits with human obligations recorded.
-Unresolved checks still block affected work or closure. `resolved` means ready
+Unresolved checks still block affected work or closure. The default
+[draft PR handoff](issue-delivery.md#default-draft-pr-handoff) can end factory work
+with failed checks or unfinished implementation, preserving those limitations
+and leaving the report open. `resolved` means ready
 for final human review here, not accepted or closed.
 
 Only the coordinator writes the authoritative queue and dispatch registry.
@@ -131,7 +134,9 @@ stage's reason and decision source before advancing past it. The shared writer
 records `source: { kind: stage, state: <deciding-state> }`; explicit user skip
 decisions use `source: { kind: user }`. Preserve the source when applying a
 previously saved skip. Required exit conditions, technical checks, human checks
-and explicit acceptance still apply. Existing completed work is recorded as
+and explicit acceptance still apply to the corresponding work. Default skips of
+integration, final review and closure describe a PR handoff, never acceptance
+or a transition into Closed. Existing completed work is recorded as
 completed, not skipped. Unknown historical sources stay unknown.
 
 ## Closing without a fix

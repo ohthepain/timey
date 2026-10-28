@@ -16,7 +16,7 @@
       "name": "factory-tooling",
       "entryPoints": ["scripts/*.mjs", "scripts/factory-ui/*-ui.js"],
       "entryPointRole": "support",
-      "toolingDependencies": ["fallow", "yaml"],
+      "toolingDependencies": ["fallow", "yaml", "@timey/local-issues"],
       "detection": {
         "type": "fileExists",
         "pattern": "scripts/**/*.mjs"

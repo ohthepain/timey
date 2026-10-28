@@ -27,7 +27,7 @@ export function routeBasis(queue, issue, runs) {
       preferences: existsSync(join(queue.root, '.issues/preferences.json'))
         ? readFileSync(join(queue.root, '.issues/preferences.json'), 'utf8')
         : null,
-      route: savedRoute(issue, runs),
+      route: savedRoute(issue, runs, queue),
       version: runs.findLast((run) => run.savedRoutes?.some((route) => route.issueId === issue.id))?.id,
     })
   );
@@ -49,7 +49,7 @@ export function toggleRoute(service, input) {
     canToggleRole(queue, issue, input.target),
     'Only optional future roles can be toggled. Required stages and acceptance stay protected.'
   );
-  const steps = structuredClone(savedRoute(issue, service.store.runs));
+  const steps = structuredClone(savedRoute(issue, service.store.runs, queue));
   const choice = changeChoice(steps, input.target);
   // Validate only the changed choice: retained history may describe earlier policy.
   validateRoutes(queue, [{ issueId: issue.id, steps: [choice] }], issue.id);

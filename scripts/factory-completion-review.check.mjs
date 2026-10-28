@@ -155,7 +155,7 @@ test('unfinished issue work prevents completion and starts no review', async (t)
     },
   ]);
   assert.throws(() => f.service.prepareCompletion(f.issueId), /Finish the current issue work/);
-  assert.equal(f.service.store.runs.length, 0);
+  assert.equal(f.service.store.runs.filter((r) => r.kind === 'completion-review').length, 0);
 });
 
 test('unrelated queue additions do not invalidate the completion review', async (t) => {
@@ -479,7 +479,7 @@ for (const role of ['ready-for-grilling', 'ready-for-repro', 'ready-to-prototype
     const labels = join(f.root, '.issues/triage-labels.md');
     writeFileSync(labels, readFileSync(labels, 'utf8').replace('ready-to-fix | implement', role + ' | implement'));
     assert.throws(() => f.service.prepareCompletion(f.issueId), /Finish the current issue work/);
-    assert.equal(f.service.store.runs.length, 0);
+    assert.equal(f.service.store.runs.filter((r) => r.kind === 'completion-review').length, 0);
   });
 }
 

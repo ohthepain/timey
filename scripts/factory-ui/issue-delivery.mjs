@@ -13,7 +13,7 @@ function basis(service, issueId) {
 }
 export function prepareIssueDelivery(service, kind, input) {
   requireThat(
-    ['assemble', 'ready', 'open', 'refresh', 'merge', 'reconcile', 'verify'].includes(kind),
+    ['assemble', 'handoff', 'ready', 'open', 'refresh', 'merge', 'reconcile', 'verify'].includes(kind),
     'Select a delivery operation.'
   );
   const delivery = service.deliveries.inspect(input.issueId);

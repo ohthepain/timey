@@ -120,12 +120,18 @@ project’s ordered Issue Priorities list defines adjacent levels and colors;
 issues without a saved value use Major. A priority change does not complete work.
 
 **Issue delivery**:
-One issue's reviewed contributions assembled on a stable branch, completed through
-one pull request. Its remote merge and independently verified integration are
-separate from final human judgment and acceptance.
+One issue's contributions retained on a stable branch and published through one
+pull request. The default outcome is a draft PR handoff; an explicitly selected
+verified-delivery route can continue through checked integration. Both remain
+separate from human acceptance.
+
+**Draft PR handoff**:
+The end of factory work at draft PR creation, with actual check results, unfinished
+work and unverified obligations disclosed for manual repair and merge. It leaves
+the issue open and unaccepted and starts no automatic PR maintenance.
 
 **Assembled contribution**:
-An independently checked worker result retained on its issue branch with its
+A worker result with its actual check outcome retained on its issue branch with its
 original base, scope, authority and merge policy. Assembly releases its worker
 claim; it does not deliver code to the target branch.
 

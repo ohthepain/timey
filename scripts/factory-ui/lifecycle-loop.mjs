@@ -1,5 +1,6 @@
 import { combinedClarify } from './clarify-policy.mjs';
 import { approvePlanAdaptation } from './plan-adaptation.mjs';
+import { draftAssembly } from './delivery-mode.mjs';
 import { directTaskChoice, saveDirectTask } from './direct-task.mjs';
 import { completionChoice } from './completion-choice.mjs';
 import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs';
@@ -26,15 +27,7 @@ export async function runLifecycle(service, record) {
 }
 async function lifecycleTick(service, record) {
   if (pauseRequested(service, record)) return false;
-  if (record.deliveryPublished) {
-    saveLifecycle(service, record, {
-      status: 'paused',
-      deliveryWaiting: true,
-      summary:
-        'The pull request is open. Its checks and merge controls are shown below. The issue remains open for review.',
-    });
-    return false;
-  }
+  if (finishAfterDeliveryPublish(service, record)) return false;
   const queue = readQueue(service.root),
     issue = queue.issues.find((i) => i.id === record.issueId);
   requireThat(issue, 'This issue no longer exists.');
@@ -43,25 +36,44 @@ async function lifecycleTick(service, record) {
   const recovered = await recoverPendingIntegration(service, record);
   if (recovered) return recovered === 'recovered';
   if (finishedLifecycle(service, record, queue, issue)) return false;
-  if (!record.assessed && combinedClarify(service.root)) {
-    if (await waitLifecycleWork(service, record, queue)) return record.status === 'running';
-    const active = queue.actions.some(
-      (a) => a.issues.includes(issue.id) && ['running', 'reserved', 'setup'].includes(a.status)
-    );
-    if (active) {
-      stopLifecycle(
-        service,
-        record,
-        'The existing assignment is still active. Its findings will be reused when it finishes; no replacement was started.'
-      );
-      return false;
-    }
-  }
+  const clarify = await combinedClarifyBeforeAssessment(service, record, queue, issue);
+  if (clarify === 'wait') return record.status === 'running';
+  if (clarify === 'stop') return false;
   if (!record.assessed) {
     await assessLifecycle(service, record, queue, issue);
     return record.status === 'running';
   }
   return continueApprovedLifecycle(service, record, queue, issue);
+}
+function finishAfterDeliveryPublish(service, record) {
+  if (!record.deliveryPublished) return false;
+  saveLifecycle(service, record, {
+    status: record.deliveryHandoff ? 'finished' : 'paused',
+    input: null,
+    deliveryWaiting: !record.deliveryHandoff,
+    summary: record.deliveryHandoff
+      ? 'Handed off for manual repair and merge. The draft PR is open; the issue remains unaccepted and open.'
+      : 'The pull request is open. Its checks and merge controls are shown below. The issue remains open for review.',
+  });
+  return true;
+}
+async function combinedClarifyBeforeAssessment(service, record, queue, issue) {
+  if (record.assessed || !combinedClarify(service.root)) return null;
+  if (await waitLifecycleWork(service, record, queue)) return 'wait';
+  if (hasActiveAssignment(queue, issue)) {
+    stopLifecycle(
+      service,
+      record,
+      'The existing assignment is still active. Its findings will be reused when it finishes; no replacement was started.'
+    );
+    return 'stop';
+  }
+  return null;
+}
+function hasActiveAssignment(queue, issue) {
+  return queue.actions.some(
+    (a) => a.issues.includes(issue.id) && ['running', 'reserved', 'setup'].includes(a.status)
+  );
 }
 function finishedLifecycle(service, record, queue, issue) {
   const role = queue.lifecycle.find((s) => s.state === issue.state).role;
@@ -165,6 +177,7 @@ function checkSelectedScope(service, record, action, choice) {
 }
 function lifecycleActionNeedsHuman(service, record, choice, action) {
   if (!action || ['bind-verification', 'refresh-recommendation'].includes(choice.kind)) return false;
+  if (choice.kind === 'integrate' && draftAssembly(readQueue(service.root), action)) return false;
   const operation =
     choice.kind === 'integrate' ? 'merge' : { review: 'investigate', retro: 'investigate' }[action.kind] || action.kind;
   return pauseForHuman(service, record, operation, {}, action);

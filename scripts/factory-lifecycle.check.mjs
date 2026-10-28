@@ -54,7 +54,7 @@ test('captured historical skips do not block an implementation route or authoriz
     assert.throws(validate, /Clarify is required/);
   }
   issue.state = 'implement';
-  for (const state of ['implement', 'verify', 'final', 'closed']) {
+  for (const state of ['implement', 'verify']) {
     issue.lifecycle_history = [{ ...recorded, state }];
     routes[0].steps = [{ state, decision: 'skip', reason: 'Must remain protected.' }];
     assert.throws(validate, /required|explicit acceptance/);
@@ -133,7 +133,7 @@ test('future choices persist without changing reports, other routes or history; 
   assert.deepEqual(service.store.runs.at(-1).savedRoutes[0].steps.at(-1).source, { kind: 'user' });
   toggleRoute(service, input());
   assert.equal(service.store.runs.at(-1).savedRoutes[0].steps.at(-1).decision, 'take');
-  for (const state of ['clarify', 'implement', 'verify', 'commit', 'final', 'closed', '@integration', 'unknown'])
+  for (const state of ['clarify', 'implement', 'verify', 'commit', '@integration', 'unknown'])
     assert.throws(() => toggleRoute(service, input(state)), /optional future/);
   const old = input();
   writeFileSync(report, original.replace('state: clarify', 'state: prototype'));
@@ -189,7 +189,7 @@ lifecycle_history:
   const roles = () => queueResponse(service.snapshot(), null).issues[0].queueLifecycle.roles;
   assert.deepEqual(
     roles().map((r) => r.status),
-    ['completed', 'skipped', 'unknown', 'idle', 'future', 'future', 'future', 'future']
+    ['completed', 'skipped', 'unknown', 'idle', 'future', 'future', 'planned-skip', 'planned-skip']
   );
   service.lifecycleRuns['20261026-one'] = { issueId: '20261026-one', status: 'running' };
   service.lifecycleTasks.set('20261026-one', Promise.resolve());

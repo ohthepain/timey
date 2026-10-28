@@ -1648,24 +1648,30 @@
         const d = issue.issueDelivery;
         if (!d) return '';
         const active = ['running', 'answering'].includes(issue.lifecycle?.status);
-        const operations = !d.pr
-          ? []
-          : d.state === 'verified'
-            ? ['refresh']
-            : d.merge
-              ? ['verify', 'reconcile']
-              : ['refresh', 'merge', 'reconcile'];
+        const handoff = d.mode === 'draft-handoff';
+        const operations =
+          handoff || !d.pr
+            ? []
+            : d.state === 'verified'
+              ? ['refresh']
+              : d.merge
+                ? ['verify', 'reconcile']
+                : ['refresh', 'merge', 'reconcile'];
         const status = d.pr
-          ? d.state === 'verified'
-            ? 'Merged and checked'
-            : 'Pull request is open'
+          ? handoff
+            ? 'Handed off for manual repair and merge'
+            : d.state === 'verified'
+              ? 'Merged and checked'
+              : 'Pull request is open'
           : d.readiness
             ? 'Ready to open the pull request'
             : 'Preparing the pull request';
-        const next = d.readiness
-          ? 'The completed work and check results have been reviewed. Publication is the next step.'
-          : 'After verification, the coordinator will check the approved plan against the finished code and test results, then prepare the pull request. You do not need to upload anything.';
-        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(status)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><details><summary>Code version and review details</summary><p>Candidate: ${esc(d.candidate)}<br>Tested target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} reviewed contribution(s).</p></details>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : `<p>${esc(next)}</p>${!issue.lifecycle?.input ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || issue.lifecycle?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : 'Continue toward pull request'}</button>` : ''}`}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Check the saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>Opening or merging the pull request does not accept or close the issue.</p></section>`;
+        const next = handoff
+          ? 'Prepare a draft PR with actual check results and remaining work. Passing checks are not required; you handle repair and merge manually.'
+          : d.readiness
+            ? 'The completed work and check results have been reviewed. Publication is the next step.'
+            : 'After verification, the coordinator will check the approved plan against the finished code and test results, then prepare the pull request. You do not need to upload anything.';
+        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(status)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><details><summary>Code version and review details</summary><p>Candidate: ${esc(d.candidate)}<br>Original target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} retained contribution(s).</p></details>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : `<p>${esc(next)}</p>${!issue.lifecycle?.input ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || issue.lifecycle?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : 'Continue toward pull request'}</button>` : ''}`}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Check the saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>${handoff ? 'Factory work ends at this draft PR. No automatic repair, rebase or CI maintenance follows. Acceptance and closure remain outstanding.' : 'Opening or merging the pull request does not accept or close the issue.'}</p></section>`;
       }
       async function issueDeliveryAction(kind, input) {
         const preview = await request('issue-delivery-preflight', { kind, input });
@@ -2058,8 +2064,22 @@
         const record = issue.lifecycle;
         const stage = data.lifecycle.find((s) => s.state === issue.state);
         if (stage?.role === 'closed') return '';
-        const active = ['running', 'answering'].includes(record?.status);
-        const child = data.runs.find((r) => r.id === record?.childRunId);
+        const active =
+          ['running', 'answering'].includes(record?.status) ||
+          (!record?.input &&
+            data.runs.some(
+              (run) =>
+                run.connected &&
+                (run.issueId === issue.id ||
+                  data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+            ));
+        const child =
+          data.runs.find(
+            (run) =>
+              run.connected &&
+              (run.issueId === issue.id ||
+                data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+          ) || data.runs.find((r) => r.id === record?.childRunId);
         const input = record?.input?.type === 'retry' ? null : record?.input;
         const blocker = !active && !input ? issue.progress?.blocker : null;
         const stopped = record?.status === 'blocked' || record?.legacyRetry || record?.input?.type === 'retry';
@@ -2069,19 +2089,23 @@
             (run.issueId === issue.id ||
               data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
         );
-        const title = blocker
-          ? 'Uncommitted changes'
-          : record?.status === 'answering'
-            ? 'Saving your answer'
-            : active
-              ? 'Working on this issue'
-              : input
-                ? 'Your input is needed'
-                : stopped
-                  ? 'Progress stopped'
-                  : stage?.role === 'ready-to-close'
-                    ? 'Ready for final review'
-                    : 'Move this issue forward';
+        const title = record?.deliveryHandoff
+          ? 'Handed off for manual repair and merge'
+          : blocker
+            ? 'Uncommitted changes'
+            : record?.status === 'answering'
+              ? 'Saving your answer'
+              : active
+                ? 'Working on this issue'
+                : input
+                  ? 'Your input is needed'
+                  : stopped
+                    ? record?.canResume && !blocker
+                      ? 'Ready to continue'
+                      : 'Progress stopped'
+                    : stage?.role === 'ready-to-close'
+                      ? 'Ready for final review'
+                      : 'Move this issue forward';
         const summary = blocker
           ? issue.progress.summary
           : record?.status === 'answering'
@@ -2099,8 +2123,12 @@
             ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
             : '');
         const canStart =
-          !input && !record?.deliveryWaiting && !issue.assemblyRecovery && stage?.role !== 'ready-to-close';
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+          !input &&
+          !record?.deliveryHandoff &&
+          !record?.deliveryWaiting &&
+          !issue.assemblyRecovery &&
+          stage?.role !== 'ready-to-close';
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -2156,8 +2184,18 @@
           )
           .join('\n\n');
       }
+      function outputStatus(issue) {
+        const runs = data.runs.filter(
+          (run) =>
+            run.issueId === issue.id ||
+            data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+        );
+        if (runs.some((run) => run.connected))
+          return 'Work is connected. Output appears as messages and commands arrive.';
+        return 'No action is running. Output below is saved history, not live activity.';
+      }
       function lifecycleActivity(issue) {
-        return `<div class="activity-toolbar"><strong>Live output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${esc(activityText(issue) || 'No output recorded yet.')}</pre><p class="muted">Recent output is kept for each chat. Scroll up to read; Follow latest returns to new output.</p>`;
+        return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${esc(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p>`;
       }
       function lifecycleInput(issue, record) {
         const input = record.input;
@@ -2231,6 +2269,12 @@
           sections.findLastIndex((s) => /^## (Evidence and progress|Result|Verification)/.test(s))
         );
       }
+      function issueGitLabel(issue) {
+        const work = issue.workingGit;
+        if (!work) return '<p class="muted">Working branch: no checkout recorded</p>';
+        if (work.unavailable) return '<p class="muted">Working branch: checkout unavailable</p>';
+        return `<p class="muted">Working branch: <code>${esc(work.branch || 'Detached HEAD')}</code> · <code title="${esc(work.revision)}">${esc(work.revision.slice(0, 8))}</code></p>`;
+      }
       function issueNotes(i) {
         const text = i.content.replace(/^---[\s\S]*?---\s*/, '');
         const sections = text.split(/(?=^## )/m).filter((section) => section.trim());
@@ -2246,7 +2290,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2368,9 +2412,11 @@
           const run = data.runs.find((r) => r.id === element.dataset.liveHealth);
           element.outerHTML = liveHealth(run);
         }
+        const status = document.querySelector('[data-output-status]');
+        if (status) status.textContent = outputStatus(issue);
         rememberOutput();
         const saved = viewMemory.logs.get(location.hash);
-        const text = activityText(issue) || 'No output recorded yet.';
+        const text = activityText(issue) || outputStatus(issue);
         if (output.textContent !== text) output.textContent = text;
         output.scrollTop = saved?.follow ? output.scrollHeight : saved?.top || 0;
       }

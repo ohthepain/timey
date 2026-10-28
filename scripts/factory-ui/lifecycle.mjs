@@ -1,4 +1,5 @@
-import { outcomeSource, savedRouteSource } from './stage-source.mjs';
+import { defaultRoute, explicitRoute } from './delivery-mode.mjs';
+import { outcomeSource } from './stage-source.mjs';
 import { skipAllowed } from './skip-policy.mjs';
 import { requireThat } from './common.mjs';
 
@@ -65,7 +66,6 @@ function nonempty(value) {
 }
 function validatePlannedSkip(queue, issue, state) {
   const stage = queue.lifecycle.find((s) => s.state === state);
-  requireThat(stage?.role !== 'closed', 'The route cannot skip explicit acceptance.');
   // Repeated capture history is not a new request to bypass today's policy.
   if (historicalSkip(queue, issue, state)) return;
   requireThat(
@@ -85,12 +85,8 @@ function historicalSkip(queue, issue, state) {
   }
   return false;
 }
-export function savedRoute(issue, runs) {
-  const review = runs.findLast((r) => r.savedRoutes?.some((route) => route.issueId === issue.id));
-  return (review?.savedRoutes.find((route) => route.issueId === issue.id)?.steps || []).map((step) => ({
-    ...step,
-    source: step.source || savedRouteSource(issue, review),
-  }));
+export function savedRoute(issue, runs, queue = null) {
+  return queue ? defaultRoute(queue, issue, runs) : explicitRoute(issue, runs);
 }
 export function stageOutcome(issue, state) {
   const history = Array.isArray(issue.lifecycle_history) ? issue.lifecycle_history : [];

@@ -1,7 +1,8 @@
+import { issueGit } from './factory-ui/issue-git.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
-import { workerPrompt, workerPermissionGuidance } from './factory-ui/prompts.mjs';
+import { workerPrompt, workerPermissionGuidance, workerResultSchema } from './factory-ui/prompts.mjs';
 import { digest as digestReport } from './factory-ui/common.mjs';
 import { beginReconciliation } from './factory-ui/reconcile.mjs';
 import { test } from 'node:test';
@@ -52,6 +53,28 @@ function fixture(t, options = {}) {
   const service = new FactoryUI(root, options);
   t.after(() => service.close());
   return { root, git, api, proposal, service };
+}
+function verifiedRoute(service) {
+  service.store.runs.push({
+    id: 'explicit-verified-route',
+    kind: 'route-choice',
+    status: 'completed',
+    events: [],
+    savedRoutes: [
+      {
+        issueId: '20261022-one',
+        steps: [
+          {
+            state: '@integration',
+            decision: 'take',
+            reason: 'Explicitly retain verified delivery.',
+            source: { kind: 'user' },
+          },
+        ],
+      },
+    ],
+  });
+  service.store.save();
 }
 async function settle(service, id) {
   for (let n = 0; n < 200; n++) {
@@ -126,16 +149,17 @@ test('failed worker setup retains one claim and blocks duplicate dispatch', asyn
 
 test('manual integration requires exact candidate approval and never follows worker completion', (t) => {
   const { api, proposal, service, git } = fixture(t);
+  verifiedRoute(service);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
   api.reserve(action.id);
   api.attach(action.id, { threadId: 'old', hostId: 'native' });
   api.record(action.id, { status: 'completed', worker_revision: git('rev-parse', 'HEAD'), evidence: 'fixture result' });
-  assert.equal(service.store.runs.length, 0);
+  assert.equal(service.store.runs.filter((r) => r.kind !== 'route-choice').length, 0);
   const selection = service.preflight(action.id, 'integrate');
   assert.equal(selection.requiresApproval, true);
   assert.throws(() => service.start(selection.token, false), /Explicit approval/);
   assert.equal(api.inspect().registry.actions[0].status, 'completed');
-  assert.equal(service.store.runs.length, 0);
+  assert.equal(service.store.runs.filter((r) => r.kind !== 'route-choice').length, 0);
 });
 
 test('Codex approval responses are bound to the pending chat', (t) => {
@@ -509,13 +533,14 @@ test('a review that tries to close the issue records neither completion nor acce
 
 test('Progress launches exactly the selected saved recommendation and integration still needs separate approval', async (t) => {
   const { api, proposal, service, git } = fixture(t);
+  verifiedRoute(service);
   transport(t, service);
   const [action] = api.recommend([proposal]);
   const selection = service.progressPreflight('20261022-one', 'investigate');
   assert.equal(selection.choice.actionId, action.id);
   const { runId } = service.progressStart(selection.token);
   assert.equal((await settle(service, runId)).status, 'completed');
-  assert.equal(service.store.runs.length, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind !== 'route-choice').length, 1);
   assert.equal(api.inspect().registry.actions[0].status, 'completed');
   api.record(action.id, { status: 'reconciled', evidence: 'Investigation reviewed independently.' });
   const [code] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
@@ -531,7 +556,7 @@ test('Progress launches exactly the selected saved recommendation and integratio
   assert.equal(integration.requiresApproval, true);
   assert.throws(() => service.progressStart(integration.token, false), /Explicit approval/);
   assert.equal(api.inspect().registry.actions.find((a) => a.id === code.id).status, 'completed');
-  assert.equal(service.store.runs.length, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind !== 'route-choice').length, 1);
 });
 
 test('a pending human decision blocks the proposed stage advance even when the model reports success', async (t) => {
@@ -704,7 +729,7 @@ test('routes save separately from execution, survive restart, and do not invent 
   const issue = restarted.snapshot().issues[0];
   assert.equal(issue.stageStates.implement.label, 'Planned');
   assert.equal(issue.stageStates.experiment.status, 'planned-skip');
-  assert.equal(issue.stageStates.final.label, 'Not decided');
+  assert.equal(issue.stageStates.final.label, 'Planned to skip');
   assert.equal(api.inspect().registry.actions.length, 1);
   assert.equal(api.inspect().registry.actions[0].status, 'setup');
   assert.equal(api.inspect().reports[0].metadata.lifecycle_history, undefined);
@@ -913,8 +938,11 @@ test('an explicitly required prototype cannot be skipped by an old route recomme
 test('invalid routes are rejected before saving any assignments', (t) => {
   const { root, service, api } = pendingReview(t);
   assert.throws(
-    () => saveRouteFixture(service, root, [{ state: 'closed', decision: 'skip', reason: 'No acceptance' }]),
-    /cannot skip explicit acceptance/
+    () =>
+      saveRouteFixture(service, root, [
+        { state: 'implement', decision: 'skip', reason: 'Unfinished required implementation' },
+      ]),
+    /required by project policy/
   );
   assert.equal(api.inspect().registry.actions.length, 1);
 });
@@ -1007,6 +1035,7 @@ test('an old blocked review does not mark a later stage blocked', async (t) => {
 
 test('integration approval is shown as a current requirement; checking never integrates or creates a chat', async (t) => {
   const { service, api, proposal, git } = fixture(t);
+  verifiedRoute(service);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
   finishCodeFixture(api, action.id, git('rev-parse', 'HEAD'), 'Fixture code candidate');
   const result = await checkNow(service);
@@ -3020,6 +3049,7 @@ test('human-first integration pauses inline and refuses approval after the candi
     join(root, '.issues/issue-delivery-config.json'),
     JSON.stringify({ provider: 'github', repository: 'fixture/timey', remote: 'origin', target: 'main' })
   );
+  verifiedRoute(service);
   startIssueLifecycle(service);
   const initial = await finishLifecycle(service);
   const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
@@ -3298,6 +3328,36 @@ async function activityScreen(t) {
   return { window: dom.window, snapshot };
 }
 
+test('a handed-off draft PR shows manual ownership without merge or maintenance controls', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const issue = snapshot.issues[0];
+  issue.lifecycle = {
+    status: 'finished',
+    deliveryHandoff: true,
+    summary: 'Handed off for manual repair and merge.',
+    events: [],
+  };
+  issue.issueDelivery = {
+    mode: 'draft-handoff',
+    state: 'handed-off',
+    source: 'factory/issue-one',
+    target: 'dev',
+    candidate: 'candidate',
+    targetRevision: 'base',
+    contributions: [],
+    pr: { url: 'https://github.com/fixture/timey/pull/1', draft: true },
+  };
+  window.screenTest.show(snapshot);
+  const card = window.document.querySelector('[aria-label="Issue pull request"]');
+  assert.match(card.textContent, /Handed off for manual repair and merge/);
+  assert.match(card.textContent, /Acceptance and closure remain outstanding/);
+  assert.equal(card.querySelector('a').href, issue.issueDelivery.pr.url);
+  assert.equal(window.document.querySelectorAll('[data-delivery-kind], [data-lifecycle-start]').length, 0);
+  issue.issueDelivery.mode = 'verified-delivery';
+  window.screenTest.show(snapshot);
+  assert.ok(window.document.querySelector('[data-delivery-kind="merge"]'));
+});
+
 test('saved report control belongs on the issue page and displays escaped full content in the named dialog', async (t) => {
   const { window } = await activityScreen(t);
   const document = window.document,
@@ -3529,6 +3589,9 @@ test('activity screen shows the current step and preserves expanded details, nat
 
 test('a stopped technical review has no answer box and does not repeat its explanation', async (t) => {
   const { window, snapshot } = await activityScreen(t);
+  snapshot.runs.forEach((run) => {
+    run.connected = false;
+  });
   const summary = 'Implementation is unfinished; no completed step can be recorded.';
   snapshot.issues[0].lifecycle = {
     status: 'blocked',
@@ -4488,4 +4551,133 @@ test('a simple approved lifecycle uses its clarification task without another pl
     false
   );
   assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 0);
+});
+
+test('retryable stops retain the concrete cause and name the next action', async () => {
+  const { visibleStoppedReason } = await import('./factory-ui/service.mjs');
+  const record = { status: 'blocked', canResume: true, summary: 'The existing issue chat could not reconnect.' };
+  const view = visibleStoppedReason(record, {
+    title: 'Continue existing worker',
+    summary: 'Retry the saved assignment in its existing checkout.',
+  });
+  assert.equal(view.summary, record.summary);
+  assert.match(view.resumeSummary, /Continue existing worker/);
+  assert.equal(record.resumeSummary, undefined);
+});
+
+test('idle issue output explains that nothing is running and preserves the stopped reason', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.runs = [];
+  snapshot.issues[0].lifecycle = {
+    status: 'blocked',
+    canResume: true,
+    summary: 'The existing issue chat could not reconnect.',
+    resumeSummary: 'Next: Continue existing worker.',
+    events: [],
+  };
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Ready to continue/);
+  assert.match(panel.textContent, /No action is running/);
+  assert.match(panel.textContent, /could not reconnect/);
+  assert.match(panel.textContent, /Next: Continue existing worker/);
+  assert.doesNotMatch(panel.textContent, /kept for each chat/);
+});
+
+test('terminal provider failures appear in live and retained issue output', async () => {
+  const { activityForRun, recordActivity } = await import('./factory-ui/activity.mjs');
+  const event = {
+    at: '2026-10-28T15:39:00Z',
+    method: 'turn/completed',
+    params: {
+      turn: {
+        id: 'failed-turn',
+        status: 'failed',
+        error: {
+          message: JSON.stringify({
+            error: { message: "Invalid schema: Missing 'artifacts'.", code: 'invalid_json_schema' },
+          }),
+        },
+      },
+    },
+  };
+  const live = { events: [], output: [] };
+  recordActivity(live, event);
+  assert.match(live.output.at(-1).text, /Missing 'artifacts'/);
+  assert.doesNotMatch(live.output.at(-1).text, /"error"/);
+  const retained = activityForRun({ output: [], events: [event] });
+  assert.match(retained.at(-1).text, /Missing 'artifacts'/);
+});
+
+test('worker response schema includes every property required by the provider', () => {
+  assert.deepEqual([...workerResultSchema.required].sort(), Object.keys(workerResultSchema.properties).sort());
+});
+
+test('a connected issue action overrides an older blocked controller in the displayed status', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].lifecycle.status = 'blocked';
+  snapshot.issues[0].lifecycle.summary = 'Earlier attempt stopped.';
+  snapshot.runs[0].summary = 'Collecting browser console evidence.';
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Working on this issue/);
+  assert.match(panel.textContent, /Collecting browser console evidence/);
+  assert.doesNotMatch(panel.textContent, /Progress stopped/);
+});
+
+test('connected native work shows activity without inventing a lifecycle pause control', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].lifecycle = null;
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Working on this issue/);
+  assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
+});
+
+test('a real pending question stays prominent even while its issue chat is connected', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].lifecycle = {
+    status: 'waiting',
+    input: { type: 'scope', question: 'Which behavior should be preserved?' },
+    summary: 'A decision is needed.',
+    events: [],
+  };
+  window.screenTest.show(snapshot);
+  const panel = window.document.querySelector('.lifecycle-progress');
+  assert.match(panel.textContent, /Your input is needed/);
+  assert.match(panel.textContent, /Which behavior should be preserved/);
+  assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
+});
+
+test('issue Git identity follows unfinished work, assembly and live HEAD without using the server branch', (t) => {
+  const { root, git } = gitFixture(t, 'issue-git-');
+  writeFileSync(join(root, 'source.js'), 'one');
+  git('add', '.');
+  git('commit', '-qm', 'initial');
+  git('checkout', '-qb', 'codex/issue-work');
+  const issue = { id: 'one', issueDelivery: { checkout: '/missing-delivery' } };
+  const snapshot = {
+    root: '/not-the-worker',
+    actions: [{ id: 'a', issues: ['one'], status: 'running' }],
+    runs: [
+      { kind: 'worker', actionId: 'a', checkout: root },
+      { kind: 'evaluation', issueId: 'one', checkout: '/not-the-worker' },
+      { kind: 'worker', actionId: 'other', checkout: '/not-this-issue' },
+    ],
+  };
+  assert.deepEqual(issueGit(snapshot, issue), { branch: 'codex/issue-work', revision: git('rev-parse', 'HEAD') });
+  git('commit', '--allow-empty', '-qm', 'advance');
+  assert.equal(issueGit(snapshot, issue).revision, git('rev-parse', 'HEAD'));
+  snapshot.actions[0].status = 'assembled';
+  assert.deepEqual(issueGit(snapshot, issue), { unavailable: true });
+  snapshot.actions[0].status = 'reconciled';
+  assert.deepEqual(issueGit(snapshot, issue), { unavailable: true });
+  issue.issueDelivery.checkout = root;
+  assert.equal(issueGit(snapshot, issue).branch, 'codex/issue-work');
+  git('checkout', '--detach');
+  assert.equal(issueGit(snapshot, issue).branch, null);
+  delete issue.issueDelivery;
+  assert.equal(issueGit(snapshot, issue).revision, git('rev-parse', 'HEAD'));
+  snapshot.runs = [];
+  assert.equal(issueGit(snapshot, issue), null);
 });

@@ -88,6 +88,7 @@ export class FixtureDeliveryProvider {
       source: request.source,
       target: request.target,
       state: 'open',
+      ...(request.draft ? { draft: true } : {}),
     };
     this.update({ prs: [pr], creates: this.state().creates + 1 });
     this.effect('open');

@@ -31,7 +31,7 @@ export class GitHubDeliveryProvider {
   }
   publish(request, checkout) {
     requireThat(
-      this.ref(request, request.target) === request.targetRevision,
+      request.mode === 'draft-handoff' || this.ref(request, request.target) === request.targetRevision,
       'Remote target changed before publication; reassemble and reverify.'
     );
     requireThat(git(checkout, 'rev-parse', 'HEAD') === request.candidate, 'Publication candidate changed.');
@@ -57,6 +57,7 @@ export class GitHubDeliveryProvider {
       target: value.base.ref,
       state: value.merged_at ? 'merged' : value.state,
       headRepository: value.head.repo?.full_name,
+      draft: value.draft === true,
     };
   }
   findPullRequests(request) {
@@ -86,7 +87,7 @@ export class GitHubDeliveryProvider {
   open(request, title) {
     requireThat(
       this.ref(request, request.source) === request.candidate &&
-        this.ref(request, request.target) === request.targetRevision,
+        (request.mode === 'draft-handoff' || this.ref(request, request.target) === request.targetRevision),
       'Remote source or target changed before opening.'
     );
     return this.canonical(
@@ -94,8 +95,11 @@ export class GitHubDeliveryProvider {
         title,
         head: request.source,
         base: request.target,
-        body: `${this.marker(request)}\nComplete issue ${request.issueId}.\nContributing actions: ${request.contributions.join(', ')}\nCandidate: ${request.candidate}\nTarget tested: ${request.targetRevision}\nCompletion and verification records remain in the factory delivery evidence. Human acceptance is separate.`,
-        draft: false,
+        body:
+          request.mode === 'draft-handoff'
+            ? `${this.marker(request)}\n${request.body}`
+            : `${this.marker(request)}\nComplete issue ${request.issueId}.\nContributing actions: ${request.contributions.join(', ')}\nCandidate: ${request.candidate}\nTarget tested: ${request.targetRevision}\nCompletion and verification records remain in the factory delivery evidence. Human acceptance is separate.`,
+        draft: request.draft === true,
       })
     );
   }

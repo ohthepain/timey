@@ -81,7 +81,11 @@ test('refresh preserves completed work, original bases and approval, then reache
     throw Error('Reached fresh planning');
   };
   await assert.rejects(runLifecycle(f.service, f.record), /Reached fresh planning/);
-  assert.equal(f.service.store.runs.length, 0, 'Recovery itself starts no worker or review');
+  assert.equal(
+    f.service.store.runs.filter((r) => r.kind !== 'route-choice').length,
+    0,
+    'Recovery itself starts no worker or review'
+  );
   assert.throws(() => refreshRecommendation(f.service, f.issueId, f.action.id), /changed or already started/);
 });
 

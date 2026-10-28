@@ -99,6 +99,14 @@ cross-chat replies or new work; the coordinator reads worker results itself.
 
 ## Integration and review
 
+Default factory delivery ends at a draft PR handoff for manual repair and merge,
+as defined in [issue delivery](issue-delivery.md#default-draft-pr-handoff).
+Attempt checks once, disclose failures and unfinished work, and finish Progress
+when the PR exists. Integration, final review and closure default to skipped
+future roles; reports remain open and unaccepted. Existing explicit routes, PRs
+and running assignments retain their meaning. The verified-delivery rules below
+apply when that route is explicitly selected.
+
 `$factory integrate ACTION_ID` assembles a reviewed contribution on the issue's
 stable delivery branch through the shared server operations. It never merges new
 work directly into dev/main. Follow [issue PR delivery](issue-delivery.md) for the
@@ -118,7 +126,9 @@ recorded. Before declaring an implementation step or worker code action complete
 run the [step-completion audit](verification.md#commit-and-step-completion-checkpoints)
 against its recorded starting commit, including work that ends without a commit.
 Retain current command/scope/result evidence; unresolved findings or warnings mean
-the step is blocked, not complete. Coordinator completion assertions must review
+the implementation step is blocked, not verified complete. The default draft
+handoff may retain that partial result and its failed evidence; it does not
+claim a completed implementation. Coordinator completion assertions must review
 that evidence as well as the worker's reported outcome. Repo lifecycle exit conditions govern advancement. At the end of a
 coherent batch, present runnable results, per-issue outcomes, evidence, limitations,
 and precise human checks. Keep issues open for actual acceptance.

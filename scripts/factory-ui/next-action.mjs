@@ -1,4 +1,6 @@
 import { clarificationState } from './clarify-policy.mjs';
+import { deliveryMode, draftHandoff } from './delivery-mode.mjs';
+import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { recommendationRefresh } from './recommendation-refresh.mjs';
 import { completionChoice } from './completion-choice.mjs';
 import { verificationHandoff } from './verification-handoff.mjs';
@@ -33,8 +35,16 @@ export function nextProgress(queue, issue, runs) {
   const stage = queue.lifecycle.find((s) => s.state === issue.state);
   const invalid = invalidStage(stage);
   if (invalid) return invalid;
+  const delivery = new DeliveryStore(queue.root, issue.id).read();
+  if (delivery?.mode === 'draft-handoff' && delivery.pr)
+    return unavailable(
+      'Handed off for manual repair and merge. Further factory work requires an explicit revision request.'
+    );
   const pending = runs.find((run) => isPending(run) && belongsToIssue(queue, issue, run));
   if (pending) return unavailable('The selected action is in progress. Its chat and results appear below.');
+  const handoff =
+    delivery && deliveryMode(queue, issue, runs, delivery.mode) === draftHandoff && completionChoice(queue, issue);
+  if (handoff) return handoff;
   if (
     runs.some(
       (r, index) =>
@@ -74,9 +84,10 @@ function stageWork(queue, issue, stage, runs) {
   return plannedSkipChoice(queue, issue, stage, runs, choice) || stageFollowup(queue, issue, stage, runs, choice);
 }
 function plannedSkipChoice(queue, issue, stage, runs, choice) {
+  if (['ready-to-close', 'closed'].includes(stage.role)) return null;
   if (!['plan', 'launch'].includes(choice.kind)) return null;
   if (!skipAllowed(queue, issue, issue.state)) return null;
-  const skip = savedRoute(issue, runs).find((step) => step.state === issue.state && step.decision === 'skip');
+  const skip = savedRoute(issue, runs, queue).find((step) => step.state === issue.state && step.decision === 'skip');
   if (!skip) return null;
   return {
     kind: 'skip-stage',
@@ -132,7 +143,7 @@ function integration(action) {
     actionId: action.id,
     title: 'Review issue contribution',
     summary:
-      'Review and assemble this contribution on its issue branch. Open one PR after the complete issue passes its checks.',
+      'Retain this contribution on its issue branch, then prepare the selected PR delivery route with actual check results.',
   };
 }
 function unavailable(reason) {
