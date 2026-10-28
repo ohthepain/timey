@@ -12,7 +12,7 @@ function branchStart(root, action, data, expectedRevision, repair) {
   requireThat(
     (repair
       ? action.kind === 'implement' && ['automatic', 'human-first'].includes(action.merge)
-      : action.kind === 'verify' && action.merge === 'none') && action.issues.length === 1,
+      : ['verify', 'review'].includes(action.kind) && action.merge === 'none') && action.issues.length === 1,
     'Only verification without code delivery can use the automatic issue-branch handoff.'
   );
   const issueId = action.issues[0],

@@ -9,7 +9,7 @@ export function verificationHandoff(queue, issue, actions) {
   const action = actions.find(
     (a) =>
       a.status === 'recommended' &&
-      a.kind === 'verify' &&
+      ['verify', 'review'].includes(a.kind) &&
       a.merge === 'none' &&
       !a.start &&
       a.issues.length === 1 &&
@@ -46,7 +46,7 @@ export function verificationBranchBasis(queue, issue) {
   if (
     !queue.actions.some(
       (a) =>
-        a.kind === 'verify' &&
+        ['verify', 'review'].includes(a.kind) &&
         a.status === 'recommended' &&
         a.issues.includes(issue.id) &&
         a.dependencies.some((id) => queue.actions.find((p) => p.id === id)?.status === 'assembled')

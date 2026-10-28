@@ -7,13 +7,13 @@ import { FactoryUI } from './factory-ui/service.mjs';
 import { nextProgress } from './factory-ui/next-action.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 
-async function fixture(t) {
+async function fixture(t, kind = 'verify') {
   const f = await deliveryScenario(t),
     api = factory(f.root);
   const prior = f.delivery.inspect(f.issueId).contributions[0];
   const [action] = api.recommend([
     {
-      kind: 'verify',
+      kind,
       merge: 'none',
       issues: [f.issueId],
       dependencies: [prior.actionId],
@@ -147,3 +147,22 @@ test('an unlaunchable saved task shows its actual blocker rather than a finished
   assert.equal(choice.disabled, true);
   assert.match(choice.summary, /assembled dependency needs/);
 });
+
+for (const kind of ['review', 'verify']) {
+  test(`${kind} on an assembled candidate enables Continue and reserves the exact revision`, async (t) => {
+    const f = await fixture(t, kind),
+      queue = readQueue(f.root),
+      issue = queue.issues[0],
+      d = f.delivery.inspect(f.issueId);
+    const choice = nextProgress(queue, issue, f.service.store.runs);
+    assert.equal(choice.kind, 'bind-verification', choice.summary);
+    assert.equal(canResumeLifecycle(f.service, f.record, queue, issue), true);
+    f.service.guard = (_root, _action, role) => assert.equal(role, 'verify');
+    f.service.bindVerification(f.action.id, d.candidate);
+    f.api.reserve(f.action.id);
+    const action = f.api.inspect().registry.actions.find((a) => a.id === f.action.id);
+    assert.equal(action.start.revision, d.candidate);
+    assert.equal(action.start.purpose, 'verification-only');
+    assert.equal(action.merge, 'none');
+  });
+}

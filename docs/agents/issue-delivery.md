@@ -90,14 +90,14 @@ and does not repeat historical target integrations.
 
 ### Verification handoff
 
-A saved same-issue `verify` task with `merge: none` may automatically bind to the
+A saved same-issue `verify` or read-only `review` task with `merge: none` may automatically bind to the
 exact retained issue candidate under its current approved plan. The ledger owns
 this metadata update and revalidates plan approval, contribution receipts, clean
 branch identity, dependency membership and ancestry before reservation. It records
 a `verification-only` purpose with the actual plan receipt; it never fabricates a
 human `start-assembled-work` approval. Other implementation requires that separate
 exact human approval; the approved-plan completion-repair path below instead
-uses its actual existing plan receipt and exact validated candidate. A verification task cannot borrow this handoff to write or
+uses its actual existing plan receipt and exact validated candidate. A verification or review task cannot borrow this handoff to write or
 deliver code, consume another issue's assembly, or silently use a newer candidate.
 
 Lifecycle Continue performs this handoff before any replan, then starts the saved
