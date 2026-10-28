@@ -94,6 +94,7 @@ export function conversationPage(service, queue, issue, before = '') {
     hasMore: messages.length < end,
     cursor: messages[0]?.id,
     status: state.status,
+    responseId: service.issueChats?.active.get(issue.id)?.messageId || null,
     connected: chatConnected(service, issue.id),
     transcript: conversationFiles(service.root, issue.id).log,
   };

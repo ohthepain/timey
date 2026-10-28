@@ -2,6 +2,37 @@ import { CodexConnection } from './codex.mjs';
 import { requireThat } from './common.mjs';
 
 class IssueChatConnection extends CodexConnection {
+  async interrupt(threadId) {
+    const turn = this.turns.get(threadId);
+    if (!turn) return { interrupted: false };
+    const started = await turn.started;
+    if (this.turns.get(threadId) !== turn) return { interrupted: false };
+    await this.call('turn/interrupt', { threadId, turnId: started.turn.id });
+    return { interrupted: true };
+  }
+  turnEvent(message, turn) {
+    const params = message.params;
+    if (message.method === 'item/agentMessage/delta') {
+      turn.fragments ||= new Map();
+      turn.fragments.set(params.itemId, (turn.fragments.get(params.itemId) || '') + params.delta);
+    }
+    if (message.method === 'item/completed' && params.item?.type === 'agentMessage') {
+      turn.fragments ||= new Map();
+      turn.fragments.set(params.item.id, params.item.text);
+    }
+    if (message.method === 'turn/completed' && params.turn.status === 'interrupted') {
+      this.turns.delete(params.threadId);
+      this.clearRequests(params.threadId);
+      turn.reject(
+        Object.assign(Error('The response was stopped.'), {
+          code: 'ISSUE_CHAT_STOPPED',
+          partialText: ([...(turn.fragments?.values() || [])].join('\n\n') || turn.text).slice(0, 32000),
+        })
+      );
+      return;
+    }
+    super.turnEvent(message, turn);
+  }
   request(message) {
     this.send({
       id: message.id,
