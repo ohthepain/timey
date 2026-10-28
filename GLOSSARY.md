@@ -4,6 +4,11 @@ Language used to coordinate work and review changes.
 
 ## Language
 
+**Clarify**:
+The issue stage that brings human intent and available technical evidence together
+to establish enough understanding to begin useful work. Remaining technical
+uncertainty can be resolved during implementation.
+
 **Human input**:
 A person's contribution to an issue through clarification, grilling, observed
 evidence, judgment, or acceptance. Its timing and purpose determine which work
@@ -25,6 +30,10 @@ _Avoid_: Verification, acceptance
 An interview whose material questions are settled, decisions are recorded, and
 shared understanding is confirmed by the person.
 _Avoid_: Skill invocation, implementation approval
+
+**Implementation-plan approval**:
+The user's authorization to implement an agreed outcome within its approved scope.
+It leaves room to adapt the technical approach as implementation reveals more.
 
 **Stale grilling**:
 Previously completed grilling whose conclusions no longer settle the issue's
