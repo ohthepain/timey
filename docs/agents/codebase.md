@@ -258,6 +258,8 @@ finalization; `delivery-integration.mjs` invokes it after checked UI integration
 `factory-delivery.mjs` exposes the separate-checkout coordinator command.
 `factory-ui/runtime.mjs` and `factory-runtime.mjs` identify the running UI source
 and issue project. `factory-ui/queue-response.mjs` projects bounded polling data;
+`factory-ui/issue-git.mjs` reads the selected issue's working branch and HEAD
+from its worker or delivery checkout, independently of the server source;
 full saved runs remain available through the authenticated on-demand endpoint.
 
 `scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;

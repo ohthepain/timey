@@ -1,3 +1,4 @@
+import { issueGit } from './issue-git.mjs';
 import { issueLifecycleView } from './lifecycle-view.mjs';
 import { readinessView } from './readiness.mjs';
 // Polling carries summaries and a bounded tail for the selected issue. Full history is fetched on demand.
@@ -8,6 +9,7 @@ export function queueResponse(snapshot, issueId) {
   return {
     ...snapshot,
     issues: (snapshot.issues || []).map((issue) => {
+      if (issue.id === issueId) issue = { ...issue, workingGit: issueGit(snapshot, issue) };
       if (issue.queueLifecycle) return issue;
       const readiness = issue.readiness ?? readinessView(snapshot, issue, snapshot.runs);
       const { queueLifecycle: strip } = issueLifecycleView(snapshot, issue, snapshot.runs, readiness);

@@ -19,6 +19,13 @@ stage, worker completion and code integration. Links use the report's Parent,
 Blocked by and Related sections; reverse links are computed from those explicit
 references. Reports are displayed as escaped text, never executable HTML.
 
+Under the issue number, the issue screen shows the working checkout's current
+branch and short HEAD commit, with the full hash available on hover. It uses
+unfinished worker work first, then the assembled issue branch, then the last
+worker checkout. Detached or unavailable checkouts and issues without assigned
+work are labeled explicitly. Only the selected issue's Git identity is read
+on refresh; the running server's branch is never substituted.
+
 The issue screen shows every configured lifecycle stage as a numbered expandable
 step. The current stage opens by default. Saved assignments and worker results
 appear under their matching stage; worker commits and manual integration have

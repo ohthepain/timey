@@ -1,3 +1,4 @@
+import { issueGit } from './factory-ui/issue-git.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
@@ -4646,4 +4647,35 @@ test('a real pending question stays prominent even while its issue chat is conne
   assert.match(panel.textContent, /Your input is needed/);
   assert.match(panel.textContent, /Which behavior should be preserved/);
   assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
+});
+
+test('issue Git identity follows unfinished work, assembly and live HEAD without using the server branch', (t) => {
+  const { root, git } = gitFixture(t, 'issue-git-');
+  writeFileSync(join(root, 'source.js'), 'one');
+  git('add', '.');
+  git('commit', '-qm', 'initial');
+  git('checkout', '-qb', 'codex/issue-work');
+  const issue = { id: 'one', issueDelivery: { checkout: '/missing-delivery' } };
+  const snapshot = {
+    root: '/not-the-worker',
+    actions: [{ id: 'a', issues: ['one'], status: 'running' }],
+    runs: [
+      { kind: 'worker', actionId: 'a', checkout: root },
+      { kind: 'evaluation', issueId: 'one', checkout: '/not-the-worker' },
+      { kind: 'worker', actionId: 'other', checkout: '/not-this-issue' },
+    ],
+  };
+  assert.deepEqual(issueGit(snapshot, issue), { branch: 'codex/issue-work', revision: git('rev-parse', 'HEAD') });
+  git('commit', '--allow-empty', '-qm', 'advance');
+  assert.equal(issueGit(snapshot, issue).revision, git('rev-parse', 'HEAD'));
+  snapshot.actions[0].status = 'assembled';
+  assert.deepEqual(issueGit(snapshot, issue), { unavailable: true });
+  issue.issueDelivery.checkout = root;
+  assert.equal(issueGit(snapshot, issue).branch, 'codex/issue-work');
+  git('checkout', '--detach');
+  assert.equal(issueGit(snapshot, issue).branch, null);
+  delete issue.issueDelivery;
+  assert.equal(issueGit(snapshot, issue).revision, git('rev-parse', 'HEAD'));
+  snapshot.runs = [];
+  assert.equal(issueGit(snapshot, issue), null);
 });
