@@ -62,6 +62,7 @@ async function mutation(service, path, value, owner) {
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
+    '/api/issue-capture': () => service.captures.save(value),
     '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
     '/api/verification-retry': () => service.retryVerification(value),
     '/api/issue-chat-send': () => service.issueChats.send(value),
@@ -171,6 +172,7 @@ function readResource(service, request, response, owner) {
     '/issue-chat-ui.js': 'issue-chat-ui.js',
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',
+    '/issue-capture-ui.js': 'issue-capture-ui.js',
   };
   if (Object.hasOwn(scripts, request.url)) {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');

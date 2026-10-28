@@ -6,6 +6,15 @@ Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions and the pnpm version in
 `packageManager`. Run `pnpm install --frozen-lockfile` in a clean checkout.
 
+The local issue helpers are a pinned development dependency packaged in
+[`vendor/`](../../vendor/README.md). The relative `.agents/skills/issues` link
+resolves through that installed package; verification and CI require no personal
+skill checkout. Its original human-input protocol and integrity manifest are
+unchanged. Install the frozen dependencies before running factory checks.
+Symbolic links remain in the exported snapshot and audit scope; their link
+metadata is not passed to Prettier, which rejects symbolic-link paths. Changed
+regular target files retain their own formatting checks.
+
 | Command                             | What it establishes                                                                                                    |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `pnpm run test:factory`             | Ledger, live UI/CLI boundaries, verifier dispatch/isolation, and audit-result checks using disposable Git repositories |
@@ -299,6 +308,27 @@ when its original readiness observations were not retained.
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
+
+## Issue capture checks
+
+Run `node --test scripts/factory-capture.check.mjs` for disposable reports and real
+HTTP capture requests, including mapped routing, skip reasons, preserved original
+wording, independent outcomes, collisions, concurrent/replayed submissions, partial
+publication recovery, provider/output failures, local guards and zero work launches.
+The aggregate factory suite includes these checks.
+
+Run `node scripts/factory-capture-browser.mjs` for actual rendered keyboard/cancel,
+polling and draft preservation, provider-error retry, filtered/scrolled list and
+one/multiple toast navigation at desktop and narrow widths. It uses the installed
+Playwright CLI and a deterministic assessor against a uniquely disposable queue.
+The printed evidence directory retains `commands.json`, assertions and
+`output/playwright/` logs/screenshots. Protocol fixtures establish no model access.
+Run `node scripts/factory-capture-provider.mjs` separately to check the real
+configured provider with synthetic single-bug/numbered-step and distinct-feature
+requests. It retains generated reports/results in the printed temporary directory,
+uses the existing login/model and fails closed for unsupported configuration.
+Neither command targets the authoritative queue or starts factory work. Required
+full verification and saved-start step/staged checkpoints still apply.
 
 ## Execution preflight and recovery
 

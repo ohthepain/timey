@@ -1042,6 +1042,7 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
+    <script src="/issue-capture-ui.js"></script>
     <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
     <script src="/issue-chat-ui.js"></script>
@@ -1097,6 +1098,7 @@
           if (
             refreshPending &&
             !busy &&
+            !document.getElementById('create-issue-dialog')?.open &&
             !$('confirm').open &&
             !$('plan').open &&
             !document.querySelector(':popover-open') &&
@@ -1389,7 +1391,7 @@
         const counts = data.lifecycle
           .map((s) => `<span>${esc(s.name)} <b>${data.issues.filter((i) => i.state === s.state).length}</b></span>`)
           .join(' · ');
-        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label><button id="create-issue" type="button">Create issue</button><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -2270,7 +2272,7 @@
         return location.hash + '|' + group + '|' + names.join('|');
       }
       function rememberView() {
-        if (!viewMemory.route) return;
+        if (viewMemory.route === null) return;
         document.querySelectorAll('#app details:not([data-temporary] *)').forEach((element) => {
           if (element.dataset.viewTouched === 'true') viewMemory.expanded[element.dataset.viewKey] = element.open;
         });
@@ -2424,6 +2426,7 @@
         );
       }
       function bind() {
+        issueCaptureUI.bind(request, refresh);
         document.querySelectorAll('[data-review-file]').forEach(
           (button) =>
             (button.onclick = () =>

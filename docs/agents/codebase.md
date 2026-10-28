@@ -331,6 +331,13 @@ handlers share these operations; `issue-delivery-fixture.mjs` supplies determini
 protocol proof only. See [the delivery contract](issue-delivery.md) and
 [ADR 0004](../adr/0004-issue-pr-delivery.md).
 
+Description-only issue capture is owned by `factory-ui/issue-capture.mjs`. It
+separates no-tools semantic assessment (`capture-assessment.mjs`), configured
+initial routing (`capture-routing.mjs`) and exclusive recoverable publication.
+`issue-capture-ui.js` owns the persistent dialog, draft identity and toast outside
+the list's replaceable DOM. HTTP dispatch retains existing mutation guards; this
+boundary calls no worker or lifecycle dispatch. See [factory UI](factory-ui.md#create-an-issue-from-the-list).
+
 `factory-ui/verification-recovery.mjs` retains completed implementation across
 failed independent checks, records the transition into Verify, and owns explicit
 retries and branch updates in isolated checkouts. It retains selection receipts,

@@ -51,7 +51,6 @@ export async function runCommand(project, argv, delivery = new IssueDelivery(pro
   ]);
   return commands.has(command) ? commands.get(command)() : decisionView(api.inspect(), argv);
 }
-
 function recordIssueWork(project, operation, path) {
   const helper = fileURLToPath(new URL('./factory-record.mjs', import.meta.url));
   return JSON.parse(
@@ -71,4 +70,3 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exitCode = 1;
   }
 }
-

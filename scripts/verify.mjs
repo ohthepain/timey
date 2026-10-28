@@ -198,7 +198,15 @@ try {
     const changed = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
       .split('\0')
       .filter(Boolean);
-    if (changed.length) await run('format-changed', bin('prettier'), ['--check', '--ignore-unknown', ...changed]);
+    // A link is Git metadata, not a formatter input. Changed tracked targets
+    // remain independent entries; all links stay in snapshot and audit scope.
+    const regular = changed.filter((name) => !lstatSync(join(snapshot, name)).isSymbolicLink());
+    if (regular.length) await run('format-changed', bin('prettier'), ['--check', '--ignore-unknown', ...regular]);
+    else if (changed.length)
+      await run('format-changed', process.execPath, [
+        '-e',
+        'console.log("No changed regular files require formatting; symbolic-link metadata remains in audit scope.")',
+      ]);
     await run('factory', 'pnpm', ['run', 'test:factory']);
     await run('typecheck', bin('tsc'), ['--noEmit']);
     await run('tests', bin('vitest'), ['run']);

@@ -1,13 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitFixture } from './git-fixture.mjs';
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const script = join(source, 'scripts/factory.mjs');
+
+test('issue helpers resolve from the pinned project dependency without a personal checkout', () => {
+  const installed = join(source, 'node_modules/@timey/local-issues');
+  assert.equal(readlinkSync(join(source, '.agents/skills/issues')), '../../node_modules/@timey/local-issues');
+  assert.equal(realpathSync(join(source, '.agents/skills/issues')), realpathSync(installed));
+  const helper = join(installed, 'scripts/human-input.mjs');
+  const capabilities = JSON.parse(execFileSync(process.execPath, [helper, 'capabilities'], { encoding: 'utf8' }));
+  const manifest = JSON.parse(readFileSync(join(installed, 'scripts/human-input-version.json'), 'utf8'));
+  assert.equal(manifest.protocol, 'local-issues-human-input/1');
+  assert.equal(capabilities.bundle_sha256, manifest.bundle_sha256);
+  assert.ok(capabilities.capabilities.includes('guards'));
+});
 
 function fixture(t) {
   const { root: temporaryRoot, git } = gitFixture(t, 'factory-interface-');
