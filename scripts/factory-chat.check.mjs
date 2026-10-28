@@ -454,6 +454,32 @@ test('Stop control retains the draft, binds the displayed response and shows can
   assert.equal(draft.value, 'Unsent draft');
   assert.equal(stop.disabled, false);
   assert.match(dom.window.document.querySelector('[role="status"]').textContent, /Cancellation unavailable/);
+  const mount = () => {
+    dom.window.chatTest.beforeRender();
+    dom.window.document.body.innerHTML = '<div id="discussion-slot"></div>';
+    dom.window.chatTest.mount(
+      'one',
+      data,
+      async () => {},
+      async () => {}
+    );
+  };
+  mount();
+  assert.match(
+    dom.window.document.querySelector('[role="status"]').textContent,
+    /Cancellation unavailable/,
+    'The failure remains visible while its original response is still running'
+  );
+  data.conversation = { issueId: 'one', responseId: null, connected: false, status: 'idle' };
+  mount();
+  assert.equal(stop.hidden, true);
+  assert.equal(dom.window.document.querySelector('[role="status"]').textContent, '');
+  data.conversation = { issueId: 'one', responseId: 'next-response', connected: true };
+  mount();
+  assert.equal(stop.hidden, false);
+  assert.equal(stop.dataset.responseId, 'next-response');
+  assert.doesNotMatch(dom.window.document.querySelector('[role="status"]').textContent, /Cancellation unavailable/);
+  assert.match(dom.window.document.querySelector('[role="status"]').textContent, /assistant is responding/);
 });
 
 test('Stop HTTP route keeps session, manual-action and preview guards and leaves workflow execution untouched', async (t) => {
