@@ -291,6 +291,30 @@
         font-size: 24px;
         line-height: 1;
       }
+      .settings-button {
+        min-width: 42px;
+        min-height: 42px;
+        padding: 0 10px;
+        font-size: 22px;
+        line-height: 1;
+        margin-left: auto;
+      }
+      .model-settings-form,
+      .issue-model-settings {
+        display: grid;
+        gap: 12px;
+      }
+      .model-settings-form label,
+      .issue-model-settings label {
+        display: grid;
+        gap: 6px;
+      }
+      .model-description {
+        margin: 0;
+      }
+      .model-save-status {
+        min-height: 1.4em;
+      }
       .direction-toggle {
         min-width: 42px;
         min-height: 42px;
@@ -1080,6 +1104,19 @@
       <div id="error" role="alert"></div>
       <div id="app"></div>
     </main>
+    <dialog id="model-settings" aria-labelledby="model-settings-title">
+      <h2 id="model-settings-title">Default model and effort</h2>
+      <form id="model-settings-form" class="model-settings-form">
+        <label>Default model<select id="default-model" aria-label="Default model"></select></label>
+        <p id="default-model-description" class="muted model-description"></p>
+        <label>Default effort<select id="default-effort" aria-label="Default effort"></select></label>
+        <p id="model-settings-status" class="muted model-save-status" role="status"></p>
+        <div class="actions">
+          <button type="submit" id="model-settings-save">Save defaults</button
+          ><button type="button" id="model-settings-cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="plan" aria-labelledby="plan-title" aria-describedby="plan-path">
       <h2 id="plan-title">Implementation plan</h2>
       <p id="plan-path" class="muted"></p>
@@ -1154,6 +1191,7 @@
             !busy &&
             !document.getElementById('create-issue-dialog')?.open &&
             !$('confirm').open &&
+            !$('model-settings').open &&
             !$('plan').open &&
             !document.querySelector(':popover-open') &&
             (!document.activeElement.matches('input,textarea,select') ||
@@ -1471,7 +1509,7 @@
           .join('');
       }
       function queue() {
-        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">View coordinator</a><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Review queue with Codex</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">View coordinator</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Review queue with Codex</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -2354,6 +2392,27 @@
         if (work.unavailable) return '<p class="muted">Working branch: checkout unavailable</p>';
         return `<p class="muted">Working branch: <code>${esc(work.branch || 'Detached HEAD')}</code> · <code title="${esc(work.revision)}">${esc(work.revision.slice(0, 8))}</code></p>`;
       }
+      function modelLabel(model) {
+        return data.modelSettings.models.find((choice) => choice.id === model)?.name || model;
+      }
+      function issueModelSettings(issue) {
+        const selected = issue.modelSelection;
+        const models = data.modelSettings.models
+          .map(
+            (choice) =>
+              `<option value="${esc(choice.id)}" ${selected.model === choice.id ? 'selected' : ''}>${esc(choice.name)}</option>`
+          )
+          .join('');
+        const efforts = data.modelSettings.efforts
+          .map(
+            (effort) =>
+              `<option value="${esc(effort)}" ${selected.effort === effort ? 'selected' : ''}>${esc(effort)}</option>`
+          )
+          .join('');
+        const modelDescription =
+          data.modelSettings.models.find((choice) => choice.id === selected.effectiveModel)?.description || '';
+        return `<section class="card issue-model-settings" data-issue-model-settings="${esc(issue.id)}"><h2>New work settings</h2><p class="muted">An empty choice follows the current default. These settings apply to work started after you save them; running chats keep their current settings.</p><label>Model<select aria-label="Model for new work on this issue" data-issue-model="${esc(issue.id)}"><option value="" ${selected.model ? '' : 'selected'}>Use default · ${esc(modelLabel(data.modelSettings.defaults.model))}</option>${models}</select></label><p class="muted model-description" data-issue-model-description="${esc(issue.id)}">${esc(modelDescription)}</p><label>Effort<select aria-label="Effort for new work on this issue" data-issue-effort="${esc(issue.id)}"><option value="" ${selected.effort ? '' : 'selected'}>Use default · ${esc(data.modelSettings.defaults.effort)}</option>${efforts}</select></label><p class="muted model-save-status" role="status" data-issue-model-status="${esc(issue.id)}"></p></section>`;
+      }
       function issueNotes(i) {
         const text = i.content.replace(/^---[\s\S]*?---\s*/, '');
         const sections = text.split(/(?=^## )/m).filter((section) => section.trim());
@@ -2369,7 +2428,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside><section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2647,6 +2706,50 @@
       }
       function bind() {
         issueCaptureUI.bind(request, refresh);
+        const settingsButton = $('model-settings-open');
+        if (settingsButton)
+          settingsButton.onclick = () => {
+            $('default-model').innerHTML = data.modelSettings.models
+              .map((choice) => `<option value="${esc(choice.id)}">${esc(choice.name)}</option>`)
+              .join('');
+            $('default-effort').innerHTML = data.modelSettings.efforts
+              .map((effort) => `<option value="${esc(effort)}">${esc(effort)}</option>`)
+              .join('');
+            $('default-model').value = data.modelSettings.defaults.model;
+            $('default-effort').value = data.modelSettings.defaults.effort;
+            updateDefaultModelDescription();
+            $('model-settings-status').textContent = '';
+            $('model-settings').showModal();
+          };
+        $('default-model').onchange = updateDefaultModelDescription;
+        $('model-settings-cancel').onclick = () => $('model-settings').close();
+        $('model-settings-form').onsubmit = (event) => {
+          event.preventDefault();
+          if (busy) return;
+          $('model-settings-status').textContent = 'Saving…';
+          void act(async () => {
+            await request('model-settings', {
+              model: $('default-model').value,
+              effort: $('default-effort').value,
+            });
+            $('model-settings').close();
+          });
+        };
+        document.querySelectorAll('[data-issue-model], [data-issue-effort]').forEach((select) => {
+          select.onchange = () => {
+            if (busy) return;
+            const issueId = select.dataset.issueModel || select.dataset.issueEffort;
+            const model = document.querySelector(`[data-issue-model="${CSS.escape(issueId)}"]`);
+            const effort = document.querySelector(`[data-issue-effort="${CSS.escape(issueId)}"]`);
+            const description = document.querySelector(`[data-issue-model-description="${CSS.escape(issueId)}"]`);
+            const selectedModel = model.value || data.modelSettings.defaults.model;
+            const modelChoice = data.modelSettings.models.find((choice) => choice.id === selectedModel);
+            if (description) description.textContent = modelChoice?.description || '';
+            const status = document.querySelector(`[data-issue-model-status="${CSS.escape(issueId)}"]`);
+            if (status) status.textContent = 'Saving…';
+            void act(() => request('issue-model-settings', { issueId, model: model.value, effort: effort.value }));
+          };
+        });
         document.querySelectorAll('[data-review-file]').forEach(
           (button) =>
             (button.onclick = () =>
@@ -2801,6 +2904,10 @@
                 act(() => issueDeliveryAction(button.dataset.deliveryKind, { issueId: button.dataset.deliveryIssue })))
           );
         if ($('search')) bindQueueFilters();
+      }
+      function updateDefaultModelDescription() {
+        const choice = data.modelSettings.models.find((item) => item.id === $('default-model').value);
+        $('default-model-description').textContent = choice?.description || '';
       }
       async function select(actionId, kind) {
         selection = await request('preflight', { actionId, kind });

@@ -28,7 +28,13 @@ async function openChat(service, run, cwd, sandbox) {
     'An earlier chat startup is unresolved. Reconnect its original connection before creating another chat.'
   );
   if (run.startup) return reconnectEmptyChat(service, run, cwd, sandbox);
-  return service.codex.start(cwd, sandbox, (startup) => retainStartup(service, run, cwd, sandbox, startup));
+  return service.codex.start(
+    cwd,
+    sandbox,
+    (startup) => retainStartup(service, run, cwd, sandbox, startup),
+    run.issueId,
+    service.root
+  );
 }
 async function reconnectEmptyChat(service, run, cwd, sandbox) {
   requireThat(

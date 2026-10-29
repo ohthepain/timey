@@ -250,6 +250,12 @@ terminal turns, preserving pending input, newer activity and unknown state.
 `factory-ui/codex.mjs` selects native automatic approval review for workspace-write
 chats while keeping the sandbox. `approval-activity.mjs` projects public automatic
 approval results into live output; it never grants access or reports test success.
+`factory-ui/model-settings.mjs` owns the validated local defaults and per-issue
+overrides used for newly started Codex threads; `codex.mjs` applies them only to
+`thread/start`, so resumed threads keep their original settings. The issues-page
+gear and per-issue selectors live in `factory-ui/index.html`. Focused behavior is
+covered by `factory-model-settings.check.mjs` and
+`factory-browser-model-settings.mjs`.
 
 `factory-inputs.mjs` defines selected decision inputs shared by issue planning and
 ledger reservations. It follows report/action dependencies and linked plans while

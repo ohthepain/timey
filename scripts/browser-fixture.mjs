@@ -30,6 +30,7 @@ export function browserFixture(root) {
     workingGit: id === 'b' ? { branch: 'codex/example-work', revision: '12345678' + 'a'.repeat(32) } : null,
     links: { parent: [], related: [], depends: [] },
     stage: state,
+    modelSelection: { model: '', effort: '', effectiveModel: 'gpt-6-luna', effectiveEffort: 'medium' },
     priorityInfo: { ...(priorities[index] || { name: 'Unknown', color: '#888888' }), index, basis: 'fixture' },
     queueLifecycle: { roles: lifecycle.map((s) => ({ ...s, label: 'Fixture stage', status: 'idle', future: false })) },
   }));
@@ -38,6 +39,28 @@ export function browserFixture(root) {
     head: '0'.repeat(40),
     lifecycle,
     priorities,
+    modelSettings: {
+      defaults: { model: 'gpt-6-luna', effort: 'medium' },
+      models: [
+        { id: 'gpt-6-luna', name: 'GPT-6 Luna', description: 'Fast and efficient for focused, frequent work.' },
+        {
+          id: 'gpt-6.1-sol',
+          name: 'GPT-6.1 Sol',
+          description: 'Near-Astra capability for complex work at lower cost.',
+        },
+        {
+          id: 'gpt-6.1-terra',
+          name: 'GPT-6.1 Terra',
+          description: 'Fast visual reasoning, precise computer use, and clear writing.',
+        },
+        {
+          id: 'gpt-6-astra',
+          name: 'GPT-6 Astra',
+          description: 'The most capable choice for demanding reasoning and coding.',
+        },
+      ],
+      efforts: ['low', 'medium', 'high', 'max'],
+    },
     issues,
     actions: [],
     runs: [],
@@ -48,11 +71,30 @@ export function browserFixture(root) {
   const ui = join(root, 'scripts/factory-ui');
   const page = readFileSync(join(ui, 'index.html'), 'utf8');
   const assets = new Set(['index.html', ...[...page.matchAll(/<script src="\/([^"]+)"/g)].map((match) => match[1])]);
-  return createServer((request, response) => {
+  return createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost');
     if (url.pathname.startsWith('/api/')) {
       response.setHeader('Content-Type', 'application/json');
       if (request.method !== 'GET') {
+        let text = '';
+        for await (const chunk of request) text += chunk;
+        const value = JSON.parse(text || '{}');
+        if (url.pathname === '/api/model-settings') {
+          data.modelSettings.defaults = { model: value.model, effort: value.effort };
+          return response.end(JSON.stringify(data.modelSettings));
+        }
+        if (url.pathname === '/api/issue-model-settings') {
+          const issue = issues.find((entry) => entry.id === value.issueId);
+          if (issue) {
+            issue.modelSelection = {
+              model: value.model,
+              effort: value.effort,
+              effectiveModel: value.model || data.modelSettings.defaults.model,
+              effectiveEffort: value.effort || data.modelSettings.defaults.effort,
+            };
+          }
+          return response.end('{}');
+        }
         response.statusCode = 405;
         return response.end('{"error":"Fixture cannot launch work or save issues"}');
       }
