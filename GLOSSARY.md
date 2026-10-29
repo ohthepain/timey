@@ -105,6 +105,16 @@ its activity and answers in the issue UI, and pauses for actual human input.
 It is separate from a single `/factory` decision iteration and never supplies
 human-first integration approval or final acceptance on the user’s behalf.
 
+**Coordinator conversation**:
+The shared conversation used to coordinate work across the issue queue. Each
+issue retains its own issue conversation; coordination does not transfer an
+issue’s execution or approval authority.
+
+**Coordinator working notes**:
+Computed findings retained to help the coordinator continue its reasoning. They
+are distinct from chat history and the current issue records, and do not grant
+execution authority or replace approvals.
+
 **Issue conversation**:
 The single continuing conversation that is an issue's home for human messages,
 all lifecycle role contributions, questions, decisions, outcomes, and retrospectives.
