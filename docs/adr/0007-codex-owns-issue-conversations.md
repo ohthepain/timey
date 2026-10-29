@@ -1,8 +1,10 @@
 # Codex owns each issue's conversation
 
 Once a conversation is needed, each issue has one native Codex chat for all
-lifecycle roles, human interaction, and retrospectives. The factory server starts
-or continues no model conversations.
+lifecycle roles, human interaction, and retrospectives. Issue conversations follow this ownership decision. The shared queue coordinator
+is a narrow exception: its read-only server-managed conversation explains and
+reviews coordination across issues. It does not replace issue chats or grant
+execution, approval or acceptance authority; see [the coordinator view](../agents/factory-ui.md#coordinator-view).
 Independent verification may use a subagent of the issue chat, with its findings
 brought back into that same chat. This keeps the work visible and interactive in
 Codex while retaining an independent reviewer context.

@@ -47,3 +47,10 @@ The coordinator applies the same completion compiler and PR-readiness validator
 without a second model conversation. A changed candidate or plan rejects that
 result. Genuine decisions are asked inline, and unfinished approved work becomes
 a saved repair task. Missing combined findings retain the ordinary review path.
+
+Administrative queue evaluations and lifecycle coordination reviews use the shared
+read-only queue coordinator conversation described in
+[the coordinator view](factory-ui.md#coordinator-view). Diagnostic Clarify turns
+stay in the issue's primary chat, as do implementation assignments. Independent
+reviews keep their separate contexts. This exception does not move issue chats
+or change their approvals, assignment evidence or acceptance rules.

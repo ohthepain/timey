@@ -1068,8 +1068,14 @@
   <body>
     <header>
       <a href="#/queue"><b>Factory</b></a
-      ><span>Issue queue</span><small id="connection">Connecting…</small>
+      ><span>Issue queue</span><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
     </header>
+    <div
+      id="coordinator-strip"
+      role="status"
+      hidden
+      style="padding: 12px 24px; background: #d7e6dc; width: 100%; box-sizing: border-box"
+    ></div>
     <main>
       <div id="error" role="alert"></div>
       <div id="app"></div>
@@ -1089,6 +1095,7 @@
     <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
     <script src="/queue-sort-ui.js"></script>
+    <script src="/coordinator-ui.js"></script>
     <script src="/file-link-ui.js"></script>
     <script src="/issue-chat-ui.js"></script>
     <script src="/discussion-ui.js"></script>
@@ -1135,6 +1142,7 @@
             issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
           ]);
           data = { ...snapshot, conversation };
+          coordinatorUI.update(data);
           showRuntime(runtime);
           if (runtime.server) serverControlUI.show(runtime.server, request);
           $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
@@ -1462,7 +1470,7 @@
           .join('');
       }
       function queue() {
-        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Review queue with Codex</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">View coordinator</a><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Review queue with Codex</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -2197,12 +2205,8 @@
             : '');
         const acceptanceOnly = stage?.role === 'ready-to-close' && (!record?.canResume || issue.progress?.disabled);
         const canStart =
-          !input &&
-          !record?.deliveryHandoff &&
-          !record?.deliveryWaiting &&
-          !issue.assemblyRecovery &&
-          !acceptanceOnly;
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+          !input && !record?.deliveryHandoff && !record?.deliveryWaiting && !issue.assemblyRecovery && !acceptanceOnly;
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -2534,7 +2538,18 @@
         issueChatUI.beforeRender();
         rememberView();
         const route = issueRoute();
-        $('app').innerHTML = route.id ? issue(route.id) : queue();
+        if (coordinatorUI.mount(data, request, refresh)) {
+          issueChatUI.mount(null, data, request, refresh);
+          return;
+        }
+        coordinatorUI.update(data);
+        $('app').innerHTML = route.id
+          ? '<p><a href="#/coordinator">View coordinator</a></p>' +
+            (data.coordinator?.active && data.coordinator.active.issueId !== route.id
+              ? '<p>Waiting while the coordinator finishes its current operation. <a href="#/coordinator">See its activity</a>.</p>'
+              : '') +
+            issue(route.id)
+          : queue();
         const currentIssue = data.issues.find((entry) => entry.id === route.id);
         const record = currentIssue?.lifecycle;
         const pending =

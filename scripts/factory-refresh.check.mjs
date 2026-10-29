@@ -8,12 +8,14 @@ function refreshFixture(t) {
   const start = html.indexOf('      async function refresh()');
   const end = html.indexOf('      function showRuntime(', start);
   const dom = new JSDOM(
-    '<input id="draft"><dialog id="confirm"></dialog><dialog id="plan"></dialog><div id="connection"></div><div id="error"></div><main id="app"></main>',
+    '<div id="coordinator-strip" hidden></div><input id="draft"><dialog id="confirm"></dialog><dialog id="plan"></dialog><div id="connection"></div><div id="error"></div><main id="app"></main>',
     { url: 'http://127.0.0.1/#/issue/one', runScripts: 'outside-only' }
   );
   t.after(() => dom.window.close());
   dom.window.eval(
-    readFileSync('scripts/factory-ui/server-control-ui.js', 'utf8') +
+    readFileSync('scripts/factory-ui/coordinator-ui.js', 'utf8') +
+      '\nwindow.coordinatorUI = coordinatorUI;\n' +
+      readFileSync('scripts/factory-ui/server-control-ui.js', 'utf8') +
       '\nwindow.serverControlUI = serverControlUI;\n' +
       readFileSync('scripts/factory-ui/discussion-ui.js', 'utf8') +
       '\nwindow.chatTest = discussionUI;'
@@ -35,6 +37,7 @@ function refreshFixture(t) {
     'isBusy',
     'serverControlUI',
     'issueRoute',
+    'coordinatorUI',
     'let data,refreshing=false,refreshPending=false;\n' +
       html.slice(start, end).replace('!busy', '!isBusy()') +
       ';return refresh;'
@@ -55,7 +58,8 @@ function refreshFixture(t) {
     },
     () => busy,
     dom.window.serverControlUI,
-    () => ({ id: 'one' })
+    () => ({ id: 'one' }),
+    dom.window.coordinatorUI
   );
   return {
     refresh,
