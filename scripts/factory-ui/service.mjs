@@ -1,3 +1,5 @@
+import { createCoordinator } from './coordinator.mjs';
+import { progressBasis } from './next-action.mjs';
 import { queueHumanInput } from './queue-human-input.mjs';
 import { deliveryMode, draftHandoff, draftAssembly } from './delivery-mode.mjs';
 import { checkHandoff } from './handoff-checks.mjs';
@@ -94,6 +96,9 @@ export class FactoryUI {
     this.lifecycleRuns = loadLifecycles(this.root);
     this.lifecycleTasks = new Map();
     this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
+    this.coordinator = createCoordinator(this, options.coordinatorConnection, (id) =>
+      this.continueCoordinatorIssue(id)
+    );
     this.check = checkCandidate;
     this.guard = humanGuard;
     installWorkerHealth(this);
@@ -104,6 +109,7 @@ export class FactoryUI {
     const runs = this.store.list(this.codex.requests);
     return {
       ...queue,
+      coordinator: this.coordinator.view(),
       reviewBasis: digest(JSON.stringify(queue)),
       issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner)),
       runs: runs.map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
@@ -188,6 +194,12 @@ export class FactoryUI {
   }
   retryIntegrationRecovery(input) {
     return retryIntegrationRecovery(this, input, (id) => continueLifecycleAfter(this, id));
+  }
+  continueCoordinatorIssue(issueId) {
+    const queue = readQueue(this.root),
+      issue = queue.issues.find((i) => i.id === issueId);
+    requireThat(issue, 'The saved issue no longer exists.');
+    return this.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
   }
   startLifecycle(input) {
     return startLifecycle(this, input);
@@ -543,14 +555,9 @@ export class FactoryUI {
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
     this.store.update(run, evaluationMetadata(queue, selected, basis));
     this.perform(run, async () => {
-      const threadId = issueId
-        ? await issueWorkChat(this, run, issueId, this.root, 'read-only')
-        : await startChat(this, run, this.root, 'read-only');
-      this.store.update(run, { threadId, status: 'running' });
       const result = JSON.parse(
-        await this.codex.turn(
-          threadId,
-          this.root,
+        await this.coordinator.turn(
+          run,
           conversationPrompt(
             this,
             run,
@@ -609,6 +616,7 @@ export class FactoryUI {
     this.store.flush();
     this.discussions.close();
     this.issueChats.close();
+    this.coordinator.close();
     this.codex.close();
     if (this.serverLock && existsSync(this.serverLock)) {
       const owner = JSON.parse(readFileSync(join(this.serverLock, 'owner.json'), 'utf8'));

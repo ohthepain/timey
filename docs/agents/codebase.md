@@ -470,3 +470,10 @@ the manual handoff report; shared delivery publication retains provider identity
 and recovery guards. `pr-publication.mjs` finishes Progress at a draft handoff;
 verified delivery still uses the existing completion and merge protocol. See
 [the default handoff contract](issue-delivery.md#default-draft-pr-handoff).
+
+The shared queue coordinator is owned by `factory-ui/coordinator.mjs`;
+`coordinator-store.mjs` retains its operation, conversation history and renewal
+handoffs. `coordinator-ui.js` renders its dedicated page and compact activity strip.
+Read-only lifecycle coordination and queue evaluations use its separate connection;
+workers and independent reviews retain their existing connections.
+Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.
