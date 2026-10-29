@@ -246,7 +246,7 @@ test('route display labels resolve to canonical states without changing approval
           issueId: f.id,
           steps: [
             { state: 'Verify', decision: 'take', reason: 'First' },
-            { state: 'verify', decision: 'take', reason: 'Duplicate' },
+            { state: 'verify', decision: 'skip', reason: 'Conflicting duplicate' },
           ],
         },
       ]),
@@ -266,5 +266,51 @@ test('route display labels resolve to canonical states without changing approval
         { issueId: f.id, steps: [{ state: 'Verify', decision: 'take', reason: 'Ambiguous' }] },
       ]),
     /Unknown or ambiguous/
+  );
+});
+
+test('route role IDs and agreeing aliases resolve once without changing decisions', async (t) => {
+  const { validateRoutes } = await import('./factory-ui/lifecycle.mjs');
+  const f = fixture(t),
+    queue = readQueue(f.root);
+  const steps = queue.lifecycle.map((stage) => ({
+    state: stage.role,
+    decision: 'undecided',
+    reason: 'Retain the decision.',
+  }));
+  steps.push({ state: 'final', decision: 'undecided', reason: 'Alias for final review.' });
+  const routes = [{ issueId: f.id, steps }],
+    before = structuredClone(routes);
+  const result = validateRoutes(queue, routes, f.id);
+  assert.deepEqual(
+    result[0].steps.map((step) => step.state),
+    queue.lifecycle.map((stage) => stage.state)
+  );
+  assert.match(result[0].steps.find((step) => step.state === 'final').reason, /Alias for final review/);
+  assert.deepEqual(routes, before);
+  assert.throws(
+    () =>
+      validateRoutes(queue, [
+        {
+          issueId: f.id,
+          steps: [
+            { state: 'ready-to-verify', decision: 'skip', reason: 'Role spelling cannot bypass required checks.' },
+          ],
+        },
+      ]),
+    /required by project policy/
+  );
+  assert.throws(
+    () =>
+      validateRoutes(queue, [
+        {
+          issueId: f.id,
+          steps: [
+            { state: 'ready-to-close', decision: 'take', reason: 'First' },
+            { state: 'final', decision: 'skip', reason: 'Conflicting alias' },
+          ],
+        },
+      ]),
+    /conflicting decisions/
   );
 });

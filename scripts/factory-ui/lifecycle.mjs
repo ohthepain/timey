@@ -41,15 +41,39 @@ export function validateRoutes(queue, routes, focus = null) {
   return normalized;
 }
 // Model responses may use the configured display label instead of its state ID.
-// Resolve exact, unique labels only; validation still owns decisions and policy.
+// Resolve unique configured labels or roles; validation still owns decisions and policy.
 function normalizeRoute(queue, route) {
   if (!Array.isArray(route.steps)) return route;
-  return { ...route, steps: route.steps.map((step) => ({ ...step, state: routeState(queue, step.state) })) };
+  const steps = [],
+    originals = new Map();
+  for (const proposal of route.steps) {
+    const state = routeState(queue, proposal.state);
+    const prior = steps.find((step) => step.state === state);
+    if (!prior) {
+      steps.push({ ...proposal, state });
+      originals.set(state, proposal.state);
+      continue;
+    }
+    requireThat(
+      originals.get(state) !== proposal.state &&
+        prior.decision === proposal.decision &&
+        JSON.stringify(prior.source) === JSON.stringify(proposal.source),
+      'The route repeats a step or gives conflicting decisions for the same stage.'
+    );
+    requireThat(
+      nonempty(prior.reason) && nonempty(proposal.reason),
+      'Each planned step needs a plain-language reason.'
+    );
+    prior.reason = [prior.reason, proposal.reason].join('\n');
+  }
+  return { ...route, steps };
 }
 function routeState(queue, value) {
   if (knownState(queue, value)) return value;
   const name = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  const matches = queue.lifecycle.filter((stage) => stage.name?.toLowerCase() === name);
+  const matches = queue.lifecycle.filter(
+    (stage) => stage.name?.toLowerCase() === name || stage.role?.toLowerCase() === name
+  );
   requireThat(
     matches.length === 1,
     `Unknown or ambiguous route stage ${JSON.stringify(value)}. Use a configured state: ${queue.lifecycle.map((stage) => stage.state).join(', ')}, @integration.`
