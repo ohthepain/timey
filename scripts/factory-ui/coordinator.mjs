@@ -274,7 +274,8 @@ class Coordinator {
       try {
         await this.connection.call('thread/read', { threadId: thread.threadId, includeTurns: false });
       } catch (probe) {
-        if (!missing(probe.message)) throw error;
+        const notLoaded = probe.message.includes(thread.threadId) && /thread not loaded:/.test(probe.message);
+        if (!missing(probe.message) && !notLoaded) throw error;
         thread.unavailable = new Date().toISOString();
         thread.title = 'Coordinator · provider did not retain this empty chat';
         this.renew();

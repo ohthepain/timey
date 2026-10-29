@@ -467,8 +467,7 @@ test('provider-confirmed missing empty chat recovers once; populated or uncertai
     return attach(...args);
   };
   f.connection.call = async (method, params) => {
-    if (method === 'thread/read' && params.threadId === missing)
-      throw Error('no rollout found for thread id ' + missing);
+    if (method === 'thread/read' && params.threadId === missing) throw Error('thread not loaded: ' + missing);
     return call(method, params);
   };
   await f.owner.turn(f.run, 'Recover from current records');
