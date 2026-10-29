@@ -30,12 +30,31 @@ export const routeSchema = {
 export function validateRoutes(queue, routes, focus = null) {
   requireThat(Array.isArray(routes), 'The proposed routes must be a list.');
   const seen = new Set();
-  for (const route of routes) {
+  const normalized = [];
+  for (const proposal of routes) {
+    const route = normalizeRoute(queue, proposal);
     requireThat(!seen.has(route.issueId), 'The review proposed more than one route for an issue.');
     seen.add(route.issueId);
     validateRoute(queue, route, focus);
+    normalized.push(route);
   }
-  return routes;
+  return normalized;
+}
+// Model responses may use the configured display label instead of its state ID.
+// Resolve exact, unique labels only; validation still owns decisions and policy.
+function normalizeRoute(queue, route) {
+  if (!Array.isArray(route.steps)) return route;
+  return { ...route, steps: route.steps.map((step) => ({ ...step, state: routeState(queue, step.state) })) };
+}
+function routeState(queue, value) {
+  if (knownState(queue, value)) return value;
+  const name = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  const matches = queue.lifecycle.filter((stage) => stage.name?.toLowerCase() === name);
+  requireThat(
+    matches.length === 1,
+    `Unknown or ambiguous route stage ${JSON.stringify(value)}. Use a configured state: ${queue.lifecycle.map((stage) => stage.state).join(', ')}, @integration.`
+  );
+  return matches[0].state;
 }
 function validateRoute(queue, route, focus) {
   const issue = queue.issues.find((i) => i.id === route.issueId);

@@ -1297,3 +1297,9 @@ continuation. It never automatically replays the old operation.
 trials `gpt-6-luna` for new factory chats to reduce latency. The preference is
 sent only at thread creation; resuming an existing issue or coordinator does not
 change its model. Removing the setting restores the installed Codex default.
+
+Route proposals accept canonical lifecycle state IDs. A model response using an
+exact, unambiguous configured display label is translated to its state ID before
+validation and saving; the original response remains unchanged. Unknown or
+ambiguous labels are rejected with the configured IDs. Label translation never
+changes take/skip decisions, required-stage policy or approval requirements.

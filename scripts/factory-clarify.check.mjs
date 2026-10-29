@@ -209,3 +209,62 @@ test('capture grilling is explicit, follows durable creation, survives retries a
   assert.equal(f.service.api.inspect().registry.actions.length, 0);
   await assert.rejects(f.service.captures.save({ ...input, grill: false }), /another description/);
 });
+
+test('route display labels resolve to canonical states without changing approval or skip policy', async (t) => {
+  const { validateRoutes } = await import('./factory-ui/lifecycle.mjs');
+  const f = fixture(t),
+    queue = readQueue(f.root);
+  const route = [
+    {
+      issueId: f.id,
+      steps: queue.lifecycle.map((stage) => ({
+        state: stage.name,
+        decision: 'undecided',
+        reason: 'Await the existing stage decision.',
+      })),
+    },
+  ];
+  const before = structuredClone(route);
+  const result = validateRoutes(queue, route, f.id);
+  assert.deepEqual(
+    result[0].steps.map((step) => step.state),
+    queue.lifecycle.map((stage) => stage.state)
+  );
+  assert.deepEqual(route, before, 'Preserve the raw model response.');
+  assert.ok(result[0].steps.every((step) => step.decision === 'undecided'));
+  assert.throws(
+    () =>
+      validateRoutes(queue, [
+        { issueId: f.id, steps: [{ state: 'Verify', decision: 'skip', reason: 'Try to skip a required stage.' }] },
+      ]),
+    /required by project policy/
+  );
+  assert.throws(
+    () =>
+      validateRoutes(queue, [
+        {
+          issueId: f.id,
+          steps: [
+            { state: 'Verify', decision: 'take', reason: 'First' },
+            { state: 'verify', decision: 'take', reason: 'Duplicate' },
+          ],
+        },
+      ]),
+    /repeats a step/
+  );
+  assert.throws(
+    () =>
+      validateRoutes(queue, [
+        { issueId: f.id, steps: [{ state: 'invented-stage', decision: 'take', reason: 'Unknown' }] },
+      ]),
+    /Unknown or ambiguous/
+  );
+  const ambiguous = { ...queue, lifecycle: [...queue.lifecycle, { state: 'other', name: 'Verify' }] };
+  assert.throws(
+    () =>
+      validateRoutes(ambiguous, [
+        { issueId: f.id, steps: [{ state: 'Verify', decision: 'take', reason: 'Ambiguous' }] },
+      ]),
+    /Unknown or ambiguous/
+  );
+});
