@@ -106,8 +106,8 @@ It is separate from a single `/factory` decision iteration and never supplies
 human-first integration approval or final acceptance on the user’s behalf.
 
 **Issue conversation**:
-The persistent exchange for one issue, including human messages, lifecycle role
-contributions, questions, decisions and outcomes.
+The single continuing conversation that is an issue's home for human messages,
+all lifecycle role contributions, questions, decisions, outcomes, and retrospectives.
 _Avoid_: Temporary chat, worker chat
 
 **Revision request**:

@@ -86,12 +86,16 @@ retain strict validation and cannot infer empty scope from a saved tool report.
 
 ### Commit and step-completion checkpoints
 
-Before a commit, the pre-commit hook audits the exact staged snapshot against
-HEAD. Before declaring an implementation step complete, including an uncommitted
-step, run `pnpm run audit:step -- --base <step-start-commit>`. Use the recorded
-starting revision, not the new HEAD after committing (which could hide that step's
-changes). Full `verify -- --base REF` uses the same new-only audit in addition to
-its other checks. A successful audit does not establish type/build/device success.
+Before a commit, the pre-commit hook runs `pnpm run audit:staged`, which exports
+the staged snapshot for verification bookkeeping. **Fallow is skipped by default**
+so commits and CI `verify` are not blocked by audit findings. Set
+`TIMEY_FALLOW_ENFORCE=1` when you want the pinned Fallow audit to fail the hook,
+`audit:step`, or full `verify`. Before declaring an implementation step complete,
+including an uncommitted step, run `pnpm run audit:step -- --base <step-start-commit>`.
+Use the recorded starting revision, not the new HEAD after committing (which could
+hide that step's changes). Full `verify -- --base REF` still runs types, tests,
+build, and factory checks; only Fallow enforcement is opt-in. A successful audit
+does not establish type/build/device success.
 
 A checkpoint fails on a nonzero Fallow process exit, a `fail` or `error` audit
 verdict, warning text on stderr, degraded analysis, missing/unsupported JSON, or a

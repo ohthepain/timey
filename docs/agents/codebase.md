@@ -56,6 +56,12 @@ calculation or event data. Tests in `TempoService.test.ts`, `wireMidiTransportTo
 `EventRecorderService.test.ts` and `Transport.test.tsx` exercise those interfaces,
 including exact live/replay CSV parity and lifecycle cleanup.
 
+The experimental native handoff starts at `scripts/factory-native-chat.mjs` and
+the `/native-chat?issue=FULL_ID` factory page. It uses the existing shared progress
+record owner for pending requests and home-chat bindings; its local CLI needs no
+factory server or model connection. The [proof record](../plans/codex-native-handoff-proof.md)
+distinguishes tested HTTP/record behavior from the pending native smoke test.
+
 Read [verification](verification.md) before exercising behavior and
 [operating rules](operating.md) before coordinating work. Domain meanings belong
 in `GLOSSARY.md`; architecture rationale belongs in relevant `docs/adr/` records.

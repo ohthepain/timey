@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Factory · Codex handoff proof</title>
+    <style>
+      body {
+        font: 17px system-ui;
+        max-width: 640px;
+        margin: 64px auto;
+        padding: 24px;
+        color: #172438;
+        background: #f5f7fa;
+      }
+      button,
+      a {
+        font: inherit;
+        padding: 12px;
+        display: inline-block;
+      }
+      #status {
+        white-space: pre-wrap;
+      }
+      a[hidden],
+      button[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Discuss this issue in Codex</h1>
+    <p>
+      This handoff proof opens a prepared Codex draft. Press Send there to register the issue’s home chat. It starts no
+      factory model conversation.
+    </p>
+    <p id="issue"></p>
+    <p id="status" role="status"></p>
+    <button id="discuss" hidden>Prepare discussion</button><a id="open" hidden>Open Codex</a
+    ><button id="refresh">Refresh saved status</button>
+    <script src="/native-chat-ui.js"></script>
+  </body>
+</html>

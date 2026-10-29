@@ -207,6 +207,13 @@ assignment can leave the issue at its current stage; the next Progress action ca
 recommend the remaining work. Chat links use `codex://threads/<id>`, the local
 desktop app's copied chat-link format; opening depends on that app being installed.
 
+An experimental `/native-chat?issue=FULL_ID` page proves the replacement native
+handoff on disposable issues. It reserves one discussion request without a model
+call; the user opens a prepared Codex composer and presses Send there to register
+the home chat through a local command. Later visits link to that exact chat.
+It is not a cutover of existing Progress or conversation controls and must not be
+used for active issues. See [proof status and limits](../plans/codex-native-handoff-proof.md).
+
 ## Recorded stage states and planned routes
 
 Blue means a recorded stage completion, grey means a recorded skip or planned

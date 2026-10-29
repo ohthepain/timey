@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { uiDirectory } from './ui-source.mjs';
+import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
 async function body(request) {
   let text = '';
   for await (const chunk of request) {
@@ -59,6 +60,10 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/native-chat-prepare': () => {
+      service.ownServer();
+      return prepareNativeChat(service.root, value);
+    },
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
@@ -121,7 +126,7 @@ export function createFactoryServer(service, options = {}) {
 }
 
 async function respond(service, request, response, token, port) {
-  if (isPage(request)) return page(service, response, token, port);
+  if (isPage(request)) return page(service, request, response, token, port);
   authorize(request, token, port);
   response.setHeader('Content-Type', 'application/json');
   if (request.method === 'GET') return readResource(service, request, response, token);
@@ -129,14 +134,16 @@ async function respond(service, request, response, token, port) {
   response.statusCode = 405;
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }
-function page(service, response, token, port) {
+function page(service, request, response, token, port) {
   response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
-  response.end(readFileSync(join(uiDirectory(service), 'index.html')));
+  const name = request.url.startsWith('/native-chat?') ? 'native-chat.html' : 'index.html';
+  response.end(readFileSync(join(uiDirectory(service), name)));
 }
 function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
   const routes = {
+    '/api/native-chat': () => nativeChatStatus(service.root, url.searchParams.get('issue')),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
     '/api/issue-chat': () =>
@@ -154,7 +161,7 @@ function read(service, request, response, owner) {
 }
 
 function isPage(request) {
-  return request.method === 'GET' && request.url === '/';
+  return request.method === 'GET' && (request.url === '/' || request.url.startsWith('/native-chat?'));
 }
 
 async function temporaryAction(action) {
@@ -167,6 +174,7 @@ async function temporaryAction(action) {
 
 function readResource(service, request, response, owner) {
   const scripts = {
+    '/native-chat-ui.js': 'native-chat-ui.js',
     '/server-control-ui.js': 'server-control-ui.js',
     '/queue-lifecycle-ui.js': 'queue-lifecycle-ui.js',
     '/queue-sort-ui.js': 'queue-sort-ui.js',

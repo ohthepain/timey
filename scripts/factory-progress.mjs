@@ -14,14 +14,18 @@ export function readProgress(root) {
   return ledger.issues;
 }
 export function writeProgress(root, record) {
+  return updateProgress(root, record.issueId, () => record);
+}
+export function updateProgress(root, issueId, update) {
   const directory = join(root, '.issues/factory-ui');
   mkdirSync(directory, { recursive: true });
   const lock = join(root, '.issues/factory-progress-record.lock');
   mkdirSync(lock);
   try {
     const issues = readProgress(root);
-    issues[record.issueId] = record;
+    issues[issueId] = update(issues[issueId] || { issueId });
     writeJson(join(directory, 'lifecycle.json'), { version: 1, issues });
+    return issues[issueId];
   } finally {
     rmSync(lock, { recursive: true });
   }
