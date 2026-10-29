@@ -2258,14 +2258,13 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
     links
   );
-  const render = new Function(
-    'data',
-    'esc',
-    'busy',
-    'approvals',
-    'fileLinkUI',
-    source + ';return lifecyclePanel;'
-  )(screen, (value) => String(value || ''), false, () => '', links.fileLinkUI);
+  const render = new Function('data', 'esc', 'busy', 'approvals', 'fileLinkUI', source + ';return lifecyclePanel;')(
+    screen,
+    (value) => String(value || ''),
+    false,
+    () => '',
+    links.fileLinkUI
+  );
   const issue = { id: 'one', state: 'investigate' };
   assert.match(render(issue), /data-lifecycle-start/);
   assert.doesNotMatch(render(issue), /showModal|readiness|data-progress-id/);
