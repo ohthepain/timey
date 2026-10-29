@@ -4835,3 +4835,54 @@ test('Continue retires a disconnected read-only review and recovers once without
   assert.equal(service.store.runs.length, 1);
   assert.equal(readQueue(root).actions.length, 0);
 });
+
+test('Continue acknowledges a click before a delayed response and prevents duplicate requests', async () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(html.indexOf('      function startIssueProgress('), html.indexOf('      function applyProgressFeedback('));
+  let finish, calls = 0;
+  const states = new Map(), feedback = [];
+  const start = new Function('act', 'request', 'data', 'progressRequests', 'applyProgressFeedback', source + ';return startIssueProgress;')(
+    (task) => task(),
+    () => { calls++; return new Promise((resolve) => { finish = resolve; }); },
+    { reviewBasis: 'basis' }, states,
+    () => feedback.push(states.get('one') && { ...states.get('one') })
+  );
+  const issue = { id: 'one', state: 'in-progress', progressBasis: 'issue-basis' };
+  const pending = start(issue);
+  assert.equal(feedback[0]?.pending, true);
+  assert.match(feedback[0]?.message || '', /Sending/);
+  await start(issue);
+  assert.equal(calls, 1);
+  finish({ issueId: 'one' });
+  await pending;
+  assert.equal(states.get('one').pending, false);
+  assert.match(states.get('one').message, /accepted/i);
+});
+
+test('Continue renders accessible pending, accepted and failure feedback beside the clicked button', async (t) => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<button data-lifecycle-start="one">Continue…</button>', { runScripts: 'outside-only' });
+  t.after(() => dom.window.close());
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(html.indexOf('      function startIssueProgress('), html.indexOf('      function bind()', html.indexOf('      function startIssueProgress(')));
+  const { window } = dom;
+  let finish;
+  window.act = (task) => task();
+  window.request = () => new Promise((resolve) => { finish = resolve; });
+  window.eval('const progressRequests = new Map(); const data = {}; ' + source);
+  const button = window.document.querySelector('button');
+  const pending = window.startIssueProgress({ id: 'one', state: 'in-progress' });
+  assert.equal(button.disabled, true);
+  assert.equal(button.getAttribute('aria-busy'), 'true');
+  assert.match(button.textContent, /Sending/);
+  assert.match(button.nextElementSibling.textContent, /approved plan/);
+  assert.equal(button.nextElementSibling.getAttribute('role'), 'status');
+  finish({});
+  await pending;
+  assert.match(button.nextElementSibling.textContent, /accepted/);
+  window.request = async () => { throw Error('Connection lost'); };
+  await assert.rejects(window.startIssueProgress({ id: 'one' }), /Connection lost/);
+  assert.equal(button.nextElementSibling.getAttribute('role'), 'alert');
+  assert.match(button.nextElementSibling.textContent, /Connection lost/);
+  assert.equal(button.getAttribute('aria-busy'), 'false');
+});

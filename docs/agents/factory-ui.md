@@ -154,6 +154,11 @@ Worker and integration recovery still reconnect their existing assignments.
 The UI refuses
 uncertain setup and leaves it for coordinator reconciliation.
 
+Continue immediately displays a sending status beside the button and prevents
+duplicate clicks while acknowledgment is pending. Server acceptance is shown
+separately from work starting; request failures remain visible with guidance to
+refresh before retrying. This feedback does not change execution or approval gates.
+
 Local history and transcripts live under ignored `.issues/factory-ui/`. A server
 ownership lock prevents concurrent UI writers. A previous ownership lock must be
 reconciled after an abnormal exit: inspect its PID and saved runs before removing

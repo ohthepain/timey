@@ -1108,6 +1108,7 @@
         refreshPending = false;
       const runDetails = new Map();
       const approvalStates = new Map();
+      const progressRequests = new Map();
       const $ = (id) => document.getElementById(id);
       const esc = (value) =>
         String(value ?? '').replace(
@@ -2569,6 +2570,7 @@
         bind();
         bindPriorities();
         applyApprovalFeedback();
+        applyProgressFeedback();
         siteReviewUI.mount(data, request, refresh);
         restoreView();
         discussionUI.mount(route.id, request);
@@ -2594,14 +2596,54 @@
         $('confirm').showModal();
       }
       function startIssueProgress(issue) {
-        return act(() =>
-          request('lifecycle-start', {
-            issueId: issue.id,
-            issueBasis: issue.progressBasis,
-            state: issue.state,
-            basis: data.reviewBasis,
-          })
-        );
+        if (progressRequests.get(issue.id)?.pending) return;
+        progressRequests.set(issue.id, {
+          pending: true,
+          message: 'Sending Continue… Requesting the next unfinished task under your approved plan. Waiting for the server to acknowledge it.',
+        });
+        applyProgressFeedback();
+        return act(async () => {
+          try {
+            await request('lifecycle-start', {
+              issueId: issue.id,
+              issueBasis: issue.progressBasis,
+              state: issue.state,
+              basis: data.reviewBasis,
+            });
+            progressRequests.set(issue.id, {
+              pending: false,
+              message: 'Continue accepted by the server. Checking saved work for the next step; progress will appear below.',
+            });
+          } catch (error) {
+            progressRequests.set(issue.id, {
+              pending: false,
+              error: true,
+              message: 'Continue could not be confirmed: ' + error.message + ' Refresh to check progress before retrying.',
+            });
+            throw error;
+          } finally {
+            applyProgressFeedback();
+          }
+        });
+      }
+      function applyProgressFeedback() {
+        document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
+          const state = progressRequests.get(button.dataset.lifecycleStart);
+          if (!state) return;
+          let feedback = button.nextElementSibling;
+          if (!feedback?.classList.contains('progress-feedback')) {
+            feedback = document.createElement('p');
+            feedback.className = 'progress-feedback';
+            button.after(feedback);
+          }
+          feedback.setAttribute('role', state.error ? 'alert' : 'status');
+          feedback.textContent = state.message;
+          button.setAttribute('aria-busy', String(state.pending));
+          if (state.pending) {
+            button.disabled = true;
+            button.textContent = 'Sending Continue…';
+          }
+        });
       }
       function bind() {
         issueCaptureUI.bind(request, refresh);
