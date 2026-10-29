@@ -67,6 +67,13 @@ import { checkImplementation } from './plan-review.mjs';
 import { decidePlanCheck } from './plan-approval.mjs';
 import { skipPlanChecks } from './plan-skips.mjs';
 import { approveReviewFile } from './review-file-access.mjs';
+import {
+  readIssueModelSettings,
+  readModelSettings,
+  saveDefaultModelSettings,
+  saveIssueModelSettings,
+  newChatModelSettings,
+} from './model-settings.mjs';
 
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
@@ -132,6 +139,7 @@ export class FactoryUI {
     const runs = this.store.list(this.codex.requests);
     return {
       ...queue,
+      modelSettings: readModelSettings(this.root),
       coordinator: this.coordinator.view(),
       reviewBasis: digest(JSON.stringify(queue)),
       issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner)),
@@ -168,7 +176,14 @@ export class FactoryUI {
       progress,
       implementation: checklistView(queue, issue, runs),
       siteReview: this.siteReviews.view(queue, issue, owner),
+      modelSelection: readIssueModelSettings(this.root, issue.id),
     };
+  }
+  saveModelSettings(input) {
+    return saveDefaultModelSettings(this, input);
+  }
+  saveIssueModelSettings(input) {
+    return saveIssueModelSettings(this, input);
   }
   lifecycleStatus(queue, issue, runs) {
     const record = lifecycleView(this, issue);
@@ -409,7 +424,9 @@ export class FactoryUI {
       run.threadId,
       run.checkout,
       conversationPrompt(this, run, prompt),
-      workerResultSchema
+      workerResultSchema,
+      [],
+      run.issueId ? newChatModelSettings(this.root, run.issueId) : null
     );
     await pinWorkerTurn(this, run, text);
     let result = JSON.parse(text);

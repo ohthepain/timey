@@ -60,6 +60,24 @@ requests do not count as actionable input; their requirements still block affect
 work. Connected worker approvals and current lifecycle questions remain visible.
 Final acceptance is projected from recorded finished work, not a stage name alone.
 
+## Model and effort preferences
+
+The issue queue's gear opens project-local defaults for model and reasoning
+effort. Defaults start at GPT-6 Luna and medium. The model selector offers Luna,
+GPT-6.1 Sol, GPT-6.1 Terra and GPT-6 Astra with brief practical descriptions;
+effort choices are low, medium, high and max. The issue page has separate model
+and effort selectors. An unset issue choice follows the current default, while an
+explicit choice remains fixed if defaults change. Preferences are stored in the
+ignored `.issues/model-settings.json` file so changing them does not dirty source
+or interfere with worker dispatch.
+
+These preferences are read when a new Codex thread starts. Resuming an existing
+thread keeps its original model and effort. `model-settings.mjs` validates and
+stores preferences; `codex.mjs` passes the effective model and reasoning effort
+to `thread/start`. New threads retain the existing sandbox and approval policy.
+
+Descriptions follow the current [OpenAI model-selection guidance](https://developers.openai.com/api/docs/guides/model-selection).
+
 ## Lifecycle Progress
 
 The lifecycle header has one **Progress** button. Pressing it opts into continued

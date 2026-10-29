@@ -1,11 +1,10 @@
 import { approvalReply } from './approval-options.mjs';
 import { turnFailure } from './turn-failure.mjs';
 import { redactValue } from './activity.mjs';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { cleanEnvironment, requireThat } from './common.mjs';
+import { newChatModelSettings } from './model-settings.mjs';
 
 // One local RPC connection. It never starts a thread or turn on construction.
 export class CodexConnection {
@@ -141,9 +140,10 @@ export class CodexConnection {
   clearRequests(threadId) {
     for (const [id, request] of this.requests) if (request.params.threadId === threadId) this.requests.delete(id);
   }
-  async start(cwd, sandbox = 'workspace-write', onStartup = () => {}) {
+  async start(cwd, sandbox = 'workspace-write', onStartup = () => {}, issueId = null, settingsRoot = cwd) {
     await this.ready();
     onStartup({ status: 'starting' });
+    const settings = newChatModelSettings(settingsRoot, issueId);
     const result = await this.call(
       'thread/start',
       {
@@ -153,7 +153,7 @@ export class CodexConnection {
         approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
         ...permissionToolConfig(sandbox),
         serviceName: 'timey-factory-ui',
-        ...factoryModel(cwd),
+        model: settings.model,
       },
       () =>
         onStartup({
@@ -183,7 +183,7 @@ export class CodexConnection {
     await this.ready();
     await this.call('thread/unarchive', { threadId });
   }
-  async turn(threadId, cwd, prompt, outputSchema, extraInput = []) {
+  async turn(threadId, cwd, prompt, outputSchema, extraInput = [], settings = null) {
     requireThat(!this.turns.has(threadId), 'This conversation already has running work.');
     let resolve, reject;
     const completion = new Promise((yes, no) => {
@@ -201,6 +201,7 @@ export class CodexConnection {
         approvalsReviewer: this.approvalReviewers.get(threadId),
         input: [{ type: 'text', text: prompt }, ...extraInput],
         outputSchema,
+        ...(settings ? { model: settings.model, effort: settings.effort } : {}),
       });
       const started = await turn.started;
       if (this.turns.get(threadId) === turn) turn.id = started.turn.id;
@@ -239,14 +240,4 @@ function approvalResult(request, response) {
 
 function permissionToolConfig(sandbox) {
   return sandbox === 'workspace-write' ? { config: { 'features.request_permissions_tool': true } } : {};
-}
-
-// Project preference applies only to new chats. Resumed work keeps its model.
-function factoryModel(root) {
-  const path = join(root, 'factory.config.json');
-  if (!existsSync(path)) return {};
-  const { factoryModel: model } = JSON.parse(readFileSync(path, 'utf8'));
-  if (model === undefined) return {};
-  requireThat(typeof model === 'string' && /^[a-zA-Z0-9._-]+$/.test(model), 'Choose a valid factory model ID.');
-  return { model };
 }
