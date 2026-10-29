@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync, readFileSync, cpSync, symlinkSync, realpathSy
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { handoffRestart } from './factory-ui/restart-process.mjs';
 import { serverControl } from './factory-ui/server-control.mjs';
 import { factoryEntry, uiDirectory } from './factory-ui/ui-source.mjs';

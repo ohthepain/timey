@@ -42,3 +42,28 @@ export function retainCandidate(root, key, result) {
   mkdirSync(directory, { recursive: true });
   writeJson(join(directory, key + '.json'), { result, evidence });
 }
+
+// Failed attempts are diagnostic evidence, never passing candidate proof.
+export function retainedFailure(root, key) {
+  if (!key) return null;
+  try {
+    const saved = readJson(join(root, '.issues/candidate-checks', key + '-failed.json'));
+    for (const file of saved.evidence) if (digest(readFileSync(file.path)) !== file.sha256) return null;
+    return saved;
+  } catch {
+    return null;
+  }
+}
+export function retainFailure(root, key, message, summaries, logs) {
+  if (!key) return;
+  const paths = [
+    ...logs,
+    ...summaries.flatMap((path) => [
+      path,
+      ...readJson(path).checks.flatMap((check) => [check.log, ...(check.artifacts || []).map((a) => a.path)]),
+    ]),
+  ];
+  const evidence = [...new Set(paths)].map((path) => ({ path, sha256: digest(readFileSync(path)) }));
+  mkdirSync(join(root, '.issues/candidate-checks'), { recursive: true });
+  writeJson(join(root, '.issues/candidate-checks', key + '-failed.json'), { message, summaries, evidence });
+}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { deliveryScenario } from './issue-delivery-scenario.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { digest, writeJson } from './factory-ui/common.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';

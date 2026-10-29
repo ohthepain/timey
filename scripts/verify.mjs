@@ -120,6 +120,13 @@ function recordCheck(name, command, result) {
     finishedAt: result.finishedAt,
   });
   console.log(`${details.passed ? 'PASS' : 'FAIL'} ${name}: ${log}`);
+  if (!details.passed) {
+    const failures = output
+      .split(/\r?\n/)
+      .filter((line) => /^(?:not ok |✖ |FAIL\s|Error:|AssertionError)/.test(line.trim()));
+    for (const line of failures.slice(0, 12)) console.error('  ' + line.trim().slice(0, 400));
+    if (failures.length > 12) console.error(`  … ${failures.length - 12} more failure lines in ${log}`);
+  }
   if (!details.passed && details.reasons?.length) {
     console.error(`${name}:`);
     for (const reason of details.reasons) console.error(`  - ${reason}`);

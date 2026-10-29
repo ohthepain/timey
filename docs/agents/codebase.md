@@ -481,3 +481,9 @@ handoffs. `coordinator-ui.js` renders its dedicated page and compact activity st
 Read-only lifecycle coordination and queue evaluations use its separate connection;
 workers and independent reviews retain their existing connections.
 Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.
+
+Factory verification recovery is covered by `scripts/factory-recovery.check.mjs`:
+unchanged failures, explicit retries, evidence integrity, live logs and new-chat
+model selection. `scripts/factory-test-service.mjs` supplies protocol fixtures
+with an explicitly shared stub transport for both coordinator and worker calls;
+production retains separate connections.

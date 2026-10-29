@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import vm from 'node:vm';
 import { join } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { factory } from './factory-ledger.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { verificationView } from './factory-ui/verification-recovery.mjs';

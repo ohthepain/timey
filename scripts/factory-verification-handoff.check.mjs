@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deliveryScenario } from './issue-delivery-scenario.mjs';
 import { factory } from './factory-ledger.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { nextProgress } from './factory-ui/next-action.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 

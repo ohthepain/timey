@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, realpathSyn
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
 import { factory } from './factory.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { createDiscussions } from './factory-ui/discussion.mjs';
 import { humanGuard } from './factory-ui/guard.mjs';
 

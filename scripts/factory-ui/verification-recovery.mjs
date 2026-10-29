@@ -183,7 +183,7 @@ async function executeRetry(service, run, action, branch) {
         authorization: run.authorization,
         evidence: 'Explicit verification retry of the existing implementation; no worker restarted.',
       });
-    await service.finishWorker(run, current, run.result);
+    await service.finishWorker(run, current, run.result, { retryFailed: true });
     service.store.update(run, {
       verification: {
         ...run.verification,

@@ -7,7 +7,7 @@ import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { finalizeDelivery, currentDelivery } from './factory-ui/delivery.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 
 // Every format uses the actual decision handler, disk queue and human-input guard.
 function workflowFixture(t, format) {

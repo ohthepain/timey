@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { createIssueChats } from './factory-ui/issue-chat.mjs';
 import { conversationMessages, conversationState, appendMessage } from './factory-ui/conversation-store.mjs';
 import { conversationPrompt } from './factory-ui/conversation-context.mjs';

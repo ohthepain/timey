@@ -1,5 +1,5 @@
 import { deliveryScenario, ready } from './issue-delivery-scenario.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 
 // Opt-in disposable UI smoke fixture, never a live remote/provider.

@@ -1,12 +1,19 @@
-import { candidateInput, retainedCandidate, retainCandidate } from './candidate-cache.mjs';
+import {
+  candidateInput,
+  retainedCandidate,
+  retainCandidate,
+  retainedFailure,
+  retainFailure,
+} from './candidate-cache.mjs';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { assessAudit } from '../audit-result.mjs';
 import { git, readJson, requireThat, runLogged, digest, writeJson } from './common.mjs';
 
 const activeChecks = new Map();
-export async function checkCandidate(root, base, folder) {
+export async function checkCandidate(root, base, folder, options = {}) {
   root = realpathSync(root);
   const key = git(root, 'rev-parse', base) + ':' + git(root, 'rev-parse', 'HEAD^{tree}');
   const active = activeChecks.get(root);
@@ -17,7 +24,7 @@ export async function checkCandidate(root, base, folder) {
     );
     return active.task;
   }
-  const task = checkCandidateOnce(root, base, folder);
+  const task = checkCandidateOnce(root, base, folder, options);
   activeChecks.set(root, { key, task });
   try {
     return await task;
@@ -25,7 +32,7 @@ export async function checkCandidate(root, base, folder) {
     activeChecks.delete(root);
   }
 }
-async function checkCandidateOnce(root, base, folder) {
+async function checkCandidateOnce(root, base, folder, options = {}) {
   root = realpathSync(root);
   requireThat(
     existsSync(join(root, 'node_modules')),
@@ -51,12 +58,43 @@ async function checkCandidateOnce(root, base, folder) {
         : 'Dependencies or clean source did not provide a cache key.',
   });
   if (retained) return retained;
+  const failed = !options.retryFailed && retainedFailure(root, input);
+  requireThat(
+    !failed,
+    'This unchanged candidate already failed verification. Fix the reported problem, update its inputs, or explicitly retry verification. ' +
+      (failed?.message || '')
+  );
+  const attempt = join(folder, 'attempt-' + randomUUID());
+  mkdirSync(attempt);
   const summaries = [];
   for (const [checkpoint, args, log] of [
     ['verification', ['run', 'verify', '--', '--base', base], 'verify.log'],
     ['step', ['run', 'audit:step', '--', '--base', base], 'audit-step.log'],
   ]) {
-    const output = await runLogged(root, 'pnpm', args, join(folder, log));
+    let output;
+    try {
+      output = await runLogged(root, 'pnpm', args, join(folder, log), options.onProgress);
+      copyFileSync(join(folder, log), join(attempt, log));
+    } catch (error) {
+      if (Number.isInteger(error.exitCode)) {
+        const savedLog = join(attempt, log);
+        copyFileSync(join(folder, log), savedLog);
+        let failedSummaries = [];
+        try {
+          const path = commandSummary(root, error.output);
+          const summary = readJson(path);
+          if (summary.base === resolvedBase && summary.snapshot_tree === treeBefore && !summary.passed)
+            failedSummaries = [path];
+        } catch {
+          /* Infrastructure failures still retain their command log. */
+        }
+        if (input === candidateInput(root, resolvedBase, digest(readFileSync(fileURLToPath(import.meta.url)))))
+          retainFailure(root, input, `Required check failed (${error.exitCode}). See ${savedLog}`, failedSummaries, [
+            savedLog,
+          ]);
+      }
+      throw error;
+    }
     const path = commandSummary(root, output);
     const value = readJson(path);
     requireThat(value.checkpoint === checkpoint, 'Verification returned the wrong checkpoint.');
@@ -112,6 +150,10 @@ function validateRequiredChecks(summary) {
   );
 }
 function validateCommand(check) {
+  if (check.name === 'fallow' && check.skipped) {
+    requireThat(check.passed && check.command?.[0] === 'skipped', 'Invalid skipped Fallow evidence.');
+    return;
+  }
   requireThat(check.passed && check.exit === 0, 'A required command failed.');
   if (check.name === 'browser') {
     requireThat(
@@ -130,7 +172,7 @@ function validateCommand(check) {
       'Factory evidence contains skipped recursive execution.'
     );
   }
-  if (check.name !== 'fallow') return;
+  if (check.name !== 'fallow' || check.skipped) return;
   const [stdout, ...stderr] = readFileSync(check.log, 'utf8').split(/\r?\n/);
   const result = assessAudit({ status: check.exit, stdout, stderr: stderr.join('\n') });
   requireThat(result.passed, 'The raw Fallow evidence does not pass the strict gate.');

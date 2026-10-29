@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { prepareNativeChat, bindNativeChat, nativeChatStatus } from './factory-native-chat.mjs';
 import { readProgress, writeProgress } from './factory-progress.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 
 const threadId = '11111111-1111-4111-8111-111111111111';

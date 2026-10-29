@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
 import { factory } from './factory-ledger.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 
 export const captureStages = [
   ['ready-for-grilling', 'backlog'],

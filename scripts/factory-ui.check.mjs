@@ -13,7 +13,7 @@ import { once } from 'node:events';
 import vm from 'node:vm';
 import { gitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 import { readQueue } from './factory-ui/data.mjs';
@@ -2863,8 +2863,8 @@ test('one approved lifecycle run saves, launches, reviews and advances to explic
   assert.equal(record.status, 'finished', record.summary);
   assert.equal(service.snapshot().issues[0].state, 'final');
   assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
-  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 0);
-  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.start === record.workThreadId && c.mode === 'workspace-write').length, 1);
   assert.match(readFileSync(join(service.root, '.issues/20261022-one.md'), 'utf8'), /Implementation plan approved/);
   assert.equal(record.input, null);
 });
@@ -4688,7 +4688,7 @@ test('a simple approved lifecycle uses its clarification task without another pl
     calls.some((c) => c.prompt?.includes('Perform one read-only factory queue review')),
     false
   );
-  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 0);
+  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
 });
 
 test('retryable stops retain the concrete cause and name the next action', async () => {

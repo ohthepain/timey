@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { deliveryScenario, addAction, ready } from './issue-delivery-scenario.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { defaultRoute, deliveryMode } from './factory-ui/delivery-mode.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { publishIssue } from './factory-ui/pr-publication.mjs';
 import { runLifecycle } from './factory-ui/lifecycle-loop.mjs';
 import { nextProgress } from './factory-ui/next-action.mjs';

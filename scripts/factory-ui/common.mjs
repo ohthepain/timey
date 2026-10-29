@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export function cleanEnvironment() {
@@ -25,13 +25,16 @@ export function writeJson(path, value) {
   writeFileSync(temp, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
   renameSync(temp, path);
 }
-export function runLogged(root, command, args, log) {
+export function runLogged(root, command, args, log, onProgress = () => {}) {
   mkdirSync(join(root, '.issues/evidence'), { recursive: true });
+  writeFileSync(log, '', { mode: 0o600 });
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: root, env: cleanEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const collect = (data) => {
       output += data;
+      appendFileSync(log, data);
+      onProgress(String(data));
     };
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
@@ -39,7 +42,7 @@ export function runLogged(root, command, args, log) {
     child.on('close', (code) => {
       writeFileSync(log, output, { mode: 0o600 });
       if (code === 0) resolve(output);
-      else reject(Error(`Required check failed (${code}). See ${log}`));
+      else reject(Object.assign(Error(`Required check failed (${code}). See ${log}`), { output, exitCode: code }));
     });
   });
 }

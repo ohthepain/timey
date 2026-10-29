@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { factory } from './factory-ledger.mjs';
 import { recoverPendingIntegration } from './factory-ui/integration-recovery.mjs';
 

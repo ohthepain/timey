@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deliveryScenario } from './issue-delivery-scenario.mjs';
 import { factory } from './factory-ledger.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { nextProgress } from './factory-ui/next-action.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';

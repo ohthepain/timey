@@ -33,12 +33,15 @@ export function runVerificationProcess(command, args, options, log) {
       escalation = setTimeout(() => terminate('SIGKILL'), 2000);
     };
     signal?.addEventListener('abort', abort, { once: true });
-    const heartbeat = setInterval(() => console.log(`RUNNING ${command}: ${log}`), 15000);
+    const heartbeat = setInterval(
+      () =>
+        console.log(`RUNNING ${command} (${Math.round((Date.now() - Date.parse(result.startedAt)) / 1000)}s): ${log}`),
+      15000
+    );
     for (const channel of ['stdout', 'stderr'])
       child[channel].on('data', (chunk) => {
         result[channel] += chunk;
         appendFileSync(log, chunk);
-        process[channel].write(chunk);
       });
     child.on('error', (error) => {
       result.error = error.message;

@@ -291,7 +291,7 @@ test('real pre-commit hook skips Fallow by default', (t) => {
   const result = spawnSync('git', ['commit', '-qm', 'hook probe'], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, GIT_INDEX_FILE: join(root, '.git/index') },
+    env: { ...process.env, TIMEY_FALLOW_ENFORCE: '0', GIT_INDEX_FILE: join(root, '.git/index') },
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /SKIP fallow/);

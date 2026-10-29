@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { cpSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { toggleRoute, routeBasis } from './factory-ui/route-toggle.mjs';

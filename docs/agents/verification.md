@@ -406,3 +406,22 @@ of live model availability. Full factory verification includes them.
 `factory-browser-clarify.mjs` exercises the candidate's rendered capture switch,
 its off default, retained retry choice and navigation to the saved issue through
 the standard browser verifier with a disposable API response.
+
+## Verification ownership and output
+
+Implementation workers run focused checks and the saved-base step checkpoint.
+The factory server owns the aggregate candidate verification; workers do not
+also run the full suite unless their assignment is verification-only. Optional
+Fallow enforcement follows project configuration, including in worker prompts.
+
+An unchanged failed candidate retains its failure and immutable command evidence.
+Automatic continuation reports that failure without rerunning the suite. Explicit
+Retry verification can start another attempt; source, base, dependency, runtime or
+environment changes also invalidate retained attempts. Failure reuse never grants
+passing proof or bypasses verified-delivery gates. Draft handoff discloses failures.
+
+The aggregate console shows check starts, heartbeats, results and a bounded list
+of failure lines. Full stdout/stderr remains in per-command logs. The outer
+verification log updates while commands run, and factory activity receives the
+same concise progress. Protocol fixtures inject both legacy and coordinator
+connections and reject accidental access to the installed model provider.

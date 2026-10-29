@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { finalizeDelivery, currentDelivery } from './factory-ui/delivery.mjs';
 import { readQueue } from './factory-ui/data.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { progressBasis } from './factory-ui/next-action.mjs';
 import { queueResponse } from './factory-ui/queue-response.mjs';
 

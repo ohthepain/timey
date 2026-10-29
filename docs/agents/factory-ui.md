@@ -1290,3 +1290,10 @@ current issue questions, decisions, approved plans, waiting reasons and history
 links; every subsequent operation also receives current issue records. A restart
 or failure preserves output and the interrupted operation and requires explicit
 continuation. It never automatically replays the old operation.
+
+### Factory model preference
+
+`factory.config.json` may set `factoryModel` to a Codex model ID. This project
+trials `gpt-6-luna` for new factory chats to reduce latency. The preference is
+sent only at thread creation; resuming an existing issue or coordinator does not
+change its model. Removing the setting restores the installed Codex default.

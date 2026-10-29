@@ -1,6 +1,8 @@
 import { approvalReply } from './approval-options.mjs';
 import { turnFailure } from './turn-failure.mjs';
 import { redactValue } from './activity.mjs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { cleanEnvironment, requireThat } from './common.mjs';
@@ -151,6 +153,7 @@ export class CodexConnection {
         approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
         ...permissionToolConfig(sandbox),
         serviceName: 'timey-factory-ui',
+        ...factoryModel(cwd),
       },
       () =>
         onStartup({
@@ -236,4 +239,14 @@ function approvalResult(request, response) {
 
 function permissionToolConfig(sandbox) {
   return sandbox === 'workspace-write' ? { config: { 'features.request_permissions_tool': true } } : {};
+}
+
+// Project preference applies only to new chats. Resumed work keeps its model.
+function factoryModel(root) {
+  const path = join(root, 'factory.config.json');
+  if (!existsSync(path)) return {};
+  const { factoryModel: model } = JSON.parse(readFileSync(path, 'utf8'));
+  if (model === undefined) return {};
+  requireThat(typeof model === 'string' && /^[a-zA-Z0-9._-]+$/.test(model), 'Choose a valid factory model ID.');
+  return { model };
 }

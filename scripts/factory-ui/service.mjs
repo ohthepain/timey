@@ -100,7 +100,28 @@ export class FactoryUI {
     this.coordinator = createCoordinator(this, options.coordinatorConnection, (id) =>
       this.continueCoordinatorIssue(id)
     );
-    this.check = checkCandidate;
+    this.check = (root, base, folder, options = {}) => {
+      const run = this.store.runs.find((r) => join(this.store.directory, r.id) === folder);
+      const event = (method, params) => this.store.event({ method, params: { threadId: run?.threadId, ...params } });
+      const item = { id: 'verification-' + run?.id, type: 'commandExecution', command: 'Verification' };
+      if (run?.threadId) event('item/started', { item });
+      return checkCandidate(root, base, folder, {
+        ...options,
+        onProgress: (delta) => {
+          options.onProgress?.(delta);
+          if (run?.threadId) event('item/commandExecution/outputDelta', { itemId: item.id, delta });
+        },
+      }).then(
+        (result) => {
+          if (run?.threadId) event('item/completed', { item: { ...item, status: 'completed', exitCode: 0 } });
+          return result;
+        },
+        (error) => {
+          if (run?.threadId) event('item/completed', { item: { ...item, status: 'failed', exitCode: 1 } });
+          throw error;
+        }
+      );
+    };
     this.guard = humanGuard;
     installWorkerHealth(this);
   }
@@ -422,7 +443,7 @@ export class FactoryUI {
   retryVerification(input) {
     return retryVerification(this, input, (id) => continueLifecycleAfter(this, id));
   }
-  async finishWorker(run, action, result) {
+  async finishWorker(run, action, result, checkOptions = {}) {
     const update = { status: 'completed', evidence: JSON.stringify(result), authorization: run.authorization };
     if (codeAction(action)) {
       const folder = join(this.store.directory, run.id);
@@ -431,7 +452,7 @@ export class FactoryUI {
         checked =
           run.deliveryMode === draftHandoff
             ? await checkHandoff(this.check, run.checkout, run.base, folder)
-            : await this.check(run.checkout, run.base, folder);
+            : await this.check(run.checkout, run.base, folder, checkOptions);
       } catch (error) {
         failedVerification(this, run, action, result, error);
         throw error;

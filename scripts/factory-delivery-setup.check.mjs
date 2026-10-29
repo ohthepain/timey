@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { join } from 'node:path';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { addAction } from './issue-delivery-scenario.mjs';
-import { FactoryUI } from './factory-ui/service.mjs';
+import { FactoryUI } from './factory-test-service.mjs';
 import { writeJson, digest } from './factory-ui/common.mjs';
 import { runLifecycle } from './factory-ui/lifecycle-loop.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
