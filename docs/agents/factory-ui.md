@@ -1269,7 +1269,8 @@ saved work and continue under original approvals. Failed or uncertain startup
 never creates a replacement conversation. Noninterruptible record writes finish
 atomically before further coordination pauses.
 
-**Send** queues discussion for a subsequent response. **Steer** addresses the exact
+**Send** queues discussion for the next coordinator response, including when another
+operation is already waiting. **Steer** addresses the exact
 currently displayed response; a stale response identifier is rejected, never sent
 to a later response. Neither control answers issue questions, approves plans or
 candidates, starts work or accepts issues. Use existing issue controls for those

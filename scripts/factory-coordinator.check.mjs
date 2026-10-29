@@ -100,13 +100,20 @@ test('queue operations share one conversation, serialize and retain issue-linked
   assert.match(f.owner.view().waiting[0].reason, /finishing/);
   assert.equal(f.owner.view().threads[0].output[0].text, 'Reviewing one');
   assert.throws(() => f.owner.fresh(), /only while idle/);
-  f.connection.turn = async () => 'Second response';
+  await f.owner.message({ id: 'queued-for-next-operation', mode: 'send', text: 'Explain the next operation' });
+  let secondPrompt;
+  f.connection.turn = async (_id, _root, prompt) => {
+    secondPrompt = prompt;
+    return 'Second response';
+  };
   release('First response');
   await Promise.all([first, second]);
   const state = JSON.parse(readFileSync(join(f.root, '.issues/factory-ui/coordinator.json')));
+  assert.match(secondPrompt, /Explain the next operation/);
+  assert.equal(f.owner.view().pending, 0);
   assert.equal(state.threads.length, 1);
-  assert.equal(state.threads[0].messages.length, 2);
-  assert.equal(state.threads[0].messages[1].issueId, 'two');
+  assert.equal(state.threads[0].messages.filter((m) => m.role === 'Coordinator').length, 2);
+  assert.equal(state.threads[0].messages.at(-1).issueId, 'two');
 });
 test('Stop interrupts only coordination, blocks next operations, and Continue uses existing issue handlers', async (t) => {
   const f = fixture(t);
