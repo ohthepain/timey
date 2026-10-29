@@ -45,6 +45,9 @@ export function browserFixture(root) {
     sourceClean: true,
     registryPresent: true,
   };
+  const ui = join(root, 'scripts/factory-ui');
+  const page = readFileSync(join(ui, 'index.html'), 'utf8');
+  const assets = new Set(['index.html', ...[...page.matchAll(/<script src="\/([^"]+)"/g)].map((match) => match[1])]);
   return createServer((request, response) => {
     const url = new URL(request.url, 'http://localhost');
     if (url.pathname.startsWith('/api/')) {
@@ -71,21 +74,11 @@ export function browserFixture(root) {
       return response.end();
     }
     const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    if (
-      ![
-        'index.html',
-        'server-control-ui.js',
-        'queue-lifecycle-ui.js',
-        'issue-chat-ui.js',
-        'discussion-ui.js',
-        'site-review-ui.js',
-        'issue-capture-ui.js',
-      ].includes(file)
-    ) {
+    if (!assets.has(file) || file.includes('/') || file.includes('..')) {
       response.statusCode = 404;
       return response.end();
     }
     response.setHeader('Content-Type', file.endsWith('.html') ? 'text/html' : 'text/javascript');
-    response.end(readFileSync(join(root, 'scripts/factory-ui', file)));
+    response.end(readFileSync(join(ui, file)));
   });
 }

@@ -2296,6 +2296,7 @@
         route: null,
         expanded: loadExpanded(),
         fields: new Map(),
+        scrolls: new Map(),
         positions: new Map(),
         logs: new Map(),
         focus: null,
@@ -2307,7 +2308,7 @@
           return {};
         }
       }
-      function detailKey(element) {
+      function detailKey(element, route = location.hash) {
         const owner = element.closest('[data-view-id],[data-step-id],[data-plan-step]');
         const names = [];
         for (let node = element; node && node !== owner; node = node.parentElement) {
@@ -2320,7 +2321,12 @@
           owner?.dataset.planStep ||
           element.closest('section')?.querySelector('h2,h3')?.textContent ||
           'page';
-        return location.hash + '|' + group + '|' + names.join('|');
+        return route + '|' + group + '|' + names.join('|');
+      }
+      function scrollKey(element, route = location.hash) {
+        if (element.id) return route + '|' + element.id;
+        const owner = element.closest('details,section') || $('app');
+        return detailKey(element, route) + '|' + [...owner.querySelectorAll('pre,textarea,input')].indexOf(element);
       }
       function rememberView() {
         if (viewMemory.route === null) return;
@@ -2333,11 +2339,25 @@
             if (field.id && !['checkbox', 'radio'].includes(field.type))
               viewMemory.fields.set(viewMemory.route + '|' + (field.dataset.draftKey || field.id), field.value);
           });
+        document
+          .querySelectorAll('#app pre:not([data-temporary] *),#app textarea:not([data-temporary] *)')
+          .forEach((element) => {
+            viewMemory.scrolls.set(scrollKey(element, viewMemory.route), {
+              top: element.scrollTop,
+              left: element.scrollLeft,
+            });
+          });
         viewMemory.positions.set(viewMemory.route, window.scrollY);
         const active = document.activeElement;
         const focused = active?.closest('[data-temporary]') ? null : active;
         viewMemory.focus = focused?.id
-          ? { route: viewMemory.route, id: focused.id, start: focused.selectionStart, end: focused.selectionEnd }
+          ? {
+              route: viewMemory.route,
+              id: focused.id,
+              start: focused.selectionStart,
+              end: focused.selectionEnd,
+              direction: focused.selectionDirection,
+            }
           : null;
         rememberOutput();
         try {
@@ -2371,8 +2391,17 @@
         const focus = viewMemory.focus;
         if (focus?.route === location.hash && $(focus.id)) {
           $(focus.id).focus({ preventScroll: true });
-          if (focus.start != null) $(focus.id).setSelectionRange(focus.start, focus.end);
+          if (focus.start != null) $(focus.id).setSelectionRange(focus.start, focus.end, focus.direction);
         }
+        document
+          .querySelectorAll('#app pre:not([data-temporary] *),#app textarea:not([data-temporary] *)')
+          .forEach((element) => {
+            const saved = viewMemory.scrolls.get(scrollKey(element));
+            if (saved) {
+              element.scrollTop = saved.top;
+              element.scrollLeft = saved.left;
+            }
+          });
         window.scrollTo(0, viewMemory.positions.get(location.hash) || 0);
         bindOutput();
       }

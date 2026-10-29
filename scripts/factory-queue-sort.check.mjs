@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { queueSortValues } from './factory-ui/queue-sort.mjs';
 import { queueResponse } from './factory-ui/queue-response.mjs';
+import { browserFixture as pageFixture } from './browser-fixture.mjs';
 
 const lifecycle = [
   { state: 'review', role: 'ready-to-close', next: 'closed', name: 'Final review' },
@@ -336,4 +337,26 @@ test('ties and missing values remain deterministic in both directions without mu
     input.map((entry) => entry.id),
     ['b', 'z', 'a']
   );
+});
+
+test('browser fixture serves every script the queue page loads', async () => {
+  const html = readFileSync('scripts/factory-ui/index.html', 'utf8');
+  const scripts = [...html.matchAll(/<script src="\/([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(scripts.includes('queue-sort-ui.js'));
+  const server = pageFixture(process.cwd());
+  await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
+  try {
+    const base = 'http://127.0.0.1:' + server.address().port;
+    for (const file of scripts) {
+      const response = await fetch(base + '/' + file);
+      const body = await response.text();
+      assert.equal(response.status, 200, file);
+      assert.match(response.headers.get('content-type') || '', /javascript/);
+      assert.ok(body.length > 0, file);
+      if (file === 'queue-sort-ui.js') assert.match(body, /const queueSortUI/);
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise((done) => server.close(done));
+  }
 });
