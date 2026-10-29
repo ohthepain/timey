@@ -277,6 +277,23 @@ test('all five controls order actual queue rows, preserve filters and selection 
     node.value = value;
     node.dispatchEvent(new win.Event('change'));
   };
+  const direction = () => document.getElementById('queue-direction');
+  const setDirection = (value) => {
+    const descending = value !== 'asc';
+    if ((direction().textContent === '▼') !== descending) direction().click();
+  };
+  const setRole = (state, checked) => {
+    const box = document.querySelector(`[data-role-filter="${state}"]`);
+    box.checked = checked;
+    box.dispatchEvent(new win.Event('change'));
+  };
+  assert.equal(direction().textContent, '▼');
+  assert.equal(document.querySelector('[data-role-filter="closed"]').checked, false);
+  assert.equal(document.querySelector('[data-role-filter="work"]').checked, true);
+  assert.equal(document.getElementById('create-issue').textContent, '+');
+  assert.equal(document.querySelector('.queue-heading').contains(document.getElementById('create-issue')), true);
+  assert.equal(document.body.textContent.includes('Choose what to work on'), false);
+  assert.equal(document.body.textContent.includes('Reviewing suggests work'), false);
   assert.deepEqual(ids(), ['b', 'a']);
   for (const [mode, expected] of [
     ['progress', ['b', 'a']],
@@ -285,9 +302,11 @@ test('all five controls order actual queue rows, preserve filters and selection 
     ['humanInput', ['a', 'b']],
   ]) {
     select('queue-sort', mode);
+    assert.equal(direction().textContent, '▼');
     assert.deepEqual(ids(), expected);
   }
-  select('queue-direction', 'asc');
+  setDirection('asc');
+  assert.equal(direction().textContent, '▲');
   assert.deepEqual(ids(), ['b', 'a']);
   fixture.replace(
     fixture.issues.map((entry) => ({
@@ -298,10 +317,10 @@ test('all five controls order actual queue rows, preserve filters and selection 
   assert.deepEqual(ids(), ['a', 'b']);
   assert.equal(document.getElementById('queue-sort').value, 'humanInput');
   select('queue-sort', 'lastProgress');
-  select('queue-direction', 'asc');
+  assert.equal(direction().textContent, '▼');
+  setDirection('asc');
   assert.deepEqual(ids(), ['a', 'b']);
-  document.getElementById('show-closed').checked = true;
-  document.getElementById('show-closed').dispatchEvent(new win.Event('change'));
+  setRole('closed', true);
   assert.deepEqual(ids(), ['a', 'b', 'z']);
   fixture.replace(
     fixture.issues.map((entry) =>
@@ -310,14 +329,20 @@ test('all five controls order actual queue rows, preserve filters and selection 
   );
   assert.deepEqual(ids(), ['b', 'a', 'z']);
   assert.equal(document.getElementById('queue-sort').value, 'lastProgress');
-  assert.equal(document.getElementById('queue-direction').value, 'asc');
-  select('stage', 'work');
+  assert.equal(direction().textContent, '▲');
+  for (const state of ['review', 'start', 'experiment', 'custom', 'closed']) setRole(state, false);
   assert.deepEqual(ids(), ['b']);
-  document.getElementById('search').value = 'Alpha';
-  document.getElementById('search').dispatchEvent(new win.Event('input'));
+  const search = document.getElementById('search');
+  search.value = 'Alpha';
+  search.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.equal(search.value, 'Alpha');
   assert.deepEqual(ids(), []);
-  select('stage', '');
+  search.dispatchEvent(new win.Event('input'));
+  assert.deepEqual(ids(), []);
+  setRole('start', true);
   assert.deepEqual(ids(), ['a']);
+  assert.equal(document.querySelector('[data-role-filter="start"]').parentElement.querySelector('b').textContent, '1');
+  assert.equal(document.querySelector('[data-role-filter="work"]').parentElement.querySelector('b').textContent, '0');
 });
 
 test('ties and missing values remain deterministic in both directions without mutating source', (t) => {

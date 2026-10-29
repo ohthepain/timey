@@ -39,8 +39,9 @@ New lifecycle stages use the same step layout without requiring another screen.
 ## Queue sorting
 
 The queue defaults to latest progress first. The sort selector also offers lifecycle
-progress, creation time, completion time and required human input; direction can be
-reversed. New modes start highest/newest/required first. Missing dates stay last
+progress, creation time, completion time and required human input. Direction is a
+toggle: a downward triangle means descending and an upward triangle means ascending.
+New modes start highest/newest/required first. Missing dates stay last
 in both directions, with ascending issue ID breaking ties. Filters and sorting
 remain selected during live refreshes.
 
@@ -499,9 +500,11 @@ This path does not prove a self-healing exercise or any other unperformed test.
 Those limits remain in the result for final acceptance. It cannot change source,
 registry entries, other reports or human check outcomes, and never closes the issue.
 
-The queue hides the configured Closed stage by default. Show closed issues includes
-those records, and choosing Closed in the stage filter enables that option.
-Search, stage and visibility choices survive live refreshes while the page is open.
+The queue lists each lifecycle role with a checkbox and the number of issues in that
+role that match the current search. Every role starts selected except Closed. Clearing
+a role hides its issues; selecting Closed shows closed issues. Search text applies when
+Return is pressed, and also as the text changes. Search, role, and sort choices survive
+live refreshes while the page is open.
 Filtering is read-only; issue links and saved reports remain available.
 
 ## Live worker status
@@ -615,6 +618,10 @@ authorization history retained, then replans only unfinished work from current
 inputs. It never updates the old fingerprint to make a stale assignment launchable.
 The replacement passes the normal scope review, human-input and launch guards;
 a changed plan or expanded scope still requires the actual human decision.
+
+Final review still shows Continue when this recovery, or another resumable task, is
+the next action. Acceptance controls appear once no automatic task remains.
+Continue does not accept or close the issue.
 
 Reads only offer recovery. The explicit Continue action performs retirement under
 the ledger lock, checking the exact expected proposal and that it is still stale,

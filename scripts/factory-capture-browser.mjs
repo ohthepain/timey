@@ -100,7 +100,7 @@ try {
     `
     await page.getByRole('button',{name:'Create issue',exact:true}).waitFor();
     await page.getByLabel('Search issues',{exact:true}).fill('Existing');
-    await page.getByLabel('Filter by stage',{exact:true}).selectOption('backlog');
+    await page.getByRole('checkbox',{name:'Clarify',exact:true}).uncheck();
     await page.evaluate(()=>window.scrollTo(0,700));
     const before=await page.evaluate(()=>window.scrollY);
     await page.locator('#create-issue').evaluate(e=>e.click());
@@ -116,7 +116,7 @@ try {
     await page.locator('#capture-toast a').nth(1).waitFor();
     await page.waitForFunction(()=>!document.querySelector('#create-issue-dialog').hasAttribute('aria-busy'));
     check(await page.getByLabel('Search issues',{exact:true}).inputValue()==='Existing','Search preserved');
-    check(await page.getByLabel('Filter by stage',{exact:true}).inputValue()==='backlog','Stage filter preserved');
+    check(!(await page.getByRole('checkbox',{name:'Clarify',exact:true}).isChecked()),'Role filter preserved');
     check(Math.abs(await page.evaluate(()=>window.scrollY)-before)<5,'Window scroll preserved: '+before+' -> '+await page.evaluate(()=>window.scrollY));
     check(!page.url().includes('/issue/'),'Multiple capture stays on queue');
     await page.screenshot({path:${JSON.stringify(join(output, 'desktop.png'))},fullPage:false});

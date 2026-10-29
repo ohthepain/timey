@@ -7,12 +7,23 @@ const queueSortUI = (() => {
     completed: 'Completion time',
     humanInput: 'Human input required',
   };
+  function descending(selection) {
+    return selection.direction !== 'asc';
+  }
+  function paintDirection(selection) {
+    const button = document.getElementById('queue-direction');
+    const down = descending(selection);
+    button.textContent = down ? '▼' : '▲';
+    button.setAttribute('aria-label', down ? 'Direction, descending' : 'Direction, ascending');
+    button.title = down ? 'Descending' : 'Ascending';
+  }
   function controls(selection) {
+    const down = descending(selection);
     return `<select id="queue-sort" aria-label="Sort issues">${Object.entries(modes)
       .map(([key, label]) => `<option value="${key}" ${selection.sort === key ? 'selected' : ''}>${label}</option>`)
       .join(
         ''
-      )}</select><select id="queue-direction" aria-label="Sort direction"><option value="desc" ${selection.direction === 'desc' ? 'selected' : ''}>Highest / newest first</option><option value="asc" ${selection.direction === 'asc' ? 'selected' : ''}>Lowest / oldest first</option></select>`;
+      )}</select><button type="button" id="queue-direction" class="direction-toggle" aria-label="${down ? 'Direction, descending' : 'Direction, ascending'}" title="${down ? 'Descending' : 'Ascending'}">${down ? '▼' : '▲'}</button>`;
   }
   function compare(left, right, selection) {
     const a = left.queueSort?.[selection.sort],
@@ -31,11 +42,12 @@ const queueSortUI = (() => {
     document.getElementById('queue-sort').onchange = (event) => {
       selection.sort = event.target.value;
       selection.direction = 'desc';
-      document.getElementById('queue-direction').value = 'desc';
+      paintDirection(selection);
       changed();
     };
-    document.getElementById('queue-direction').onchange = (event) => {
-      selection.direction = event.target.value;
+    document.getElementById('queue-direction').onclick = () => {
+      selection.direction = descending(selection) ? 'asc' : 'desc';
+      paintDirection(selection);
       changed();
     };
   }

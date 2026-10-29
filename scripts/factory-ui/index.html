@@ -274,20 +274,51 @@
         grid-template-columns: minmax(0, 2.5fr) minmax(230px, 1fr);
         gap: 24px;
       }
+      .queue-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 8px;
+      }
+      .queue-heading h1 {
+        margin: 0;
+      }
+      .create-issue {
+        min-width: 42px;
+        min-height: 42px;
+        padding: 0 12px;
+        font-size: 24px;
+        line-height: 1;
+      }
+      .direction-toggle {
+        min-width: 42px;
+        min-height: 42px;
+        padding: 0;
+        font-size: 18px;
+        line-height: 1;
+      }
+      .queue-search {
+        display: flex;
+        margin: 0;
+      }
       .rail {
         display: flex;
         gap: 12px;
         flex-wrap: wrap;
         margin: 24px 0;
       }
-      .rail span {
+      .role-filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         padding: 6px 10px;
         border-radius: 16px;
         background: #eceee6;
+        cursor: pointer;
       }
-      .rail .current {
-        background: #2c5848;
-        color: white;
+      .role-filter:has(input:checked) {
+        background: #d7e6dc;
       }
       pre {
         white-space: pre-wrap;
@@ -1354,49 +1385,71 @@
         focusedStageRoute = location.hash;
       }
       let queueRouteMessage = '';
-      const queueFilters = { search: '', stage: '', showClosed: false, sort: 'lastProgress', direction: 'desc' };
+      const queueFilters = { search: '', roles: new Map(), sort: 'lastProgress', direction: 'desc' };
       function closedIssueState(state) {
         return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
       }
+      function roleSelected(stage) {
+        return queueFilters.roles.has(stage.state) ? queueFilters.roles.get(stage.state) : stage.role !== 'closed';
+      }
+      function matchesQueueSearch(issue) {
+        const query = queueFilters.search.trim().toLowerCase();
+        return !query || JSON.stringify(issue).toLowerCase().includes(query);
+      }
+      function roleCount(stage) {
+        return data.issues.filter((issue) => issue.state === stage.state && matchesQueueSearch(issue)).length;
+      }
       function queueIssues() {
         return queueSortUI.sort(
-          data.issues.filter(
-            (issue) =>
-              (queueFilters.showClosed || !closedIssueState(issue.state)) &&
-              (!queueFilters.stage || issue.state === queueFilters.stage) &&
-              JSON.stringify(issue).toLowerCase().includes(queueFilters.search.toLowerCase())
-          ),
+          data.issues.filter((issue) => {
+            const stage = data.lifecycle.find((item) => item.state === issue.state);
+            return (!stage || roleSelected(stage)) && matchesQueueSearch(issue);
+          }),
           queueFilters
         );
       }
+      function refreshRoleCounts() {
+        for (const box of document.querySelectorAll('[data-role-filter]')) {
+          const stage = data.lifecycle.find((item) => item.state === box.dataset.roleFilter);
+          const count = box.parentElement.querySelector('b');
+          if (stage && count) count.textContent = String(roleCount(stage));
+        }
+      }
       function bindQueueFilters() {
         const filter = () => {
-          Object.assign(queueFilters, {
-            search: $('search').value,
-            stage: $('stage').value,
-            showClosed: $('show-closed').checked,
-          });
+          queueFilters.search = $('search').value;
           $('issues').innerHTML = rows(queueIssues());
           queueLifecycleUI.restore($('issues'));
           bindPriorities();
+          refreshRoleCounts();
+        };
+        const applySearch = (event) => {
+          event.preventDefault();
+          filter();
         };
         queueSortUI.bind(queueFilters, filter);
         queueLifecycleUI.bind($('issues'));
         $('search').oninput = filter;
-        $('stage').onchange = () => {
-          if (closedIssueState($('stage').value)) $('show-closed').checked = true;
-          filter();
+        $('search').onkeydown = (event) => {
+          if (event.key === 'Enter') applySearch(event);
         };
-        $('show-closed').onchange = () => {
-          if (!$('show-closed').checked && closedIssueState($('stage').value)) $('stage').value = '';
-          filter();
-        };
+        $('queue-search').onsubmit = applySearch;
+        for (const box of document.querySelectorAll('[data-role-filter]'))
+          box.onchange = () => {
+            queueFilters.roles.set(box.dataset.roleFilter, box.checked);
+            filter();
+          };
+      }
+      function roleFilters() {
+        return data.lifecycle
+          .map((stage) => {
+            const selected = roleSelected(stage);
+            return `<label class="role-filter"><input type="checkbox" data-role-filter="${esc(stage.state)}" aria-label="${esc(stage.name)}" ${selected ? 'checked' : ''}>${esc(stage.name)} <b>${roleCount(stage)}</b></label>`;
+          })
+          .join('');
       }
       function queue() {
-        const counts = data.lifecycle
-          .map((s) => `<span>${esc(s.name)} <b>${data.issues.filter((i) => i.state === s.state).length}</b></span>`)
-          .join(' · ');
-        return `<p class="muted">${esc(data.root)}</p><h1>Issue queue</h1><p>Choose what to work on. Open an issue to follow its progress and see what it needs.</p><div class="rail">${counts}</div><div class="toolbar"><input id="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"><select id="stage" aria-label="Filter by stage"><option value="">All stages</option>${data.lifecycle.map((s) => `<option value="${esc(s.state)}" ${queueFilters.stage === s.state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><label><input type="checkbox" id="show-closed" ${queueFilters.showClosed ? 'checked' : ''}> Show closed issues</label>${queueSortUI.controls(queueFilters)}<button id="create-issue" type="button">Create issue</button><button id="review">Review queue with Codex</button></div><p class="muted">Reviewing suggests work. Save recommendations, then choose each worker to start.</p><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Review queue with Codex</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -2122,12 +2175,13 @@
           (stage?.role === 'ready-to-prototype' && input
             ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
             : '');
+        const acceptanceOnly = stage?.role === 'ready-to-close' && (!record?.canResume || issue.progress?.disabled);
         const canStart =
           !input &&
           !record?.deliveryHandoff &&
           !record?.deliveryWaiting &&
           !issue.assemblyRecovery &&
-          stage?.role !== 'ready-to-close';
+          !acceptanceOnly;
         return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events

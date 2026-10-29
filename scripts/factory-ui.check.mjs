@@ -2224,6 +2224,25 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   screen.runs.push({ id: 'own', issueId: issue.id, connected: true, summary: 'Inspecting the panel' });
   assert.match(render(issue), /Inspecting the panel/);
   assert.doesNotMatch(render(issue), /No work is running for this issue/);
+
+  screen.lifecycle = [{ state: 'final', role: 'ready-to-close', name: 'Final review' }];
+  screen.runs = [];
+  issue.state = 'final';
+  issue.lifecycle = {
+    status: 'blocked',
+    canResume: true,
+    summary: 'thread/resume did not respond. Do not retry a creation without reconciliation.',
+    resumeSummary: 'Next: Refresh the unfinished task. Completed work is preserved.',
+    events: [],
+  };
+  issue.progress = { kind: 'refresh-recommendation', title: 'Refresh the unfinished task' };
+  const recovery = render(issue);
+  assert.match(recovery, /Ready to continue/);
+  assert.match(recovery, /data-lifecycle-start="one"[^>]*>(?:Continue…|Continue)/);
+  assert.doesNotMatch(recovery, /data-lifecycle-start="one"[^>]*disabled/);
+  issue.lifecycle.canResume = false;
+  issue.progress = { kind: 'unavailable', disabled: true, summary: 'Review the result.' };
+  assert.doesNotMatch(render(issue), /data-lifecycle-start/);
 });
 
 function commitFixture(t) {

@@ -59,6 +59,15 @@ function remainingWork(run) {
   return run.result?.remaining || [];
 }
 
+export const resumableProgressKinds = [
+  'save-review',
+  'refresh-recommendation',
+  'bind-verification',
+  'launch',
+  'completion-review',
+  'publish-issue-pr',
+];
+
 const retriableLifecycleFailure =
   /(?:initialize|turn\/start|thread\/resume) did not respond|Codex disconnected|Chat startup is uncertain/;
 
@@ -86,14 +95,5 @@ export function canResumeLifecycle(service, record, queue, issue, runs) {
   const basis = lifecycleWorkBasis(queue, issue, record);
   if (record.stopBasis !== basis) return true;
   const choice = nextProgress(queue, issue, runs || service.store.list(service.codex.requests));
-  return (
-    [
-      'save-review',
-      'refresh-recommendation',
-      'bind-verification',
-      'launch',
-      'completion-review',
-      'publish-issue-pr',
-    ].includes(choice.kind) && !record.attempts.includes(basis + ':' + choice.kind)
-  );
+  return resumableProgressKinds.includes(choice.kind) && !record.attempts.includes(basis + ':' + choice.kind);
 }

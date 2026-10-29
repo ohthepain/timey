@@ -213,7 +213,9 @@ requests. `lifecycle-planning.mjs` separates actual human questions from unfinis
 work and stopped operations. `lifecycle-stop.mjs` owns the meaningful-work fingerprint
 and bounded planning recovery, so administrative notes cannot reset a failed review.
 `recommendation-refresh.mjs` offers and executes approved-plan recovery for unused
-stale recommendations. `data.mjs` supplies structured launch blockers; the ledger
+stale recommendations, including when the issue is already at Final review. The
+lifecycle runs that recovery before it stops for acceptance, and the issue screen
+keeps Continue available for it. `data.mjs` supplies structured launch blockers; the ledger
 checks expected proposal identity and staleness atomically before retirement.
 The lifecycle replans unfinished work, preserving normal replacement scope checks.
 The browser retains keyed expansion, draft and scroll state around live refreshes.

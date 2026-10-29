@@ -7,7 +7,7 @@ import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs'
 import { recoverPendingIntegration } from './integration-recovery.mjs';
 import { continuationChoice, checkContinuation, resumeContinuation } from './lifecycle-continuation.mjs';
 import { planProgress } from './progress.mjs';
-import { lifecycleWorkBasis, stopLifecycle } from './lifecycle-stop.mjs';
+import { lifecycleWorkBasis, resumableProgressKinds, stopLifecycle } from './lifecycle-stop.mjs';
 import { digest, requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { progressBasis, nextProgress } from './next-action.mjs';
@@ -78,9 +78,15 @@ function hasActiveAssignment(queue, issue) {
 function finishedLifecycle(service, record, queue, issue) {
   const role = queue.lifecycle.find((s) => s.state === issue.state).role;
   if (!['ready-to-close', 'closed'].includes(role)) return false;
-  if (role !== 'closed' && completionChoice(queue, issue)) return false;
+  if (role !== 'closed' && pendingAcceptanceWork(service, record, queue, issue)) return false;
   stopAtFinal(service, record, role);
   return true;
+}
+function pendingAcceptanceWork(service, record, queue, issue) {
+  if (record.replan) return true;
+  if (completionChoice(queue, issue)) return true;
+  const choice = nextProgress(queue, issue, service.store.list(service.codex.requests));
+  return resumableProgressKinds.includes(choice.kind) && !choice.disabled;
 }
 function pauseRequested(service, record) {
   if (!record.pauseRequested) return false;

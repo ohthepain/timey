@@ -3,7 +3,7 @@ import { writeJson, digest } from './factory-ui/common.mjs';
 import { runLifecycle } from './factory-ui/lifecycle-loop.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deliveryScenario } from './issue-delivery-scenario.mjs';
 import { factory } from './factory-ledger.mjs';
@@ -58,6 +58,23 @@ test('Continue offers recovery for a stale unlaunched recommendation under its a
   const choice = nextProgress(queue, issue, []);
   assert.equal(choice.kind, 'refresh-recommendation', choice.summary);
   assert.equal(canResumeLifecycle(f.service, f.record, queue, issue), true);
+});
+
+test('final review Continue refreshes a stale recommendation before stopping for acceptance', async (t) => {
+  const f = await fixture(t);
+  const report = join(f.root, '.issues', f.issueId + '.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('state: verify', 'state: final'));
+  const queue = readQueue(f.root),
+    issue = queue.issues[0];
+  assert.equal(issue.state, 'final');
+  assert.equal(nextProgress(queue, issue, []).kind, 'refresh-recommendation');
+  assert.equal(canResumeLifecycle(f.service, f.record, queue, issue), true);
+  f.record.status = 'running';
+  f.service.evaluate = () => {
+    throw Error('Reached fresh planning');
+  };
+  await assert.rejects(runLifecycle(f.service, f.record), /Reached fresh planning/);
+  assert.equal(f.api.inspect().registry.actions.find((a) => a.id === f.action.id).status, 'cancelled');
 });
 
 test('refresh preserves completed work, original bases and approval, then reaches fresh planning', async (t) => {
