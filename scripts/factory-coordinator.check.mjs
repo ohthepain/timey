@@ -481,3 +481,48 @@ test('provider-confirmed missing empty chat recovers once; populated or uncertai
   await assert.rejects(f.owner.turn(f.run, 'Do not duplicate'), /no rollout/);
   assert.equal(f.owner.state.threads.length, count);
 });
+
+test('cold predecessor is loaded read-only and confirmed idle before archival without inference', async (t) => {
+  const f = fixture(t);
+  await f.owner.turn(f.run, 'Initial');
+  const old = f.owner.state.threads[0].threadId,
+    call = f.connection.call;
+  let loaded = false;
+  f.connection.call = async (method, params) => {
+    if (method === 'thread/read' && params.threadId === old && !loaded) throw Error('thread not loaded: ' + old);
+    if (method === 'thread/resume') {
+      assert.equal(params.sandbox, 'read-only');
+      assert.equal(params.excludeTurns, true);
+      loaded = true;
+      return {};
+    }
+    return call(method, params);
+  };
+  await f.owner.fresh();
+  assert.ok(loaded);
+  assert.ok(f.owner.state.threads[0].archived);
+  assert.equal(f.calls.filter((call) => call[0] === 'turn').length, 1);
+});
+
+test('a new read-only chat reattaches on its owning connection without resuming an absent rollout', async () => {
+  const connection = createIssueChatConnection();
+  connection.start = async () => 'empty-new';
+  let resumes = 0;
+  connection.resume = async () => {
+    resumes++;
+    throw Error('no rollout found');
+  };
+  connection.call = async () => ({ thread: { cwd: '/project', status: { type: 'idle' } } });
+  const state = {};
+  await connection.attach('/project', state, (changes) => Object.assign(state, changes));
+  state.threadId = 'empty-new';
+  assert.equal(await connection.attach('/project', state, () => {}), 'empty-new');
+  assert.equal(resumes, 0);
+  const other = createIssueChatConnection();
+  other.resume = connection.resume;
+  await assert.rejects(
+    other.attach('/project', state, () => {}),
+    /no rollout/
+  );
+  assert.equal(resumes, 1, 'A different connection must still establish read-only permissions.');
+});

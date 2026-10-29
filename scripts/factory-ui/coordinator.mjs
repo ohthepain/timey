@@ -327,6 +327,23 @@ class Coordinator {
   maintenanceCall(method, params) {
     return this.connection.call(method, params, null, 2000);
   }
+  async readPredecessor(threadId) {
+    const read = () => this.maintenanceCall('thread/read', { threadId, includeTurns: false });
+    try {
+      return await read();
+    } catch (error) {
+      if (!error.message.includes(threadId) || !/thread not loaded:/.test(error.message)) throw error;
+      await this.maintenanceCall('thread/resume', {
+        threadId,
+        cwd: this.service.root,
+        sandbox: 'read-only',
+        approvalPolicy: 'on-request',
+        approvalsReviewer: 'user',
+        excludeTurns: true,
+      });
+      return read();
+    }
+  }
   async archivePredecessors(current) {
     const deadline = Date.now() + 5000;
     // Attach the replacement first. Failed/uncertain startup leaves history intact.
@@ -334,10 +351,7 @@ class Coordinator {
       if (thread === current || !thread.threadId || thread.archived || thread.unavailable) continue;
       if (Date.now() >= deadline) break;
       try {
-        const { thread: native } = await this.maintenanceCall('thread/read', {
-          threadId: thread.threadId,
-          includeTurns: false,
-        });
+        const { thread: native } = await this.readPredecessor(thread.threadId);
         requireThat(
           native?.cwd === this.service.root && ['idle', 'notLoaded'].includes(native.status?.type),
           'The predecessor is not confirmed idle in this project.'

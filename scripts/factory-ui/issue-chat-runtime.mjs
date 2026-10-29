@@ -43,17 +43,21 @@ class IssueChatConnection extends CodexConnection {
     });
   }
   async attach(root, state, retain) {
+    this.readOnlyThreads ||= new Set();
     if (state.threadId) {
-      await this.resume(state.threadId, root, 'read-only');
+      if (!this.readOnlyThreads.has(state.threadId)) await this.resume(state.threadId, root, 'read-only');
       const { thread } = await this.call('thread/read', { threadId: state.threadId, includeTurns: false });
       requireIdle(thread, root);
+      this.readOnlyThreads.add(state.threadId);
       return state.threadId;
     }
     requireThat(
       !state.startup || state.startup.status === 'ready',
       'Chat startup is uncertain. Reconcile its original connection; no replacement was created.'
     );
-    return this.start(root, 'read-only', (startup) => retain({ startup, threadId: startup.threadId }));
+    const threadId = await this.start(root, 'read-only', (startup) => retain({ startup, threadId: startup.threadId }));
+    this.readOnlyThreads.add(threadId);
+    return threadId;
   }
 }
 export function createIssueChatConnection() {
