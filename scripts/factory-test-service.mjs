@@ -21,6 +21,7 @@ export class FactoryUI extends LiveFactoryUI {
           },
           turn: (...args) => service.codex.turn(...args),
           interrupt: (threadId) => service.codex.call('turn/interrupt', { threadId }),
+          call: (...args) => service.codex.call(...args),
           close() {},
         })),
     });

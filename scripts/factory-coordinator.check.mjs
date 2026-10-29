@@ -2,9 +2,11 @@ import { createFactoryServer } from './factory-ui/http.mjs';
 import { once } from 'node:events';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { digest } from './factory-ui/common.mjs';
+import { currentNotes, retainNotes } from './factory-ui/coordinator-notes.mjs';
 import { createCoordinator } from './factory-ui/coordinator.mjs';
 import { createIssueChatConnection } from './factory-ui/issue-chat-runtime.mjs';
 
@@ -64,6 +66,7 @@ function fixture(t) {
     },
     async call(method, params) {
       calls.push([method, params]);
+      if (method === 'thread/read') return { thread: { cwd: root, status: { type: 'idle' } } };
     },
   };
   const owner = createCoordinator(service, () => connection);
@@ -187,8 +190,11 @@ test('renewal retains history and current questions; restart pauses without repl
   f.owner.state.threads[0].characters = 120000;
   await f.owner.turn(f.run, 'Second task');
   assert.equal(f.owner.view().threads.length, 2);
-  assert.equal(f.owner.state.threads[1].handoff.records[0].question.question, 'Pending decision?');
-  f.owner.fresh();
+  assert.equal(f.owner.state.threads[1].handoff.records, undefined);
+  assert.match(f.owner.state.threads[1].handoff.workingNotes, /coordinator-notes.json$/);
+  assert.ok(f.owner.state.threads[0].archived);
+  assert.deepEqual(f.service.lifecycleRuns.one.approval, { sha256: 'approved' });
+  await f.owner.fresh();
   assert.equal(f.owner.view().threads.length, 3);
   f.owner.state.active = { issueId: 'one', operation: 'Saving', runId: 'old-operation' };
   f.owner.save();
@@ -262,6 +268,7 @@ let current; const send = m => process.stdout.write(JSON.stringify(m)+'\\n');
 createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line); appendFileSync(${JSON.stringify(log)},JSON.stringify(m)+'\\n'); if(!m.method||m.id===undefined)return;
  if(m.method==='initialize') return send({id:m.id,result:{}});
+ if(m.method==='thread/name/set'||m.method==='thread/archive') return send({id:m.id,result:{}});
  if(m.method==='thread/start') return send({id:m.id,result:{thread:{id:'queue-native'}}});
  if(m.method==='thread/resume') return send({id:m.id,result:{thread:{id:'queue-native'}}});
  if(m.method==='thread/read') return send({id:m.id,result:{thread:{id:'queue-native',cwd:${JSON.stringify(f.root)},status:{type:'idle'}}}});
@@ -287,7 +294,164 @@ createInterface({input:process.stdin}).on('line',line=>{
   await assert.rejects(turn, /stopped/);
   const rpc = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(rpc.find((m) => m.method === 'thread/start').params.sandbox, 'read-only');
+  assert.match(rpc.find((m) => m.method === 'thread/name/set').params.name, / coordinator$/);
   assert.equal(rpc.find((m) => m.method === 'turn/steer').params.expectedTurnId, 'native-turn');
   assert.equal(rpc.find((m) => m.method === 'turn/interrupt').params.threadId, 'queue-native');
   assert.match(owner.view().threads[0].output[0].text, /Retained live output/);
+});
+
+test('large unrelated plans stay out of prompts and cumulative billing does not replace small chats', async (t) => {
+  const f = fixture(t);
+  f.service.lifecycleRuns.other = { issueId: 'other', plan: { content: 'UNRELATED PLAN '.repeat(20000) } };
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    const text = await original(...args);
+    f.owner.event({
+      method: 'thread/tokenUsage/updated',
+      params: { tokenUsage: { last: { inputTokens: 2000, outputTokens: 100 }, total: { totalTokens: 900000 } } },
+    });
+    return text;
+  };
+  for (let n = 0; n < 4; n++) await f.owner.turn(f.run, 'Review the selected issue');
+  const prompts = f.calls.filter((call) => call[0] === 'turn').map((call) => call[2]);
+  assert.equal(f.owner.state.threads.length, 1);
+  assert.ok(prompts.every((prompt) => prompt.length < 6000));
+  assert.ok(prompts.every((prompt) => !prompt.includes('UNRELATED PLAN') && !prompt.includes('Pending decision?')));
+  assert.match(prompts[0], /lifecycle.json/);
+  assert.match(prompts[0], /progressSelector/);
+  assert.match(prompts[0], /one.md/);
+  assert.match(prompts[0], /working_notes/);
+});
+
+test('current context and tool-output fallback rotate only between operations', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  let operation = 0;
+  f.connection.turn = async (...args) => {
+    const text = await original(...args);
+    if (++operation === 1)
+      f.owner.event({
+        method: 'thread/tokenUsage/updated',
+        params: { tokenUsage: { last: { inputTokens: 21000, outputTokens: 100 }, total: { totalTokens: 999999 } } },
+      });
+    if (operation === 2)
+      f.owner.event({
+        method: 'item/commandExecution/outputDelta',
+        params: { itemId: 'tool', delta: 'x'.repeat(65000) },
+      });
+    return text;
+  };
+  await f.owner.turn(f.run, 'First');
+  await f.owner.turn(f.run, 'Second');
+  assert.equal(f.owner.state.threads.length, 2);
+  const attach = f.calls.findIndex(
+    (call) => call[0] === 'attach' && call[1] === undefined && f.calls.indexOf(call) > 0
+  );
+  const archived = f.calls.findIndex((call) => call[0] === 'thread/archive');
+  assert.ok(attach < archived);
+  assert.match(f.owner.state.threads[0].title, /archived/);
+  await f.owner.turn(f.run, 'Third');
+  assert.equal(f.owner.state.threads.length, 3);
+});
+
+test('fresh chats carry validated computed notes, never chat history; changed sources discard affected notes', async (t) => {
+  const f = fixture(t),
+    path = join(f.root, 'source.md'),
+    other = join(f.root, 'other.md');
+  writeFileSync(path, 'current source');
+  writeFileSync(other, 'unchanged');
+  const source = { path, sha256: digest(readFileSync(path)) };
+  const note = { finding: 'Two operations share one underlying cause.', sources: [source] };
+  f.connection.turn = async () => JSON.stringify({ reply: 'Done', working_notes: [note] });
+  assert.equal(await f.owner.turn(f.run, 'Analyze'), 'Done');
+  retainNotes(f.root, 'two', [
+    { finding: 'Independent finding', sources: [{ path: other, sha256: digest(readFileSync(other)) }] },
+  ]);
+  await f.owner.fresh();
+  let received;
+  f.connection.turn = async (_id, _root, prompt) => {
+    received = prompt;
+    return JSON.stringify({ reply: 'Continued', working_notes: [note] });
+  };
+  await f.owner.turn(f.run, 'Continue');
+  assert.match(received, /Two operations share one underlying cause/);
+  assert.doesNotMatch(received, /Independent finding/);
+  assert.doesNotMatch(received, /\"role\":\"Coordinator\"/);
+  writeFileSync(path, 'changed source');
+  assert.equal(currentNotes(f.root, 'one').length, 0);
+  assert.equal(currentNotes(f.root, 'two').length, 1);
+  retainNotes(f.root, 'one', [
+    { finding: 'Unsafe pointer', sources: [{ path: '/etc/passwd', sha256: '0'.repeat(64) }] },
+  ]);
+  assert.equal(currentNotes(f.root, 'one').length, 0);
+});
+
+test('failed replacement attachment never archives a predecessor; archival failure retains history and permits work', async (t) => {
+  const f = fixture(t);
+  await f.owner.turn(f.run, 'Initial');
+  const attach = f.connection.attach;
+  f.connection.attach = async () => {
+    throw Error('startup uncertain');
+  };
+  await assert.rejects(f.owner.fresh(), /startup uncertain/);
+  assert.equal(f.calls.filter((call) => call[0] === 'thread/archive').length, 0);
+  f.connection.attach = attach;
+  await f.owner.continue();
+  const call = f.connection.call;
+  f.connection.call = async (method, params) => {
+    if (method === 'thread/archive') throw Error('Provider temporarily unavailable');
+    return call(method, params);
+  };
+  await f.owner.turn(f.run, 'Retain and continue');
+  assert.equal(f.owner.state.threads[0].archived, undefined);
+  assert.match(f.owner.state.threads[0].archiveError, /temporarily unavailable/);
+  assert.equal(f.owner.state.threads.at(-1).messages.length, 1);
+});
+
+test('real evaluation path references huge selected reports and other plans instead of copying them', async (t) => {
+  const { captureFixture } = await import('./factory-capture-fixture.mjs');
+  const { readQueue } = await import('./factory-ui/data.mjs');
+  const f = captureFixture(t),
+    issueId = '20261025-existing';
+  writeFileSync(
+    join(f.root, '.issues', issueId + '.md'),
+    readFileSync(join(f.root, '.issues', issueId + '.md'), 'utf8') + '\nREPORT_ONLY_SENTINEL '.repeat(15000)
+  );
+  f.service.lifecycleRuns.other = { issueId: 'other', plan: { content: 'OTHER_PLAN_SENTINEL '.repeat(15000) } };
+  f.service.ownServer = () => {};
+  f.service.codex.start = async () => 'evaluation-thread';
+  f.service.codex.call = async () => ({});
+  let captured;
+  f.service.codex.turn = async (_id, _cwd, prompt) => {
+    captured = prompt;
+    return JSON.stringify({
+      summary: 'Read current sources.',
+      recommendations: [],
+      routes: [],
+      next_step: 'Wait',
+      continuation: null,
+      record_update: null,
+      human_question: null,
+      next_action: 'blocked',
+      working_notes: [],
+    });
+  };
+  const run = f.service.evaluate(digest(JSON.stringify(readQueue(f.root))), issueId);
+  for (let n = 0; n < 200 && f.service.store.connected.has(run.runId); n++) await tick();
+  const saved = f.service.store.runs.find((r) => r.id === run.runId);
+  assert.equal(saved.status, 'completed', saved.summary);
+  assert.ok(captured.length < 14000, 'Actual evaluation prompt must stay bounded: ' + captured.length);
+  assert.doesNotMatch(captured, /REPORT_ONLY_SENTINEL|OTHER_PLAN_SENTINEL/);
+  assert.match(captured, /context.json/);
+  assert.match(captured, /coordinator-index.json/);
+});
+
+test('Start fresh names and archives through RPC without starting a model turn', async (t) => {
+  const f = fixture(t);
+  await f.owner.turn(f.run, 'One operation');
+  const before = f.calls.filter((call) => call[0] === 'turn').length;
+  assert.deepEqual(await f.owner.fresh(), { renewed: true });
+  assert.equal(f.calls.filter((call) => call[0] === 'turn').length, before);
+  assert.ok(f.owner.state.threads[0].archived);
+  assert.match(f.owner.state.threads.at(-1).title, / coordinator$/);
 });

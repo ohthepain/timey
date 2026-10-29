@@ -25,7 +25,7 @@ const coordinatorUI = (() => {
       return true;
     }
     document.getElementById('app').innerHTML =
-      `<section data-view-id="coordinator"><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
+      `<section data-view-id="coordinator"><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label><input type="checkbox" id="coordinator-show-history"> Show archived conversations</label><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
     const input = document.getElementById('coordinator-message');
     input.value = draft;
     input.oninput = () => {
@@ -109,12 +109,18 @@ const coordinatorUI = (() => {
       .join('');
   }
   function updateHistory(data, state) {
+    const showHistory = document.getElementById('coordinator-show-history');
+    showHistory.onchange = () => {
+      selected = '';
+      updateHistory(data, state);
+    };
+    const visible = showHistory.checked ? state.threads : state.threads.slice(-1);
     const history = document.getElementById('coordinator-history');
-    if (!state.threads.some((t) => t.id === selected)) selected = state.threads.at(-1)?.id || '';
-    const options = state.threads
+    if (!visible.some((t) => t.id === selected)) selected = visible.at(-1)?.id || '';
+    const options = visible
       .map(
         (t, n) =>
-          `<option value="${esc(t.id)}" ${selected === t.id ? 'selected' : ''}>Conversation ${n + 1}${n === state.threads.length - 1 ? ' · current' : ''}</option>`
+          `<option value="${esc(t.id)}" ${selected === t.id ? 'selected' : ''}>${esc(t.title || 'Coordinator')}${t.id === state.threads.at(-1)?.id ? ' · current' : ' · ' + esc(new Date(t.created).toLocaleString())}</option>`
       )
       .join('');
     if (history.innerHTML !== options) history.innerHTML = options;

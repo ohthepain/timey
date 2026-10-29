@@ -1,6 +1,6 @@
 # Coordinator context and chat reuse
 
-Status: agreed design; implementation has not started. All interview decisions
+Status: implemented; focused verification passed. All interview decisions
 are settled. This preserves ADR 0007’s distinction between the shared coordinator
 conversation and each issue’s own conversation.
 
@@ -80,4 +80,17 @@ alone does not cause rotation, and replacements receive only working notes and
 source references. Check title assignment, archive-after-ready ordering, source
 freshness and preservation of real approval boundaries. Retained reports and
 approval receipts remain authoritative; fixture success is not live-provider
-proof. No broad regression or provider trial has been run during this interview.
+proof. Focused protocol and rendered-browser verification cover the implementation.
+No full regression pass or live-provider behavior is claimed.
+
+## Verification result
+
+The coordinator protocol suite passes 13 tests, including source freshness,
+replacement failure, archival failure, native RPC naming/cancellation, no-inference
+maintenance, and actual evaluation-path prompt size with large local records.
+The affected Clarify, short-path and recovery cases passed (40 tests in the
+combined run before the final maintenance additions), as did 14 selected lifecycle
+compatibility cases. The coordinator browser scenario passed against a disposable
+fixture, including archived-history visibility. The configured saved-base step
+checkpoint passed with Fallow skipped by project policy. No full regression or
+live-provider functional pass is asserted.

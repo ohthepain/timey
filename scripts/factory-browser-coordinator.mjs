@@ -49,6 +49,9 @@ export default async function coordinatorBrowserChecks(page) {
   await page.getByLabel('Message', { exact: true }).fill('Next question');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => document.getElementById('coordinator-message').value === '');
+  if ((await page.locator('#coordinator-history option').count()) !== 1)
+    throw Error('Archived chats clutter the default view.');
+  await page.getByLabel('Show archived conversations', { exact: true }).check();
   await page.getByLabel('Coordinator history').selectOption('old');
   await page.locator('#coordinator-messages').filter({ hasText: 'Earlier retained conversation' }).waitFor();
   await page.getByRole('button', { name: 'Stop', exact: true }).click();

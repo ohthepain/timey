@@ -12,4 +12,4 @@ This applies to ADR 0007’s shared-coordinator exception, preserving each issue
 own conversation and all existing execution and approval boundaries. The
 [user-confirmed design](../plans/coordinator-context-and-chat-reuse.md) records
 the initial tunable 20,000-token budget and the agreed context/retention behavior;
-implementation has not started.
+the implementation retains these boundaries.

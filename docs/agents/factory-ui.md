@@ -1282,12 +1282,30 @@ candidates, starts work or accepts issues. Use existing issue controls for those
 decisions. Native permission requests are denied by the conversational connection.
 
 **Start fresh** is available only while idle and after interrupted work is checked.
-Automatic renewal happens between operations after 20 turns, 120,000 accumulated
-prompt/response characters, or 80,000 total tokens when reported by the provider.
-These bounded thresholds avoid relying on an unavailable provider context limit.
-Earlier conversations remain readable. The handoff preserves pending discussion,
-current issue questions, decisions, approved plans, waiting reasons and history
-links; every subsequent operation also receives current issue records. A restart
+**Start fresh** prepares and names a replacement and archives confirmed idle
+predecessors through native RPC without starting a model turn or issue work.
+
+Automatic rotation happens between operations around 20,000 tokens of current
+working context, configurable with `coordinatorContextTokens` in
+`factory.config.json`. It uses the latest input/output usage, with a conservative
+text-size estimate including observed tool output when measurements are absent.
+Cumulative billing and turn count do not trigger rotation. A predecessor created
+with the old oversized context format is replaced once at the next safe operation.
+
+Each operation receives local source references, rather than copies of all issue
+reports, plans and approvals. Current issue records and actual approval receipts
+remain authoritative. Useful computed findings can be retained as bounded working
+notes with source paths and SHA-256 hashes; findings whose inputs changed are not
+reused. The next chat receives only validated relevant findings and source
+references. Pending discussion remains in the coordinator store rather than being
+copied into the handoff.
+
+The active native chat is explicitly named after the project, such as “Timey
+coordinator”. After the replacement attaches successfully, confirmed idle
+predecessors are dated and archived. Naming or archival failure retains history
+and reports the error without blocking the operation; cleanup retries on a later
+operation. The coordinator page shows the current conversation by default, with
+**Show archived conversations** for retained history. A restart
 or failure preserves output and the interrupted operation and requires explicit
 continuation. It never automatically replays the old operation.
 

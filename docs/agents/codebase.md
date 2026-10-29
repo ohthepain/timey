@@ -476,8 +476,10 @@ verified delivery still uses the existing completion and merge protocol. See
 [the default handoff contract](issue-delivery.md#default-draft-pr-handoff).
 
 The shared queue coordinator is owned by `factory-ui/coordinator.mjs`;
-`coordinator-store.mjs` retains its operation, conversation history and renewal
-handoffs. `coordinator-ui.js` renders its dedicated page and compact activity strip.
+`coordinator-store.mjs` retains its operation, conversation history and source
+references. `coordinator-notes.mjs` validates bounded computed findings against
+source hashes; current-context usage controls early rotation rather than billing
+or turn counts. Predecessor archival follows successful replacement attachment. `coordinator-ui.js` renders its dedicated page and compact activity strip.
 Read-only lifecycle coordination and queue evaluations use its separate connection;
 workers and independent reviews retain their existing connections.
 Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.

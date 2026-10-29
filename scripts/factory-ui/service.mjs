@@ -1,3 +1,4 @@
+import { coordinatorContext } from './coordinator-store.mjs';
 import { createCoordinator } from './coordinator.mjs';
 import { progressBasis } from './next-action.mjs';
 import { queueHumanInput } from './queue-human-input.mjs';
@@ -587,11 +588,18 @@ export class FactoryUI {
             this,
             run,
             evaluationPrompt({
-              ...issueContext(queue, issueId),
-              approved_lifecycle_plan: approvedLifecyclePlan(this, issueId),
-              lifecycle_followup: lifecycleFollowup(this, issueId),
+              sources: coordinatorContext(this, issueId),
+              lifecycle: queue.lifecycle.map(({ state, name, role }) => ({ state, name, role })),
+              approved_lifecycle_plan: approvedLifecyclePlan(this, issueId)
+                ? {
+                    source: join(this.root, '.issues/factory-ui/lifecycle.json'),
+                    issue_id: issueId,
+                  }
+                : null,
+              lifecycle_followup: lifecycleFollowup(this, issueId)?.summary || null,
               focus_issue_ids: issueId ? [issueId] : null,
-            })
+            }),
+            true
           ),
           evaluationSchema
         )

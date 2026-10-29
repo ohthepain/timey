@@ -50,7 +50,7 @@ export class CodexConnection {
   send(value) {
     this.child.stdin.write(JSON.stringify(value) + '\n');
   }
-  call(method, params, onSlow = null) {
+  call(method, params, onSlow = null, timeoutMs = 30000) {
     return new Promise((resolve, reject) => {
       const id = ++this.serial;
       this.phase('requested', method, params.threadId);
@@ -62,7 +62,7 @@ export class CodexConnection {
         }
         this.pending.delete(id);
         reject(Error(`${method} did not respond. Do not retry a creation without reconciliation.`));
-      }, 30000);
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, method, threadId: params.threadId });
       this.send({ id, method, params });
     });
