@@ -83,10 +83,7 @@ function recordSkippedFallow() {
   const startedAt = new Date().toISOString();
   report.phases.push({ name: 'fallow', startedAt });
   const log = join(reportDir, `${stamp}-fallow.log`);
-  writeFileSync(
-    log,
-    'Fallow audit skipped. Set TIMEY_FALLOW_ENFORCE=1 to enforce at commit, push, and verify.\n'
-  );
+  writeFileSync(log, 'Fallow audit skipped. Set TIMEY_FALLOW_ENFORCE=1 to enforce at commit, push, and verify.\n');
   report.checks.push({
     name: 'fallow',
     passed: true,
