@@ -39,8 +39,9 @@ New lifecycle stages use the same step layout without requiring another screen.
 ## Queue sorting
 
 The queue defaults to latest progress first. The sort selector also offers lifecycle
-progress, creation time, completion time and required human input; direction can be
-reversed. New modes start highest/newest/required first. Missing dates stay last
+progress, creation time, completion time and required human input. Direction is a
+toggle: a downward triangle means descending and an upward triangle means ascending.
+New modes start highest/newest/required first. Missing dates stay last
 in both directions, with ascending issue ID breaking ties. Filters and sorting
 remain selected during live refreshes.
 
@@ -344,7 +345,12 @@ page also offers **Open saved report**, which reads its current complete Markdow
 path in the same accessible dialog. Report content is displayed as text. The
 authenticated report resource accepts only an issue ID, rejects symlinks and
 non-regular files, and reports missing or invalid reports without changing files,
-assignments or lifecycle state. The plans-only resource remains separate. The current
+assignments or lifecycle state. The plans-only resource remains separate. A filename
+shown in issue notes, verification messages, recorded evidence, checklist text, or
+command output is a button that opens that file in the same dialog. That shown-file
+read accepts one regular text file inside the project, including an absolute path
+that resolves there. It rejects folders, symlinks, paths outside the project, binary
+files, and files of 2 MB or larger, and it does not change the queue. The current
 step keeps Progress available without a separate readiness check. Saved
 implementation results remain visible as the issue advances.
 
@@ -379,8 +385,8 @@ Blue checked circles mean Passed, red X circles Failed and empty green circles T
 do. Grey question circles mean Not checked, grey minus circles Skipped and a green
 ellipsis means Checking. Every state also has a visible text label. Expand an item
 for acceptance criteria, result, exact requirement and supporting files. Those
-files open as inert text after matching the reviewed hash; arbitrary paths cannot
-be read through the viewer.
+files open as inert text after matching the reviewed hash. The checklist resource
+still refuses a path that was not part of that review.
 
 Ordinary criteria pass without per-item approval. Only existing human checks get
 Approve result / Needs changes controls; evidence checks instead ask for the
@@ -499,9 +505,11 @@ This path does not prove a self-healing exercise or any other unperformed test.
 Those limits remain in the result for final acceptance. It cannot change source,
 registry entries, other reports or human check outcomes, and never closes the issue.
 
-The queue hides the configured Closed stage by default. Show closed issues includes
-those records, and choosing Closed in the stage filter enables that option.
-Search, stage and visibility choices survive live refreshes while the page is open.
+The queue lists each lifecycle role with a checkbox and the number of issues in that
+role that match the current search. Every role starts selected except Closed. Clearing
+a role hides its issues; selecting Closed shows closed issues. Search text applies when
+Return is pressed, and also as the text changes. Search, role, and sort choices survive
+live refreshes while the page is open.
 Filtering is read-only; issue links and saved reports remain available.
 
 ## Live worker status
@@ -615,6 +623,10 @@ authorization history retained, then replans only unfinished work from current
 inputs. It never updates the old fingerprint to make a stale assignment launchable.
 The replacement passes the normal scope review, human-input and launch guards;
 a changed plan or expanded scope still requires the actual human decision.
+
+Final review still shows Continue when this recovery, or another resumable task, is
+the next action. Acceptance controls appear once no automatic task remains.
+Continue does not accept or close the issue.
 
 Reads only offer recovery. The explicit Continue action performs retirement under
 the ledger lock, checking the exact expected proposal and that it is still stale,
@@ -1243,3 +1255,38 @@ route check failures and unfinished work are retained in the draft PR descriptio
 Progress finishes at publication, and the delivery card shows the manual handoff
 without automatic merge or check-maintenance controls. The verified delivery
 controls remain available for explicitly selected routes.
+
+## Coordinator view
+
+Open **Coordinator** from the header, queue, issue page or a waiting explanation.
+The dedicated page shows the shared queue conversation, sanitized live output,
+active issue and operation, waiting work and workers still running. The compact
+full-width strip beneath the header shows only the issue and basic operation; on
+an issue page it appears only during coordination for that issue and disappears
+automatically. Page reads and refreshes start no work.
+
+The server manages one read-only coordinator conversation across queue reviews and
+lifecycle coordination. Issue conversations and independent reviews keep their own
+contexts. **Stop** interrupts only the coordinator response, pauses further
+coordination and leaves workers running. **Continue** is explicit: it checks that
+the retained conversation is idle, then uses existing issue handlers to inspect
+saved work and continue under original approvals. Failed or uncertain startup
+never creates a replacement conversation. Noninterruptible record writes finish
+atomically before further coordination pauses.
+
+**Send** queues discussion for the next coordinator response, including when another
+operation is already waiting. **Steer** addresses the exact
+currently displayed response; a stale response identifier is rejected, never sent
+to a later response. Neither control answers issue questions, approves plans or
+candidates, starts work or accepts issues. Use existing issue controls for those
+decisions. Native permission requests are denied by the conversational connection.
+
+**Start fresh** is available only while idle and after interrupted work is checked.
+Automatic renewal happens between operations after 20 turns, 120,000 accumulated
+prompt/response characters, or 80,000 total tokens when reported by the provider.
+These bounded thresholds avoid relying on an unavailable provider context limit.
+Earlier conversations remain readable. The handoff preserves pending discussion,
+current issue questions, decisions, approved plans, waiting reasons and history
+links; every subsequent operation also receives current issue records. A restart
+or failure preserves output and the interrupted operation and requires explicit
+continuation. It never automatically replays the old operation.

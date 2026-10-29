@@ -156,6 +156,10 @@ validated existing conversations and the original ledger attach operation.
 
 `factory-ui/plan-document.mjs` reads Markdown plans for the issue screen’s document
 viewer, restricted to canonical regular files under the selected project’s docs/plans.
+`factory-ui/shown-file.mjs` reads one regular text file for a filename the issue screen
+already shows. The path must resolve inside the project. It rejects symlinks, folders,
+binary content, and files of 2 MB or larger. `file-link-ui.js` turns those displayed
+paths into buttons for the same read-only dialog.
 
 `factory-ui/report-document.mjs` reads the full current saved report by issue ID from
 the authoritative project queue, requiring a contained regular file with matching
@@ -213,7 +217,9 @@ requests. `lifecycle-planning.mjs` separates actual human questions from unfinis
 work and stopped operations. `lifecycle-stop.mjs` owns the meaningful-work fingerprint
 and bounded planning recovery, so administrative notes cannot reset a failed review.
 `recommendation-refresh.mjs` offers and executes approved-plan recovery for unused
-stale recommendations. `data.mjs` supplies structured launch blockers; the ledger
+stale recommendations, including when the issue is already at Final review. The
+lifecycle runs that recovery before it stops for acceptance, and the issue screen
+keeps Continue available for it. `data.mjs` supplies structured launch blockers; the ledger
 checks expected proposal identity and staleness atomically before retirement.
 The lifecycle replans unfinished work, preserving normal replacement scope checks.
 The browser retains keyed expansion, draft and scroll state around live refreshes.
@@ -468,3 +474,10 @@ the manual handoff report; shared delivery publication retains provider identity
 and recovery guards. `pr-publication.mjs` finishes Progress at a draft handoff;
 verified delivery still uses the existing completion and merge protocol. See
 [the default handoff contract](issue-delivery.md#default-draft-pr-handoff).
+
+The shared queue coordinator is owned by `factory-ui/coordinator.mjs`;
+`coordinator-store.mjs` retains its operation, conversation history and renewal
+handoffs. `coordinator-ui.js` renders its dedicated page and compact activity strip.
+Read-only lifecycle coordination and queue evaluations use its separate connection;
+workers and independent reviews retain their existing connections.
+Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
+import vm from 'node:vm';
 import { join } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
@@ -228,16 +229,23 @@ test('Verify recovery UI names the checkout, uncertainty, branch scope and both 
     html.indexOf('      function verificationRecovery('),
     html.indexOf('      async function retryIssueVerification(')
   );
-  const render = new Function('esc', 'busy', source + ';return verificationRecovery;')(
-    (v) => String(v).replaceAll('<', '&lt;'),
-    false
+  const context = {};
+  vm.runInNewContext(
+    readFileSync('scripts/factory-ui/file-link-ui.js', 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
+    context
   );
+  const render = new Function('esc', 'busy', 'fileLinkUI', source + ';return verificationRecovery;')(
+    (v) => String(v).replaceAll('<', '&lt;'),
+    false,
+    context.fileLinkUI
+  );
+  const log = '/project/.issues/factory-ui/run/verify.log';
   const view = {
     runId: 'one',
     checkout: '/project/.issues/worker',
     branch: 'worker',
     busy: false,
-    error: 'An outside check failed',
+    error: 'An outside check failed. See ' + log,
     defaultBranch: 'refs/heads/manual-fix',
     branches: [
       { ref: 'refs/heads/manual-fix', name: 'manual-fix', revision: 'a'.repeat(40), subject: 'Manual repair' },
@@ -251,6 +259,7 @@ test('Verify recovery UI names the checkout, uncertainty, branch scope and both 
   };
   const dom = new JSDOM(render({ id: 'one', verificationRecovery: view }));
   const text = dom.window.document.body.textContent;
+  assert.equal(dom.window.document.querySelector('[data-open-file]').dataset.openFile, log);
   assert.match(text, /may be outside/);
   assert.match(text, /\/project\/\.issues\/worker/);
   assert.match(text, /all changes/);
