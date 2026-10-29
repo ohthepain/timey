@@ -35,6 +35,16 @@ export async function waitLifecycleWork(service, record, queue) {
   return reconnectLifecycleWork(service, record, interrupted);
 }
 async function reconnectLifecycleWork(service, record, interrupted) {
+  if (['evaluation', 'coordinator'].includes(interrupted.kind)) {
+    service.store.update(interrupted, {
+      status: 'blocked',
+      summary: 'The read-only review lost its connection. Saved findings are retained; checking current inputs again.',
+    });
+    record.input = null;
+    if (!recoverReviewFailure(service, record, interrupted))
+      stopLifecycle(service, record, 'The interrupted review could not recover with unchanged inputs.');
+    return record.status !== 'running';
+  }
   if (['worker', 'integration'].includes(interrupted.kind) && interrupted.threadId) {
     await service.resume(
       interrupted.id,

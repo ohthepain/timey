@@ -146,7 +146,12 @@ decline decision, scoped to the pending request. Unsupported requests fail close
 A missing CLI, failed setup or disconnected conversation retains its saved claim,
 checkout and ID. Do not retry creation blindly. Known interrupted chats can be
 continued explicitly within the original assignment; no resumption occurs on
-page load. A server restart displays saved runs as disconnected. The UI refuses
+page load. A server restart displays saved runs as disconnected. On Continue,
+an unattached read-only evaluation or coordinator review is retired as interrupted,
+with its findings retained, and current inputs are reviewed once through bounded
+recovery. It cannot remain falsely running and recreate the same retry prompt.
+Worker and integration recovery still reconnect their existing assignments.
+The UI refuses
 uncertain setup and leaves it for coordinator reconciliation.
 
 Local history and transcripts live under ignored `.issues/factory-ui/`. A server

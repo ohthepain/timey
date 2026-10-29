@@ -4818,3 +4818,20 @@ test('issue Git identity follows unfinished work, assembly and live HEAD without
   snapshot.runs = [];
   assert.equal(issueGit(snapshot, issue), null);
 });
+
+test('Continue retires a disconnected read-only review and recovers once without a worker', async (t) => {
+  const { service, root } = fixture(t);
+  const { waitLifecycleWork } = await import('./factory-ui/lifecycle-work.mjs');
+  const record = { issueId: '20261022-one', status: 'running', events: [], attempts: [], input: { type: 'retry' } };
+  const run = { id: 'lost-review', issueId: record.issueId, kind: 'evaluation', status: 'running', events: [], threadId: 'unavailable-chat' };
+  service.store.runs.push(run);
+  assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
+  assert.equal(run.status, 'blocked');
+  assert.equal(record.replan, true);
+  assert.equal(record.input, null);
+  assert.equal(record.lastFailure.runId, run.id);
+  assert.equal(record.recoveryContexts.length, 1);
+  assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
+  assert.equal(service.store.runs.length, 1);
+  assert.equal(readQueue(root).actions.length, 0);
+});
