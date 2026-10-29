@@ -455,3 +455,30 @@ test('Start fresh names and archives through RPC without starting a model turn',
   assert.ok(f.owner.state.threads[0].archived);
   assert.match(f.owner.state.threads.at(-1).title, / coordinator$/);
 });
+
+test('provider-confirmed missing empty chat recovers once; populated or uncertain chats never duplicate', async (t) => {
+  const f = fixture(t);
+  await f.owner.fresh();
+  const missing = f.owner.state.threads.at(-1).threadId;
+  const attach = f.connection.attach,
+    call = f.connection.call;
+  f.connection.attach = async (...args) => {
+    if (args[1].threadId === missing) throw Error('no rollout found for thread id ' + missing);
+    return attach(...args);
+  };
+  f.connection.call = async (method, params) => {
+    if (method === 'thread/read' && params.threadId === missing)
+      throw Error('no rollout found for thread id ' + missing);
+    return call(method, params);
+  };
+  await f.owner.turn(f.run, 'Recover from current records');
+  assert.ok(f.owner.state.threads.find((t) => t.threadId === missing).unavailable);
+  assert.equal(f.calls.filter((call) => call[0] === 'turn').length, 1);
+  const populated = f.owner.state.threads.at(-1).threadId,
+    count = f.owner.state.threads.length;
+  f.connection.attach = async () => {
+    throw Error('no rollout found for thread id ' + populated);
+  };
+  await assert.rejects(f.owner.turn(f.run, 'Do not duplicate'), /no rollout/);
+  assert.equal(f.owner.state.threads.length, count);
+});

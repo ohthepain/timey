@@ -85,9 +85,9 @@ No full regression pass or live-provider behavior is claimed.
 
 ## Verification result
 
-The coordinator protocol suite passes 13 tests, including source freshness,
+The coordinator protocol suite passes 14 tests, including source freshness,
 replacement failure, archival failure, native RPC naming/cancellation, no-inference
-maintenance, and actual evaluation-path prompt size with large local records.
+maintenance, confirmed-missing empty-chat recovery, and actual evaluation-path prompt size with large local records.
 The affected Clarify, short-path and recovery cases passed (40 tests in the
 combined run before the final maintenance additions), as did 14 selected lifecycle
 compatibility cases. The coordinator browser scenario passed against a disposable

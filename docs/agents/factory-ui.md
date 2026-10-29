@@ -1307,7 +1307,10 @@ and reports the error without blocking the operation; cleanup retries on a later
 operation. The coordinator page shows the current conversation by default, with
 **Show archived conversations** for retained history. A restart
 or failure preserves output and the interrupted operation and requires explicit
-continuation. It never automatically replays the old operation.
+continuation. It never automatically replays the old operation. If the provider
+independently confirms that an empty chat has no retained rollout, it may be
+replaced once from source records. Populated chats and other uncertain startup
+failures retain their guards.
 
 ### Factory model preference
 

@@ -95,6 +95,7 @@ class Coordinator {
         status: thread.status,
         title: thread.title,
         archived: thread.archived || null,
+        unavailable: thread.unavailable || null,
         archiveError: thread.archiveError || null,
         notesError: thread.notesError || null,
         namingError: thread.namingError || null,
@@ -131,16 +132,15 @@ class Coordinator {
   async execute(operation, task) {
     this.service.ownServer();
     this.renewIfNeeded(operation.incomingTokens || 0);
-    const thread = this.state.threads.at(-1);
+    let thread = this.state.threads.at(-1);
     this.state.active = { ...operation, started: new Date().toISOString() };
     this.save();
     try {
       this.connection ||= this.create();
       this.connection.onEvent = (event) => this.event(event);
-      const threadId = await this.connection.attach(this.service.root, thread, (changes) => {
-        Object.assign(thread, changes);
-        this.save();
-      });
+      const attached = await this.attachCurrent();
+      thread = attached.thread;
+      const threadId = attached.threadId;
       await this.nameThread(thread, threadId);
       await this.archivePredecessors(thread);
       requireThat(!this.paused, 'Coordination was stopped before the response began.');
@@ -235,10 +235,7 @@ class Coordinator {
     const thread = this.state.threads.at(-1);
     if (thread.threadId || thread.startup) {
       this.connection ||= this.create();
-      await this.connection.attach(this.service.root, thread, (changes) => {
-        Object.assign(thread, changes);
-        this.save();
-      });
+      await this.attachCurrent();
     }
     const issueIds = this.state.resumeIssues || [];
     requireThat(
@@ -254,6 +251,37 @@ class Coordinator {
     for (const id of issueIds) this.resume(id);
     this.drain();
     return { continued: true };
+  }
+  async attachCurrent(recovered = false) {
+    const thread = this.state.threads.at(-1);
+    this.connection ||= this.create();
+    this.connection.onEvent = (event) => this.event(event);
+    try {
+      const threadId = await this.connection.attach(this.service.root, thread, (changes) => {
+        Object.assign(thread, changes);
+        this.save();
+      });
+      return { thread, threadId };
+    } catch (error) {
+      const missing = (message) =>
+        thread.threadId && message.includes(thread.threadId) && /no rollout found for thread id/.test(message);
+      const empty =
+        !thread.turns &&
+        !(thread.output || []).length &&
+        !(thread.messages || []).some((m) => m.role === 'Coordinator');
+      if (recovered || !empty || !missing(error.message)) throw error;
+      // Confirm absence independently; an attach error alone is not enough.
+      try {
+        await this.connection.call('thread/read', { threadId: thread.threadId, includeTurns: false });
+      } catch (probe) {
+        if (!missing(probe.message)) throw error;
+        thread.unavailable = new Date().toISOString();
+        thread.title = 'Coordinator · provider did not retain this empty chat';
+        this.renew();
+        return this.attachCurrent(true);
+      }
+      throw error;
+    }
   }
   fresh() {
     this.service.ownServer();
@@ -302,7 +330,7 @@ class Coordinator {
     const deadline = Date.now() + 5000;
     // Attach the replacement first. Failed/uncertain startup leaves history intact.
     for (const thread of this.state.threads) {
-      if (thread === current || !thread.threadId || thread.archived) continue;
+      if (thread === current || !thread.threadId || thread.archived || thread.unavailable) continue;
       if (Date.now() >= deadline) break;
       try {
         const { thread: native } = await this.maintenanceCall('thread/read', {
