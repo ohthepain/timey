@@ -149,6 +149,7 @@ function read(service, request, response, owner) {
     '/api/issue-chat': () =>
       service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
+    '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
     '/api/issue-report': () => service.readSavedReport(url.searchParams.get('issue')),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
@@ -178,6 +179,7 @@ function readResource(service, request, response, owner) {
     '/server-control-ui.js': 'server-control-ui.js',
     '/queue-lifecycle-ui.js': 'queue-lifecycle-ui.js',
     '/queue-sort-ui.js': 'queue-sort-ui.js',
+    '/file-link-ui.js': 'file-link-ui.js',
     '/issue-chat-ui.js': 'issue-chat-ui.js',
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',

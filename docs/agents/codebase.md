@@ -156,6 +156,10 @@ validated existing conversations and the original ledger attach operation.
 
 `factory-ui/plan-document.mjs` reads Markdown plans for the issue screen’s document
 viewer, restricted to canonical regular files under the selected project’s docs/plans.
+`factory-ui/shown-file.mjs` reads one regular text file for a filename the issue screen
+already shows. The path must resolve inside the project. It rejects symlinks, folders,
+binary content, and files of 2 MB or larger. `file-link-ui.js` turns those displayed
+paths into buttons for the same read-only dialog.
 
 `factory-ui/report-document.mjs` reads the full current saved report by issue ID from
 the authoritative project queue, requiring a contained regular file with matching

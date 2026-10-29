@@ -345,7 +345,12 @@ page also offers **Open saved report**, which reads its current complete Markdow
 path in the same accessible dialog. Report content is displayed as text. The
 authenticated report resource accepts only an issue ID, rejects symlinks and
 non-regular files, and reports missing or invalid reports without changing files,
-assignments or lifecycle state. The plans-only resource remains separate. The current
+assignments or lifecycle state. The plans-only resource remains separate. A filename
+shown in issue notes, verification messages, recorded evidence, checklist text, or
+command output is a button that opens that file in the same dialog. That shown-file
+read accepts one regular text file inside the project, including an absolute path
+that resolves there. It rejects folders, symlinks, paths outside the project, binary
+files, and files of 2 MB or larger, and it does not change the queue. The current
 step keeps Progress available without a separate readiness check. Saved
 implementation results remain visible as the issue advances.
 
@@ -380,8 +385,8 @@ Blue checked circles mean Passed, red X circles Failed and empty green circles T
 do. Grey question circles mean Not checked, grey minus circles Skipped and a green
 ellipsis means Checking. Every state also has a visible text label. Expand an item
 for acceptance criteria, result, exact requirement and supporting files. Those
-files open as inert text after matching the reviewed hash; arbitrary paths cannot
-be read through the viewer.
+files open as inert text after matching the reviewed hash. The checklist resource
+still refuses a path that was not part of that review.
 
 Ordinary criteria pass without per-item approval. Only existing human checks get
 Approve result / Needs changes controls; evidence checks instead ask for the

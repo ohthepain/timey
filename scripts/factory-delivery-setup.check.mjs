@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdirSync } from 'node:fs';
+import vm from 'node:vm';
 import { join } from 'node:path';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { addAction } from './issue-delivery-scenario.mjs';
@@ -139,7 +140,16 @@ test('the stopped-operation panel gives a visible retry and readable failure det
     html.indexOf('      function assemblyRecoveryPanel('),
     html.indexOf('      function lifecyclePanel(')
   );
-  const render = new Function('esc', 'busy', source + ';return assemblyRecoveryPanel;')((s) => String(s), false);
+  const context = {};
+  vm.runInNewContext(
+    readFileSync('scripts/factory-ui/file-link-ui.js', 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
+    context
+  );
+  const render = new Function('esc', 'busy', 'fileLinkUI', source + ';return assemblyRecoveryPanel;')(
+    (s) => String(s),
+    false,
+    context.fileLinkUI
+  );
   const dom = new JSDOM(
     render({
       id: 'one',
@@ -153,7 +163,8 @@ test('the stopped-operation panel gives a visible retry and readable failure det
       },
     })
   );
-  assert.equal(dom.window.document.querySelector('button').textContent, 'Retry existing operation');
+  assert.equal(dom.window.document.querySelector('[data-assembly-retry]').textContent, 'Retry existing operation');
+  assert.equal(dom.window.document.querySelector('[data-open-file]').dataset.openFile, '/project/check.log');
   assert.match(dom.window.document.body.textContent, /will not restart implementation or repeat the original merge/);
   assert.match(dom.window.document.body.textContent, /check.log/);
   assert.match(html, /Continuing existing work…/);

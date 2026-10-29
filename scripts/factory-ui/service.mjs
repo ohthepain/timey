@@ -54,6 +54,7 @@ import { latestResult, reviewInput, savedReviewInput, reviewSaveCurrent } from '
 import { validateRoutes } from './lifecycle.mjs';
 import { readPlan } from './plan-document.mjs';
 import { readSavedReport } from './report-document.mjs';
+import { readShownFile } from './shown-file.mjs';
 import { findConnection, connectWorker } from './worker-connection.mjs';
 import { decideIssue } from './issue-decision.mjs';
 import { resolveNextAction } from './next-action.mjs';
@@ -151,6 +152,9 @@ export class FactoryUI {
   }
   readPlan(path) {
     return readPlan(this.root, path);
+  }
+  readShownFile(path) {
+    return readShownFile(this.root, path);
   }
   readChecklistEvidence(id, path) {
     return readChecklistEvidence(readQueue(this.root), id, path);

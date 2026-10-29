@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
+import vm from 'node:vm';
 import { gitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
@@ -1494,6 +1495,65 @@ test('the plan viewer reads actual project plans without changing issue records'
   assert.equal(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), before);
 });
 
+test('a shown filename reads one project text file and refuses folders, links and outside paths', (t) => {
+  const { service, root } = fixture(t);
+  const relative = 'scripts/notes.txt';
+  mkdirSync(join(root, 'scripts'));
+  writeFileSync(join(root, relative), 'Required check output\n');
+  assert.deepEqual(service.readShownFile(relative), { path: relative, content: 'Required check output\n' });
+  assert.deepEqual(service.readShownFile(join(root, relative)), { path: relative, content: 'Required check output\n' });
+  assert.deepEqual(service.readShownFile('scripts/../scripts/notes.txt'), {
+    path: relative,
+    content: 'Required check output\n',
+  });
+  const outside = join(root, '..', 'shown-file-outside.txt');
+  writeFileSync(outside, 'secret');
+  t.after(() => unlinkSync(outside));
+  assert.throws(() => service.readShownFile(outside), /inside this project/);
+  symlinkSync(join(root, relative), join(root, 'linked.txt'));
+  assert.throws(() => service.readShownFile('linked.txt'), /cannot be a symlink/);
+  mkdirSync(join(root, 'folder'));
+  assert.throws(() => service.readShownFile('folder'), /not a folder/);
+  assert.throws(() => service.readShownFile('missing.txt'), /missing/);
+  writeFileSync(join(root, 'binary.txt'), Buffer.from([0x00, 0x01, 0x00, 0x02]));
+  assert.throws(() => service.readShownFile('binary.txt'), /not text/);
+  writeFileSync(
+    join(root, 'log.txt'),
+    Buffer.concat([Buffer.from('See the log\n'), Buffer.from([0]), Buffer.from('virtual client\n')])
+  );
+  assert.match(service.readShownFile('log.txt').content, /See the log\n\uFFFDvirtual client/);
+  writeFileSync(join(root, 'big.txt'), 'x'.repeat(2 * 1048576));
+  assert.throws(() => service.readShownFile('big.txt'), /smaller than 2 MB/);
+  assert.equal(readFileSync(join(root, relative), 'utf8'), 'Required check output\n');
+});
+
+test('displayed file paths become buttons without turning nearby text into markup', () => {
+  const context = {};
+  vm.runInNewContext(
+    readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
+    context
+  );
+  const html = context.fileLinkUI.html;
+  const log =
+    '/Users/paulwilkinson/projects/tanstack-start/timey/.issues/factory-ui/e08fa364-9e72-43bb-8988-770ddefcbee6/verify.log';
+  const linked = html('Required check failed (1). See ' + log);
+  assert.ok(linked.includes(`data-open-file="${log}"`));
+  assert.match(linked, /Required check failed \(1\)\. See <button/);
+  const note = html(
+    '- ' + log + ' (sha256: abc)\n- scripts/factory-ui/index.html\n- .issues/factory-ui/run/verify.log'
+  );
+  assert.ok(note.includes('data-open-file="scripts/factory-ui/index.html"'));
+  assert.ok(note.includes('data-open-file=".issues/factory-ui/run/verify.log"'));
+  assert.match(note, /sha256: abc/);
+  assert.ok(html('exported by "src/client.tsx"').includes('data-open-file="src/client.tsx"'));
+  const relative =
+    '../../../../../../../Users/paulwilkinson/projects/tanstack-start/timey/.issues/factory-ui/workers/8ece966b-9202-4932-929b-671551beb900/node_modules/.pnpm/zod@4.6.7/node_modules/zod/v4/core/util.js';
+  assert.ok(html('in "' + relative + '"').includes(`data-open-file="${relative}"`));
+  const plain = html('<script>alert(1)</script> https://example.com/docs/readme.md Checkout: /project/.issues/worker');
+  assert.doesNotMatch(plain, /<script>|data-open-file/);
+  assert.match(plain, /&lt;script&gt;/);
+});
+
 test('saved report reads full fresh Markdown for only the selected issue without mutations', (t) => {
   const { service, root, api } = fixture(t);
   const path = join(root, '.issues/20261022-one.md');
@@ -1547,6 +1607,15 @@ test('saved report resource requires authentication and leaves the plans-only re
   mkdirSync(join(root, 'docs/plans'), { recursive: true });
   writeFileSync(join(root, 'docs/plans/example.md'), '# Example plan');
   assert.equal((await fetch(url + '/api/document?path=docs/plans/example.md', { headers })).status, 200);
+  writeFileSync(join(root, 'source.js'), 'export const answer = 42;\n');
+  assert.equal((await fetch(url + '/api/shown-file?path=source.js')).status, 400);
+  const shown = await fetch(url + '/api/shown-file?path=source.js', { headers });
+  assert.equal(shown.status, 200);
+  assert.equal((await shown.json()).content, 'export const answer = 42;\n');
+  const outside = join(root, '..', 'shown-file-http-outside.txt');
+  writeFileSync(outside, 'nope');
+  t.after(() => unlinkSync(outside));
+  assert.equal((await fetch(url + '/api/shown-file?path=' + encodeURIComponent(outside), { headers })).status, 400);
 });
 
 function implementationFixture(t) {
@@ -2137,12 +2206,14 @@ test('earlier checklist results keep their recorded status without enabling acti
     'checkCircle',
     'checkLabels',
     'criterionSkip',
+    'fileLinkUI',
     source + ';return implementationCriterion;'
   )(
     (value) => value,
     (status) => `<circle>${status}</circle>`,
     { passed: 'Passed', skipped: 'Skipped' },
-    () => ''
+    () => '',
+    { html: (value) => value }
   );
   for (const status of ['passed', 'skipped']) {
     const content = render(
@@ -2182,12 +2253,19 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     html.indexOf('      function liveStepWork(')
   );
   const screen = { lifecycle: [], runs: [], actions: [] };
-  const render = new Function('data', 'esc', 'busy', 'approvals', source + ';return lifecyclePanel;')(
-    screen,
-    (value) => String(value || ''),
-    false,
-    () => ''
+  const links = {};
+  vm.runInNewContext(
+    readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
+    links
   );
+  const render = new Function(
+    'data',
+    'esc',
+    'busy',
+    'approvals',
+    'fileLinkUI',
+    source + ';return lifecyclePanel;'
+  )(screen, (value) => String(value || ''), false, () => '', links.fileLinkUI);
   const issue = { id: 'one', state: 'investigate' };
   assert.match(render(issue), /data-lifecycle-start/);
   assert.doesNotMatch(render(issue), /showModal|readiness|data-progress-id/);
@@ -3316,7 +3394,9 @@ async function activityScreen(t) {
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/queue-lifecycle-ui.js'), 'utf8') +
+    readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/queue-lifecycle-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-capture-ui.js'), 'utf8') +
       '\n' +
@@ -3412,6 +3492,43 @@ test('saved report control belongs on the issue page and displays escaped full c
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(document.getElementById('error').textContent, /report is missing/);
   assert.equal(document.getElementById('plan').open, false);
+});
+
+test('a filename in the Verify failure and issue notes opens in the document dialog', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  const log = '/Users/example/project/.issues/factory-ui/run/verify.log';
+  const issue = snapshot.issues[0];
+  issue.verificationRecovery = {
+    runId: 'run',
+    checkout: '/Users/example/project/.issues/worker',
+    branch: 'worker',
+    busy: false,
+    error: 'Required check failed (1). See ' + log,
+    defaultBranch: 'refs/heads/dev',
+    branches: [],
+    basis: 'basis',
+  };
+  issue.content = '## Evidence\n\n- ' + log + '\n- scripts/factory-ui/index.html\n';
+  window.screenTest.show(snapshot);
+  const buttons = [...window.document.querySelectorAll('[data-open-file]')];
+  assert.ok(buttons.some((button) => button.dataset.openFile === log));
+  assert.ok(buttons.some((button) => button.dataset.openFile === 'scripts/factory-ui/index.html'));
+  assert.match(window.document.body.textContent, /\/Users\/example\/project\/\.issues\/worker/);
+  const calls = [];
+  window.fetch = async (path) => {
+    calls.push(path);
+    return { ok: true, json: async () => ({ path: '.issues/factory-ui/run/verify.log', content: 'vite building' }) };
+  };
+  window.document.getElementById('plan').showModal = function () {
+    this.open = true;
+  };
+  buttons.find((button) => button.dataset.openFile === log).click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(calls, ['/api/shown-file?path=' + encodeURIComponent(log)]);
+  assert.equal(window.document.getElementById('plan-title').textContent, 'verify.log');
+  assert.equal(window.document.getElementById('plan-path').textContent, '.issues/factory-ui/run/verify.log');
+  assert.equal(window.document.getElementById('plan-content').textContent, 'vite building');
+  assert.equal(window.document.getElementById('plan').open, true);
 });
 
 async function approvalScreen(t) {
