@@ -192,10 +192,14 @@ Worker and integration recovery still reconnect their existing assignments.
 The UI refuses
 uncertain setup and leaves it for coordinator reconciliation.
 
-Continue immediately displays a sending status beside the button and prevents
+Continue immediately replaces the previous stop/status explanation with a sending
+status and prevents
 duplicate clicks while acknowledgment is pending. Server acceptance is shown
 separately from work starting; request failures remain visible with guidance to
-refresh before retrying. This feedback does not change execution or approval gates.
+refresh before retrying. Acknowledgment is retired when fresh lifecycle progress
+arrives. Current status distinguishes coordinator queueing from waiting for the
+active review result instead of retaining a stale conversation-preparation label.
+Saved chat history is preserved. This feedback does not change execution or approval gates.
 
 Local history and transcripts live under ignored `.issues/factory-ui/`. A server
 ownership lock prevents concurrent UI writers. A previous ownership lock must be

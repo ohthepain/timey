@@ -2180,6 +2180,18 @@
         if (!recovery) return '';
         return `<section class="card"><h4>Finish the existing operation</h4><p>${fileLinkUI.html(recovery.reason)}</p><details><summary>Failure details</summary><pre class="prose">${fileLinkUI.html(recovery.detail)}</pre>${recovery.output ? `<pre class="prose">${fileLinkUI.html(recovery.output)}</pre>` : ''}${recovery.checkout ? `<p>Saved issue branch: <code>${esc(recovery.checkout)}</code></p>` : ''}${recovery.log ? `<p>Check log: ${fileLinkUI.html(recovery.log)}</p>` : ''}</details><p>Retry uses the saved work. It will not restart implementation or repeat the original merge. A changed source result still needs review.</p><button class="primary" data-assembly-retry="${esc(issue.id)}" data-retry-run="${esc(recovery.runId)}" data-retry-updated="${esc(recovery.updated)}" ${busy ? 'disabled' : ''}>Retry existing operation</button></section>`;
       }
+      function currentProgressSummary(issue, record, child, summary, input) {
+        if (input || record?.status === 'answering') return summary;
+        const coordinator = data.coordinator;
+        const queued = coordinator?.waiting?.findIndex((entry) => entry.issueId === issue.id) ?? -1;
+        if (record?.status === 'running' && queued >= 0)
+          return `Waiting for the coordinator. Queue position ${queued + 1}; another review is running.`;
+        if (child?.connected && child.summary && !/^Preparing the conversation\.?$/.test(child.summary))
+          return child.summary;
+        if (record?.status === 'running' && coordinator?.active?.issueId === issue.id)
+          return summary + ' Waiting for the review result.';
+        return summary;
+      }
       function lifecyclePanel(issue) {
         const record = issue.lifecycle;
         const stage = data.lifecycle.find((s) => s.state === issue.state);
@@ -2245,7 +2257,7 @@
         const acceptanceOnly = stage?.role === 'ready-to-close' && (!record?.canResume || issue.progress?.disabled);
         const canStart =
           !input && !record?.deliveryHandoff && !record?.deliveryWaiting && !issue.assemblyRecovery && !acceptanceOnly;
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(currentProgressSummary(issue, record, child, summary, input))}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p data-progress-stop-reason>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${record.events
                 .slice(-30)
@@ -2658,7 +2670,9 @@
         if (progressRequests.get(issue.id)?.pending) return;
         progressRequests.set(issue.id, {
           pending: true,
-          message: 'Sending Continue… Requesting the next unfinished task under your approved plan. Waiting for the server to acknowledge it.',
+          previousUpdated: issue.lifecycle?.updated,
+          message:
+            'Sending Continue… Requesting the next unfinished task under your approved plan. Waiting for the server to acknowledge it.',
         });
         applyProgressFeedback();
         return act(async () => {
@@ -2671,13 +2685,16 @@
             });
             progressRequests.set(issue.id, {
               pending: false,
-              message: 'Continue accepted by the server. Checking saved work for the next step; progress will appear below.',
+              previousUpdated: issue.lifecycle?.updated,
+              message:
+                'Continue accepted by the server. Checking saved work for the next step; progress will appear below.',
             });
           } catch (error) {
             progressRequests.set(issue.id, {
               pending: false,
               error: true,
-              message: 'Continue could not be confirmed: ' + error.message + ' Refresh to check progress before retrying.',
+              message:
+                'Continue could not be confirmed: ' + error.message + ' Refresh to check progress before retrying.',
             });
             throw error;
           } finally {
@@ -2689,6 +2706,26 @@
         document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
           const state = progressRequests.get(button.dataset.lifecycleStart);
           if (!state) return;
+          const issue = data.issues?.find((i) => i.id === button.dataset.lifecycleStart);
+          if (!state.pending && !state.error && issue?.lifecycle?.updated !== state.previousUpdated) {
+            progressRequests.delete(button.dataset.lifecycleStart);
+            return;
+          }
+          const panel = button.closest('.lifecycle-progress');
+          if (panel) {
+            panel.querySelector('h3').textContent = state.error
+              ? 'Continue needs attention'
+              : state.pending
+                ? 'Sending Continue…'
+                : 'Waiting for current progress';
+            panel
+              .querySelectorAll('[data-resume-summary], [data-progress-stop-reason], [role="alert"]')
+              .forEach((element) => {
+                element.hidden = true;
+              });
+            const status = panel.querySelector('[role="status"]');
+            if (status) status.textContent = state.message;
+          }
           let feedback = button.nextElementSibling;
           if (!feedback?.classList.contains('progress-feedback')) {
             feedback = document.createElement('p');
@@ -2697,6 +2734,7 @@
           }
           feedback.setAttribute('role', state.error ? 'alert' : 'status');
           feedback.textContent = state.message;
+          feedback.hidden = Boolean(panel);
           button.setAttribute('aria-busy', String(state.pending));
           if (state.pending) {
             button.disabled = true;

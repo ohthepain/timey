@@ -4897,7 +4897,10 @@ test('Continue acknowledges a click before a delayed response and prevents dupli
 
 test('Continue renders accessible pending, accepted and failure feedback beside the clicked button', async (t) => {
   const { JSDOM } = await import('jsdom');
-  const dom = new JSDOM('<button data-lifecycle-start="one">Continue…</button>', { runScripts: 'outside-only' });
+  const dom = new JSDOM(
+    '<section class="lifecycle-progress"><h3>Progress stopped</h3><p role="status">Old failure</p><p data-resume-summary>Old retry explanation</p><p data-progress-stop-reason>Cannot advance</p><button data-lifecycle-start="one">Continue…</button></section><div id="history">Saved past output</div>',
+    { runScripts: 'outside-only' }
+  );
   t.after(() => dom.window.close());
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const source = html.slice(
@@ -4911,17 +4914,25 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
     new Promise((resolve) => {
       finish = resolve;
     });
-  window.eval('const progressRequests = new Map(); const data = {}; ' + source);
+  window.eval('var progressRequests = new Map(); var data = {}; ' + source);
   const button = window.document.querySelector('button');
   const pending = window.startIssueProgress({ id: 'one', state: 'in-progress' });
   assert.equal(button.disabled, true);
   assert.equal(button.getAttribute('aria-busy'), 'true');
   assert.match(button.textContent, /Sending/);
+  assert.equal(window.document.querySelector('h3').textContent, 'Sending Continue…');
+  assert.match(window.document.querySelector('[role="status"]').textContent, /Sending/);
+  assert.equal(window.document.querySelector('[data-progress-stop-reason]').hidden, true);
+  assert.equal(window.document.querySelector('[data-resume-summary]').hidden, true);
+  assert.equal(window.document.getElementById('history').textContent, 'Saved past output');
   assert.match(button.nextElementSibling.textContent, /approved plan/);
   assert.equal(button.nextElementSibling.getAttribute('role'), 'status');
   finish({});
   await pending;
   assert.match(button.nextElementSibling.textContent, /accepted/);
+  window.eval('data.issues = [{id: "one", lifecycle: {updated: "fresh", status: "running"}}];');
+  window.applyProgressFeedback();
+  assert.equal(window.eval('progressRequests.has("one")'), false);
   window.request = async () => {
     throw Error('Connection lost');
   };
@@ -5005,4 +5016,23 @@ test('code merge policy is validated before saving any route or deferred assignm
   assert.throws(() => service.saveReview(run.id, service.snapshot().reviewBasis), /No route or stage change was saved/);
   assert.equal(run.savedRoutes, undefined);
   assert.equal(api.inspect().registry.actions.length, 0);
+});
+
+test('current progress replaces stale preparation text with the actual wait and retires old acknowledgment', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function currentProgressSummary('),
+    html.indexOf('      function lifecyclePanel(')
+  );
+  const data = { coordinator: { waiting: [{ issueId: 'one' }], active: { issueId: 'other' } } };
+  const summary = new Function('data', source + ';return currentProgressSummary;')(data);
+  const issue = { id: 'one' },
+    record = { status: 'running' },
+    child = { connected: true, summary: 'Preparing the conversation.' };
+  assert.match(summary(issue, record, child, 'Checking the assignment', null), /Queue position 1/);
+  data.coordinator = { waiting: [], active: { issueId: 'one' } };
+  assert.equal(
+    summary(issue, record, child, 'Checking the assignment', null),
+    'Checking the assignment Waiting for the review result.'
+  );
 });
