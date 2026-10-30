@@ -262,6 +262,13 @@
       .muted {
         color: #657169;
       }
+      .history-time {
+        color: #657169;
+        white-space: nowrap;
+      }
+      .history-interrupted {
+        color: #8c4200;
+      }
       .card {
         background: #fffef9;
         border: 1px solid #deded1;
@@ -2247,12 +2254,44 @@
           !input && !record?.deliveryHandoff && !record?.deliveryWaiting && !issue.assemblyRecovery && !acceptanceOnly;
         return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
           record?.events?.length
-            ? `<details><summary>What happened</summary><ol>${record.events
-                .slice(-30)
-                .map((event) => `<li>${fileLinkUI.html(event.message)}</li>`)
-                .join('')}</ol></details>`
+            ? `<details><summary>What happened</summary><ol>${lifecycleHistory(record)}</ol></details>`
             : ''
         }</section>`;
+      }
+      function lifecycleHistory(record) {
+        let previousStage;
+        return record.events
+          .map((event) => {
+            const stage = data.lifecycle.find((candidate) => candidate.state === event.stage);
+            const transitioned = stage && stage.state !== previousStage;
+            if (stage) previousStage = stage.state;
+            const role = transitioned
+              ? `<strong style="color:${historyRoleColor(stage.role)}">${esc(stage.name)}: </strong>`
+              : '';
+            const interrupted =
+              event.interrupted || event.result === 'interrupted'
+                ? ' <span class="history-interrupted">(interrupted)</span>'
+                : '';
+            const timestamp = event.at
+              ? ` <time class="history-time" datetime="${esc(event.at)}">[${esc(new Date(event.at).toLocaleString())}]</time>`
+              : '';
+            return `<li>${role}${fileLinkUI.html(event.message)}${interrupted}${timestamp}</li>`;
+          })
+          .join('');
+      }
+      function historyRoleColor(role) {
+        return (
+          {
+            'ready-for-grilling': '#9a3412',
+            'ready-for-repro': '#6b21a8',
+            'ready-to-prototype': '#6d28d9',
+            'ready-to-fix': '#1d4ed8',
+            'ready-to-verify': '#0f766e',
+            'ready-for-commit': '#166534',
+            'ready-to-close': '#92400e',
+            closed: '#475569',
+          }[role] || '#334155'
+        );
       }
       function launchBlockDetails(blocker) {
         if (!blocker) return '';
@@ -2658,7 +2697,8 @@
         if (progressRequests.get(issue.id)?.pending) return;
         progressRequests.set(issue.id, {
           pending: true,
-          message: 'Sending Continue… Requesting the next unfinished task under your approved plan. Waiting for the server to acknowledge it.',
+          message:
+            'Sending Continue… Requesting the next unfinished task under your approved plan. Waiting for the server to acknowledge it.',
         });
         applyProgressFeedback();
         return act(async () => {
@@ -2671,13 +2711,15 @@
             });
             progressRequests.set(issue.id, {
               pending: false,
-              message: 'Continue accepted by the server. Checking saved work for the next step; progress will appear below.',
+              message:
+                'Continue accepted by the server. Checking saved work for the next step; progress will appear below.',
             });
           } catch (error) {
             progressRequests.set(issue.id, {
               pending: false,
               error: true,
-              message: 'Continue could not be confirmed: ' + error.message + ' Refresh to check progress before retrying.',
+              message:
+                'Continue could not be confirmed: ' + error.message + ' Refresh to check progress before retrying.',
             });
             throw error;
           } finally {

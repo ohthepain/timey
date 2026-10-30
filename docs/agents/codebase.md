@@ -209,7 +209,9 @@ their guards. `lifecycle-store.mjs` adapts the shared durable progress store.
 review saved answers, original plan approval and assignment scope. Inline responses
 route through `lifecycle-input.mjs` and `lifecycle-human.mjs`; native shared requests
 retain guarded owner updates. `lifecycle-work.mjs` waits for child runs and reuses
-existing chats for bounded corrections. See the UI guide for consent boundaries.
+existing chats for bounded corrections. The issue screen renders the complete
+“What happened” lifecycle event history with inline timestamps and role-transition
+labels. See the UI guide for consent boundaries.
 
 `factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
 `approval-options.mjs` exposes native approval choices and binds replies to pending

@@ -2296,6 +2296,35 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   assert.doesNotMatch(render(issue), /href="javascript/);
   delete issue.prototype_preview;
 
+  const previousHistoryIssueState = issue.state;
+  const previousHistoryLifecycle = issue.lifecycle;
+  const previousHistoryStages = screen.lifecycle;
+  screen.lifecycle = [
+    { state: 'prototype', role: 'ready-to-prototype', name: 'Prototype' },
+    { state: 'fix', role: 'ready-to-fix', name: 'Implement' },
+  ];
+  issue.state = 'fix';
+  issue.lifecycle = {
+    status: 'blocked',
+    summary: 'History test',
+    events: Array.from({ length: 35 }, (_, index) => ({
+      message: `History item ${index}`,
+      at: `2026-10-29T12:${String(index).padStart(2, '0')}:00.000Z`,
+      ...(index === 0 ? { stage: 'prototype' } : index === 1 ? { stage: 'fix' } : {}),
+      ...(index === 5 ? { result: 'interrupted' } : {}),
+    })),
+  };
+  const history = render(issue);
+  assert.equal((history.match(/<li>/g) || []).length, 35);
+  assert.match(history, /<strong style="color:#6d28d9">Prototype:/);
+  assert.match(history, /<strong style="color:#1d4ed8">Implement:/);
+  assert.match(history, /class="history-interrupted">\(interrupted\)/);
+  assert.match(history, /class="history-time" datetime="2026-10-29T12:00:00.000Z">\[/);
+  assert.match(history, /History item 34/);
+  issue.state = previousHistoryIssueState;
+  issue.lifecycle = previousHistoryLifecycle;
+  screen.lifecycle = previousHistoryStages;
+
   screen.runs.push({ id: 'other', issueId: 'different-issue', connected: true, summary: 'Other work' });
   assert.match(render(issue), /No work is running for this issue/);
   screen.runs.push({ id: 'own', issueId: issue.id, connected: true, summary: 'Inspecting the panel' });
@@ -4823,7 +4852,14 @@ test('Continue retires a disconnected read-only review and recovers once without
   const { service, root } = fixture(t);
   const { waitLifecycleWork } = await import('./factory-ui/lifecycle-work.mjs');
   const record = { issueId: '20261022-one', status: 'running', events: [], attempts: [], input: { type: 'retry' } };
-  const run = { id: 'lost-review', issueId: record.issueId, kind: 'evaluation', status: 'running', events: [], threadId: 'unavailable-chat' };
+  const run = {
+    id: 'lost-review',
+    issueId: record.issueId,
+    kind: 'evaluation',
+    status: 'running',
+    events: [],
+    threadId: 'unavailable-chat',
+  };
   service.store.runs.push(run);
   assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
   assert.equal(run.status, 'blocked');
@@ -4838,13 +4874,31 @@ test('Continue retires a disconnected read-only review and recovers once without
 
 test('Continue acknowledges a click before a delayed response and prevents duplicate requests', async () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
-  const source = html.slice(html.indexOf('      function startIssueProgress('), html.indexOf('      function applyProgressFeedback('));
-  let finish, calls = 0;
-  const states = new Map(), feedback = [];
-  const start = new Function('act', 'request', 'data', 'progressRequests', 'applyProgressFeedback', source + ';return startIssueProgress;')(
+  const source = html.slice(
+    html.indexOf('      function startIssueProgress('),
+    html.indexOf('      function applyProgressFeedback(')
+  );
+  let finish,
+    calls = 0;
+  const states = new Map(),
+    feedback = [];
+  const start = new Function(
+    'act',
+    'request',
+    'data',
+    'progressRequests',
+    'applyProgressFeedback',
+    source + ';return startIssueProgress;'
+  )(
     (task) => task(),
-    () => { calls++; return new Promise((resolve) => { finish = resolve; }); },
-    { reviewBasis: 'basis' }, states,
+    () => {
+      calls++;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+    { reviewBasis: 'basis' },
+    states,
     () => feedback.push(states.get('one') && { ...states.get('one') })
   );
   const issue = { id: 'one', state: 'in-progress', progressBasis: 'issue-basis' };
@@ -4864,11 +4918,17 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
   const dom = new JSDOM('<button data-lifecycle-start="one">Continue…</button>', { runScripts: 'outside-only' });
   t.after(() => dom.window.close());
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
-  const source = html.slice(html.indexOf('      function startIssueProgress('), html.indexOf('      function bind()', html.indexOf('      function startIssueProgress(')));
+  const source = html.slice(
+    html.indexOf('      function startIssueProgress('),
+    html.indexOf('      function bind()', html.indexOf('      function startIssueProgress('))
+  );
   const { window } = dom;
   let finish;
   window.act = (task) => task();
-  window.request = () => new Promise((resolve) => { finish = resolve; });
+  window.request = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
   window.eval('const progressRequests = new Map(); const data = {}; ' + source);
   const button = window.document.querySelector('button');
   const pending = window.startIssueProgress({ id: 'one', state: 'in-progress' });
@@ -4880,7 +4940,9 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
   finish({});
   await pending;
   assert.match(button.nextElementSibling.textContent, /accepted/);
-  window.request = async () => { throw Error('Connection lost'); };
+  window.request = async () => {
+    throw Error('Connection lost');
+  };
   await assert.rejects(window.startIssueProgress({ id: 'one' }), /Connection lost/);
   assert.equal(button.nextElementSibling.getAttribute('role'), 'alert');
   assert.match(button.nextElementSibling.textContent, /Connection lost/);
