@@ -137,7 +137,7 @@ rendered controls, browser console/network failures, and navigation. An HTTP 200
 or a screenshot alone does not establish hydration or interaction behavior.
 
 Database-backed/authenticated paths require configured local services. Compose
-defines Postgres; inspect readiness with `docker compose ps` and logs. The Prisma
+defines Postgres; inspect readiness with `docker compose ps` and logs. The domain
 datasource needs `DATABASE_URL`; Better Auth needs `AUTH_DATABASE_URL`, `BETTER_AUTH_URL`,
 and `BETTER_AUTH_SECRET` (see [AUTH_SETUP.md](../../AUTH_SETUP.md)). Compose uses
 `DB_USER`/`DB_PASSWORD`. Use supplied local configuration, never print secrets or

@@ -45,7 +45,7 @@ function CopyDestination({ beat, userId }: { beat: Beat; userId: string }) {
     setError('');
     try {
       const result = await copyBeatServerFn({ data: { id: beat.id!, moduleId: destination } });
-      if (useNavigationStore.getState().practiceUserId === userId) setCreated(result.moduleId);
+      if (result && useNavigationStore.getState().practiceUserId === userId) setCreated(result.moduleId);
     } catch {
       setError('Unable to copy. Sign in and select a module you own, then retry.');
     } finally {

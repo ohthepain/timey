@@ -22,6 +22,8 @@
     "hooks:install": "node scripts/install-hooks.mjs",
     "auth:generate": "drizzle-kit generate --config auth/drizzle.config.ts",
     "auth:migrate": "drizzle-kit migrate --config auth/drizzle.config.ts",
+    "domain:generate": "drizzle-kit generate --config domain/drizzle.config.ts",
+    "domain:migrate": "drizzle-kit migrate --config domain/drizzle.config.ts",
     "test:auth": "python3 scripts/auth-fixture.py",
     "factory:ui": "node scripts/factory-ui.mjs",
     "test:workflow": "node --test scripts/factory-workflow.check.mjs",
@@ -30,7 +32,6 @@
     "test:browser": "node scripts/factory-browser.mjs"
   },
   "dependencies": {
-    "@prisma/client": "6.11.1",
     "@tanstack/react-router": "1.114.29",
     "@tanstack/react-router-devtools": "1.114.29",
     "@tanstack/react-start": "1.114.29",
@@ -67,7 +68,6 @@
     "jsdom": "26.1.0",
     "postcss": "8.5.3",
     "prettier": "3.5.3",
-    "prisma": "6.11.1",
     "smtp-server": "3.21.1",
     "tailwindcss": "3.4.17",
     "ts-node": "10.9.2",

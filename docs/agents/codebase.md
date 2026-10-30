@@ -11,7 +11,7 @@ configuration; this map explains responsibilities and the useful starting points
 | Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                                                                                  | Turn performed notes into timing/velocity feedback                                                                                                                                                                  |
 | Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                                                                                    | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
 | Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                                                                                       | Practice hierarchy and recorded performance                                                                                                                                                                         |
-| Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                                                                                                         | Repository calls, server operations, relational storage                                                                                                                                                             |
+| Persistence              | `src/repositories/`, `src/services/`, `domain/schema.ts`                                                                                                                              | Repository calls, server operations, relational storage in the `domain` PostgreSQL schema                                                                                                                             |
 | Authentication           | `src/server/auth-runtime/client.ts`, `src/components/auth/UserMenu.tsx`, `LoginButton.tsx`, `src/utils/authenticatedServerFn.ts`                                                     | Better Auth browser client (`/api/auth`), header sign-in/menu, cookie-backed `withAuth` via `requireDomainUser`                                                                                                     |
 | Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                            | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
 | Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                               | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit                                                                                                          |
@@ -21,11 +21,11 @@ configuration; this map explains responsibilities and the useful starting points
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
 timestamp semantics. Replay uses these same services; test their interaction, not
 just the display. Services use singleton state, so tests must reset ownership and
-timers. Server repositories obtain a checked Prisma client from `getServerPrisma`
+timers. Server repositories obtain a checked Drizzle client from `getServerDb`
 or the typed `safeQuery` callback in `src/config/db.ts`. Acquire it when executing
 a query, not at repository module scope: browser imports must not attempt database
-access. `safeQuery` retains one reconnect-and-retry for existing connection-error
-conditions. Authenticated handlers preserve their result types through `withAuth`;
+access. `safeQuery` retains one reconnect-and-retry for transient pool failures.
+Authenticated handlers preserve their result types through `withAuth`;
 browser callers receive the framework's serialized data contract. A jsdom mock is
 not database evidence.
 
@@ -70,7 +70,7 @@ Update this map when responsibilities, boundaries, or starting points change.
 The [authentication foundation](../../AUTH_SETUP.md) owns `/api/auth/$` and
 `/api/session`; private progress/performance functions use `requireDomainUser`,
 and method/module create/edit plus beat create/copy/edit operations use `requireDomainUser`. Profile creation uses the trusted auth primary key and blocks
-dependent domain work on failure. Auth and Prisma clients have no shared transaction.
+dependent domain work on failure. Auth and domain database clients have no shared transaction.
 The [ownership decision](../adr/0002-auth-domain-ownership.md) records migration boundaries.
 
 The `/auth/$screen` routes and header auth UI use the browser-only `auth-runtime/client.ts`; they do not import auth
@@ -92,7 +92,7 @@ performance-owned note cleanup. See [setup and proof](../../AUTH_SETUP.md#privat
 Method/module writes share strict schemas in `src/types/contentWrites.ts` across
 server functions and `/api/modules` POST/PUT. Repositories own locked author and
 destination checks plus writes in the same domain transaction. Only editable fields
-reach Prisma; authorship never changes on edit. `MethodsAdminPage` and `AddModule`
+reach the domain database; authorship never changes on edit. `MethodsAdminPage` and `AddModule`
 use the existing validated browser session observer; keyed forms clear drafts on
 identity changes. The method route reloads after creation and account switches.
 The module update has no rendered editor; the fixture invokes its compiled server

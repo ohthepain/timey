@@ -166,9 +166,6 @@ importers:
 
   .:
     dependencies:
-      '@prisma/client':
-        specifier: 6.11.1
-        version: 6.11.1(prisma@6.11.1(typescript@5.8.2))(typescript@5.8.2)
       '@tanstack/react-router':
         specifier: 1.114.29
         version: 1.114.29(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -272,9 +269,6 @@ importers:
       prettier:
         specifier: 3.5.3
         version: 3.5.3
-      prisma:
-        specifier: 6.11.1
-        version: 6.11.1(typescript@5.8.2)
       smtp-server:
         specifier: 3.21.1
         version: 3.21.1
@@ -5488,14 +5482,18 @@ snapshots:
     optionalDependencies:
       prisma: 6.11.1(typescript@5.8.2)
       typescript: 5.8.2
+    optional: true
 
   '@prisma/config@6.11.1':
     dependencies:
       jiti: 2.4.2
+    optional: true
 
-  '@prisma/debug@6.11.1': {}
+  '@prisma/debug@6.11.1':
+    optional: true
 
-  '@prisma/engines-version@6.11.1-1.f40f79ec31188888a2e33acda0ecc8fd10a853a9': {}
+  '@prisma/engines-version@6.11.1-1.f40f79ec31188888a2e33acda0ecc8fd10a853a9':
+    optional: true
 
   '@prisma/engines@6.11.1':
     dependencies:
@@ -5503,16 +5501,19 @@ snapshots:
       '@prisma/engines-version': 6.11.1-1.f40f79ec31188888a2e33acda0ecc8fd10a853a9
       '@prisma/fetch-engine': 6.11.1
       '@prisma/get-platform': 6.11.1
+    optional: true
 
   '@prisma/fetch-engine@6.11.1':
     dependencies:
       '@prisma/debug': 6.11.1
       '@prisma/engines-version': 6.11.1-1.f40f79ec31188888a2e33acda0ecc8fd10a853a9
       '@prisma/get-platform': 6.11.1
+    optional: true
 
   '@prisma/get-platform@6.11.1':
     dependencies:
       '@prisma/debug': 6.11.1
+    optional: true
 
   '@rollup/plugin-alias@5.1.1(rollup@4.37.0)':
     optionalDependencies:
@@ -7985,6 +7986,7 @@ snapshots:
       '@prisma/engines': 6.11.1
     optionalDependencies:
       typescript: 5.8.2
+    optional: true
 
   process-nextick-args@2.0.1: {}
 

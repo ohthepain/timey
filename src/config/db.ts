@@ -1,70 +1,77 @@
-// src/config/db.ts
-import { PrismaClient } from '@prisma/client';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import pg from 'pg';
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const globalForDb = globalThis as unknown as { domainPool?: pg.Pool; domainDb?: DomainDb };
 
-// Only create Prisma client on server side
-let prisma: PrismaClient | null = null;
+export type DomainDb = NodePgDatabase;
+
+let pool: pg.Pool | null = null;
+let db: DomainDb | null = null;
+
+function connectionString() {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL is required for domain database access');
+  return url;
+}
+
+function createPool() {
+  return new pg.Pool({ connectionString: connectionString() });
+}
 
 if (typeof window === 'undefined') {
-  // Server-side only
-  prisma =
-    globalForPrisma.prisma ||
-    new PrismaClient({
-      // log: ['query', 'info', 'warn', 'error'], // uncomment for debugging
-    });
-
+  pool = globalForDb.domainPool ?? createPool();
+  db = globalForDb.domainDb ?? drizzle({ client: pool });
   if (process.env.NODE_ENV !== 'production') {
-    globalForPrisma.prisma = prisma;
+    globalForDb.domainPool = pool;
+    globalForDb.domainDb = db;
   }
-
-  // Graceful shutdown - only on server side
   if (typeof process !== 'undefined' && process.on) {
-    process.on('SIGTERM', async () => {
-      await prisma?.$disconnect();
-    });
-    process.on('SIGINT', async () => {
-      await prisma?.$disconnect();
-    });
+    const close = async () => {
+      await pool?.end();
+    };
+    process.on('SIGTERM', close);
+    process.on('SIGINT', close);
   }
 }
 
-export function getServerPrisma(): PrismaClient {
-  if (typeof window !== 'undefined' || !prisma) {
+export function getServerDb(): DomainDb {
+  if (typeof window !== 'undefined' || !db) {
     throw new Error('Database not available on client side');
   }
-  return prisma;
+  return db;
 }
 
-/**
- * Executes a database query with retry logic for specific errors.
- *
- * If the query fails due to a database connection issue (e.g., error code P1001,
- * "Timed out", or "Connection pool"), the function will attempt to reconnect
- * to the database and retry the query once.
- *
- * @template T - The type of the result returned by the query.
- * @param {(client: PrismaClient) => Promise<T>} fn - A function that performs the database query.
- * @returns {Promise<T>} The result of the query.
- * @throws Will rethrow the original error if it is not a connection issue or if
- *         the retry attempt also fails.
- */
-export async function safeQuery<T>(fn: (client: PrismaClient) => Promise<T>): Promise<T> {
-  const client = getServerPrisma();
+function isConnectionError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('timed out') ||
+    message.includes('connection pool') ||
+    message.includes('connection terminated') ||
+    message.includes('econnrefused') ||
+    message.includes('cannot connect')
+  );
+}
 
+async function reconnect() {
+  await pool?.end();
+  pool = createPool();
+  db = drizzle({ client: pool });
+  if (process.env.NODE_ENV !== 'production') {
+    globalForDb.domainPool = pool;
+    globalForDb.domainDb = db;
+  }
+}
+
+/** Executes a database query with one reconnect retry for transient pool failures. */
+export async function safeQuery<T>(fn: (client: DomainDb) => Promise<T>): Promise<T> {
+  const client = getServerDb();
   try {
     return await fn(client);
-  } catch (e: any) {
-    if (
-      e.code === 'P1001' || // can't reach DB
-      e.message?.includes('Timed out') ||
-      e.message?.includes('Connection pool')
-    ) {
-      console.warn('[safeQuery] Reconnecting Prisma...');
-      await client.$disconnect();
-      await client.$connect();
-      return await fn(client); // retry once
-    }
-    throw e;
+  } catch (error) {
+    if (!isConnectionError(error)) throw error;
+    console.warn('[safeQuery] Reconnecting domain database pool...');
+    await reconnect();
+    return await fn(getServerDb());
   }
 }
