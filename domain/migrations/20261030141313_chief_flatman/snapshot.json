@@ -3,17 +3,11 @@
   "version": "9",
   "dialect": "postgres",
   "id": "83fcb4c4-6e56-4d56-aa53-c0623fb4ece4",
-  "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
-  ],
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "footprints": [
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "BeatNote"
-      ],
+      "statementTarget": ["table", "domain", "BeatNote"],
       "writes": [
         "s|tbl|domain.BeatNote",
         "n|tbl|domain.BeatNote",
@@ -22,17 +16,11 @@
         "n|type|domain.BeatNote",
         "n|rel|domain.BeatNote_pkey"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "BeatProgress"
-      ],
+      "statementTarget": ["table", "domain", "BeatProgress"],
       "writes": [
         "s|tbl|domain.BeatProgress",
         "n|tbl|domain.BeatProgress",
@@ -41,17 +29,11 @@
         "n|type|domain.BeatProgress",
         "n|rel|domain.BeatProgress_pkey"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Beat"
-      ],
+      "statementTarget": ["table", "domain", "Beat"],
       "writes": [
         "s|tbl|domain.Beat",
         "n|tbl|domain.Beat",
@@ -60,17 +42,11 @@
         "n|type|domain.Beat",
         "n|rel|domain.Beat_pkey"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "MethodProgress"
-      ],
+      "statementTarget": ["table", "domain", "MethodProgress"],
       "writes": [
         "s|tbl|domain.MethodProgress",
         "n|tbl|domain.MethodProgress",
@@ -79,17 +55,11 @@
         "n|type|domain.MethodProgress",
         "n|rel|domain.MethodProgress_pkey"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Method"
-      ],
+      "statementTarget": ["table", "domain", "Method"],
       "writes": [
         "s|tbl|domain.Method",
         "n|tbl|domain.Method",
@@ -98,17 +68,11 @@
         "n|type|domain.Method",
         "n|rel|domain.Method_pkey"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "ModuleProgress"
-      ],
+      "statementTarget": ["table", "domain", "ModuleProgress"],
       "writes": [
         "s|tbl|domain.ModuleProgress",
         "n|tbl|domain.ModuleProgress",
@@ -117,17 +81,11 @@
         "n|type|domain.ModuleProgress",
         "n|rel|domain.ModuleProgress_pkey"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Module"
-      ],
+      "statementTarget": ["table", "domain", "Module"],
       "writes": [
         "s|tbl|domain.Module",
         "n|tbl|domain.Module",
@@ -136,17 +94,11 @@
         "n|type|domain.Module",
         "n|rel|domain.Module_pkey"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Performance"
-      ],
+      "statementTarget": ["table", "domain", "Performance"],
       "writes": [
         "s|tbl|domain.Performance",
         "n|tbl|domain.Performance",
@@ -155,17 +107,11 @@
         "n|type|domain.Performance",
         "n|rel|domain.Performance_pkey"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_table",
-      "statementTarget": [
-        "table",
-        "domain",
-        "User"
-      ],
+      "statementTarget": ["table", "domain", "User"],
       "writes": [
         "s|tbl|domain.User",
         "n|tbl|domain.User",
@@ -175,38 +121,22 @@
         "n|rel|domain.User_pkey",
         "n|rel|domain.User_keycloakId_key"
       ],
-      "reads": [
-        "n|sch|domain"
-      ]
+      "reads": ["n|sch|domain"]
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "BeatNote",
-        "BeatNote_beatId_idx"
-      ],
+      "statementTarget": ["index", "domain", "BeatNote", "BeatNote_beatId_idx"],
       "writes": [
         "s|idx|domain.BeatNote_beatId_idx",
         "n|idx|domain.BeatNote_beatId_idx",
         "e|idx|domain.BeatNote_beatId_idx",
         "n|rel|domain.BeatNote_beatId_idx"
       ],
-      "reads": [
-        "n|tbl|domain.BeatNote",
-        "n|sch|domain",
-        "n|col|domain.BeatNote.beatId"
-      ]
+      "reads": ["n|tbl|domain.BeatNote", "n|sch|domain", "n|col|domain.BeatNote.beatId"]
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "BeatProgress",
-        "BeatProgress_userId_beatId_key"
-      ],
+      "statementTarget": ["index", "domain", "BeatProgress", "BeatProgress_userId_beatId_key"],
       "writes": [
         "s|idx|domain.BeatProgress_userId_beatId_key",
         "n|idx|domain.BeatProgress_userId_beatId_key",
@@ -222,52 +152,29 @@
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "Beat",
-        "Beat_authorId_idx"
-      ],
+      "statementTarget": ["index", "domain", "Beat", "Beat_authorId_idx"],
       "writes": [
         "s|idx|domain.Beat_authorId_idx",
         "n|idx|domain.Beat_authorId_idx",
         "e|idx|domain.Beat_authorId_idx",
         "n|rel|domain.Beat_authorId_idx"
       ],
-      "reads": [
-        "n|tbl|domain.Beat",
-        "n|sch|domain",
-        "n|col|domain.Beat.authorId"
-      ]
+      "reads": ["n|tbl|domain.Beat", "n|sch|domain", "n|col|domain.Beat.authorId"]
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "Beat",
-        "Beat_moduleId_idx"
-      ],
+      "statementTarget": ["index", "domain", "Beat", "Beat_moduleId_idx"],
       "writes": [
         "s|idx|domain.Beat_moduleId_idx",
         "n|idx|domain.Beat_moduleId_idx",
         "e|idx|domain.Beat_moduleId_idx",
         "n|rel|domain.Beat_moduleId_idx"
       ],
-      "reads": [
-        "n|tbl|domain.Beat",
-        "n|sch|domain",
-        "n|col|domain.Beat.moduleId"
-      ]
+      "reads": ["n|tbl|domain.Beat", "n|sch|domain", "n|col|domain.Beat.moduleId"]
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "MethodProgress",
-        "MethodProgress_userId_methodId_key"
-      ],
+      "statementTarget": ["index", "domain", "MethodProgress", "MethodProgress_userId_methodId_key"],
       "writes": [
         "s|idx|domain.MethodProgress_userId_methodId_key",
         "n|idx|domain.MethodProgress_userId_methodId_key",
@@ -283,32 +190,18 @@
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "Method",
-        "Method_title_key"
-      ],
+      "statementTarget": ["index", "domain", "Method", "Method_title_key"],
       "writes": [
         "s|idx|domain.Method_title_key",
         "n|idx|domain.Method_title_key",
         "e|idx|domain.Method_title_key",
         "n|rel|domain.Method_title_key"
       ],
-      "reads": [
-        "n|tbl|domain.Method",
-        "n|sch|domain",
-        "n|col|domain.Method.title"
-      ]
+      "reads": ["n|tbl|domain.Method", "n|sch|domain", "n|col|domain.Method.title"]
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "ModuleProgress",
-        "ModuleProgress_userId_moduleId_key"
-      ],
+      "statementTarget": ["index", "domain", "ModuleProgress", "ModuleProgress_userId_moduleId_key"],
       "writes": [
         "s|idx|domain.ModuleProgress_userId_moduleId_key",
         "n|idx|domain.ModuleProgress_userId_moduleId_key",
@@ -324,52 +217,29 @@
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "Module",
-        "Module_title_methodId_key"
-      ],
+      "statementTarget": ["index", "domain", "Module", "Module_title_methodId_key"],
       "writes": [
         "s|idx|domain.Module_title_methodId_key",
         "n|idx|domain.Module_title_methodId_key",
         "e|idx|domain.Module_title_methodId_key",
         "n|rel|domain.Module_title_methodId_key"
       ],
-      "reads": [
-        "n|tbl|domain.Module",
-        "n|sch|domain",
-        "n|col|domain.Module.title",
-        "n|col|domain.Module.methodId"
-      ]
+      "reads": ["n|tbl|domain.Module", "n|sch|domain", "n|col|domain.Module.title", "n|col|domain.Module.methodId"]
     },
     {
       "statementType": "create_index",
-      "statementTarget": [
-        "index",
-        "domain",
-        "User",
-        "User_email_key"
-      ],
+      "statementTarget": ["index", "domain", "User", "User_email_key"],
       "writes": [
         "s|idx|domain.User_email_key",
         "n|idx|domain.User_email_key",
         "e|idx|domain.User_email_key",
         "n|rel|domain.User_email_key"
       ],
-      "reads": [
-        "n|tbl|domain.User",
-        "n|sch|domain",
-        "n|col|domain.User.email"
-      ]
+      "reads": ["n|tbl|domain.User", "n|sch|domain", "n|col|domain.User.email"]
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "BeatNote"
-      ],
+      "statementTarget": ["table", "domain", "BeatNote"],
       "writes": [
         "s|fk|domain.BeatNote.BeatNote_beatId_Beat_id_fkey",
         "n|fk|domain.BeatNote.BeatNote_beatId_Beat_id_fkey",
@@ -388,11 +258,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "BeatNote"
-      ],
+      "statementTarget": ["table", "domain", "BeatNote"],
       "writes": [
         "s|fk|domain.BeatNote.BeatNote_performanceId_Performance_id_fkey",
         "n|fk|domain.BeatNote.BeatNote_performanceId_Performance_id_fkey",
@@ -411,11 +277,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "BeatProgress"
-      ],
+      "statementTarget": ["table", "domain", "BeatProgress"],
       "writes": [
         "s|fk|domain.BeatProgress.BeatProgress_userId_User_id_fkey",
         "n|fk|domain.BeatProgress.BeatProgress_userId_User_id_fkey",
@@ -434,11 +296,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "BeatProgress"
-      ],
+      "statementTarget": ["table", "domain", "BeatProgress"],
       "writes": [
         "s|fk|domain.BeatProgress.BeatProgress_beatId_Beat_id_fkey",
         "n|fk|domain.BeatProgress.BeatProgress_beatId_Beat_id_fkey",
@@ -457,11 +315,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Beat"
-      ],
+      "statementTarget": ["table", "domain", "Beat"],
       "writes": [
         "s|fk|domain.Beat.Beat_authorId_User_id_fkey",
         "n|fk|domain.Beat.Beat_authorId_User_id_fkey",
@@ -480,11 +334,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Beat"
-      ],
+      "statementTarget": ["table", "domain", "Beat"],
       "writes": [
         "s|fk|domain.Beat.Beat_moduleId_Module_id_fkey",
         "n|fk|domain.Beat.Beat_moduleId_Module_id_fkey",
@@ -503,11 +353,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "MethodProgress"
-      ],
+      "statementTarget": ["table", "domain", "MethodProgress"],
       "writes": [
         "s|fk|domain.MethodProgress.MethodProgress_userId_User_id_fkey",
         "n|fk|domain.MethodProgress.MethodProgress_userId_User_id_fkey",
@@ -526,11 +372,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "MethodProgress"
-      ],
+      "statementTarget": ["table", "domain", "MethodProgress"],
       "writes": [
         "s|fk|domain.MethodProgress.MethodProgress_methodId_Method_id_fkey",
         "n|fk|domain.MethodProgress.MethodProgress_methodId_Method_id_fkey",
@@ -549,11 +391,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Method"
-      ],
+      "statementTarget": ["table", "domain", "Method"],
       "writes": [
         "s|fk|domain.Method.Method_authorId_User_id_fkey",
         "n|fk|domain.Method.Method_authorId_User_id_fkey",
@@ -572,11 +410,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "ModuleProgress"
-      ],
+      "statementTarget": ["table", "domain", "ModuleProgress"],
       "writes": [
         "s|fk|domain.ModuleProgress.ModuleProgress_userId_User_id_fkey",
         "n|fk|domain.ModuleProgress.ModuleProgress_userId_User_id_fkey",
@@ -595,11 +429,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "ModuleProgress"
-      ],
+      "statementTarget": ["table", "domain", "ModuleProgress"],
       "writes": [
         "s|fk|domain.ModuleProgress.ModuleProgress_moduleId_Module_id_fkey",
         "n|fk|domain.ModuleProgress.ModuleProgress_moduleId_Module_id_fkey",
@@ -618,11 +448,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Module"
-      ],
+      "statementTarget": ["table", "domain", "Module"],
       "writes": [
         "s|fk|domain.Module.Module_authorId_User_id_fkey",
         "n|fk|domain.Module.Module_authorId_User_id_fkey",
@@ -641,11 +467,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Module"
-      ],
+      "statementTarget": ["table", "domain", "Module"],
       "writes": [
         "s|fk|domain.Module.Module_methodId_Method_id_fkey",
         "n|fk|domain.Module.Module_methodId_Method_id_fkey",
@@ -664,11 +486,7 @@
     },
     {
       "statementType": "create_fk",
-      "statementTarget": [
-        "table",
-        "domain",
-        "Performance"
-      ],
+      "statementTarget": ["table", "domain", "Performance"],
       "writes": [
         "s|fk|domain.Performance.Performance_beatId_Beat_id_fkey",
         "n|fk|domain.Performance.Performance_beatId_Beat_id_fkey",
@@ -1847,14 +1665,10 @@
       "table": "BeatNote",
       "name": "BeatNote_beatId_Beat_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "beatId"
-      ],
+      "columns": ["beatId"],
       "schemaTo": "domain",
       "tableTo": "Beat",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "entityType": "fks"
@@ -1864,14 +1678,10 @@
       "table": "BeatNote",
       "name": "BeatNote_performanceId_Performance_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "performanceId"
-      ],
+      "columns": ["performanceId"],
       "schemaTo": "domain",
       "tableTo": "Performance",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "entityType": "fks"
@@ -1881,14 +1691,10 @@
       "table": "BeatProgress",
       "name": "BeatProgress_userId_User_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "schemaTo": "domain",
       "tableTo": "User",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "entityType": "fks"
@@ -1898,14 +1704,10 @@
       "table": "BeatProgress",
       "name": "BeatProgress_beatId_Beat_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "beatId"
-      ],
+      "columns": ["beatId"],
       "schemaTo": "domain",
       "tableTo": "Beat",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "entityType": "fks"
@@ -1915,14 +1717,10 @@
       "table": "Beat",
       "name": "Beat_authorId_User_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "authorId"
-      ],
+      "columns": ["authorId"],
       "schemaTo": "domain",
       "tableTo": "User",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "entityType": "fks"
@@ -1932,14 +1730,10 @@
       "table": "Beat",
       "name": "Beat_moduleId_Module_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "moduleId"
-      ],
+      "columns": ["moduleId"],
       "schemaTo": "domain",
       "tableTo": "Module",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "entityType": "fks"
@@ -1949,14 +1743,10 @@
       "table": "MethodProgress",
       "name": "MethodProgress_userId_User_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "schemaTo": "domain",
       "tableTo": "User",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "entityType": "fks"
@@ -1966,14 +1756,10 @@
       "table": "MethodProgress",
       "name": "MethodProgress_methodId_Method_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "methodId"
-      ],
+      "columns": ["methodId"],
       "schemaTo": "domain",
       "tableTo": "Method",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "entityType": "fks"
@@ -1983,14 +1769,10 @@
       "table": "Method",
       "name": "Method_authorId_User_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "authorId"
-      ],
+      "columns": ["authorId"],
       "schemaTo": "domain",
       "tableTo": "User",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "entityType": "fks"
@@ -2000,14 +1782,10 @@
       "table": "ModuleProgress",
       "name": "ModuleProgress_userId_User_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "userId"
-      ],
+      "columns": ["userId"],
       "schemaTo": "domain",
       "tableTo": "User",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "entityType": "fks"
@@ -2017,14 +1795,10 @@
       "table": "ModuleProgress",
       "name": "ModuleProgress_moduleId_Module_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "moduleId"
-      ],
+      "columns": ["moduleId"],
       "schemaTo": "domain",
       "tableTo": "Module",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "entityType": "fks"
@@ -2034,14 +1808,10 @@
       "table": "Module",
       "name": "Module_authorId_User_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "authorId"
-      ],
+      "columns": ["authorId"],
       "schemaTo": "domain",
       "tableTo": "User",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "entityType": "fks"
@@ -2051,14 +1821,10 @@
       "table": "Module",
       "name": "Module_methodId_Method_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "methodId"
-      ],
+      "columns": ["methodId"],
       "schemaTo": "domain",
       "tableTo": "Method",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "entityType": "fks"
@@ -2068,14 +1834,10 @@
       "table": "Performance",
       "name": "Performance_beatId_Beat_id_fkey",
       "nameExplicit": false,
-      "columns": [
-        "beatId"
-      ],
+      "columns": ["beatId"],
       "schemaTo": "domain",
       "tableTo": "Beat",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "entityType": "fks"
@@ -2084,9 +1846,7 @@
       "schema": "domain",
       "table": "BeatNote",
       "name": "BeatNote_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2094,9 +1854,7 @@
       "schema": "domain",
       "table": "BeatProgress",
       "name": "BeatProgress_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2104,9 +1862,7 @@
       "schema": "domain",
       "table": "Beat",
       "name": "Beat_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2114,9 +1870,7 @@
       "schema": "domain",
       "table": "MethodProgress",
       "name": "MethodProgress_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2124,9 +1878,7 @@
       "schema": "domain",
       "table": "Method",
       "name": "Method_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2134,9 +1886,7 @@
       "schema": "domain",
       "table": "ModuleProgress",
       "name": "ModuleProgress_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2144,9 +1894,7 @@
       "schema": "domain",
       "table": "Module",
       "name": "Module_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2154,9 +1902,7 @@
       "schema": "domain",
       "table": "Performance",
       "name": "Performance_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2164,9 +1910,7 @@
       "schema": "domain",
       "table": "User",
       "name": "User_pkey",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -2175,9 +1919,7 @@
       "table": "User",
       "name": "User_keycloakId_key",
       "nameExplicit": false,
-      "columns": [
-        "keycloakId"
-      ],
+      "columns": ["keycloakId"],
       "nullsNotDistinct": false,
       "entityType": "uniques"
     }

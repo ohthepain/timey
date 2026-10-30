@@ -1381,7 +1381,6 @@ stage are combined with both reasons retained; conflicting choices are rejected.
 Label translation never
 changes take/skip decisions, required-stage policy or approval requirements.
 
-
 ### Stable assignments and approvals during issue progress
 
 An unstarted stale assignment is refreshed in place after its approved scope is

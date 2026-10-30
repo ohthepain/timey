@@ -1,5 +1,5 @@
 import { Module } from '~/types/Module';
-import { BeatProgressView } from '~/services/userProgressServerService.server';
+import { BeatProgressView } from '~/services/userProgressServerService';
 import { BeatViewer } from './BeatViewer';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { BeatEditor } from './BeatEditor';

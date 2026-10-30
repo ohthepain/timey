@@ -7,12 +7,12 @@ import { Method } from '~/types/Method';
 import { requireDomainUser } from '~/server/domain-session';
 import { createMethodInput, updateMethodInput } from '~/types/contentWrites';
 
-export const getAllMethodsServerFn = createServerFn({ method: 'GET', response: 'data' }).handler(async () => {
+export const getAllMethodsServerFn = createServerFn({ method: 'GET' }).handler(async () => {
   const methods = await methodRepository.getAllMethods();
   return methods.map((method) => new Method(method).toJSON());
 });
 
-export const createMethodServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const createMethodServerFn = createServerFn({ method: 'POST' })
   .validator(createMethodInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();
@@ -24,7 +24,7 @@ const getMethodByIdServerFnArgs = z.object({
   id: z.string(),
 });
 
-export const getMethodByIdServerFn = createServerFn({ method: 'GET', response: 'data' })
+export const getMethodByIdServerFn = createServerFn({ method: 'GET' })
   .validator((data: unknown) => getMethodByIdServerFnArgs.parse(data))
   .handler(async (ctx) => {
     const method = await methodRepository.getMethodById(ctx.data.id);
@@ -34,7 +34,7 @@ export const getMethodByIdServerFn = createServerFn({ method: 'GET', response: '
     return new Method(method).toJSON();
   });
 
-export const updateMethodServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const updateMethodServerFn = createServerFn({ method: 'POST' })
   .validator(updateMethodInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();
@@ -42,7 +42,7 @@ export const updateMethodServerFn = createServerFn({ method: 'POST', response: '
     return new Method(method).toJSON();
   });
 
-export const deleteMethodServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const deleteMethodServerFn = createServerFn({ method: 'POST' })
   .validator(deleteContentInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();

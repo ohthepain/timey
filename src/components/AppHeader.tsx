@@ -35,7 +35,11 @@ export function AppHeader({ onOpenMetronome, onOpenMidi }: AppHeaderProps) {
         </Link>
       </div>
       <div className="flex gap-2 items-center">
-        <button className={toggleButtonClass(devMode, 'orange')} onClick={() => setDevMode(!devMode)} title="Toggle Dev Mode">
+        <button
+          className={toggleButtonClass(devMode, 'orange')}
+          onClick={() => setDevMode(!devMode)}
+          title="Toggle Dev Mode"
+        >
           Dev
         </button>
         <button

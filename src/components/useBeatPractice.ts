@@ -3,8 +3,8 @@ import { Beat } from '~/types/Beat';
 import { Performance } from '~/types/Performance';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { privatePractice } from '~/state/privatePractice';
-import { getBeatWithPerformancesServerFn } from '~/services/beatService.server';
-import { startBeatServerFn, passBeatTempoServerFn } from '~/services/userProgressServerService.server';
+import { getBeatWithPerformancesServerFn } from '~/services/beatService';
+import { startBeatServerFn, passBeatTempoServerFn } from '~/services/userProgressServerService';
 import { beatPlayer } from '~/lib/BeatPlayer';
 import { BeatRecorder } from '~/lib/BeatRecorder';
 

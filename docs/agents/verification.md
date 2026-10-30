@@ -19,7 +19,7 @@ resolves through that installed package; verification and CI require no personal
 skill checkout. Its original human-input protocol and integrity manifest are
 unchanged. Install the frozen dependencies before running factory checks.
 Symbolic links remain in the exported snapshot and audit scope; their link
-metadata is not passed to Prettier, which rejects symbolic-link paths. Changed
+metadata is not passed to the formatter, which rejects symbolic-link paths. Changed
 regular target files retain their own formatting checks.
 
 | Command                             | What it establishes                                                                                                    |

@@ -1,5 +1,13 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { beatNotes, beats, methods, modules, performances, type DomainBeat, type DomainModule } from '../../domain/schema';
+import {
+  beatNotes,
+  beats,
+  methods,
+  modules,
+  performances,
+  type DomainBeat,
+  type DomainModule,
+} from '../../domain/schema';
 import { newId } from '~/db/ids';
 import { contentNotes, loadContentBeat } from '~/db/beats';
 import { pgRows } from '~/db/pg-rows';

@@ -25,7 +25,7 @@ const savePerformanceArgs = z.strictObject({
   }),
 });
 
-export const savePerformanceServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const savePerformanceServerFn = createServerFn({ method: 'POST' })
   .validator(savePerformanceArgs)
   .handler(async (ctx) => {
     const { userId } = await requirePracticeUser();
@@ -37,7 +37,7 @@ const fetchUserPerformancesForBeatArgs = z.strictObject({
   beatId: z.string(),
 });
 
-export const fetchUserPerformancesForBeatServerFn = createServerFn({ method: 'GET', response: 'data' })
+export const fetchUserPerformancesForBeatServerFn = createServerFn({ method: 'GET' })
   .validator(fetchUserPerformancesForBeatArgs)
   .handler(async (ctx) => {
     const { userId } = await requirePracticeUser();
@@ -49,7 +49,7 @@ const deleteUserPerformancesForBeatArgs = z.strictObject({
   beatId: z.string(),
 });
 
-export const deletePerformancesByBeatIdAndUserId = createServerFn({ method: 'POST', response: 'data' })
+export const deletePerformancesByBeatIdAndUserId = createServerFn({ method: 'POST' })
   .validator((data: unknown) => deleteUserPerformancesForBeatArgs.parse(data))
   .handler(async (ctx) => {
     const { userId } = await requirePracticeUser();

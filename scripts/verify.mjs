@@ -250,7 +250,8 @@ try {
     // A link is Git metadata, not a formatter input. Changed tracked targets
     // remain independent entries; all links stay in snapshot and audit scope.
     const regular = changed.filter((name) => !lstatSync(join(snapshot, name)).isSymbolicLink());
-    if (regular.length) await run('format-changed', bin('prettier'), ['--check', '--ignore-unknown', ...regular]);
+    if (regular.length)
+      await run('format-changed', bin('vp'), ['fmt', '--check', '--no-error-on-unmatched-pattern', ...regular]);
     else if (changed.length)
       await run('format-changed', process.execPath, [
         '-e',
@@ -259,7 +260,7 @@ try {
     await run('browser', 'pnpm', ['run', 'test:browser']);
     await run('factory', 'pnpm', ['run', 'test:factory']);
     await run('typecheck', bin('tsc'), ['--noEmit']);
-    await run('tests', bin('vitest'), ['run']);
+    await run('tests', bin('vp'), ['test', 'run']);
     await run('build', 'pnpm', ['run', 'build']);
   }
 } catch (error) {

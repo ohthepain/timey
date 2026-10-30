@@ -16,9 +16,7 @@ async function removeRecordings(tx: DomainDb, beatId: string, userId: string) {
     .where(and(eq(performances.beatId, beatId), eq(performances.userId, userId)));
   const performanceIds = owned.map((row) => row.id);
   if (performanceIds.length) {
-    await tx
-      .delete(beatNotes)
-      .where(and(isNull(beatNotes.beatId), inArray(beatNotes.performanceId, performanceIds)));
+    await tx.delete(beatNotes).where(and(isNull(beatNotes.beatId), inArray(beatNotes.performanceId, performanceIds)));
     await tx.delete(performances).where(inArray(performances.id, performanceIds));
   }
 }

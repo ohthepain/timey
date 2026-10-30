@@ -2960,9 +2960,8 @@ test('approved continuation resumes the same worker before reviewing its new res
 
 test('continuations reject unknown assignments, active workers and changed inputs before resuming', async (t) => {
   const { service, record, action, worker, root } = await blockedContinuationFixture(t);
-  const { saveContinuation, resumeContinuation, continuationChoice } = await import(
-    './factory-ui/lifecycle-continuation.mjs'
-  );
+  const { saveContinuation, resumeContinuation, continuationChoice } =
+    await import('./factory-ui/lifecycle-continuation.mjs');
   service.lifecycleTasks.set(record.issueId, Promise.resolve());
   const result = {
     next_action: 'work',

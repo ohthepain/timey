@@ -27,8 +27,7 @@ export function deleteContent(kind: ContentKind, id: string, userId: string) {
             ? await tx.select().from(modules).where(eq(modules.id, id)).limit(1)
             : await tx.select().from(beats).where(eq(beats.id, id)).limit(1);
       if (!selected) throw new Response('Content not found', { status: 404 });
-      if (selected.authorId !== userId)
-        throw new Response('Only the author can delete this content', { status: 403 });
+      if (selected.authorId !== userId) throw new Response('Only the author can delete this content', { status: 403 });
 
       const methodIds = kind === 'method' ? [id] : [];
       const moduleIds =

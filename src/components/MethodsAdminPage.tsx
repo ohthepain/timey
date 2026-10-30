@@ -4,7 +4,7 @@ import {
   createMethodServerFn,
   updateMethodServerFn,
   deleteMethodServerFn,
-} from '~/services/methodService.server';
+} from '~/services/methodService';
 import { Link } from '@tanstack/react-router';
 import { confirmContentDeletion } from './deleteContent';
 import { useRouter } from '@tanstack/react-router';

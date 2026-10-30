@@ -167,7 +167,7 @@ try:
     f.code('switch-account', '''
       await page.goto(base+'/methods');await page.getByRole('button',{name:'Edit',exact:true}).first().waitFor();
       await page.getByRole('button',{name:'Edit',exact:true}).first().click();
-      await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
+      await page.evaluate(async()=>{const c=(await import('/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
       await page.getByRole('button',{name:'Save',exact:true}).waitFor({state:'hidden'});return true;
     ''')
     f.rejected('switched-denied',calls('method',keep['id']),403)

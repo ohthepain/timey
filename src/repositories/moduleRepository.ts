@@ -67,8 +67,7 @@ export const moduleRepository = {
           const parent = pgRows<DomainMethod>(
             await tx.execute(sql`SELECT * FROM domain."Method" WHERE id = ${data.methodId} FOR UPDATE`)
           )[0];
-          if (parent?.authorId !== userId)
-            throw new Response('You must own the destination method', { status: 403 });
+          if (parent?.authorId !== userId) throw new Response('You must own the destination method', { status: 403 });
         }
         const [updated] = await tx
           .update(modules)

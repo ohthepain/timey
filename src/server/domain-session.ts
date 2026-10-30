@@ -1,12 +1,12 @@
-import { serverOnly } from '@tanstack/react-start';
-import { getWebRequest } from '@tanstack/react-start/server';
+import { createServerOnlyFn } from '@tanstack/react-start';
+import { getRequest } from '@tanstack/react-start/server';
 import { eq } from 'drizzle-orm';
 import { getAuth } from './auth';
 import { getServerDb } from '~/config/db';
 import { users } from '../../domain/schema';
 
 /** Fail closed: only a validated, live database session can provision a domain profile. */
-export const requireDomainUser = serverOnly(async (request: Request | undefined = getWebRequest()) => {
+export const requireDomainUser = createServerOnlyFn(async (request: Request | undefined = getRequest()) => {
   if (!request) throw new Response('Authentication required', { status: 401 });
   const auth = await getAuth();
   const session = await auth.api.getSession({ headers: request.headers });
