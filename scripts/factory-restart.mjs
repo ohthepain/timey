@@ -1,47 +1,18 @@
-import { mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, rmSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { git, requireThat, writeJson } from './factory-ui/common.mjs';
-import { validateSummary } from './factory-ui/checks.mjs';
 import { readRuntime } from './factory-ui/runtime.mjs';
 import { deploymentSession, startFactory, portReleased } from './factory-deploy-transport.mjs';
 import { observeRuntime } from './factory-deploy-readiness.mjs';
 
 function candidate(options) {
   const checkout = realpathSync(options.checkout || process.cwd());
-  requireThat(
-    !git(checkout, 'status', '--porcelain', '--untracked-files=all'),
-    'Commit the selected checkout before restarting; uncommitted changes were left untouched.'
-  );
   const revision = git(checkout, 'rev-parse', 'HEAD'),
     tree = git(checkout, 'rev-parse', 'HEAD^{tree}');
   requireThat(existsSync(join(checkout, 'scripts/factory-ui.mjs')), 'The selected checkout has no factory server.');
-  const folder = join(checkout, '.issues/evidence');
-  const files = options.verification
-    ? [resolve(options.verification)]
-    : existsSync(folder)
-      ? readdirSync(folder)
-          .filter((name) => name.endsWith('-summary.json'))
-          .sort()
-          .reverse()
-          .map((name) => join(folder, name))
-      : [];
-  for (const path of files) {
-    try {
-      const summary = JSON.parse(readFileSync(path, 'utf8'));
-      requireThat(summary.checkpoint === 'verification', 'A full verification summary is required.');
-      const base = git(checkout, 'rev-parse', summary.base + '^{commit}');
-      git(checkout, 'merge-base', '--is-ancestor', base, revision);
-      validateSummary(summary, base, tree);
-      return { checkout, revision, tree, verification: path };
-    } catch (error) {
-      if (options.verification) throw error;
-    }
-  }
-  throw Error(
-    'No passing full verification matches this checkout. Run pnpm run verify -- --base BASE separately, or supply --verification PATH. Restart does not run tests.'
-  );
+  return { checkout, revision, tree, verification: options.verification ? resolve(options.verification) : null };
 }
 async function until(check, description, timeout) {
   const end = Date.now() + timeout;
@@ -113,7 +84,7 @@ export async function restartFactory(options = {}) {
     );
     const owner = JSON.parse(readFileSync(join(project, '.issues/factory-ui-server.lock/owner.json'), 'utf8'));
     requireThat(owner.pid === previous.pid, 'The server ownership changed; no process was stopped.');
-    const fresh = candidate({ ...options, verification: target.verification });
+    const fresh = candidate(options);
     requireThat(
       fresh.revision === target.revision && fresh.tree === target.tree,
       'The selected candidate changed during draining.'

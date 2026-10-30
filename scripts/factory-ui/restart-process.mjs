@@ -4,14 +4,9 @@ import { join } from 'node:path';
 import { cleanEnvironment, requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { progressBasis } from './next-action.mjs';
-import { runtimeInfo } from './runtime.mjs';
 import { factoryEntry } from './ui-source.mjs';
 
 export function handoffRestart(service, server) {
-  requireThat(
-    !runtimeInfo(service).sourceChanged,
-    'The installed source has changed. Deploy a clean, verified checkout with pnpm run factory:deploy.'
-  );
   const port = server.address().port;
   const log = join(service.store.directory, 'server-restart.log');
   const fd = openSync(log, 'a', 0o600);

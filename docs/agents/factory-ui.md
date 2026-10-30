@@ -959,9 +959,9 @@ Verification and commit operations continue to require current source checks.
 ## Programmatic restart
 
 Run `pnpm factory:restart` from the selected checkout. It defaults to this checkout,
-this project and `http://127.0.0.1:52995`. It uses existing full verification evidence
-for the exact clean committed tree, discovered in `.issues/evidence/`, and never
-runs tests, pulls code, merges branches or accepts an issue.
+this project and `http://127.0.0.1:52995`. It starts the current working folder as-is,
+including uncommitted WIP, and never runs tests, pulls code, merges branches or accepts
+an issue.
 
 ```sh
 pnpm factory:restart
@@ -975,11 +975,11 @@ It then verifies the replacement's HTML, authenticated queue, PID and commit has
 `--timeout MS` bounds each waiting phase (default 30000). Busy work is never force
 killed. Issue work paused at an action boundary stays saved for explicit Continue.
 
-Missing/stale verification or a dirty selected checkout fails before changing the
-server. Run verification separately before retrying. A failed startup is reported
-with its log and receipt under `.issues/evidence/`; it does not claim success or
-silently restore a checkout whose source may have changed. The command shares the
-managed deployment lock and never removes unknown operation locks.
+The restart button and command intentionally do not require verification or a clean
+checkout. A failed startup is reported with its log and receipt under
+`.issues/evidence/`; the old server is left running when the drain or replacement
+cannot be completed. The command shares the managed deployment lock and never removes
+unknown operation locks.
 
 ## Managed deployment
 
