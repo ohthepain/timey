@@ -2918,7 +2918,7 @@ async function blockedContinuationFixture(t) {
   return { ...setup, action, worker, record };
 }
 
-test('approved continuation resumes the same worker before reviewing its new result and creates no duplicate assignment', async (t) => {
+test('a proposed continuation stops for manual attention without resuming the worker', async (t) => {
   const { service, api, calls, action, worker } = await blockedContinuationFixture(t);
   const turn = service.codex.turn;
   service.codex.turn = async (id, cwd, prompt, schema) => {
@@ -2943,18 +2943,12 @@ test('approved continuation resumes the same worker before reviewing its new res
   };
   startIssueLifecycle(service);
   const result = await finishLifecycle(service);
-  assert.equal(result.status, 'finished', result.summary);
+  assert.equal(result.status, 'blocked', result.summary);
+  assert.match(result.summary, /manual attention/);
   assert.equal(api.inspect().registry.actions.length, 1);
   assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
   assert.equal(worker.threadId, 'existing-worker');
-  assert.equal(service.store.runs.find((r) => r.id === worker.id).authorization.kind, 'approved-plan');
-  const work = calls.findIndex(
-    (c) => c.turn === 'existing-worker' && c.prompt?.startsWith('Continue only the original saved assignment.')
-  );
-  const review = calls.findIndex((c) => c.prompt?.includes('Perform one coordinator evidence review'));
-  assert.ok(work >= 0 && review > work);
-  assert.match(calls[work].prompt, /bounded correction already approved/);
-  assert.ok(calls.some((c) => c.resume === 'existing-worker'));
+  assert.ok(!calls.some((c) => c.prompt?.startsWith('Continue only the original saved assignment.')));
   assert.ok(!calls.some((c) => c.start && c.mode === 'workspace-write'));
 });
 
@@ -4228,7 +4222,7 @@ test('native completion respects the shared active coordinator and unanswered UI
   assert.equal(readQueue(root).issues[0].state, 'investigate');
 });
 
-test('automatic same-worker correction is recorded as plan continuation, not a human follow-up', async (t) => {
+test('an explicit approved worker retry retains its original authorization', async (t) => {
   const { service, api, proposal, root } = fixture(t);
   const [action] = api.recommend([proposal]);
   api.reserve(action.id);
@@ -4847,7 +4841,7 @@ test('issue Git identity follows unfinished work, assembly and live HEAD without
   assert.equal(issueGit(snapshot, issue), null);
 });
 
-test('Continue retires a disconnected read-only review and recovers once without a worker', async (t) => {
+test('a disconnected read-only review stops for manual attention without replanning', async (t) => {
   const { service, root } = fixture(t);
   const { waitLifecycleWork } = await import('./factory-ui/lifecycle-work.mjs');
   const record = { issueId: '20261022-one', status: 'running', events: [], attempts: [], input: { type: 'retry' } };
@@ -4860,12 +4854,11 @@ test('Continue retires a disconnected read-only review and recovers once without
     threadId: 'unavailable-chat',
   };
   service.store.runs.push(run);
-  assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
+  assert.equal(await waitLifecycleWork(service, record, readQueue(root)), true);
   assert.equal(run.status, 'blocked');
-  assert.equal(record.replan, true);
+  assert.equal(record.status, 'blocked');
+  assert.notEqual(record.replan, true);
   assert.equal(record.input, null);
-  assert.equal(record.lastFailure.runId, run.id);
-  assert.equal(record.recoveryContexts.length, 1);
   assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
   assert.equal(service.store.runs.length, 1);
   assert.equal(readQueue(root).actions.length, 0);
@@ -4959,7 +4952,7 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
   assert.equal(button.getAttribute('aria-busy'), 'false');
 });
 
-test('planning revalidates source-only changes once and preserves the existing proposal', async (t) => {
+test('changed planning inputs stop without another AI revalidation turn', async (t) => {
   const { root, git, service } = fixture(t);
   const { captureInputs } = await import('./factory-ui/input-change.mjs');
   const { revalidatePlanning } = await import('./factory-ui/planning-revalidation.mjs');
@@ -4974,14 +4967,12 @@ test('planning revalidates source-only changes once and preserves the existing p
     assert.match(prompt, /Revalidate only the impact/);
     return JSON.stringify({ reusable: true, summary: 'Unrelated addition; the proposed task is unchanged.' });
   };
-  const current = await revalidatePlanning(service, run, before, '20261022-one', { recommendations: [] });
-  assert.equal(calls, 1);
-  assert.equal(run.sourceRevalidation.after, current.head);
-  assert.equal(run.reviewInput, service.snapshot().issues[0].progressBasis);
+  await assert.rejects(revalidatePlanning(service, run, before, '20261022-one', {}), /Inputs changed during planning/);
+  assert.equal(calls, 0);
   const report = join(root, '.issues/20261022-one.md');
   writeFileSync(report, readFileSync(report, 'utf8') + '\nChanged scope');
-  await assert.rejects(revalidatePlanning(service, run, before, '20261022-one', {}), /scope or policy changed/);
-  assert.equal(calls, 1);
+  await assert.rejects(revalidatePlanning(service, run, before, '20261022-one', {}), /Inputs changed during planning/);
+  assert.equal(calls, 0);
 });
 
 test('invalid worker JSON is repaired in the same chat before recording completion', async (t) => {

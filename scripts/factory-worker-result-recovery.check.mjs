@@ -14,21 +14,20 @@ const result = {
   artifacts: [],
 };
 const service = (cli) => ({ codex: cli, store: { update: (run, fields) => Object.assign(run, fields) } });
-test('malformed final JSON is corrected once without another implementation assignment', async () => {
+test('malformed final JSON retains the output and starts no AI correction turn', async () => {
   let turns = 0;
   const cli = {
-    turn: async (_id, _cwd, prompt) => {
+    turn: async () => {
       turns++;
-      assert.match(prompt, /Do not run tools/);
       return JSON.stringify(result);
     },
   };
   const run = { threadId: 'same-chat' };
-  assert.deepEqual(await readWorkerResult(service(cli), run, '{bad'), result);
-  assert.equal(turns, 1);
+  await assert.rejects(readWorkerResult(service(cli), run, '{bad'), /Invalid worker result/);
+  assert.equal(turns, 0);
   assert.equal(run.rejectedWorkerResult, '{bad');
 });
-test('a failed correction retains a clean commit for draft handoff without claiming implementation complete', async (t) => {
+test('invalid results preserve the committed candidate without inventing a draft result', async (t) => {
   const { root, git } = gitFixture(t, 'result-recovery-');
   writeFileSync(join(root, 'one'), 'base');
   git('add', '.');
@@ -36,22 +35,32 @@ test('a failed correction retains a clean commit for draft handoff without claim
   const base = git('rev-parse', 'HEAD');
   writeFileSync(join(root, 'one'), 'changed');
   git('commit', '-qam', 'candidate');
-  let turns = 0;
+  const candidate = git('rev-parse', 'HEAD');
   const cli = {
+    turn: async () => {
+      throw Error('Must not call AI');
+    },
+  };
+  for (const deliveryMode of ['draft-handoff', 'verified-delivery']) {
+    const run = { checkout: root, base, deliveryMode };
+    await assert.rejects(readWorkerResult(service(cli), run, 'bad'), /retry manually/);
+    assert.equal(git('rev-parse', 'HEAD'), candidate);
+    assert.equal(run.rejectedWorkerResult, 'bad');
+  }
+});
+test('invalid review JSON retains evidence without another AI review turn', async () => {
+  const { readOnlyReviewTurn } = await import('./factory-ui/review-recovery.mjs');
+  let turns = 0;
+  const run = {};
+  const owner = service({
     turn: async () => {
       turns++;
       return 'bad';
     },
-  };
-  const run = { checkout: root, base, deliveryMode: 'draft-handoff' };
-  const recovered = await readWorkerResult(service(cli), run, 'bad');
+  });
+  await assert.rejects(readOnlyReviewTurn(owner, run, 'chat', 'Review', {}), /Invalid review result/);
   assert.equal(turns, 1);
-  assert.equal(recovered.implementation_complete, false);
-  assert.match(recovered.summary, /unverified/);
-  await readWorkerResult(service(cli), run, 'bad');
-  assert.equal(turns, 1);
-  run.deliveryMode = 'verified-delivery';
-  await assert.rejects(readWorkerResult(service(cli), run, 'bad'), /cannot be weakened/);
+  assert.equal(run.rejectedReviewResult, 'bad');
 });
 test('transport recovery observes the exact original turn and never starts another turn', async () => {
   const cli = {

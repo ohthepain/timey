@@ -169,3 +169,19 @@ human guards apply in both workflows.
 The UI's [issue execution](issue-execution.md) reuses the issue's primary chat and
 unchanged check evidence. This changes conversation/decision overhead, not the
 required verification or operation-specific approval policies above.
+
+## Deterministic UI scheduling
+
+The local UI scheduler chooses eligible issues by highest configured priority,
+then most advanced configured lifecycle state, then issue ID as a stable tie-breaker.
+Running, blocked, failed, paused, waiting and finished issues are ineligible.
+Each issue owns its progress within existing approval and check boundaries.
+The shared coordinator UI is optional queue discussion, not an execution dependency.
+AI can discuss requested priority changes or combining issues; discussion alone
+changes neither records nor authority. There is no automatic grouping operation.
+
+Failed or interrupted operations preserve evidence and stop for manual attention.
+Do not start AI recovery reviews, automatic continuation or completion repair tasks,
+or revive failures because conditions changed. Existing explicit retry operations
+remain available and retain their own safeguards. This overrides earlier automatic
+recovery behavior; it does not weaken required checks or authorize merge or acceptance.

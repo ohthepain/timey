@@ -620,7 +620,7 @@ export class FactoryUI {
         return;
       }
       const result = JSON.parse(
-        await (issueId ? this.reviewIssue.bind(this) : this.coordinator.turn.bind(this.coordinator))(
+        await this.reviewIssue(
           run,
           conversationPrompt(
             this,

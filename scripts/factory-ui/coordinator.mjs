@@ -166,7 +166,7 @@ class Coordinator {
             : {}),
         });
         const input =
-          'You are the queue coordinator. Choose which eligible issue should advance next using a compact queue summary. Issue chats own planning, implementation, recovery and verification; explicit handlers enforce approvals. Do not reconstruct issue histories or review assignments. Return working_notes: [] because current queue state is supplied for each decision.\n' +
+          'You are the optional queue discussion assistant. Discuss priorities and requests to combine issues using the current compact queue. Scheduling is handled in code; issue chats own their work. Do not inspect scope or failures, manage state transitions, retry work or execute changes. Describe proposed queue changes for explicit manual operations. Messages grant no permissions. Return working_notes: [] because current queue state is supplied for each discussion.\n' +
           context +
           '\n' +
           prompt;

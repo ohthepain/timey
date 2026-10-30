@@ -1,11 +1,14 @@
-// Queue coordination chooses an issue, never an implementation assignment.
+// Scheduling is deterministic; optional queue discussion never owns execution.
 export function compactQueue(service, queue) {
+  const major = queue.priorities?.findIndex((priority) => priority.id === 'major') ?? 2;
   return queue.issues.map((issue) => {
     const progress = service.lifecycleRuns[issue.id];
     return {
       id: issue.id,
       title: issue.title?.slice(0, 160),
       state: issue.state,
+      priority: issue.priorityInfo?.index >= 0 ? issue.priorityInfo.index : Math.max(major, 0),
+      stage: queue.lifecycle.findIndex((stage) => stage.state === issue.state),
       running: service.lifecycleTasks.has(issue.id),
       needsInput: Boolean(progress?.input),
       status: progress?.status || 'not-started',
@@ -16,25 +19,39 @@ export function compactQueue(service, queue) {
 
 export async function selectNextIssue(service, run, queue) {
   const items = compactQueue(service, queue);
-  const ids = items
-    .filter((i) => !i.running && !i.needsInput && queue.lifecycle.find((s) => s.state === i.state)?.role !== 'closed')
-    .map((i) => i.id);
-  const choice = JSON.parse(
-    await service.coordinator.turn(
-      run,
-      'Choose which eligible issue should advance next from this compact queue. Return only its ID and a short reason. Do not inspect code, chat histories, ledgers, plans or test logs, plan assignments, or review approvals. Each issue chat owns its own work. Choosing grants no execution permission. Queue: ' +
-        JSON.stringify(items),
-      {
-        type: 'object',
-        properties: { next_issue_id: { type: ['string', 'null'], enum: [...ids, null] }, reason: { type: 'string' } },
-        required: ['next_issue_id', 'reason'],
-        additionalProperties: false,
-      },
-      'Choosing next issue'
-    )
-  );
-  if (choice.next_issue_id !== null && !ids.includes(choice.next_issue_id))
-    throw Error('Coordinator selected an ineligible issue.');
+  const eligible = items.filter((item) => {
+    const role = queue.lifecycle[item.stage]?.role;
+    return (
+      item.stage >= 0 &&
+      !item.running &&
+      !item.needsInput &&
+      ![
+        'running',
+        'preparing',
+        'checking',
+        'blocked',
+        'failed',
+        'paused',
+        'waiting',
+        'answering',
+        'completed',
+      ].includes(item.status) &&
+      !['ready-to-close', 'closed'].includes(role) &&
+      !queue.actions?.some(
+        (action) =>
+          action.issues.includes(item.id) &&
+          ['reserved', 'setup', 'running', 'blocked', 'failed'].includes(action.status)
+      )
+    );
+  });
+  eligible.sort((a, b) => a.priority - b.priority || b.stage - a.stage || a.id.localeCompare(b.id));
+  const selected = eligible[0];
+  const choice = {
+    next_issue_id: selected?.id || null,
+    reason: selected
+      ? `Selected ${selected.title || selected.id}: highest priority, then most advanced lifecycle state.`
+      : 'No issue is currently eligible. Blocked issues need manual attention.',
+  };
   return {
     summary: choice.reason,
     next_issue_id: choice.next_issue_id,

@@ -223,8 +223,10 @@ updates launch freshness without cancelling the assignment or replanning.
 `factory-assignment-scope.mjs` binds semantic assignment fields to an actual plan
 approval, the latest answer and an unchanged supporting receipt. Source revision
 changes alone do not require a new scope decision; changed scope or altered evidence does.
-`queue-selection.mjs` sends compact scheduling facts to the shared coordinator and
-accepts only an eligible issue ID and reason. Selected-issue planning and reviews
+`queue-selection.mjs` selects an eligible issue in code: configured priority order,
+then most advanced configured state, then issue ID. Running, blocked, failed, paused,
+waiting and finished issues are excluded, including active or blocked assignments.
+Selection never calls a model. Optional queue discussion still uses the coordinator UI. Selected-issue planning and reviews
 use the issue's owning chat through `reviewIssue` and `lifecycleReview`.
 The browser retains keyed expansion, draft and scroll state around live refreshes.
 Conversation state is captured before DOM replacement, including reading position,
@@ -495,8 +497,12 @@ The shared queue coordinator is owned by `factory-ui/coordinator.mjs`;
 references. `coordinator-notes.mjs` validates bounded computed findings against
 source hashes; current-context usage controls early rotation rather than billing
 or turn counts. Predecessor archival follows successful replacement attachment. `coordinator-ui.js` renders its dedicated page and compact activity strip.
-Read-only lifecycle coordination and queue evaluations use its separate connection;
-workers and independent reviews retain their existing connections.
+Only optional queue discussion uses its separate connection. Issue planning and
+reviews use the owning issue chat; queue scheduling uses no chat. Failed or interrupted
+operations retain their results and stop for manual attention. They do not trigger AI
+recovery reviews, automatic worker continuations, completion repair assignments or
+replanning when inputs change. Explicit retry controls retain their approval guards.
+Workers and independent reviews retain their existing connections.
 Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.
 
 Factory verification recovery is covered by `scripts/factory-recovery.check.mjs`:

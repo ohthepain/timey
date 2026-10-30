@@ -53,7 +53,14 @@ async function fixture(t, response) {
     assert.ok(schema.properties.complete, 'Completion review must not become another planning iteration');
     return JSON.stringify(response ? response(result) : result);
   };
-  return { ...f, service, record, checked, result, plan: { content: f.content, sha256: digest(f.content) } };
+  return {
+    ...f,
+    service,
+    record,
+    checked,
+    result,
+    plan: { content: f.content, sha256: digest(f.content) },
+  };
 }
 async function settle(service, id) {
   while (service.store.connected.has(id)) await new Promise((resolve) => setTimeout(resolve, 20));
@@ -101,8 +108,8 @@ test('a real decision is asked inline, while a technical gap produces no fake qu
     }));
     const { runId } = f.service.prepareCompletion(f.issueId);
     await settle(f.service, runId);
-    assert.equal(f.record.status, question ? 'waiting' : 'running');
-    if (!question) assert.equal(f.record.replan, true);
+    assert.equal(f.record.status, question ? 'waiting' : 'blocked');
+    if (!question) assert.notEqual(f.record.replan, true);
     assert.equal(f.record.input?.question || '', question);
     assert.equal(f.delivery.inspect(f.issueId).readiness, null);
     assert.equal(f.provider.state().creates, 0);
@@ -243,50 +250,22 @@ test('the PR card has Continue instead of an upload, and publication retries do 
   retry.window.close();
 });
 
-test('an incomplete completion review leaves Continue available for one bounded recovery, including saved stops', async (t) => {
+test('incomplete completion stops for manual attention without another planning review', async (t) => {
   const f = await fixture(t, (r) => ({
     ...r,
     complete: false,
-    summary: 'GitHub checks remain unfinished.',
+    summary: 'Checks remain unfinished.',
     question: '',
   }));
   const { runId } = f.service.prepareCompletion(f.issueId);
   await settle(f.service, runId);
-  const { canResumeLifecycle, stopLifecycle, lifecycleWorkBasis } = await import('./factory-ui/lifecycle-stop.mjs');
-  stopLifecycle(f.service, f.record, 'GitHub checks remain unfinished.');
+  const { canResumeLifecycle } = await import('./factory-ui/lifecycle-stop.mjs');
   const queue = readQueue(f.root);
-  f.record.recoveryContexts = []; // Saved stop created by the previous backend.
-  f.record.replan = false;
-  f.record.attempts.push(lifecycleWorkBasis(queue, queue.issues[0], f.record) + ':completion-review');
-  assert.equal(canResumeLifecycle(f.service, f.record, queue, queue.issues[0]), true);
-  const { recoverReviewFailure } = await import('./factory-ui/lifecycle-stop.mjs');
-  const run = f.service.store.runs.find((r) => r.id === runId);
-  assert.equal(recoverReviewFailure(f.service, f.record, run), true);
-  assert.equal(recoverReviewFailure(f.service, f.record, run), false);
+  assert.equal(f.record.status, 'blocked');
+  assert.notEqual(f.record.replan, true);
   assert.equal(canResumeLifecycle(f.service, f.record, queue, queue.issues[0]), false);
-  assert.equal(f.record.lastFailure.runId, runId);
-});
-
-test('incomplete completion review selects repair planning instead of repeating the completion review', async (t) => {
-  const f = await fixture(t, (r) => ({
-    ...r,
-    complete: false,
-    summary: 'GitHub checks remain unfinished.',
-    question: '',
-  }));
-  const { runId } = f.service.prepareCompletion(f.issueId);
-  await settle(f.service, runId);
-  let evaluations = 0;
-  f.service.evaluate = (_basis, issueId) => {
-    evaluations++;
-    assert.equal(issueId, f.issueId);
-    assert.match(f.record.lastFailure.summary, /GitHub checks remain unfinished/);
-    f.record.pauseRequested = true;
-    return {};
-  };
-  const { runLifecycle } = await import('./factory-ui/lifecycle-loop.mjs');
-  await runLifecycle(f.service, f.record);
-  assert.equal(evaluations, 1);
+  queue.head = 'changed-source';
+  assert.equal(canResumeLifecycle(f.service, f.record, queue, queue.issues[0]), false);
   assert.equal(f.service.store.runs.filter((r) => r.kind === 'completion-review').length, 1);
   assert.equal(f.provider.state().creates, 0);
 });
@@ -323,7 +302,7 @@ test('repair work at Commit is saved and selected before the commit action', asy
   assert.equal(choice.actionId, 'repair');
 });
 
-test('a completion review saves its bounded repair directly without another evaluation', async (t) => {
+test('a completion review retains a proposed repair without dispatching it', async (t) => {
   const f = await fixture(t, (r) => ({
     ...r,
     complete: false,
@@ -342,48 +321,14 @@ test('a completion review saves its bounded repair directly without another eval
   await settle(f.service, runId);
   const queue = readQueue(f.root),
     action = queue.actions.find((a) => a.completionReview === runId);
-  assert.ok(action, 'The finding must become a saved task without another review');
-  assert.equal(action.status, 'recommended');
-  assert.equal(action.start.revision, f.delivery.inspect(f.issueId).candidate);
-  assert.equal(action.start.purpose, 'approved-plan-repair');
-  assert.equal(f.record.replan, false);
+  assert.equal(action, undefined);
+  assert.equal(f.record.status, 'blocked');
+  assert.notEqual(f.record.replan, true);
+  assert.ok(f.service.store.runs.find((r) => r.id === runId).result.repair);
   assert.equal(
     f.service.store.runs.some((r) => r.kind === 'evaluation'),
     false
   );
-  assert.equal(nextProgress(queue, queue.issues[0], []).kind, 'launch');
-});
-
-test('repair tasks preserve scope and cannot launch against changed candidates', async (t) => {
-  const f = await fixture(t, (r) => ({
-    ...r,
-    complete: false,
-    summary: 'A bounded repair is needed.',
-    question: '',
-    repair: {
-      title: 'Repair',
-      scope: 'Only missing behavior',
-      reason: 'Approved work unfinished',
-      verification: 'Relevant tests',
-      instruction: 'Implement missing behavior',
-      planItems: [1],
-    },
-  }));
-  const { runId } = f.service.prepareCompletion(f.issueId);
-  await settle(f.service, runId);
-  const queue = readQueue(f.root),
-    action = queue.actions.find((a) => a.completionReview === runId);
-  const { validateAssembledStart } = await import('./issue-delivery-records.mjs');
-  assert.equal(validateAssembledStart(f.root, action, { actions: queue.actions }), action.start.revision);
-  assert.throws(
-    () => validateAssembledStart(f.root, { ...action, issues: ['another'] }, { actions: queue.actions }),
-    /Only verification|another issue|older plan|changed/
-  );
-  const { DeliveryStore } = await import('./issue-delivery-store.mjs'),
-    store = new DeliveryStore(f.root, f.issueId);
-  store.save({ ...store.read(), candidate: 'a'.repeat(40) });
-  assert.throws(() => validateAssembledStart(f.root, action, { actions: queue.actions }), /branch changed/);
-  assert.equal(f.provider.state().creates, 0);
 });
 
 test('stream fragments stay durable without rewriting the complete history for every fragment', async (t) => {
@@ -501,7 +446,10 @@ test('unfinished work and failed evidence still block completion from Implement'
     },
   ]);
   assert.throws(() => f.service.prepareCompletion(f.issueId), /Finish the current issue work/);
-  factory(f.root).record(action.id, { status: 'cancelled', evidence: 'Unused fixture task' });
+  factory(f.root).record(action.id, {
+    status: 'cancelled',
+    evidence: 'Unused fixture task',
+  });
   const { writeJson } = await import('./factory-ui/common.mjs');
   const proof = f.checked.summaries[0];
   writeJson(proof, { ...JSON.parse(readFileSync(proof)), passed: false });
@@ -550,14 +498,22 @@ test('legacy mixed evidence is staged and compiled without rerunning completed w
     contribution = delivery.contributions[0];
   const index = stageWorkerArtifacts(
     f.root,
-    { id: contribution.actionId, issues: contribution.issues, basis: { head: contribution.originalBase } },
+    {
+      id: contribution.actionId,
+      issues: contribution.issues,
+      basis: { head: contribution.originalBase },
+    },
     { head: contribution.workerRevision, tree: delivery.tree },
     [proof(path)]
   );
   const review = store.retain('artifact-review', {
     action: { evidence: JSON.stringify({ retainedArtifacts: index }) },
   });
-  const retained = { ...contribution, review, evidence: [...contribution.evidence, review] };
+  const retained = {
+    ...contribution,
+    review,
+    evidence: [...contribution.evidence, review],
+  };
   retained.receipt = store.retain('artifact-assembly', retained);
   store.save({ ...delivery, contributions: [retained] });
   rmSync(temp, { recursive: true });
@@ -605,7 +561,7 @@ test('unregistered temporary completion evidence cannot be imported by a reviewe
   assert.equal(f.provider.state().creates, 0);
 });
 
-test('changed-input recovery has a coordinator owner, exact changed input and one attempt per basis', async (t) => {
+test('changed inputs retain diagnostics but do not trigger recovery or replanning', async (t) => {
   const f = await fixture(t);
   const { assertCurrentInputs } = await import('./factory-ui/input-change.mjs');
   const { handleLifecycleFailure } = await import('./factory-ui/lifecycle-work.mjs');
@@ -623,9 +579,14 @@ test('changed-input recovery has a coordinator owner, exact changed input and on
       return true;
     }
   );
-  const run = { id: 'changed-input-review', kind: 'completion-review', recovery, summary: 'Review changed.' };
-  assert.equal(await handleLifecycleFailure(f.service, f.record, run), true);
-  assert.equal(f.record.replan, true);
+  const run = {
+    id: 'changed-input-review',
+    kind: 'completion-review',
+    recovery,
+    summary: 'Review changed.',
+  };
+  assert.equal(await handleLifecycleFailure(f.service, f.record, run), false);
+  assert.notEqual(f.record.replan, true);
   assert.equal(await handleLifecycleFailure(f.service, f.record, run), false);
   assert.equal(f.record.status, 'blocked');
   assert.equal(f.provider.state().creates, 0);
