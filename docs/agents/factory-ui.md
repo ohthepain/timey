@@ -7,7 +7,8 @@ replaces either. The selected checkout owns the issue records and delivery confi
 authoritative project rather than an old worker checkout. In live mode the
 server uses browser assets and the restart entry from the installed adapter
 checkout. Updating code uses managed deployment with exact passing verification,
-HTML and authenticated queue probes; restart refuses changed installed source.
+HTML and authenticated queue probes. The in-page restart refuses changed installed
+source; the external restart command below can install an already verified checkout.
 Use `--port NUMBER` only when a fixed local port is needed.
 
 The queue and issue screens read actual reports and the dispatch ledger through
@@ -954,6 +955,31 @@ snapshot. Changed or missing immutable test logs still fail with the exact path.
 Queue reports and the registry are mutable context; their current bytes and
 original recorded digests are retained separately from technical evidence.
 Verification and commit operations continue to require current source checks.
+
+## Programmatic restart
+
+Run `pnpm factory:restart` from the selected checkout. It defaults to this checkout,
+this project and `http://127.0.0.1:52995`. It uses existing full verification evidence
+for the exact clean committed tree, discovered in `.issues/evidence/`, and never
+runs tests, pulls code, merges branches or accepts an issue.
+
+```sh
+pnpm factory:restart
+pnpm factory:restart --checkout /absolute/checkout --project /absolute/project --url http://127.0.0.1:52995 --verification /absolute/summary.json
+```
+
+The external launcher permits changed installed source, pauses new actions, waits
+for existing work/approvals/chats/locks to drain, verifies process ownership and
+rechecks the candidate before stopping only the identified old PID with SIGTERM.
+It then verifies the replacement's HTML, authenticated queue, PID and commit hash.
+`--timeout MS` bounds each waiting phase (default 30000). Busy work is never force
+killed. Issue work paused at an action boundary stays saved for explicit Continue.
+
+Missing/stale verification or a dirty selected checkout fails before changing the
+server. Run verification separately before retrying. A failed startup is reported
+with its log and receipt under `.issues/evidence/`; it does not claim success or
+silently restore a checkout whose source may have changed. The command shares the
+managed deployment lock and never removes unknown operation locks.
 
 ## Managed deployment
 

@@ -14,21 +14,19 @@ export async function deploymentSession(address) {
     .getSetCookie()
     .map((value) => value.split(';')[0])
     .join('; ');
-  return {
-    runtime,
-    async action(name) {
-      const response = await fetch(origin + '/api/deployment-' + name, {
-        method: 'POST',
-        headers: { cookie, origin, 'content-type': 'application/json', 'x-factory-action': 'manual' },
-        body: '{}',
-        redirect: 'error',
-        signal: AbortSignal.timeout(10000),
-      });
-      const value = await response.json();
-      requireThat(response.ok, value.error || 'Deployment request failed.');
-      return value;
-    },
-  };
+  async function request(path) {
+    const response = await fetch(origin + path, {
+      method: 'POST',
+      headers: { cookie, origin, 'content-type': 'application/json', 'x-factory-action': 'manual' },
+      body: '{}',
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+    const value = await response.json();
+    requireThat(response.ok, value.error || 'Deployment request failed.');
+    return value;
+  }
+  return { runtime, request, action: (name) => request('/api/deployment-' + name) };
 }
 export function startFactory(checkout, project, port, log) {
   const fd = openSync(log, 'a', 0o600);

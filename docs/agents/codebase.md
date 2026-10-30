@@ -525,3 +525,8 @@ failures, explicit starts and missing review capabilities.
 `factory-ui/strategy-closure.mjs` validates saved strategy verification and step
 summaries against their recorded candidate and retains their evidence for explicit
 acceptance. It does not run checks or contact the provider during closure.
+
+`factory-restart.mjs` is the external `pnpm factory:restart` launcher. It reuses
+saved verification and deployment transport/readiness probes, permits changed
+installed source, and restarts only an owned, drained listener. Its disposable
+server checks live in `factory-restart.check.mjs`.
