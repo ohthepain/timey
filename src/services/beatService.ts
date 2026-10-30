@@ -8,28 +8,28 @@ import { Beat } from '~/types/Beat';
 import { requireDomainUser } from '~/server/domain-session';
 import { createBeatInput, copyBeatInput, editBeatInput } from '~/types/beatWrites';
 
-export const deleteBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const deleteBeatServerFn = createServerFn({ method: 'POST' })
   .validator(deleteContentInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();
     return deleteContent('beat', ctx.data.id, userId);
   });
 
-export const saveBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const saveBeatServerFn = createServerFn({ method: 'POST' })
   .validator(editBeatInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();
     return beatRepository.updateBeat(ctx.data.id, ctx.data, userId);
   });
 
-export const createBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const createBeatServerFn = createServerFn({ method: 'POST' })
   .validator(createBeatInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();
     return beatRepository.createBeat(ctx.data, userId);
   });
 
-export const copyBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const copyBeatServerFn = createServerFn({ method: 'POST' })
   .validator(copyBeatInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();
@@ -40,7 +40,7 @@ const getBeatWithPerformancesServerFnArgs = z.strictObject({
   beatId: z.string(),
 });
 
-export const getBeatWithPerformancesServerFn = createServerFn({ method: 'GET', response: 'data' })
+export const getBeatWithPerformancesServerFn = createServerFn({ method: 'GET' })
   .validator(getBeatWithPerformancesServerFnArgs)
   .handler(async (ctx) => {
     const { userId } = await requirePracticeUser();
@@ -51,7 +51,7 @@ const getBeatByNameServerFnArgs = z.object({
   name: z.string(),
 });
 
-export const getBeatByNameServerFn = createServerFn({ method: 'GET', response: 'data' })
+export const getBeatByNameServerFn = createServerFn({ method: 'GET' })
   .validator((data: unknown) => getBeatByNameServerFnArgs.parse(data))
   .handler(async (ctx): Promise<any> => {
     const data = await beatRepository.getBeatByName(ctx.data.name);

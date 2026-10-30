@@ -37,7 +37,7 @@ export default async function coordinatorBrowserChecks(page) {
   await page.locator('#coordinator-strip').filter({ hasText: 'Older urgent issue' }).waitFor();
   await page.goto(new URL('/#/issue/a', page.url()).href);
   await page.waitForFunction(() => document.getElementById('coordinator-strip').hidden);
-  await page.getByRole('link', { name: 'View coordinator', exact: true }).click();
+  await page.getByRole('link', { name: 'Discuss queue', exact: true }).click();
   await page.getByRole('heading', { name: 'Coordinator', exact: true }).waitFor();
   await page.getByLabel('Coordinator live output').filter({ hasText: 'Reading saved work' }).waitFor();
   if (await page.locator('#coordinator-output script').count()) throw Error('Output was interpreted as HTML.');

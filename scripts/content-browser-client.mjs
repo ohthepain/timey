@@ -4,13 +4,13 @@ import {
   updateMethodServerFn,
   getAllMethodsServerFn,
   getMethodByIdServerFn,
-} from '../src/services/methodService.server.ts';
+} from '../src/services/methodService.ts';
 import {
   createModuleServerFn,
   updateModuleServerFn,
   getAllModulesServerFn,
   getModuleByIdServerFn,
-} from '../src/services/moduleService.server.ts';
+} from '../src/services/moduleService.ts';
 
 window.content = {
   createMethodServerFn,

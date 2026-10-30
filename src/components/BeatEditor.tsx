@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createBeatServerFn, saveBeatServerFn } from '~/services/beatService.server';
+import { createBeatServerFn, saveBeatServerFn } from '~/services/beatService';
 import { Beat } from '~/types/Beat';
 import { Module } from '~/types/Module';
 import { BarDefEditor } from '~/components/BarDefEditor';

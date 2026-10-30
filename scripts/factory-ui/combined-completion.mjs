@@ -1,5 +1,4 @@
 import { compileCompletion } from './completion-contract.mjs';
-import { saveCompletionRepair } from './completion-repair.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import { requireThat, digest, writeJson } from './common.mjs';
 import { join } from 'node:path';
@@ -65,6 +64,5 @@ export async function applyCombinedCompletion(service, run, result) {
       summary: completion.summary,
       input: { type: 'scope', question: completion.question },
     });
-  } else if (completion.repair) saveCompletionRepair(service, record, run, completion, context, delivery);
-  else throw Error(completion.summary || 'The combined review needs a specific remaining task.');
+  } else throw Error(completion.summary || 'The combined review needs manual attention.');
 }

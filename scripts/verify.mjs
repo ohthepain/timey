@@ -121,11 +121,14 @@ function recordCheck(name, command, result) {
   });
   console.log(`${details.passed ? 'PASS' : 'FAIL'} ${name}: ${log}`);
   if (!details.passed) {
-    const failures = output
-      .split(/\r?\n/)
-      .filter((line) => /^(?:not ok |✖ |FAIL\s|Error:|AssertionError)/.test(line.trim()));
-    for (const line of failures.slice(0, 12)) console.error('  ' + line.trim().slice(0, 400));
-    if (failures.length > 12) console.error(`  … ${failures.length - 12} more failure lines in ${log}`);
+    // Node's spec reporter repeats failures with their assertions and source locations
+    // at the end. Keep that complete section, rather than only matching headlines.
+    const marker = '✖ failing tests:';
+    const detailStart = output.indexOf(marker);
+    const details = detailStart < 0 ? output : output.slice(detailStart);
+    console.error(`::group::${name} failure details`);
+    console.error(details.trim() || `No diagnostic output was returned. See ${log}`);
+    console.error('::endgroup::');
   }
   if (!details.passed && details.reasons?.length) {
     console.error(`${name}:`);
@@ -250,7 +253,8 @@ try {
     // A link is Git metadata, not a formatter input. Changed tracked targets
     // remain independent entries; all links stay in snapshot and audit scope.
     const regular = changed.filter((name) => !lstatSync(join(snapshot, name)).isSymbolicLink());
-    if (regular.length) await run('format-changed', bin('prettier'), ['--check', '--ignore-unknown', ...regular]);
+    if (regular.length)
+      await run('format-changed', bin('vp'), ['fmt', '--check', '--no-error-on-unmatched-pattern', ...regular]);
     else if (changed.length)
       await run('format-changed', process.execPath, [
         '-e',
@@ -259,7 +263,7 @@ try {
     await run('browser', 'pnpm', ['run', 'test:browser']);
     await run('factory', 'pnpm', ['run', 'test:factory']);
     await run('typecheck', bin('tsc'), ['--noEmit']);
-    await run('tests', bin('vitest'), ['run']);
+    await run('tests', bin('vp'), ['test', 'run']);
     await run('build', 'pnpm', ['run', 'build']);
   }
 } catch (error) {

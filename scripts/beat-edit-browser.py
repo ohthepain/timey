@@ -43,7 +43,7 @@ def code(label, body, session='a'):
       page.on('response',response); page.on('console',log); page.on('pageerror',error);
       await page.waitForLoadState('domcontentloaded');
       await page.evaluate(async () => {
-        await import('/_build/scripts/beat-browser-client.mjs');
+        await import('/scripts/beat-browser-client.mjs');
       });
       page.setDefaultTimeout(15000);
       let value, failure;
@@ -246,12 +246,12 @@ if __name__ == '__main__':
         sql('permission-restored',f'''UPDATE domain."Beat" SET "authorId"='{a}' WHERE id='{source['id']}';''')
         code('switch-clears-editor', '''
           await page.getByPlaceholder('Enter beat name').first().fill('Stale edit draft');
-          await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
+          await page.evaluate(async()=>{const c=(await import('/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
           await page.getByText('Only the module author can create beats here.',{exact:true}).waitFor();
           check(await page.getByPlaceholder('Enter beat name').count()===0,'editor cleared');return true;
         ''')
         code('switch-back-clean-editor', '''
-          await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contenta',password:'Content-fixture-password-123!'});});
+          await page.evaluate(async()=>{const c=(await import('/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contenta',password:'Content-fixture-password-123!'});});
           const edit=page.getByRole('button',{name:'Edit',exact:true});await edit.waitFor();await edit.click();
           check(await page.getByPlaceholder('Enter beat name').first().inputValue()==='Rendered edit','stale edit draft removed');return true;
         ''')

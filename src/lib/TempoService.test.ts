@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { BeatRecorder } from './BeatRecorder';
 import { TempoService } from './TempoService';
 import { EventRecorderService } from './EventRecorderService';
@@ -19,7 +19,7 @@ vi.mock('~/lib/MidiService', async () => {
   };
 });
 
-vi.mock('~/services/performanceService.server', () => ({
+vi.mock('~/services/performanceService', () => ({
   savePerformanceServerFn: vi.fn(),
   deletePerformancesByBeatIdAndUserId: vi.fn(),
 }));

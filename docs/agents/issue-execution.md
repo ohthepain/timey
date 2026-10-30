@@ -1,5 +1,19 @@
 # Issue execution
 
+## Strategy execution
+
+[ADR 0009](../adr/0009-issue-strategies.md) defines the primary execution path.
+Explicitly start Full Stop for a merge-ready PR or Full Send for a protected merge.
+Sol Loop is optional (off, one or up to three review rounds). One owning chat and
+branch carry the work without role assignments, routes or stage transitions.
+Existing work stays intact and is adopted only when idle. Starting records exact
+scope and destination consent. Required checks, real permissions, acceptance and
+closure stay distinct. Full Stop never merges or enables automatic merging.
+Failures retain their evidence and require manual attention; changed conditions
+never launch another recovery. Queue order is priority, then oldest eligible issue.
+
+The following describes the retained legacy execution records and adapters.
+
 Single-issue chats use the exact current issue title as their native chat name.
 Creation and primary-chat reuse refresh that name from the authoritative report;
 changing lifecycle roles keeps the issue name. Independent issue review chats
@@ -45,12 +59,13 @@ This cache does not establish current external-service, browser or human evidenc
 The final independent verification review can also assess all approved plan items.
 The coordinator applies the same completion compiler and PR-readiness validator
 without a second model conversation. A changed candidate or plan rejects that
-result. Genuine decisions are asked inline, and unfinished approved work becomes
-a saved repair task. Missing combined findings retain the ordinary review path.
+result. Genuine decisions are asked inline; unfinished work and proposed repairs
+are retained for manual attention without automatically dispatching repair tasks.
+Missing combined findings retain the ordinary review path.
 
-Administrative queue evaluations and lifecycle coordination reviews use the shared
-read-only queue coordinator conversation described in
-[the coordinator view](factory-ui.md#coordinator-view). Diagnostic Clarify turns
-stay in the issue's primary chat, as do implementation assignments. Independent
-reviews keep their separate contexts. This exception does not move issue chats
-or change their approvals, assignment evidence or acceptance rules.
+Queue selection is deterministic code: priority first, then oldest eligible issue.
+The shared coordinator chat is only for optional queue discussion. Issue planning
+and lifecycle reviews use the issue's primary chat; independent reviews keep their
+separate contexts. Failed or interrupted work stops for manual attention. Invalid
+worker or review JSON is retained without another AI correction turn. Existing
+explicit retry controls preserve approvals and candidate evidence.

@@ -1,33 +1,47 @@
-import { getServerPrisma, safeQuery } from '~/config/db';
+import { and, eq } from 'drizzle-orm';
+import { beatProgress, beats } from '../../domain/schema';
+import { newId } from '~/db/ids';
+import { safeQuery } from '~/config/db';
 
 class BeatProgressRepository {
   async setBeatBestTempo(userId: string, beatId: string, tempo: number) {
-    const existing = await getServerPrisma().beatProgress.findUnique({
-      where: { userId_beatId: { userId, beatId } },
-    });
+    const [existing] = await safeQuery((db) =>
+      db
+        .select()
+        .from(beatProgress)
+        .where(and(eq(beatProgress.userId, userId), eq(beatProgress.beatId, beatId)))
+        .limit(1)
+    );
     if (!existing || existing.bestTempo == null || tempo > existing.bestTempo) {
-      return await safeQuery((prisma) =>
-        prisma.beatProgress.upsert({
-          where: { userId_beatId: { userId, beatId } },
-          update: { bestTempo: tempo },
-          create: { userId, beatId, bestTempo: tempo },
-        })
+      const [row] = await safeQuery((db) =>
+        db
+          .insert(beatProgress)
+          .values({ id: newId(), userId, beatId, bestTempo: tempo })
+          .onConflictDoUpdate({
+            target: [beatProgress.userId, beatProgress.beatId],
+            set: { bestTempo: tempo },
+          })
+          .returning()
       );
+      return row;
     }
     return existing;
   }
 
   async getBeatProgressForModule(userId: string, moduleId: string) {
-    return await safeQuery((prisma) =>
-      prisma.beat.findMany({
-        where: { moduleId },
-        include: {
-          beatProgress: {
-            where: { userId },
-          },
-        },
-      })
-    );
+    return await safeQuery(async (db) => {
+      const moduleBeats = await db.select().from(beats).where(eq(beats.moduleId, moduleId));
+      return Promise.all(
+        moduleBeats.map(async (beat) => {
+          const [progress] = await db
+            .select()
+            .from(beatProgress)
+            .where(and(eq(beatProgress.userId, userId), eq(beatProgress.beatId, beat.id)))
+            .limit(1);
+          return { ...beat, beatProgress: progress ? [progress] : [] };
+        })
+      );
+    });
   }
 }
 

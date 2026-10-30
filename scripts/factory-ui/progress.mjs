@@ -1,6 +1,7 @@
 import { deliveryMode, draftHandoff } from './delivery-mode.mjs';
 import { checkHandoff } from './handoff-checks.mjs';
 import { assertCurrentInputs, captureInputs } from './input-change.mjs';
+import { revalidatePlanning } from './planning-revalidation.mjs';
 import { stageWorkerArtifacts } from './evidence-staging.mjs';
 import { refreshRecommendation } from './recommendation-refresh.mjs';
 import { combinedContext, applyCombinedCompletion } from './combined-completion.mjs';
@@ -292,13 +293,13 @@ function reconcileWithoutAssignment(service, queue, issue, result) {
 
 export function planProgress(service, queue, issue) {
   const originalInputs = captureInputs(queue, issue.id);
-  return service.evaluate(progressBasis(queue), issue.id, (result) => {
-    assertCurrentInputs(
-      originalInputs,
-      readQueue(service.root),
-      issue.id,
-      'The issue changed during planning. No continuation was dispatched.'
+  return service.evaluate(progressBasis(queue), issue.id, async (result, _queue, _issue, run) => {
+    const current = await revalidatePlanning(service, run, originalInputs, issue.id, result);
+    return continueExistingWork(
+      service,
+      current,
+      current.issues.find((i) => i.id === issue.id),
+      result
     );
-    return continueExistingWork(service, queue, issue, result);
   });
 }

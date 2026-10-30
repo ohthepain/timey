@@ -106,7 +106,9 @@ It is separate from a single `/factory` decision iteration and never supplies
 human-first integration approval or final acceptance on the user’s behalf.
 
 **Coordinator conversation**:
-The shared conversation used to coordinate work across the issue queue. Each
+The shared conversation that selects which eligible issue advances next from a
+compact queue summary. Planning, implementation, recovery and verification belong
+to the issue conversation. Each
 issue retains its own issue conversation; coordination does not transfer an
 issue’s execution or approval authority.
 
@@ -149,3 +151,13 @@ claim; it does not deliver code to the target branch.
 The coordinator's evidence-backed review of every item in the approved issue
 plan, the exact aggregate candidate, all contributions and required local checks.
 Further issue work or changed evidence invalidates readiness to open the PR.
+
+**Issue strategy**:
+An explicitly chosen delivery finish line for one issue. Full Stop produces a
+merge-ready PR and leaves it unmerged. Full Send additionally merges through
+provider-enforced protection. Neither implies deployment or human acceptance.
+Lifecycle roles are historical context rather than execution requirements.
+
+**Sol Loop**:
+An optional bounded review of an issue's current candidate by one Sol reviewer.
+It may be selected with either strategy or requested afterward on retained work.

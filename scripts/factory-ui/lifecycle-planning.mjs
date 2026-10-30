@@ -1,4 +1,3 @@
-import { saveContinuation } from './lifecycle-continuation.mjs';
 import { readQueue } from './data.mjs';
 import { digest, requireThat } from './common.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
@@ -8,7 +7,14 @@ export function applyLifecyclePlanning(service, issue, result) {
   const record = service.lifecycleRuns[issue.id];
   if (!record) return false;
   if (result.next_action === 'question') return askNextQuestion(service, record, result);
-  if (result.continuation) return saveContinuation(service, record, result);
+  if (result.continuation) {
+    stopLifecycle(
+      service,
+      record,
+      'The existing worker needs manual attention. Review its saved output and retry explicitly.'
+    );
+    return true;
+  }
   return validateNextTask(service, record, result);
 }
 function validateNextTask(service, record, result) {

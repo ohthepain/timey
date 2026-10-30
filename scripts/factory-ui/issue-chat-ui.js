@@ -142,7 +142,7 @@ const issueChatUI = (() => {
     status.setAttribute('role', 'status');
     const notice = node(
       'small',
-      'Saved on this issue. Roles share its history; implementation and independent review keep separate execution contexts.'
+      'One owning chat per issue. Comments are saved; Reply and continue resumes the selected strategy. Sol review is optional.'
     );
     body.append(historyButton, log, pending, form, stop, mode, status, notice);
     section.append(toggle, body);

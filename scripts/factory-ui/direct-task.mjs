@@ -1,3 +1,4 @@
+import { retainAssignmentScope } from '../factory-assignment-scope.mjs';
 import { approvedPlan } from '../issue-delivery-policy.mjs';
 import { readQueue } from './data.mjs';
 import { digest, requireThat } from './common.mjs';
@@ -51,7 +52,15 @@ export function saveDirectTask(service, record) {
         next_step: 'Continue the approved task.',
       },
     });
-    service.saveReview(run.id, progressBasis(queue));
+    const saved = service.saveReview(run.id, progressBasis(queue));
+    const current = readQueue(service.root);
+    for (const id of saved.savedActions)
+      retainAssignmentScope(
+        service,
+        record,
+        current.actions.find((a) => a.id === id),
+        record.approval.receipt
+      );
     saveLifecycle(service, record, { directTask: null });
     return {};
   } finally {

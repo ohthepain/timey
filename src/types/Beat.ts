@@ -70,5 +70,4 @@ export class Beat {
 
     return diff;
   }
-
 }

@@ -72,7 +72,7 @@ coordinating work.
    are appropriate. With only human input or waiting work, save no empty action
    batch and present the applicable choices instead.
    The input is an array of `{kind,title,scope,reason,verification,worker_prompt,
-merge,issues,dependencies}`. Kinds: `investigate`, `prototype`, `implement`,
+   merge,issues,dependencies}`. Kinds: `investigate`, `prototype`, `implement`,
    `verify`, `review`, `integrate`, `retro`. `merge` is `automatic`, `human-first`,
    or `none`; issue IDs are full local IDs; dependencies are existing action IDs
    (`none` is for non-code work; code actions require an integration policy).

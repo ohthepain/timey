@@ -96,7 +96,7 @@ function transport(t, service) {
     if(m.method==='thread/resume')send({id:m.id,result:{thread:{id:m.params.threadId}}});
     if(m.method==='thread/name/set')send({id:m.id,result:{}});
     if(m.method==='turn/start'){send({id:m.id,result:{turn:{id:'turn'}}});
-      send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(m.params.outputSchema.properties.recommendations?{summary:'One suggestion',recommendations:[{kind:'investigate',title:'Read source',scope:'One file',reason:'Find answer',verification:'Read source',worker_prompt:'Read source.js only',merge:'none',dependencies:[],issues:['20261022-one']}]}:{outcome:'completed',summary:'Read the file.',evidence:'source.js contains 42',remaining:[]})}}});
+      send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(m.params.outputSchema.properties.recommendations?{summary:'One suggestion',recommendations:[{kind:'investigate',title:'Read source',scope:'One file',reason:'Find answer',verification:'Read source',worker_prompt:'Read source.js only',merge:'none',dependencies:[],issues:['20261022-one']}]}:{outcome:'completed',implementation_complete:false,summary:'Read the file.',evidence:'source.js contains 42',remaining:[],artifacts:[]})}}});
       send({method:'turn/completed',params:{threadId:m.params.threadId,turn:{status:'completed'}}});}
   });`
   );
@@ -283,6 +283,7 @@ test('queue-wide review still reconsiders grouping after an unrelated issue chan
   const { root, service } = fixture(t);
   transport(t, service);
   const before = service.snapshot().reviewBasis;
+  service.coordinator.turn = async () => JSON.stringify({ next_issue_id: '20261022-one', reason: 'Ready issue' });
   const { runId } = service.evaluate(before);
   await settle(service, runId);
   writeFileSync(join(root, '.issues/20261022-other.md'), '---\nid: 20261022-other\nstate: investigate\n---\nNew work');
@@ -293,7 +294,7 @@ test('queue review, saving and launching are separate explicit operations', asyn
   const { service, api } = fixture(t);
   transport(t, service);
   const basis = service.snapshot().reviewBasis;
-  const { runId } = service.evaluate(basis);
+  const { runId } = service.evaluate(basis, '20261022-one');
   const run = await settle(service, runId);
   assert.equal(run.status, 'completed');
   assert.equal(api.inspect().registry.actions.length, 0);
@@ -325,7 +326,7 @@ test('restarting the UI does not replay work; explicit resume keeps the original
   assert.throws(() => restarted.answer(run.id, 'unknown', { decision: 'allow' }), /not connected/);
 });
 
-test('installed transport client starts and resumes one chat without model overrides', async (t) => {
+test('installed transport client starts chats with the default model and resumes them without replacing it', async (t) => {
   const { service, root } = fixture(t);
   const cli = transport(t, service);
   const calls = [];
@@ -347,10 +348,13 @@ test('installed transport client starts and resumes one chat without model overr
     threads.map((call) => call.params.config),
     [undefined, { 'features.request_permissions_tool': true }, { 'features.request_permissions_tool': true }, undefined]
   );
+  assert.deepEqual(
+    threads.map((call) => call.params.model),
+    ['gpt-6-luna', undefined, 'gpt-6-luna', undefined]
+  );
   for (const call of threads) {
     assert.equal(call.params.approvalPolicy, 'on-request');
     assert.equal(call.params.approvalsReviewer, call.params.sandbox === 'workspace-write' ? 'auto_review' : 'user');
-    assert.equal(call.params.model, undefined);
   }
   assert.deepEqual(
     calls.filter((call) => call.method === 'turn/start').map((call) => call.params.approvalsReviewer),
@@ -2010,51 +2014,7 @@ test('changed supporting files require a fresh bounded review in the same chat',
   assert.equal(calls.filter((c) => c.method === 'turn/start').length, 2);
 });
 
-test('a citation of the known worker transcript is corrected in the same review without requesting file access', async (t) => {
-  const { root, service } = pendingReview(t, {
-    transcriptPath: '/etc/hosts',
-    result: {
-      outcome: 'completed',
-      summary: 'Selected investigation finished.',
-      notes: 'Implementation still remains.',
-      evidence: ['/etc/hosts'],
-      remaining: ['Implementation'],
-      next_state: null,
-    },
-  });
-  const turn = service.codex.turn.bind(service.codex);
-  const prompts = [];
-  service.codex.turn = async (thread, cwd, prompt, schema) => {
-    prompts.push({ thread, prompt });
-    if (prompts.length === 1) return turn(thread, cwd, prompt, schema);
-    const receipt = service.store.runs.at(-1).workerResultPath;
-    assert.ok(receipt);
-    const retained = JSON.parse(readFileSync(receipt, 'utf8'));
-    assert.equal(retained.threadId, 'original-worker');
-    assert.equal(retained.turnId, 'original-turn');
-    assert.ok(retained.messages.length);
-    return JSON.stringify({
-      outcome: 'completed',
-      summary: 'Selected investigation finished.',
-      notes: 'Implementation still remains.',
-      evidence: [receipt, join(root, 'source.js')],
-      remaining: ['Implementation'],
-      next_state: null,
-      skipped_steps: [],
-    });
-  };
-  const run = await runReview(service);
-  assert.equal(run.status, 'completed', run.summary);
-  assert.equal(prompts.length, 2);
-  assert.equal(prompts[0].thread, prompts[1].thread);
-  assert.match(prompts[1].prompt, /not an access denial/);
-  assert.equal(run.approvedFiles.length, 0);
-  assert.ok(!run.fileProblems?.length);
-  assert.ok(run.rejectedResult.evidence.includes('/etc/hosts'));
-  assert.equal(readQueue(root).issues[0].state, 'investigate');
-});
-
-test('a repeated worker-transcript citation stops after one correction without presenting a permission request', async (t) => {
+test('a worker-transcript citation stops without an AI correction or permission request', async (t) => {
   const { service } = pendingReview(t, {
     transcriptPath: '/etc/hosts',
     result: {
@@ -2074,7 +2034,7 @@ test('a repeated worker-transcript citation stops after one correction without p
   };
   const run = await runReview(service);
   assert.equal(run.status, 'blocked');
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.match(run.summary, /no additional file permission is needed/);
   assert.ok(!run.fileProblems?.length);
   assert.equal(run.approvedFiles.length, 0);
@@ -2295,6 +2255,35 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   issue.prototype_preview.url = 'javascript:alert(1)';
   assert.doesNotMatch(render(issue), /href="javascript/);
   delete issue.prototype_preview;
+
+  const previousHistoryIssueState = issue.state;
+  const previousHistoryLifecycle = issue.lifecycle;
+  const previousHistoryStages = screen.lifecycle;
+  screen.lifecycle = [
+    { state: 'prototype', role: 'ready-to-prototype', name: 'Prototype' },
+    { state: 'fix', role: 'ready-to-fix', name: 'Implement' },
+  ];
+  issue.state = 'fix';
+  issue.lifecycle = {
+    status: 'blocked',
+    summary: 'History test',
+    events: Array.from({ length: 35 }, (_, index) => ({
+      message: `History item ${index}`,
+      at: `2026-10-29T12:${String(index).padStart(2, '0')}:00.000Z`,
+      ...(index === 0 ? { stage: 'prototype' } : index === 1 ? { stage: 'fix' } : {}),
+      ...(index === 5 ? { result: 'interrupted' } : {}),
+    })),
+  };
+  const history = render(issue);
+  assert.equal((history.match(/<li>/g) || []).length, 35);
+  assert.match(history, /<strong style="color:#6d28d9">Prototype:/);
+  assert.match(history, /<strong style="color:#1d4ed8">Implement:/);
+  assert.match(history, /class="history-interrupted">\(interrupted\)/);
+  assert.match(history, /class="history-time" datetime="2026-10-29T12:00:00.000Z">\[/);
+  assert.match(history, /History item 34/);
+  issue.state = previousHistoryIssueState;
+  issue.lifecycle = previousHistoryLifecycle;
+  screen.lifecycle = previousHistoryStages;
 
   screen.runs.push({ id: 'other', issueId: 'different-issue', connected: true, summary: 'Other work' });
   assert.match(render(issue), /No work is running for this issue/);
@@ -2812,6 +2801,15 @@ function lifecycleResponse(root, schema, proposal) {
       next_step: 'Read the source.',
       record_update: null,
     };
+  if (props.implementation_complete)
+    return {
+      outcome: 'completed',
+      implementation_complete: false,
+      summary: 'Read the source: answer is 42.',
+      evidence: join(root, 'source.js'),
+      remaining: [],
+      artifacts: [],
+    };
   return {
     outcome: 'completed',
     summary: 'Read the source: answer is 42.',
@@ -2862,8 +2860,8 @@ test('one approved lifecycle run saves, launches, reviews and advances to explic
   assert.equal(record.status, 'finished', record.summary);
   assert.equal(service.snapshot().issues[0].state, 'final');
   assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
-  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
-  assert.equal(calls.filter((c) => c.start === record.workThreadId && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
   assert.match(readFileSync(join(service.root, '.issues/20261022-one.md'), 'utf8'), /Implementation plan approved/);
   assert.equal(record.input, null);
 });
@@ -2899,12 +2897,16 @@ async function blockedContinuationFixture(t) {
     plan: { path: 'docs/plans/inspect.md', content, sha256: digestReport(content) },
     approval: { sha256: digestReport(content), receipt: join(root, '.issues/answer.json') },
   };
+  writeFileSync(
+    record.approval.receipt,
+    JSON.stringify({ actor: 'human', issueId: record.issueId, type: 'plan-approval', plan: record.plan })
+  );
   const { saveLifecycle } = await import('./factory-ui/lifecycle-store.mjs');
   saveLifecycle(service, record);
   return { ...setup, action, worker, record };
 }
 
-test('approved continuation resumes the same worker before reviewing its new result and creates no duplicate assignment', async (t) => {
+test('a proposed continuation stops for manual attention without resuming the worker', async (t) => {
   const { service, api, calls, action, worker } = await blockedContinuationFixture(t);
   const turn = service.codex.turn;
   service.codex.turn = async (id, cwd, prompt, schema) => {
@@ -2929,26 +2931,19 @@ test('approved continuation resumes the same worker before reviewing its new res
   };
   startIssueLifecycle(service);
   const result = await finishLifecycle(service);
-  assert.equal(result.status, 'finished', result.summary);
+  assert.equal(result.status, 'blocked', result.summary);
+  assert.match(result.summary, /manual attention/);
   assert.equal(api.inspect().registry.actions.length, 1);
   assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
   assert.equal(worker.threadId, 'existing-worker');
-  assert.equal(service.store.runs.find((r) => r.id === worker.id).authorization.kind, 'approved-plan');
-  const work = calls.findIndex(
-    (c) => c.turn === 'existing-worker' && c.prompt?.startsWith('Continue only the original saved assignment.')
-  );
-  const review = calls.findIndex((c) => c.prompt?.includes('Perform one coordinator evidence review'));
-  assert.ok(work >= 0 && review > work);
-  assert.match(calls[work].prompt, /bounded correction already approved/);
-  assert.ok(calls.some((c) => c.resume === 'existing-worker'));
+  assert.ok(!calls.some((c) => c.prompt?.startsWith('Continue only the original saved assignment.')));
   assert.ok(!calls.some((c) => c.start && c.mode === 'workspace-write'));
 });
 
 test('continuations reject unknown assignments, active workers and changed inputs before resuming', async (t) => {
   const { service, record, action, worker, root } = await blockedContinuationFixture(t);
-  const { saveContinuation, resumeContinuation, continuationChoice } = await import(
-    './factory-ui/lifecycle-continuation.mjs'
-  );
+  const { saveContinuation, resumeContinuation, continuationChoice } =
+    await import('./factory-ui/lifecycle-continuation.mjs');
   service.lifecycleTasks.set(record.issueId, Promise.resolve());
   const result = {
     next_action: 'work',
@@ -3176,21 +3171,34 @@ test('an original recorded approval of the current plan allows Progress to conti
   const report = join(root, '.issues/20261022-one.md');
   const quote = 'Human decision: I approve docs/plans/inspect.md as written. Proceed with the source inspection.';
   writeFileSync(report, readFileSync(report, 'utf8') + '\n\n' + quote + '\n');
+  const receipt = join(root, '.issues/original-approval.json');
+  const content = readFileSync(join(root, 'docs/plans/inspect.md'), 'utf8');
+  writeFileSync(
+    receipt,
+    JSON.stringify({
+      actor: 'human',
+      issueId: '20261022-one',
+      type: 'plan-approval',
+      answer: quote,
+      plan: { content, sha256: digest(content) },
+    })
+  );
   const turn = service.codex.turn;
   service.codex.turn = async (...args) => {
     const response = JSON.parse(await turn(...args));
     if (args[3].properties.clarification_complete)
       response.prior_approval = {
-        file: report,
+        file: receipt,
         quote,
         plan_sha256: digest(readFileSync(join(root, 'docs/plans/inspect.md'), 'utf8')),
       };
+    if (response.prior_approval) response.evidence.push(receipt);
     return JSON.stringify(response);
   };
   startIssueLifecycle(service);
   const record = await finishLifecycle(service);
   assert.equal(record.status, 'finished', record.summary);
-  assert.equal(record.approval.origin, 'reviewed-saved-human-approval');
+  assert.equal(record.approval.origin, 'original-human-plan-approval');
   assert.equal(service.snapshot().issues[0].state, 'final');
 });
 
@@ -3830,7 +3838,7 @@ test('a real planning question explains the missing decision and resumes plannin
   assert.equal(readQueue(root).issues[0].state, 'investigate');
 });
 
-test('blocked review finds the unfinished task once instead of looping or inventing an answer request', async (t) => {
+test('blocked review stops on the unfinished task without inventing an answer request', async (t) => {
   const { service } = lifecycleFixture(t);
   const original = service.codex.turn;
   let evaluations = 0;
@@ -3865,10 +3873,11 @@ test('blocked review finds the unfinished task once instead of looping or invent
   startIssueLifecycle(service);
   await approveIssuePlan(service);
   const record = await finishLifecycle(service);
-  assert.equal(record.input.type, 'questions', record.summary);
-  assert.equal(evaluations, 2);
+  assert.equal(record.status, 'blocked', record.summary);
+  assert.match(record.summary, /unfinished/);
+  assert.equal(record.input, null);
+  assert.equal(evaluations, 1);
   assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'coordinator').length, 1);
 });
 
 test('native question drafts survive live refreshes but do not leak into a later lifecycle question', async (t) => {
@@ -4026,7 +4035,7 @@ test('a newer task recommendation supersedes an older stopped reconciliation', a
   assert.equal(service.snapshot().issues[0].progress.kind, 'launch');
 });
 
-test('approved progress saves and launches the new task after an unsuccessful bookkeeping review', async (t) => {
+test('unsuccessful bookkeeping stops for manual attention without launching another task', async (t) => {
   const { service, proposal } = lifecycleFixture(t);
   const original = service.codex.turn;
   let evaluations = 0;
@@ -4044,19 +4053,12 @@ test('approved progress saves and launches the new task after an unsuccessful bo
   startIssueLifecycle(service);
   await approveIssuePlan(service);
   const record = await finishLifecycle(service);
-  assert.equal(
-    record.status,
-    'finished',
-    JSON.stringify({
-      summary: record.summary,
-      events: record.events,
-      runs: service.store.runs.map((r) => ({ kind: r.kind, status: r.status, summary: r.summary })),
-    })
-  );
-  assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 2);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
-  assert.equal(service.snapshot().issues[0].state, 'final');
-  assert.equal(service.store.runs.findLast((r) => r.kind === 'evaluation').savedActions.length, 1);
+  assert.equal(record.status, 'blocked', record.summary);
+  assert.match(record.summary, /unfinished/);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 0);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'reconciliation' && r.status === 'blocked').length, 1);
+  assert.notEqual(service.snapshot().issues[0].state, 'final');
   assert.equal(proposal.merge, 'none');
 });
 
@@ -4202,7 +4204,7 @@ test('native completion respects the shared active coordinator and unanswered UI
   assert.equal(readQueue(root).issues[0].state, 'investigate');
 });
 
-test('automatic same-worker correction is recorded as plan continuation, not a human follow-up', async (t) => {
+test('an explicit approved worker retry retains its original authorization', async (t) => {
   const { service, api, proposal, root } = fixture(t);
   const [action] = api.recommend([proposal]);
   api.reserve(action.id);
@@ -4221,6 +4223,8 @@ test('automatic same-worker correction is recorded as plan continuation, not a h
       return JSON.stringify({
         outcome: 'blocked',
         summary: 'Need the next technical correction.',
+        implementation_complete: false,
+        artifacts: [],
         evidence: 'Existing results.',
         remaining: [],
       });
@@ -4687,7 +4691,7 @@ test('a simple approved lifecycle uses its clarification task without another pl
     calls.some((c) => c.prompt?.includes('Perform one read-only factory queue review')),
     false
   );
-  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
 });
 
 test('retryable stops retain the concrete cause and name the next action', async () => {
@@ -4819,18 +4823,24 @@ test('issue Git identity follows unfinished work, assembly and live HEAD without
   assert.equal(issueGit(snapshot, issue), null);
 });
 
-test('Continue retires a disconnected read-only review and recovers once without a worker', async (t) => {
+test('a disconnected read-only review stops for manual attention without replanning', async (t) => {
   const { service, root } = fixture(t);
   const { waitLifecycleWork } = await import('./factory-ui/lifecycle-work.mjs');
   const record = { issueId: '20261022-one', status: 'running', events: [], attempts: [], input: { type: 'retry' } };
-  const run = { id: 'lost-review', issueId: record.issueId, kind: 'evaluation', status: 'running', events: [], threadId: 'unavailable-chat' };
+  const run = {
+    id: 'lost-review',
+    issueId: record.issueId,
+    kind: 'evaluation',
+    status: 'running',
+    events: [],
+    threadId: 'unavailable-chat',
+  };
   service.store.runs.push(run);
-  assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
+  assert.equal(await waitLifecycleWork(service, record, readQueue(root)), true);
   assert.equal(run.status, 'blocked');
-  assert.equal(record.replan, true);
+  assert.equal(record.status, 'blocked');
+  assert.notEqual(record.replan, true);
   assert.equal(record.input, null);
-  assert.equal(record.lastFailure.runId, run.id);
-  assert.equal(record.recoveryContexts.length, 1);
   assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
   assert.equal(service.store.runs.length, 1);
   assert.equal(readQueue(root).actions.length, 0);
@@ -4838,13 +4848,31 @@ test('Continue retires a disconnected read-only review and recovers once without
 
 test('Continue acknowledges a click before a delayed response and prevents duplicate requests', async () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
-  const source = html.slice(html.indexOf('      function startIssueProgress('), html.indexOf('      function applyProgressFeedback('));
-  let finish, calls = 0;
-  const states = new Map(), feedback = [];
-  const start = new Function('act', 'request', 'data', 'progressRequests', 'applyProgressFeedback', source + ';return startIssueProgress;')(
+  const source = html.slice(
+    html.indexOf('      function startIssueProgress('),
+    html.indexOf('      function applyProgressFeedback(')
+  );
+  let finish,
+    calls = 0;
+  const states = new Map(),
+    feedback = [];
+  const start = new Function(
+    'act',
+    'request',
+    'data',
+    'progressRequests',
+    'applyProgressFeedback',
+    source + ';return startIssueProgress;'
+  )(
     (task) => task(),
-    () => { calls++; return new Promise((resolve) => { finish = resolve; }); },
-    { reviewBasis: 'basis' }, states,
+    () => {
+      calls++;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+    { reviewBasis: 'basis' },
+    states,
     () => feedback.push(states.get('one') && { ...states.get('one') })
   );
   const issue = { id: 'one', state: 'in-progress', progressBasis: 'issue-basis' };
@@ -4861,28 +4889,215 @@ test('Continue acknowledges a click before a delayed response and prevents dupli
 
 test('Continue renders accessible pending, accepted and failure feedback beside the clicked button', async (t) => {
   const { JSDOM } = await import('jsdom');
-  const dom = new JSDOM('<button data-lifecycle-start="one">Continue…</button>', { runScripts: 'outside-only' });
+  const dom = new JSDOM(
+    '<section class="lifecycle-progress"><h3>Progress stopped</h3><p role="status">Old failure</p><p data-resume-summary>Old retry explanation</p><p data-progress-stop-reason>Cannot advance</p><button data-lifecycle-start="one">Continue…</button></section><div id="history">Saved past output</div>',
+    { runScripts: 'outside-only' }
+  );
   t.after(() => dom.window.close());
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
-  const source = html.slice(html.indexOf('      function startIssueProgress('), html.indexOf('      function bind()', html.indexOf('      function startIssueProgress(')));
+  const source = html.slice(
+    html.indexOf('      function startIssueProgress('),
+    html.indexOf('      function bind()', html.indexOf('      function startIssueProgress('))
+  );
   const { window } = dom;
   let finish;
   window.act = (task) => task();
-  window.request = () => new Promise((resolve) => { finish = resolve; });
-  window.eval('const progressRequests = new Map(); const data = {}; ' + source);
+  window.request = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  window.eval('var progressRequests = new Map(); var data = {}; ' + source);
   const button = window.document.querySelector('button');
   const pending = window.startIssueProgress({ id: 'one', state: 'in-progress' });
   assert.equal(button.disabled, true);
   assert.equal(button.getAttribute('aria-busy'), 'true');
   assert.match(button.textContent, /Sending/);
+  assert.equal(window.document.querySelector('h3').textContent, 'Sending Continue…');
+  assert.match(window.document.querySelector('[role="status"]').textContent, /Sending/);
+  assert.equal(window.document.querySelector('[data-progress-stop-reason]').hidden, true);
+  assert.equal(window.document.querySelector('[data-resume-summary]').hidden, true);
+  assert.equal(window.document.getElementById('history').textContent, 'Saved past output');
   assert.match(button.nextElementSibling.textContent, /approved plan/);
   assert.equal(button.nextElementSibling.getAttribute('role'), 'status');
   finish({});
   await pending;
   assert.match(button.nextElementSibling.textContent, /accepted/);
-  window.request = async () => { throw Error('Connection lost'); };
+  window.eval('data.issues = [{id: "one", lifecycle: {updated: "fresh", status: "running"}}];');
+  window.applyProgressFeedback();
+  assert.equal(window.eval('progressRequests.has("one")'), false);
+  window.request = async () => {
+    throw Error('Connection lost');
+  };
   await assert.rejects(window.startIssueProgress({ id: 'one' }), /Connection lost/);
   assert.equal(button.nextElementSibling.getAttribute('role'), 'alert');
   assert.match(button.nextElementSibling.textContent, /Connection lost/);
   assert.equal(button.getAttribute('aria-busy'), 'false');
+});
+
+test('changed planning inputs stop without another AI revalidation turn', async (t) => {
+  const { root, git, service } = fixture(t);
+  const { captureInputs } = await import('./factory-ui/input-change.mjs');
+  const { revalidatePlanning } = await import('./factory-ui/planning-revalidation.mjs');
+  const before = captureInputs(readQueue(root), '20261022-one');
+  writeFileSync(join(root, 'other.js'), 'export const unrelated = true;\n');
+  git('add', 'other.js');
+  git('commit', '-qm', 'unrelated source');
+  const run = service.store.add({ id: 'queue-review' }, 'evaluation', before.head);
+  let calls = 0;
+  service.reviewIssue = async (_run, prompt) => {
+    calls++;
+    assert.match(prompt, /Revalidate only the impact/);
+    return JSON.stringify({ reusable: true, summary: 'Unrelated addition; the proposed task is unchanged.' });
+  };
+  await assert.rejects(revalidatePlanning(service, run, before, '20261022-one', {}), /Inputs changed during planning/);
+  assert.equal(calls, 0);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8') + '\nChanged scope');
+  await assert.rejects(revalidatePlanning(service, run, before, '20261022-one', {}), /Inputs changed during planning/);
+  assert.equal(calls, 0);
+});
+
+test('invalid worker JSON is retained for manual retry without another repair turn', async (t) => {
+  const { root, service, api, proposal } = fixture(t);
+  const [action] = api.recommend([proposal]);
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'same-worker', hostId: 'codex-cli' });
+  const run = service.store.add(action, 'worker', readQueue(root).head);
+  service.store.update(run, { threadId: 'same-worker', checkout: root });
+  let turns = 0;
+  service.codex.resume = async (id, _root, sandbox) => {
+    assert.equal(id, 'same-worker');
+    assert.equal(sandbox, 'read-only');
+  };
+  service.codex.turn = async (id) => {
+    assert.equal(id, 'same-worker');
+    return ++turns === 1
+      ? '{malformed'
+      : JSON.stringify({
+          outcome: 'completed',
+          implementation_complete: false,
+          summary: 'Read source.',
+          evidence: 'source.js',
+          remaining: [],
+          artifacts: [],
+        });
+  };
+  await assert.rejects(service.runTurn(run, 'Read source only'), /Review the retained output and retry manually/);
+  assert.equal(turns, 1);
+  assert.equal(run.rejectedWorkerResult, '{malformed');
+  assert.match(run.summary, /invalid result/);
+  assert.equal(api.inspect().registry.actions.length, 1);
+  assert.notEqual(api.inspect().registry.actions[0].status, 'completed');
+});
+
+test('code merge policy is validated before saving any route or deferred assignment', (t) => {
+  const { service, api, proposal } = fixture(t);
+  service.ownServer();
+  const run = service.store.add({ id: 'queue-review' }, 'evaluation', service.snapshot().head);
+  service.store.update(run, {
+    status: 'completed',
+    reviewBasis: service.snapshot().reviewBasis,
+    result: {
+      summary: 'Proposed code work',
+      recommendations: [{ ...proposal, kind: 'implement', merge: 'none' }],
+      routes: [],
+    },
+  });
+  service.store.connected.delete(run.id);
+  assert.throws(() => service.saveReview(run.id, service.snapshot().reviewBasis), /No route or stage change was saved/);
+  assert.equal(run.savedRoutes, undefined);
+  assert.equal(api.inspect().registry.actions.length, 0);
+});
+
+test('current progress replaces stale preparation text with the actual wait and retires old acknowledgment', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function currentProgressSummary('),
+    html.indexOf('      function lifecyclePanel(')
+  );
+  const data = { coordinator: { waiting: [{ issueId: 'one' }], active: { issueId: 'other' } } };
+  const summary = new Function('data', source + ';return currentProgressSummary;')(data);
+  const issue = { id: 'one' },
+    record = { status: 'running' },
+    child = { connected: true, summary: 'Preparing the conversation.' };
+  assert.match(summary(issue, record, child, 'Checking the assignment', null), /Queue position 1/);
+  data.coordinator = { waiting: [], active: { issueId: 'one' } };
+  assert.equal(
+    summary(issue, record, child, 'Checking the assignment', null),
+    'Checking the assignment Waiting for the review result.'
+  );
+});
+
+test('approved issue survives a delivery-scope answer and an unrelated commit, then launches once in its owning chat', async (t) => {
+  const { service, calls, api, proposal, git, root } = lifecycleFixture(t);
+  const originalTurn = service.codex.turn;
+  service.codex.turn = async (...args) => {
+    const result = JSON.parse(await originalTurn(...args));
+    if (args[3].properties.clarification_complete) {
+      result.direct_task = proposal;
+      result.direct_routes = [];
+    }
+    return JSON.stringify(result);
+  };
+  service.coordinator.turn = async () => {
+    throw Error('Issue progress must not enter the queue coordinator');
+  };
+  service.coordinator.state.paused = true;
+  startIssueLifecycle(service);
+  const waiting = await finishLifecycle(service);
+  const record = service.lifecycleRuns[waiting.issueId];
+  const { respondLifecycle } = await import('./factory-ui/lifecycle-input.mjs');
+  await respondLifecycle(service, record, { decision: 'approve' });
+  const approval = structuredClone(record.approval),
+    plan = structuredClone(record.plan);
+  record.input = { type: 'scope', question: 'Stop before publication?' };
+  await respondLifecycle(service, record, { text: 'No, go as far as the existing permissions allow.' });
+  assert.deepEqual(record.approval, approval);
+  assert.deepEqual(record.plan, plan);
+  assert.match(JSON.parse(readFileSync(record.latestAnswer.path, 'utf8')).answer, /Assignment scope answer/);
+  const save = service.saveReview.bind(service);
+  let inserted = false;
+  service.saveReview = (...args) => {
+    const result = save(...args);
+    if (!inserted) {
+      inserted = true;
+      writeFileSync(join(root, 'unrelated.js'), 'export const unrelated = true;\n');
+      git('add', 'unrelated.js');
+      git('commit', '-qm', 'unrelated UI fix');
+    }
+    return result;
+  };
+  startIssueLifecycle(service);
+  const done = await finishLifecycle(service);
+  assert.equal(done.status, 'finished', done.summary);
+  const actions = api.inspect().registry.actions;
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].status, 'reconciled');
+  assert.equal(actions[0].recommendationHistory.length, 1);
+  assert.deepEqual(record.approval, approval);
+  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
+  assert.equal(
+    calls.some((c) => c.prompt?.includes('Does this exact saved assignment fit')),
+    false
+  );
+});
+
+test('an explicit plan revision suspends authority but retains the prior plan and approval receipt', async (t) => {
+  const { service } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  const waiting = await finishLifecycle(service),
+    record = service.lifecycleRuns[waiting.issueId];
+  const { respondLifecycle } = await import('./factory-ui/lifecycle-input.mjs');
+  await respondLifecycle(service, record, { decision: 'approve' });
+  const previous = structuredClone({ plan: record.plan, approval: record.approval });
+  record.input = { type: 'plan' };
+  await respondLifecycle(service, record, {
+    decision: 'changes',
+    text: 'Add a new feature outside the original scope.',
+  });
+  assert.equal(record.approval, null);
+  assert.equal(record.approvalSuspended, true);
+  assert.deepEqual(record.plan, previous.plan);
+  assert.deepEqual(record.approvalHistory.at(-1), previous);
 });

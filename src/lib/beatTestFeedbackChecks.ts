@@ -35,26 +35,18 @@ function matchesPlayedNote(
   );
 }
 
-export function collectPlayedNoteErrors(
-  feedback: PerformanceFeedback,
-  expectedEvents: BeatTestEvents
-): string[] {
+export function collectPlayedNoteErrors(feedback: PerformanceFeedback, expectedEvents: BeatTestEvents): string[] {
   const errors: string[] = [];
   for (const expected of expectedEvents.playedNotes) {
     const found = feedback.beatNoteFeedback.some((entry) => matchesPlayedNote(entry, expected));
     if (!found) {
-      errors.push(
-        `Expected played note not found: ${expected.noteString} with microtiming ${expected.microtiming}ms`
-      );
+      errors.push(`Expected played note not found: ${expected.noteString} with microtiming ${expected.microtiming}ms`);
     }
   }
   return errors;
 }
 
-export function collectMissedNoteErrors(
-  feedback: PerformanceFeedback,
-  expectedEvents: BeatTestEvents
-): string[] {
+export function collectMissedNoteErrors(feedback: PerformanceFeedback, expectedEvents: BeatTestEvents): string[] {
   const errors: string[] = [];
   for (const expected of expectedEvents.missedNotes) {
     const found = feedback.beatNoteFeedback.some(
@@ -65,15 +57,11 @@ export function collectMissedNoteErrors(
   return errors;
 }
 
-export function collectExtraNoteErrors(
-  feedback: PerformanceFeedback,
-  expectedEvents: BeatTestEvents
-): string[] {
+export function collectExtraNoteErrors(feedback: PerformanceFeedback, expectedEvents: BeatTestEvents): string[] {
   const errors: string[] = [];
   for (const expected of expectedEvents.extraNotes) {
     const incorrectlyMatched = feedback.beatNoteFeedback.some(
-      (entry) =>
-        entry.index === expected.index && entry.performanceNote?.noteString === expected.noteString
+      (entry) => entry.index === expected.index && entry.performanceNote?.noteString === expected.noteString
     );
     if (incorrectlyMatched) {
       errors.push(`Extra note incorrectly matched: ${expected.noteString} at index ${expected.index}`);
@@ -91,9 +79,7 @@ export function collectUnexpectedFeedbackErrors(
     if (entry.performanceNote) {
       const expected = expectedEvents.playedNotes.find((played) => matchesPlayedNote(entry, played));
       if (!expected) {
-        errors.push(
-          `Unexpected played note in feedback: ${entry.performanceNote.noteString} at index ${entry.index}`
-        );
+        errors.push(`Unexpected played note in feedback: ${entry.performanceNote.noteString} at index ${entry.index}`);
       }
       continue;
     }

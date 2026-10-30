@@ -10,7 +10,13 @@ import { saveLifecycle } from './lifecycle-store.mjs';
 export function lifecycleWorkBasis(queue, issue, record) {
   const actions = queue.actions
     .filter((a) => a.issues.includes(issue.id))
-    .map((a) => ({ kind: a.kind, status: a.status, scope: a.scope, revision: a.worker_revision, start: a.start }));
+    .map((a) => ({
+      kind: a.kind,
+      status: a.status,
+      scope: a.scope,
+      revision: a.worker_revision,
+      start: a.start,
+    }));
   return digest(
     JSON.stringify({
       head: queue.head,
@@ -39,26 +45,6 @@ export function stopLifecycle(service, record, summary) {
     stopBasis: lifecycleWorkBasis(queue, issue, record),
   });
 }
-export function recoverReviewFailure(service, record, run) {
-  const queue = readQueue(service.root),
-    issue = queue.issues.find((i) => i.id === record.issueId);
-  const basis = lifecycleWorkBasis(queue, issue, record);
-  record.recoveryContexts ||= [];
-  if (record.recoveryContexts.includes(basis)) return false;
-  record.recoveryContexts.push(basis);
-  saveLifecycle(service, record, {
-    replan: true,
-    summary:
-      'The previous review could not advance this step. Finding the actual unfinished task instead of repeating that review.',
-    lastFailure: { runId: run.id, summary: run.summary, remaining: remainingWork(run), recovery: run.recovery || null },
-  });
-  return true;
-}
-
-function remainingWork(run) {
-  return run.result?.remaining || [];
-}
-
 export const resumableProgressKinds = [
   'save-review',
   'refresh-recommendation',
@@ -88,7 +74,7 @@ export function incompleteCompletion(service, record, queue, issue) {
 }
 export function canResumeLifecycle(service, record, queue, issue, runs) {
   if (record.deliveryHandoff && record.deliveryPublished) return false;
-  if (incompleteCompletion(service, record, queue, issue)) return true;
+  if (incompleteCompletion(service, record, queue, issue)) return false;
   if (needsDeliverySetupRecovery(service, record)) return true;
   if (!record.integrationRecovery && integrationReservation(service, record.issueId, queue)) return true;
   if (isRetriableLifecycleFailure(service, record)) return true;

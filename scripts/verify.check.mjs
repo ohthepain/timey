@@ -405,3 +405,62 @@ test('browser interaction failures block aggregate verification while remaining 
   assert.equal(summary.checks.find((check) => check.name === 'factory').passed, true);
   assert.equal(summary.checks.find((check) => check.name === 'build').passed, true);
 });
+
+test('failed checks print assertion details for every failed test in the CI console', (t) => {
+  const folder = mkdtempSync(join(tmpdir(), 'verify-failure-output-'));
+  t.after(() => rmSync(folder, { recursive: true, force: true }));
+  const path = join(folder, 'failures.test.mjs');
+  writeFileSync(
+    path,
+    `import { test } from 'node:test'; import assert from 'node:assert/strict';
+    for (let i = 0; i < 16; i++) test('failure ' + i, () => assert.equal('actual-' + i, 'expected-' + i));`
+  );
+  const env = { ...process.env, FORCE_COLOR: '0' };
+  delete env.NODE_TEST_CONTEXT;
+  const failed = spawnSync(process.execPath, ['--test', '--test-reporter=spec', path], {
+    encoding: 'utf8',
+    env,
+  });
+  assert.equal(failed.status, 1);
+  const html = readFileSync('scripts/verify.mjs', 'utf8');
+  const source = html.slice(html.indexOf('function recordCheck('), html.indexOf('async function run('));
+  const lines = [];
+  const record = new Function(
+    'join',
+    'reportDir',
+    'stamp',
+    'writeFileSync',
+    'checkAssessment',
+    'report',
+    'console',
+    'let failure = false; const snapshot = null;\n' + source + '\nreturn recordCheck;'
+  )(
+    join,
+    '/tmp/evidence',
+    'fixture',
+    () => {},
+    () => ({ passed: false }),
+    { checks: [] },
+    {
+      log: (line) => lines.push(line),
+      error: (line) => lines.push(line),
+    }
+  );
+  record('factory', ['node', '--test'], { stdout: failed.stdout, stderr: failed.stderr, status: 1 });
+  const printed = lines.join('\n');
+  assert.match(printed, /actual-0/);
+  assert.match(printed, /expected-15/);
+  assert.match(printed, /AssertionError/);
+  assert.match(printed, /at /);
+  assert.doesNotMatch(printed, /more failure lines/);
+  lines.length = 0;
+  record('factory', ['node', '--test'], {
+    stdout: failed.stdout + '\n✖ failing tests:\nsecond command failed',
+    status: 1,
+  });
+  assert.match(lines.join('\n'), /expected-0/);
+  assert.match(lines.join('\n'), /second command failed/);
+  lines.length = 0;
+  record('build', ['build'], { stderr: 'Error: Cannot resolve dependency\n  at build.mjs:12:4', status: 1 });
+  assert.match(lines.join('\n'), /Cannot resolve dependency\n  at build.mjs:12:4/);
+});

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Method } from '~/types/Method';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { createModuleServerFn } from '~/services/moduleService.server';
+import { createModuleServerFn } from '~/services/moduleService';
 
 interface AddModuleProps {
   method: Method;

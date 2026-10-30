@@ -5,13 +5,13 @@ configuration; this map explains responsibilities and the useful starting points
 
 | Area                     | Start reading                                                                                                                                                                        | Responsibility                                                                                                                                                                                                      |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`                                                                                                                                            | Shared UI, authentication context, route restoration                                                                                                                                                                |
+| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`, `vite.config.ts`, `src/start.ts`                                                                                                          | Shared UI, authentication context, route restoration, Vite+ and Start setup                                                                                                                                         |
 | Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                                                                                   | Display the beat and control practice                                                                                                                                                                               |
 | Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                                                                                   | Clock pulses, MIDI input/output, metronome                                                                                                                                                                          |
 | Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                                                                                  | Turn performed notes into timing/velocity feedback                                                                                                                                                                  |
 | Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                                                                                    | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
 | Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                                                                                       | Practice hierarchy and recorded performance                                                                                                                                                                         |
-| Persistence              | `src/repositories/`, `src/services/`, `prisma/schema.prisma`                                                                                                                         | Repository calls, server operations, relational storage                                                                                                                                                             |
+| Persistence              | `src/repositories/`, `src/services/`, `domain/schema.ts`                                                                                                                             | Repository calls, server operations, relational storage in the `domain` PostgreSQL schema                                                                                                                           |
 | Authentication           | `src/server/auth-runtime/client.ts`, `src/components/auth/UserMenu.tsx`, `LoginButton.tsx`, `src/utils/authenticatedServerFn.ts`                                                     | Better Auth browser client (`/api/auth`), header sign-in/menu, cookie-backed `withAuth` via `requireDomainUser`                                                                                                     |
 | Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                            | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
 | Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                               | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit                                                                                                          |
@@ -21,11 +21,11 @@ configuration; this map explains responsibilities and the useful starting points
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
 timestamp semantics. Replay uses these same services; test their interaction, not
 just the display. Services use singleton state, so tests must reset ownership and
-timers. Server repositories obtain a checked Prisma client from `getServerPrisma`
+timers. Server repositories obtain a checked Drizzle client from `getServerDb`
 or the typed `safeQuery` callback in `src/config/db.ts`. Acquire it when executing
 a query, not at repository module scope: browser imports must not attempt database
-access. `safeQuery` retains one reconnect-and-retry for existing connection-error
-conditions. Authenticated handlers preserve their result types through `withAuth`;
+access. `safeQuery` retains one reconnect-and-retry for transient pool failures.
+Authenticated handlers preserve their result types through `withAuth`;
 browser callers receive the framework's serialized data contract. A jsdom mock is
 not database evidence.
 
@@ -70,7 +70,7 @@ Update this map when responsibilities, boundaries, or starting points change.
 The [authentication foundation](../../AUTH_SETUP.md) owns `/api/auth/$` and
 `/api/session`; private progress/performance functions use `requireDomainUser`,
 and method/module create/edit plus beat create/copy/edit operations use `requireDomainUser`. Profile creation uses the trusted auth primary key and blocks
-dependent domain work on failure. Auth and Prisma clients have no shared transaction.
+dependent domain work on failure. Auth and domain database clients have no shared transaction.
 The [ownership decision](../adr/0002-auth-domain-ownership.md) records migration boundaries.
 
 The `/auth/$screen` routes and header auth UI use the browser-only `auth-runtime/client.ts`; they do not import auth
@@ -92,7 +92,7 @@ performance-owned note cleanup. See [setup and proof](../../AUTH_SETUP.md#privat
 Method/module writes share strict schemas in `src/types/contentWrites.ts` across
 server functions and `/api/modules` POST/PUT. Repositories own locked author and
 destination checks plus writes in the same domain transaction. Only editable fields
-reach Prisma; authorship never changes on edit. `MethodsAdminPage` and `AddModule`
+reach the domain database; authorship never changes on edit. `MethodsAdminPage` and `AddModule`
 use the existing validated browser session observer; keyed forms clear drafts on
 identity changes. The method route reloads after creation and account switches.
 The module update has no rendered editor; the fixture invokes its compiled server
@@ -209,19 +209,27 @@ their guards. `lifecycle-store.mjs` adapts the shared durable progress store.
 review saved answers, original plan approval and assignment scope. Inline responses
 route through `lifecycle-input.mjs` and `lifecycle-human.mjs`; native shared requests
 retain guarded owner updates. `lifecycle-work.mjs` waits for child runs and reuses
-existing chats for bounded corrections. See the UI guide for consent boundaries.
+existing chats for bounded corrections. The issue screen renders the complete
+“What happened” lifecycle event history with inline timestamps and role-transition
+labels. See the UI guide for consent boundaries.
 
 `factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
 `approval-options.mjs` exposes native approval choices and binds replies to pending
 requests. `lifecycle-planning.mjs` separates actual human questions from unfinished
 work and stopped operations. `lifecycle-stop.mjs` owns the meaningful-work fingerprint
 and bounded planning recovery, so administrative notes cannot reset a failed review.
-`recommendation-refresh.mjs` offers and executes approved-plan recovery for unused
-stale recommendations, including when the issue is already at Final review. The
-lifecycle runs that recovery before it stops for acceptance, and the issue screen
-keeps Continue available for it. `data.mjs` supplies structured launch blockers; the ledger
-checks expected proposal identity and staleness atomically before retirement.
-The lifecycle replans unfinished work, preserving normal replacement scope checks.
+`recommendation-refresh.mjs` refreshes an unstarted approved assignment in place.
+The ledger checks expected identity, clean source, original approval and retained
+scope evidence atomically, preserves prior starting snapshots in its history, and
+updates launch freshness without cancelling the assignment or replanning.
+`factory-assignment-scope.mjs` binds semantic assignment fields to an actual plan
+approval, the latest answer and an unchanged supporting receipt. Source revision
+changes alone do not require a new scope decision; changed scope or altered evidence does.
+`queue-selection.mjs` selects an eligible issue in code: configured priority order,
+then oldest eligible issue, then issue ID. Running, blocked, failed, paused,
+waiting and finished issues are excluded, including active or blocked assignments.
+Selection never calls a model. Optional queue discussion still uses the coordinator UI. Selected-issue planning and reviews
+use the issue's owning chat through `reviewIssue` and `lifecycleReview`.
 The browser retains keyed expansion, draft and scroll state around live refreshes.
 Conversation state is captured before DOM replacement, including reading position,
 textarea scroll/caret and selected conversation text. Readers at the bottom keep
@@ -440,6 +448,11 @@ the original delivery validator.
 
 `worker-turn.mjs` pins assignment results and selects them from a shared chat;
 `worker-history.mjs` validates their original checkout and recorded candidate.
+`worker-result-recovery.mjs` observes disconnected original turns, bounds report-only
+JSON correction, and retains unverified committed work for existing draft handoff.
+`planning-revalidation.mjs` rechecks source-only changes against retained proposals
+and enumerates actual eligible worker continuations. Recovery cases are covered by
+`scripts/factory-worker-result-recovery.check.mjs` and the focused UI lifecycle tests.
 
 `factory-ui/evidence-staging.mjs` retains declared supplemental artifacts and
 resolves contribution-bound indexes for completion compilation. It does not
@@ -486,8 +499,12 @@ The shared queue coordinator is owned by `factory-ui/coordinator.mjs`;
 references. `coordinator-notes.mjs` validates bounded computed findings against
 source hashes; current-context usage controls early rotation rather than billing
 or turn counts. Predecessor archival follows successful replacement attachment. `coordinator-ui.js` renders its dedicated page and compact activity strip.
-Read-only lifecycle coordination and queue evaluations use its separate connection;
-workers and independent reviews retain their existing connections.
+Only optional queue discussion uses its separate connection. Issue planning and
+reviews use the owning issue chat; queue scheduling uses no chat. Failed or interrupted
+operations retain their results and stop for manual attention. They do not trigger AI
+recovery reviews, automatic worker continuations, completion repair assignments or
+replanning when inputs change. Explicit retry controls retain their approval guards.
+Workers and independent reviews retain their existing connections.
 Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.
 
 Factory verification recovery is covered by `scripts/factory-recovery.check.mjs`:
@@ -495,3 +512,12 @@ unchanged failures, explicit retries, evidence integrity, live logs and new-chat
 model selection. `scripts/factory-test-service.mjs` supplies protocol fixtures
 with an explicitly shared stub transport for both coordinator and worker calls;
 production retains separate connections.
+
+`factory-ui/issue-strategy.mjs` owns explicit Full Stop/Full Send starts, typed scope
+receipts, reuse of the issue checkout/chat, and final candidate checks. It does not
+use lifecycle role planning or completion manifests. `strategy-prompt.mjs` bounds
+the owning assignment; `strategy-review.mjs` implements optional bounded Sol review;
+`strategy-provider.mjs` reads live PR readiness and enforces strict protected merges.
+The issue screen shows strategy/status and collapses legacy roles into disabled
+history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
+failures, explicit starts and missing review capabilities.

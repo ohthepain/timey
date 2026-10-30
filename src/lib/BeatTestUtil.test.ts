@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vite-plus/test';
 import { checkBeatNoteFeedback, BeatTestEvents, createTestBeat } from './BeatTestUtil';
 import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
 import { BeatNote } from '~/types/BeatNote';

@@ -19,7 +19,7 @@ resolves through that installed package; verification and CI require no personal
 skill checkout. Its original human-input protocol and integrity manifest are
 unchanged. Install the frozen dependencies before running factory checks.
 Symbolic links remain in the exported snapshot and audit scope; their link
-metadata is not passed to Prettier, which rejects symbolic-link paths. Changed
+metadata is not passed to the formatter, which rejects symbolic-link paths. Changed
 regular target files retain their own formatting checks.
 
 | Command                             | What it establishes                                                                                                    |
@@ -43,7 +43,8 @@ or root CSV files. Existing root CSVs are never test cleanup targets.
 `verify` exports source into a disposable local clone, shares installed dependencies
 only when lockfiles match, and deletes the clone afterward. Each command prints
 START, streams output while it runs, and emits a periodic running message during
-silence. Per-command logs are readable before completion; summaries retain the
+silence. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
+Per-command logs are readable before completion; summaries retain the
 original pass/fail and separate audit-channel assessment. Evidence stays under
 `.issues/evidence/` with a JSON summary and per-command logs. Preserve relevant
 results in the tracked effort plan before a fresh-worktree handoff. Reports identify
@@ -137,7 +138,7 @@ rendered controls, browser console/network failures, and navigation. An HTTP 200
 or a screenshot alone does not establish hydration or interaction behavior.
 
 Database-backed/authenticated paths require configured local services. Compose
-defines Postgres; inspect readiness with `docker compose ps` and logs. The Prisma
+defines Postgres; inspect readiness with `docker compose ps` and logs. The domain
 datasource needs `DATABASE_URL`; Better Auth needs `AUTH_DATABASE_URL`, `BETTER_AUTH_URL`,
 and `BETTER_AUTH_SECRET` (see [AUTH_SETUP.md](../../AUTH_SETUP.md)). Compose uses
 `DB_USER`/`DB_PASSWORD`. Use supplied local configuration, never print secrets or

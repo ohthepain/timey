@@ -80,5 +80,4 @@ export class GeneralMidiService {
   static getDrumName(noteNumber: number): string | undefined {
     return this.REVERSE_MAP[noteNumber];
   }
-
 }

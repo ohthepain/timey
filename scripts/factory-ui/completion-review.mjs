@@ -1,8 +1,7 @@
 import { deliveryMode, draftHandoff } from './delivery-mode.mjs';
 import { completionReviewSchema, completionPrompt, compileCompletion } from './completion-contract.mjs';
-import { saveCompletionRepair } from './completion-repair.mjs';
 import { completionChoice } from './completion-choice.mjs';
-import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
+import { stopLifecycle } from './lifecycle-stop.mjs';
 import { join } from 'node:path';
 import { lifecycleReview } from './lifecycle-review.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
@@ -67,7 +66,10 @@ export function beginCompletionReview(service, issueId) {
       requireThat(!review.result.repair, 'A completion review cannot pass with unfinished repair work.');
       requireThat(!review.result.question.trim(), 'A completion review cannot pass while a decision is unanswered.');
       const manifest = compileCompletion(service.root, saved, context.plan, review);
-      const result = await service.deliveries.operate('ready', { issueId, manifest });
+      const result = await service.deliveries.operate('ready', {
+        issueId,
+        manifest,
+      });
       service.store.update(run, {
         status: 'completed',
         result,
@@ -85,9 +87,16 @@ function incompleteReview(service, record, run, result, context, delivery) {
   const question = result.question.trim();
   requireThat(!question || !result.repair, 'Answer the decision before saving dependent repair work.');
   requireThat(!question || question.endsWith('?'), 'The completion review must ask a real, specific question.');
-  service.store.update(run, { status: 'completed', result, summary: result.summary });
+  service.store.update(run, {
+    status: 'completed',
+    result,
+    summary: result.summary,
+  });
   if (question)
-    saveLifecycle(service, record, { status: 'waiting', summary: result.summary, input: { type: 'scope', question } });
-  else if (result.repair) saveCompletionRepair(service, record, run, result, context, delivery);
-  else if (!recoverReviewFailure(service, record, run)) stopLifecycle(service, record, result.summary);
+    saveLifecycle(service, record, {
+      status: 'waiting',
+      summary: result.summary,
+      input: { type: 'scope', question },
+    });
+  else stopLifecycle(service, record, result.summary);
 }

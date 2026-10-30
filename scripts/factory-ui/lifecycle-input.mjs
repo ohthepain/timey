@@ -18,7 +18,7 @@ export async function respondLifecycle(service, record, input) {
     integration: () => approveLifecycleIntegration(service, record, input),
     worker: () => service.resume(record.input.runId, answerText(input)),
     human: () => answerHumanRequirement(service, record, input),
-    scope: () => requestPlanChange(service, record, input),
+    scope: () => recordScopeAnswer(service, record, input),
     retry: () => retryLifecycle(service, record, input),
   };
   requireThat(handlers[record.input.type], 'This response type is not supported.');
@@ -57,6 +57,7 @@ function approveLifecyclePlan(service, record, input) {
   );
   saveLifecycle(service, record, {
     feedbackPending: null,
+    approvalSuspended: false,
     directTask: directCurrent
       ? {
           ...record.directTask,
@@ -70,7 +71,29 @@ function requestPlanChange(service, record, input) {
   const text = answerText(input);
   retainAnswer(service, record, { type: 'requested-plan-change', answer: text });
   appendAnswer(service, record, 'Requested plan changes\n\n' + text);
-  saveLifecycle(service, record, { assessed: false, approval: null, plan: null, attempts: [] });
+  saveLifecycle(service, record, {
+    assessed: false,
+    approval: null,
+    approvalSuspended: true,
+    approvalHistory: [...(record.approvalHistory || []), { plan: record.plan, approval: record.approval }],
+    attempts: [],
+  });
+}
+function recordScopeAnswer(service, record, input) {
+  const text = answerText(input);
+  retainAnswer(service, record, { type: 'scope-answer', answer: text });
+  appendAnswer(service, record, 'Assignment scope answer\n\n' + text);
+  saveLifecycle(service, record, {
+    input: null,
+    replan: false,
+    attempts: [],
+    directTask: record.directTask
+      ? {
+          ...record.directTask,
+          report: digest(readQueue(service.root).issues.find((i) => i.id === record.issueId).content),
+        }
+      : null,
+  });
 }
 function recordLifecycleAnswers(service, record, input) {
   const text = answerText(input);
