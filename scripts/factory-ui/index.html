@@ -417,6 +417,16 @@
         flex-wrap: wrap;
         margin-top: 18px;
       }
+      .issue-navigation-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .issue-navigation {
+        min-width: 36px;
+        min-height: 36px;
+        padding: 4px 10px;
+      }
       .issue-title h1 {
         flex: 1;
         min-width: 250px;
@@ -1468,6 +1478,24 @@
           queueFilters
         );
       }
+      function issueNeighbors(issue) {
+        let ordered = queueIssues();
+        if (!ordered.some((entry) => entry.id === issue.id))
+          ordered = queueSortUI.sort([...ordered, issue], queueFilters);
+        return {
+          previous: queueSortUI.adjacent(ordered, issue.id, -1),
+          next: queueSortUI.adjacent(ordered, issue.id, 1),
+        };
+      }
+      function issueNavigation(issue) {
+        return Object.entries(issueNeighbors(issue))
+          .map(([direction, destination]) => {
+            const label = destination?.title || 'Untitled issue';
+            const symbol = direction === 'previous' ? '&lt;' : '&gt;';
+            return `<button type="button" class="issue-navigation" data-issue-navigation="${direction}" data-issue-id="${esc(issue.id)}" aria-label="${destination ? `Go to: ${esc(label)}` : `${direction} issue unavailable`}" title="${destination ? `Go to: ${esc(label)}` : ''}" ${destination ? '' : 'disabled'}>${symbol}</button>`;
+          })
+          .join('');
+      }
       function refreshRoleCounts() {
         for (const box of document.querySelectorAll('[data-role-filter]')) {
           const stage = data.lifecycle.find((item) => item.state === box.dataset.roleFilter);
@@ -1545,6 +1573,16 @@
                 priorityPending.delete(issue.id);
               }
             });
+          };
+        });
+      }
+      function bindIssueNavigation() {
+        document.querySelectorAll('[data-issue-navigation]').forEach((button) => {
+          button.onclick = () => {
+            const issue = data.issues.find((entry) => entry.id === button.dataset.issueId);
+            const direction = button.dataset.issueNavigation;
+            const destination = issue && issueNeighbors(issue)[direction];
+            if (destination) location.hash = `#/issue/${encodeURIComponent(destination.id)}`;
           };
         });
       }
@@ -2457,7 +2495,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.strategy?.status || i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${strategyPanel(i)}<details><summary>Earlier lifecycle history and saved work</summary><fieldset disabled>${i.strategy?.runId ? '' : lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.strategy?.status || i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${strategyPanel(i)}<details><summary>Earlier lifecycle history and saved work</summary><fieldset disabled>${i.strategy?.runId ? '' : lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2655,6 +2693,7 @@
         issueChatUI.mount(route.id, data, request, refresh, data.conversation ? pending + permissions : '');
         bind();
         bindPriorities();
+        bindIssueNavigation();
         applyApprovalFeedback();
         applyProgressFeedback();
         siteReviewUI.mount(data, request, refresh);

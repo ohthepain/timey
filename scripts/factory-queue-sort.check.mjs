@@ -345,6 +345,25 @@ test('all five controls order actual queue rows, preserve filters and selection 
   assert.equal(document.querySelector('[data-role-filter="work"]').parentElement.querySelector('b').textContent, '0');
 });
 
+test('issue navigation follows the visible sort order and has bounded neighbors', (t) => {
+  const { win, fixture, document } = browserFixture(t);
+  const ordered = win.queueSortUI.sort(fixture.issues, { sort: 'created', direction: 'desc' });
+  assert.deepEqual(
+    Array.from(ordered, (entry) => entry.id),
+    ['a', 'b', 'z']
+  );
+  assert.equal(win.queueSortUI.adjacent(ordered, 'b', -1).id, 'a');
+  assert.equal(win.queueSortUI.adjacent(ordered, 'b', 1).id, 'z');
+  assert.equal(win.queueSortUI.adjacent(ordered, 'a', -1), null);
+  assert.equal(win.queueSortUI.adjacent(ordered, 'z', 1), null);
+  assert.equal(win.queueSortUI.adjacent(ordered, 'missing', 1), null);
+  const source = readFileSync('scripts/factory-ui/index.html', 'utf8');
+  assert.match(source, /data-issue-navigation="\$\{direction\}"/);
+  assert.match(source, /title="\$\{destination \? `Go to: \$\{esc\(label\)\}`/);
+  assert.match(source, /function issueNeighbors\(issue\)/);
+  assert.ok(document.querySelector('#issues'));
+});
+
 test('ties and missing values remain deterministic in both directions without mutating source', (t) => {
   const { win } = browserFixture(t);
   win.eval(`window.sortTest = queueSortUI.sort;`);
