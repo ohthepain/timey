@@ -4,6 +4,7 @@ export default async function strategyBrowserChecks(page) {
     legacy = [];
   page.on('pageerror', (error) => errors.push(error.message));
   let running = false;
+  let outputText = 'Strategy worker is implementing the issue.';
   let release;
   const sent = new Promise((resolve) => {
     release = resolve;
@@ -28,7 +29,7 @@ export default async function strategyBrowserChecks(page) {
         status: 'running',
         created: '2026-10-30',
         events: [],
-        output: [],
+        output: [{ at: '2026-10-30T12:00:00Z', text: outputText }],
         approvals: [],
         summary: 'Working in the owning chat.',
       });
@@ -74,6 +75,19 @@ export default async function strategyBrowserChecks(page) {
     !submissions[0].approved
   )
     throw Error('Strategy consent or review choice was not submitted exactly.');
+  const output = page.getByLabel('Live output for this issue', { exact: true });
+  await output.waitFor({ state: 'visible', timeout: 3000 });
+  if (!(await output.textContent()).includes('Strategy worker is implementing the issue.'))
+    throw Error('The issue channel did not show strategy worker output.');
+  outputText = 'New output arrived from the owning chat.';
+  await page.evaluate(async () => {
+    await refresh();
+  });
+  if (!(await output.textContent()).includes(outputText))
+    throw Error('The issue channel did not refresh incoming output.');
+  if ((await output.count()) !== 1) throw Error('Issue output must appear only once.');
+  if (await page.locator('[data-follow-output]').isDisabled())
+    throw Error('Issue output controls are disabled by legacy history.');
   if (legacy.length) throw Error('Strategy execution dispatched a lifecycle-role operation.');
   const history = page.getByText('Earlier lifecycle history and saved work', { exact: true });
   if (!(await history.isVisible())) throw Error('Saved lifecycle history is missing.');
@@ -93,6 +107,7 @@ export default async function strategyBrowserChecks(page) {
       'no duplicate start',
       'no lifecycle dispatch',
       'legacy history retained',
+      'issue channel visible and updates during strategy work',
     ],
   };
 }
