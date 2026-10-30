@@ -283,6 +283,7 @@ test('queue-wide review still reconsiders grouping after an unrelated issue chan
   const { root, service } = fixture(t);
   transport(t, service);
   const before = service.snapshot().reviewBasis;
+  service.coordinator.turn = async () => JSON.stringify({ next_issue_id: '20261022-one', reason: 'Ready issue' });
   const { runId } = service.evaluate(before);
   await settle(service, runId);
   writeFileSync(join(root, '.issues/20261022-other.md'), '---\nid: 20261022-other\nstate: investigate\n---\nNew work');
@@ -293,7 +294,7 @@ test('queue review, saving and launching are separate explicit operations', asyn
   const { service, api } = fixture(t);
   transport(t, service);
   const basis = service.snapshot().reviewBasis;
-  const { runId } = service.evaluate(basis);
+  const { runId } = service.evaluate(basis, '20261022-one');
   const run = await settle(service, runId);
   assert.equal(run.status, 'completed');
   assert.equal(api.inspect().registry.actions.length, 0);
@@ -2871,8 +2872,8 @@ test('one approved lifecycle run saves, launches, reviews and advances to explic
   assert.equal(record.status, 'finished', record.summary);
   assert.equal(service.snapshot().issues[0].state, 'final');
   assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
-  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
-  assert.equal(calls.filter((c) => c.start === record.workThreadId && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
   assert.match(readFileSync(join(service.root, '.issues/20261022-one.md'), 'utf8'), /Implementation plan approved/);
   assert.equal(record.input, null);
 });
@@ -4698,7 +4699,7 @@ test('a simple approved lifecycle uses its clarification task without another pl
     calls.some((c) => c.prompt?.includes('Perform one read-only factory queue review')),
     false
   );
-  assert.equal(calls.filter((c) => c.start && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
 });
 
 test('retryable stops retain the concrete cause and name the next action', async () => {
@@ -4952,7 +4953,7 @@ test('planning revalidates source-only changes once and preserves the existing p
   git('commit', '-qm', 'unrelated source');
   const run = service.store.add({ id: 'queue-review' }, 'evaluation', before.head);
   let calls = 0;
-  service.coordinator.turn = async (_run, prompt) => {
+  service.reviewIssue = async (_run, prompt) => {
     calls++;
     assert.match(prompt, /Revalidate only the impact/);
     return JSON.stringify({ reusable: true, summary: 'Unrelated addition; the proposed task is unchanged.' });
@@ -5035,4 +5036,47 @@ test('current progress replaces stale preparation text with the actual wait and 
     summary(issue, record, child, 'Checking the assignment', null),
     'Checking the assignment Waiting for the review result.'
   );
+});
+
+test('approved issue survives a delivery-scope answer and an unrelated commit, then launches once in its owning chat', async (t) => {
+  const { service, calls, api, proposal, git, root } = lifecycleFixture(t);
+  const originalTurn = service.codex.turn;
+  service.codex.turn = async (...args) => {
+    const result = JSON.parse(await originalTurn(...args));
+    if (args[3].properties.clarification_complete) { result.direct_task = proposal; result.direct_routes = []; }
+    return JSON.stringify(result);
+  };
+  service.coordinator.turn = async () => { throw Error('Issue progress must not enter the queue coordinator'); };
+  startIssueLifecycle(service);
+  const waiting = await finishLifecycle(service);
+  const record = service.lifecycleRuns[waiting.issueId];
+  const { respondLifecycle } = await import('./factory-ui/lifecycle-input.mjs');
+  await respondLifecycle(service, record, { decision: 'approve' });
+  const approval = structuredClone(record.approval), plan = structuredClone(record.plan);
+  record.input = { type: 'scope', question: 'Stop before publication?' };
+  await respondLifecycle(service, record, { text: 'No, go as far as the existing permissions allow.' });
+  assert.deepEqual(record.approval, approval); assert.deepEqual(record.plan, plan);
+  assert.match(JSON.parse(readFileSync(record.latestAnswer.path, 'utf8')).answer, /Assignment scope answer/);
+  const save = service.saveReview.bind(service);
+  let inserted = false;
+  service.saveReview = (...args) => {
+    const result = save(...args);
+    if (!inserted) {
+      inserted = true;
+      writeFileSync(join(root, 'unrelated.js'), 'export const unrelated = true;\n');
+      git('add', 'unrelated.js'); git('commit', '-qm', 'unrelated UI fix');
+    }
+    return result;
+  };
+  startIssueLifecycle(service);
+  const done = await finishLifecycle(service);
+  assert.equal(done.status, 'finished', done.summary);
+  const actions = api.inspect().registry.actions;
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].status, 'reconciled');
+  assert.equal(actions[0].recommendationHistory.length, 1);
+  assert.deepEqual(record.approval, approval);
+  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
+  assert.equal(calls.some((c) => c.prompt?.includes('Does this exact saved assignment fit')), false);
 });

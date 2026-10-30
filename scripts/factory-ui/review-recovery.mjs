@@ -58,3 +58,14 @@ function matchingReview(run, queue, worker) {
   const actual = { basis: run.checkpoint.basis, thread: run.workerThreadId, turn: run.workerTurnId };
   return run.status === 'blocked' && JSON.stringify(actual) === JSON.stringify(expected);
 }
+
+export async function readOnlyReviewTurn(service, run, threadId, prompt, schema) {
+  let text = await service.codex.turn(threadId, service.root, prompt, schema);
+  try { JSON.parse(text); } catch {
+    service.store.update(run, { rejectedReviewResult: text, summary: 'Correcting this review result once in the issue chat.' });
+    text = await service.codex.turn(threadId, service.root,
+      'Return only corrected JSON for your preceding review, matching the supplied schema. Preserve findings and approval boundaries. Do not run tools, repeat investigation or change files.', schema);
+    JSON.parse(text);
+  }
+  return text;
+}

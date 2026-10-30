@@ -16,7 +16,7 @@ export async function revalidatePlanning(service, run, before, issueId, result) 
   service.store.update(run, {
     summary: 'Source changed. Revalidating the saved proposal against the current source without repeating planning.',
   });
-  const text = await service.coordinator.turn(
+  const text = await service.reviewIssue(
     run,
     `Revalidate only the impact of source changes on this existing proposal. Selected issue: ${issueId}. Read its current report at ${service.root}/.issues/${issueId}.md and its approved plan and answer references in ${service.root}/.issues/factory-ui/lifecycle.json, selector issues["${issueId}"]. Read affected files as needed in ${service.root}. Do not repeat the whole planning review. Decide whether the proposal remains applicable at current revision ${current.head}, within the same approved scope, policy and decisions. No execution, publication, merge or acceptance is authorized by this review. Return reusable=false if relevant analysis must be redone or evidence is insufficient. Source changes since ${before.head}: ${changes}. Uncommitted status: ${git(service.root, 'status', '--short').slice(0, 4000)}. Proposed result: ${JSON.stringify(result)}`,
     {

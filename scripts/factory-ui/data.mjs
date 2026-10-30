@@ -129,7 +129,7 @@ function launchFreshness(queue, action) {
       ? action.scope_basis !== scopedActionBasis(queue, action)
       : JSON.stringify(action.basis) !== JSON.stringify(queue.snapshot)
   )
-    return { code: 'stale-recommendation', message: 'This recommendation is out of date. Review the queue again.' };
+    return { code: 'stale-recommendation', message: 'The starting source changed. Continue will refresh this issue’s existing assignment under its approved plan.' };
   return null;
 }
 

@@ -1,3 +1,5 @@
+import { scopeBinding } from './factory-assignment-scope.mjs';
+import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
 import { refreshRecommendation, recommendationRefresh } from './factory-ui/recommendation-refresh.mjs';
 import { writeJson, digest } from './factory-ui/common.mjs';
 import { runLifecycle } from './factory-ui/lifecycle-loop.mjs';
@@ -48,6 +50,7 @@ async function fixture(t) {
   const queue = readQueue(f.root),
     issue = queue.issues[0];
   record.stopBasis = lifecycleWorkBasis(queue, issue, record);
+  saveLifecycle(service, record, { approvedAssignments: [scopeBinding(service, record, action)] });
   return { ...f, api, action, service, record };
 }
 
@@ -60,50 +63,23 @@ test('Continue offers recovery for a stale unlaunched recommendation under its a
   assert.equal(canResumeLifecycle(f.service, f.record, queue, issue), true);
 });
 
-test('final review Continue refreshes a stale recommendation before stopping for acceptance', async (t) => {
-  const f = await fixture(t);
-  const report = join(f.root, '.issues', f.issueId + '.md');
-  writeFileSync(report, readFileSync(report, 'utf8').replace('state: verify', 'state: final'));
-  const queue = readQueue(f.root),
-    issue = queue.issues[0];
-  assert.equal(issue.state, 'final');
-  assert.equal(nextProgress(queue, issue, []).kind, 'refresh-recommendation');
-  assert.equal(canResumeLifecycle(f.service, f.record, queue, issue), true);
-  f.record.status = 'running';
-  f.service.evaluate = () => {
-    throw Error('Reached fresh planning');
-  };
-  await assert.rejects(runLifecycle(f.service, f.record), /Reached fresh planning/);
-  assert.equal(f.api.inspect().registry.actions.find((a) => a.id === f.action.id).status, 'cancelled');
-});
-
-test('refresh preserves completed work, original bases and approval, then reaches fresh planning', async (t) => {
-  const f = await fixture(t),
-    before = f.api.inspect().registry.actions.find((a) => a.status === 'assembled'),
-    approval = structuredClone(f.record.approval),
-    oldBasis = structuredClone(f.action.basis);
-  f.record.status = 'running';
-  f.service.evaluate = (_basis, id) => {
-    assert.equal(id, f.issueId);
-    const actions = f.api.inspect().registry.actions;
-    assert.deepEqual(
-      actions.find((a) => a.id === before.id),
-      before
-    );
-    const retired = actions.find((a) => a.id === f.action.id);
-    assert.equal(retired.status, 'cancelled');
-    assert.deepEqual(retired.basis, oldBasis);
-    assert.equal(retired.operations.at(-1).authorization.plan_sha256, approval.sha256);
-    assert.deepEqual(f.record.approval, approval);
-    throw Error('Reached fresh planning');
-  };
-  await assert.rejects(runLifecycle(f.service, f.record), /Reached fresh planning/);
-  assert.equal(
-    f.service.store.runs.filter((r) => r.kind !== 'route-choice').length,
-    0,
-    'Recovery itself starts no worker or review'
-  );
-  assert.throws(() => refreshRecommendation(f.service, f.issueId, f.action.id), /changed or already started/);
+test('refresh retains the same assignment, approved scope, prior bases and completed work', async (t) => {
+  const f = await fixture(t), before = f.api.inspect().registry.actions.find((a) => a.status === 'assembled'),
+    approval = structuredClone(f.record.approval), oldBasis = structuredClone(f.action.basis);
+  f.service.coordinator.turn = () => { throw Error('No coordinator review is needed'); };
+  f.service.codex.turn = () => { throw Error('No repeat scope review is needed'); };
+  await refreshRecommendation(f.service, f.issueId, f.action.id);
+  const actions = f.api.inspect().registry.actions, refreshed = actions.find((a) => a.id === f.action.id);
+  assert.equal(refreshed.status, 'recommended');
+  assert.deepEqual(refreshed.recommendationHistory[0].basis, oldBasis);
+  assert.notEqual(refreshed.basis.head, oldBasis.head);
+  assert.deepEqual(actions.find((a) => a.id === before.id), before);
+  assert.deepEqual(f.record.approval, approval);
+  assert.equal(f.record.replan, false);
+  assert.equal(nextProgress(readQueue(f.root), readQueue(f.root).issues[0], []).kind, 'launch');
+  assert.equal(actions.length, f.api.inspect().registry.actions.length);
+  f.api.reserve(f.action.id);
+  assert.equal(f.api.inspect().registry.actions.find((a) => a.id === f.action.id).status, 'reserved');
 });
 
 for (const variant of ['dirty', 'grouped', 'attached', 'reserved', 'missing-approval', 'changed-plan']) {
@@ -169,7 +145,6 @@ test('a fresh recommendation uses the normal launch path and cannot be retired b
 
 test('replacement with expanded scope still asks the human before any launch', async (t) => {
   const f = await fixture(t);
-  refreshRecommendation(f.service, f.issueId, f.action.id);
   f.api.recommend([{ ...f.action, id: undefined, scope: 'Expand the feature beyond the approved plan.' }]);
   f.record.status = 'running';
   f.record.replan = false;

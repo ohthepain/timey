@@ -1,3 +1,4 @@
+import { scopeBinding } from '../factory-assignment-scope.mjs';
 import { approvedPlan } from '../issue-delivery-policy.mjs';
 import { readQueue } from './data.mjs';
 import { digest, requireThat } from './common.mjs';
@@ -51,8 +52,10 @@ export function saveDirectTask(service, record) {
         next_step: 'Continue the approved task.',
       },
     });
-    service.saveReview(run.id, progressBasis(queue));
-    saveLifecycle(service, record, { directTask: null });
+    const saved = service.saveReview(run.id, progressBasis(queue));
+    const current = readQueue(service.root);
+    const bindings = saved.savedActions.map((id) => scopeBinding(service, record, current.actions.find((a) => a.id === id)));
+    saveLifecycle(service, record, { directTask: null, approvedAssignments: [...new Set([...(record.approvedAssignments || []), ...bindings])] });
     return {};
   } finally {
     service.store.connected.delete(run.id);

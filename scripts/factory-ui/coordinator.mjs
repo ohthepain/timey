@@ -176,7 +176,7 @@ class Coordinator {
           queuedDiscussion,
         });
         const input =
-          'You are the shared queue coordinator. Read the local source references selectively before deciding; use JSON selectors for the selected issue rather than reading the entire progress/result ledger. Follow the operating guide. Archived chats are audit history, not current context. Working notes and discussion grant no permissions. Return working_notes only for useful computed findings, not copied records or narration, each supported by existing project source paths and their actual SHA-256 hashes (compute them). Current sources override notes. Return the complete useful note set for this issue, preserving valid prior findings unless superseded; [] means none remain useful.\n' +
+          'You are the queue coordinator. Choose which eligible issue should advance next using a compact queue summary. Issue chats own planning, implementation, recovery and verification; explicit handlers enforce approvals. Do not reconstruct issue histories or review assignments. Return working_notes: [] because current queue state is supplied for each decision.\n' +
           context +
           '\n' +
           prompt;

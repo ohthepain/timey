@@ -31,13 +31,27 @@ export function existingPlanApproval(service, plan, result, run) {
     prior.quote.trim() && content.includes(prior.quote),
     'The original plan approval could not be found in its cited record.'
   );
+  let original;
+  try { original = JSON.parse(content); } catch { throw Error('The approval must cite the original human plan-approval receipt.'); }
+  requireThat(original.actor === 'human' && original.type === 'plan-approval' &&
+    original.issueId === run.issueId && original.plan?.sha256 === plan.sha256,
+    'The original receipt does not approve this issue plan.');
   return {
-    sha256: digest(plan.content),
-    path: plan.path,
-    actor: 'human',
-    evidence,
-    quote: prior.quote,
-    receipt: run.receipt,
-    origin: 'reviewed-saved-human-approval',
+    sha256: digest(plan.content), path: plan.path, actor: 'human', evidence, quote: prior.quote,
+    receipt: evidence[0].path, origin: 'original-human-plan-approval',
   };
+}
+
+export function retainedApprovalPlan(service, result, run) {
+  if (!result.prior_approval) return null;
+  const path = result.prior_approval.file;
+  requireThat(result.evidence.includes(path), 'The original approval needs supporting evidence.');
+  const evidence = reviewEvidence(service.root, { cwd: service.root }, {
+    outcome: 'completed', summary: result.summary, notes: '', remaining: [], evidence: [path], next_state: null,
+  }, run.instructions);
+  const original = JSON.parse(readFileSync(evidence[0].path, 'utf8'));
+  requireThat(original.actor === 'human' && original.type === 'plan-approval' && original.issueId === run.issueId &&
+    typeof original.plan?.content === 'string' && digest(original.plan.content) === original.plan.sha256,
+    'The original approved plan is unavailable or changed.');
+  return original.plan;
 }

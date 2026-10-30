@@ -2,7 +2,7 @@ import { combinedClarify } from './clarify-policy.mjs';
 import { recommendationSchema } from './prompts.mjs';
 import { routeSchema } from './lifecycle.mjs';
 import { stageOutcome } from './lifecycle.mjs';
-import { priorApprovalSchema, existingPlanApproval } from './lifecycle-authorization.mjs';
+import { priorApprovalSchema, existingPlanApproval, retainedApprovalPlan } from './lifecycle-authorization.mjs';
 import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 import { implementationPlans } from './plan-outline.mjs';
@@ -109,8 +109,9 @@ function finishAssessment(service, record, queue, issue, result, run) {
     result.clarification_complete || recordedClarificationSkip(queue, issue),
     'The review did not establish completed clarification or identify a question.'
   );
-  const plan = reviewedPlan(service.root, issue, queue.actions, result);
-  const approval = record.feedbackPending ? null : existingPlanApproval(service, plan, result, run);
+  const retained = record.plan || (!result.proposed_plan?.trim() ? retainedApprovalPlan(service, result, run) : null);
+  const plan = reviewedPlan(service.root, issue, queue.actions, result, retained);
+  const approval = record.feedbackPending || record.approvalSuspended ? null : existingPlanApproval(service, plan, result, run);
   const currentIssue = readQueue(service.root).issues.find((i) => i.id === issue.id);
   saveLifecycle(service, record, {
     directTask:
@@ -148,7 +149,7 @@ function finishAssessment(service, record, queue, issue, result, run) {
   });
   return false;
 }
-function reviewedPlan(root, issue, actions, result) {
+function reviewedPlan(root, issue, actions, result, retainedPlan) {
   const paths = implementationPlans(issue, actions),
     path = result.plan_path || paths[0];
   if (path) {
@@ -156,6 +157,7 @@ function reviewedPlan(root, issue, actions, result) {
     const plan = readPlan(root, path);
     return { ...plan, sha256: digest(plan.content), summary: result.plan_summary };
   }
+  if (!result.proposed_plan?.trim() && retainedPlan?.content) return retainedPlan;
   requireThat(result.proposed_plan?.trim(), 'The review did not provide a plan to approve.');
   return {
     path: null,

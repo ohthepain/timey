@@ -1,3 +1,5 @@
+import { readOnlyReviewTurn } from './review-recovery.mjs';
+import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
 import { createCoordinator } from './coordinator.mjs';
 import { progressBasis } from './next-action.mjs';
@@ -599,6 +601,10 @@ export class FactoryUI {
       writeJson(join(this.root, '.issues/factory-integration.lock/owner.json'), { ...owner, pid: process.pid });
     }
   }
+  async reviewIssue(run, prompt, schema) {
+    const threadId = await issueWorkChat(this, run, run.issueId, this.root, 'read-only');
+    return readOnlyReviewTurn(this, run, threadId, prompt, schema);
+  }
   evaluate(basis, issueId = null, afterReview = null) {
     this.ownServer();
     const queue = readQueue(this.root);
@@ -608,8 +614,13 @@ export class FactoryUI {
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
     this.store.update(run, evaluationMetadata(queue, selected, basis));
     this.perform(run, async () => {
+      if (!issueId) {
+        const result = await selectNextIssue(this, run, queue);
+        this.store.update(run, { status: 'completed', summary: result.summary, result });
+        return;
+      }
       const result = JSON.parse(
-        await this.coordinator.turn(
+        await (issueId ? this.reviewIssue.bind(this) : this.coordinator.turn.bind(this.coordinator))(
           run,
           conversationPrompt(
             this,
