@@ -23,7 +23,7 @@ const issueChatUI = (() => {
     return element;
   };
   function mount(id, data, request, refresh, inputHtml = '') {
-    const slot = document.getElementById('discussion-slot');
+    const slot = document.getElementById('issue-chat-slot');
     if (!slot || !id) {
       remember();
       current = null;
