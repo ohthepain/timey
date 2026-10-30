@@ -71,15 +71,29 @@ function requestPlanChange(service, record, input) {
   const text = answerText(input);
   retainAnswer(service, record, { type: 'requested-plan-change', answer: text });
   appendAnswer(service, record, 'Requested plan changes\n\n' + text);
-  saveLifecycle(service, record, { assessed: false, approval: null, approvalSuspended: true,
-    approvalHistory: [...(record.approvalHistory || []), { plan: record.plan, approval: record.approval }], attempts: [] });
+  saveLifecycle(service, record, {
+    assessed: false,
+    approval: null,
+    approvalSuspended: true,
+    approvalHistory: [...(record.approvalHistory || []), { plan: record.plan, approval: record.approval }],
+    attempts: [],
+  });
 }
 function recordScopeAnswer(service, record, input) {
   const text = answerText(input);
   retainAnswer(service, record, { type: 'scope-answer', answer: text });
   appendAnswer(service, record, 'Assignment scope answer\n\n' + text);
-  saveLifecycle(service, record, { input: null, replan: false, attempts: [],
-    directTask: record.directTask ? { ...record.directTask, report: digest(readQueue(service.root).issues.find((i) => i.id === record.issueId).content) } : null });
+  saveLifecycle(service, record, {
+    input: null,
+    replan: false,
+    attempts: [],
+    directTask: record.directTask
+      ? {
+          ...record.directTask,
+          report: digest(readQueue(service.root).issues.find((i) => i.id === record.issueId).content),
+        }
+      : null,
+  });
 }
 function recordLifecycleAnswers(service, record, input) {
   const text = answerText(input);

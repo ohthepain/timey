@@ -1317,10 +1317,12 @@ full-width strip beneath the header shows only the issue and basic operation; on
 an issue page it appears only during coordination for that issue and disappears
 automatically. Page reads and refreshes start no work.
 
-The server manages one read-only coordinator conversation across queue reviews and
-lifecycle coordination. Issue conversations and independent reviews keep their own
-contexts. **Stop** interrupts only the coordinator response, pauses further
-coordination and leaves workers running. **Continue** is explicit: it checks that
+The server manages one read-only coordinator conversation that selects the next
+eligible issue from compact queue facts. Its result contains only an issue ID and
+reason, never an implementation assignment or route. Issue planning, approval-scope
+questions, implementation, recovery and verification use the owning issue chat.
+Independent reviews retain their existing evidence and approval boundaries. **Stop** interrupts only queue coordination and leaves issue progress and workers
+running. A coordinator failure cannot pause an independently owned issue. **Continue** is explicit: it checks that
 the retained conversation is idle, then uses existing issue handlers to inspect
 saved work and continue under original approvals. Failed or uncertain startup
 never creates a replacement conversation. Noninterruptible record writes finish
@@ -1378,3 +1380,22 @@ ambiguous labels are rejected with the configured IDs. Agreeing aliases for one
 stage are combined with both reasons retained; conflicting choices are rejected.
 Label translation never
 changes take/skip decisions, required-stage policy or approval requirements.
+
+
+### Stable assignments and approvals during issue progress
+
+An unstarted stale assignment is refreshed in place after its approved scope is
+validated. Its ID, task, merge policy, dependencies and original snapshot history
+are preserved. Source changes alone do not invalidate a retained scope decision;
+changed task semantics or altered supporting receipts require an issue-local review.
+Direct tasks presented with the approved plan do not receive a redundant model
+scope review before launch. Current launch, candidate and human approval guards
+remain enforced.
+
+An answer to an assignment-scope or delivery-boundary question is recorded as an
+answer, preserving the implementation plan and approval. It grants no publication,
+merge or acceptance authority. Explicit plan revision requests suspend approval
+but retain the previous plan and receipt in approval history. Reassessment that
+returns no replacement plan retains that plan for review rather than failing with
+“no plan to approve”. A historical missing plan can be recovered only from the
+original human plan-approval receipt, with its content hash and issue identity checked.

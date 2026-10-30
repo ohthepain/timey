@@ -26,13 +26,6 @@ export async function runLifecycle(service, record) {
   throw Error('Progress stopped after many actions. Completed work is saved; resume to continue.');
 }
 async function lifecycleTick(service, record) {
-  if (service.coordinator?.paused) {
-    saveLifecycle(service, record, {
-      status: 'paused',
-      summary: 'Coordination is paused. Continue from the coordinator page.',
-    });
-    return false;
-  }
   if (pauseRequested(service, record)) return false;
   if (finishAfterDeliveryPublish(service, record)) return false;
   const queue = readQueue(service.root),

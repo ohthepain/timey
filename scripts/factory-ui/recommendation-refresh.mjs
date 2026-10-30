@@ -35,8 +35,16 @@ export async function refreshRecommendation(service, issueId, actionId) {
   const plan = approvedPlan(service.root, issueId);
   requireThat(record?.approval?.sha256 === plan.sha256, 'Continue under the current approved plan.');
   if (!(await checkLifecycleScope(service, record, action))) return {};
-  service.api.refreshRecommendation(action.id, digest(JSON.stringify(action)), planAuthorization(record, 'refresh-recommendation'));
+  service.api.refreshRecommendation(
+    action.id,
+    digest(JSON.stringify(action)),
+    planAuthorization(record, 'refresh-recommendation')
+  );
   saveLifecycle(service, record, { replan: false });
-  lifecycleEvent(service, record, 'Refreshed the existing assignment under your approved plan. Continuing without replanning.');
+  lifecycleEvent(
+    service,
+    record,
+    'Refreshed the existing assignment under your approved plan. Continuing without replanning.'
+  );
   return {};
 }

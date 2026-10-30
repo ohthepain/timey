@@ -106,7 +106,9 @@ It is separate from a single `/factory` decision iteration and never supplies
 human-first integration approval or final acceptance on the user’s behalf.
 
 **Coordinator conversation**:
-The shared conversation used to coordinate work across the issue queue. Each
+The shared conversation that selects which eligible issue advances next from a
+compact queue summary. Planning, implementation, recovery and verification belong
+to the issue conversation. Each
 issue retains its own issue conversation; coordination does not transfer an
 issue’s execution or approval authority.
 

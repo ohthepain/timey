@@ -111,7 +111,8 @@ function finishAssessment(service, record, queue, issue, result, run) {
   );
   const retained = record.plan || (!result.proposed_plan?.trim() ? retainedApprovalPlan(service, result, run) : null);
   const plan = reviewedPlan(service.root, issue, queue.actions, result, retained);
-  const approval = record.feedbackPending || record.approvalSuspended ? null : existingPlanApproval(service, plan, result, run);
+  const approval =
+    record.feedbackPending || record.approvalSuspended ? null : existingPlanApproval(service, plan, result, run);
   const currentIssue = readQueue(service.root).issues.find((i) => i.id === issue.id);
   saveLifecycle(service, record, {
     directTask:

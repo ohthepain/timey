@@ -1,4 +1,4 @@
-import { scopeBinding } from './factory-assignment-scope.mjs';
+import { retainAssignmentScope } from './factory-assignment-scope.mjs';
 import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
 import { refreshRecommendation, recommendationRefresh } from './factory-ui/recommendation-refresh.mjs';
 import { writeJson, digest } from './factory-ui/common.mjs';
@@ -50,7 +50,8 @@ async function fixture(t) {
   const queue = readQueue(f.root),
     issue = queue.issues[0];
   record.stopBasis = lifecycleWorkBasis(queue, issue, record);
-  saveLifecycle(service, record, { approvedAssignments: [scopeBinding(service, record, action)] });
+  retainAssignmentScope(service, record, action, record.approval.receipt);
+  saveLifecycle(service, record);
   return { ...f, api, action, service, record };
 }
 
@@ -64,16 +65,26 @@ test('Continue offers recovery for a stale unlaunched recommendation under its a
 });
 
 test('refresh retains the same assignment, approved scope, prior bases and completed work', async (t) => {
-  const f = await fixture(t), before = f.api.inspect().registry.actions.find((a) => a.status === 'assembled'),
-    approval = structuredClone(f.record.approval), oldBasis = structuredClone(f.action.basis);
-  f.service.coordinator.turn = () => { throw Error('No coordinator review is needed'); };
-  f.service.codex.turn = () => { throw Error('No repeat scope review is needed'); };
+  const f = await fixture(t),
+    before = f.api.inspect().registry.actions.find((a) => a.status === 'assembled'),
+    approval = structuredClone(f.record.approval),
+    oldBasis = structuredClone(f.action.basis);
+  f.service.coordinator.turn = () => {
+    throw Error('No coordinator review is needed');
+  };
+  f.service.codex.turn = () => {
+    throw Error('No repeat scope review is needed');
+  };
   await refreshRecommendation(f.service, f.issueId, f.action.id);
-  const actions = f.api.inspect().registry.actions, refreshed = actions.find((a) => a.id === f.action.id);
+  const actions = f.api.inspect().registry.actions,
+    refreshed = actions.find((a) => a.id === f.action.id);
   assert.equal(refreshed.status, 'recommended');
   assert.deepEqual(refreshed.recommendationHistory[0].basis, oldBasis);
   assert.notEqual(refreshed.basis.head, oldBasis.head);
-  assert.deepEqual(actions.find((a) => a.id === before.id), before);
+  assert.deepEqual(
+    actions.find((a) => a.id === before.id),
+    before
+  );
   assert.deepEqual(f.record.approval, approval);
   assert.equal(f.record.replan, false);
   assert.equal(nextProgress(readQueue(f.root), readQueue(f.root).issues[0], []).kind, 'launch');

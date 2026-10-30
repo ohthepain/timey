@@ -2616,11 +2616,7 @@
         }
         coordinatorUI.update(data);
         $('app').innerHTML = route.id
-          ? '<p><a href="#/coordinator">View coordinator</a></p>' +
-            (data.coordinator?.active && data.coordinator.active.issueId !== route.id
-              ? '<p>Waiting while the coordinator finishes its current operation. <a href="#/coordinator">See its activity</a>.</p>'
-              : '') +
-            issue(route.id)
+          ? '<p><a href="#/coordinator">View coordinator</a></p>' + issue(route.id)
           : queue();
         const currentIssue = data.issues.find((entry) => entry.id === route.id);
         const record = currentIssue?.lifecycle;

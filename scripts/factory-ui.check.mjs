@@ -2909,6 +2909,10 @@ async function blockedContinuationFixture(t) {
     plan: { path: 'docs/plans/inspect.md', content, sha256: digestReport(content) },
     approval: { sha256: digestReport(content), receipt: join(root, '.issues/answer.json') },
   };
+  writeFileSync(
+    record.approval.receipt,
+    JSON.stringify({ actor: 'human', issueId: record.issueId, type: 'plan-approval', plan: record.plan })
+  );
   const { saveLifecycle } = await import('./factory-ui/lifecycle-store.mjs');
   saveLifecycle(service, record);
   return { ...setup, action, worker, record };
@@ -3186,21 +3190,34 @@ test('an original recorded approval of the current plan allows Progress to conti
   const report = join(root, '.issues/20261022-one.md');
   const quote = 'Human decision: I approve docs/plans/inspect.md as written. Proceed with the source inspection.';
   writeFileSync(report, readFileSync(report, 'utf8') + '\n\n' + quote + '\n');
+  const receipt = join(root, '.issues/original-approval.json');
+  const content = readFileSync(join(root, 'docs/plans/inspect.md'), 'utf8');
+  writeFileSync(
+    receipt,
+    JSON.stringify({
+      actor: 'human',
+      issueId: '20261022-one',
+      type: 'plan-approval',
+      answer: quote,
+      plan: { content, sha256: digest(content) },
+    })
+  );
   const turn = service.codex.turn;
   service.codex.turn = async (...args) => {
     const response = JSON.parse(await turn(...args));
     if (args[3].properties.clarification_complete)
       response.prior_approval = {
-        file: report,
+        file: receipt,
         quote,
         plan_sha256: digest(readFileSync(join(root, 'docs/plans/inspect.md'), 'utf8')),
       };
+    if (response.prior_approval) response.evidence.push(receipt);
     return JSON.stringify(response);
   };
   startIssueLifecycle(service);
   const record = await finishLifecycle(service);
   assert.equal(record.status, 'finished', record.summary);
-  assert.equal(record.approval.origin, 'reviewed-saved-human-approval');
+  assert.equal(record.approval.origin, 'original-human-plan-approval');
   assert.equal(service.snapshot().issues[0].state, 'final');
 });
 
@@ -5043,19 +5060,27 @@ test('approved issue survives a delivery-scope answer and an unrelated commit, t
   const originalTurn = service.codex.turn;
   service.codex.turn = async (...args) => {
     const result = JSON.parse(await originalTurn(...args));
-    if (args[3].properties.clarification_complete) { result.direct_task = proposal; result.direct_routes = []; }
+    if (args[3].properties.clarification_complete) {
+      result.direct_task = proposal;
+      result.direct_routes = [];
+    }
     return JSON.stringify(result);
   };
-  service.coordinator.turn = async () => { throw Error('Issue progress must not enter the queue coordinator'); };
+  service.coordinator.turn = async () => {
+    throw Error('Issue progress must not enter the queue coordinator');
+  };
+  service.coordinator.state.paused = true;
   startIssueLifecycle(service);
   const waiting = await finishLifecycle(service);
   const record = service.lifecycleRuns[waiting.issueId];
   const { respondLifecycle } = await import('./factory-ui/lifecycle-input.mjs');
   await respondLifecycle(service, record, { decision: 'approve' });
-  const approval = structuredClone(record.approval), plan = structuredClone(record.plan);
+  const approval = structuredClone(record.approval),
+    plan = structuredClone(record.plan);
   record.input = { type: 'scope', question: 'Stop before publication?' };
   await respondLifecycle(service, record, { text: 'No, go as far as the existing permissions allow.' });
-  assert.deepEqual(record.approval, approval); assert.deepEqual(record.plan, plan);
+  assert.deepEqual(record.approval, approval);
+  assert.deepEqual(record.plan, plan);
   assert.match(JSON.parse(readFileSync(record.latestAnswer.path, 'utf8')).answer, /Assignment scope answer/);
   const save = service.saveReview.bind(service);
   let inserted = false;
@@ -5064,7 +5089,8 @@ test('approved issue survives a delivery-scope answer and an unrelated commit, t
     if (!inserted) {
       inserted = true;
       writeFileSync(join(root, 'unrelated.js'), 'export const unrelated = true;\n');
-      git('add', 'unrelated.js'); git('commit', '-qm', 'unrelated UI fix');
+      git('add', 'unrelated.js');
+      git('commit', '-qm', 'unrelated UI fix');
     }
     return result;
   };
@@ -5078,5 +5104,27 @@ test('approved issue survives a delivery-scope answer and an unrelated commit, t
   assert.deepEqual(record.approval, approval);
   assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
   assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
-  assert.equal(calls.some((c) => c.prompt?.includes('Does this exact saved assignment fit')), false);
+  assert.equal(
+    calls.some((c) => c.prompt?.includes('Does this exact saved assignment fit')),
+    false
+  );
+});
+
+test('an explicit plan revision suspends authority but retains the prior plan and approval receipt', async (t) => {
+  const { service } = lifecycleFixture(t);
+  startIssueLifecycle(service);
+  const waiting = await finishLifecycle(service),
+    record = service.lifecycleRuns[waiting.issueId];
+  const { respondLifecycle } = await import('./factory-ui/lifecycle-input.mjs');
+  await respondLifecycle(service, record, { decision: 'approve' });
+  const previous = structuredClone({ plan: record.plan, approval: record.approval });
+  record.input = { type: 'plan' };
+  await respondLifecycle(service, record, {
+    decision: 'changes',
+    text: 'Add a new feature outside the original scope.',
+  });
+  assert.equal(record.approval, null);
+  assert.equal(record.approvalSuspended, true);
+  assert.deepEqual(record.plan, previous.plan);
+  assert.deepEqual(record.approvalHistory.at(-1), previous);
 });

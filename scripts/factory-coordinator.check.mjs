@@ -145,7 +145,10 @@ test('Stop interrupts only coordination, blocks next operations, and Continue us
   await assert.rejects(f.owner.turn(f.run, 'No implicit resume'), /paused/);
   f.service.lifecycleTasks.clear();
   await f.owner.continue();
-  assert.ok(f.calls.some((call) => call[0] === 'continue' && call[1] === 'one'));
+  assert.equal(
+    f.calls.some((call) => call[0] === 'pause' || call[0] === 'continue'),
+    false
+  );
 });
 test('Send waits for the next response, Steer requires the exact current turn, and messages confer no authority', async (t) => {
   const f = fixture(t);

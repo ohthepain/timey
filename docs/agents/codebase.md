@@ -216,12 +216,16 @@ existing chats for bounded corrections. See the UI guide for consent boundaries.
 requests. `lifecycle-planning.mjs` separates actual human questions from unfinished
 work and stopped operations. `lifecycle-stop.mjs` owns the meaningful-work fingerprint
 and bounded planning recovery, so administrative notes cannot reset a failed review.
-`recommendation-refresh.mjs` offers and executes approved-plan recovery for unused
-stale recommendations, including when the issue is already at Final review. The
-lifecycle runs that recovery before it stops for acceptance, and the issue screen
-keeps Continue available for it. `data.mjs` supplies structured launch blockers; the ledger
-checks expected proposal identity and staleness atomically before retirement.
-The lifecycle replans unfinished work, preserving normal replacement scope checks.
+`recommendation-refresh.mjs` refreshes an unstarted approved assignment in place.
+The ledger checks expected identity, clean source, original approval and retained
+scope evidence atomically, preserves prior starting snapshots in its history, and
+updates launch freshness without cancelling the assignment or replanning.
+`factory-assignment-scope.mjs` binds semantic assignment fields to an actual plan
+approval, the latest answer and an unchanged supporting receipt. Source revision
+changes alone do not require a new scope decision; changed scope or altered evidence does.
+`queue-selection.mjs` sends compact scheduling facts to the shared coordinator and
+accepts only an eligible issue ID and reason. Selected-issue planning and reviews
+use the issue's owning chat through `reviewIssue` and `lifecycleReview`.
 The browser retains keyed expansion, draft and scroll state around live refreshes.
 Conversation state is captured before DOM replacement, including reading position,
 textarea scroll/caret and selected conversation text. Readers at the bottom keep

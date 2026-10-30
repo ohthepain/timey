@@ -1,3 +1,5 @@
+import { compactQueue } from './queue-selection.mjs';
+import { readQueue } from './data.mjs';
 import { createIssueChatConnection } from './issue-chat-runtime.mjs';
 import { recordActivity, redactValue } from './activity.mjs';
 import { basename, join } from 'node:path';
@@ -59,20 +61,7 @@ class Coordinator {
     const runningWorkers = runs.filter(
       (r) => ['worker', 'integration'].includes(r.kind) && this.service.store.connected.has(r.id)
     );
-    const fallback = runs.findLast(
-      (r) =>
-        (r.kind === 'worker' ? r.status === 'checking' : r.kind !== 'integration') &&
-        this.service.store.connected.has(r.id)
-    );
-    const active =
-      this.state.active ||
-      (fallback
-        ? {
-            runId: fallback.id,
-            issueId: fallback.issueId,
-            operation: fallback.status === 'checking' ? 'Checking' : operationLabel(fallback.kind),
-          }
-        : null);
+    const active = this.state.active;
     return redactValue({
       paused: this.paused,
       interrupted: this.state.interrupted || null,
@@ -151,9 +140,7 @@ class Coordinator {
       thread.status = 'attention';
       this.state.paused = true;
       this.state.interrupted = this.state.active;
-      this.state.resumeIssues = [
-        ...new Set([...(this.state.resumeIssues || []), ...this.service.lifecycleTasks.keys()]),
-      ];
+      // A queue-selection failure does not pause independently owned issues.
       this.state.reason = redactValue(error.message).replace(/reconcile/gi, 'check');
       throw error;
     } finally {
@@ -168,12 +155,15 @@ class Coordinator {
         this.service.store.update(run, { threadId, status: 'running' });
         const queuedDiscussion = this.state.pending.splice(0);
         this.save();
-        const bootstrap = coordinatorBootstrap(this.service, run.issueId);
+        const bootstrap = run.issueId ? coordinatorBootstrap(this.service, run.issueId) : { sources: {}, findings: [] };
         // Current references are refreshed each turn; findings are loaded once per chat.
         const context = JSON.stringify({
           sources: bootstrap.sources,
           ...(thread.turns ? {} : { findings: bootstrap.findings }),
           queuedDiscussion,
+          ...(run.kind === 'coordinator-discussion' && existsSync(join(this.service.root, '.git'))
+            ? { queue: compactQueue(this.service, readQueue(this.service.root)) }
+            : {}),
         });
         const input =
           'You are the queue coordinator. Choose which eligible issue should advance next using a compact queue summary. Issue chats own planning, implementation, recovery and verification; explicit handlers enforce approvals. Do not reconstruct issue histories or review assignments. Return working_notes: [] because current queue state is supplied for each decision.\n' +
@@ -239,8 +229,7 @@ class Coordinator {
     this.service.ownServer();
     this.state.paused = true;
     this.state.reason = 'Coordination stopped. Existing workers are still running. Continue explicitly when ready.';
-    this.state.resumeIssues = [...this.service.lifecycleTasks.keys()];
-    for (const issueId of this.state.resumeIssues) this.service.pauseLifecycle({ issueId });
+    this.state.resumeIssues = [];
     for (const item of this.waiters.splice(0)) item.reject(Error('Coordination stopped before this operation began.'));
     this.save();
     if (this.state.active && this.connection) await this.connection.interrupt(this.state.threads.at(-1).threadId);
@@ -448,12 +437,6 @@ class Coordinator {
     for (const item of this.waiters.splice(0)) item.reject(Error('Coordinator disconnected.'));
   }
 }
-function operationLabel(kind) {
-  if (/skip|record|commit/.test(kind)) return 'Saving';
-  if (/verif|check/.test(kind)) return 'Checking';
-  return 'Reviewing';
-}
-
 function workingContext(thread) {
   if (Number.isFinite(thread.contextTokens))
     return thread.contextTokens + Math.ceil(Math.max(0, thread.characters - (thread.charactersAtUsage || 0)) / 3);

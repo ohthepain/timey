@@ -1,4 +1,4 @@
-import { scopeBinding } from './factory-assignment-scope.mjs';
+import { hasAssignmentScope } from './factory-assignment-scope.mjs';
 import { verificationStart } from './issue-verification-start.mjs';
 import { historicalIntegration } from './factory-legacy-integration.mjs';
 import { assembledContribution, verifiedIssueDelivery, validateAssembledStart } from './issue-delivery-records.mjs';
@@ -389,19 +389,32 @@ export function factory(project) {
     refreshRecommendation(id, expected, authorization) {
       return mutate((data) => {
         const action = find(data, id);
-        assert(digest(JSON.stringify(action)) === expected && action.status === 'recommended' &&
-          !action.threadId && !action.clientThreadId, 'The recommendation changed or already started.');
+        assert(
+          digest(JSON.stringify(action)) === expected &&
+            action.status === 'recommended' &&
+            !action.threadId &&
+            !action.clientThreadId,
+          'The recommendation changed or already started.'
+        );
         assert(action.issues.length === 1, 'Refresh belongs to one approved issue.');
         const record = readProgress(root)[action.issues[0]];
-        const binding = scopeBinding({ root }, record, action);
-        assert(record.approvedAssignments?.includes(binding), 'Review this assignment against its approved scope before refresh.');
-        assert(authorization.kind === 'approved-plan' && authorization.plan_sha256 === record.approval.sha256 &&
-          authorization.issue_id === record.issueId, 'Refresh requires the original issue approval.');
+        assert(
+          hasAssignmentScope({ root }, record, action),
+          'Review this assignment against its approved scope before refresh.'
+        );
+        assert(
+          authorization.kind === 'approved-plan' &&
+            authorization.plan_sha256 === record.approval.sha256 &&
+            authorization.issue_id === record.issueId,
+          'Refresh requires the original issue approval.'
+        );
         assert(!data.actions.some((entry) => claimsIssue(entry, action)), 'Issue already claimed by another action.');
         assert(!git('status', '--porcelain', '--untracked-files=all').trim(), 'Preserve source before refreshing.');
         validateDependencies(action, data, find);
-        action.recommendationHistory = [...(action.recommendationHistory || []),
-          { basis: action.basis, scope_basis: action.scope_basis, at: new Date().toISOString() }];
+        action.recommendationHistory = [
+          ...(action.recommendationHistory || []),
+          { basis: action.basis, scope_basis: action.scope_basis, at: new Date().toISOString() },
+        ];
         action.basis = snapshot();
         action.scope_basis = scopeBasis(action, data);
         action.updated = new Date().toISOString();

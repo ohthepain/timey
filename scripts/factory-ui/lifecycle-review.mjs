@@ -1,4 +1,4 @@
-import { scopeBinding } from '../factory-assignment-scope.mjs';
+import { hasAssignmentScope, retainAssignmentScope } from '../factory-assignment-scope.mjs';
 import { issueWorkChat } from './issue-work-chat.mjs';
 import { resumeReviewThread, readOnlyReviewTurn } from './review-recovery.mjs';
 import { readFileSync } from 'node:fs';
@@ -40,9 +40,20 @@ export async function lifecycleReview(service, record, message, schema, options 
     const permissions = options.diagnostics
       ? 'This is pre-implementation Clarify work. Inspect code and run focused diagnostic or reproduction commands to establish available facts before asking the person. Use temporary locations for generated data and request actual permissions when needed. Keep project source unchanged: do not implement fixes, commit, launch workers, merge, publish or accept. Use judgment about when there is enough context to start useful implementation; it can resolve remaining technical uncertainty. Ask only for intent, preferences, unavailable observations or real permissions. Ordinary commits do not erase earlier understanding. '
       : 'Do not modify files, start work, run tests, merge, commit, approve human decisions or close anything. Only the server executes guarded actions. ';
-    const result = JSON.parse(await readOnlyReviewTurn(service, run, threadId,
-      conversationPrompt(service, run,
-        `Review this issue's current task within its existing approval. Source report: ${service.root}/.issues/${record.issueId}.md. Plan and latest answers: ${service.root}/.issues/factory-ui/lifecycle.json, selector issues["${record.issueId}"]. Instruction index: ${join(service.store.directory, run.id, 'instruction-inputs.json')}. ${permissions} ${message}`, true), schema));
+    const result = JSON.parse(
+      await readOnlyReviewTurn(
+        service,
+        run,
+        threadId,
+        conversationPrompt(
+          service,
+          run,
+          `Review this issue's current task within its existing approval. Source report: ${service.root}/.issues/${record.issueId}.md. Plan and latest answers: ${service.root}/.issues/factory-ui/lifecycle.json, selector issues["${record.issueId}"]. Instruction index: ${join(service.store.directory, run.id, 'instruction-inputs.json')}. ${permissions} ${message}`,
+          true
+        ),
+        schema
+      )
+    );
     const receipt = join(service.store.directory, run.id + '-decision.json');
     writeJson(receipt, {
       issueId: record.issueId,
@@ -75,8 +86,7 @@ export async function checkLifecycleScope(service, record, action) {
     action.issues.every((id) => id === record.issueId),
     'This assignment includes another issue. It needs a separate decision.'
   );
-  const binding = scopeBinding(service, record, action);
-  if (record.approvedAssignments?.includes(binding)) return true;
+  if (hasAssignmentScope(service, record, action)) return true;
   const input = scopeInput(service, record, action, digest(readFileSync(new URL(import.meta.url))));
   if (reusedScope(record, input)) {
     lifecycleEvent(service, record, 'The saved scope check still applies. Continuing.');
@@ -92,7 +102,8 @@ export async function checkLifecycleScope(service, record, action) {
   const { result } = review;
   if (result.within_plan && !result.question.trim()) {
     retainScope(service, record, input, review);
-    saveLifecycle(service, record, { approvedAssignments: [...new Set([...(record.approvedAssignments || []), binding])] });
+    retainAssignmentScope(service, record, action, review.receipt);
+    saveLifecycle(service, record);
     return true;
   }
   if (!result.question.trim().endsWith('?')) {
@@ -106,4 +117,3 @@ export async function checkLifecycleScope(service, record, action) {
   });
   return false;
 }
-
