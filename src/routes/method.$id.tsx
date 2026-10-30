@@ -4,7 +4,7 @@ import { UserErrorComponent } from '~/components/UserError';
 import { ModuleList } from '~/components/ModuleList';
 import { AddModule } from '~/components/AddModule';
 import { Method } from '~/types/Method';
-import { getMethodByIdServerFn } from '~/services/methodService.server';
+import { getMethodByIdServerFn } from '~/services/methodService';
 import { useState, useEffect } from 'react';
 import { useNavigationStore } from '~/state/NavigationStore';
 

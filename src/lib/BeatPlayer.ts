@@ -65,12 +65,7 @@ class BeatPlayer extends EventEmitter {
     const nextNote = this.allNotes[this.noteIndex];
     if (!nextNote) throw new Error('No more notes to play.');
     const loopLengthMsec = this.beat!.getLoopLengthMsec(this.tempoService.bpm);
-    this.nextNoteStartMsec = nextScheduleTimeMsec(
-      nextNote,
-      this.tempoService.bpm,
-      loopLengthMsec,
-      this.numLoops
-    );
+    this.nextNoteStartMsec = nextScheduleTimeMsec(nextNote, this.tempoService.bpm, loopLengthMsec, this.numLoops);
   }
 
   private handleMidiPulse = () => {

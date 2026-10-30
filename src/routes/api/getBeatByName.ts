@@ -1,29 +1,30 @@
-import { createAPIFileRoute } from '@tanstack/react-start/api';
+import { createFileRoute } from '@tanstack/react-router';
 import { beatRepository } from '~/repositories/beatRepository';
-import { json } from '@tanstack/react-start';
 
-const APIRoute = createAPIFileRoute('/api/getBeatByName')({
-  GET: async ({ request }) => {
-    try {
-      // Extract the `name` query parameter from the request URL
-      const url = new URL(request.url);
-      const name = url.searchParams.get('name');
+export const Route = createFileRoute('/api/getBeatByName')({
+  server: {
+    handlers: {
+      GET: async ({ request }) => {
+        try {
+          const url = new URL(request.url);
+          const name = url.searchParams.get('name');
 
-      if (!name) {
-        return json({ error: 'Beat name is required' }, { status: 400 });
-      }
+          if (!name) {
+            return Response.json({ error: 'Beat name is required' }, { status: 400 });
+          }
 
-      // Call the repository function to fetch the beat by name
-      const beat = await beatRepository.getBeatByName(name);
+          const beat = await beatRepository.getBeatByName(name);
 
-      if (!beat) {
-        return json({ error: `Beat with name "${name}" not found` }, { status: 404 });
-      }
+          if (!beat) {
+            return Response.json({ error: `Beat with name "${name}" not found` }, { status: 404 });
+          }
 
-      return json({ beat }, { status: 200 });
-    } catch (error) {
-      console.error('Error fetching beat by name:', error);
-      return json({ error: 'Failed to fetch beat' }, { status: 500 });
-    }
+          return Response.json({ beat }, { status: 200 });
+        } catch (error) {
+          console.error('Error fetching beat by name:', error);
+          return Response.json({ error: 'Failed to fetch beat' }, { status: 500 });
+        }
+      },
+    },
   },
 });

@@ -27,7 +27,14 @@ function voiceKeysFromEighth(beats: string[]): string[] {
   return keys.length ? keys : ['rest'];
 }
 
-function appendNoteLine(result: string[], ctx: NoteWriteContext, duration: number, keys: string[], subdivisions: number, subIndex: number) {
+function appendNoteLine(
+  result: string[],
+  ctx: NoteWriteContext,
+  duration: number,
+  keys: string[],
+  subdivisions: number,
+  subIndex: number
+) {
   result.push(
     `note,${ctx.noteIndex++},${duration},[${keys.join(', ')}],${ctx.barNum},${ctx.beatNumber},${ctx.divisionNumber},${subIndex},${subdivisions}`
   );

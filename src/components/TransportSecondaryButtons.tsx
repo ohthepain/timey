@@ -1,7 +1,7 @@
 import { BeatRecorder } from '~/lib/BeatRecorder';
 import { privatePractice } from '~/state/privatePractice';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
+import { deletePerformancesByBeatIdAndUserId } from '~/services/performanceService';
 import { openReplayCsvPicker } from '~/lib/transportRecording';
 
 type TransportSecondaryButtonsProps = {

@@ -1,7 +1,7 @@
 import { Method } from '~/types/Method';
 import { Link } from '@tanstack/react-router';
 import { useRouter } from '@tanstack/react-router';
-import { deleteModuleServerFn } from '~/services/moduleService.server';
+import { deleteModuleServerFn } from '~/services/moduleService';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { confirmContentDeletion } from './deleteContent';
 

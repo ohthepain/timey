@@ -58,3 +58,17 @@ function matchingReview(run, queue, worker) {
   const actual = { basis: run.checkpoint.basis, thread: run.workerThreadId, turn: run.workerTurnId };
   return run.status === 'blocked' && JSON.stringify(actual) === JSON.stringify(expected);
 }
+
+export async function readOnlyReviewTurn(service, run, threadId, prompt, schema) {
+  const text = await service.codex.turn(threadId, service.root, prompt, schema);
+  try {
+    JSON.parse(text);
+  } catch (error) {
+    service.store.update(run, {
+      rejectedReviewResult: text,
+      summary: 'The review returned invalid JSON. Its output is retained for manual attention.',
+    });
+    throw Error('Invalid review result. Review the retained output and retry manually. ' + error.message);
+  }
+  return text;
+}

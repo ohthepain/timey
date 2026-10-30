@@ -1,12 +1,7 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
-  "entry": ["src/routes/**/*.{ts,tsx}", "src/client.tsx", "src/ssr.tsx", "src/api.ts", "src/global-middleware.ts"],
-  "ignorePatterns": [
-    ".vinxi/**",
-    ".output/**",
-    "src/routeTree.gen.ts",
-    "app.config.timestamp_*.js"
-  ],
+  "entry": ["src/routes/**/*.{ts,tsx}", "src/router.tsx", "src/start.ts"],
+  "ignorePatterns": [".output/**", "src/routeTree.gen.ts"],
   "audit": {
     "gate": "new-only"
   },

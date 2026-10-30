@@ -145,7 +145,10 @@ test('Stop interrupts only coordination, blocks next operations, and Continue us
   await assert.rejects(f.owner.turn(f.run, 'No implicit resume'), /paused/);
   f.service.lifecycleTasks.clear();
   await f.owner.continue();
-  assert.ok(f.calls.some((call) => call[0] === 'continue' && call[1] === 'one'));
+  assert.equal(
+    f.calls.some((call) => call[0] === 'pause' || call[0] === 'continue'),
+    false
+  );
 });
 test('Send waits for the next response, Steer requires the exact current turn, and messages confer no authority', async (t) => {
   const f = fixture(t);
@@ -525,4 +528,25 @@ test('a new read-only chat reattaches on its owning connection without resuming 
     /no rollout/
   );
   assert.equal(resumes, 1, 'A different connection must still establish read-only permissions.');
+});
+
+test('malformed coordinator JSON receives one same-chat format correction without another review', async (t) => {
+  const f = fixture(t);
+  let calls = 0;
+  f.connection.turn = async (id, _root, prompt) => {
+    assert.equal(id, 'native-1');
+    if (++calls === 1) return '{malformed';
+    assert.match(prompt, /Do not repeat investigation/);
+    return JSON.stringify({ summary: 'Retained finding', working_notes: [] });
+  };
+  const schema = {
+    type: 'object',
+    properties: { summary: { type: 'string' } },
+    required: ['summary'],
+    additionalProperties: false,
+  };
+  assert.deepEqual(JSON.parse(await f.owner.turn(f.run, 'Review', schema)), { summary: 'Retained finding' });
+  assert.equal(calls, 2);
+  assert.equal(f.run.rejectedCoordinatorResult, '{malformed');
+  assert.equal(f.owner.view().paused, false);
 });

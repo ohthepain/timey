@@ -1,29 +1,17 @@
 import { assemblyBlockReason } from './assembly-recovery.mjs';
-import { recoverPendingIntegration } from './integration-recovery.mjs';
-import { planAuthorization } from '../factory-authorization.mjs';
-import { stopLifecycle, recoverReviewFailure } from './lifecycle-stop.mjs';
+import { stopLifecycle } from './lifecycle-stop.mjs';
 import { saveLifecycle, lifecycleEvent } from './lifecycle-store.mjs';
-import { lifecycleReview } from './lifecycle-review.mjs';
-import { blockedHumanInput } from './lifecycle-human.mjs';
 import { requireThat } from './common.mjs';
 
-const continuationSchema = {
-  type: 'object',
-  properties: {
-    can_continue: { type: 'boolean' },
-    summary: { type: 'string' },
-    instruction: { type: 'string' },
-    question: { type: 'string' },
-  },
-  required: ['can_continue', 'summary', 'instruction', 'question'],
-  additionalProperties: false,
-};
 export async function waitLifecycleWork(service, record, queue) {
   const active = service.store.runs.findLast(
     (r) => belongsToLifecycle(record, queue, r) && service.store.connected.has(r.id)
   );
   if (active) {
-    saveLifecycle(service, record, { childRunId: active.id, summary: active.summary });
+    saveLifecycle(service, record, {
+      childRunId: active.id,
+      summary: active.summary,
+    });
     const run = await waitForChild(service, record, active.id);
     if (run.status !== 'completed') await handleLifecycleFailure(service, record, run);
     return true;
@@ -35,35 +23,12 @@ export async function waitLifecycleWork(service, record, queue) {
   return reconnectLifecycleWork(service, record, interrupted);
 }
 async function reconnectLifecycleWork(service, record, interrupted) {
-  if (['evaluation', 'coordinator'].includes(interrupted.kind)) {
-    service.store.update(interrupted, {
-      status: 'blocked',
-      summary: 'The read-only review lost its connection. Saved findings are retained; checking current inputs again.',
-    });
-    record.input = null;
-    if (!recoverReviewFailure(service, record, interrupted))
-      stopLifecycle(service, record, 'The interrupted review could not recover with unchanged inputs.');
-    return record.status !== 'running';
-  }
-  if (['worker', 'integration'].includes(interrupted.kind) && interrupted.threadId) {
-    await service.resume(
-      interrupted.id,
-      'Recover the latest result in this same chat. Continue unfinished work within the original assignment and approved plan; do not repeat completed work.',
-      planAuthorization(record, 'resume')
-    );
-    saveLifecycle(service, record, { childRunId: interrupted.id, summary: 'Reconnected to the existing work.' });
-    return true;
-  }
-  saveLifecycle(service, record, {
-    childRunId: interrupted.id,
-    status: 'waiting',
-    summary: 'The connection to the saved review was interrupted. Its findings are kept.',
-    input: {
-      type: 'retry',
-      runId: interrupted.id,
-      question: 'Retry will reconnect the saved review rather than launch another worker.',
-    },
-  });
+  service.store.update(interrupted, { status: 'blocked' });
+  stopLifecycle(
+    service,
+    record,
+    `Work was interrupted. Review the saved result and retry the operation manually. ${interrupted.summary || ''}`
+  );
   return true;
 }
 function belongsToLifecycle(record, queue, run) {
@@ -73,61 +38,8 @@ function belongsToLifecycle(record, queue, run) {
   );
 }
 export async function handleLifecycleFailure(service, record, run) {
-  if (run.recovery?.code === 'WORKFLOW_INPUT_CHANGED' && run.recovery.owner === 'coordinator') {
-    if (recoverReviewFailure(service, record, run)) return true;
-    stopLifecycle(service, record, run.summary);
-    return false;
-  }
-  if (run.kind === 'completion-review' || run.completionError) {
-    stopLifecycle(service, record, run.summary);
-    return false;
-  }
-  if (run.kind === 'assembly') {
-    stopLifecycle(service, record, assemblyBlockReason(run.summary));
-    return false;
-  }
-  if (run.kind === 'integration') {
-    const result = await recoverPendingIntegration(service, record);
-    if (result) return result === 'recovered';
-  }
-  if (run.verification?.status === 'failed') {
-    stopLifecycle(
-      service,
-      record,
-      'Implementation finished. Verification needs attention; use the retry controls in Verify.'
-    );
-    return false;
-  }
-  if (blockedHumanInput(service, record)) return false;
-  const eligible = canContinueFailedWork(record, run);
-  if (eligible) return continueFailedWork(service, record, run);
-  if (recoverReviewFailure(service, record, run)) return true;
-  stopLifecycle(service, record, run.summary);
-  return false;
-}
-async function continueFailedWork(service, record, run) {
-  const { result } = await lifecycleReview(
-    service,
-    record,
-    `An existing assignment stopped: ${JSON.stringify(stoppedResult(run))}. Can the SAME worker continue to fix a technical problem using only the approved plan and existing permissions? If yes give a bounded correction instruction. Do not ask the user to run technical tests, read internal files, or do routine bookkeeping. If actual human information, permission or decision is missing, ask exactly for it in plain language. A failed check is never a pass.`,
-    continuationSchema
-  );
-  if (result.can_continue && result.instruction.trim()) {
-    record.retriedRuns.push(run.id);
-    await service.resume(run.id, result.instruction, planAuthorization(record, 'resume'));
-    saveLifecycle(service, record, { childRunId: run.id, summary: result.summary });
-    return true;
-  }
-  if (!hasQuestion(result)) {
-    stopLifecycle(service, record, result.summary);
-    return false;
-  }
-  saveLifecycle(service, record, {
-    status: 'waiting',
-    childRunId: run.id,
-    summary: result.summary,
-    input: { type: 'worker', runId: run.id, question: result.question },
-  });
+  const summary = run.kind === 'assembly' ? assemblyBlockReason(run.summary) : run.summary;
+  stopLifecycle(service, record, summary || 'The operation failed. Review its saved output and retry manually.');
   return false;
 }
 
@@ -137,18 +49,9 @@ export async function waitForChild(service, record, id) {
   }
   const run = service.store.runs.find((r) => r.id === id);
   requireThat(run, 'The saved activity record is missing. No replacement work was started.');
-  lifecycleEvent(service, record, run.summary, { runId: run.id, result: run.status });
+  lifecycleEvent(service, record, record.status === 'running' ? run.summary : record.summary, {
+    runId: run.id,
+    result: run.status,
+  });
   return run;
-}
-
-function stoppedResult(run) {
-  return run.result || { summary: run.summary };
-}
-
-function canContinueFailedWork(record, run) {
-  return ['worker', 'integration'].includes(run.kind) && !!run.threadId && !record.retriedRuns.includes(run.id);
-}
-
-function hasQuestion(result) {
-  return result.question.trim().endsWith('?');
 }

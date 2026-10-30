@@ -16,7 +16,11 @@ export const Route = createFileRoute('/users/$userId')({
 
 function UserComponent() {
   const params = Route.useParams();
-  const { data: user, loading, error } = useLoadedResource(
+  const {
+    data: user,
+    loading,
+    error,
+  } = useLoadedResource(
     () => axios.get<User>(DEPLOY_URL + '/api/users/' + params.userId).then((response) => response.data),
     params.userId
   );

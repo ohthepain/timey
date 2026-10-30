@@ -41,7 +41,7 @@ export default async function refreshStateChecks(page) {
   if (error) throw Error('Fixture render failed: ' + error);
   const log = page.getByRole('log', { name: 'Issue conversation', exact: true });
   await log.getByText(conversation.messages[0].body, { exact: true }).waitFor();
-  const ordinary = page.locator('#resume-refresh-worker');
+  const ordinary = page.locator('#strategy-instruction');
   const ancestors = ordinary.locator('xpath=ancestor::details');
   for (const ancestor of await ancestors.all()) {
     if (!(await ancestor.evaluate((element) => element.open))) await ancestor.locator(':scope > summary').click();
@@ -151,6 +151,9 @@ export default async function refreshStateChecks(page) {
     throw Error('Refreshing lost selected conversation text');
   await page.evaluate(() => window.getSelection().removeAllRanges());
   const details = page.locator('.issue-step[data-stage-state="qa"]');
+  for (const ancestor of await details.locator('xpath=ancestor::details').all()) {
+    if (!(await ancestor.evaluate((element) => element.open))) await ancestor.locator(':scope > summary').click();
+  }
   {
     const summary = details.locator(':scope > summary');
     if (!(await details.evaluate((element) => element.open))) await summary.click();

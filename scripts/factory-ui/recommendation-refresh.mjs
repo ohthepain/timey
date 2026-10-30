@@ -1,3 +1,4 @@
+import { checkLifecycleScope } from './lifecycle-review.mjs';
 import { approvedPlan } from '../issue-delivery-policy.mjs';
 import { planAuthorization } from '../factory-authorization.mjs';
 import { launchProblem, readQueue } from './data.mjs';
@@ -18,10 +19,10 @@ export function recommendationRefresh(queue, issue, action) {
     actionId: action.id,
     title: 'Refresh the unfinished task',
     summary:
-      'Review current inputs under the approved plan and replace the unused stale recommendation. Completed work is preserved.',
+      'Review current inputs under the approved plan and refresh the same unstarted assignment. Completed work is preserved.',
   };
 }
-export function refreshRecommendation(service, issueId, actionId) {
+export async function refreshRecommendation(service, issueId, actionId) {
   service.ownServer();
   const queue = readQueue(service.root),
     issue = queue.issues.find((i) => i.id === issueId),
@@ -33,21 +34,17 @@ export function refreshRecommendation(service, issueId, actionId) {
   );
   const plan = approvedPlan(service.root, issueId);
   requireThat(record?.approval?.sha256 === plan.sha256, 'Continue under the current approved plan.');
-  service.api.record(action.id, {
-    status: 'cancelled',
-    expected_recommendation: digest(JSON.stringify(action)),
-    evidence:
-      'Unused stale recommendation retired for fresh planning under approved plan ' +
-      plan.sha256 +
-      '. Original scope, base and history are retained.',
-    summary: 'Superseded unused recommendation; replan only unfinished work.',
-    authorization: planAuthorization(record, 'refresh-recommendation'),
-  });
-  saveLifecycle(service, record, { replan: true });
+  if (!(await checkLifecycleScope(service, record, action))) return {};
+  service.api.refreshRecommendation(
+    action.id,
+    digest(JSON.stringify(action)),
+    planAuthorization(record, 'refresh-recommendation')
+  );
+  saveLifecycle(service, record, { replan: false });
   lifecycleEvent(
     service,
     record,
-    'Retired an unused stale recommendation. Reviewing the unfinished work under your approved plan.'
+    'Refreshed the existing assignment under your approved plan. Continuing without replanning.'
   );
   return {};
 }

@@ -1,17 +1,19 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vite-plus/test';
 const mocks = vi.hoisted(() => ({ domain: vi.fn(), create: vi.fn(), update: vi.fn() }));
 vi.mock('~/server/domain-session', () => ({ requireDomainUser: mocks.domain }));
 vi.mock('~/repositories/beatRepository', () => ({
   beatRepository: { createBeat: mocks.create, updateBeat: mocks.update },
 }));
-vi.mock('@tanstack/react-start/api', () => ({ createAPIFileRoute: () => (methods: unknown) => ({ methods }) }));
-vi.mock('@tanstack/react-start', () => ({ json: (body: unknown, init?: ResponseInit) => Response.json(body, init) }));
-import { APIRoute } from './beats';
+import { Route } from './beats';
 const input = { name: 'Beat', moduleId: 'destination', index: 0, beatString: 'note,0,8,[g/4],0,0,0,0,1' };
+const putBeat = (
+  Route.options.server!.handlers as unknown as {
+    PUT: (ctx: { request: Request }) => Promise<Response>;
+  }
+).PUT;
 async function put(data: unknown) {
-  return APIRoute.methods.PUT!({
+  return putBeat({
     request: new Request('http://localhost/api/beats', { method: 'PUT', body: JSON.stringify(data) }),
-    params: {},
   });
 }
 beforeEach(() => {

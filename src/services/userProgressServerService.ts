@@ -13,7 +13,7 @@ export interface BeatProgressView {
 
 const beatArgs = z.strictObject({ beatId: z.string() });
 
-export const startBeatServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const startBeatServerFn = createServerFn({ method: 'POST' })
   .validator(beatArgs)
   .handler(async (ctx) => {
     const { userId } = await requirePracticeUser();
@@ -26,7 +26,7 @@ export const startBeatServerFn = createServerFn({ method: 'POST', response: 'dat
 
 const passBeatTempoArgs = z.strictObject({ beatId: z.string(), tempo: z.number().int().positive() });
 
-export const passBeatTempoServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const passBeatTempoServerFn = createServerFn({ method: 'POST' })
   .validator(passBeatTempoArgs)
   .handler(async (ctx) => {
     const { userId } = await requirePracticeUser();
@@ -35,7 +35,7 @@ export const passBeatTempoServerFn = createServerFn({ method: 'POST', response: 
 
 const moduleArgs = z.strictObject({ id: z.string() });
 
-export const getBeatProgressForModuleServerFn = createServerFn({ method: 'GET', response: 'data' })
+export const getBeatProgressForModuleServerFn = createServerFn({ method: 'GET' })
   .validator(moduleArgs)
   .handler(async (ctx): Promise<BeatProgressView[]> => {
     const { userId } = await requirePracticeUser();

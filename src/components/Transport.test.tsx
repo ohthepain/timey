@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Transport } from './Transport';
 import { TempoService } from '~/lib/TempoService';
 import { BeatRecorder } from '~/lib/BeatRecorder';
@@ -20,7 +20,7 @@ vi.mock('~/lib/MidiService', async () => {
 });
 vi.mock('./Metronome', () => ({ Metronome: () => null }));
 vi.mock('./TempoInput', () => ({ TempoInput: () => null }));
-vi.mock('~/services/performanceService.server', () => ({
+vi.mock('~/services/performanceService', () => ({
   savePerformanceServerFn: vi.fn(),
   deletePerformancesByBeatIdAndUserId: vi.fn(),
 }));

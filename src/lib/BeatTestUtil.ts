@@ -28,4 +28,3 @@ export function checkBeatNoteFeedback(
   ];
   return { success: errors.length === 0, errors };
 }
-

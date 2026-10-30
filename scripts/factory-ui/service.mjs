@@ -1,3 +1,6 @@
+import { startIssueStrategy, stopIssueStrategy, strategyView } from './issue-strategy.mjs';
+import { readOnlyReviewTurn } from './review-recovery.mjs';
+import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
 import { createCoordinator } from './coordinator.mjs';
 import { progressBasis } from './next-action.mjs';
@@ -7,6 +10,8 @@ import { checkHandoff } from './handoff-checks.mjs';
 import { createCaptures } from './issue-capture.mjs';
 import { stageWorkerArtifacts } from './evidence-staging.mjs';
 import { pinWorkerTurn } from './worker-turn.mjs';
+import { recoverWorkerText, readWorkerResult } from './worker-result-recovery.mjs';
+import { eligibleContinuations } from './planning-revalidation.mjs';
 import { issueWorkChat } from './issue-work-chat.mjs';
 import { beginCompletionReview } from './completion-review.mjs';
 import { requestPublication } from './pr-publication.mjs';
@@ -162,6 +167,7 @@ export class FactoryUI {
     const humanInputView = queueHumanInput(queue, { ...issue, issueDelivery });
     return {
       ...issue,
+      strategy: strategyView(this, issue),
       humanInputView,
       readiness,
       verificationRecovery: verificationView(this, queue, issue),
@@ -242,6 +248,12 @@ export class FactoryUI {
     requireThat(issue, 'The saved issue no longer exists.');
     return this.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
   }
+  stopIssueStrategy(input) {
+    return stopIssueStrategy(this, input);
+  }
+  startIssueStrategy(input) {
+    return startIssueStrategy(this, input);
+  }
   startLifecycle(input) {
     return startLifecycle(this, input);
   }
@@ -290,6 +302,10 @@ export class FactoryUI {
     };
   }
   validateOperation(queue, action, kind) {
+    requireThat(
+      !action.issues.some((id) => this.lifecycleRuns[id]?.work),
+      'This issue uses strategy execution. Its old role assignments are history; use the strategy controls.'
+    );
     if (kind === 'launch') requireThat(!describeLaunch(queue, action), describeLaunch(queue, action));
     else {
       requireThat(
@@ -420,20 +436,28 @@ export class FactoryUI {
   }
   async runTurn(run, prompt) {
     this.store.update(run, { status: 'running', summary: 'Codex is working. Permission requests will appear here.' });
-    const text = await this.codex.turn(
-      run.threadId,
-      run.checkout,
-      conversationPrompt(this, run, prompt),
-      workerResultSchema,
-      [],
-      run.issueId ? newChatModelSettings(this.root, run.issueId) : null
-    );
-    await pinWorkerTurn(this, run, text);
-    let result = JSON.parse(text);
-    requireThat(
-      ['completed', 'blocked', 'failed'].includes(result.outcome) && typeof result.summary === 'string',
-      'Worker returned an invalid result.'
-    );
+    let recovered;
+    let text;
+    try {
+      text = await this.codex.turn(
+        run.threadId,
+        run.checkout,
+        conversationPrompt(this, run, prompt),
+        workerResultSchema,
+        [],
+        run.issueId ? newChatModelSettings(this.root, run.issueId) : null
+      );
+    } catch (error) {
+      recovered = await recoverWorkerText(this, run, error);
+      text = recovered.text;
+    }
+    let result;
+    try {
+      await pinWorkerTurn(this, run, text);
+      result = await readWorkerResult(this, run, text, recovered?.cli || this.codex);
+    } finally {
+      recovered?.cli.close();
+    }
     const { action } = currentAction(this.root, run.actionId);
     if (
       run.kind === 'worker' &&
@@ -589,6 +613,10 @@ export class FactoryUI {
       writeJson(join(this.root, '.issues/factory-integration.lock/owner.json'), { ...owner, pid: process.pid });
     }
   }
+  async reviewIssue(run, prompt, schema) {
+    const threadId = await issueWorkChat(this, run, run.issueId, this.root, 'read-only');
+    return readOnlyReviewTurn(this, run, threadId, prompt, schema);
+  }
   evaluate(basis, issueId = null, afterReview = null) {
     this.ownServer();
     const queue = readQueue(this.root);
@@ -598,8 +626,13 @@ export class FactoryUI {
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
     this.store.update(run, evaluationMetadata(queue, selected, basis));
     this.perform(run, async () => {
+      if (!issueId) {
+        const result = await selectNextIssue(this, run, queue);
+        this.store.update(run, { status: 'completed', summary: result.summary, result });
+        return;
+      }
       const result = JSON.parse(
-        await this.coordinator.turn(
+        await this.reviewIssue(
           run,
           conversationPrompt(
             this,
@@ -615,10 +648,13 @@ export class FactoryUI {
                 : null,
               lifecycle_followup: lifecycleFollowup(this, issueId)?.summary || null,
               focus_issue_ids: issueId ? [issueId] : null,
+              eligible_worker_continuations: issueId ? eligibleContinuations(this, queue, issueId) : [],
+              continuation_rule:
+                'Use only an action_id from eligible_worker_continuations. If empty, no worker exists to continue: propose a new bounded assignment when authorized, never a lifecycle or stage-skip run ID.',
             }),
             true
           ),
-          evaluationSchema
+          continuationOutputSchema(this, queue, issueId)
         )
       );
       requireThat(
@@ -626,7 +662,7 @@ export class FactoryUI {
         'Invalid queue review result.'
       );
       this.store.update(run, { status: 'completed', summary: result.summary, result });
-      if (afterReview) await afterReview(result, queue, selected);
+      if (afterReview) await afterReview(result, queue, selected, run);
     });
     return { runId: run.id };
   }
@@ -647,6 +683,12 @@ export class FactoryUI {
         'The review proposed work outside the selected issue. Review its scope before saving.'
       );
     const skipsCurrent = defersForStageSkip(queue, run, routes);
+    requireThat(
+      run.result.recommendations.every(
+        (a) => !['implement', 'integrate'].includes(a.kind) || ['automatic', 'human-first'].includes(a.merge)
+      ),
+      'Code actions need an automatic or human-first integration policy. No route or stage change was saved.'
+    );
     const actions = saveAssignments(this.api, skipsCurrent ? [] : run.result.recommendations);
     this.store.update(run, {
       savedActions: actions.map((a) => a.id),
@@ -754,4 +796,18 @@ export function visibleStoppedReason(record, progress) {
       resumeSummary: `Next: ${progress.title || 'Review the saved work'}. ${progress.summary || ''}`,
     };
   return record;
+}
+
+function continuationOutputSchema(service, queue, issueId) {
+  const ids = issueId ? eligibleContinuations(service, queue, issueId).map((a) => a.action_id) : [];
+  const continuation = ids.length
+    ? {
+        ...evaluationSchema.properties.continuation,
+        properties: {
+          ...evaluationSchema.properties.continuation.properties,
+          action_id: { type: 'string', enum: ids },
+        },
+      }
+    : { type: 'null' };
+  return { ...evaluationSchema, properties: { ...evaluationSchema.properties, continuation } };
 }

@@ -8,331 +8,482 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-// Import Routes
+import { Route as rootRouteImport } from './routes/__root';
+import { Route as IndexRouteImport } from './routes/index';
+import { Route as MethodsRouteImport } from './routes/methods';
+import { Route as RedirectRouteImport } from './routes/redirect';
+import { Route as UsersRouteRouteImport } from './routes/users.route';
+import { Route as ApiBeatsRouteImport } from './routes/api/beats';
+import { Route as ApiGetBeatByNameRouteImport } from './routes/api/getBeatByName';
+import { Route as ApiModulesRouteImport } from './routes/api/modules';
+import { Route as ApiSessionRouteImport } from './routes/api/session';
+import { Route as ApiUsersRouteImport } from './routes/api/users';
+import { Route as AuthScreenRouteImport } from './routes/auth.$screen';
+import { Route as MethodIdRouteImport } from './routes/method.$id';
+import { Route as ModuleIdRouteImport } from './routes/module.$id';
+import { Route as SequenceIndexRouteImport } from './routes/sequence.index';
+import { Route as UsersIndexRouteImport } from './routes/users.index';
+import { Route as UsersUserIdRouteImport } from './routes/users.$userId';
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$';
+import { Route as ApiBeatsIdRouteImport } from './routes/api/beats.$id';
+import { Route as ApiModulesIdRouteImport } from './routes/api/modules.$id';
+import { Route as ApiUsersIdRouteImport } from './routes/api/users.$id';
 
-import { Route as rootRoute } from './routes/__root'
-import { Route as RedirectImport } from './routes/redirect'
-import { Route as MethodsImport } from './routes/methods'
-import { Route as UsersRouteImport } from './routes/users.route'
-import { Route as IndexImport } from './routes/index'
-import { Route as UsersIndexImport } from './routes/users.index'
-import { Route as SequenceIndexImport } from './routes/sequence.index'
-import { Route as UsersUserIdImport } from './routes/users.$userId'
-import { Route as ModuleIdImport } from './routes/module.$id'
-import { Route as MethodIdImport } from './routes/method.$id'
-import { Route as AuthScreenImport } from './routes/auth.$screen'
-
-// Create/Update Routes
-
-const RedirectRoute = RedirectImport.update({
-  id: '/redirect',
-  path: '/redirect',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const MethodsRoute = MethodsImport.update({
-  id: '/methods',
-  path: '/methods',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const UsersRouteRoute = UsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const IndexRoute = IndexImport.update({
+const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const UsersIndexRoute = UsersIndexImport.update({
+  getParentRoute: () => rootRouteImport,
+} as any);
+const MethodsRoute = MethodsRouteImport.update({
+  id: '/methods',
+  path: '/methods',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const RedirectRoute = RedirectRouteImport.update({
+  id: '/redirect',
+  path: '/redirect',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const UsersRouteRoute = UsersRouteRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiBeatsRoute = ApiBeatsRouteImport.update({
+  id: '/api/beats',
+  path: '/api/beats',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiGetBeatByNameRoute = ApiGetBeatByNameRouteImport.update({
+  id: '/api/getBeatByName',
+  path: '/api/getBeatByName',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiModulesRoute = ApiModulesRouteImport.update({
+  id: '/api/modules',
+  path: '/api/modules',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiSessionRoute = ApiSessionRouteImport.update({
+  id: '/api/session',
+  path: '/api/session',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiUsersRoute = ApiUsersRouteImport.update({
+  id: '/api/users',
+  path: '/api/users',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AuthScreenRoute = AuthScreenRouteImport.update({
+  id: '/auth/$screen',
+  path: '/auth/$screen',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const MethodIdRoute = MethodIdRouteImport.update({
+  id: '/method/$id',
+  path: '/method/$id',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ModuleIdRoute = ModuleIdRouteImport.update({
+  id: '/module/$id',
+  path: '/module/$id',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const SequenceIndexRoute = SequenceIndexRouteImport.update({
+  id: '/sequence/',
+  path: '/sequence/',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const UsersIndexRoute = UsersIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => UsersRouteRoute,
-} as any)
-
-const SequenceIndexRoute = SequenceIndexImport.update({
-  id: '/sequence/',
-  path: '/sequence/',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const UsersUserIdRoute = UsersUserIdImport.update({
+} as any);
+const UsersUserIdRoute = UsersUserIdRouteImport.update({
   id: '/$userId',
   path: '/$userId',
   getParentRoute: () => UsersRouteRoute,
-} as any)
-
-const ModuleIdRoute = ModuleIdImport.update({
-  id: '/module/$id',
-  path: '/module/$id',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const MethodIdRoute = MethodIdImport.update({
-  id: '/method/$id',
-  path: '/method/$id',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const AuthScreenRoute = AuthScreenImport.update({
-  id: '/auth/$screen',
-  path: '/auth/$screen',
-  getParentRoute: () => rootRoute,
-} as any)
-
-// Populate the FileRoutesByPath interface
-
-declare module '@tanstack/react-router' {
-  interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/users': {
-      id: '/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof UsersRouteImport
-      parentRoute: typeof rootRoute
-    }
-    '/methods': {
-      id: '/methods'
-      path: '/methods'
-      fullPath: '/methods'
-      preLoaderRoute: typeof MethodsImport
-      parentRoute: typeof rootRoute
-    }
-    '/redirect': {
-      id: '/redirect'
-      path: '/redirect'
-      fullPath: '/redirect'
-      preLoaderRoute: typeof RedirectImport
-      parentRoute: typeof rootRoute
-    }
-    '/auth/$screen': {
-      id: '/auth/$screen'
-      path: '/auth/$screen'
-      fullPath: '/auth/$screen'
-      preLoaderRoute: typeof AuthScreenImport
-      parentRoute: typeof rootRoute
-    }
-    '/method/$id': {
-      id: '/method/$id'
-      path: '/method/$id'
-      fullPath: '/method/$id'
-      preLoaderRoute: typeof MethodIdImport
-      parentRoute: typeof rootRoute
-    }
-    '/module/$id': {
-      id: '/module/$id'
-      path: '/module/$id'
-      fullPath: '/module/$id'
-      preLoaderRoute: typeof ModuleIdImport
-      parentRoute: typeof rootRoute
-    }
-    '/users/$userId': {
-      id: '/users/$userId'
-      path: '/$userId'
-      fullPath: '/users/$userId'
-      preLoaderRoute: typeof UsersUserIdImport
-      parentRoute: typeof UsersRouteImport
-    }
-    '/sequence/': {
-      id: '/sequence/'
-      path: '/sequence'
-      fullPath: '/sequence'
-      preLoaderRoute: typeof SequenceIndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/users/': {
-      id: '/users/'
-      path: '/'
-      fullPath: '/users/'
-      preLoaderRoute: typeof UsersIndexImport
-      parentRoute: typeof UsersRouteImport
-    }
-  }
-}
-
-// Create and export the route tree
-
-interface UsersRouteRouteChildren {
-  UsersUserIdRoute: typeof UsersUserIdRoute
-  UsersIndexRoute: typeof UsersIndexRoute
-}
-
-const UsersRouteRouteChildren: UsersRouteRouteChildren = {
-  UsersUserIdRoute: UsersUserIdRoute,
-  UsersIndexRoute: UsersIndexRoute,
-}
-
-const UsersRouteRouteWithChildren = UsersRouteRoute._addFileChildren(
-  UsersRouteRouteChildren,
-)
+} as any);
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiBeatsIdRoute = ApiBeatsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiBeatsRoute,
+} as any);
+const ApiModulesIdRoute = ApiModulesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiModulesRoute,
+} as any);
+const ApiUsersIdRoute = ApiUsersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiUsersRoute,
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/users': typeof UsersRouteRouteWithChildren
-  '/methods': typeof MethodsRoute
-  '/redirect': typeof RedirectRoute
-  '/auth/$screen': typeof AuthScreenRoute
-  '/method/$id': typeof MethodIdRoute
-  '/module/$id': typeof ModuleIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
-  '/sequence': typeof SequenceIndexRoute
-  '/users/': typeof UsersIndexRoute
+  '/': typeof IndexRoute;
+  '/users': typeof UsersRouteRouteWithChildren;
+  '/methods': typeof MethodsRoute;
+  '/redirect': typeof RedirectRoute;
+  '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
+  '/api/modules': typeof ApiModulesRouteWithChildren;
+  '/api/session': typeof ApiSessionRoute;
+  '/api/users': typeof ApiUsersRouteWithChildren;
+  '/auth/$screen': typeof AuthScreenRoute;
+  '/method/$id': typeof MethodIdRoute;
+  '/module/$id': typeof ModuleIdRoute;
+  '/users/$userId': typeof UsersUserIdRoute;
+  '/sequence/': typeof SequenceIndexRoute;
+  '/users/': typeof UsersIndexRoute;
+  '/api/auth/$': typeof ApiAuthSplatRoute;
+  '/api/beats/$id': typeof ApiBeatsIdRoute;
+  '/api/modules/$id': typeof ApiModulesIdRoute;
+  '/api/users/$id': typeof ApiUsersIdRoute;
 }
-
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/methods': typeof MethodsRoute
-  '/redirect': typeof RedirectRoute
-  '/auth/$screen': typeof AuthScreenRoute
-  '/method/$id': typeof MethodIdRoute
-  '/module/$id': typeof ModuleIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
-  '/sequence': typeof SequenceIndexRoute
-  '/users': typeof UsersIndexRoute
+  '/': typeof IndexRoute;
+  '/methods': typeof MethodsRoute;
+  '/redirect': typeof RedirectRoute;
+  '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
+  '/api/modules': typeof ApiModulesRouteWithChildren;
+  '/api/session': typeof ApiSessionRoute;
+  '/api/users': typeof ApiUsersRouteWithChildren;
+  '/auth/$screen': typeof AuthScreenRoute;
+  '/method/$id': typeof MethodIdRoute;
+  '/module/$id': typeof ModuleIdRoute;
+  '/users/$userId': typeof UsersUserIdRoute;
+  '/sequence': typeof SequenceIndexRoute;
+  '/users': typeof UsersIndexRoute;
+  '/api/auth/$': typeof ApiAuthSplatRoute;
+  '/api/beats/$id': typeof ApiBeatsIdRoute;
+  '/api/modules/$id': typeof ApiModulesIdRoute;
+  '/api/users/$id': typeof ApiUsersIdRoute;
 }
-
 export interface FileRoutesById {
-  __root__: typeof rootRoute
-  '/': typeof IndexRoute
-  '/users': typeof UsersRouteRouteWithChildren
-  '/methods': typeof MethodsRoute
-  '/redirect': typeof RedirectRoute
-  '/auth/$screen': typeof AuthScreenRoute
-  '/method/$id': typeof MethodIdRoute
-  '/module/$id': typeof ModuleIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
-  '/sequence/': typeof SequenceIndexRoute
-  '/users/': typeof UsersIndexRoute
+  __root__: typeof rootRouteImport;
+  '/': typeof IndexRoute;
+  '/users': typeof UsersRouteRouteWithChildren;
+  '/methods': typeof MethodsRoute;
+  '/redirect': typeof RedirectRoute;
+  '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
+  '/api/modules': typeof ApiModulesRouteWithChildren;
+  '/api/session': typeof ApiSessionRoute;
+  '/api/users': typeof ApiUsersRouteWithChildren;
+  '/auth/$screen': typeof AuthScreenRoute;
+  '/method/$id': typeof MethodIdRoute;
+  '/module/$id': typeof ModuleIdRoute;
+  '/users/$userId': typeof UsersUserIdRoute;
+  '/sequence/': typeof SequenceIndexRoute;
+  '/users/': typeof UsersIndexRoute;
+  '/api/auth/$': typeof ApiAuthSplatRoute;
+  '/api/beats/$id': typeof ApiBeatsIdRoute;
+  '/api/modules/$id': typeof ApiModulesIdRoute;
+  '/api/users/$id': typeof ApiUsersIdRoute;
 }
-
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
+  fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | '/'
     | '/users'
     | '/methods'
     | '/redirect'
-    | '/auth/$screen'
-    | '/method/$id'
-    | '/module/$id'
-    | '/users/$userId'
-    | '/sequence'
-    | '/users/'
-  fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/methods'
-    | '/redirect'
-    | '/auth/$screen'
-    | '/method/$id'
-    | '/module/$id'
-    | '/users/$userId'
-    | '/sequence'
-    | '/users'
-  id:
-    | '__root__'
-    | '/'
-    | '/users'
-    | '/methods'
-    | '/redirect'
+    | '/api/beats'
+    | '/api/getBeatByName'
+    | '/api/modules'
+    | '/api/session'
+    | '/api/users'
     | '/auth/$screen'
     | '/method/$id'
     | '/module/$id'
     | '/users/$userId'
     | '/sequence/'
     | '/users/'
-  fileRoutesById: FileRoutesById
+    | '/api/auth/$'
+    | '/api/beats/$id'
+    | '/api/modules/$id'
+    | '/api/users/$id';
+  fileRoutesByTo: FileRoutesByTo;
+  to:
+    | '/'
+    | '/methods'
+    | '/redirect'
+    | '/api/beats'
+    | '/api/getBeatByName'
+    | '/api/modules'
+    | '/api/session'
+    | '/api/users'
+    | '/auth/$screen'
+    | '/method/$id'
+    | '/module/$id'
+    | '/users/$userId'
+    | '/sequence'
+    | '/users'
+    | '/api/auth/$'
+    | '/api/beats/$id'
+    | '/api/modules/$id'
+    | '/api/users/$id';
+  id:
+    | '__root__'
+    | '/'
+    | '/users'
+    | '/methods'
+    | '/redirect'
+    | '/api/beats'
+    | '/api/getBeatByName'
+    | '/api/modules'
+    | '/api/session'
+    | '/api/users'
+    | '/auth/$screen'
+    | '/method/$id'
+    | '/module/$id'
+    | '/users/$userId'
+    | '/sequence/'
+    | '/users/'
+    | '/api/auth/$'
+    | '/api/beats/$id'
+    | '/api/modules/$id'
+    | '/api/users/$id';
+  fileRoutesById: FileRoutesById;
+}
+export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute;
+  UsersRouteRoute: typeof UsersRouteRouteWithChildren;
+  MethodsRoute: typeof MethodsRoute;
+  RedirectRoute: typeof RedirectRoute;
+  ApiBeatsRoute: typeof ApiBeatsRouteWithChildren;
+  ApiGetBeatByNameRoute: typeof ApiGetBeatByNameRoute;
+  ApiModulesRoute: typeof ApiModulesRouteWithChildren;
+  ApiSessionRoute: typeof ApiSessionRoute;
+  ApiUsersRoute: typeof ApiUsersRouteWithChildren;
+  AuthScreenRoute: typeof AuthScreenRoute;
+  MethodIdRoute: typeof MethodIdRoute;
+  ModuleIdRoute: typeof ModuleIdRoute;
+  SequenceIndexRoute: typeof SequenceIndexRoute;
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute;
 }
 
-export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  UsersRouteRoute: typeof UsersRouteRouteWithChildren
-  MethodsRoute: typeof MethodsRoute
-  RedirectRoute: typeof RedirectRoute
-  AuthScreenRoute: typeof AuthScreenRoute
-  MethodIdRoute: typeof MethodIdRoute
-  ModuleIdRoute: typeof ModuleIdRoute
-  SequenceIndexRoute: typeof SequenceIndexRoute
+declare module '@tanstack/react-router' {
+  interface FileRoutesByPath {
+    '/': {
+      id: '/';
+      path: '/';
+      fullPath: '/';
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/methods': {
+      id: '/methods';
+      path: '/methods';
+      fullPath: '/methods';
+      preLoaderRoute: typeof MethodsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/redirect': {
+      id: '/redirect';
+      path: '/redirect';
+      fullPath: '/redirect';
+      preLoaderRoute: typeof RedirectRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/users': {
+      id: '/users';
+      path: '/users';
+      fullPath: '/users';
+      preLoaderRoute: typeof UsersRouteRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/beats': {
+      id: '/api/beats';
+      path: '/api/beats';
+      fullPath: '/api/beats';
+      preLoaderRoute: typeof ApiBeatsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/getBeatByName': {
+      id: '/api/getBeatByName';
+      path: '/api/getBeatByName';
+      fullPath: '/api/getBeatByName';
+      preLoaderRoute: typeof ApiGetBeatByNameRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/modules': {
+      id: '/api/modules';
+      path: '/api/modules';
+      fullPath: '/api/modules';
+      preLoaderRoute: typeof ApiModulesRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/session': {
+      id: '/api/session';
+      path: '/api/session';
+      fullPath: '/api/session';
+      preLoaderRoute: typeof ApiSessionRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/users': {
+      id: '/api/users';
+      path: '/api/users';
+      fullPath: '/api/users';
+      preLoaderRoute: typeof ApiUsersRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/auth/$screen': {
+      id: '/auth/$screen';
+      path: '/auth/$screen';
+      fullPath: '/auth/$screen';
+      preLoaderRoute: typeof AuthScreenRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/method/$id': {
+      id: '/method/$id';
+      path: '/method/$id';
+      fullPath: '/method/$id';
+      preLoaderRoute: typeof MethodIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/module/$id': {
+      id: '/module/$id';
+      path: '/module/$id';
+      fullPath: '/module/$id';
+      preLoaderRoute: typeof ModuleIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/sequence/': {
+      id: '/sequence/';
+      path: '/sequence';
+      fullPath: '/sequence/';
+      preLoaderRoute: typeof SequenceIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/users/': {
+      id: '/users/';
+      path: '/';
+      fullPath: '/users/';
+      preLoaderRoute: typeof UsersIndexRouteImport;
+      parentRoute: typeof UsersRouteRoute;
+    };
+    '/users/$userId': {
+      id: '/users/$userId';
+      path: '/$userId';
+      fullPath: '/users/$userId';
+      preLoaderRoute: typeof UsersUserIdRouteImport;
+      parentRoute: typeof UsersRouteRoute;
+    };
+    '/api/auth/$': {
+      id: '/api/auth/$';
+      path: '/api/auth/$';
+      fullPath: '/api/auth/$';
+      preLoaderRoute: typeof ApiAuthSplatRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/beats/$id': {
+      id: '/api/beats/$id';
+      path: '/$id';
+      fullPath: '/api/beats/$id';
+      preLoaderRoute: typeof ApiBeatsIdRouteImport;
+      parentRoute: typeof ApiBeatsRoute;
+    };
+    '/api/modules/$id': {
+      id: '/api/modules/$id';
+      path: '/$id';
+      fullPath: '/api/modules/$id';
+      preLoaderRoute: typeof ApiModulesIdRouteImport;
+      parentRoute: typeof ApiModulesRoute;
+    };
+    '/api/users/$id': {
+      id: '/api/users/$id';
+      path: '/$id';
+      fullPath: '/api/users/$id';
+      preLoaderRoute: typeof ApiUsersIdRouteImport;
+      parentRoute: typeof ApiUsersRoute;
+    };
+  }
 }
+
+interface UsersRouteRouteChildren {
+  UsersUserIdRoute: typeof UsersUserIdRoute;
+  UsersIndexRoute: typeof UsersIndexRoute;
+}
+
+const UsersRouteRouteChildren: UsersRouteRouteChildren = {
+  UsersUserIdRoute: UsersUserIdRoute,
+  UsersIndexRoute: UsersIndexRoute,
+};
+
+const UsersRouteRouteWithChildren = UsersRouteRoute._addFileChildren(
+  UsersRouteRouteChildren,
+);
+
+interface ApiBeatsRouteChildren {
+  ApiBeatsIdRoute: typeof ApiBeatsIdRoute;
+}
+
+const ApiBeatsRouteChildren: ApiBeatsRouteChildren = {
+  ApiBeatsIdRoute: ApiBeatsIdRoute,
+};
+
+const ApiBeatsRouteWithChildren = ApiBeatsRoute._addFileChildren(
+  ApiBeatsRouteChildren,
+);
+
+interface ApiModulesRouteChildren {
+  ApiModulesIdRoute: typeof ApiModulesIdRoute;
+}
+
+const ApiModulesRouteChildren: ApiModulesRouteChildren = {
+  ApiModulesIdRoute: ApiModulesIdRoute,
+};
+
+const ApiModulesRouteWithChildren = ApiModulesRoute._addFileChildren(
+  ApiModulesRouteChildren,
+);
+
+interface ApiUsersRouteChildren {
+  ApiUsersIdRoute: typeof ApiUsersIdRoute;
+}
+
+const ApiUsersRouteChildren: ApiUsersRouteChildren = {
+  ApiUsersIdRoute: ApiUsersIdRoute,
+};
+
+const ApiUsersRouteWithChildren = ApiUsersRoute._addFileChildren(
+  ApiUsersRouteChildren,
+);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   UsersRouteRoute: UsersRouteRouteWithChildren,
   MethodsRoute: MethodsRoute,
   RedirectRoute: RedirectRoute,
+  ApiBeatsRoute: ApiBeatsRouteWithChildren,
+  ApiGetBeatByNameRoute: ApiGetBeatByNameRoute,
+  ApiModulesRoute: ApiModulesRouteWithChildren,
+  ApiSessionRoute: ApiSessionRoute,
+  ApiUsersRoute: ApiUsersRouteWithChildren,
   AuthScreenRoute: AuthScreenRoute,
   MethodIdRoute: MethodIdRoute,
   ModuleIdRoute: ModuleIdRoute,
   SequenceIndexRoute: SequenceIndexRoute,
-}
-
-export const routeTree = rootRoute
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
+};
+export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();
 
-/* ROUTE_MANIFEST_START
-{
-  "routes": {
-    "__root__": {
-      "filePath": "__root.tsx",
-      "children": [
-        "/",
-        "/users",
-        "/methods",
-        "/redirect",
-        "/auth/$screen",
-        "/method/$id",
-        "/module/$id",
-        "/sequence/"
-      ]
-    },
-    "/": {
-      "filePath": "index.tsx"
-    },
-    "/users": {
-      "filePath": "users.route.tsx",
-      "children": [
-        "/users/$userId",
-        "/users/"
-      ]
-    },
-    "/methods": {
-      "filePath": "methods.tsx"
-    },
-    "/redirect": {
-      "filePath": "redirect.tsx"
-    },
-    "/auth/$screen": {
-      "filePath": "auth.$screen.tsx"
-    },
-    "/method/$id": {
-      "filePath": "method.$id.tsx"
-    },
-    "/module/$id": {
-      "filePath": "module.$id.tsx"
-    },
-    "/users/$userId": {
-      "filePath": "users.$userId.tsx",
-      "parent": "/users"
-    },
-    "/sequence/": {
-      "filePath": "sequence.index.tsx"
-    },
-    "/users/": {
-      "filePath": "users.index.tsx",
-      "parent": "/users"
-    }
+import type { getRouter } from './router.tsx';
+import type { startInstance } from './start.ts';
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true;
+    router: Awaited<ReturnType<typeof getRouter>>;
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>;
   }
 }
-ROUTE_MANIFEST_END */

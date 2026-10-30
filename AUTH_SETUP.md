@@ -12,7 +12,7 @@ Keep unrelated content callers on their existing authentication path until their
 
 ## Install and configure
 
-Use the Node version in `.nvmrc`, `pnpm install --frozen-lockfile`, then `pnpm exec prisma generate`.
+Use the Node version in `.nvmrc` and `pnpm install --frozen-lockfile`.
 Application and auth now use Zod 4.6.7 under the explicit follow-up approval.
 The auth workspace retains the server runtime boundary. Older framework packages
 keep their own required Zod 3 dependencies; these are separate, unresolved audit findings.
@@ -24,8 +24,9 @@ local environment file. None are `VITE_` variables:
 
 - `AUTH_DATABASE_URL`: PostgreSQL auth owner connection. Owns only `auth` and
   `auth_migrations`, including their tables and migration history.
-- `DATABASE_URL`: existing Prisma domain connection, explicitly selecting
-  `?schema=domain` in a fresh setup. Its distinct owner owns only the domain schema.
+- `DATABASE_URL`: Drizzle domain connection, explicitly selecting `?schema=domain`
+  in a fresh setup. Its distinct owner owns only the domain schema and
+  `domain_migrations` history.
   Preserve the existing schema selection on an existing installation; moving it
   is a separate operation, not part of this foundation.
 - `BETTER_AUTH_URL`: public application origin, HTTPS except for loopback development.
@@ -50,8 +51,9 @@ verified target, connect as the auth migration owner and run:
 
 ```sh
 psql "$AUTH_DATABASE_URL" -v ON_ERROR_STOP=1 -f auth/schemas.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f domain/schemas.sql
 pnpm run auth:migrate
-pnpm exec prisma migrate deploy
+pnpm run domain:migrate
 ```
 
 `auth/schemas.sql` creates only the two auth-owned schemas under the connected owner;
@@ -59,14 +61,15 @@ it grants no roles. The domain owner must have no rights to alter/drop auth obje
 and the auth owner must have no rights to alter/drop domain objects. The fixture
 checks these denials. Use separately scoped runtime credentials when deploying;
 this work provisions no real roles, databases, AWS resources or external mail.
-Never run Prisma reset or Drizzle push against an existing installation as setup.
+Never run Drizzle push against an existing installation as setup.
 
 To append an auth schema change, edit `auth/schema.ts`, run `pnpm run auth:generate`,
 review the generated SQL/snapshot and check them in together. `auth/drizzle.config.ts`
 limits generation to auth and stores history in `auth_migrations.__drizzle_migrations`.
-Prisma owns its existing domain migrations and `_prisma_migrations`. Keep the auth
-history continuous when domain storage later joins Drizzle. Do not copy the old
-disposable experiment's history or dependency-probe table into this new foundation.
+Domain schema changes live in `domain/schema.ts`. Run `pnpm run domain:generate`,
+review the SQL, and check it in with `pnpm run domain:migrate`. History is stored
+in `domain_migrations.__drizzle_migrations`. Keep auth history continuous. Do not
+copy the old disposable experiment's history or dependency-probe table into this foundation.
 
 ## Request and session boundary
 
@@ -102,7 +105,7 @@ identity and replaced when the account changes. A failed persistence operation
 leaves local practice available and provides a sign-in/retry message.
 
 Performance replacement retains one saved recording per beat/user, its index and
-played-note values. Replacement and explicit recording deletion use one Prisma
+played-note values. Replacement and explicit recording deletion use one domain
 transaction, serialized with a transaction advisory lock per beat/user. Cleanup
 removes only performance-owned notes without a content beat link, retaining unrelated
 recordings and content notes. There is no historical regrading or tempo snapshot.
@@ -115,7 +118,7 @@ Request comes from the installed `getWebRequest` API. A missing, invalid, expire
 revoked session yields 401. Auth persistence is consulted on every request. Browser
 IDs, bearer tokens and email matches cannot supply identity to this path.
 
-Profile provisioning uses that trusted ID as the Prisma User primary key. Existing
+Profile provisioning uses that trusted ID as the domain `User` primary key. Existing
 domain state is retained on retry; transitional name/email copies are not identity
 authority. The legacy nullable unique Keycloak mapping exists only for callers
 awaiting cutover. Legacy email collisions fail closed rather than linking accounts;
@@ -157,7 +160,7 @@ Treat the directory as private fixture evidence. Delete it only after retaining
 needed evidence; the runner deliberately preserves it. PostgreSQL shared-memory
 creation may require command approval beyond file/network sandbox grants.
 
-The proof covers fresh/repeated migration replay and owner isolation, Prisma shadow
+The proof covers fresh/repeated migration replay and owner isolation, domain shadow
 replay preservation, real signup cookies and persisted sessions, invalid/expired/
 revoked/logout and foreign-origin rejection, persistence across an app restart,
 stable IDs, concurrent provisioning, injected database
@@ -221,7 +224,7 @@ An Admin toggle, role field, bearer token or claimed author cannot override this
 
 Method updates lock the selected row before checking its author. Module updates
 lock their selected row; module creation and explicit moves lock the destination
-method. Each permission check and dependent write shares one Prisma transaction,
+method. Each permission check and dependent write shares one domain transaction,
 so concurrent moves/ownership changes cannot pass a stale authorization check.
 Profile provisioning remains a separate recoverable boundary before that transaction.
 The existing session observer validates `/api/session`; identity changes remount
@@ -274,7 +277,7 @@ creation controls when none exist, and can refresh destinations after returning.
 Account changes unmount creation drafts and copy selections through the existing
 validated session observer. Anonymous public reading and local practice remain.
 Ordinary-author deletion has a separate proof below. Designated Admin enforcement and
-remaining Prisma replacement are deferred; this is not complete beat mutation
+remaining coordinated migration work is deferred; this is not complete beat mutation
 authorization. No existing database or volume is reset by these checks.
 
 ## Existing-beat editing verification

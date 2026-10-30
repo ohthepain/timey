@@ -124,29 +124,28 @@ def check_migrations():
             "CREATE SCHEMA auth AUTHORIZATION auth_owner;"
             "CREATE SCHEMA auth_migrations AUTHORIZATION auth_owner;"
             "CREATE SCHEMA domain AUTHORIZATION domain_owner;"
+            "CREATE SCHEMA domain_migrations AUTHORIZATION domain_owner;"
             f"GRANT CREATE ON DATABASE {database} TO auth_owner, domain_owner;", database)
         env = owner_env(database)
         run("auth-migrate-" + database, ["npm", "run", "auth:migrate"], env)
-        auth_before = snapshot("auth-before-prisma-" + database, database, "auth")
-        history_before = snapshot("history-before-prisma-" + database, database, "auth_migrations")
-        run("domain-migrate-" + database, ["npm", "exec", "--no", "--", "prisma", "migrate", "deploy"], env)
-        expect(database + " Prisma preserves auth", snapshot("auth-after-prisma-" + database, database, "auth"), auth_before)
-        expect(database + " Prisma preserves auth history", snapshot("history-after-prisma-" + database, database, "auth_migrations"), history_before)
-        before = snapshot("domain-before-drizzle-" + database, database, "domain")
-        run("auth-migrate-repeat-" + database, ["npm", "run", "auth:migrate"], env)
-        expect(database + " Drizzle preserves domain and history", snapshot("domain-after-drizzle-" + database, database, "domain"), before)
+        auth_before = snapshot("auth-before-domain-" + database, database, "auth")
+        history_before = snapshot("history-before-domain-" + database, database, "auth_migrations")
+        run("domain-migrate-" + database, ["npm", "run", "domain:migrate"], env)
+        expect(database + " domain migrate preserves auth", snapshot("auth-after-domain-" + database, database, "auth"), auth_before)
+        expect(database + " domain migrate preserves auth history", snapshot("history-after-domain-" + database, database, "auth_migrations"), history_before)
+        before = snapshot("domain-before-repeat-" + database, database, "domain")
+        run("domain-migrate-repeat-" + database, ["npm", "run", "domain:migrate"], env)
+        expect(database + " domain migrate preserves domain", snapshot("domain-after-repeat-" + database, database, "domain"), before)
     for schema in ["auth", "auth_migrations"]:
         first = snapshot("shadow-before-" + schema, "shadow", schema)
-        run("shadow-diff-" + schema, ["npm", "exec", "--no", "--", "prisma", "migrate", "diff",
-             "--from-migrations", "prisma/migrations", "--to-schema-datamodel", "prisma/schema.prisma",
-             "--shadow-database-url", owner_env("shadow")["DATABASE_URL"]], owner_env("foundation"))
-        expect("shadow preserves " + schema, snapshot("shadow-after-" + schema, "shadow", schema), first)
+        run("domain-migrate-shadow-" + schema, ["npm", "run", "domain:migrate"], owner_env("shadow"))
+        expect("domain migrate preserves " + schema, snapshot("shadow-after-" + schema, "shadow", schema), first)
     for role, schema in [("auth_owner", "domain"), ("domain_owner", "auth")]:
         run("denied-" + role, ["psql", ADMIN_URL.replace("fixture@", role + "@") + "foundation",
              "-v", "ON_ERROR_STOP=1", "-c", f'DELETE FROM {schema}."' + ("User" if schema == "domain" else "user") + '";'], expected=1)
     for query, label in [
         ('SELECT hash,name,created_at FROM auth_migrations.__drizzle_migrations ORDER BY id', "auth-history"),
-        ('SELECT migration_name,checksum FROM domain._prisma_migrations ORDER BY migration_name', "domain-history"),
+        ('SELECT hash,created_at FROM domain_migrations.__drizzle_migrations ORDER BY id', "domain-history"),
     ]:
         expect("fresh replay " + label, sql("replay-" + label, query, "replay"), sql("initial-" + label, query))
 
@@ -180,14 +179,14 @@ def check_http():
     expect("repeat identity", http("GET", "/api/session", cookie)[1]["userId"], user_id)
     expect("domain state preserved", sql("preserved-state", 'SELECT "userName" FROM domain."User"'), "preserved-domain-state")
     expect("current module preserved", sql("preserved-module", 'SELECT "currentModuleId" FROM domain."User"'), "fixture-module")
-    auth_before = snapshot("live-auth-before-prisma", "foundation", "auth")
-    history_before = snapshot("live-history-before-prisma", "foundation", "auth_migrations")
-    run("live-prisma-replay", ["npm", "exec", "--no", "--", "prisma", "migrate", "deploy"], owner_env("foundation"))
-    expect("live auth persistence", snapshot("live-auth-after-prisma", "foundation", "auth"), auth_before)
-    expect("live auth history persistence", snapshot("live-history-after-prisma", "foundation", "auth_migrations"), history_before)
-    domain_before = snapshot("live-domain-before-drizzle", "foundation", "domain")
-    run("live-auth-replay", ["npm", "run", "auth:migrate"], owner_env("foundation"))
-    expect("live domain and history preserved", snapshot("live-domain-after-drizzle", "foundation", "domain"), domain_before)
+    auth_before = snapshot("live-auth-before-domain", "foundation", "auth")
+    history_before = snapshot("live-history-before-domain", "foundation", "auth_migrations")
+    run("live-domain-replay", ["npm", "run", "domain:migrate"], owner_env("foundation"))
+    expect("live auth persistence", snapshot("live-auth-after-domain", "foundation", "auth"), auth_before)
+    expect("live auth history persistence", snapshot("live-history-after-domain", "foundation", "auth_migrations"), history_before)
+    domain_before = snapshot("live-domain-before-repeat", "foundation", "domain")
+    run("live-domain-repeat", ["npm", "run", "domain:migrate"], owner_env("foundation"))
+    expect("live domain preserved", snapshot("live-domain-after-repeat", "foundation", "domain"), domain_before)
     expect("cookie after migration replay", http("GET", "/api/session", cookie)[1]["userId"], user_id)
     sql("expire", "UPDATE auth.session SET expires_at=now()-interval '1 day'")
     expect("expired session", http("GET", "/api/session", cookie)[0], 401)
@@ -249,12 +248,11 @@ try:
     sql("fixture-roles", "CREATE ROLE auth_owner LOGIN; CREATE ROLE domain_owner LOGIN;", "postgres")
     if any(flag in sys.argv for flag in ['--practice', '--content', '--beats', '--edit-beats', '--delete-content']):
         sql('create-practice', 'CREATE DATABASE foundation', 'postgres')
-        sql('practice-schemas', 'CREATE SCHEMA auth AUTHORIZATION auth_owner; CREATE SCHEMA auth_migrations AUTHORIZATION auth_owner; CREATE SCHEMA domain AUTHORIZATION domain_owner; GRANT CREATE ON DATABASE foundation TO auth_owner, domain_owner;')
+        sql('practice-schemas', 'CREATE SCHEMA auth AUTHORIZATION auth_owner; CREATE SCHEMA auth_migrations AUTHORIZATION auth_owner; CREATE SCHEMA domain AUTHORIZATION domain_owner; CREATE SCHEMA domain_migrations AUTHORIZATION domain_owner; GRANT CREATE ON DATABASE foundation TO auth_owner, domain_owner;')
         run('practice-auth-migrate', ['npm', 'run', 'auth:migrate'], owner_env('foundation'))
-        run('practice-domain-migrate', ['npm', 'exec', '--no', '--', 'prisma', 'migrate', 'deploy'], owner_env('foundation'))
+        run('practice-domain-migrate', ['npm', 'run', 'domain:migrate'], owner_env('foundation'))
     else:
         check_migrations()
-    run("prisma-generate", ["npm", "exec", "--no", "--", "prisma", "generate"])
     mail_log = (OUT / "smtp.log").open("w")
     mail = subprocess.Popen(["node", "scripts/auth-mail-capture.mjs", str(SMTP_PORT), str(OUT)],
                             cwd=ROOT, stdout=mail_log, stderr=subprocess.STDOUT, start_new_session=True)

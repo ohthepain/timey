@@ -43,7 +43,7 @@ def code(label, body, session='a'):
       page.on('response',response); page.on('console',log); page.on('pageerror',error);
       await page.waitForLoadState('domcontentloaded');
       await page.evaluate(async () => {
-        await import('/_build/scripts/beat-browser-client.mjs');
+        await import('/scripts/beat-browser-client.mjs');
       });
       page.setDefaultTimeout(15000);
       let value, failure;
@@ -229,7 +229,7 @@ try:
       await page.getByRole('region',{name:'New beat'}).getByPlaceholder('Enter beat name').fill('Stale draft');
       await page.getByRole('button',{name:'Copy',exact:true}).first().click();
       await page.getByLabel('Destination module').selectOption(DESTINATION);
-      await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
+      await page.evaluate(async()=>{const c=(await import('/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
       await page.getByText('Only the module author can create beats here.',{exact:true}).waitFor();
       check(await page.getByLabel('Destination module').count()===0,'old destination cleared');
       await page.getByRole('button',{name:'Copy',exact:true}).first().click();
@@ -238,7 +238,7 @@ try:
       check(await select.locator('option[value="'+DESTINATION+'"]').count()===0,'old destination unavailable');return true;
     '''.replace('MODULE',mod['id']).replace('DESTINATION',json.dumps(mod['id'])))
     code('switch-back-clears-draft', '''
-      await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contenta',password:'Content-fixture-password-123!'});});
+      await page.evaluate(async()=>{const c=(await import('/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contenta',password:'Content-fixture-password-123!'});});
       const name=page.getByRole('region',{name:'New beat'}).getByPlaceholder('Enter beat name');await name.waitFor();
       check(await name.inputValue()==='New Beat','old draft removed');return true;
     ''')

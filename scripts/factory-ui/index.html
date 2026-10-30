@@ -1426,7 +1426,7 @@
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
+        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
       let focusedStageRoute = null;
       function issueRoute() {
@@ -1516,18 +1516,18 @@
           .join('');
       }
       function queue() {
-        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">View coordinator</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Review queue with Codex</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Lifecycle</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><h2>Suggested work</h2>${
+        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><p class="muted">Work runs by issue strategy. Scheduling uses priority, then oldest eligible issue.</p><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
-            .join('') || '<p>No saved recommendations. Review the queue to suggest work.</p>'
-        }<h2>Queue reviews</h2>${
+            .join('') || '<p>No saved assignments. Choose the next issue or discuss the queue.</p>'
+        }</fieldset></details><h2>Queue selections</h2>${
           data.runs
             .filter((r) => r.kind === 'evaluation')
             .slice()
             .reverse()
-            .map((run) => progress(run))
-            .join('') || '<p>No reviews started here yet.</p>'
+            .map((run) => progress(run, false))
+            .join('') || '<p>No selections made yet.</p>'
         }`;
       }
       const priorityPending = new Set();
@@ -1559,7 +1559,7 @@
         return issues
           .map(
             (i) =>
-              `<tr style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${queueLifecycleUI.render(i, esc)}</td></tr>`
+              `<tr style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
           )
           .join('');
       }
@@ -2187,6 +2187,18 @@
         if (!recovery) return '';
         return `<section class="card"><h4>Finish the existing operation</h4><p>${fileLinkUI.html(recovery.reason)}</p><details><summary>Failure details</summary><pre class="prose">${fileLinkUI.html(recovery.detail)}</pre>${recovery.output ? `<pre class="prose">${fileLinkUI.html(recovery.output)}</pre>` : ''}${recovery.checkout ? `<p>Saved issue branch: <code>${esc(recovery.checkout)}</code></p>` : ''}${recovery.log ? `<p>Check log: ${fileLinkUI.html(recovery.log)}</p>` : ''}</details><p>Retry uses the saved work. It will not restart implementation or repeat the original merge. A changed source result still needs review.</p><button class="primary" data-assembly-retry="${esc(issue.id)}" data-retry-run="${esc(recovery.runId)}" data-retry-updated="${esc(recovery.updated)}" ${busy ? 'disabled' : ''}>Retry existing operation</button></section>`;
       }
+      function currentProgressSummary(issue, record, child, summary, input) {
+        if (input || record?.status === 'answering') return summary;
+        const coordinator = data.coordinator;
+        const queued = coordinator?.waiting?.findIndex((entry) => entry.issueId === issue.id) ?? -1;
+        if (record?.status === 'running' && queued >= 0)
+          return `Waiting for the coordinator. Queue position ${queued + 1}; another review is running.`;
+        if (child?.connected && child.summary && !/^Preparing the conversation\.?$/.test(child.summary))
+          return child.summary;
+        if (record?.status === 'running' && coordinator?.active?.issueId === issue.id)
+          return summary + ' Waiting for the review result.';
+        return summary;
+      }
       function lifecyclePanel(issue) {
         const record = issue.lifecycle;
         const stage = data.lifecycle.find((s) => s.state === issue.state);
@@ -2252,7 +2264,7 @@
         const acceptanceOnly = stage?.role === 'ready-to-close' && (!record?.canResume || issue.progress?.disabled);
         const canStart =
           !input && !record?.deliveryHandoff && !record?.deliveryWaiting && !issue.assemblyRecovery && !acceptanceOnly;
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(input || record?.status === 'answering' ? summary : child?.connected ? child.summary : summary)}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${lifecycleActivity(issue)}${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(currentProgressSummary(issue, record, child, summary, input))}</p>${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p data-progress-stop-reason>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${lifecycleHistory(record)}</ol></details>`
             : ''
@@ -2463,11 +2475,28 @@
           })
           .join('')}</section>`;
       }
+      function strategyPanel(issue) {
+        const work = issue.strategy;
+        if (!work || closedIssueState(issue.state)) return '';
+        const current = data.runs.find((run) => run.id === work.runId);
+        return `<section class="card" data-view-id="strategy-${esc(issue.id)}"><h2>Issue strategy</h2><p><b>${esc(work.status)}</b> ${fileLinkUI.html(work.summary || 'Choose a finish line and start this issue.')}</p>${/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(work.prUrl || '') ? `<p><a href="${esc(work.prUrl)}" target="_blank" rel="noreferrer">Open pull request #${esc(work.pr)}</a></p>` : ''}<label>Strategy<select id="issue-strategy" aria-label="Strategy" data-preserve-draft ${work.active ? 'disabled' : ''}><option value="full-stop" ${work.strategy === 'full-stop' ? 'selected' : ''}>Full Stop — merge-ready PR</option><option value="full-send" ${work.strategy === 'full-send' ? 'selected' : ''}>Full Send — merge after required checks</option></select></label><label>Optional Sol Loop<select id="strategy-sol" aria-label="Optional Sol Loop" data-preserve-draft ${work.active ? 'disabled' : ''}>${[
+          [0, 'Off'],
+          [1, 'One review round'],
+          [3, 'Up to three review rounds'],
+        ]
+          .map(
+            ([value, title]) =>
+              `<option value="${value}" ${work.solRounds === value ? 'selected' : ''}>${title}</option>`
+          )
+          .join(
+            ''
+          )}</select></label><p class="muted">Starting authorizes work on this issue, commits and PR publication to ${esc(work.repository || 'the configured repository')} targeting ${esc(work.target || 'the configured branch')}. Full Send also authorizes a protected merge. Deployment and human acceptance remain separate. Required checks and real permissions still apply.</p><label>Instruction or answer (optional)<textarea id="strategy-instruction" placeholder="Clarify scope or explain what changed"></textarea></label><button data-strategy-start="${esc(issue.id)}" ${work.active || work.status === 'merged' ? 'disabled' : ''}>${work.runId ? 'Continue' : 'Start'} selected strategy</button>${work.checkout && !work.active && work.status !== 'merged' ? `<button data-strategy-review="${esc(issue.id)}">Run Sol Loop on saved work</button>` : ''}${work.active ? `<button data-strategy-stop="${esc(issue.id)}" data-strategy-run="${esc(work.runId)}">Stop</button>` : ''}<p id="strategy-feedback" role="status"></p>${current ? progress(current) : ''}</section>`;
+      }
       function issue(id) {
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Answer any question above to continue. Final review has buttons to review, close or reopen the issue.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.strategy?.status || i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset disabled>${i.strategy?.runId ? '' : lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2511,7 +2540,9 @@
           if (element.dataset.viewTouched === 'true') viewMemory.expanded[element.dataset.viewKey] = element.open;
         });
         document
-          .querySelectorAll('#app textarea:not([data-temporary] *),#app input:not([data-temporary] *)')
+          .querySelectorAll(
+            '#app textarea:not([data-temporary] *),#app input:not([data-temporary] *),#app select[data-preserve-draft]'
+          )
           .forEach((field) => {
             if (field.id && !['checkbox', 'radio'].includes(field.type))
               viewMemory.fields.set(viewMemory.route + '|' + (field.dataset.draftKey || field.id), field.value);
@@ -2560,7 +2591,9 @@
           });
         });
         document
-          .querySelectorAll('#app textarea:not([data-temporary] *),#app input:not([data-temporary] *)')
+          .querySelectorAll(
+            '#app textarea:not([data-temporary] *),#app input:not([data-temporary] *),#app select[data-preserve-draft]'
+          )
           .forEach((field) => {
             const saved = viewMemory.fields.get(location.hash + '|' + (field.dataset.draftKey || field.id));
             if (saved !== undefined) field.value = saved;
@@ -2642,13 +2675,7 @@
           return;
         }
         coordinatorUI.update(data);
-        $('app').innerHTML = route.id
-          ? '<p><a href="#/coordinator">View coordinator</a></p>' +
-            (data.coordinator?.active && data.coordinator.active.issueId !== route.id
-              ? '<p>Waiting while the coordinator finishes its current operation. <a href="#/coordinator">See its activity</a>.</p>'
-              : '') +
-            issue(route.id)
-          : queue();
+        $('app').innerHTML = route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id) : queue();
         const currentIssue = data.issues.find((entry) => entry.id === route.id);
         const record = currentIssue?.lifecycle;
         const pending =
@@ -2697,6 +2724,7 @@
         if (progressRequests.get(issue.id)?.pending) return;
         progressRequests.set(issue.id, {
           pending: true,
+          previousUpdated: issue.lifecycle?.updated,
           message:
             'Sending Continue… Requesting the next unfinished task under your approved plan. Waiting for the server to acknowledge it.',
         });
@@ -2711,6 +2739,7 @@
             });
             progressRequests.set(issue.id, {
               pending: false,
+              previousUpdated: issue.lifecycle?.updated,
               message:
                 'Continue accepted by the server. Checking saved work for the next step; progress will appear below.',
             });
@@ -2731,6 +2760,26 @@
         document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
           const state = progressRequests.get(button.dataset.lifecycleStart);
           if (!state) return;
+          const issue = data.issues?.find((i) => i.id === button.dataset.lifecycleStart);
+          if (!state.pending && !state.error && issue?.lifecycle?.updated !== state.previousUpdated) {
+            progressRequests.delete(button.dataset.lifecycleStart);
+            return;
+          }
+          const panel = button.closest('.lifecycle-progress');
+          if (panel) {
+            panel.querySelector('h3').textContent = state.error
+              ? 'Continue needs attention'
+              : state.pending
+                ? 'Sending Continue…'
+                : 'Waiting for current progress';
+            panel
+              .querySelectorAll('[data-resume-summary], [data-progress-stop-reason], [role="alert"]')
+              .forEach((element) => {
+                element.hidden = true;
+              });
+            const status = panel.querySelector('[role="status"]');
+            if (status) status.textContent = state.message;
+          }
           let feedback = button.nextElementSibling;
           if (!feedback?.classList.contains('progress-feedback')) {
             feedback = document.createElement('p');
@@ -2739,6 +2788,7 @@
           }
           feedback.setAttribute('role', state.error ? 'alert' : 'status');
           feedback.textContent = state.message;
+          feedback.hidden = Boolean(panel);
           button.setAttribute('aria-busy', String(state.pending));
           if (state.pending) {
             button.disabled = true;
@@ -2928,15 +2978,43 @@
         document
           .querySelectorAll('[data-answer]')
           .forEach((b) => (b.onclick = () => submitApproval(b, () => answer(b))));
+        document.querySelectorAll('[data-strategy-start], [data-strategy-review]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              const id = button.dataset.strategyStart || button.dataset.strategyReview;
+              const issue = data.issues.find((entry) => entry.id === id);
+              const review = Boolean(button.dataset.strategyReview);
+              const rounds = Number($('strategy-sol').value);
+              if (review && !rounds) throw Error('Choose one or three Sol review rounds first.');
+              button.disabled = true;
+              $('strategy-feedback').textContent = 'Sending request…';
+              await request('issue-strategy-start', {
+                issueId: id,
+                basis: issue.strategy.basis,
+                strategy: $('issue-strategy').value,
+                solRounds: rounds,
+                approved: true,
+                operation: review ? 'review' : 'work',
+                instruction: $('strategy-instruction').value,
+              });
+              $('strategy-feedback').textContent = 'Accepted. The issue is working in its owning chat.';
+            });
+        });
+        document.querySelectorAll('[data-strategy-stop]').forEach((button) => {
+          button.onclick = () =>
+            act(() =>
+              request('issue-strategy-stop', {
+                issueId: button.dataset.strategyStop,
+                runId: button.dataset.strategyRun,
+              })
+            );
+        });
         if ($('review'))
           $('review').onclick = () =>
             act(async () => {
-              selection = { review: true, basis: data.reviewBasis };
-              $('selection').innerHTML =
-                '<h2>Review the queue?</h2><p>Codex will read the issues and suggest assignments. This starts a read-only chat. It does not save recommendations, start workers or integrate changes.</p>';
-              $('approve').textContent = 'Start queue review';
-              $('approve').disabled = false;
-              $('confirm').showModal();
+              $('review').disabled = true;
+              $('review').textContent = 'Selecting…';
+              await request('evaluate', { basis: data.reviewBasis });
             });
         document
           .querySelectorAll('[data-delivery-kind]')

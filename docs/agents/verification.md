@@ -19,7 +19,7 @@ resolves through that installed package; verification and CI require no personal
 skill checkout. Its original human-input protocol and integrity manifest are
 unchanged. Install the frozen dependencies before running factory checks.
 Symbolic links remain in the exported snapshot and audit scope; their link
-metadata is not passed to Prettier, which rejects symbolic-link paths. Changed
+metadata is not passed to the formatter, which rejects symbolic-link paths. Changed
 regular target files retain their own formatting checks.
 
 | Command                             | What it establishes                                                                                                    |
@@ -137,7 +137,7 @@ rendered controls, browser console/network failures, and navigation. An HTTP 200
 or a screenshot alone does not establish hydration or interaction behavior.
 
 Database-backed/authenticated paths require configured local services. Compose
-defines Postgres; inspect readiness with `docker compose ps` and logs. The Prisma
+defines Postgres; inspect readiness with `docker compose ps` and logs. The domain
 datasource needs `DATABASE_URL`; Better Auth needs `AUTH_DATABASE_URL`, `BETTER_AUTH_URL`,
 and `BETTER_AUTH_SECRET` (see [AUTH_SETUP.md](../../AUTH_SETUP.md)). Compose uses
 `DB_USER`/`DB_PASSWORD`. Use supplied local configuration, never print secrets or

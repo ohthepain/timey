@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { ScoreView } from '~/components/ScoreView';
 import { Transport } from '~/components/Transport';
 import { Beat } from '~/types/Beat';
-import { getBeatByNameServerFn } from '~/services/beatService.server';
+import { getBeatByNameServerFn } from '~/services/beatService';
 import MidiSelector from '~/components/DeviceSelector/MidiSelector';
 import MetronomeMidiSettings from '~/components/DeviceSelector/MetronomeMidiSettings';
 

@@ -1,8 +1,8 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vite-plus/test';
 import { withAuth } from './authenticatedServerFn';
 import { requireDomainUser } from '~/server/domain-session';
 
-vi.mock('@tanstack/react-start/server', () => ({ getWebRequest: vi.fn(() => new Request('http://localhost')) }));
+vi.mock('@tanstack/react-start/server', () => ({ getRequest: vi.fn(() => new Request('http://localhost')) }));
 vi.mock('~/server/domain-session', () => ({ requireDomainUser: vi.fn() }));
 
 beforeEach(() => vi.clearAllMocks());

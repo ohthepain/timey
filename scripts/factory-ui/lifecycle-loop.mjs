@@ -3,9 +3,7 @@ import { approvePlanAdaptation } from './plan-adaptation.mjs';
 import { draftAssembly } from './delivery-mode.mjs';
 import { directTaskChoice, saveDirectTask } from './direct-task.mjs';
 import { completionChoice } from './completion-choice.mjs';
-import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs';
-import { recoverPendingIntegration } from './integration-recovery.mjs';
-import { continuationChoice, checkContinuation, resumeContinuation } from './lifecycle-continuation.mjs';
+import { ensureDeliverySetup } from './delivery-setup.mjs';
 import { planProgress } from './progress.mjs';
 import { lifecycleWorkBasis, resumableProgressKinds, stopLifecycle } from './lifecycle-stop.mjs';
 import { digest, requireThat } from './common.mjs';
@@ -26,22 +24,20 @@ export async function runLifecycle(service, record) {
   throw Error('Progress stopped after many actions. Completed work is saved; resume to continue.');
 }
 async function lifecycleTick(service, record) {
-  if (service.coordinator?.paused) {
-    saveLifecycle(service, record, {
-      status: 'paused',
-      summary: 'Coordination is paused. Continue from the coordinator page.',
-    });
-    return false;
-  }
+  if (record.status !== 'running') return false;
   if (pauseRequested(service, record)) return false;
   if (finishAfterDeliveryPublish(service, record)) return false;
   const queue = readQueue(service.root),
     issue = queue.issues.find((i) => i.id === record.issueId);
   requireThat(issue, 'This issue no longer exists.');
-  recoverDeliverySetup(service, record);
-  if (record.status !== 'running') return false;
-  const recovered = await recoverPendingIntegration(service, record);
-  if (recovered) return recovered === 'recovered';
+  if (record.pendingContinuation) {
+    stopLifecycle(
+      service,
+      record,
+      'The saved worker continuation needs manual attention. No automatic recovery was started.'
+    );
+    return false;
+  }
   if (finishedLifecycle(service, record, queue, issue)) return false;
   const clarify = await combinedClarifyBeforeAssessment(service, record, queue, issue);
   if (clarify === 'wait') return record.status === 'running';
@@ -95,7 +91,10 @@ function pendingAcceptanceWork(service, record, queue, issue) {
 }
 function pauseRequested(service, record) {
   if (!record.pauseRequested) return false;
-  saveLifecycle(service, record, { status: 'paused', summary: 'Paused. Your saved work is kept.' });
+  saveLifecycle(service, record, {
+    status: 'paused',
+    summary: 'Paused. Your saved work is kept.',
+  });
   return true;
 }
 async function chooseAndExecute(service, record, queue, issue) {
@@ -124,7 +123,12 @@ async function approvedPlan(service, record) {
     sha256,
     summary: 'The implementation plan changed. Review its current contents before continuing.',
   };
-  saveLifecycle(service, record, { status: 'waiting', plan, input: { type: 'plan', plan }, summary: plan.summary });
+  saveLifecycle(service, record, {
+    status: 'waiting',
+    plan,
+    input: { type: 'plan', plan },
+    summary: plan.summary,
+  });
   return false;
 }
 function stopAtFinal(service, record, role) {
@@ -140,15 +144,18 @@ function stopAtFinal(service, record, role) {
 function selectLifecycleWork(service, queue, issue, record) {
   const direct = directTaskChoice(service, record, queue, issue);
   if (direct) return direct;
-  const continuation = continuationChoice(service, record, queue);
-  if (continuation) return continuation;
+
   const handoff = nextProgress(queue, issue, service.store.list(service.codex.requests));
   if (['bind-verification', 'refresh-recommendation'].includes(handoff.kind)) return handoff;
   if (record.replan) return { kind: 'replan', title: 'Finding the next unfinished task.' };
   if (['completion-review', 'publish-issue-pr'].includes(handoff.kind)) return handoff;
   const checklist = checklistView(queue, issue, service.store.list(service.codex.requests));
   if (needsPlanCheck(queue, issue, checklist))
-    return { kind: 'check-plan', path: checklist.path, title: 'Checking the implementation steps.' };
+    return {
+      kind: 'check-plan',
+      path: checklist.path,
+      title: 'Checking the implementation steps.',
+    };
   return nextProgress(queue, issue, service.store.list(service.codex.requests));
 }
 function needsPlanCheck(queue, issue, checklist) {
@@ -163,7 +170,10 @@ async function executeLifecycleWork(service, record, queue, issue, choice) {
     progressBasis(fresh, issue.id) === progressBasis(queue, issue.id),
     'The issue changed while the next assignment was being checked. Resume to use the current record.'
   );
-  lifecycleEvent(service, record, choice.title, { stage: issue.state, kind: choice.kind });
+  lifecycleEvent(service, record, choice.title, {
+    stage: issue.state,
+    kind: choice.kind,
+  });
   const started = await startLifecycleWork(service, record, queue, issue, choice);
   if (record.status !== 'running') return false;
   saveLifecycle(service, record, { childRunId: started.runId || null });
@@ -183,7 +193,7 @@ async function coveredLifecycleAction(service, record, queue, choice) {
 }
 function checkSelectedScope(service, record, action, choice) {
   if (['bind-verification', 'refresh-recommendation'].includes(choice.kind)) return true;
-  if (choice.kind === 'resume') return checkContinuation(service, record);
+  if (choice.kind === 'resume') return false;
   return action ? checkLifecycleScope(service, record, action) : true;
 }
 function lifecycleActionNeedsHuman(service, record, choice, action) {
@@ -199,7 +209,6 @@ function startLifecycleWork(service, record, queue, issue, choice) {
   if (choice.kind === 'integrate') return startLifecycleIntegration(service, record, choice);
   const handler = {
     'save-direct-task': () => saveDirectTask(service, record),
-    resume: () => resumeContinuation(service, record),
     replan: () => restartPlanning(service, record, queue, issue),
   }[choice.kind];
   return handler ? handler() : startSelectedProgress(service, issue);

@@ -1,11 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 const { identity, remove } = vi.hoisted(() => ({ identity: vi.fn(), remove: vi.fn() }));
-vi.mock('@tanstack/react-start/api', () => ({ createAPIFileRoute: () => (handlers: unknown) => handlers }));
 vi.mock('~/server/domain-session', () => ({ requireDomainUser: identity }));
 vi.mock('~/repositories/contentDeletion', () => ({ deleteContent: remove }));
-import { APIRoute } from '../routes/api/beats.$id';
-const route = APIRoute as unknown as {
+import { Route } from '../routes/api/beats.$id';
+const route = Route.options.server!.handlers as unknown as {
   DELETE: (ctx: { params: { id: string }; request: Request }) => Promise<Response>;
 };
 

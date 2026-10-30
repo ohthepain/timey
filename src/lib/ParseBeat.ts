@@ -127,7 +127,6 @@ export class NoteEntry {
     this.subDivisionNum = subDivisionNum;
     this.numSubDivisions = numSubDivisions;
   }
-
 }
 
 /** Start position of a note in milliseconds at the given tempo (BPM). */
@@ -171,11 +170,15 @@ export function MakeStaveNotesFromBeat(beat: Beat): {
     const beatStartIndex = noteEntries.findIndex((entry) => entry.barNum === start.barNum);
     const noteRecords = noteEntries.slice(beatStartIndex + start.index, beatStartIndex + start.index + 2);
     return [
-      new TupletRecord(start.barNum, noteRecords.map((record) => record.staveNote), {
-        numNotes: 3,
-        notesOccupied: 2,
-        bracketed: true,
-      }),
+      new TupletRecord(
+        start.barNum,
+        noteRecords.map((record) => record.staveNote),
+        {
+          numNotes: 3,
+          notesOccupied: 2,
+          bracketed: true,
+        }
+      ),
     ];
   });
 

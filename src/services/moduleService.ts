@@ -7,12 +7,12 @@ import { Module } from '~/types/Module';
 import { requireDomainUser } from '~/server/domain-session';
 import { createModuleInput, updateModuleInput } from '~/types/contentWrites';
 
-export const getAllModulesServerFn = createServerFn({ method: 'GET', response: 'data' }).handler(async () => {
+export const getAllModulesServerFn = createServerFn({ method: 'GET' }).handler(async () => {
   const data = await moduleRepository.getAllModules();
   return data.map((module) => new Module(module).toJSON());
 });
 
-export const getModuleByIdServerFn = createServerFn({ method: 'GET', response: 'data' })
+export const getModuleByIdServerFn = createServerFn({ method: 'GET' })
   .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async (ctx) => {
     const data = await getModuleById(ctx.data.id);
@@ -34,7 +34,7 @@ const getModuleById = async (id: string) => {
   };
 };
 
-export const createModuleServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const createModuleServerFn = createServerFn({ method: 'POST' })
   .validator(createModuleInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();
@@ -42,7 +42,7 @@ export const createModuleServerFn = createServerFn({ method: 'POST', response: '
     return new Module(data).toJSON();
   });
 
-export const updateModuleServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const updateModuleServerFn = createServerFn({ method: 'POST' })
   .validator(updateModuleInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();
@@ -50,7 +50,7 @@ export const updateModuleServerFn = createServerFn({ method: 'POST', response: '
     return new Module(result).toJSON();
   });
 
-export const deleteModuleServerFn = createServerFn({ method: 'POST', response: 'data' })
+export const deleteModuleServerFn = createServerFn({ method: 'POST' })
   .validator(deleteContentInput)
   .handler(async (ctx) => {
     const { userId } = await requireDomainUser();

@@ -44,11 +44,11 @@ def code(label, body, session='a'):
       await page.waitForLoadState('domcontentloaded');
       await page.evaluate(async () => {
         window.practice = {
-          ...await import('/_build/src/services/performanceService.server.ts'),
-          ...await import('/_build/src/services/userProgressServerService.server.ts'),
-          ...await import('/_build/src/services/beatService.server.ts'),
+          ...await import('/src/services/performanceService.ts'),
+          ...await import('/src/services/userProgressServerService.ts'),
+          ...await import('/src/services/beatService.ts'),
         };
-        window.nav = (await import('/_build/src/state/NavigationStore.ts')).useNavigationStore;
+        window.nav = (await import('/src/state/NavigationStore.ts')).useNavigationStore;
       });
       const value = await (async () => { BODY })();
       page.off('response',response); page.off('console',log); page.off('pageerror',error);
@@ -77,11 +77,11 @@ def modules(session='a'):
     return code('modules-' + session, '''
       return page.evaluate(async () => {
         window.practice = {
-          ...await import('/_build/src/services/performanceService.server.ts'),
-          ...await import('/_build/src/services/userProgressServerService.server.ts'),
-          ...await import('/_build/src/services/beatService.server.ts'),
+          ...await import('/src/services/performanceService.ts'),
+          ...await import('/src/services/userProgressServerService.ts'),
+          ...await import('/src/services/beatService.ts'),
         };
-        window.nav = (await import('/_build/src/state/NavigationStore.ts')).useNavigationStore;
+        window.nav = (await import('/src/state/NavigationStore.ts')).useNavigationStore;
         return Object.keys(window.practice);
       });
     ''', session)
@@ -256,12 +256,12 @@ try:
     ''')
     code('switch-account', '''
       await page.evaluate(async()=>{
-        const client=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;
+        const client=(await import('/src/server/auth-runtime/client.ts')).authClient;
         await client.signOut();
       });
       await page.waitForFunction(()=>window.nav.getState().practiceUserId===null && Object.keys(window.nav.getState().performancesByBeatId).length===0 && window.nav.getState().currentPerformance===null);
       await page.evaluate(async()=>{
-        const client=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;
+        const client=(await import('/src/server/auth-runtime/client.ts')).authClient;
         await client.signIn.username({username:'practiceb',password:'Private-fixture-password-123!'});
       });
       await page.waitForFunction(expected=>window.nav.getState().practiceUserId===expected, OTHER);

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vite-plus/test';
 import { privatePractice, setPracticeUser } from './privatePractice';
 import { useNavigationStore } from './NavigationStore';
 import { Performance } from '~/types/Performance';

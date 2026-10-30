@@ -1,63 +1,78 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-const { client, PrismaClient } = vi.hoisted(() => {
-  const client = { $connect: vi.fn(), $disconnect: vi.fn() };
+const { client, drizzleMock } = vi.hoisted(() => {
+  const client = { end: vi.fn(), query: vi.fn() };
+  const db = { transaction: vi.fn(), select: vi.fn() };
   return {
     client,
-    PrismaClient: vi.fn(function () {
-      return client;
-    }),
+    drizzleMock: vi.fn(() => db),
+    db,
   };
 });
 
-vi.mock('@prisma/client', () => ({ PrismaClient }));
+vi.mock('pg', () => ({
+  default: {
+    Pool: vi.fn(function () {
+      return client;
+    }),
+  },
+}));
+
+vi.mock('drizzle-orm/node-postgres', () => ({
+  drizzle: drizzleMock,
+}));
 
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
-  Reflect.deleteProperty(globalThis, 'prisma');
+  Reflect.deleteProperty(globalThis, 'domainPool');
+  Reflect.deleteProperty(globalThis, 'domainDb');
   vi.spyOn(process, 'on').mockReturnValue(process);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
+  process.env.DATABASE_URL = 'postgresql://postgres:password@localhost:5432/timey_db?schema=domain';
 });
 
 afterEach(() => {
-  Reflect.deleteProperty(globalThis, 'prisma');
+  Reflect.deleteProperty(globalThis, 'domainPool');
+  Reflect.deleteProperty(globalThis, 'domainDb');
+  delete process.env.DATABASE_URL;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe('server database access', () => {
   it('allows browser imports without constructing a client and rejects query execution', async () => {
-    const { getServerPrisma, safeQuery } = await import('./db');
+    const { getServerDb, safeQuery } = await import('./db');
     const query = vi.fn();
-    expect(PrismaClient).not.toHaveBeenCalled();
-    expect(getServerPrisma).toThrow('Database not available on client side');
+    expect(drizzleMock).not.toHaveBeenCalled();
+    expect(getServerDb).toThrow('Database not available on client side');
     await expect(safeQuery(query)).rejects.toThrow('Database not available on client side');
     expect(query).not.toHaveBeenCalled();
   });
 
   it('passes the checked server client to the query and returns its result', async () => {
     vi.stubGlobal('window', undefined);
-    const { getServerPrisma, safeQuery } = await import('./db');
+    const { getServerDb, safeQuery } = await import('./db');
     const query = vi.fn(async () => ({ id: 'fixture' }));
-    expect(getServerPrisma()).toBe(client);
+    const db = getServerDb();
     await expect(safeQuery(query)).resolves.toEqual({ id: 'fixture' });
-    expect(query).toHaveBeenCalledExactlyOnceWith(client);
-    expect(PrismaClient).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledExactlyOnceWith(db);
+    expect(drizzleMock).toHaveBeenCalledTimes(1);
   });
 
-  it.each([{ code: 'P1001' }, new Error('Timed out'), new Error('Connection pool unavailable')])(
-    'reconnects and retries once for an existing retry condition: %o',
-    async (error) => {
-      vi.stubGlobal('window', undefined);
-      const { safeQuery } = await import('./db');
-      const query = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce('ok');
-      await expect(safeQuery(query)).resolves.toBe('ok');
-      expect(query.mock.calls).toEqual([[client], [client]]);
-      expect(client.$disconnect).toHaveBeenCalledTimes(1);
-      expect(client.$connect).toHaveBeenCalledTimes(1);
-    }
-  );
+  it.each([
+    new Error('Timed out'),
+    new Error('Connection pool unavailable'),
+    new Error('connection terminated unexpectedly'),
+  ])('reconnects and retries once for an existing retry condition: %o', async (error) => {
+    vi.stubGlobal('window', undefined);
+    const { safeQuery } = await import('./db');
+    const query = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce('ok');
+    await expect(safeQuery(query)).resolves.toBe('ok');
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(client.end).toHaveBeenCalledTimes(1);
+    expect(drizzleMock).toHaveBeenCalledTimes(2);
+  });
 
   it('propagates the second failure without retrying again', async () => {
     vi.stubGlobal('window', undefined);
@@ -66,7 +81,7 @@ describe('server database access', () => {
     const query = vi.fn().mockRejectedValue(error);
     await expect(safeQuery(query)).rejects.toBe(error);
     expect(query).toHaveBeenCalledTimes(2);
-    expect(client.$connect).toHaveBeenCalledTimes(1);
+    expect(drizzleMock).toHaveBeenCalledTimes(2);
   });
 
   it('does not reconnect for unrelated errors', async () => {
@@ -76,7 +91,6 @@ describe('server database access', () => {
     const query = vi.fn().mockRejectedValue(error);
     await expect(safeQuery(query)).rejects.toBe(error);
     expect(query).toHaveBeenCalledTimes(1);
-    expect(client.$disconnect).not.toHaveBeenCalled();
-    expect(client.$connect).not.toHaveBeenCalled();
+    expect(client.end).not.toHaveBeenCalled();
   });
 });

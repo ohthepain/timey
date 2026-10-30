@@ -43,7 +43,7 @@ def code(label, body, session='a'):
       page.on('response',response); page.on('console',log); page.on('pageerror',error);
       await page.waitForLoadState('domcontentloaded');
       await page.evaluate(async () => {
-        await import('/_build/scripts/content-browser-client.mjs');
+        await import('/scripts/content-browser-client.mjs');
       });
       const value = await (async () => { BODY })();
       page.off('response',response); page.off('console',log); page.off('pageerror',error);
@@ -213,14 +213,14 @@ try:
     ''')
     sql('restore-rendered-owner',f'''UPDATE domain."Method" SET "authorId"='{a}' WHERE id='{rendered}';''')
     code('switch-clears-method-draft', '''
-      await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
+      await page.evaluate(async()=>{const c=(await import('/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
       await page.waitForFunction(()=>!document.querySelector('.btn-update'));
       const row=page.locator('li').filter({has:page.getByRole('link',{name:'Rendered edited',exact:true})});
       check(await row.getByRole('button',{name:'Edit',exact:true}).isDisabled(),'new account cannot edit old author');
       return true;
     ''')
     code('switch-back', '''
-      await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contenta',password:'Content-fixture-password-123!'});});
+      await page.evaluate(async()=>{const c=(await import('/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contenta',password:'Content-fixture-password-123!'});});
       return true;
     ''')
     code('rendered-add-module', '''
@@ -235,12 +235,12 @@ try:
     cli('created-module','screenshot','--filename',str(ARTIFACTS/'created-module.png'))
     code('module-account-switch', '''
       await page.locator('.add-module input[type=text]').fill('Must be cleared');
-      await page.evaluate(async()=>{const c=(await import('/_build/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
+      await page.evaluate(async()=>{const c=(await import('/src/server/auth-runtime/client.ts')).authClient;await c.signOut();await c.signIn.username({username:'contentb',password:'Content-fixture-password-123!'});});
       await page.getByText('Only the method author can add modules.',{exact:true}).waitFor();
       check(await page.getByRole('button',{name:'Add Module',exact:true}).count()===0,'non-owner creation absent');return true;
     ''')
     code('anonymous-signin-path', '''
-      await page.evaluate(async()=>{await (await import('/_build/src/server/auth-runtime/client.ts')).authClient.signOut();});
+      await page.evaluate(async()=>{await (await import('/src/server/auth-runtime/client.ts')).authClient.signOut();});
       await page.getByRole('link',{name:'Sign in to add modules',exact:true}).click();
       await page.getByRole('heading',{name:'Sign in',exact:true}).waitFor();return true;
     ''')

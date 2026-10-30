@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Beat } from '~/types/Beat';
 import { useNavigationStore } from '~/state/NavigationStore';
-import { getAllModulesServerFn } from '~/services/moduleService.server';
-import { copyBeatServerFn } from '~/services/beatService.server';
+import { getAllModulesServerFn } from '~/services/moduleService';
+import { copyBeatServerFn } from '~/services/beatService';
 
 export function CopyBeat({ beat }: { beat: Beat }) {
   const userId = useNavigationStore((state) => state.practiceUserId);
@@ -45,7 +45,7 @@ function CopyDestination({ beat, userId }: { beat: Beat; userId: string }) {
     setError('');
     try {
       const result = await copyBeatServerFn({ data: { id: beat.id!, moduleId: destination } });
-      if (useNavigationStore.getState().practiceUserId === userId) setCreated(result.moduleId);
+      if (result && useNavigationStore.getState().practiceUserId === userId) setCreated(result.moduleId);
     } catch {
       setError('Unable to copy. Sign in and select a module you own, then retry.');
     } finally {

@@ -150,6 +150,26 @@ its still-current result through Continue without repeating the investigation.
 
 ## CLI connection and recovery
 
+During an approved worker run, a transport failure automatically checks the exact
+original turn before starting any further work. A running original turn is
+observed for up to 15 minutes; recovery never launches replacement implementation.
+Malformed final results receive one report-only correction in the same chat with
+read-only permissions. The original response and recovery failure are retained.
+An uncertain running correction cannot be treated as finished.
+
+If report correction finishes but still fails validation, an existing draft-handoff
+route may retain a clean committed contribution with implementation completeness
+explicitly unverified. Normal candidate checks run and their failures remain
+disclosed. Existing publication authorization is still required; verified-delivery
+routes, merge approval and acceptance are never weakened by result recovery.
+
+Source-only changes during planning receive one focused impact revalidation of
+the existing proposal. Changes to selected reports, assignments or captured policy
+inputs require ordinary planning recovery. A second concurrent change invalidates
+the revalidation. Execution and candidate checks still use current source.
+Continuation output is restricted to actual eligible blocked worker action IDs;
+an empty eligible set requires a new assignment rather than a fabricated resume.
+
 The adapter uses the installed `codex app-server --listen stdio://`, its existing
 login and configured model. It does not change authentication or model settings.
 The protocol boundary was checked against CLI 0.164.0 and its generated JSON
@@ -172,10 +192,14 @@ Worker and integration recovery still reconnect their existing assignments.
 The UI refuses
 uncertain setup and leaves it for coordinator reconciliation.
 
-Continue immediately displays a sending status beside the button and prevents
+Continue immediately replaces the previous stop/status explanation with a sending
+status and prevents
 duplicate clicks while acknowledgment is pending. Server acceptance is shown
 separately from work starting; request failures remain visible with guidance to
-refresh before retrying. This feedback does not change execution or approval gates.
+refresh before retrying. Acknowledgment is retired when fresh lifecycle progress
+arrives. Current status distinguishes coordinator queueing from waiting for the
+active review result instead of retaining a stale conversation-preparation label.
+Saved chat history is preserved. This feedback does not change execution or approval gates.
 
 Local history and transcripts live under ignored `.issues/factory-ui/`. A server
 ownership lock prevents concurrent UI writers. A previous ownership lock must be
@@ -1293,10 +1317,12 @@ full-width strip beneath the header shows only the issue and basic operation; on
 an issue page it appears only during coordination for that issue and disappears
 automatically. Page reads and refreshes start no work.
 
-The server manages one read-only coordinator conversation across queue reviews and
-lifecycle coordination. Issue conversations and independent reviews keep their own
-contexts. **Stop** interrupts only the coordinator response, pauses further
-coordination and leaves workers running. **Continue** is explicit: it checks that
+The server manages one read-only coordinator conversation that selects the next
+eligible issue from compact queue facts. Its result contains only an issue ID and
+reason, never an implementation assignment or route. Issue planning, approval-scope
+questions, implementation, recovery and verification use the owning issue chat.
+Independent reviews retain their existing evidence and approval boundaries. **Stop** interrupts only queue coordination and leaves issue progress and workers
+running. A coordinator failure cannot pause an independently owned issue. **Continue** is explicit: it checks that
 the retained conversation is idle, then uses existing issue handlers to inspect
 saved work and continue under original approvals. Failed or uncertain startup
 never creates a replacement conversation. Noninterruptible record writes finish
@@ -1354,3 +1380,21 @@ ambiguous labels are rejected with the configured IDs. Agreeing aliases for one
 stage are combined with both reasons retained; conflicting choices are rejected.
 Label translation never
 changes take/skip decisions, required-stage policy or approval requirements.
+
+### Stable assignments and approvals during issue progress
+
+An unstarted stale assignment is refreshed in place after its approved scope is
+validated. Its ID, task, merge policy, dependencies and original snapshot history
+are preserved. Source changes alone do not invalidate a retained scope decision;
+changed task semantics or altered supporting receipts require an issue-local review.
+Direct tasks presented with the approved plan do not receive a redundant model
+scope review before launch. Current launch, candidate and human approval guards
+remain enforced.
+
+An answer to an assignment-scope or delivery-boundary question is recorded as an
+answer, preserving the implementation plan and approval. It grants no publication,
+merge or acceptance authority. Explicit plan revision requests suspend approval
+but retain the previous plan and receipt in approval history. Reassessment that
+returns no replacement plan retains that plan for review rather than failing with
+“no plan to approve”. A historical missing plan can be recovered only from the
+original human plan-approval receipt, with its content hash and issue identity checked.

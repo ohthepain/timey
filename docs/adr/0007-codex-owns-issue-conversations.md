@@ -2,8 +2,8 @@
 
 Once a conversation is needed, each issue has one native Codex chat for all
 lifecycle roles, human interaction, and retrospectives. Issue conversations follow this ownership decision. The shared queue coordinator
-is a narrow exception: its read-only server-managed conversation explains and
-reviews coordination across issues. It does not replace issue chats or grant
+is a narrow exception: its read-only server-managed conversation selects which eligible issue advances
+next from compact queue facts. It does not plan assignments or review issue approvals. It does not replace issue chats or grant
 execution, approval or acceptance authority; see [the coordinator view](../agents/factory-ui.md#coordinator-view).
 Independent verification may use a subagent of the issue chat, with its findings
 brought back into that same chat. This keeps the work visible and interactive in
