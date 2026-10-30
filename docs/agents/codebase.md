@@ -440,6 +440,11 @@ the original delivery validator.
 
 `worker-turn.mjs` pins assignment results and selects them from a shared chat;
 `worker-history.mjs` validates their original checkout and recorded candidate.
+`worker-result-recovery.mjs` observes disconnected original turns, bounds report-only
+JSON correction, and retains unverified committed work for existing draft handoff.
+`planning-revalidation.mjs` rechecks source-only changes against retained proposals
+and enumerates actual eligible worker continuations. Recovery cases are covered by
+`scripts/factory-worker-result-recovery.check.mjs` and the focused UI lifecycle tests.
 
 `factory-ui/evidence-staging.mjs` retains declared supplemental artifacts and
 resolves contribution-bound indexes for completion compilation. It does not

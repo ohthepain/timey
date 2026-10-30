@@ -96,7 +96,7 @@ function transport(t, service) {
     if(m.method==='thread/resume')send({id:m.id,result:{thread:{id:m.params.threadId}}});
     if(m.method==='thread/name/set')send({id:m.id,result:{}});
     if(m.method==='turn/start'){send({id:m.id,result:{turn:{id:'turn'}}});
-      send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(m.params.outputSchema.properties.recommendations?{summary:'One suggestion',recommendations:[{kind:'investigate',title:'Read source',scope:'One file',reason:'Find answer',verification:'Read source',worker_prompt:'Read source.js only',merge:'none',dependencies:[],issues:['20261022-one']}]}:{outcome:'completed',summary:'Read the file.',evidence:'source.js contains 42',remaining:[]})}}});
+      send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(m.params.outputSchema.properties.recommendations?{summary:'One suggestion',recommendations:[{kind:'investigate',title:'Read source',scope:'One file',reason:'Find answer',verification:'Read source',worker_prompt:'Read source.js only',merge:'none',dependencies:[],issues:['20261022-one']}]}:{outcome:'completed',implementation_complete:false,summary:'Read the file.',evidence:'source.js contains 42',remaining:[],artifacts:[]})}}});
       send({method:'turn/completed',params:{threadId:m.params.threadId,turn:{status:'completed'}}});}
   });`
   );
@@ -2812,6 +2812,15 @@ function lifecycleResponse(root, schema, proposal) {
       next_step: 'Read the source.',
       record_update: null,
     };
+  if (props.implementation_complete)
+    return {
+      outcome: 'completed',
+      implementation_complete: false,
+      summary: 'Read the source: answer is 42.',
+      evidence: join(root, 'source.js'),
+      remaining: [],
+      artifacts: [],
+    };
   return {
     outcome: 'completed',
     summary: 'Read the source: answer is 42.',
@@ -4221,6 +4230,8 @@ test('automatic same-worker correction is recorded as plan continuation, not a h
       return JSON.stringify({
         outcome: 'blocked',
         summary: 'Need the next technical correction.',
+        implementation_complete: false,
+        artifacts: [],
         evidence: 'Existing results.',
         remaining: [],
       });
@@ -4823,7 +4834,14 @@ test('Continue retires a disconnected read-only review and recovers once without
   const { service, root } = fixture(t);
   const { waitLifecycleWork } = await import('./factory-ui/lifecycle-work.mjs');
   const record = { issueId: '20261022-one', status: 'running', events: [], attempts: [], input: { type: 'retry' } };
-  const run = { id: 'lost-review', issueId: record.issueId, kind: 'evaluation', status: 'running', events: [], threadId: 'unavailable-chat' };
+  const run = {
+    id: 'lost-review',
+    issueId: record.issueId,
+    kind: 'evaluation',
+    status: 'running',
+    events: [],
+    threadId: 'unavailable-chat',
+  };
   service.store.runs.push(run);
   assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
   assert.equal(run.status, 'blocked');
@@ -4838,13 +4856,31 @@ test('Continue retires a disconnected read-only review and recovers once without
 
 test('Continue acknowledges a click before a delayed response and prevents duplicate requests', async () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
-  const source = html.slice(html.indexOf('      function startIssueProgress('), html.indexOf('      function applyProgressFeedback('));
-  let finish, calls = 0;
-  const states = new Map(), feedback = [];
-  const start = new Function('act', 'request', 'data', 'progressRequests', 'applyProgressFeedback', source + ';return startIssueProgress;')(
+  const source = html.slice(
+    html.indexOf('      function startIssueProgress('),
+    html.indexOf('      function applyProgressFeedback(')
+  );
+  let finish,
+    calls = 0;
+  const states = new Map(),
+    feedback = [];
+  const start = new Function(
+    'act',
+    'request',
+    'data',
+    'progressRequests',
+    'applyProgressFeedback',
+    source + ';return startIssueProgress;'
+  )(
     (task) => task(),
-    () => { calls++; return new Promise((resolve) => { finish = resolve; }); },
-    { reviewBasis: 'basis' }, states,
+    () => {
+      calls++;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+    { reviewBasis: 'basis' },
+    states,
     () => feedback.push(states.get('one') && { ...states.get('one') })
   );
   const issue = { id: 'one', state: 'in-progress', progressBasis: 'issue-basis' };
@@ -4864,11 +4900,17 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
   const dom = new JSDOM('<button data-lifecycle-start="one">Continue…</button>', { runScripts: 'outside-only' });
   t.after(() => dom.window.close());
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
-  const source = html.slice(html.indexOf('      function startIssueProgress('), html.indexOf('      function bind()', html.indexOf('      function startIssueProgress(')));
+  const source = html.slice(
+    html.indexOf('      function startIssueProgress('),
+    html.indexOf('      function bind()', html.indexOf('      function startIssueProgress('))
+  );
   const { window } = dom;
   let finish;
   window.act = (task) => task();
-  window.request = () => new Promise((resolve) => { finish = resolve; });
+  window.request = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
   window.eval('const progressRequests = new Map(); const data = {}; ' + source);
   const button = window.document.querySelector('button');
   const pending = window.startIssueProgress({ id: 'one', state: 'in-progress' });
@@ -4880,9 +4922,87 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
   finish({});
   await pending;
   assert.match(button.nextElementSibling.textContent, /accepted/);
-  window.request = async () => { throw Error('Connection lost'); };
+  window.request = async () => {
+    throw Error('Connection lost');
+  };
   await assert.rejects(window.startIssueProgress({ id: 'one' }), /Connection lost/);
   assert.equal(button.nextElementSibling.getAttribute('role'), 'alert');
   assert.match(button.nextElementSibling.textContent, /Connection lost/);
   assert.equal(button.getAttribute('aria-busy'), 'false');
+});
+
+test('planning revalidates source-only changes once and preserves the existing proposal', async (t) => {
+  const { root, git, service } = fixture(t);
+  const { captureInputs } = await import('./factory-ui/input-change.mjs');
+  const { revalidatePlanning } = await import('./factory-ui/planning-revalidation.mjs');
+  const before = captureInputs(readQueue(root), '20261022-one');
+  writeFileSync(join(root, 'other.js'), 'export const unrelated = true;\n');
+  git('add', 'other.js');
+  git('commit', '-qm', 'unrelated source');
+  const run = service.store.add({ id: 'queue-review' }, 'evaluation', before.head);
+  let calls = 0;
+  service.coordinator.turn = async (_run, prompt) => {
+    calls++;
+    assert.match(prompt, /Revalidate only the impact/);
+    return JSON.stringify({ reusable: true, summary: 'Unrelated addition; the proposed task is unchanged.' });
+  };
+  const current = await revalidatePlanning(service, run, before, '20261022-one', { recommendations: [] });
+  assert.equal(calls, 1);
+  assert.equal(run.sourceRevalidation.after, current.head);
+  assert.equal(run.reviewInput, service.snapshot().issues[0].progressBasis);
+  const report = join(root, '.issues/20261022-one.md');
+  writeFileSync(report, readFileSync(report, 'utf8') + '\nChanged scope');
+  await assert.rejects(revalidatePlanning(service, run, before, '20261022-one', {}), /scope or policy changed/);
+  assert.equal(calls, 1);
+});
+
+test('invalid worker JSON is repaired in the same chat before recording completion', async (t) => {
+  const { root, service, api, proposal } = fixture(t);
+  const [action] = api.recommend([proposal]);
+  api.reserve(action.id);
+  api.attach(action.id, { threadId: 'same-worker', hostId: 'codex-cli' });
+  const run = service.store.add(action, 'worker', readQueue(root).head);
+  service.store.update(run, { threadId: 'same-worker', checkout: root });
+  let turns = 0;
+  service.codex.resume = async (id, _root, sandbox) => {
+    assert.equal(id, 'same-worker');
+    assert.equal(sandbox, 'read-only');
+  };
+  service.codex.turn = async (id) => {
+    assert.equal(id, 'same-worker');
+    return ++turns === 1
+      ? '{malformed'
+      : JSON.stringify({
+          outcome: 'completed',
+          implementation_complete: false,
+          summary: 'Read source.',
+          evidence: 'source.js',
+          remaining: [],
+          artifacts: [],
+        });
+  };
+  await service.runTurn(run, 'Read source only');
+  assert.equal(turns, 2);
+  assert.equal(run.status, 'completed');
+  assert.equal(api.inspect().registry.actions.length, 1);
+  assert.equal(api.inspect().registry.actions[0].status, 'completed');
+});
+
+test('code merge policy is validated before saving any route or deferred assignment', (t) => {
+  const { service, api, proposal } = fixture(t);
+  service.ownServer();
+  const run = service.store.add({ id: 'queue-review' }, 'evaluation', service.snapshot().head);
+  service.store.update(run, {
+    status: 'completed',
+    reviewBasis: service.snapshot().reviewBasis,
+    result: {
+      summary: 'Proposed code work',
+      recommendations: [{ ...proposal, kind: 'implement', merge: 'none' }],
+      routes: [],
+    },
+  });
+  service.store.connected.delete(run.id);
+  assert.throws(() => service.saveReview(run.id, service.snapshot().reviewBasis), /No route or stage change was saved/);
+  assert.equal(run.savedRoutes, undefined);
+  assert.equal(api.inspect().registry.actions.length, 0);
 });

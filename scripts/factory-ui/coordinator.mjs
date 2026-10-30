@@ -181,7 +181,24 @@ class Coordinator {
           '\n' +
           prompt;
         thread.characters += input.length;
-        const raw = await connection.turn(threadId, this.service.root, input, notesSchema(schema));
+        let raw = await connection.turn(threadId, this.service.root, input, notesSchema(schema));
+        if (schema) {
+          try {
+            JSON.parse(raw);
+          } catch {
+            this.service.store.update(run, {
+              rejectedCoordinatorResult: raw,
+              summary: 'Correcting the review response format once in this same read-only chat.',
+            });
+            raw = await connection.turn(
+              threadId,
+              this.service.root,
+              'Return only the corrected JSON for your preceding review, matching the supplied schema. Preserve its findings, failures, questions and authorization boundaries. Do not repeat investigation, run tools or change any files.',
+              notesSchema(schema)
+            );
+            JSON.parse(raw);
+          }
+        }
         const text = takeNotes(this.service.root, run.issueId, raw, Boolean(schema), (error) => {
           thread.notesError = error.message;
         });

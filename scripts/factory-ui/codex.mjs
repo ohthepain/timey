@@ -3,7 +3,7 @@ import { turnFailure } from './turn-failure.mjs';
 import { redactValue } from './activity.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { cleanEnvironment, requireThat } from './common.mjs';
+import { cleanEnvironment, requireThat, digest } from './common.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
 
 // One local RPC connection. It never starts a thread or turn on construction.
@@ -71,7 +71,17 @@ export class CodexConnection {
     try {
       message = JSON.parse(line);
     } catch {
-      return this.fail(Error('Codex returned invalid protocol data.'));
+      return this.fail(
+        Object.assign(Error('Codex returned invalid protocol data.'), {
+          recovery: {
+            code: 'CODEX_PROTOCOL_INVALID',
+            owner: 'coordinator',
+            operation: 'reconcile-original-turn',
+            bytes: Buffer.byteLength(line),
+            sha256: digest(line),
+          },
+        })
+      );
     }
     if (message.id === undefined) return this.event(message);
     if (message.method) return this.request(message);

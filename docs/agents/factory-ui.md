@@ -150,6 +150,26 @@ its still-current result through Continue without repeating the investigation.
 
 ## CLI connection and recovery
 
+During an approved worker run, a transport failure automatically checks the exact
+original turn before starting any further work. A running original turn is
+observed for up to 15 minutes; recovery never launches replacement implementation.
+Malformed final results receive one report-only correction in the same chat with
+read-only permissions. The original response and recovery failure are retained.
+An uncertain running correction cannot be treated as finished.
+
+If report correction finishes but still fails validation, an existing draft-handoff
+route may retain a clean committed contribution with implementation completeness
+explicitly unverified. Normal candidate checks run and their failures remain
+disclosed. Existing publication authorization is still required; verified-delivery
+routes, merge approval and acceptance are never weakened by result recovery.
+
+Source-only changes during planning receive one focused impact revalidation of
+the existing proposal. Changes to selected reports, assignments or captured policy
+inputs require ordinary planning recovery. A second concurrent change invalidates
+the revalidation. Execution and candidate checks still use current source.
+Continuation output is restricted to actual eligible blocked worker action IDs;
+an empty eligible set requires a new assignment rather than a fabricated resume.
+
 The adapter uses the installed `codex app-server --listen stdio://`, its existing
 login and configured model. It does not change authentication or model settings.
 The protocol boundary was checked against CLI 0.164.0 and its generated JSON

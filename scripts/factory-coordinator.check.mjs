@@ -526,3 +526,24 @@ test('a new read-only chat reattaches on its owning connection without resuming 
   );
   assert.equal(resumes, 1, 'A different connection must still establish read-only permissions.');
 });
+
+test('malformed coordinator JSON receives one same-chat format correction without another review', async (t) => {
+  const f = fixture(t);
+  let calls = 0;
+  f.connection.turn = async (id, _root, prompt) => {
+    assert.equal(id, 'native-1');
+    if (++calls === 1) return '{malformed';
+    assert.match(prompt, /Do not repeat investigation/);
+    return JSON.stringify({ summary: 'Retained finding', working_notes: [] });
+  };
+  const schema = {
+    type: 'object',
+    properties: { summary: { type: 'string' } },
+    required: ['summary'],
+    additionalProperties: false,
+  };
+  assert.deepEqual(JSON.parse(await f.owner.turn(f.run, 'Review', schema)), { summary: 'Retained finding' });
+  assert.equal(calls, 2);
+  assert.equal(f.run.rejectedCoordinatorResult, '{malformed');
+  assert.equal(f.owner.view().paused, false);
+});
