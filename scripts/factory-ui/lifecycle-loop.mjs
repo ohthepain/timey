@@ -3,7 +3,8 @@ import { approvePlanAdaptation } from './plan-adaptation.mjs';
 import { draftAssembly } from './delivery-mode.mjs';
 import { directTaskChoice, saveDirectTask } from './direct-task.mjs';
 import { completionChoice } from './completion-choice.mjs';
-import { ensureDeliverySetup } from './delivery-setup.mjs';
+import { ensureDeliverySetup, recoverDeliverySetup } from './delivery-setup.mjs';
+import { recoverPendingIntegration } from './integration-recovery.mjs';
 import { planProgress } from './progress.mjs';
 import { lifecycleWorkBasis, resumableProgressKinds, stopLifecycle } from './lifecycle-stop.mjs';
 import { digest, requireThat } from './common.mjs';
@@ -38,6 +39,10 @@ async function lifecycleTick(service, record) {
     );
     return false;
   }
+  recoverDeliverySetup(service, record);
+  if (record.status !== 'running') return false;
+  const recovered = await recoverPendingIntegration(service, record);
+  if (recovered) return recovered === 'recovered';
   if (finishedLifecycle(service, record, queue, issue)) return false;
   const clarify = await combinedClarifyBeforeAssessment(service, record, queue, issue);
   if (clarify === 'wait') return record.status === 'running';

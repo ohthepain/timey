@@ -15,8 +15,13 @@ export function assignmentScope(action) {
     )
   );
 }
+function boundPlan(service, record) {
+  const plan = record.plan;
+  if (plan?.content && digest(plan.content) === plan.sha256 && record.approval?.sha256 === plan.sha256) return plan;
+  return approvedPlan(service.root, record.issueId);
+}
 export function scopeBinding(service, record, action) {
-  const plan = approvedPlan(service.root, record.issueId);
+  const plan = boundPlan(service, record);
   const report = readFileSync(join(service.root, '.issues', record.issueId + '.md'), 'utf8')
     .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
     .split(/^## (?:Worker result review|Issue progress review)\b/m)[0]

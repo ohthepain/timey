@@ -3838,7 +3838,7 @@ test('a real planning question explains the missing decision and resumes plannin
   assert.equal(readQueue(root).issues[0].state, 'investigate');
 });
 
-test('blocked review finds the unfinished task once instead of looping or inventing an answer request', async (t) => {
+test('blocked review stops on the unfinished task without inventing an answer request', async (t) => {
   const { service } = lifecycleFixture(t);
   const original = service.codex.turn;
   let evaluations = 0;
@@ -3873,10 +3873,11 @@ test('blocked review finds the unfinished task once instead of looping or invent
   startIssueLifecycle(service);
   await approveIssuePlan(service);
   const record = await finishLifecycle(service);
-  assert.equal(record.input.type, 'questions', record.summary);
-  assert.equal(evaluations, 2);
+  assert.equal(record.status, 'blocked', record.summary);
+  assert.match(record.summary, /unfinished/);
+  assert.equal(record.input, null);
+  assert.equal(evaluations, 1);
   assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'coordinator').length, 1);
 });
 
 test('native question drafts survive live refreshes but do not leak into a later lifecycle question', async (t) => {
@@ -4034,7 +4035,7 @@ test('a newer task recommendation supersedes an older stopped reconciliation', a
   assert.equal(service.snapshot().issues[0].progress.kind, 'launch');
 });
 
-test('approved progress saves and launches the new task after an unsuccessful bookkeeping review', async (t) => {
+test('unsuccessful bookkeeping stops for manual attention without launching another task', async (t) => {
   const { service, proposal } = lifecycleFixture(t);
   const original = service.codex.turn;
   let evaluations = 0;
@@ -4052,19 +4053,12 @@ test('approved progress saves and launches the new task after an unsuccessful bo
   startIssueLifecycle(service);
   await approveIssuePlan(service);
   const record = await finishLifecycle(service);
-  assert.equal(
-    record.status,
-    'finished',
-    JSON.stringify({
-      summary: record.summary,
-      events: record.events,
-      runs: service.store.runs.map((r) => ({ kind: r.kind, status: r.status, summary: r.summary })),
-    })
-  );
-  assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 2);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
-  assert.equal(service.snapshot().issues[0].state, 'final');
-  assert.equal(service.store.runs.findLast((r) => r.kind === 'evaluation').savedActions.length, 1);
+  assert.equal(record.status, 'blocked', record.summary);
+  assert.match(record.summary, /unfinished/);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 1);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 0);
+  assert.equal(service.store.runs.filter((r) => r.kind === 'reconciliation' && r.status === 'blocked').length, 1);
+  assert.notEqual(service.snapshot().issues[0].state, 'final');
   assert.equal(proposal.merge, 'none');
 });
 
@@ -4963,7 +4957,7 @@ test('changed planning inputs stop without another AI revalidation turn', async 
   assert.equal(calls, 0);
 });
 
-test('invalid worker JSON is repaired in the same chat before recording completion', async (t) => {
+test('invalid worker JSON is retained for manual retry without another repair turn', async (t) => {
   const { root, service, api, proposal } = fixture(t);
   const [action] = api.recommend([proposal]);
   api.reserve(action.id);
@@ -4988,11 +4982,12 @@ test('invalid worker JSON is repaired in the same chat before recording completi
           artifacts: [],
         });
   };
-  await service.runTurn(run, 'Read source only');
-  assert.equal(turns, 2);
-  assert.equal(run.status, 'completed');
+  await assert.rejects(service.runTurn(run, 'Read source only'), /Review the retained output and retry manually/);
+  assert.equal(turns, 1);
+  assert.equal(run.rejectedWorkerResult, '{malformed');
+  assert.match(run.summary, /invalid result/);
   assert.equal(api.inspect().registry.actions.length, 1);
-  assert.equal(api.inspect().registry.actions[0].status, 'completed');
+  assert.notEqual(api.inspect().registry.actions[0].status, 'completed');
 });
 
 test('code merge policy is validated before saving any route or deferred assignment', (t) => {
