@@ -205,15 +205,26 @@ export class CodexConnection {
     const turn = { resolve, reject, text: '', id: null };
     this.turns.set(threadId, turn);
     try {
-      turn.started = this.call('turn/start', {
-        threadId,
-        cwd,
-        approvalsReviewer: this.approvalReviewers.get(threadId),
-        input: [{ type: 'text', text: prompt }, ...extraInput],
-        outputSchema,
-        ...(settings ? { model: settings.model, effort: settings.effort } : {}),
-      });
-      const started = await turn.started;
+      const request = () =>
+        this.call('turn/start', {
+          threadId,
+          cwd,
+          approvalsReviewer: this.approvalReviewers.get(threadId),
+          input: [{ type: 'text', text: prompt }, ...extraInput],
+          outputSchema,
+          ...(settings ? { model: settings.model, effort: settings.effort } : {}),
+        });
+      let started;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          turn.started = request();
+          started = await turn.started;
+          break;
+        } catch (error) {
+          if (!/already has an active writer/i.test(error.message) || attempt >= 9) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
       if (this.turns.get(threadId) === turn) turn.id = started.turn.id;
     } catch (error) {
       this.turns.delete(threadId);
