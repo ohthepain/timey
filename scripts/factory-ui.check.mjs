@@ -2011,51 +2011,7 @@ test('changed supporting files require a fresh bounded review in the same chat',
   assert.equal(calls.filter((c) => c.method === 'turn/start').length, 2);
 });
 
-test('a citation of the known worker transcript is corrected in the same review without requesting file access', async (t) => {
-  const { root, service } = pendingReview(t, {
-    transcriptPath: '/etc/hosts',
-    result: {
-      outcome: 'completed',
-      summary: 'Selected investigation finished.',
-      notes: 'Implementation still remains.',
-      evidence: ['/etc/hosts'],
-      remaining: ['Implementation'],
-      next_state: null,
-    },
-  });
-  const turn = service.codex.turn.bind(service.codex);
-  const prompts = [];
-  service.codex.turn = async (thread, cwd, prompt, schema) => {
-    prompts.push({ thread, prompt });
-    if (prompts.length === 1) return turn(thread, cwd, prompt, schema);
-    const receipt = service.store.runs.at(-1).workerResultPath;
-    assert.ok(receipt);
-    const retained = JSON.parse(readFileSync(receipt, 'utf8'));
-    assert.equal(retained.threadId, 'original-worker');
-    assert.equal(retained.turnId, 'original-turn');
-    assert.ok(retained.messages.length);
-    return JSON.stringify({
-      outcome: 'completed',
-      summary: 'Selected investigation finished.',
-      notes: 'Implementation still remains.',
-      evidence: [receipt, join(root, 'source.js')],
-      remaining: ['Implementation'],
-      next_state: null,
-      skipped_steps: [],
-    });
-  };
-  const run = await runReview(service);
-  assert.equal(run.status, 'completed', run.summary);
-  assert.equal(prompts.length, 2);
-  assert.equal(prompts[0].thread, prompts[1].thread);
-  assert.match(prompts[1].prompt, /not an access denial/);
-  assert.equal(run.approvedFiles.length, 0);
-  assert.ok(!run.fileProblems?.length);
-  assert.ok(run.rejectedResult.evidence.includes('/etc/hosts'));
-  assert.equal(readQueue(root).issues[0].state, 'investigate');
-});
-
-test('a repeated worker-transcript citation stops after one correction without presenting a permission request', async (t) => {
+test('a worker-transcript citation stops without an AI correction or permission request', async (t) => {
   const { service } = pendingReview(t, {
     transcriptPath: '/etc/hosts',
     result: {
@@ -2075,7 +2031,7 @@ test('a repeated worker-transcript citation stops after one correction without p
   };
   const run = await runReview(service);
   assert.equal(run.status, 'blocked');
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.match(run.summary, /no additional file permission is needed/);
   assert.ok(!run.fileProblems?.length);
   assert.equal(run.approvedFiles.length, 0);
