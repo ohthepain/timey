@@ -173,7 +173,7 @@ required verification or operation-specific approval policies above.
 ## Deterministic UI scheduling
 
 The local UI scheduler chooses eligible issues by highest configured priority,
-then most advanced configured lifecycle state, then issue ID as a stable tie-breaker.
+then oldest eligible issue, then issue ID as a stable tie-breaker.
 Running, blocked, failed, paused, waiting and finished issues are ineligible.
 Each issue owns its progress within existing approval and check boundaries.
 The shared coordinator UI is optional queue discussion, not an execution dependency.
@@ -185,3 +185,13 @@ Do not start AI recovery reviews, automatic continuation or completion repair ta
 or revive failures because conditions changed. Existing explicit retry operations
 remain available and retain their own safeguards. This overrides earlier automatic
 recovery behavior; it does not weaken required checks or authorize merge or acceptance.
+
+## Issue strategies
+
+The explicit [strategy path](../adr/0009-issue-strategies.md) replaces role-by-role
+execution for newly started work. Full Stop ends at a merge-ready PR; Full Send
+adds the protected merge. Sol Loop is optional. Starting grants bounded issue work
+and publication, plus merge only for Full Send. This supersedes the draft-only
+finish line and separate lifecycle planning requirements for this path. Checks,
+real permission boundaries, deployment, human acceptance and closure retain their
+meaning. Legacy records are retained without automatic migration or replay.

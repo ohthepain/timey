@@ -8,6 +8,7 @@ const finishing = new Set([
   '/api/server-cancel-restart',
   '/api/answer',
   '/api/lifecycle-pause',
+  '/api/issue-strategy-stop',
   '/api/discussion-summary',
   '/api/discussion-prepare',
   '/api/discussion-commit',

@@ -1,3 +1,4 @@
+import { strategyBasis } from './issue-strategy.mjs';
 import { readQueue } from './data.mjs';
 import { requireThat } from './common.mjs';
 import {
@@ -42,6 +43,8 @@ class IssueChats {
     if (alreadySent(this.service.root, issue.id, input)) return { saved: true, repeated: true };
     if (input.mode === 'answer') return this.answer(input);
     captureMessage(this.service, issue.id, input);
+    if (this.service.lifecycleRuns[issue.id]?.work && this.service.lifecycleTasks.has(issue.id))
+      return { saved: true, disposition: 'Saved for the owning chat. No competing response was started.' };
     this.enqueue(issue.id, input);
     return {
       saved: true,
@@ -52,6 +55,35 @@ class IssueChats {
     };
   }
   async answer(input) {
+    const record = this.service.lifecycleRuns[input.issueId];
+    if (record?.work) {
+      requireThat(
+        input.updated === record.updated,
+        'The saved strategy changed. Refresh before replying and continuing.'
+      );
+      const { issue } = this.selected(input.issueId);
+      const started = this.service.startIssueStrategy({
+        issueId: issue.id,
+        basis: strategyBasis(this.service, issue),
+        strategy: record.work.strategy,
+        solRounds: record.work.solRounds,
+        operation: 'work',
+        instruction: input.text,
+        approved: true,
+      });
+      appendMessage(this.service.root, issue.id, {
+        id: input.id,
+        actor: 'human',
+        role: 'You',
+        kind: 'answer',
+        body: input.text,
+      });
+      return {
+        saved: true,
+        ...started,
+        disposition: 'Reply recorded. Continuing the saved strategy in the owning chat.',
+      };
+    }
     await this.service.answerLifecycle({
       issueId: input.issueId,
       updated: input.updated,

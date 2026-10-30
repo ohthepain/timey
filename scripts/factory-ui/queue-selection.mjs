@@ -9,6 +9,7 @@ export function compactQueue(service, queue) {
       state: issue.state,
       priority: issue.priorityInfo?.index >= 0 ? issue.priorityInfo.index : Math.max(major, 0),
       stage: queue.lifecycle.findIndex((stage) => stage.state === issue.state),
+      created: Date.parse(issue.created) || 0,
       running: service.lifecycleTasks.has(issue.id),
       needsInput: Boolean(progress?.input),
       status: progress?.status || 'not-started',
@@ -35,6 +36,9 @@ export async function selectNextIssue(service, run, queue) {
         'waiting',
         'answering',
         'completed',
+        'finished',
+        'handed-off',
+        'merged',
       ].includes(item.status) &&
       !['ready-to-close', 'closed'].includes(role) &&
       !queue.actions?.some(
@@ -44,12 +48,12 @@ export async function selectNextIssue(service, run, queue) {
       )
     );
   });
-  eligible.sort((a, b) => a.priority - b.priority || b.stage - a.stage || a.id.localeCompare(b.id));
+  eligible.sort((a, b) => a.priority - b.priority || a.created - b.created || a.id.localeCompare(b.id));
   const selected = eligible[0];
   const choice = {
     next_issue_id: selected?.id || null,
     reason: selected
-      ? `Selected ${selected.title || selected.id}: highest priority, then most advanced lifecycle state.`
+      ? `Selected ${selected.title || selected.id}: highest priority, then oldest eligible issue.`
       : 'No issue is currently eligible. Blocked issues need manual attention.',
   };
   return {

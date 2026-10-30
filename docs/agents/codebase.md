@@ -224,7 +224,7 @@ updates launch freshness without cancelling the assignment or replanning.
 approval, the latest answer and an unchanged supporting receipt. Source revision
 changes alone do not require a new scope decision; changed scope or altered evidence does.
 `queue-selection.mjs` selects an eligible issue in code: configured priority order,
-then most advanced configured state, then issue ID. Running, blocked, failed, paused,
+then oldest eligible issue, then issue ID. Running, blocked, failed, paused,
 waiting and finished issues are excluded, including active or blocked assignments.
 Selection never calls a model. Optional queue discussion still uses the coordinator UI. Selected-issue planning and reviews
 use the issue's owning chat through `reviewIssue` and `lifecycleReview`.
@@ -510,3 +510,12 @@ unchanged failures, explicit retries, evidence integrity, live logs and new-chat
 model selection. `scripts/factory-test-service.mjs` supplies protocol fixtures
 with an explicitly shared stub transport for both coordinator and worker calls;
 production retains separate connections.
+
+`factory-ui/issue-strategy.mjs` owns explicit Full Stop/Full Send starts, typed scope
+receipts, reuse of the issue checkout/chat, and final candidate checks. It does not
+use lifecycle role planning or completion manifests. `strategy-prompt.mjs` bounds
+the owning assignment; `strategy-review.mjs` implements optional bounded Sol review;
+`strategy-provider.mjs` reads live PR readiness and enforces strict protected merges.
+The issue screen shows strategy/status and collapses legacy roles into disabled
+history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
+failures, explicit starts and missing review capabilities.

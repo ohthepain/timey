@@ -33,11 +33,15 @@ const issue = (id, priority, state = 'implement') => ({
   priorityInfo: { index: priority },
 });
 
-test('scheduler chooses priority before progress, then advanced state and stable issue ID', async () => {
+test('scheduler chooses priority, then oldest issue and stable issue ID', async () => {
   const { service, queue } = fixture();
   queue.issues = [issue('low', 3, 'verify'), issue('high', 0, 'backlog')];
   assert.equal((await selectNextIssue(service, {}, queue)).next_issue_id, 'high');
-  queue.issues = [issue('b', 1, 'verify'), issue('a', 1, 'verify'), issue('early', 1, 'implement')];
+  queue.issues = [
+    { ...issue('b', 1, 'verify'), created: '2026-10-03' },
+    { ...issue('a', 1, 'implement'), created: '2026-10-01' },
+    { ...issue('early', 1, 'verify'), created: '2026-10-02' },
+  ];
   const selected = await selectNextIssue(service, {}, queue);
   assert.equal(selected.next_issue_id, 'a');
   assert.deepEqual(selected.recommendations, []);

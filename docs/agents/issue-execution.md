@@ -1,5 +1,19 @@
 # Issue execution
 
+## Strategy execution
+
+[ADR 0009](../adr/0009-issue-strategies.md) defines the primary execution path.
+Explicitly start Full Stop for a merge-ready PR or Full Send for a protected merge.
+Sol Loop is optional (off, one or up to three review rounds). One owning chat and
+branch carry the work without role assignments, routes or stage transitions.
+Existing work stays intact and is adopted only when idle. Starting records exact
+scope and destination consent. Required checks, real permissions, acceptance and
+closure stay distinct. Full Stop never merges or enables automatic merging.
+Failures retain their evidence and require manual attention; changed conditions
+never launch another recovery. Queue order is priority, then oldest eligible issue.
+
+The following describes the retained legacy execution records and adapters.
+
 Single-issue chats use the exact current issue title as their native chat name.
 Creation and primary-chat reuse refresh that name from the authoritative report;
 changing lifecycle roles keeps the issue name. Independent issue review chats
@@ -49,7 +63,7 @@ result. Genuine decisions are asked inline; unfinished work and proposed repairs
 are retained for manual attention without automatically dispatching repair tasks.
 Missing combined findings retain the ordinary review path.
 
-Queue selection is deterministic code: priority first, then lifecycle progress.
+Queue selection is deterministic code: priority first, then oldest eligible issue.
 The shared coordinator chat is only for optional queue discussion. Issue planning
 and lifecycle reviews use the issue's primary chat; independent reviews keep their
 separate contexts. Failed or interrupted work stops for manual attention. Invalid

@@ -1,5 +1,10 @@
 # Issue pull request delivery
 
+[Issue strategies](../adr/0009-issue-strategies.md) supersede the draft-only default
+for explicitly started strategy work. Full Stop ends at a merge-ready PR; Full
+Send adds a protected merge. The retained contribution/manifest protocol below
+applies to legacy delivery operations, not the strategy path.
+
 The default factory outcome is a **draft PR handoff for manual repair and merge**.
 Integrate (`@integration`), Final review and Closed are planned as skipped where
 no explicit take/skip decision exists. These skips end factory responsibility;

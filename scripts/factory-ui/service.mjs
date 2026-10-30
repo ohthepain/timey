@@ -1,3 +1,4 @@
+import { startIssueStrategy, stopIssueStrategy, strategyView } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
 import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
@@ -166,6 +167,7 @@ export class FactoryUI {
     const humanInputView = queueHumanInput(queue, { ...issue, issueDelivery });
     return {
       ...issue,
+      strategy: strategyView(this, issue),
       humanInputView,
       readiness,
       verificationRecovery: verificationView(this, queue, issue),
@@ -246,6 +248,12 @@ export class FactoryUI {
     requireThat(issue, 'The saved issue no longer exists.');
     return this.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
   }
+  stopIssueStrategy(input) {
+    return stopIssueStrategy(this, input);
+  }
+  startIssueStrategy(input) {
+    return startIssueStrategy(this, input);
+  }
   startLifecycle(input) {
     return startLifecycle(this, input);
   }
@@ -294,6 +302,10 @@ export class FactoryUI {
     };
   }
   validateOperation(queue, action, kind) {
+    requireThat(
+      !action.issues.some((id) => this.lifecycleRuns[id]?.work),
+      'This issue uses strategy execution. Its old role assignments are history; use the strategy controls.'
+    );
     if (kind === 'launch') requireThat(!describeLaunch(queue, action), describeLaunch(queue, action));
     else {
       requireThat(

@@ -64,6 +64,8 @@ async function mutation(service, path, value, owner) {
       service.ownServer();
       return prepareNativeChat(service.root, value);
     },
+    '/api/issue-strategy-stop': () => service.stopIssueStrategy(value),
+    '/api/issue-strategy-start': () => service.startIssueStrategy(value),
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),

@@ -8,7 +8,8 @@ export function issueGit(snapshot, issue) {
     (r) =>
       !['assembled', 'integrated', 'superseded', 'reconciled', 'cancelled'].includes(actions.get(r.actionId).status)
   );
-  const checkout = unfinished?.checkout || issue.issueDelivery?.checkout || workers.at(-1)?.checkout;
+  const checkout =
+    issue.strategy?.checkout || unfinished?.checkout || issue.issueDelivery?.checkout || workers.at(-1)?.checkout;
   if (!checkout) return null;
   try {
     return {

@@ -151,3 +151,13 @@ claim; it does not deliver code to the target branch.
 The coordinator's evidence-backed review of every item in the approved issue
 plan, the exact aggregate candidate, all contributions and required local checks.
 Further issue work or changed evidence invalidates readiness to open the PR.
+
+**Issue strategy**:
+An explicitly chosen delivery finish line for one issue. Full Stop produces a
+merge-ready PR and leaves it unmerged. Full Send additionally merges through
+provider-enforced protection. Neither implies deployment or human acceptance.
+Lifecycle roles are historical context rather than execution requirements.
+
+**Sol Loop**:
+An optional bounded review of an issue's current candidate by one Sol reviewer.
+It may be selected with either strategy or requested afterward on retained work.

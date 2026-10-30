@@ -17,6 +17,10 @@ export function startLifecycle(service, input) {
     'The issue changed. Refresh before continuing.'
   );
   if (service.lifecycleTasks.has(input.issueId)) return { issueId: input.issueId, active: true };
+  requireThat(
+    !service.lifecycleRuns[input.issueId]?.work,
+    'Use the issue strategy controls; lifecycle roles no longer drive this issue.'
+  );
   service.lifecycleRuns = loadLifecycles(service.root);
   let record = service.lifecycleRuns[input.issueId];
   prepareLegacyResume(record);
@@ -101,6 +105,7 @@ function stopLifecycleError(service, record, error) {
 }
 export function continueLifecycleAfter(service, issueId) {
   const record = service.lifecycleRuns[issueId];
+  if (record?.work) return;
   if (!['waiting', 'blocked'].includes(record?.status)) return;
   if (service.lifecycleTasks.has(issueId)) return;
   record.attempts = [];
