@@ -6,8 +6,8 @@ import { appendCompletion } from '../factory-completion.mjs';
 import { retainClosingRegistry } from './closure-registry.mjs';
 import { recordedResult, validateRecordedEvidence } from './recorded-result.mjs';
 
-export function recordClosingApproval(service, queue, issue) {
-  const artifact = recordedResult(queue, issue);
+export function recordClosingApproval(service, queue, issue, savedArtifact) {
+  const artifact = savedArtifact || recordedResult(queue, issue);
   validateRecordedEvidence(queue, artifact);
   requireActualObservations(issue);
   requireRecordedChecklist(issue);
@@ -78,5 +78,12 @@ function updatedChecklist(value, id, result) {
 
 function requireActualObservations(issue) {
   const pending = (issue.human_checks || []).some((check) => check.kind === 'evidence' && check.status !== 'passed');
-  requireThat(!pending, 'A required manual check still needs an actual observation before closing.');
+  requireThat(
+    !pending,
+    'A required manual check still needs an actual observation before closing: ' +
+      (issue.human_checks || [])
+        .filter((check) => check.kind === 'evidence' && check.status !== 'passed')
+        .map((check) => check.title || check.question || check.id)
+        .join(', ')
+  );
 }

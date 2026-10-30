@@ -2521,64 +2521,59 @@ test('closing retains a changed administrative task log without changing test ou
   assert.equal(closed.plan_verification.steps[1].criteria[0].status, 'passed');
 });
 
-test('Close issue submits acceptance in one tap without opening a confirmation dialog', async () => {
-  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
-  const source = html.slice(
-    html.indexOf('      function selectIssueDecision('),
-    html.indexOf('      function progressControls(')
-  );
-  const elements = {
-    selection: {},
-    approve: {},
-    confirm: {
-      showModal() {
-        throw Error('Close must not open a confirmation');
-      },
-    },
+test('direct closure gives immediate feedback, prevents duplicates, and confirms before conversation refresh finishes', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  let release,
+    posts = 0,
+    conversation = 0;
+  window.fetch = (url) => {
+    if (url.endsWith('/issue-decision')) {
+      posts++;
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    }
+    if (url.includes('/issue-chat?')) {
+      conversation++;
+      return new Promise(() => {});
+    }
+    return Promise.resolve({ ok: true, json: async () => (url.endsWith('/runtime') ? {} : snapshot) });
   };
-  const sent = [];
-  const errors = new Map();
-  let failRequest = false;
-  const selectDecision = new Function(
-    '$',
-    'data',
-    'act',
-    'request',
-    'decisionErrors',
-    'let selection;' + source + ';return selectIssueDecision;'
-  )(
-    (id) => elements[id],
-    { reviewBasis: 'current-page', issues: [{ id: 'one', decisionBasis: 'current-page' }] },
-    async (task) => task(),
-    async (endpoint, body) => {
-      if (failRequest) throw Error('The recorded result is missing.');
-      sent.push({ endpoint, body });
-      return { state: 'closed' };
-    },
-    errors
-  );
-  const button = { dataset: { issueDecision: 'close', issueId: 'one', issueState: 'final' } };
-  await selectDecision(button);
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0].endpoint, 'issue-decision');
-  assert.equal(sent[0].body.kind, 'close');
-  assert.equal(sent[0].body.basis, 'current-page');
-  assert.equal(button.disabled, true);
-  failRequest = true;
-  await assert.rejects(() => selectDecision(button), /recorded result is missing/);
-  assert.equal(errors.get('one'), 'The recorded result is missing.');
-  const controls = html.slice(
-    html.indexOf('      function finalControls('),
-    html.indexOf('      const decisionErrors')
-  );
-  const render = new Function('humanChecks', 'esc', 'decisionErrors', controls + ';return finalControls;')(
-    () => '',
-    (value) => value,
-    errors
-  );
+  const button = window.document.querySelector('[data-issue-decision="close"]');
+  assert.equal(button.textContent, 'Accept fix and close');
+  button.click();
+  assert.match(window.document.querySelector('[data-issue-decision-status]').textContent, /Waiting for the server/);
+  assert.equal(window.document.querySelector('[data-issue-decision="close"]').disabled, true);
+  button.click();
+  assert.equal(posts, 1);
+  release({ ok: true, json: async () => ({ state: 'closed' }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.querySelector('[data-issue-decision-status]').textContent, 'Accepted and closed.');
+  assert.equal(window.document.querySelector('[data-issue-decision="close"]'), null);
+  assert.equal(window.document.getElementById('confirm').open, false);
+  assert.equal(conversation, 1, 'confirmation must not wait for conversation retrieval');
+});
+
+test('direct closure exposes the exact blocker and enables retry without a model call', async (t) => {
+  const { window } = await activityScreen(t);
+  window.fetch = async () => ({
+    ok: false,
+    json: async () => ({ error: 'Manual observation timing-check still needs a result.' }),
+  });
+  window.document.querySelector('[data-issue-decision="close"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.querySelector('[data-issue-decision="close"]').disabled, false);
   assert.match(
-    render({ id: 'one', state: 'final' }, 'ready-to-close'),
-    /role="alert"[^>]*>The recorded result is missing/
+    window.document.querySelector('[data-issue-decision-status][role="alert"]').textContent,
+    /timing-check still needs a result/
+  );
+  window.document.getElementById('confirm').showModal = function () {
+    this.open = true;
+  };
+  window.document.querySelector('[data-issue-decision="choose-close"]').click();
+  assert.ok(
+    window.document.querySelector('#closure-reason option[value="fixed"]'),
+    'Fixed must be available outside final review'
   );
 });
 
@@ -5100,4 +5095,59 @@ test('an explicit plan revision suspends authority but retains the prior plan an
   assert.equal(record.approvalSuspended, true);
   assert.deepEqual(record.plan, previous.plan);
   assert.deepEqual(record.approvalHistory.at(-1), previous);
+});
+
+test('accepting a retained fix closes directly from implementation without fabricating completed stages or model calls', async (t) => {
+  const { service, root } = completedWorkFixture(t);
+  await reconcileNow(service);
+  const path = join(root, '.issues/20261022-one.md');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('state: final', 'state: implement'));
+  const before = service.snapshot().issues[0];
+  service.codex.turn =
+    service.codex.start =
+    service.check =
+      () => {
+        throw Error('Closure must not start work');
+      };
+  const closed = service.decideIssue(before.id, before.state, 'close', before.decisionBasis);
+  assert.equal(closed.state, 'closed');
+  const issue = service.snapshot().issues[0];
+  assert.equal(issue.accepted_result.verification_rerun, false);
+  assert.equal(issue.closure.reason, 'fixed');
+  assert.equal(issue.lifecycle_history.length, before.lifecycle_history.length + 1);
+  assert.equal(issue.lifecycle_history.at(-1).state, 'closed');
+});
+
+test('strategy acceptance reuses exact saved checks without a legacy final-review stage', (t) => {
+  const { service, root, git, result } = completedWorkFixture(t);
+  const issue = service.snapshot().issues[0];
+  const run = service.store.add({ id: 'strategy-result', issues: [issue.id] }, 'issue-work', git('rev-parse', 'HEAD'));
+  const checked = {
+    head: git('rev-parse', 'HEAD'),
+    tree: git('rev-parse', 'HEAD^{tree}'),
+    summaries: [result.verification_summary, result.audit_summary],
+  };
+  const readiness = { head: checked.head };
+  service.store.update(run, { issueId: issue.id, status: 'completed', result: { checked, readiness } });
+  service.store.connected.delete(run.id);
+  mkdirSync(join(service.store.directory, run.id), { recursive: true });
+  writeFileSync(join(service.store.directory, run.id, 'readiness.json'), JSON.stringify({ ...readiness, checked }));
+  service.lifecycleRuns[issue.id] = { work: { runId: run.id, checkout: root, base: checked.head, readiness } };
+  service.codex.turn =
+    service.codex.start =
+    service.check =
+      () => {
+        throw Error('No new work during closure');
+      };
+  const summary = JSON.parse(readFileSync(result.verification_summary));
+  summary.checks.find((check) => check.name === 'tests').passed = false;
+  writeFileSync(result.verification_summary, JSON.stringify(summary));
+  assert.throws(() => service.decideIssue(issue.id, issue.state, 'close', issue.decisionBasis), /required check/i);
+  assert.equal(service.snapshot().issues[0].state, issue.state);
+  summary.checks.find((check) => check.name === 'tests').passed = true;
+  writeFileSync(result.verification_summary, JSON.stringify(summary));
+  assert.equal(service.decideIssue(issue.id, issue.state, 'close', issue.decisionBasis).state, 'closed');
+  const accepted = service.snapshot().issues[0].accepted_result;
+  assert.equal(accepted.revision, checked.head);
+  assert.ok(accepted.evidence.some((entry) => entry.source === result.verification_summary));
 });

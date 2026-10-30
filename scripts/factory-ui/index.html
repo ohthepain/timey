@@ -2120,6 +2120,7 @@
         return `<section class="next-action"><div><small>${closed ? 'Issue closed' : 'Your decision'}</small><h3>${closed ? 'This issue is closed' : 'Ready for final review'}</h3><p>${closed ? 'You can review the result or reopen the issue if more work is needed.' : description}</p>${recordOnly ? `<p>${esc(issue.record_update.summary)}</p><ul>${issue.record_update.remaining.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${humanChecks(issue)}${decisionErrors.has(issue.id) ? `<p role="alert" class="decision-error">${esc(decisionErrors.get(issue.id))}</p>` : ''}<div class="toolbar">${closed ? '' : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Close issue</button>`}<button data-review-result="${esc(issue.id)}">Review result</button><button data-issue-decision="reopen" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Reopen issue</button></div></div></section>`;
       }
       const decisionErrors = new Map();
+      const decisionRequests = new Map();
       let reviewOpenFor = null;
       function reviewRecordedResult(id) {
         reviewOpenFor = id;
@@ -2141,8 +2142,7 @@
           basis: issue.decisionBasis || data.reviewBasis,
         };
         if (chooseReason) {
-          const final = data.lifecycle.some((stage) => stage.state === issue.state && stage.role === 'ready-to-close');
-          const choices = data.closureReasons.filter((choice) => final || choice.id !== 'fixed');
+          const choices = data.closureReasons;
           $('selection').innerHTML =
             `<h2>Close this issue</h2><p>Choose why you are closing it. Reasons other than Fixed leave unfinished work, including an unreviewed worker result, as they are. Fixed still requires that review.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}">${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`;
           $('approve').textContent = 'Close issue';
@@ -2151,17 +2151,8 @@
           return;
         }
         if (kind === 'close') {
-          button.disabled = true;
-          const decision = selection;
-          decisionErrors.delete(decision.issueId);
-          return act(async () => {
-            try {
-              await request('issue-decision', decision);
-            } catch (error) {
-              decisionErrors.set(decision.issueId, error.message);
-              throw error;
-            }
-          });
+          if (decisionRequests.get(issue.id)?.pending) return;
+          return sendIssueDecision(selection, button).catch(() => {});
         }
         $('selection').innerHTML =
           '<h2>Reopen this issue?</h2><p>This returns the issue to investigation. The existing result, checks and commits are kept. No worker starts automatically.</p><label>What still needs work? (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>';
@@ -2169,9 +2160,63 @@
         $('approve').disabled = false;
         $('confirm').showModal();
       }
+      function decisionStatus(issue) {
+        const state = decisionRequests.get(issue.id);
+        const error = decisionErrors.get(issue.id);
+        return `<p data-issue-decision-status="${esc(issue.id)}" role="${error ? 'alert' : 'status'}">${esc(error || state?.message || '')}</p>`;
+      }
+      async function sendIssueDecision(decision, button) {
+        if (decisionRequests.get(decision.issueId)?.pending) return;
+        const id = decision.issueId;
+        decisionErrors.delete(id);
+        decisionRequests.set(id, {
+          pending: true,
+          message: 'Closing issue… Waiting for the server to save your decision.',
+        });
+        if (button) {
+          button.disabled = true;
+          button.textContent = 'Closing…';
+        }
+        render();
+        try {
+          const result = await request('issue-decision', decision);
+          const issue = data.issues.find((entry) => entry.id === id);
+          issue.state = result.state;
+          issue.stage = data.lifecycle.find((stage) => stage.state === result.state)?.name || result.state;
+          if (decision.kind === 'close') {
+            const reason = data.closureReasons.find((choice) => choice.id === (decision.resolution || 'fixed'));
+            issue.closure = {
+              reason: reason?.id || 'fixed',
+              label: reason?.label || 'Fixed',
+              details: decision.reason || '',
+            };
+          } else {
+            delete issue.closure;
+          }
+          const accepted = decision.kind === 'close' && (!decision.resolution || decision.resolution === 'fixed');
+          decisionRequests.set(id, {
+            pending: false,
+            message: accepted
+              ? 'Accepted and closed.'
+              : decision.kind === 'close'
+                ? 'Issue closed.'
+                : 'Issue reopened.',
+          });
+          render();
+          // The saved decision is visible immediately, even if conversation polling is slow.
+          void refresh();
+          return result;
+        } catch (error) {
+          decisionRequests.delete(id);
+          decisionErrors.set(id, error.message);
+          render();
+          throw error;
+        }
+      }
       function progressControls(issue) {
         const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
-        if (['ready-to-close', 'closed'].includes(role) && issue.progress.disabled) return finalControls(issue, role);
+        if (role === 'closed' || (role === 'ready-to-close' && issue.progress?.disabled))
+          return finalControls(issue, role);
         if (/UI lost the link/.test(issue.readiness?.summary || ''))
           return `<section class="next-action"><div><h3>Find the existing work</h3><p>The UI lost the link to the Codex chat that worked on this task. It can look it up and restore the link so you can review the finished result.</p><button class="primary" data-find-worker="${esc(issue.id)}" data-worker-state="${esc(issue.state)}">Find existing chat</button></div></section>`;
         return '';
@@ -2496,7 +2541,7 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(i.strategy?.status || i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${i.strategy?.runId ? '' : lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<a href="#/queue">← Issue queue</a><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(closedIssueState(i.state) ? i.stage : i.strategy?.status || i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div id="discussion-slot"></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${i.strategy?.runId ? '' : lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -3069,7 +3114,7 @@
               link: $('worker-link').value || $('worker-choice')?.value || '',
             });
           else if (selection.decision)
-            await request('issue-decision', {
+            await sendIssueDecision({
               ...selection,
               reason: $('reopen-reason')?.value || '',
               resolution: $('closure-reason')?.value || 'fixed',

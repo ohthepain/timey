@@ -21,7 +21,9 @@ export function recordedResult(queue, issue) {
 }
 function completedResult(issue) {
   return (
-    issue.lifecycle_history?.findLast((entry) => entry.outcome === 'completed' && entry.next === issue.state) || {}
+    issue.lifecycle_history?.findLast((entry) => entry.outcome === 'completed' && entry.next === issue.state) ||
+    issue.lifecycle_history?.findLast((entry) => entry.outcome === 'completed' && entry.revision) ||
+    {}
   );
 }
 function resultCheckout(last) {
@@ -84,8 +86,8 @@ function existingFolder(folder) {
 export function validateRecordedEvidence(queue, artifact) {
   artifact.evidence.forEach((entry) => recordedBytes(queue, artifact, entry));
 }
-export function retainAcceptedResult(service, queue, issue) {
-  const artifact = recordedResult(queue, issue),
+export function retainAcceptedResult(service, queue, issue, savedArtifact) {
+  const artifact = savedArtifact || recordedResult(queue, issue),
     directory = join(service.store.directory, 'accepted-' + randomUUID());
   const files = artifact.evidence.map((entry) => ({ entry, bytes: recordedBytes(queue, artifact, entry) }));
   mkdirSync(directory, { recursive: true });

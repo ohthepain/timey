@@ -161,3 +161,11 @@ Lifecycle roles are historical context rather than execution requirements.
 **Sol Loop**:
 An optional bounded review of an issue's current candidate by one Sol reviewer.
 It may be selected with either strategy or requested afterward on retained work.
+
+**Issue acceptance**:
+The person's explicit judgment that an issue's recorded result satisfies their
+intent. Publication, merge, successful checks and strategy completion do not imply acceptance.
+
+**Issue closure**:
+The recorded decision to end work on an issue, either with an accepted fix or a
+stated reason for closing without a fix. It is independent of historical lifecycle stages.

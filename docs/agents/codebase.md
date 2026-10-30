@@ -148,7 +148,7 @@ records no outcome and launches no work.
 set of evidence-backed stage outcomes before updating a stale issue. It never
 launches workers, merges code or accepts issues.
 
-`factory-ui/issue-decision.mjs` owns explicit final-review acceptance/closure and
+`factory-ui/issue-decision.mjs` owns direct human acceptance/closure independently of lifecycle stages and
 reopening, with current report/evidence guards and preserved historical outcomes.
 
 `factory-ui/worker-connection.mjs` restores missing task/chat connections using
@@ -521,3 +521,7 @@ the owning assignment; `strategy-review.mjs` implements optional bounded Sol rev
 The issue screen shows strategy/status and collapses legacy roles into disabled
 history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
 failures, explicit starts and missing review capabilities.
+
+`factory-ui/strategy-closure.mjs` validates saved strategy verification and step
+summaries against their recorded candidate and retains their evidence for explicit
+acceptance. It does not run checks or contact the provider during closure.

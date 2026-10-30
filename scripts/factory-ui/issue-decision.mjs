@@ -6,6 +6,7 @@ import { progressBasis, progressIssue } from './next-action.mjs';
 import { appendReview } from './review-result.mjs';
 import { digest, requireThat } from './common.mjs';
 
+import { strategyClosureResult } from './strategy-closure.mjs';
 import { recordClosingApproval } from './closure-approval.mjs';
 
 export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed') {
@@ -39,8 +40,6 @@ function closureChoice(queue, role, kind, resolution) {
   const choice = queue.closureReasons.find((entry) => entry.id === resolution);
   requireThat(choice, 'Choose a closure reason from the project’s current list.');
   const dismissed = choice.id !== 'fixed';
-  if (!dismissed)
-    requireThat(['ready-to-close', 'closed'].includes(role), 'Fixed issues must reach final review before closing.');
   return { choice, dismissed };
 }
 function prepareDecision(service, queue, issue, action, decision) {
@@ -49,14 +48,15 @@ function prepareDecision(service, queue, issue, action, decision) {
     return { queue, issue };
   }
   if (decision.dismissed) return { queue, issue };
+  const artifact = strategyClosureResult(service, issue);
   const delivery = new DeliveryStore(service.root, issue.id).read();
   requireThat(
-    !delivery || delivery.state === 'verified',
+    artifact || !delivery || delivery.state === 'verified',
     'Complete independent issue PR integration verification before accepting the fix.'
   );
-  queue = recordClosingApproval(service, queue, issue);
+  queue = recordClosingApproval(service, queue, issue, artifact);
   issue = progressIssue(queue, issue.id, issue.state);
-  return { queue, issue, accepted: checkClosure(service, queue, issue, action) };
+  return { queue, issue, accepted: checkClosure(service, queue, issue, action, artifact) };
 }
 function decisionSummary(kind, choice, dismissed) {
   if (kind === 'reopen') return 'Reopened by the user for investigation.';
@@ -102,6 +102,7 @@ function recordDecision(service, queue, issue, run, result, evidence, target, ba
 
 function checkIdle(service, queue, issue, decision) {
   requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for this issue’s current work to finish before closing.');
+  requireThat(!service.issueChats?.tasks?.has(issue.id), 'Wait for this issue’s active chat to finish before closing.');
   const actions = queue.actions.filter((a) => a.issues.includes(issue.id));
   requireThat(
     !actions.some((a) => ['reserved', 'setup', 'running'].includes(a.status)),
@@ -125,27 +126,23 @@ function decisionTarget(queue, role, kind, dismissed) {
   const targetRole = kind === 'close' ? 'closed' : 'ready-for-repro';
   const matches = queue.lifecycle.filter((s) => s.role === targetRole);
   requireThat(matches.length === 1, 'The lifecycle needs one valid destination for this action.');
-  if (kind === 'close') checkClosingTarget(queue, role, matches[0], dismissed);
   return matches[0].state;
 }
-function checkClosingTarget(queue, role, target, dismissed) {
-  if (dismissed) return;
-  requireThat(
-    queue.lifecycle.find((stage) => stage.role === role).next === target.state,
-    'Complete the configured final checks before closing.'
-  );
-}
-function checkClosure(service, queue, issue, action) {
+function checkClosure(service, queue, issue, action, artifact) {
   checkManualResults(issue);
   requireAcceptedChecklist(issue);
   service.guard(service.root, action, 'accept', queue.head);
   service.guard(service.root, action, 'close', queue.head);
-  return retainAcceptedResult(service, queue, issue);
+  return retainAcceptedResult(service, queue, issue, artifact);
 }
 function checkManualResults(issue) {
   requireThat(
     (issue.human_checks || []).every((check) => check.status === 'passed'),
-    'A required manual check still needs an actual result before closing.'
+    'Required manual checks need results: ' +
+      (issue.human_checks || [])
+        .filter((check) => check.status !== 'passed')
+        .map((check) => check.title || check.question || check.id)
+        .join(', ')
   );
 }
 function requireAcceptedChecklist(issue) {
@@ -154,7 +151,12 @@ function requireAcceptedChecklist(issue) {
     issue.plan_verification.steps.every((step) =>
       step.criteria.every((criterion) => ['passed', 'skipped'].includes(criterion.status))
     ),
-    'Finish the outstanding implementation checks before continuing.'
+    'Outstanding implementation checks: ' +
+      issue.plan_verification.steps
+        .flatMap((step) => step.criteria)
+        .filter((criterion) => !['passed', 'skipped'].includes(criterion.status))
+        .map((criterion) => criterion.text || criterion.id)
+        .join(', ')
   );
 }
 function validDecisionBasis(queue, issue, basis) {
@@ -165,10 +167,10 @@ function decisionResult(issue, target, kind, summary, reason) {
   const closing = kind === 'close';
   const details = closing
     ? {
-        state: issue.state,
+        state: target,
         outcome: 'completed',
         notes:
-          'The user selected Close issue on the final review screen. This records their acceptance of the finished result. Original verification dates and limitations remain in the report; this decision does not claim new tests or invent earlier stage history.',
+          'The user selected Close issue on the issue page. This records their acceptance of the finished result. Original verification dates and limitations remain in the report; this decision does not claim new tests or invent earlier stage history.',
       }
     : {
         state: target,
