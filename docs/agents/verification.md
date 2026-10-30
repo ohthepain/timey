@@ -43,7 +43,8 @@ or root CSV files. Existing root CSVs are never test cleanup targets.
 `verify` exports source into a disposable local clone, shares installed dependencies
 only when lockfiles match, and deletes the clone afterward. Each command prints
 START, streams output while it runs, and emits a periodic running message during
-silence. Per-command logs are readable before completion; summaries retain the
+silence. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
+Per-command logs are readable before completion; summaries retain the
 original pass/fail and separate audit-channel assessment. Evidence stays under
 `.issues/evidence/` with a JSON summary and per-command logs. Preserve relevant
 results in the tracked effort plan before a fresh-worktree handoff. Reports identify
