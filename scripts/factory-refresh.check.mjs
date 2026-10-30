@@ -8,7 +8,7 @@ function refreshFixture(t) {
   const start = html.indexOf('      async function refresh()');
   const end = html.indexOf('      function showRuntime(', start);
   const dom = new JSDOM(
-    '<div id="coordinator-strip" hidden></div><input id="draft"><dialog id="confirm"></dialog><dialog id="plan"></dialog><div id="connection"></div><div id="error"></div><main id="app"></main>',
+    '<div id="coordinator-strip" hidden></div><input id="draft"><dialog id="confirm"></dialog><dialog id="model-settings"></dialog><dialog id="plan"></dialog><div id="connection"></div><div id="error"></div><main id="app"></main>',
     { url: 'http://127.0.0.1/#/issue/one', runScripts: 'outside-only' }
   );
   t.after(() => dom.window.close());

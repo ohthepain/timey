@@ -325,7 +325,7 @@ test('restarting the UI does not replay work; explicit resume keeps the original
   assert.throws(() => restarted.answer(run.id, 'unknown', { decision: 'allow' }), /not connected/);
 });
 
-test('installed transport client starts and resumes one chat without model overrides', async (t) => {
+test('installed transport client starts chats with the default model and resumes them without replacing it', async (t) => {
   const { service, root } = fixture(t);
   const cli = transport(t, service);
   const calls = [];
@@ -347,10 +347,13 @@ test('installed transport client starts and resumes one chat without model overr
     threads.map((call) => call.params.config),
     [undefined, { 'features.request_permissions_tool': true }, { 'features.request_permissions_tool': true }, undefined]
   );
+  assert.deepEqual(
+    threads.map((call) => call.params.model),
+    ['gpt-6-luna', undefined, 'gpt-6-luna', undefined]
+  );
   for (const call of threads) {
     assert.equal(call.params.approvalPolicy, 'on-request');
     assert.equal(call.params.approvalsReviewer, call.params.sandbox === 'workspace-write' ? 'auto_review' : 'user');
-    assert.equal(call.params.model, undefined);
   }
   assert.deepEqual(
     calls.filter((call) => call.method === 'turn/start').map((call) => call.params.approvalsReviewer),
