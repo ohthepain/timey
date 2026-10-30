@@ -38,6 +38,10 @@ const queueSortUI = (() => {
   function sort(issues, selection) {
     return issues.slice().sort((a, b) => compare(a, b, selection));
   }
+  function adjacent(issues, issueId, offset) {
+    const index = issues.findIndex((issue) => issue.id === issueId);
+    return index < 0 ? null : (issues[index + offset] ?? null);
+  }
   function bind(selection, changed) {
     document.getElementById('queue-sort').onchange = (event) => {
       selection.sort = event.target.value;
@@ -51,5 +55,5 @@ const queueSortUI = (() => {
       changed();
     };
   }
-  return { controls, sort, bind };
+  return { controls, sort, adjacent, bind };
 })();

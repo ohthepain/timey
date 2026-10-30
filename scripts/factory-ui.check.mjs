@@ -3402,6 +3402,8 @@ async function activityScreen(t) {
       '\n' +
       readFileSync(resolve('scripts/factory-ui/queue-lifecycle-ui.js'), 'utf8') +
       '\n' +
+      readFileSync(resolve('scripts/factory-ui/queue-sort-ui.js'), 'utf8') +
+      '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-capture-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') +
