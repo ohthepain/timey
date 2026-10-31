@@ -183,7 +183,15 @@ class IssueChats {
   }
   async response(issueId, input, active) {
     const root = this.service.root,
-      state = conversationState(root, issueId);
+      state = conversationState(root, issueId),
+      workThreadId = this.service.lifecycleRuns[issueId]?.workThreadId;
+    // Execution owns the issue chat once a strategy has started. Keep the
+    // saved conversation pointer aligned so messages sent from the Issue tab
+    // always continue in the same Codex thread as the worker.
+    if (workThreadId && state.threadId !== workThreadId) {
+      state.threadId = workThreadId;
+      saveConversationState(root, issueId, state);
+    }
     const connection = this.connections.get(issueId) || this.create();
     this.connections.set(issueId, connection);
     active.connection = connection;
