@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { produce } from 'immer';
 
-export class MidiDeviceSettings {
+class MidiDeviceSettings {
   deviceId: string = '';
   deviceName: string = '';
   track: boolean = true;
@@ -22,18 +22,6 @@ export class MidiDevicePreferences {
     }
   }
 
-  getMidiInputDevicePreferences(
-    deviceId: string,
-    deviceName: string | undefined = undefined
-  ): MidiDeviceSettings | undefined {
-    let settings: MidiDeviceSettings | undefined = this.inputs.find((candidate) => candidate.deviceId === deviceId);
-    if (settings === undefined && deviceName !== undefined) {
-      settings = this.inputs.find((candidate) => candidate.deviceName === deviceName);
-    }
-
-    return settings;
-  }
-
   getMidiOutputDevicePreferences(deviceId: string, deviceName?: string): MidiDeviceSettings | undefined {
     let settings: MidiDeviceSettings | undefined = this.outputs.find((candidate) => candidate.deviceId === deviceId);
     if (settings === undefined && deviceName !== undefined) {
@@ -43,33 +31,9 @@ export class MidiDevicePreferences {
     return settings;
   }
 
-  isTrackingEnabledForMidiInputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiInputDevicePreferences(deviceId);
-    const enabled = deviceSettings !== undefined ? deviceSettings.track : true;
-    return enabled;
-  }
-
-  isRemoteEnabledForMidiInputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiInputDevicePreferences(deviceId);
-    const enabled = deviceSettings !== undefined ? deviceSettings.remote : true;
-    return enabled;
-  }
-
-  isTrackingEnabledForMidiOutputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
-    const enabled = deviceSettings !== undefined ? deviceSettings.track : true;
-    return enabled;
-  }
-
   isSyncEnabledForMidiOutputId(deviceId: string): boolean {
     const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
     const enabled = deviceSettings !== undefined ? deviceSettings.sync : false;
-    return enabled;
-  }
-
-  isRemoteEnabledForMidiOutputId(deviceId: string): boolean {
-    const deviceSettings: MidiDeviceSettings | undefined = this.getMidiOutputDevicePreferences(deviceId);
-    const enabled = deviceSettings !== undefined ? deviceSettings.remote : true;
     return enabled;
   }
 }

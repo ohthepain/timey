@@ -1,0 +1,145 @@
+# Factory interface
+
+Use `/factory` (or `$factory`) as the front door for coordinating the local issue
+queue. `/Factory` means the same skill. Evaluation and worker launches remain
+separate manual actions.
+
+| In chat           | Result                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------- |
+| `/factory`        | Evaluate the queue, existing workers, grouping and priorities; offer the next choices.             |
+| `/factory ID ID`  | Evaluate only the selected issues, checking dependencies and existing work.                        |
+| `/factory issues` | Display the existing code-generated issue table, without an evaluation.                            |
+| `/factory status` | Show compact last-recorded progress, results, remaining work and evidence links for factory tasks. |
+
+Issue selection accepts full IDs or unique prefixes. Ambiguous or missing IDs
+stop selection and show a useful diagnostic. Selecting issues authorizes planning
+and discussion of their required input; launching work requires another choice.
+Dependencies outside the selection are inspected and explained before proposing
+their inclusion. Existing workers are reused rather than duplicated.
+
+## Check progress
+
+`/factory status` displays a code-generated summary from the saved factory records.
+It reads no issue reports, evidence contents or chat histories, and changes nothing.
+Chat references are included in the JSON output so an agent can check a known chat
+without searching for it again. Status is a saved observation, not a live check or
+permission to launch, merge or accept an issue.
+
+```sh
+pnpm run factory -- status
+pnpm run factory -- status --json
+pnpm run factory -- status ACTION_ID --details
+```
+
+Add full action IDs or unique action-ID prefixes to narrow the summary. Full saved
+records, including worker prompts and unabridged evidence, require `--details` and
+exactly one selected action. A saved prompt may contain an old issue snapshot;
+read the current report before taking further action. Missing or damaged records
+are reported rather than initialized or repaired.
+
+Each row shows the task, saved progress, a short result, remaining work, and links
+to local evidence. Long legacy evidence is shortened; when no file link can be
+recovered, the link opens the saved factory records. Missing evidence files are
+identified. Remaining work uses a saved list when provided, otherwise a reminder
+based on the action's state; it does not assess the linked issue's requirements
+or acceptance. No result is invented for tasks still waiting for a response.
+
+When recording a reviewed result through `factory record`, keep the existing
+required `evidence` and optionally provide `summary` (a concise sentence),
+`remaining` (a list of next steps), and `evidence_links` (local file or directory
+paths, absolute or relative to the project). These are reporting fields only.
+A newer result clears older reporting fields unless they are explicitly supplied
+again, so a completed merge cannot keep showing an obsolete “merge next” message.
+Reading status never backfills old records or completes human obligations.
+
+## Choose what happens next
+
+Each evaluation offers applicable choices, names the issues/actions, and explains
+what each choice will unblock:
+
+- **Human input:** answer, grill, defer, or perform an available human check in the
+  current chat. Handle only input needed for the next operation; hardware evidence
+  and final judgment become useful at their own stage.
+- **Launch recommended group:** explicitly start the displayed independent saved
+  actions in separate worker chats. Show scope, dependencies, verification and
+  merge policy before the choice. Allow narrowing the group.
+- **Both:** start the displayed independent actions, then handle the selected human
+  input here. Work depending on those answers stays pending.
+
+Use native follow-up suggestions with explicit commands as fallbacks. Carry saved
+action IDs in the submitted prompt so users can choose named work without copying
+UUIDs. Offer only applicable choices; an unavailable choice gets its reason.
+If no work or human input is actionable, explain what is pending.
+
+| Explicit continuation           | Meaning                                                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `/factory human [ISSUE_ID ...]` | Handle the selected issues' human input; omit IDs for the queue.                                                               |
+| `/factory launch ACTION_ID ...` | Launch exactly the selected saved actions.                                                                                     |
+| `/factory both ACTION_ID ...`   | Launch those actions, then offer human input for their issues and the previously displayed human-input selection in this chat. |
+| `/factory integrate ACTION_ID`  | Assemble one reviewed contribution on its issue branch; complete-issue PR delivery is separate.                                |
+
+For Both, include the displayed human-input issue IDs in the follow-up's plain
+language prompt as well as the explicit action IDs. With a bare Both command,
+use the selected actions' issues only. Never infer an unrelated selection from
+another chat or a lost conversation context.
+
+Saving an answer records input only. Offer a manual reevaluation when answers
+change readiness; old saved recommendations may now be stale. An explicit
+“Answer and continue” must name the next operation. Neither answers nor worker
+completion start another iteration, launch dependent work, merge, or accept issues.
+Apply the installed issues skill's human-input protocol and project verification
+policy; a flag or timestamp cannot establish an answer or human evidence.
+
+## Code and coordinator responsibilities
+
+`pnpm run factory --` returns a read-only inspection with `focus_issue_ids` for
+the whole queue. Add issue IDs to narrow that focus. Dependency context stays in
+the inspection; it does not expand the assignment. The inspection also includes shared issue progress, plan approval and outstanding
+questions; consult these before proposing overlapping work. The coordinator evaluates
+meaning, grouping, evidence and priorities and saves recommendations.
+
+For listing, run:
+
+```sh
+pnpm run factory -- issues --output /absolute/writable/visualization/issues-unique.html
+```
+
+This calls the installed `.agents/skills/issues/scripts/list-issues.mjs` directly
+with the current project. Its filters (`--state`, `--sort`), counts, diagnostics
+and HTML are unchanged. Display the returned path using the issues skill's inline
+renderer. Listing reads no factory registry and writes only the requested output;
+it performs no model reconstruction, readiness assessment or queue mutation.
+An absent helper requires installation, rather than a competing parser.
+
+Chat operations such as launch need the skill and app tools; the shell helper
+does not create chats. Each selected action retains its own reservation and chat
+reference. Revalidate all selected actions before dispatch, then reserve and attach
+each once. A failed or uncertain launch stops the remaining group and preserves
+earlier successes/reservations for reconciliation; report per-action outcomes.
+Groups are not atomic and never imply automatic retries or subsequent batches.
+
+Read [operating rules](operating.md) for ownership, launch and integration policy,
+[verification](verification.md) for evidence and human gates, and the
+[factory skill](../../.agents/skills/factory/SKILL.md) for execution steps.
+
+## Local UI adapter
+
+The [local factory UI](factory-ui.md) is an alternative front door for the same
+queue and ledger. `pnpm run factory:ui -- --project /absolute/project` serves the
+queue and issue screens locally. This adapter uses the installed Codex CLI
+app-server transport instead of native chat creation. Scope, ownership, human
+gates and verification policy remain enforced. The issue screen’s lifecycle
+Progress control continues within an approved issue plan, including workers and
+automatic-policy integration. Human-first integration and final acceptance still
+require explicit decisions. This opt-in UI workflow is described below; native
+chat commands continue to follow the factory skill’s one-iteration contract.
+
+Both front doors use [shared progress and completion records](factory-records.md).
+Their selection scope and control loops remain separate.
+
+## Issue PR delivery
+
+Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
+review, publication, recovery and server-enforced merge gates. Default delivery uses
+one draft PR per issue and ends at manual handoff, including failed checks and
+unfinished implementation. Explicit verified-delivery routes retain their gates. Historical records retain their original meaning.

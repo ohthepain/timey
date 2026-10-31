@@ -4,16 +4,9 @@ import type { User } from '~/utils/users';
 import { DEPLOY_URL } from '~/utils/users';
 import { NotFound } from '~/components/NotFound';
 import { UserErrorComponent } from '~/components/UserError';
+import { useLoadedResource } from '~/hooks/useLoadedResource';
 
 export const Route = createFileRoute('/users/$userId')({
-  loader: async ({ params: { userId } }) => {
-    return await axios
-      .get<User>(DEPLOY_URL + '/api/users/' + userId)
-      .then((r) => r.data)
-      .catch(() => {
-        throw new Error('Failed to fetch user');
-      });
-  },
   errorComponent: UserErrorComponent,
   component: UserComponent,
   notFoundComponent: () => {
@@ -22,7 +15,37 @@ export const Route = createFileRoute('/users/$userId')({
 });
 
 function UserComponent() {
-  const user = Route.useLoaderData();
+  const params = Route.useParams();
+  const {
+    data: user,
+    loading,
+    error,
+  } = useLoadedResource(
+    () => axios.get<User>(DEPLOY_URL + '/api/users/' + params.userId).then((response) => response.data),
+    params.userId
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading user...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-red-600 mb-4">Error</h2>
+          <p className="text-gray-600">{error || 'User not found'}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">

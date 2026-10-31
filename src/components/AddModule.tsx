@@ -1,17 +1,32 @@
 import { useState } from 'react';
 import { Method } from '~/types/Method';
-import { useRouter } from '@tanstack/react-router';
-import { createModuleServerFn } from '~/services/moduleService.server';
+import { useNavigationStore } from '~/state/NavigationStore';
+import { createModuleServerFn } from '~/services/moduleService';
 
 interface AddModuleProps {
   method: Method;
+  onCreated: () => void;
 }
 
-export const AddModule = ({ method }: AddModuleProps) => {
+export const AddModule = (props: AddModuleProps) => {
+  const userId = useNavigationStore((state) => state.practiceUserId);
+  if (!userId)
+    return (
+      <a
+        className="text-indigo-600 underline"
+        href={`/auth/login?returnTo=${encodeURIComponent('/method/' + props.method.id)}`}
+      >
+        Sign in to add modules
+      </a>
+    );
+  if (props.method.authorId !== userId) return <p>Only the method author can add modules.</p>;
+  return <ModuleCreator key={`${props.method.id}:${userId}`} {...props} />;
+};
+
+const ModuleCreator = ({ method, onCreated }: AddModuleProps) => {
   const [title, setTitle] = useState('');
   const [index, setIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   const handleAddModule = async () => {
     if (!title.trim()) {
@@ -30,17 +45,21 @@ export const AddModule = ({ method }: AddModuleProps) => {
       setTitle('');
       setIndex(0);
       setError(null);
-      router.invalidate();
+      onCreated();
     } catch (err) {
       console.error('Error adding module:', err);
-      setError('Failed to add module');
+      setError('Unable to add module. You must be signed in and own this method. Please retry.');
     }
   };
 
   return (
     <div className="add-module">
       <h2 className="text-xl font-bold mb-4">Add Module</h2>
-      {error && <p className="text-red-500 mb-2">{error}</p>}
+      {error && (
+        <p role="alert" className="text-red-500 mb-2">
+          {error}
+        </p>
+      )}
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
         <input

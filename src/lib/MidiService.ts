@@ -2,7 +2,10 @@ import { useEffect } from 'react';
 import { Input, NoteMessageEvent, Output, WebMidi } from 'webmidi';
 import { useMidiSettingsStore } from '~/state/MidiSettingsStore';
 import { EventEmitter } from 'events';
-import { TempoService } from '~/lib/TempoService';
+import { bindConfiguredMidiDevices, ensureWebMidiEnabled } from '~/lib/midiDeviceBinding';
+import { midiTransportPolicy } from '~/lib/midiTransportPolicy';
+import { MIDI_CLOCK_LOST, MIDI_CLOCK_PULSE, type MidiClockPulseEvent } from '~/lib/midiClockEvents';
+import { SLAVE_TRANSPORT_COMMAND, type SlaveTransportCommand } from '~/lib/slaveTransportCommand';
 
 class MidiService extends EventEmitter {
   receivedResponse: boolean = false;
@@ -17,48 +20,36 @@ class MidiService extends EventEmitter {
   midiOutputDevice: Output | undefined = undefined;
   midiInputChannel: any = null;
   midiOutputChannel: any = null;
+  private lastClockTime: number = 0;
+  private clockCount: number = 0;
+  private clockTimeout: any = null;
 
   constructor() {
     super();
     this.enable();
   }
 
-  get tempoService(): TempoService {
-    return TempoService.getInstance();
-  }
+  private handleNoteOnMessage = (e: NoteMessageEvent) => {
+    if (e.message.type === 'noteon') {
+      this.emitMidiNote(e.message.dataBytes[0], e.message.dataBytes[1]);
+    }
+  };
 
   async enable() {
-    if (this.tempoService.isSimulatedTimerForTesting) {
-      return;
-    }
-    if (!WebMidi.enabled) {
-      console.log('WebMidi not enabled, enabling...');
-      try {
-        await WebMidi.enable({ sysex: true });
-      } catch (error) {
-        console.error('Error enabling WebMidi:', error);
-        return;
-      }
-    }
+    if (!(await ensureWebMidiEnabled())) return;
     console.log('WebMidi enabled (MidiService)');
     this.refreshDevices();
     this.initListeners();
-
-    if (this.midiInputDeviceId && this.midiOutputDeviceId) {
-      this.midiOutputDevice = WebMidi.getOutputById(this.midiOutputDeviceId);
-      if (!this.midiOutputDevice) {
-        throw new Error(`MIDI output device not found: ${this.midiOutputDeviceId}`);
-      }
-      this.midiOutputChannel = this.midiOutputDevice.channels[this.midiOutputChannelNum];
-    }
-
-    if (this.midiInputDeviceId && this.midiInputChannelNum) {
-      this.midiInputDevice = WebMidi.getInputById(this.midiInputDeviceId);
-      if (!this.midiInputDevice) {
-        throw new Error(`MIDI input device not found: ${this.midiInputDeviceId}`);
-      }
-      this.midiInputChannel = this.midiInputDevice.channels[this.midiInputChannelNum];
-    }
+    const bound = bindConfiguredMidiDevices(
+      this.midiInputDeviceId,
+      this.midiOutputDeviceId,
+      this.midiInputChannelNum,
+      this.midiOutputChannelNum
+    );
+    this.midiOutputDevice = bound.midiOutputDevice;
+    this.midiOutputChannel = bound.midiOutputChannel;
+    this.midiInputDevice = bound.midiInputDevice ?? null;
+    this.midiInputChannel = bound.midiInputChannel;
   }
 
   isEnabled() {
@@ -192,6 +183,18 @@ class MidiService extends EventEmitter {
       return;
     }
 
+    // Remove existing listeners
+    this.midiInputDevice.removeListener('clock');
+    this.midiInputDevice.removeListener('start');
+    this.midiInputDevice.removeListener('stop');
+    this.midiInputDevice.removeListener('continue');
+
+    // Add MIDI clock listeners
+    this.midiInputDevice.addListener('clock', this.handleMidiClock);
+    this.midiInputDevice.addListener('start', this.handleMidiStart);
+    this.midiInputDevice.addListener('stop', this.handleMidiStop);
+    this.midiInputDevice.addListener('continue', this.handleMidiContinue);
+
     if (channelNum) {
       console.log(`listenToInput : channel ${channelNum}`);
       const channel = this.midiInputDevice.channels[channelNum];
@@ -201,25 +204,55 @@ class MidiService extends EventEmitter {
       }
 
       channel.removeListener('noteon');
-      channel.addListener('noteon', (e) => {
-        if (e.message.type === 'noteon') {
-          const note = e.message.dataBytes[0];
-          const velocity = e.message.dataBytes[1];
-          this.emitMidiNote(note, velocity);
-        }
-      });
+      channel.addListener('noteon', this.handleNoteOnMessage);
     } else {
       console.log(`listenToInput : all channels`);
-      this.midiInputDevice.removeListener('noteon');
-      this.midiInputDevice.addListener('noteon', (e: NoteMessageEvent) => {
-        if (e.message.type === 'noteon') {
-          const note = e.message.dataBytes[0];
-          const velocity = e.message.dataBytes[1];
-          this.emitMidiNote(note, velocity);
-        }
-      });
+      this.midiInputDevice.addListener('noteon', this.handleNoteOnMessage);
     }
   }
+
+  private handleMidiClock = () => {
+    const now = WebMidi.time;
+
+    // Clear any existing timeout
+    if (this.clockTimeout) {
+      clearTimeout(this.clockTimeout);
+    }
+
+    // Set a timeout to detect when clock stops
+    this.clockTimeout = setTimeout(() => {
+      this.emit(MIDI_CLOCK_LOST);
+    }, 1000); // If no clock for 1 second, assume it stopped
+
+    if (this.lastClockTime > 0) {
+      const interval = now - this.lastClockTime;
+      const ppqn = 24;
+      const bpm = 60000 / (interval * ppqn);
+      const pulse: MidiClockPulseEvent = { now, bpm, ppqn };
+      this.emit(MIDI_CLOCK_PULSE, pulse);
+    }
+
+    this.lastClockTime = now;
+    this.clockCount++;
+  };
+
+  private emitSlaveTransport(command: SlaveTransportCommand) {
+    if (midiTransportPolicy().followSlaveTransportCommands()) {
+      this.emit(SLAVE_TRANSPORT_COMMAND, command);
+    }
+  }
+
+  private handleMidiStart = () => {
+    this.emitSlaveTransport('record');
+  };
+
+  private handleMidiStop = () => {
+    this.emitSlaveTransport('stop');
+  };
+
+  private handleMidiContinue = () => {
+    this.emitSlaveTransport('continue');
+  };
 }
 
 export const midiService = new MidiService();

@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vite-plus/test';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { BeatRecorder } from './BeatRecorder';
 import { TempoService } from './TempoService';
 import { midiService } from './MidiService';
@@ -34,15 +37,14 @@ function dump(performance: Performance, feedback: BeatNoteFeedback[]) {
 }
 
 describe('BeatRecorder', () => {
+  let csvDirectory: string;
+  const csvPath = (filename: string) => join(csvDirectory, filename);
   let beat: Beat;
   let eventRecorder: EventRecorderService;
   let tempoService: TempoService;
   let beatRecorder: BeatRecorder;
 
   beforeAll(async () => {
-    eventRecorder = EventRecorderService.getInstance();
-    tempoService = TempoService.getInstance();
-
     // Fetch the real module
     const module = await moduleRepository.getModuleById('c55b83e4-11d9-48f3-acc9-bbcbfb8a1a1f');
     if (!module || !module.beats || module.beats.length === 0) {
@@ -50,10 +52,17 @@ describe('BeatRecorder', () => {
     }
 
     beat = new Beat(module.beats[0]); // Properly instantiate the Beat class
-    beatRecorder = BeatRecorder.getInstance();
   });
 
   beforeEach(async () => {
+    csvDirectory = mkdtempSync(join(tmpdir(), 'timey-beat-recorder-'));
+    EventRecorderService.shutdown();
+    TempoService.shutdown();
+    BeatRecorder.shutdown();
+    eventRecorder = EventRecorderService.getInstance();
+    tempoService = TempoService.getInstance();
+    beatRecorder = BeatRecorder.getInstance();
+
     // Start the tempo service with simulated timer
     tempoService.reset();
     tempoService.startSimulatedIntervalTimerForTesting();
@@ -65,12 +74,16 @@ describe('BeatRecorder', () => {
 
     // Reset the recorder state
     beatRecorder.setBeat(beat);
-    tempoService.isRecording = true;
+    tempoService.record();
   });
 
   afterEach(() => {
-    // Clean up
-    tempoService.stop();
+    try {
+      tempoService?.stop();
+    } finally {
+      // Remove only this test's directory, including sibling CSV backups.
+      rmSync(csvDirectory, { recursive: true, force: true });
+    }
   });
 
   function eighthNoteMsec() {
@@ -135,17 +148,35 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-    eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.loadFromCsvFile('test.csv');
-    eventRecorder.replay();
-    eventRecorder.saveToCsv('test2.csv', true);
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
+    eventRecorder.loadFromCsvFile(csvPath('test.csv'));
+    beatRecorder.replay();
+    eventRecorder.saveToCsv(csvPath('test2.csv'), true);
     checkResults();
   });
 
   it('replay test.csv', () => {
-    eventRecorder.loadFromCsvFile('test.csv');
-    eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv', true);
+    // A deterministic input owned by this test; no preceding capture is required.
+    const csv = [
+      'timestamp,noteIndex,type,note,timing,velocity',
+      '0,0,midi,kick,,100',
+      '0,0,midi,hihat,,100',
+      '250,0,timing,,250,',
+    ].join('\n');
+    writeFileSync(csvPath('test.csv'), csv);
+    expect(existsSync(csvPath('test-prev.csv'))).toBe(false);
+
+    eventRecorder.loadFromCsvFile(csvPath('test.csv'));
+    beatRecorder.replay();
+    expect(beatRecorder.performance.notes.map((note) => note.noteString)).toEqual([
+      String(getNote('kick')),
+      String(getNote('hihat')),
+    ]);
+    expect(beatRecorder.performance.notes.map((note) => note.microtiming)).toEqual([0, 0]);
+    expect(beatRecorder.performanceFeedback.beatNoteFeedback).toHaveLength(2);
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
+    expect(readFileSync(csvPath('test.csv'), 'utf8')).toBe(eventRecorder.toCsv());
+    expect(readFileSync(csvPath('test-prev.csv'), 'utf8')).toBe(csv);
   });
 
   it('first note', () => {
@@ -197,9 +228,9 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-    eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv', true);
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
+    beatRecorder.replay();
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
     checkResults();
   });
 
@@ -236,9 +267,9 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-    eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv', true);
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
+    beatRecorder.replay();
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
     checkResults();
   });
 
@@ -278,9 +309,9 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-    eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv', true);
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
+    beatRecorder.replay();
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
     checkResults();
   });
 
@@ -321,15 +352,15 @@ describe('BeatRecorder', () => {
     };
 
     checkResults();
-    eventRecorder.saveToCsv('test.csv', true);
-    eventRecorder.replay();
-    eventRecorder.saveToCsv('test.csv', true);
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
+    beatRecorder.replay();
+    eventRecorder.saveToCsv(csvPath('test.csv'), true);
     checkResults();
   });
 
   // it('wip: test miss first note', () => {
   //   beatRecorder.setBeat(beat);
-  //   tempoService.isRecording = true;
+  //   tempoService.record();
 
   //   // midiService.emitMidiNote(getNote('kick'), 100);
   //   midiService.emitMidiNote(getNote('hihat'), 100);
@@ -366,7 +397,7 @@ describe('BeatRecorder', () => {
 
   //   it('manual play of beat', () => {
   //     beatRecorder.setBeat(beat);
-  //     tempoService.isRecording = true;
+  //     tempoService.record();
 
   //     midiService.emitMidiNote(getNote('kick'), 100);
   //     midiService.emitMidiNote(getNote('hihat'), 100);

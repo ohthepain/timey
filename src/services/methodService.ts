@@ -1,85 +1,50 @@
+import { deleteContent } from '~/repositories/contentDeletion';
+import { deleteContentInput } from '~/types/contentDeletion';
+import { createServerFn } from '@tanstack/react-start';
+import { methodRepository } from '~/repositories/methodRepository';
+import { z } from 'zod';
 import { Method } from '~/types/Method';
+import { requireDomainUser } from '~/server/domain-session';
+import { createMethodInput, updateMethodInput } from '~/types/contentWrites';
 
-export const methodService = {
-  async getAllMethods(): Promise<Method[]> {
-    let url = `/api/methods`;
-    if (typeof window === 'undefined') {
-      // Server-side: use absolute URL - on ChatGPT's recommendation
-      const base = process.env.API_BASE_URL;
-      url = `${base}/api/methods`;
-    }
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error('Failed to fetch methods');
-    }
-    const result = await response.json();
-    console.log('Methods:', result);
-    return result;
-  },
+export const getAllMethodsServerFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const methods = await methodRepository.getAllMethods();
+  return methods.map((method) => new Method(method).toJSON());
+});
 
-  async createMethod(title: string): Promise<Method> {
-    let url = `/api/methods`;
-    if (typeof window === 'undefined') {
-      // Server-side: use absolute URL - on ChatGPT's recommendation
-      const base = process.env.API_BASE_URL;
-      url = `${base}/api/methods`;
-    }
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
-    });
-    if (!response.ok) {
-      throw new Error('Failed to create method');
-    }
-    return response.json();
-  },
+export const createMethodServerFn = createServerFn({ method: 'POST' })
+  .validator(createMethodInput)
+  .handler(async (ctx) => {
+    const { userId } = await requireDomainUser();
+    const method = await methodRepository.createMethod(ctx.data, userId);
+    return new Method(method).toJSON();
+  });
 
-  async getMethodById(id: string): Promise<Method | null> {
-    let url = `/api/methods/${id}`;
-    if (typeof window === 'undefined') {
-      // Server-side: use absolute URL - on ChatGPT's recommendation
-      const base = process.env.API_BASE_URL;
-      url = `${base}/api/methods/${id}`;
-    }
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error('Failed to fetch method');
-    }
-    return response.json();
-  },
+const getMethodByIdServerFnArgs = z.object({
+  id: z.string(),
+});
 
-  async updateMethod(id: string, data: Partial<Omit<Method, 'id' | 'createdAt' | 'modifiedAt'>>): Promise<Method> {
-    let url = `/api/methods/${id}`;
-    if (typeof window === 'undefined') {
-      // Server-side: use absolute URL - on ChatGPT's recommendation
-      const base = process.env.API_BASE_URL;
-      url = `${base}/api/methods/${id}`;
+export const getMethodByIdServerFn = createServerFn({ method: 'GET' })
+  .validator((data: unknown) => getMethodByIdServerFnArgs.parse(data))
+  .handler(async (ctx) => {
+    const method = await methodRepository.getMethodById(ctx.data.id);
+    if (!method) {
+      return null;
     }
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-      throw new Error('Failed to update method');
-    }
-    return response.json();
-  },
+    return new Method(method).toJSON();
+  });
 
-  async deleteMethod(id: string): Promise<Method> {
-    let url = `/api/methods/${id}`;
-    if (typeof window === 'undefined') {
-      // Server-side: use absolute URL - on ChatGPT's recommendation
-      const base = process.env.API_BASE_URL;
-      url = `${base}/api/methods/${id}`;
-    }
-    const response = await fetch(url, {
-      method: 'DELETE',
-    });
-    if (!response.ok) {
-      throw new Error('Failed to delete method');
-    }
-    return response.json();
-  },
-};
+export const updateMethodServerFn = createServerFn({ method: 'POST' })
+  .validator(updateMethodInput)
+  .handler(async (ctx) => {
+    const { userId } = await requireDomainUser();
+    const method = await methodRepository.updateMethod(ctx.data.id, ctx.data, userId);
+    return new Method(method).toJSON();
+  });
+
+export const deleteMethodServerFn = createServerFn({ method: 'POST' })
+  .validator(deleteContentInput)
+  .handler(async (ctx) => {
+    const { userId } = await requireDomainUser();
+    return deleteContent('method', ctx.data.id, userId);
+  });

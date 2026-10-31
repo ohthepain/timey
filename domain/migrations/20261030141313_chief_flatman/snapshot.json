@@ -1,0 +1,1927 @@
+{
+  "type": "base",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "83fcb4c4-6e56-4d56-aa53-c0623fb4ece4",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "BeatNote"],
+      "writes": [
+        "s|tbl|domain.BeatNote",
+        "n|tbl|domain.BeatNote",
+        "e|tbl|domain.BeatNote",
+        "n|rel|domain.BeatNote",
+        "n|type|domain.BeatNote",
+        "n|rel|domain.BeatNote_pkey"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "BeatProgress"],
+      "writes": [
+        "s|tbl|domain.BeatProgress",
+        "n|tbl|domain.BeatProgress",
+        "e|tbl|domain.BeatProgress",
+        "n|rel|domain.BeatProgress",
+        "n|type|domain.BeatProgress",
+        "n|rel|domain.BeatProgress_pkey"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "Beat"],
+      "writes": [
+        "s|tbl|domain.Beat",
+        "n|tbl|domain.Beat",
+        "e|tbl|domain.Beat",
+        "n|rel|domain.Beat",
+        "n|type|domain.Beat",
+        "n|rel|domain.Beat_pkey"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "MethodProgress"],
+      "writes": [
+        "s|tbl|domain.MethodProgress",
+        "n|tbl|domain.MethodProgress",
+        "e|tbl|domain.MethodProgress",
+        "n|rel|domain.MethodProgress",
+        "n|type|domain.MethodProgress",
+        "n|rel|domain.MethodProgress_pkey"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "Method"],
+      "writes": [
+        "s|tbl|domain.Method",
+        "n|tbl|domain.Method",
+        "e|tbl|domain.Method",
+        "n|rel|domain.Method",
+        "n|type|domain.Method",
+        "n|rel|domain.Method_pkey"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "ModuleProgress"],
+      "writes": [
+        "s|tbl|domain.ModuleProgress",
+        "n|tbl|domain.ModuleProgress",
+        "e|tbl|domain.ModuleProgress",
+        "n|rel|domain.ModuleProgress",
+        "n|type|domain.ModuleProgress",
+        "n|rel|domain.ModuleProgress_pkey"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "Module"],
+      "writes": [
+        "s|tbl|domain.Module",
+        "n|tbl|domain.Module",
+        "e|tbl|domain.Module",
+        "n|rel|domain.Module",
+        "n|type|domain.Module",
+        "n|rel|domain.Module_pkey"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "Performance"],
+      "writes": [
+        "s|tbl|domain.Performance",
+        "n|tbl|domain.Performance",
+        "e|tbl|domain.Performance",
+        "n|rel|domain.Performance",
+        "n|type|domain.Performance",
+        "n|rel|domain.Performance_pkey"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "domain", "User"],
+      "writes": [
+        "s|tbl|domain.User",
+        "n|tbl|domain.User",
+        "e|tbl|domain.User",
+        "n|rel|domain.User",
+        "n|type|domain.User",
+        "n|rel|domain.User_pkey",
+        "n|rel|domain.User_keycloakId_key"
+      ],
+      "reads": ["n|sch|domain"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "BeatNote", "BeatNote_beatId_idx"],
+      "writes": [
+        "s|idx|domain.BeatNote_beatId_idx",
+        "n|idx|domain.BeatNote_beatId_idx",
+        "e|idx|domain.BeatNote_beatId_idx",
+        "n|rel|domain.BeatNote_beatId_idx"
+      ],
+      "reads": ["n|tbl|domain.BeatNote", "n|sch|domain", "n|col|domain.BeatNote.beatId"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "BeatProgress", "BeatProgress_userId_beatId_key"],
+      "writes": [
+        "s|idx|domain.BeatProgress_userId_beatId_key",
+        "n|idx|domain.BeatProgress_userId_beatId_key",
+        "e|idx|domain.BeatProgress_userId_beatId_key",
+        "n|rel|domain.BeatProgress_userId_beatId_key"
+      ],
+      "reads": [
+        "n|tbl|domain.BeatProgress",
+        "n|sch|domain",
+        "n|col|domain.BeatProgress.userId",
+        "n|col|domain.BeatProgress.beatId"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "Beat", "Beat_authorId_idx"],
+      "writes": [
+        "s|idx|domain.Beat_authorId_idx",
+        "n|idx|domain.Beat_authorId_idx",
+        "e|idx|domain.Beat_authorId_idx",
+        "n|rel|domain.Beat_authorId_idx"
+      ],
+      "reads": ["n|tbl|domain.Beat", "n|sch|domain", "n|col|domain.Beat.authorId"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "Beat", "Beat_moduleId_idx"],
+      "writes": [
+        "s|idx|domain.Beat_moduleId_idx",
+        "n|idx|domain.Beat_moduleId_idx",
+        "e|idx|domain.Beat_moduleId_idx",
+        "n|rel|domain.Beat_moduleId_idx"
+      ],
+      "reads": ["n|tbl|domain.Beat", "n|sch|domain", "n|col|domain.Beat.moduleId"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "MethodProgress", "MethodProgress_userId_methodId_key"],
+      "writes": [
+        "s|idx|domain.MethodProgress_userId_methodId_key",
+        "n|idx|domain.MethodProgress_userId_methodId_key",
+        "e|idx|domain.MethodProgress_userId_methodId_key",
+        "n|rel|domain.MethodProgress_userId_methodId_key"
+      ],
+      "reads": [
+        "n|tbl|domain.MethodProgress",
+        "n|sch|domain",
+        "n|col|domain.MethodProgress.userId",
+        "n|col|domain.MethodProgress.methodId"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "Method", "Method_title_key"],
+      "writes": [
+        "s|idx|domain.Method_title_key",
+        "n|idx|domain.Method_title_key",
+        "e|idx|domain.Method_title_key",
+        "n|rel|domain.Method_title_key"
+      ],
+      "reads": ["n|tbl|domain.Method", "n|sch|domain", "n|col|domain.Method.title"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "ModuleProgress", "ModuleProgress_userId_moduleId_key"],
+      "writes": [
+        "s|idx|domain.ModuleProgress_userId_moduleId_key",
+        "n|idx|domain.ModuleProgress_userId_moduleId_key",
+        "e|idx|domain.ModuleProgress_userId_moduleId_key",
+        "n|rel|domain.ModuleProgress_userId_moduleId_key"
+      ],
+      "reads": [
+        "n|tbl|domain.ModuleProgress",
+        "n|sch|domain",
+        "n|col|domain.ModuleProgress.userId",
+        "n|col|domain.ModuleProgress.moduleId"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "Module", "Module_title_methodId_key"],
+      "writes": [
+        "s|idx|domain.Module_title_methodId_key",
+        "n|idx|domain.Module_title_methodId_key",
+        "e|idx|domain.Module_title_methodId_key",
+        "n|rel|domain.Module_title_methodId_key"
+      ],
+      "reads": ["n|tbl|domain.Module", "n|sch|domain", "n|col|domain.Module.title", "n|col|domain.Module.methodId"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "domain", "User", "User_email_key"],
+      "writes": [
+        "s|idx|domain.User_email_key",
+        "n|idx|domain.User_email_key",
+        "e|idx|domain.User_email_key",
+        "n|rel|domain.User_email_key"
+      ],
+      "reads": ["n|tbl|domain.User", "n|sch|domain", "n|col|domain.User.email"]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "BeatNote"],
+      "writes": [
+        "s|fk|domain.BeatNote.BeatNote_beatId_Beat_id_fkey",
+        "n|fk|domain.BeatNote.BeatNote_beatId_Beat_id_fkey",
+        "e|fk|domain.BeatNote.BeatNote_beatId_Beat_id_fkey",
+        "n|con|domain.BeatNote.BeatNote_beatId_Beat_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.BeatNote",
+        "n|sch|domain",
+        "n|tbl|domain.Beat",
+        "n|sch|domain",
+        "n|col|domain.BeatNote.beatId",
+        "n|col|domain.Beat.id",
+        "e|uniqueness|domain.Beat.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "BeatNote"],
+      "writes": [
+        "s|fk|domain.BeatNote.BeatNote_performanceId_Performance_id_fkey",
+        "n|fk|domain.BeatNote.BeatNote_performanceId_Performance_id_fkey",
+        "e|fk|domain.BeatNote.BeatNote_performanceId_Performance_id_fkey",
+        "n|con|domain.BeatNote.BeatNote_performanceId_Performance_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.BeatNote",
+        "n|sch|domain",
+        "n|tbl|domain.Performance",
+        "n|sch|domain",
+        "n|col|domain.BeatNote.performanceId",
+        "n|col|domain.Performance.id",
+        "e|uniqueness|domain.Performance.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "BeatProgress"],
+      "writes": [
+        "s|fk|domain.BeatProgress.BeatProgress_userId_User_id_fkey",
+        "n|fk|domain.BeatProgress.BeatProgress_userId_User_id_fkey",
+        "e|fk|domain.BeatProgress.BeatProgress_userId_User_id_fkey",
+        "n|con|domain.BeatProgress.BeatProgress_userId_User_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.BeatProgress",
+        "n|sch|domain",
+        "n|tbl|domain.User",
+        "n|sch|domain",
+        "n|col|domain.BeatProgress.userId",
+        "n|col|domain.User.id",
+        "e|uniqueness|domain.User.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "BeatProgress"],
+      "writes": [
+        "s|fk|domain.BeatProgress.BeatProgress_beatId_Beat_id_fkey",
+        "n|fk|domain.BeatProgress.BeatProgress_beatId_Beat_id_fkey",
+        "e|fk|domain.BeatProgress.BeatProgress_beatId_Beat_id_fkey",
+        "n|con|domain.BeatProgress.BeatProgress_beatId_Beat_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.BeatProgress",
+        "n|sch|domain",
+        "n|tbl|domain.Beat",
+        "n|sch|domain",
+        "n|col|domain.BeatProgress.beatId",
+        "n|col|domain.Beat.id",
+        "e|uniqueness|domain.Beat.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "Beat"],
+      "writes": [
+        "s|fk|domain.Beat.Beat_authorId_User_id_fkey",
+        "n|fk|domain.Beat.Beat_authorId_User_id_fkey",
+        "e|fk|domain.Beat.Beat_authorId_User_id_fkey",
+        "n|con|domain.Beat.Beat_authorId_User_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.Beat",
+        "n|sch|domain",
+        "n|tbl|domain.User",
+        "n|sch|domain",
+        "n|col|domain.Beat.authorId",
+        "n|col|domain.User.id",
+        "e|uniqueness|domain.User.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "Beat"],
+      "writes": [
+        "s|fk|domain.Beat.Beat_moduleId_Module_id_fkey",
+        "n|fk|domain.Beat.Beat_moduleId_Module_id_fkey",
+        "e|fk|domain.Beat.Beat_moduleId_Module_id_fkey",
+        "n|con|domain.Beat.Beat_moduleId_Module_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.Beat",
+        "n|sch|domain",
+        "n|tbl|domain.Module",
+        "n|sch|domain",
+        "n|col|domain.Beat.moduleId",
+        "n|col|domain.Module.id",
+        "e|uniqueness|domain.Module.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "MethodProgress"],
+      "writes": [
+        "s|fk|domain.MethodProgress.MethodProgress_userId_User_id_fkey",
+        "n|fk|domain.MethodProgress.MethodProgress_userId_User_id_fkey",
+        "e|fk|domain.MethodProgress.MethodProgress_userId_User_id_fkey",
+        "n|con|domain.MethodProgress.MethodProgress_userId_User_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.MethodProgress",
+        "n|sch|domain",
+        "n|tbl|domain.User",
+        "n|sch|domain",
+        "n|col|domain.MethodProgress.userId",
+        "n|col|domain.User.id",
+        "e|uniqueness|domain.User.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "MethodProgress"],
+      "writes": [
+        "s|fk|domain.MethodProgress.MethodProgress_methodId_Method_id_fkey",
+        "n|fk|domain.MethodProgress.MethodProgress_methodId_Method_id_fkey",
+        "e|fk|domain.MethodProgress.MethodProgress_methodId_Method_id_fkey",
+        "n|con|domain.MethodProgress.MethodProgress_methodId_Method_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.MethodProgress",
+        "n|sch|domain",
+        "n|tbl|domain.Method",
+        "n|sch|domain",
+        "n|col|domain.MethodProgress.methodId",
+        "n|col|domain.Method.id",
+        "e|uniqueness|domain.Method.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "Method"],
+      "writes": [
+        "s|fk|domain.Method.Method_authorId_User_id_fkey",
+        "n|fk|domain.Method.Method_authorId_User_id_fkey",
+        "e|fk|domain.Method.Method_authorId_User_id_fkey",
+        "n|con|domain.Method.Method_authorId_User_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.Method",
+        "n|sch|domain",
+        "n|tbl|domain.User",
+        "n|sch|domain",
+        "n|col|domain.Method.authorId",
+        "n|col|domain.User.id",
+        "e|uniqueness|domain.User.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "ModuleProgress"],
+      "writes": [
+        "s|fk|domain.ModuleProgress.ModuleProgress_userId_User_id_fkey",
+        "n|fk|domain.ModuleProgress.ModuleProgress_userId_User_id_fkey",
+        "e|fk|domain.ModuleProgress.ModuleProgress_userId_User_id_fkey",
+        "n|con|domain.ModuleProgress.ModuleProgress_userId_User_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.ModuleProgress",
+        "n|sch|domain",
+        "n|tbl|domain.User",
+        "n|sch|domain",
+        "n|col|domain.ModuleProgress.userId",
+        "n|col|domain.User.id",
+        "e|uniqueness|domain.User.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "ModuleProgress"],
+      "writes": [
+        "s|fk|domain.ModuleProgress.ModuleProgress_moduleId_Module_id_fkey",
+        "n|fk|domain.ModuleProgress.ModuleProgress_moduleId_Module_id_fkey",
+        "e|fk|domain.ModuleProgress.ModuleProgress_moduleId_Module_id_fkey",
+        "n|con|domain.ModuleProgress.ModuleProgress_moduleId_Module_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.ModuleProgress",
+        "n|sch|domain",
+        "n|tbl|domain.Module",
+        "n|sch|domain",
+        "n|col|domain.ModuleProgress.moduleId",
+        "n|col|domain.Module.id",
+        "e|uniqueness|domain.Module.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "Module"],
+      "writes": [
+        "s|fk|domain.Module.Module_authorId_User_id_fkey",
+        "n|fk|domain.Module.Module_authorId_User_id_fkey",
+        "e|fk|domain.Module.Module_authorId_User_id_fkey",
+        "n|con|domain.Module.Module_authorId_User_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.Module",
+        "n|sch|domain",
+        "n|tbl|domain.User",
+        "n|sch|domain",
+        "n|col|domain.Module.authorId",
+        "n|col|domain.User.id",
+        "e|uniqueness|domain.User.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "Module"],
+      "writes": [
+        "s|fk|domain.Module.Module_methodId_Method_id_fkey",
+        "n|fk|domain.Module.Module_methodId_Method_id_fkey",
+        "e|fk|domain.Module.Module_methodId_Method_id_fkey",
+        "n|con|domain.Module.Module_methodId_Method_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.Module",
+        "n|sch|domain",
+        "n|tbl|domain.Method",
+        "n|sch|domain",
+        "n|col|domain.Module.methodId",
+        "n|col|domain.Method.id",
+        "e|uniqueness|domain.Method.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "domain", "Performance"],
+      "writes": [
+        "s|fk|domain.Performance.Performance_beatId_Beat_id_fkey",
+        "n|fk|domain.Performance.Performance_beatId_Beat_id_fkey",
+        "e|fk|domain.Performance.Performance_beatId_Beat_id_fkey",
+        "n|con|domain.Performance.Performance_beatId_Beat_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|domain.Performance",
+        "n|sch|domain",
+        "n|tbl|domain.Beat",
+        "n|sch|domain",
+        "n|col|domain.Performance.beatId",
+        "n|col|domain.Beat.id",
+        "e|uniqueness|domain.Beat.id"
+      ]
+    }
+  ],
+  "ddl": [
+    {
+      "schema": "domain",
+      "name": "BeatNote",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "name": "BeatProgress",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "name": "Beat",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "name": "MethodProgress",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "name": "Method",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "name": "ModuleProgress",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "name": "Module",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "name": "Performance",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "name": "User",
+      "isRlsEnabled": false,
+      "entityType": "tables"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "index",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "duration",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "noteString",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "barNum",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "beatNum",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "divisionNum",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "subDivisionNum",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "numSubDivisions",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "velocity",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "microtiming",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "beatId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "performanceId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "userId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "beatId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "bestTempo",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "createdAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "updatedAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "name",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "description",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "index",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "authorId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "moduleId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "createdAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "modifiedAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "userId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "methodId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "createdAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "updatedAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "targetLevel",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "title",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "description",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "index",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "authorId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "createdAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "modifiedAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "userId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "moduleId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "currentMethodId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "createdAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "updatedAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "targetLevel",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "title",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "description",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "index",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "authorId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "methodId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "createdAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "modifiedAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Performance",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Performance",
+      "name": "beatId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Performance",
+      "name": "index",
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Performance",
+      "name": "userId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Performance",
+      "name": "createdAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "Performance",
+      "name": "modifiedAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "id",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "keycloakId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "userName",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "email",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "currentModuleId",
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "createdAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "modifiedAt",
+      "type": "timestamp(3)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "entityType": "columns"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "BeatNote_beatId_idx",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "beatId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "BeatProgress_userId_beatId_key",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "userId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "beatId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "Beat_authorId_idx",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "authorId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "Beat_moduleId_idx",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "moduleId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "MethodProgress_userId_methodId_key",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "userId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "methodId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "Method_title_key",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "title",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "ModuleProgress_userId_moduleId_key",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "userId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "moduleId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "Module_title_methodId_key",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "title",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "methodId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "User_email_key",
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "email",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "entityType": "indexes"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "BeatNote_beatId_Beat_id_fkey",
+      "nameExplicit": false,
+      "columns": ["beatId"],
+      "schemaTo": "domain",
+      "tableTo": "Beat",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "BeatNote_performanceId_Performance_id_fkey",
+      "nameExplicit": false,
+      "columns": ["performanceId"],
+      "schemaTo": "domain",
+      "tableTo": "Performance",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "BeatProgress_userId_User_id_fkey",
+      "nameExplicit": false,
+      "columns": ["userId"],
+      "schemaTo": "domain",
+      "tableTo": "User",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "BeatProgress_beatId_Beat_id_fkey",
+      "nameExplicit": false,
+      "columns": ["beatId"],
+      "schemaTo": "domain",
+      "tableTo": "Beat",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "Beat_authorId_User_id_fkey",
+      "nameExplicit": false,
+      "columns": ["authorId"],
+      "schemaTo": "domain",
+      "tableTo": "User",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "Beat_moduleId_Module_id_fkey",
+      "nameExplicit": false,
+      "columns": ["moduleId"],
+      "schemaTo": "domain",
+      "tableTo": "Module",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "MethodProgress_userId_User_id_fkey",
+      "nameExplicit": false,
+      "columns": ["userId"],
+      "schemaTo": "domain",
+      "tableTo": "User",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "MethodProgress_methodId_Method_id_fkey",
+      "nameExplicit": false,
+      "columns": ["methodId"],
+      "schemaTo": "domain",
+      "tableTo": "Method",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "Method_authorId_User_id_fkey",
+      "nameExplicit": false,
+      "columns": ["authorId"],
+      "schemaTo": "domain",
+      "tableTo": "User",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "ModuleProgress_userId_User_id_fkey",
+      "nameExplicit": false,
+      "columns": ["userId"],
+      "schemaTo": "domain",
+      "tableTo": "User",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "ModuleProgress_moduleId_Module_id_fkey",
+      "nameExplicit": false,
+      "columns": ["moduleId"],
+      "schemaTo": "domain",
+      "tableTo": "Module",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "Module_authorId_User_id_fkey",
+      "nameExplicit": false,
+      "columns": ["authorId"],
+      "schemaTo": "domain",
+      "tableTo": "User",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "Module_methodId_Method_id_fkey",
+      "nameExplicit": false,
+      "columns": ["methodId"],
+      "schemaTo": "domain",
+      "tableTo": "Method",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "Performance",
+      "name": "Performance_beatId_Beat_id_fkey",
+      "nameExplicit": false,
+      "columns": ["beatId"],
+      "schemaTo": "domain",
+      "tableTo": "Beat",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "entityType": "fks"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatNote",
+      "name": "BeatNote_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "BeatProgress",
+      "name": "BeatProgress_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "Beat",
+      "name": "Beat_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "MethodProgress",
+      "name": "MethodProgress_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "Method",
+      "name": "Method_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "ModuleProgress",
+      "name": "ModuleProgress_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "Module",
+      "name": "Module_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "Performance",
+      "name": "Performance_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "User_pkey",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "schema": "domain",
+      "table": "User",
+      "name": "User_keycloakId_key",
+      "nameExplicit": false,
+      "columns": ["keycloakId"],
+      "nullsNotDistinct": false,
+      "entityType": "uniques"
+    }
+  ]
+}

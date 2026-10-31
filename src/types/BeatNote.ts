@@ -1,4 +1,4 @@
-import { GeneralMidiService } from '~/lib/GeneralMidiService';
+import { matchBeatNoteMidi } from '~/lib/beatNoteMidiMatch';
 
 export class BeatNote {
   id: string;
@@ -62,13 +62,7 @@ export class BeatNote {
     return barTime + beatTime + divisionTime + subDivisionTime + (this.microtiming || 0);
   }
 
-  includesMidiNote(midiNote: number): boolean {
-    const drumName = GeneralMidiService.getDrumName(midiNote);
-    if (!drumName) {
-      throw new Error(`Unknown MIDI note: ${midiNote}`);
-    }
-
-    const notes = this.noteString.split(', ');
-    return notes.some((note) => note === drumName);
+  matchMidiNote(midiNote: number): string | null {
+    return matchBeatNoteMidi(this.noteString, midiNote);
   }
 }

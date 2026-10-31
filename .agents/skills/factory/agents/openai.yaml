@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Factory'
+  short_description: 'Browse issues and choose human input or worker chats'
+  default_prompt: "Use $factory to evaluate this project's queue and offer human input, a recommended worker group, or both. Keep launches manual."
+policy:
+  allow_implicit_invocation: false

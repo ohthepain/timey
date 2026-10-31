@@ -1,6 +1,6 @@
 // Returns the center (h, k) of the circle passing through three points
 // (x0, y0), (x1, y1), (x2, y2)
-export function circleCenter(
+function circleCenter(
   x0: number,
   y0: number,
   x1: number,
@@ -25,14 +25,7 @@ export function circleCenterAndArc(
   x2: number,
   y2: number
 ): { x: number; y: number; arc: number } {
-  let D = 2 * (x0 * (y1 - y2) + x1 * (y2 - y0) + x2 * (y0 - y1));
-  if (D === 0) {
-    // Points are collinear
-    D = 1;
-  }
-
-  const h = ((x0 ** 2 + y0 ** 2) * (y1 - y2) + (x1 ** 2 + y1 ** 2) * (y2 - y0) + (x2 ** 2 + y2 ** 2) * (y0 - y1)) / D;
-  const k = ((x0 ** 2 + y0 ** 2) * (x2 - x1) + (x1 ** 2 + y1 ** 2) * (x0 - x2) + (x2 ** 2 + y2 ** 2) * (x1 - x0)) / D;
+  const { x: h, y: k } = circleCenter(x0, y0, x1, y1, x2, y2);
 
   // Angles from center to each point
   const a0 = Math.atan2(y0 - k, x0 - h);

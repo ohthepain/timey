@@ -1,103 +1,60 @@
-import { json } from '@tanstack/react-start';
-import { createAPIFileRoute } from '@tanstack/react-start/api';
+import { createFileRoute } from '@tanstack/react-router';
+import { deleteContent } from '~/repositories/contentDeletion';
+import { deleteContentInput } from '~/types/contentDeletion';
 import { moduleRepository } from '~/repositories/moduleRepository';
-import { checkUser } from '~/lib/checkUser';
-import { getAuth } from '@clerk/tanstack-react-start/server';
-import { redirect } from '@tanstack/react-router';
+import { requireDomainUser } from '~/server/domain-session';
+import { createModuleInput, updateModuleApiInput } from '~/types/contentWrites';
 
-export const APIRoute = createAPIFileRoute('/api/modules')({
-  GET: async () => {
-    console.log(`/api/modules GET request`);
-    try {
-      const modules = await moduleRepository.getAllModules();
-      return json({ modules });
-    } catch (error) {
-      console.error('Error fetching methods:', error);
-      return json({ error: 'Failed to get methods' }, { status: 500 });
-    }
-  },
-  POST: async ({ request }) => {
-    console.log(`/api/modules POST request`);
-    try {
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        throw redirect({
-          to: '/sign-in/$',
-        });
-      }
-
-      const { title, index, methodId } = await request.json();
-      if (!title || !methodId) {
-        return json({ error: 'Title and methodId are required' }, { status: 400 });
-      }
-
-      await checkUser(request);
-
-      const newMethod = await moduleRepository.createModule({
-        title,
-        index,
-        description: '',
-        authorId: userId,
-        methodId,
-      });
-
-      return json(newMethod, { status: 201 });
-    } catch (error) {
-      console.error('Error creating method:', error);
-      return json({ error: 'Failed to create method' }, { status: 500 });
-    }
-  },
-  PUT: async ({ request }) => {
-    console.log(`/api/modules PUT request`);
-    try {
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        throw redirect({
-          to: '/sign-in/$',
-        });
-      }
-
-      const { id, title, index } = await request.json();
-      if (!id || !title) {
-        return json({ error: 'ID and title are required' }, { status: 400 });
-      }
-
-      await checkUser(request);
-
-      const updatedMethod = await moduleRepository.updateModule({
-        id,
-        title,
-        index,
-      });
-
-      return json(updatedMethod, { status: 200 });
-    } catch (error) {
-      console.error('Error updating method:', error);
-      return json({ error: 'Failed to update method' }, { status: 500 });
-    }
-  },
-  DELETE: async ({ request }) => {
-    console.log(`/api/modules DELETE request`);
-    try {
-      const { userId } = await getAuth(request);
-      if (!userId) {
-        throw redirect({
-          to: '/sign-in/$',
-        });
-      }
-
-      const { id } = await request.json();
-      if (!id) {
-        return json({ error: 'ID is required' }, { status: 400 });
-      }
-
-      await checkUser(request);
-
-      const deletedMethod = await moduleRepository.deleteModule(id);
-      return json(deletedMethod, { status: 200 });
-    } catch (error) {
-      console.error('Error deleting method:', error);
-      return json({ error: 'Failed to delete method' }, { status: 500 });
-    }
+export const Route = createFileRoute('/api/modules')({
+  server: {
+    handlers: {
+      GET: async () => {
+        console.log(`/api/modules GET request`);
+        try {
+          const modules = await moduleRepository.getAllModules();
+          return Response.json({ modules });
+        } catch (error) {
+          console.error('Error fetching methods:', error);
+          return Response.json({ error: 'Failed to get methods' }, { status: 500 });
+        }
+      },
+      POST: async ({ request }) => {
+        try {
+          const { userId } = await requireDomainUser(request);
+          const parsed = createModuleInput.safeParse(await request.json());
+          if (!parsed.success) return Response.json({ error: 'Invalid module fields' }, { status: 400 });
+          return Response.json(await moduleRepository.createModule(parsed.data, userId), { status: 201 });
+        } catch (error) {
+          return moduleWriteError(error);
+        }
+      },
+      PUT: async ({ request }) => {
+        try {
+          const { userId } = await requireDomainUser(request);
+          const parsed = updateModuleApiInput.safeParse(await request.json());
+          if (!parsed.success) return Response.json({ error: 'Invalid module fields' }, { status: 400 });
+          return Response.json(await moduleRepository.updateModule(parsed.data.id, parsed.data, userId));
+        } catch (error) {
+          return moduleWriteError(error);
+        }
+      },
+      DELETE: async ({ request }) => {
+        try {
+          const { userId } = await requireDomainUser(request);
+          const parsed = deleteContentInput.safeParse(await request.json());
+          if (!parsed.success) return Response.json({ error: 'Invalid deletion fields' }, { status: 400 });
+          return Response.json(await deleteContent('module', parsed.data.id, userId));
+        } catch (error) {
+          return moduleWriteError(error);
+        }
+      },
+    },
   },
 });
+
+function moduleWriteError(error: unknown) {
+  if (error instanceof Response) return error;
+  if (error instanceof SyntaxError) return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+  console.error('Module write failed:', error);
+  return Response.json({ error: 'Unable to save module; please retry' }, { status: 500 });
+}

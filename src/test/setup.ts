@@ -25,9 +25,7 @@ Object.defineProperty(global.navigator, 'requestMIDIAccess', {
 
 import '@testing-library/jest-dom';
 import { EventEmitter } from 'events';
-import { ParseBeatSource, ParseBeatString } from '~/lib/ParseBeat';
-import { BeatSource } from '~/types/BarSource';
-import { Beat } from '~/types/Beat';
+import { createTestBeat } from '~/lib/createTestBeat';
 declare global {
   var vi: {
     mock: (path: string, factory: () => any) => void;
@@ -37,40 +35,13 @@ declare global {
   };
 }
 
-// Create a beat source with the same patterns as BeatEditor
-const makeTestBeat = (moduleId: string): Beat => {
-  const beatSource = new BeatSource([
-    {
-      kick: 'k,,,,k,,,',
-      hihat: 'h,h,h,h,h,h,h,h',
-      snare: ',,s,,,,s,',
-      accent: 'a,,a,,a,,a,',
-    },
-  ]);
-
-  const beatString = ParseBeatSource(beatSource);
-  const { beatNotes } = ParseBeatString(beatString);
-  const testBeat = new Beat({
-    id: 'testBeat',
-    name: 'testBeat',
-    index: 0,
-    authorId: '',
-    createdAt: new Date(),
-    modifiedAt: new Date(),
-    beatNotes: beatNotes,
-    description: '',
-    moduleId: moduleId,
-  });
-  return testBeat;
-};
-
 // Mock the module repository for testing
 global.vi.mock('~/repositories/moduleRepository', () => ({
   moduleRepository: {
     getModuleById: global.vi.fn().mockImplementation(async (id: string) => ({
       id,
       title: 'Test Module',
-      beats: [makeTestBeat(id)],
+      beats: [createTestBeat(id)],
     })),
   },
 }));

@@ -1,62 +1,43 @@
-import { json } from '@tanstack/react-start';
-import { createAPIFileRoute } from '@tanstack/react-start/api';
-import { getAuth } from '@clerk/tanstack-react-start/server';
-import { redirect } from '@tanstack/react-router';
-import { checkUser } from '~/lib/checkUser';
+import { createFileRoute } from '@tanstack/react-router';
 import { beatRepository } from '~/repositories/beatRepository';
 import { ParseBeatString } from '~/lib/ParseBeat';
+import { requireDomainUser } from '~/server/domain-session';
+import { createBeatApiInput, createBeatInput, editBeatApiInput, editBeatInput } from '~/types/beatWrites';
 
-export const APIRoute = createAPIFileRoute('/api/beats')({
-  PUT: async ({ request }) => {
-    console.log(`/api/beats PUT request`);
-    try {
-      const { userId } = await getAuth(request);
-      const { id, name, beatString, index, description, moduleId } = await request.json();
-      console.log('Request body:', { id, name, beatString, index, description, moduleId });
-
-      if (!userId) {
-        throw redirect({ to: '/sign-in/$' });
-      }
-
-      if (!beatString || typeof beatString !== 'string') {
-        return json({ error: 'Invalid beat string' }, { status: 400 });
-      }
-
-      if (index === undefined || index === null) {
-        console.error('Index is missing in the request body');
-        return json({ error: 'Index is required' }, { status: 400 });
-      }
-
-      await checkUser(request);
-
-      const { beatNotes } = ParseBeatString(beatString);
-      console.log('Parsed beat notes:', beatNotes);
-
-      if (id) {
-        const beat = await beatRepository.updateBeat(id, {
-          name,
-          description,
-          index,
-          moduleId,
-          beatNotes: beatNotes,
-        });
-
-        return json({ beat }, { status: 200 });
-      } else {
-        const beat = await beatRepository.createBeat({
-          name,
-          description,
-          index,
-          authorId: userId,
-          moduleId,
-          beatNotes: beatNotes,
-        });
-
-        return json({ beat }, { status: 200 });
-      }
-    } catch (error) {
-      console.error('Error saving/updating beat:', error);
-      return json({ error: 'Failed to save/update beat' }, { status: 500 });
-    }
+export const Route = createFileRoute('/api/beats')({
+  server: {
+    handlers: {
+      PUT: async ({ request }) => {
+        try {
+          const body = await request.json();
+          return body.id ? await updateExistingBeat(request, body) : await createBeat(request, body);
+        } catch (error) {
+          if (error instanceof Response) return error;
+          if (error instanceof SyntaxError) return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+          console.error('Beat write failed:', error);
+          return Response.json({ error: 'Failed to save/update beat' }, { status: 500 });
+        }
+      },
+    },
   },
 });
+
+async function createBeat(request: Request, body: unknown) {
+  const { userId } = await requireDomainUser(request);
+  const parsed = createBeatApiInput.safeParse(body);
+  if (!parsed.success) return Response.json({ error: 'Invalid beat fields' }, { status: 400 });
+  const { beatString, ...fields } = parsed.data;
+  const input = createBeatInput.safeParse({ ...fields, beatNotes: ParseBeatString(beatString).beatNotes });
+  if (!input.success) return Response.json({ error: 'Invalid musical notes' }, { status: 400 });
+  return Response.json({ beat: await beatRepository.createBeat(input.data, userId) });
+}
+
+async function updateExistingBeat(request: Request, body: unknown) {
+  const { userId } = await requireDomainUser(request);
+  const parsed = editBeatApiInput.safeParse(body);
+  if (!parsed.success) return Response.json({ error: 'Invalid beat fields' }, { status: 400 });
+  const { beatString, ...fields } = parsed.data;
+  const input = editBeatInput.safeParse({ ...fields, beatNotes: ParseBeatString(beatString).beatNotes });
+  if (!input.success) return Response.json({ error: 'Invalid musical notes' }, { status: 400 });
+  return Response.json({ beat: await beatRepository.updateBeat(input.data.id, input.data, userId) });
+}

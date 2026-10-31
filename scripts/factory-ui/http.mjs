@@ -1,0 +1,238 @@
+import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
+import { changePriority } from './issue-priority.mjs';
+import { prepareDeployment } from './deployment.mjs';
+import { serverControl } from './server-control.mjs';
+import { toggleRoute } from './route-toggle.mjs';
+import { createServer } from 'node:http';
+import { runtimeInfo } from './runtime.mjs';
+import { queueResponse } from './queue-response.mjs';
+import { readFileSync } from 'node:fs';
+import { join, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
+import { requireThat } from './common.mjs';
+import { uiDirectory } from './ui-source.mjs';
+import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
+async function body(request) {
+  let text = '';
+  for await (const chunk of request) {
+    text += chunk;
+    requireThat(Buffer.byteLength(text) < 65536, 'Request too large.');
+  }
+  return JSON.parse(text || '{}');
+}
+function authenticated(request, token, port) {
+  return (request.headers.cookie || '').split(';').some((value) => value.trim() === `timey_factory_${port}=${token}`);
+}
+function authorize(request, token, port) {
+  requireThat(request.headers.host === `127.0.0.1:${port}`, 'Use the local URL printed by this server.');
+  requireThat(
+    authenticated(request, token, port),
+    'This page session expired, possibly because the local server restarted. Reload this page and try again. No action was performed.'
+  );
+  if (request.method === 'POST') {
+    requireThat(
+      request.headers.origin === `http://127.0.0.1:${port}`,
+      'This operation must come from the local factory page.'
+    );
+    requireThat(
+      request.headers['x-factory-action'] === 'manual' && request.headers['content-type'] === 'application/json',
+      'Explicit JSON actions are required.'
+    );
+  }
+}
+async function mutation(service, path, value, owner) {
+  requireLiveMutation(service, path);
+  service.serverControl?.allow(path, value);
+  const discussionRoutes = {
+    '/api/site-review-open': () => service.siteReviews.open(value, owner),
+    '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
+    '/api/discussion-open': () => service.discussions.open(value, owner),
+    '/api/discussion-turn': () => service.discussions.turn(value, owner),
+    '/api/discussion-summary': () => service.discussions.summarize(value, owner),
+    '/api/discussion-prepare': () => service.discussions.prepare(value, owner),
+    '/api/discussion-commit': () => service.discussions.commit(value, owner),
+    '/api/discussion-end': () => service.discussions.end(value, owner),
+  };
+  if (path.startsWith('/api/site-review-')) {
+    requireThat(Object.hasOwn(discussionRoutes, path), 'Unknown site review operation.');
+    return discussionRoutes[path]();
+  }
+  if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
+  const routes = {
+    '/api/native-chat-prepare': () => {
+      service.ownServer();
+      return prepareNativeChat(service.root, value);
+    },
+    '/api/issue-strategy-stop': () => service.stopIssueStrategy(value),
+    '/api/issue-strategy-start': () => service.startIssueStrategy(value),
+    '/api/assembly-retry': () => service.retryAssembly(value),
+    '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
+    '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
+    '/api/issue-capture': () => service.captures.save(value),
+    '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
+    '/api/verification-retry': () => service.retryVerification(value),
+    '/api/coordinator-send': () => service.coordinator.message(value),
+    '/api/coordinator-stop': () => service.coordinator.stop(),
+    '/api/coordinator-continue': () => service.coordinator.continue(),
+    '/api/coordinator-fresh': () => service.coordinator.fresh(),
+    '/api/issue-chat-send': () => service.issueChats.send(value),
+    '/api/issue-chat-stop': () => service.issueChats.stop(value),
+    '/api/server-pause': () => service.serverControl.pause(),
+    '/api/server-restart': () => service.serverControl.request(),
+    '/api/server-cancel-restart': () => service.serverControl.cancel(),
+    '/api/lifecycle-start': () => service.startLifecycle(value),
+    '/api/lifecycle-answer': () => service.answerLifecycle(value),
+    '/api/lifecycle-pause': () => service.pauseLifecycle(value),
+    '/api/approve-review-file': () => service.approveReviewFile(value),
+    '/api/issue-priority': () => changePriority(service, value),
+    '/api/model-settings': () => service.saveModelSettings(value),
+    '/api/issue-model-settings': () => service.saveIssueModelSettings(value),
+    '/api/toggle-route': () => toggleRoute(service, value),
+    '/api/skip-plan-checks': () => service.skipPlanChecks(value),
+    '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),
+    '/api/plan-decision': () =>
+      service.decidePlanCheck(value.issueId, value.state, value.checkId, value.status, value.basis, value.result),
+    '/api/find-worker': () => service.findConnection(value.issueId, value.state, value.basis),
+    '/api/connect-worker': () => service.connectWorker(value.issueId, value.state, value.basis, value.link),
+    '/api/issue-decision': () =>
+      service.decideIssue(value.issueId, value.state, value.kind, value.basis, value.reason, value.resolution),
+    '/api/check-readiness': () => service.checkReadiness(value.issueId, value.state),
+    '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),
+    '/api/progress-start': () => service.progressStart(value.token, value.humanApproved),
+    '/api/evaluate': () => service.evaluate(value.basis),
+    '/api/save-review': () => service.saveReview(value.runId, value.basis),
+    '/api/preflight': () => service.preflight(value.actionId, value.kind),
+    '/api/start': () => service.start(value.token, value.humanApproved),
+    '/api/resume': () => service.resume(value.runId, value.text),
+    '/api/answer': () => service.answer(value.runId, value.requestId, value.response),
+  };
+  if (Object.hasOwn(routes, path)) return routes[path]();
+  throw Error('Unknown operation. No action was taken.');
+}
+export function createFactoryServer(service, options = {}) {
+  service.serverControl = serverControl(service, options.restart);
+  const token = randomBytes(32).toString('hex');
+  const server = createServer(async (request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    );
+    try {
+      requireThat(request.headers.host === `127.0.0.1:${server.address().port}`, 'Use the local factory address.');
+      await respond(service, request, response, token, server.address().port);
+    } catch (error) {
+      response.statusCode = 400;
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify({ error: error.message }));
+    }
+  });
+  server.once('close', () => service.serverControl.close());
+  return server;
+}
+
+async function respond(service, request, response, token, port) {
+  if (isPage(request)) return page(service, request, response, token, port);
+  authorize(request, token, port);
+  response.setHeader('Content-Type', 'application/json');
+  if (request.method === 'GET') return readResource(service, request, response, token);
+  if (request.method === 'POST') return response.end(JSON.stringify(await postedAction(service, request, token)));
+  response.statusCode = 405;
+  response.end(JSON.stringify({ error: 'Unsupported method' }));
+}
+function page(service, request, response, token, port) {
+  response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
+  response.setHeader('Content-Type', 'text/html; charset=utf-8');
+  const name = request.url.startsWith('/native-chat?') ? 'native-chat.html' : 'index.html';
+  response.end(readFileSync(join(uiDirectory(service), name)));
+}
+function read(service, request, response, owner) {
+  const url = new URL(request.url, 'http://127.0.0.1');
+  const routes = {
+    '/api/native-chat': () => nativeChatStatus(service.root, url.searchParams.get('issue')),
+    '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
+    '/api/server-status': () => service.serverControl.status(),
+    '/api/coordinator': () => service.coordinator.view(),
+    '/api/issue-chat': () =>
+      service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
+    '/api/document': () => service.readPlan(url.searchParams.get('path')),
+    '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
+    '/api/issue-report': () => service.readSavedReport(url.searchParams.get('issue')),
+    '/api/check-evidence': () =>
+      service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
+    '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),
+    '/api/run': () => savedRun(service, url.searchParams.get('id')),
+  };
+  if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(routes[url.pathname]()));
+  response.statusCode = 404;
+  response.end(JSON.stringify({ error: 'Not found' }));
+}
+
+function isPage(request) {
+  return request.method === 'GET' && (request.url === '/' || request.url.startsWith('/native-chat?'));
+}
+
+async function temporaryAction(action) {
+  try {
+    return await action();
+  } catch {
+    throw Error('Discussion could not complete. Refresh or start a new temporary discussion.');
+  }
+}
+
+function readResource(service, request, response, owner) {
+  const scripts = {
+    '/native-chat-ui.js': 'native-chat-ui.js',
+    '/server-control-ui.js': 'server-control-ui.js',
+    '/queue-lifecycle-ui.js': 'queue-lifecycle-ui.js',
+    '/queue-sort-ui.js': 'queue-sort-ui.js',
+    '/file-link-ui.js': 'file-link-ui.js',
+    '/coordinator-ui.js': 'coordinator-ui.js',
+    '/issue-chat-ui.js': 'issue-chat-ui.js',
+    '/site-review-ui.js': 'site-review-ui.js',
+    '/discussion-ui.js': 'discussion-ui.js',
+    '/issue-capture-ui.js': 'issue-capture-ui.js',
+  };
+  if (Object.hasOwn(scripts, request.url)) {
+    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    return response.end(readFileSync(join(uiDirectory(service), basename(scripts[request.url]))));
+  }
+  return read(service, request, response, owner);
+}
+
+function savedRun(service, id) {
+  const run = service.store.list(service.codex.requests).find((item) => item.id === id);
+  requireThat(run, 'This saved run no longer exists.');
+  return run;
+}
+
+function requireLiveMutation(service, path) {
+  if (service.reviewMode === 'preview')
+    requireThat(
+      [
+        '/api/discussion-open',
+        '/api/discussion-turn',
+        '/api/discussion-prepare',
+        '/api/discussion-summary',
+        '/api/discussion-end',
+      ].includes(path),
+      'This is a preview copy. Make changes and record approvals on the real issue.'
+    );
+}
+
+function deploymentAction(service, path) {
+  if (path === '/api/deployment-prepare') return prepareDeployment(service);
+  if (path === '/api/deployment-cancel') {
+    service.deploymentDraining = false;
+    return { cancelled: true };
+  }
+  throw Error('Unknown deployment operation.');
+}
+
+async function postedAction(service, request, token) {
+  if (request.url.startsWith('/api/deployment-')) return deploymentAction(service, request.url);
+  requireThat(!service.deploymentDraining, 'The factory UI is restarting. Refresh when it is ready.');
+  return mutation(service, request.url, await body(request), token);
+}

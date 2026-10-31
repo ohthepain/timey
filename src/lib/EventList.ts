@@ -1,11 +1,15 @@
 export type EventType = 'midi' | 'played' | 'missed' | 'extra' | 'timing';
 
+export interface ReplayTarget {
+  advanceTime: (intervalMsec: number) => void;
+  emitMidiNote: (note: number, velocity: number) => void;
+}
+
 export interface EventRecord {
   timestamp: number;
   type: EventType;
-  toString(): string;
   toCsv(): string;
-  replay(): void;
+  replay(target: ReplayTarget): void;
 }
 
 export class EventList {
@@ -29,10 +33,6 @@ export class EventList {
 
   clear(): void {
     this.events = [];
-  }
-
-  toString(): string {
-    return this.events.map((e) => e.toString()).join('\n');
   }
 
   toCsv(): string {

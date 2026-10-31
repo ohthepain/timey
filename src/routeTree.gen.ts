@@ -8,580 +8,482 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-// Import Routes
+import { Route as rootRouteImport } from './routes/__root';
+import { Route as IndexRouteImport } from './routes/index';
+import { Route as MethodsRouteImport } from './routes/methods';
+import { Route as RedirectRouteImport } from './routes/redirect';
+import { Route as UsersRouteRouteImport } from './routes/users.route';
+import { Route as ApiBeatsRouteImport } from './routes/api/beats';
+import { Route as ApiGetBeatByNameRouteImport } from './routes/api/getBeatByName';
+import { Route as ApiModulesRouteImport } from './routes/api/modules';
+import { Route as ApiSessionRouteImport } from './routes/api/session';
+import { Route as ApiUsersRouteImport } from './routes/api/users';
+import { Route as AuthScreenRouteImport } from './routes/auth.$screen';
+import { Route as MethodIdRouteImport } from './routes/method.$id';
+import { Route as ModuleIdRouteImport } from './routes/module.$id';
+import { Route as SequenceIndexRouteImport } from './routes/sequence.index';
+import { Route as UsersIndexRouteImport } from './routes/users.index';
+import { Route as UsersUserIdRouteImport } from './routes/users.$userId';
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$';
+import { Route as ApiBeatsIdRouteImport } from './routes/api/beats.$id';
+import { Route as ApiModulesIdRouteImport } from './routes/api/modules.$id';
+import { Route as ApiUsersIdRouteImport } from './routes/api/users.$id';
 
-import { Route as rootRoute } from './routes/__root'
-import { Route as RedirectImport } from './routes/redirect'
-import { Route as MethodsImport } from './routes/methods'
-import { Route as DeferredImport } from './routes/deferred'
-import { Route as PathlessLayoutImport } from './routes/_pathlessLayout'
-import { Route as UsersRouteImport } from './routes/users.route'
-import { Route as PostsRouteImport } from './routes/posts.route'
-import { Route as IndexImport } from './routes/index'
-import { Route as UsersIndexImport } from './routes/users.index'
-import { Route as SequenceIndexImport } from './routes/sequence.index'
-import { Route as PostsIndexImport } from './routes/posts.index'
-import { Route as UsersUserIdImport } from './routes/users.$userId'
-import { Route as PostsPostIdImport } from './routes/posts.$postId'
-import { Route as ModuleIdImport } from './routes/module.$id'
-import { Route as MethodIdImport } from './routes/method.$id'
-import { Route as PathlessLayoutNestedLayoutImport } from './routes/_pathlessLayout/_nested-layout'
-import { Route as PostsPostIdDeepImport } from './routes/posts_.$postId.deep'
-import { Route as PathlessLayoutNestedLayoutRouteBImport } from './routes/_pathlessLayout/_nested-layout/route-b'
-import { Route as PathlessLayoutNestedLayoutRouteAImport } from './routes/_pathlessLayout/_nested-layout/route-a'
-
-// Create/Update Routes
-
-const RedirectRoute = RedirectImport.update({
-  id: '/redirect',
-  path: '/redirect',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const MethodsRoute = MethodsImport.update({
-  id: '/methods',
-  path: '/methods',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const DeferredRoute = DeferredImport.update({
-  id: '/deferred',
-  path: '/deferred',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const PathlessLayoutRoute = PathlessLayoutImport.update({
-  id: '/_pathlessLayout',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const UsersRouteRoute = UsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const PostsRouteRoute = PostsRouteImport.update({
-  id: '/posts',
-  path: '/posts',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const IndexRoute = IndexImport.update({
+const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const UsersIndexRoute = UsersIndexImport.update({
+  getParentRoute: () => rootRouteImport,
+} as any);
+const MethodsRoute = MethodsRouteImport.update({
+  id: '/methods',
+  path: '/methods',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const RedirectRoute = RedirectRouteImport.update({
+  id: '/redirect',
+  path: '/redirect',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const UsersRouteRoute = UsersRouteRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiBeatsRoute = ApiBeatsRouteImport.update({
+  id: '/api/beats',
+  path: '/api/beats',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiGetBeatByNameRoute = ApiGetBeatByNameRouteImport.update({
+  id: '/api/getBeatByName',
+  path: '/api/getBeatByName',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiModulesRoute = ApiModulesRouteImport.update({
+  id: '/api/modules',
+  path: '/api/modules',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiSessionRoute = ApiSessionRouteImport.update({
+  id: '/api/session',
+  path: '/api/session',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiUsersRoute = ApiUsersRouteImport.update({
+  id: '/api/users',
+  path: '/api/users',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AuthScreenRoute = AuthScreenRouteImport.update({
+  id: '/auth/$screen',
+  path: '/auth/$screen',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const MethodIdRoute = MethodIdRouteImport.update({
+  id: '/method/$id',
+  path: '/method/$id',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ModuleIdRoute = ModuleIdRouteImport.update({
+  id: '/module/$id',
+  path: '/module/$id',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const SequenceIndexRoute = SequenceIndexRouteImport.update({
+  id: '/sequence/',
+  path: '/sequence/',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const UsersIndexRoute = UsersIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => UsersRouteRoute,
-} as any)
-
-const SequenceIndexRoute = SequenceIndexImport.update({
-  id: '/sequence/',
-  path: '/sequence/',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const PostsIndexRoute = PostsIndexImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => PostsRouteRoute,
-} as any)
-
-const UsersUserIdRoute = UsersUserIdImport.update({
+} as any);
+const UsersUserIdRoute = UsersUserIdRouteImport.update({
   id: '/$userId',
   path: '/$userId',
   getParentRoute: () => UsersRouteRoute,
-} as any)
+} as any);
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiBeatsIdRoute = ApiBeatsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiBeatsRoute,
+} as any);
+const ApiModulesIdRoute = ApiModulesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiModulesRoute,
+} as any);
+const ApiUsersIdRoute = ApiUsersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiUsersRoute,
+} as any);
 
-const PostsPostIdRoute = PostsPostIdImport.update({
-  id: '/$postId',
-  path: '/$postId',
-  getParentRoute: () => PostsRouteRoute,
-} as any)
-
-const ModuleIdRoute = ModuleIdImport.update({
-  id: '/module/$id',
-  path: '/module/$id',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const MethodIdRoute = MethodIdImport.update({
-  id: '/method/$id',
-  path: '/method/$id',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const PathlessLayoutNestedLayoutRoute = PathlessLayoutNestedLayoutImport.update(
-  {
-    id: '/_nested-layout',
-    getParentRoute: () => PathlessLayoutRoute,
-  } as any,
-)
-
-const PostsPostIdDeepRoute = PostsPostIdDeepImport.update({
-  id: '/posts_/$postId/deep',
-  path: '/posts/$postId/deep',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const PathlessLayoutNestedLayoutRouteBRoute =
-  PathlessLayoutNestedLayoutRouteBImport.update({
-    id: '/route-b',
-    path: '/route-b',
-    getParentRoute: () => PathlessLayoutNestedLayoutRoute,
-  } as any)
-
-const PathlessLayoutNestedLayoutRouteARoute =
-  PathlessLayoutNestedLayoutRouteAImport.update({
-    id: '/route-a',
-    path: '/route-a',
-    getParentRoute: () => PathlessLayoutNestedLayoutRoute,
-  } as any)
-
-// Populate the FileRoutesByPath interface
+export interface FileRoutesByFullPath {
+  '/': typeof IndexRoute;
+  '/users': typeof UsersRouteRouteWithChildren;
+  '/methods': typeof MethodsRoute;
+  '/redirect': typeof RedirectRoute;
+  '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
+  '/api/modules': typeof ApiModulesRouteWithChildren;
+  '/api/session': typeof ApiSessionRoute;
+  '/api/users': typeof ApiUsersRouteWithChildren;
+  '/auth/$screen': typeof AuthScreenRoute;
+  '/method/$id': typeof MethodIdRoute;
+  '/module/$id': typeof ModuleIdRoute;
+  '/users/$userId': typeof UsersUserIdRoute;
+  '/sequence/': typeof SequenceIndexRoute;
+  '/users/': typeof UsersIndexRoute;
+  '/api/auth/$': typeof ApiAuthSplatRoute;
+  '/api/beats/$id': typeof ApiBeatsIdRoute;
+  '/api/modules/$id': typeof ApiModulesIdRoute;
+  '/api/users/$id': typeof ApiUsersIdRoute;
+}
+export interface FileRoutesByTo {
+  '/': typeof IndexRoute;
+  '/methods': typeof MethodsRoute;
+  '/redirect': typeof RedirectRoute;
+  '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
+  '/api/modules': typeof ApiModulesRouteWithChildren;
+  '/api/session': typeof ApiSessionRoute;
+  '/api/users': typeof ApiUsersRouteWithChildren;
+  '/auth/$screen': typeof AuthScreenRoute;
+  '/method/$id': typeof MethodIdRoute;
+  '/module/$id': typeof ModuleIdRoute;
+  '/users/$userId': typeof UsersUserIdRoute;
+  '/sequence': typeof SequenceIndexRoute;
+  '/users': typeof UsersIndexRoute;
+  '/api/auth/$': typeof ApiAuthSplatRoute;
+  '/api/beats/$id': typeof ApiBeatsIdRoute;
+  '/api/modules/$id': typeof ApiModulesIdRoute;
+  '/api/users/$id': typeof ApiUsersIdRoute;
+}
+export interface FileRoutesById {
+  __root__: typeof rootRouteImport;
+  '/': typeof IndexRoute;
+  '/users': typeof UsersRouteRouteWithChildren;
+  '/methods': typeof MethodsRoute;
+  '/redirect': typeof RedirectRoute;
+  '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
+  '/api/modules': typeof ApiModulesRouteWithChildren;
+  '/api/session': typeof ApiSessionRoute;
+  '/api/users': typeof ApiUsersRouteWithChildren;
+  '/auth/$screen': typeof AuthScreenRoute;
+  '/method/$id': typeof MethodIdRoute;
+  '/module/$id': typeof ModuleIdRoute;
+  '/users/$userId': typeof UsersUserIdRoute;
+  '/sequence/': typeof SequenceIndexRoute;
+  '/users/': typeof UsersIndexRoute;
+  '/api/auth/$': typeof ApiAuthSplatRoute;
+  '/api/beats/$id': typeof ApiBeatsIdRoute;
+  '/api/modules/$id': typeof ApiModulesIdRoute;
+  '/api/users/$id': typeof ApiUsersIdRoute;
+}
+export interface FileRouteTypes {
+  fileRoutesByFullPath: FileRoutesByFullPath;
+  fullPaths:
+    | '/'
+    | '/users'
+    | '/methods'
+    | '/redirect'
+    | '/api/beats'
+    | '/api/getBeatByName'
+    | '/api/modules'
+    | '/api/session'
+    | '/api/users'
+    | '/auth/$screen'
+    | '/method/$id'
+    | '/module/$id'
+    | '/users/$userId'
+    | '/sequence/'
+    | '/users/'
+    | '/api/auth/$'
+    | '/api/beats/$id'
+    | '/api/modules/$id'
+    | '/api/users/$id';
+  fileRoutesByTo: FileRoutesByTo;
+  to:
+    | '/'
+    | '/methods'
+    | '/redirect'
+    | '/api/beats'
+    | '/api/getBeatByName'
+    | '/api/modules'
+    | '/api/session'
+    | '/api/users'
+    | '/auth/$screen'
+    | '/method/$id'
+    | '/module/$id'
+    | '/users/$userId'
+    | '/sequence'
+    | '/users'
+    | '/api/auth/$'
+    | '/api/beats/$id'
+    | '/api/modules/$id'
+    | '/api/users/$id';
+  id:
+    | '__root__'
+    | '/'
+    | '/users'
+    | '/methods'
+    | '/redirect'
+    | '/api/beats'
+    | '/api/getBeatByName'
+    | '/api/modules'
+    | '/api/session'
+    | '/api/users'
+    | '/auth/$screen'
+    | '/method/$id'
+    | '/module/$id'
+    | '/users/$userId'
+    | '/sequence/'
+    | '/users/'
+    | '/api/auth/$'
+    | '/api/beats/$id'
+    | '/api/modules/$id'
+    | '/api/users/$id';
+  fileRoutesById: FileRoutesById;
+}
+export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute;
+  UsersRouteRoute: typeof UsersRouteRouteWithChildren;
+  MethodsRoute: typeof MethodsRoute;
+  RedirectRoute: typeof RedirectRoute;
+  ApiBeatsRoute: typeof ApiBeatsRouteWithChildren;
+  ApiGetBeatByNameRoute: typeof ApiGetBeatByNameRoute;
+  ApiModulesRoute: typeof ApiModulesRouteWithChildren;
+  ApiSessionRoute: typeof ApiSessionRoute;
+  ApiUsersRoute: typeof ApiUsersRouteWithChildren;
+  AuthScreenRoute: typeof AuthScreenRoute;
+  MethodIdRoute: typeof MethodIdRoute;
+  ModuleIdRoute: typeof ModuleIdRoute;
+  SequenceIndexRoute: typeof SequenceIndexRoute;
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute;
+}
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
     '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/posts': {
-      id: '/posts'
-      path: '/posts'
-      fullPath: '/posts'
-      preLoaderRoute: typeof PostsRouteImport
-      parentRoute: typeof rootRoute
-    }
-    '/users': {
-      id: '/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof UsersRouteImport
-      parentRoute: typeof rootRoute
-    }
-    '/_pathlessLayout': {
-      id: '/_pathlessLayout'
-      path: ''
-      fullPath: ''
-      preLoaderRoute: typeof PathlessLayoutImport
-      parentRoute: typeof rootRoute
-    }
-    '/deferred': {
-      id: '/deferred'
-      path: '/deferred'
-      fullPath: '/deferred'
-      preLoaderRoute: typeof DeferredImport
-      parentRoute: typeof rootRoute
-    }
+      id: '/';
+      path: '/';
+      fullPath: '/';
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/methods': {
-      id: '/methods'
-      path: '/methods'
-      fullPath: '/methods'
-      preLoaderRoute: typeof MethodsImport
-      parentRoute: typeof rootRoute
-    }
+      id: '/methods';
+      path: '/methods';
+      fullPath: '/methods';
+      preLoaderRoute: typeof MethodsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/redirect': {
-      id: '/redirect'
-      path: '/redirect'
-      fullPath: '/redirect'
-      preLoaderRoute: typeof RedirectImport
-      parentRoute: typeof rootRoute
-    }
-    '/_pathlessLayout/_nested-layout': {
-      id: '/_pathlessLayout/_nested-layout'
-      path: ''
-      fullPath: ''
-      preLoaderRoute: typeof PathlessLayoutNestedLayoutImport
-      parentRoute: typeof PathlessLayoutImport
-    }
+      id: '/redirect';
+      path: '/redirect';
+      fullPath: '/redirect';
+      preLoaderRoute: typeof RedirectRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/users': {
+      id: '/users';
+      path: '/users';
+      fullPath: '/users';
+      preLoaderRoute: typeof UsersRouteRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/beats': {
+      id: '/api/beats';
+      path: '/api/beats';
+      fullPath: '/api/beats';
+      preLoaderRoute: typeof ApiBeatsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/getBeatByName': {
+      id: '/api/getBeatByName';
+      path: '/api/getBeatByName';
+      fullPath: '/api/getBeatByName';
+      preLoaderRoute: typeof ApiGetBeatByNameRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/modules': {
+      id: '/api/modules';
+      path: '/api/modules';
+      fullPath: '/api/modules';
+      preLoaderRoute: typeof ApiModulesRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/session': {
+      id: '/api/session';
+      path: '/api/session';
+      fullPath: '/api/session';
+      preLoaderRoute: typeof ApiSessionRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/users': {
+      id: '/api/users';
+      path: '/api/users';
+      fullPath: '/api/users';
+      preLoaderRoute: typeof ApiUsersRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/auth/$screen': {
+      id: '/auth/$screen';
+      path: '/auth/$screen';
+      fullPath: '/auth/$screen';
+      preLoaderRoute: typeof AuthScreenRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/method/$id': {
-      id: '/method/$id'
-      path: '/method/$id'
-      fullPath: '/method/$id'
-      preLoaderRoute: typeof MethodIdImport
-      parentRoute: typeof rootRoute
-    }
+      id: '/method/$id';
+      path: '/method/$id';
+      fullPath: '/method/$id';
+      preLoaderRoute: typeof MethodIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/module/$id': {
-      id: '/module/$id'
-      path: '/module/$id'
-      fullPath: '/module/$id'
-      preLoaderRoute: typeof ModuleIdImport
-      parentRoute: typeof rootRoute
-    }
-    '/posts/$postId': {
-      id: '/posts/$postId'
-      path: '/$postId'
-      fullPath: '/posts/$postId'
-      preLoaderRoute: typeof PostsPostIdImport
-      parentRoute: typeof PostsRouteImport
-    }
-    '/users/$userId': {
-      id: '/users/$userId'
-      path: '/$userId'
-      fullPath: '/users/$userId'
-      preLoaderRoute: typeof UsersUserIdImport
-      parentRoute: typeof UsersRouteImport
-    }
-    '/posts/': {
-      id: '/posts/'
-      path: '/'
-      fullPath: '/posts/'
-      preLoaderRoute: typeof PostsIndexImport
-      parentRoute: typeof PostsRouteImport
-    }
+      id: '/module/$id';
+      path: '/module/$id';
+      fullPath: '/module/$id';
+      preLoaderRoute: typeof ModuleIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/sequence/': {
-      id: '/sequence/'
-      path: '/sequence'
-      fullPath: '/sequence'
-      preLoaderRoute: typeof SequenceIndexImport
-      parentRoute: typeof rootRoute
-    }
+      id: '/sequence/';
+      path: '/sequence';
+      fullPath: '/sequence/';
+      preLoaderRoute: typeof SequenceIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/users/': {
-      id: '/users/'
-      path: '/'
-      fullPath: '/users/'
-      preLoaderRoute: typeof UsersIndexImport
-      parentRoute: typeof UsersRouteImport
-    }
-    '/_pathlessLayout/_nested-layout/route-a': {
-      id: '/_pathlessLayout/_nested-layout/route-a'
-      path: '/route-a'
-      fullPath: '/route-a'
-      preLoaderRoute: typeof PathlessLayoutNestedLayoutRouteAImport
-      parentRoute: typeof PathlessLayoutNestedLayoutImport
-    }
-    '/_pathlessLayout/_nested-layout/route-b': {
-      id: '/_pathlessLayout/_nested-layout/route-b'
-      path: '/route-b'
-      fullPath: '/route-b'
-      preLoaderRoute: typeof PathlessLayoutNestedLayoutRouteBImport
-      parentRoute: typeof PathlessLayoutNestedLayoutImport
-    }
-    '/posts_/$postId/deep': {
-      id: '/posts_/$postId/deep'
-      path: '/posts/$postId/deep'
-      fullPath: '/posts/$postId/deep'
-      preLoaderRoute: typeof PostsPostIdDeepImport
-      parentRoute: typeof rootRoute
-    }
+      id: '/users/';
+      path: '/';
+      fullPath: '/users/';
+      preLoaderRoute: typeof UsersIndexRouteImport;
+      parentRoute: typeof UsersRouteRoute;
+    };
+    '/users/$userId': {
+      id: '/users/$userId';
+      path: '/$userId';
+      fullPath: '/users/$userId';
+      preLoaderRoute: typeof UsersUserIdRouteImport;
+      parentRoute: typeof UsersRouteRoute;
+    };
+    '/api/auth/$': {
+      id: '/api/auth/$';
+      path: '/api/auth/$';
+      fullPath: '/api/auth/$';
+      preLoaderRoute: typeof ApiAuthSplatRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/beats/$id': {
+      id: '/api/beats/$id';
+      path: '/$id';
+      fullPath: '/api/beats/$id';
+      preLoaderRoute: typeof ApiBeatsIdRouteImport;
+      parentRoute: typeof ApiBeatsRoute;
+    };
+    '/api/modules/$id': {
+      id: '/api/modules/$id';
+      path: '/$id';
+      fullPath: '/api/modules/$id';
+      preLoaderRoute: typeof ApiModulesIdRouteImport;
+      parentRoute: typeof ApiModulesRoute;
+    };
+    '/api/users/$id': {
+      id: '/api/users/$id';
+      path: '/$id';
+      fullPath: '/api/users/$id';
+      preLoaderRoute: typeof ApiUsersIdRouteImport;
+      parentRoute: typeof ApiUsersRoute;
+    };
   }
 }
 
-// Create and export the route tree
-
-interface PostsRouteRouteChildren {
-  PostsPostIdRoute: typeof PostsPostIdRoute
-  PostsIndexRoute: typeof PostsIndexRoute
-}
-
-const PostsRouteRouteChildren: PostsRouteRouteChildren = {
-  PostsPostIdRoute: PostsPostIdRoute,
-  PostsIndexRoute: PostsIndexRoute,
-}
-
-const PostsRouteRouteWithChildren = PostsRouteRoute._addFileChildren(
-  PostsRouteRouteChildren,
-)
-
 interface UsersRouteRouteChildren {
-  UsersUserIdRoute: typeof UsersUserIdRoute
-  UsersIndexRoute: typeof UsersIndexRoute
+  UsersUserIdRoute: typeof UsersUserIdRoute;
+  UsersIndexRoute: typeof UsersIndexRoute;
 }
 
 const UsersRouteRouteChildren: UsersRouteRouteChildren = {
   UsersUserIdRoute: UsersUserIdRoute,
   UsersIndexRoute: UsersIndexRoute,
-}
+};
 
 const UsersRouteRouteWithChildren = UsersRouteRoute._addFileChildren(
   UsersRouteRouteChildren,
-)
+);
 
-interface PathlessLayoutNestedLayoutRouteChildren {
-  PathlessLayoutNestedLayoutRouteARoute: typeof PathlessLayoutNestedLayoutRouteARoute
-  PathlessLayoutNestedLayoutRouteBRoute: typeof PathlessLayoutNestedLayoutRouteBRoute
+interface ApiBeatsRouteChildren {
+  ApiBeatsIdRoute: typeof ApiBeatsIdRoute;
 }
 
-const PathlessLayoutNestedLayoutRouteChildren: PathlessLayoutNestedLayoutRouteChildren =
-  {
-    PathlessLayoutNestedLayoutRouteARoute:
-      PathlessLayoutNestedLayoutRouteARoute,
-    PathlessLayoutNestedLayoutRouteBRoute:
-      PathlessLayoutNestedLayoutRouteBRoute,
-  }
+const ApiBeatsRouteChildren: ApiBeatsRouteChildren = {
+  ApiBeatsIdRoute: ApiBeatsIdRoute,
+};
 
-const PathlessLayoutNestedLayoutRouteWithChildren =
-  PathlessLayoutNestedLayoutRoute._addFileChildren(
-    PathlessLayoutNestedLayoutRouteChildren,
-  )
+const ApiBeatsRouteWithChildren = ApiBeatsRoute._addFileChildren(
+  ApiBeatsRouteChildren,
+);
 
-interface PathlessLayoutRouteChildren {
-  PathlessLayoutNestedLayoutRoute: typeof PathlessLayoutNestedLayoutRouteWithChildren
+interface ApiModulesRouteChildren {
+  ApiModulesIdRoute: typeof ApiModulesIdRoute;
 }
 
-const PathlessLayoutRouteChildren: PathlessLayoutRouteChildren = {
-  PathlessLayoutNestedLayoutRoute: PathlessLayoutNestedLayoutRouteWithChildren,
+const ApiModulesRouteChildren: ApiModulesRouteChildren = {
+  ApiModulesIdRoute: ApiModulesIdRoute,
+};
+
+const ApiModulesRouteWithChildren = ApiModulesRoute._addFileChildren(
+  ApiModulesRouteChildren,
+);
+
+interface ApiUsersRouteChildren {
+  ApiUsersIdRoute: typeof ApiUsersIdRoute;
 }
 
-const PathlessLayoutRouteWithChildren = PathlessLayoutRoute._addFileChildren(
-  PathlessLayoutRouteChildren,
-)
+const ApiUsersRouteChildren: ApiUsersRouteChildren = {
+  ApiUsersIdRoute: ApiUsersIdRoute,
+};
 
-export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/posts': typeof PostsRouteRouteWithChildren
-  '/users': typeof UsersRouteRouteWithChildren
-  '': typeof PathlessLayoutNestedLayoutRouteWithChildren
-  '/deferred': typeof DeferredRoute
-  '/methods': typeof MethodsRoute
-  '/redirect': typeof RedirectRoute
-  '/method/$id': typeof MethodIdRoute
-  '/module/$id': typeof ModuleIdRoute
-  '/posts/$postId': typeof PostsPostIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
-  '/posts/': typeof PostsIndexRoute
-  '/sequence': typeof SequenceIndexRoute
-  '/users/': typeof UsersIndexRoute
-  '/route-a': typeof PathlessLayoutNestedLayoutRouteARoute
-  '/route-b': typeof PathlessLayoutNestedLayoutRouteBRoute
-  '/posts/$postId/deep': typeof PostsPostIdDeepRoute
-}
-
-export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '': typeof PathlessLayoutNestedLayoutRouteWithChildren
-  '/deferred': typeof DeferredRoute
-  '/methods': typeof MethodsRoute
-  '/redirect': typeof RedirectRoute
-  '/method/$id': typeof MethodIdRoute
-  '/module/$id': typeof ModuleIdRoute
-  '/posts/$postId': typeof PostsPostIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
-  '/posts': typeof PostsIndexRoute
-  '/sequence': typeof SequenceIndexRoute
-  '/users': typeof UsersIndexRoute
-  '/route-a': typeof PathlessLayoutNestedLayoutRouteARoute
-  '/route-b': typeof PathlessLayoutNestedLayoutRouteBRoute
-  '/posts/$postId/deep': typeof PostsPostIdDeepRoute
-}
-
-export interface FileRoutesById {
-  __root__: typeof rootRoute
-  '/': typeof IndexRoute
-  '/posts': typeof PostsRouteRouteWithChildren
-  '/users': typeof UsersRouteRouteWithChildren
-  '/_pathlessLayout': typeof PathlessLayoutRouteWithChildren
-  '/deferred': typeof DeferredRoute
-  '/methods': typeof MethodsRoute
-  '/redirect': typeof RedirectRoute
-  '/_pathlessLayout/_nested-layout': typeof PathlessLayoutNestedLayoutRouteWithChildren
-  '/method/$id': typeof MethodIdRoute
-  '/module/$id': typeof ModuleIdRoute
-  '/posts/$postId': typeof PostsPostIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
-  '/posts/': typeof PostsIndexRoute
-  '/sequence/': typeof SequenceIndexRoute
-  '/users/': typeof UsersIndexRoute
-  '/_pathlessLayout/_nested-layout/route-a': typeof PathlessLayoutNestedLayoutRouteARoute
-  '/_pathlessLayout/_nested-layout/route-b': typeof PathlessLayoutNestedLayoutRouteBRoute
-  '/posts_/$postId/deep': typeof PostsPostIdDeepRoute
-}
-
-export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/posts'
-    | '/users'
-    | ''
-    | '/deferred'
-    | '/methods'
-    | '/redirect'
-    | '/method/$id'
-    | '/module/$id'
-    | '/posts/$postId'
-    | '/users/$userId'
-    | '/posts/'
-    | '/sequence'
-    | '/users/'
-    | '/route-a'
-    | '/route-b'
-    | '/posts/$postId/deep'
-  fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | ''
-    | '/deferred'
-    | '/methods'
-    | '/redirect'
-    | '/method/$id'
-    | '/module/$id'
-    | '/posts/$postId'
-    | '/users/$userId'
-    | '/posts'
-    | '/sequence'
-    | '/users'
-    | '/route-a'
-    | '/route-b'
-    | '/posts/$postId/deep'
-  id:
-    | '__root__'
-    | '/'
-    | '/posts'
-    | '/users'
-    | '/_pathlessLayout'
-    | '/deferred'
-    | '/methods'
-    | '/redirect'
-    | '/_pathlessLayout/_nested-layout'
-    | '/method/$id'
-    | '/module/$id'
-    | '/posts/$postId'
-    | '/users/$userId'
-    | '/posts/'
-    | '/sequence/'
-    | '/users/'
-    | '/_pathlessLayout/_nested-layout/route-a'
-    | '/_pathlessLayout/_nested-layout/route-b'
-    | '/posts_/$postId/deep'
-  fileRoutesById: FileRoutesById
-}
-
-export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  PostsRouteRoute: typeof PostsRouteRouteWithChildren
-  UsersRouteRoute: typeof UsersRouteRouteWithChildren
-  PathlessLayoutRoute: typeof PathlessLayoutRouteWithChildren
-  DeferredRoute: typeof DeferredRoute
-  MethodsRoute: typeof MethodsRoute
-  RedirectRoute: typeof RedirectRoute
-  MethodIdRoute: typeof MethodIdRoute
-  ModuleIdRoute: typeof ModuleIdRoute
-  SequenceIndexRoute: typeof SequenceIndexRoute
-  PostsPostIdDeepRoute: typeof PostsPostIdDeepRoute
-}
+const ApiUsersRouteWithChildren = ApiUsersRoute._addFileChildren(
+  ApiUsersRouteChildren,
+);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  PostsRouteRoute: PostsRouteRouteWithChildren,
   UsersRouteRoute: UsersRouteRouteWithChildren,
-  PathlessLayoutRoute: PathlessLayoutRouteWithChildren,
-  DeferredRoute: DeferredRoute,
   MethodsRoute: MethodsRoute,
   RedirectRoute: RedirectRoute,
+  ApiBeatsRoute: ApiBeatsRouteWithChildren,
+  ApiGetBeatByNameRoute: ApiGetBeatByNameRoute,
+  ApiModulesRoute: ApiModulesRouteWithChildren,
+  ApiSessionRoute: ApiSessionRoute,
+  ApiUsersRoute: ApiUsersRouteWithChildren,
+  AuthScreenRoute: AuthScreenRoute,
   MethodIdRoute: MethodIdRoute,
   ModuleIdRoute: ModuleIdRoute,
   SequenceIndexRoute: SequenceIndexRoute,
-  PostsPostIdDeepRoute: PostsPostIdDeepRoute,
-}
-
-export const routeTree = rootRoute
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
+};
+export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();
 
-/* ROUTE_MANIFEST_START
-{
-  "routes": {
-    "__root__": {
-      "filePath": "__root.tsx",
-      "children": [
-        "/",
-        "/posts",
-        "/users",
-        "/_pathlessLayout",
-        "/deferred",
-        "/methods",
-        "/redirect",
-        "/method/$id",
-        "/module/$id",
-        "/sequence/",
-        "/posts_/$postId/deep"
-      ]
-    },
-    "/": {
-      "filePath": "index.tsx"
-    },
-    "/posts": {
-      "filePath": "posts.route.tsx",
-      "children": [
-        "/posts/$postId",
-        "/posts/"
-      ]
-    },
-    "/users": {
-      "filePath": "users.route.tsx",
-      "children": [
-        "/users/$userId",
-        "/users/"
-      ]
-    },
-    "/_pathlessLayout": {
-      "filePath": "_pathlessLayout.tsx",
-      "children": [
-        "/_pathlessLayout/_nested-layout"
-      ]
-    },
-    "/deferred": {
-      "filePath": "deferred.tsx"
-    },
-    "/methods": {
-      "filePath": "methods.tsx"
-    },
-    "/redirect": {
-      "filePath": "redirect.tsx"
-    },
-    "/_pathlessLayout/_nested-layout": {
-      "filePath": "_pathlessLayout/_nested-layout.tsx",
-      "parent": "/_pathlessLayout",
-      "children": [
-        "/_pathlessLayout/_nested-layout/route-a",
-        "/_pathlessLayout/_nested-layout/route-b"
-      ]
-    },
-    "/method/$id": {
-      "filePath": "method.$id.tsx"
-    },
-    "/module/$id": {
-      "filePath": "module.$id.tsx"
-    },
-    "/posts/$postId": {
-      "filePath": "posts.$postId.tsx",
-      "parent": "/posts"
-    },
-    "/users/$userId": {
-      "filePath": "users.$userId.tsx",
-      "parent": "/users"
-    },
-    "/posts/": {
-      "filePath": "posts.index.tsx",
-      "parent": "/posts"
-    },
-    "/sequence/": {
-      "filePath": "sequence.index.tsx"
-    },
-    "/users/": {
-      "filePath": "users.index.tsx",
-      "parent": "/users"
-    },
-    "/_pathlessLayout/_nested-layout/route-a": {
-      "filePath": "_pathlessLayout/_nested-layout/route-a.tsx",
-      "parent": "/_pathlessLayout/_nested-layout"
-    },
-    "/_pathlessLayout/_nested-layout/route-b": {
-      "filePath": "_pathlessLayout/_nested-layout/route-b.tsx",
-      "parent": "/_pathlessLayout/_nested-layout"
-    },
-    "/posts_/$postId/deep": {
-      "filePath": "posts_.$postId.deep.tsx"
-    }
+import type { getRouter } from './router.tsx';
+import type { startInstance } from './start.ts';
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true;
+    router: Awaited<ReturnType<typeof getRouter>>;
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>;
   }
 }
-ROUTE_MANIFEST_END */

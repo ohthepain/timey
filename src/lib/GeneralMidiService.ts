@@ -1,5 +1,6 @@
 export class GeneralMidiService {
   private static readonly DRUM_MAP: Record<string, number> = {
+    'hihat-open-edge-td27': 26,
     // Bass Drums
     kick: 36,
     kick2: 35,
@@ -78,30 +79,5 @@ export class GeneralMidiService {
    */
   static getDrumName(noteNumber: number): string | undefined {
     return this.REVERSE_MAP[noteNumber];
-  }
-
-  /**
-   * Check if a MIDI note number is a valid drum note
-   * @param noteNumber The MIDI note number to check
-   * @returns true if the note number corresponds to a drum
-   */
-  static isDrumNote(noteNumber: number): boolean {
-    return noteNumber in this.REVERSE_MAP;
-  }
-
-  /**
-   * Get all available drum names
-   * @returns Array of all drum names
-   */
-  static getAllDrumNames(): string[] {
-    return Object.keys(this.DRUM_MAP);
-  }
-
-  /**
-   * Get all available MIDI note numbers for drums
-   * @returns Array of all drum MIDI note numbers
-   */
-  static getAllNoteNumbers(): number[] {
-    return Object.keys(this.REVERSE_MAP).map(Number);
   }
 }

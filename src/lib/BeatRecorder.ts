@@ -4,12 +4,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { Beat } from '~/types/Beat';
 import { BeatNote } from '~/types/BeatNote';
 import { Performance } from '~/types/Performance';
-import { savePerformanceServerFn, deletePerformancesByBeatIdAndUserId } from '~/services/performanceService.server';
+import { privatePractice } from '~/state/privatePractice';
+import { fetchUserPerformancesForBeatServerFn, savePerformanceServerFn } from '~/services/performanceService';
 import { useNavigationStore } from '~/state/NavigationStore';
 import { PerformanceFeedback, BeatNoteFeedback } from './PerformanceFeedback';
 import { TempoService } from '~/lib/TempoService';
 import { EventRecorderService } from './EventRecorderService';
-import { GeneralMidiService } from './GeneralMidiService';
+import type { EventPosition } from './EventRecorderService';
 
 // Helper to quantize a time to the nearest 32nd note
 function quantizeTo32nd(elapsedMsec: number, bpm: number) {
@@ -22,19 +23,15 @@ function quantizeTo32nd(elapsedMsec: number, bpm: number) {
 }
 
 export class BeatRecorder extends EventEmitter {
-  private static _instance: BeatRecorder;
+  private static _instance: BeatRecorder | null = null;
   public beat: Beat | null = null;
   // Note: setBeat must reset entire object state
   public performance: Performance = new Performance({ beatId: 'no beat!' });
   public performanceFeedback: PerformanceFeedback = new PerformanceFeedback([]);
   private currentNoteIndex: number = 0;
-  private playedNotesForCurrentIndex: number[] = [];
+  private playedNotesForCurrentIndex: string[] = [];
 
-  private get eventRecorder() {
-    return EventRecorderService.getInstance();
-  }
-
-  private get tempoService() {
+  private get tempoService(): TempoService {
     return TempoService.getInstance();
   }
 
@@ -43,6 +40,13 @@ export class BeatRecorder extends EventEmitter {
       BeatRecorder._instance = new BeatRecorder();
     }
     return BeatRecorder._instance;
+  }
+
+  public static shutdown() {
+    if (BeatRecorder._instance) {
+      BeatRecorder._instance.destroy();
+      BeatRecorder._instance = null;
+    }
   }
 
   private constructor() {
@@ -54,8 +58,8 @@ export class BeatRecorder extends EventEmitter {
         throw new Error('midiService is not initialized');
       }
       midiService.on('midiNote', this.midiService_midiNote);
-      this.tempoService.eventsEmitter.addListener('stateChange', this.handleStateChange);
-      this.tempoService.eventsEmitter.addListener('MIDI Clock Pulse', this.handleMidiPulse);
+      this.tempoService.eventsEmitter.addListener('stateChange', this.tempoService_stateChange);
+      this.tempoService.eventsEmitter.addListener('midiClockPulse', this.tempoService_midiPulse);
     }
   }
 
@@ -63,8 +67,8 @@ export class BeatRecorder extends EventEmitter {
     console.log('BeatRecorder: destroy');
     if (typeof window !== 'undefined') {
       midiService.removeListener('midiNote', this.midiService_midiNote);
-      this.tempoService.eventsEmitter.removeListener('stateChange', this.handleStateChange);
-      this.tempoService.eventsEmitter.removeListener('MIDI Clock Pulse', this.handleMidiPulse);
+      this.tempoService.eventsEmitter.removeListener('stateChange', this.tempoService_stateChange);
+      this.tempoService.eventsEmitter.removeListener('midiClockPulse', this.tempoService_midiPulse);
     }
   }
 
@@ -87,24 +91,39 @@ export class BeatRecorder extends EventEmitter {
       return;
     }
 
-    useNavigationStore.getState().clearPerformancesForBeatId(this.performance.beatId);
-    useNavigationStore.getState().cachePerformance(this.performance);
-    await savePerformanceServerFn({ data: { performance: this.performance } });
-    console.log('Performance saved:', this.performance);
-  }
-
-  async deletePerformancesForBeat() {
-    console.log('BeatRecorder: deletePerformances');
-    const success = await deletePerformancesByBeatIdAndUserId({ data: { performanceId: this.performance?.id } });
-    if (success) {
-      console.log('BeatRecorder: deletePerformances success', success);
-      useNavigationStore.getState().clearPerformancesForBeatId(this.performance!.beatId);
-    } else {
-      console.log('BeatRecorder: deletePerformances FAILED', success);
+    const recording = {
+      beatId: this.performance.beatId,
+      index: this.performance.index,
+      notes: this.performance.notes.map((note) => note.toJSON()),
+    };
+    const saved = await privatePractice(async () => {
+      await savePerformanceServerFn({ data: { performance: recording } });
+      return fetchUserPerformancesForBeatServerFn({ data: { beatId: recording.beatId } });
+    });
+    if (saved) {
+      useNavigationStore.getState().clearPerformancesForBeatId(recording.beatId);
+      saved.forEach((performance) => useNavigationStore.getState().cachePerformance(new Performance(performance)));
     }
   }
 
-  private handleStateChange = (state: any) => {
+  replay() {
+    const beat = this.beat;
+    if (!beat) throw new Error('Select a beat before replaying.');
+    const tempo = this.tempoService;
+    tempo.replay(() => {
+      this.setBeat(beat);
+      EventRecorderService.getInstance().replay({
+        advanceTime: tempo.simulateInterval,
+        emitMidiNote: (note, velocity) => midiService.emitMidiNote(note, velocity),
+      });
+    });
+  }
+
+  private get eventPosition(): EventPosition {
+    return { noteIndex: this.currentNoteIndex, timestamp: this.tempoService.elapsedMsec };
+  }
+
+  private tempoService_stateChange = (state: any) => {
     if (state.isRunning && state.isRecording) {
       this.start();
     } else {
@@ -122,19 +141,19 @@ export class BeatRecorder extends EventEmitter {
 
   public stop = () => {
     console.log('BeatRecorder: stop');
+    console.log('BeatRecorder: performanceFeedback', this.performanceFeedback?.beatNoteFeedback);
   };
 
-  private findUnplayedNotes(currentBeatNote: BeatNote, playedNotes: number[]): string[] {
+  private findUnplayedNotes(currentBeatNote: BeatNote, playedNotes: string[]): string[] {
     // Parse the noteString to get expected notes
     const expectedNotes = currentBeatNote.noteString
       .replace(/[\[\]]/g, '') // Remove brackets
       .split(',')
       .map((note) => note.trim());
 
-    // Find notes that weren't played
-    return expectedNotes.filter(
-      (expectedNote) => !playedNotes.some((playedNote) => Beat.isDrumEquivalent(expectedNote, String(playedNote)))
-    );
+    // Return strings in expectedNotes that do not appear in playedNotes
+    const unplayedNotes = expectedNotes.filter((expectedNote) => !playedNotes.includes(expectedNote));
+    return unplayedNotes;
   }
 
   // Once we have passed a note, check if any notes were missed. if so, emit a missedNotes event
@@ -150,16 +169,17 @@ export class BeatRecorder extends EventEmitter {
         missedNotes: unplayedNotes,
       });
       this.performanceFeedback.beatNoteFeedback.push(beatNoteFeedback);
-      this.eventRecorder.recordMissedNotes(beatNoteFeedback);
+      EventRecorderService.getInstance().recordMissedNotes(beatNoteFeedback, this.eventPosition);
       this.emit('missedNotes', beatNoteFeedback);
     }
   };
 
-  private handleMidiPulse = (event: { time: number; ticks: number }) => {
+  private tempoService_midiPulse = (event: { time: number; ticks: number; intervalMsec: number }) => {
+    // Capture the pulse before advancing the note index, matching live/replay CSV ordering.
+    EventRecorderService.getInstance().recordTimingPulse(event.intervalMsec, this.eventPosition);
     if (this.beat && this.tempoService.isRecording) {
       const elapsedMsec = this.tempoService.elapsedMsec;
       const position = elapsedMsec % this.beat.getLoopLengthMsec(this.tempoService.bpm);
-      const currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
       const nextNoteIndex = (this.currentNoteIndex + 1) % this.beat.beatNotes.length;
       const nextBeatNote = this.beat.beatNotes[nextNoteIndex];
       const nextBeatNoteTime = nextBeatNote.getPositionMsec(this.tempoService.bpm);
@@ -254,6 +274,28 @@ export class BeatRecorder extends EventEmitter {
     return playedNote;
   };
 
+  private WasNotePlayedForCurrentIndex(note: number): boolean {
+    const matchedNote = this.beat!.beatNotes[this.currentNoteIndex].matchMidiNote(note);
+    if (!matchedNote) {
+      return false;
+    }
+    return this.playedNotesForCurrentIndex.includes(matchedNote);
+  }
+
+  private matchCurrentOrNextNote(beat: Beat, note: number): BeatNote | null {
+    const current = beat.beatNotes[this.currentNoteIndex];
+    if (current.matchMidiNote(note) && !this.WasNotePlayedForCurrentIndex(note)) {
+      return current;
+    }
+    const next = beat.beatNotes[(this.currentNoteIndex + 1) % beat.beatNotes.length];
+    // Repeated notes can advance only after reaching the current interval.
+    if (next.matchMidiNote(note) && this.hasReachedCurrentIndex()) {
+      this.advanceToNextIndex();
+      return next;
+    }
+    return null;
+  }
+
   private midiService_midiNote = (e: any) => {
     if (!this.tempoService.isRecording || !this.beat) {
       return;
@@ -264,12 +306,8 @@ export class BeatRecorder extends EventEmitter {
       return;
     }
 
-    if (e.note === GeneralMidiService.getNoteNumber('kick') && this.currentNoteIndex === 15) {
-      console.log('Kick at 15');
-    }
-
     // Record the raw MIDI note input immediately
-    this.eventRecorder.recordMidiNote(e.note, e.velocity);
+    EventRecorderService.getInstance().recordMidiNote(e.note, e.velocity, this.eventPosition);
 
     const playedNote = this.makeBeatNote(e.note, e.velocity);
     this.performance.notes.push(playedNote);
@@ -277,29 +315,18 @@ export class BeatRecorder extends EventEmitter {
     const elapsedMsec = this.tempoService.elapsedMsec;
     const bpm = this.tempoService.bpm;
 
-    // Special case: the note has already been played for the current index AND exists at the next index.
-    // In this case we advance to the next index. BUT only if we have already reached the time of the current index.
-    let currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-    // let currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
-    const nextBeatNote = this.beat.beatNotes[(this.currentNoteIndex + 1) % this.beat.beatNotes.length];
     const position = elapsedMsec % this.beat.getLoopLengthMsec(bpm);
-
-    if (!currentBeatNote.includesMidiNote(e.note) || this.playedNotesForCurrentIndex.includes(e.note)) {
-      // Note was not expected
-      if (nextBeatNote.includesMidiNote(e.note) && this.hasReachedCurrentIndex()) {
-        this.advanceToNextIndex();
-        currentBeatNote = this.beat.beatNotes[this.currentNoteIndex];
-        // currentBeatNoteTime = currentBeatNote.getPositionMsec(tempoService.bpm);
-      } else {
-        console.log('BeatRecorder: handleMidiNote - extra note', playedNote);
-        this.eventRecorder.recordExtraNote(e.note);
-        return;
-      }
+    const currentBeatNote = this.matchCurrentOrNextNote(this.beat, e.note);
+    if (!currentBeatNote) {
+      console.log('BeatRecorder: handleMidiNote - extra note', playedNote);
+      EventRecorderService.getInstance().recordExtraNote(e.note, this.eventPosition);
+      return;
     }
 
     // Add the note to playedNotesForCurrentIndex if it's expected in the current beat note
-    if (currentBeatNote.includesMidiNote(e.note)) {
-      this.playedNotesForCurrentIndex.push(e.note);
+    const matchedNote: string | null = currentBeatNote.matchMidiNote(e.note);
+    if (matchedNote) {
+      this.playedNotesForCurrentIndex.push(matchedNote);
     }
 
     const beatNoteFeedback = this.performanceFeedback.addBeatNote(
@@ -307,29 +334,26 @@ export class BeatRecorder extends EventEmitter {
       playedNote,
       this.currentNoteIndex,
       position,
-      e.note
+      e.note,
+      bpm
     );
 
     if (beatNoteFeedback) {
-      // Record the played note with its feedback
-      const tempoFeedback = this.performanceFeedback.getTempoFeedback(this.tempoService.bpm);
-      this.emit('tempoFeedback', tempoFeedback);
+      EventRecorderService.getInstance().recordNoteFeedback(
+        parseInt(playedNote.noteString),
+        beatNoteFeedback.timingDifferenceMs || 0,
+        beatNoteFeedback.velocityDifference || 0,
+        this.eventPosition
+      );
+      this.emit('beatNoteFeedback', beatNoteFeedback);
     } else {
       console.log('BeatRecorder: handleMidiNote - no match', playedNote);
       // Record as extra note if it doesn't match any expected note
-      this.eventRecorder.recordExtraNote(e.note);
+      EventRecorderService.getInstance().recordExtraNote(e.note, this.eventPosition);
     }
 
     this.emit('beatNote', beatNoteFeedback);
   };
-
-  public getPerformance(): Performance | null {
-    return this.performance;
-  }
-
-  public getCurrentNoteIndex(): number {
-    return this.currentNoteIndex;
-  }
 }
 
 if (import.meta.hot) {

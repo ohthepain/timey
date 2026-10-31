@@ -1,0 +1,3244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Factory · Issue queue</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        background: #f4f3ed;
+        color: #203b35;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        font:
+          500 clamp(30px, 4vw, 43px) / 1.15 Georgia,
+          serif;
+        letter-spacing: -0.7px;
+      }
+      h2 {
+        font:
+          500 25px/1.2 Georgia,
+          serif;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      a {
+        text-underline-offset: 3px;
+      }
+      button:hover:not(:disabled) {
+        filter: brightness(0.95);
+      }
+      .live-output {
+        background: #17211e;
+        color: #e5eee9;
+        border-radius: 8px;
+        padding: 12px;
+        height: 300px;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          12px/1.5 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        text-align: left;
+      }
+      .activity-toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 12px 0 6px;
+      }
+      .activity-toolbar strong {
+        margin-right: auto;
+      }
+      .permission-choice {
+        margin-top: 10px;
+      }
+      .permission-choice code {
+        display: block;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        margin: 6px 0;
+      }
+      .discussion {
+        margin: 22px 0 30px;
+      }
+      .issue-chat-tabs {
+        margin: 22px 0 30px;
+      }
+      .issue-chat-tablist {
+        display: flex;
+        align-items: end;
+        gap: 4px;
+      }
+      .issue-chat-tab {
+        margin: 0;
+        padding: 9px 16px;
+        border: 0;
+        border-radius: 8px 8px 0 0;
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      .issue-chat-tab[data-chat-tab='discussion'] { background: #e8f1ed; color: #24453b; }
+      .issue-chat-tab[data-chat-tab='issue'] { background: #f3e9dc; color: #62452d; }
+      .issue-chat-tab[aria-selected='true'] { padding-bottom: 11px; }
+      .issue-chat-panel { display: none; padding: 0 12px 12px; border-radius: 0 8px 8px 8px; }
+      .issue-chat-panel[data-chat-panel='discussion'] { background: #e8f1ed; }
+      .issue-chat-panel[data-chat-panel='issue'] { background: #f3e9dc; }
+      .issue-chat-panel[data-chat-active='true'] { display: block; }
+      .issue-chat-panel > .discussion { margin: 0; }
+      .discussion .discussion-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: transparent;
+        padding: 6px 0;
+        color: #243f39;
+        font: inherit;
+        font-weight: 600;
+      }
+      .discussion-toggle::before {
+        content: '▸';
+      }
+      .discussion-toggle[aria-expanded='true']::before {
+        content: '▾';
+      }
+      .discussion-output {
+        height: 260px;
+        overflow: auto;
+        border: 1px solid #d7d9cd;
+        border-radius: 6px 6px 0 0;
+        background: #fffefa;
+        padding: 16px 18px;
+        line-height: 1.6;
+      }
+      .discussion-output p {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .discussion-output strong {
+        display: block;
+        font-size: 12px;
+        color: #758071;
+      }
+      .discussion-compose {
+        position: relative;
+        margin: 0;
+      }
+      .discussion-compose textarea {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 84px;
+        margin: 0;
+        padding: 12px 60px 14px 18px;
+        border: 1px solid #d7d9cd;
+        border-top: 0;
+        border-radius: 0 0 6px 6px;
+        resize: vertical;
+        background: #fffefa;
+      }
+      .discussion .discussion-send {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        display: grid;
+        place-items: center;
+        box-sizing: border-box;
+        width: 34px;
+        height: 34px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: #243f39;
+        color: white;
+        line-height: 1;
+      }
+      .discussion-send svg {
+        display: block;
+        width: 19px;
+        height: 19px;
+      }
+      .discussion-status:empty {
+        display: none;
+      }
+      .discussion-info {
+        font-size: 12px;
+        color: #758071;
+        margin: 7px 0 0;
+      }
+      .discussion-info summary {
+        cursor: pointer;
+      }
+      .discussion-preview pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      @media (max-width: 600px) {
+        .discussion-output {
+          height: 230px;
+        }
+      }
+    </style>
+    <style>
+      body {
+        margin: 0;
+      }
+      main {
+        max-width: 1200px;
+        margin: 32px auto;
+        padding: 0 24px;
+      }
+      header {
+        padding: 18px 28px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        gap: 24px;
+        align-items: center;
+      }
+      a {
+        color: #285747;
+      }
+      button {
+        cursor: pointer;
+        padding: 9px 14px;
+        border: 1px solid #bbc9bf;
+        border-radius: 6px;
+        background: #edf3ed;
+        color: #244d3e;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      input,
+      select,
+      textarea {
+        padding: 9px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        max-width: 100%;
+        font: inherit;
+      }
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      td,
+      th {
+        text-align: left;
+        padding: 14px 10px;
+        border-bottom: 1px solid #ddd;
+        vertical-align: top;
+      }
+      #issues td {
+        border-bottom: 0;
+      }
+      #issues tr + tr td {
+        border-top: 2px solid var(--issue-priority, #eab308);
+      }
+      .issue-priority {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 6px 10px 6px 0;
+        font-size: 13px;
+      }
+      .priority-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--issue-priority);
+      }
+      .issue-priority button {
+        padding: 2px 7px;
+        min-width: 28px;
+        min-height: 28px;
+      }
+      small,
+      .muted {
+        color: #657169;
+      }
+      .history-time {
+        color: #657169;
+        white-space: nowrap;
+      }
+      .history-interrupted {
+        color: #8c4200;
+      }
+      .card {
+        background: #fffef9;
+        border: 1px solid #deded1;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 16px 0;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 2.5fr) minmax(230px, 1fr);
+        gap: 24px;
+      }
+      .queue-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 8px;
+      }
+      .queue-heading h1 {
+        margin: 0;
+      }
+      .create-issue {
+        min-width: 42px;
+        min-height: 42px;
+        padding: 0 12px;
+        font-size: 24px;
+        line-height: 1;
+      }
+      .settings-button {
+        min-width: 42px;
+        min-height: 42px;
+        padding: 0 10px;
+        font-size: 22px;
+        line-height: 1;
+        margin-left: auto;
+      }
+      .model-settings-form,
+      .issue-model-settings {
+        display: grid;
+        gap: 12px;
+      }
+      .model-settings-form label,
+      .issue-model-settings label {
+        display: grid;
+        gap: 6px;
+      }
+      .model-description {
+        margin: 0;
+      }
+      .model-save-status {
+        min-height: 1.4em;
+      }
+      .direction-toggle {
+        min-width: 42px;
+        min-height: 42px;
+        padding: 0;
+        font-size: 18px;
+        line-height: 1;
+      }
+      .queue-search {
+        display: flex;
+        margin: 0;
+      }
+      .rail {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 24px 0;
+      }
+      .role-filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 16px;
+        background: #eceee6;
+        cursor: pointer;
+      }
+      .role-filter:has(input:checked) {
+        background: #d7e6dc;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          13px/1.6 ui-monospace,
+          monospace;
+      }
+      details {
+        margin: 12px 0;
+      }
+      summary {
+        cursor: pointer;
+      }
+      dialog {
+        max-width: 650px;
+        width: calc(100% - 64px);
+        border: 1px solid #aaa;
+        border-radius: 12px;
+        padding: 26px;
+      }
+      dialog::backdrop {
+        background: #142a2266;
+      }
+      #error {
+        color: #92352e;
+      }
+      #error:empty {
+        display: none;
+      }
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .badge {
+        font-size: 12px;
+        background: #eeeede;
+        padding: 4px 8px;
+        border-radius: 12px;
+      }
+      h1 {
+        margin-bottom: 8px;
+      }
+      h2 {
+        font-size: 24px;
+      }
+      h3 {
+        font-size: 18px;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 16px;
+      }
+      .prose {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .tablewrap {
+        overflow: auto;
+      }
+      #notice {
+        padding: 0 24px;
+        color: #657169;
+      }
+      .issue-title {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+      .issue-navigation-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .issue-navigation {
+        min-width: 36px;
+        min-height: 36px;
+        padding: 4px 10px;
+      }
+      .issue-title h1 {
+        flex: 1;
+        min-width: 250px;
+      }
+      .lifecycle-heading {
+        margin: 22px 0;
+      }
+      .issue-steps {
+        position: relative;
+      }
+      .issue-step {
+        margin: 0 0 14px;
+        background: #fffefa;
+        border: 1px solid #d7ded4;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .issue-step.is-current {
+        border-color: #2c705c;
+        box-shadow: 0 0 0 1px #2c705c;
+      }
+      .issue-step > summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 20px;
+      }
+      .issue-step > summary::-webkit-details-marker {
+        display: none;
+      }
+      .step-number {
+        font:
+          500 23px Georgia,
+          serif;
+        color: #6e7c72;
+        min-width: 30px;
+      }
+      .is-current .step-number {
+        color: #176d5a;
+      }
+      .step-heading {
+        flex: 1;
+        min-width: 0;
+      }
+      .step-heading strong {
+        display: block;
+        font:
+          500 24px Georgia,
+          serif;
+        margin-bottom: 5px;
+      }
+      .step-description {
+        display: block;
+        font-size: 13px;
+        color: #657169;
+      }
+      .step-label {
+        font-size: 12px;
+        color: #657169;
+        max-width: 110px;
+        text-align: right;
+      }
+      .is-current .step-label {
+        color: #176d5a;
+        font-weight: 600;
+      }
+      .step-chevron {
+        color: #657169;
+        transition: transform 0.15s;
+      }
+      .issue-step[open] > summary .step-chevron {
+        transform: rotate(180deg);
+      }
+      .step-body {
+        border-top: 1px solid #e4e7de;
+        padding: 20px;
+      }
+      .step-body > .card:first-child {
+        margin-top: 0;
+      }
+      .step-body > .card:last-child {
+        margin-bottom: 0;
+      }
+      .next-action {
+        background: #edf3eb;
+        border: 1px solid #c8d9c8;
+        border-radius: 8px;
+        padding: 18px;
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .next-action > div {
+        flex: 1;
+        min-width: 0;
+      }
+      .next-action h3 {
+        margin: 5px 0 8px;
+      }
+      .next-action p {
+        margin: 0;
+        font-size: 14px;
+      }
+      button.primary {
+        background: #23604d;
+        border-color: #23604d;
+        color: white;
+        white-space: nowrap;
+      }
+      .action-history {
+        font-size: 13px;
+      }
+      .action-history dt {
+        color: #657169;
+      }
+      .action-history dd {
+        margin: 0 0 10px;
+      }
+      .commit-record {
+        overflow-wrap: anywhere;
+      }
+      summary:focus-visible {
+        outline: 2px solid #176d5a;
+        outline-offset: -3px;
+      }
+
+      .latest-result {
+        border: 2px solid #93b3d0;
+        background: #f5f9ff;
+      }
+      .latest-result h4 {
+        margin: 18px 0 6px;
+      }
+      .suggestion {
+        border-top: 1px solid #cfdeec;
+        margin-top: 18px;
+      }
+      .plan-problem {
+        padding: 12px;
+        background: #fff1e9;
+        border-radius: 6px;
+      }
+      .implementation-checklist {
+        margin: 8px 0 24px;
+      }
+      .implementation-step {
+        border: 1px solid #d5dfdc;
+        border-radius: 10px;
+        margin: 10px 0;
+        background: white;
+      }
+      .implementation-step > summary {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+        cursor: pointer;
+      }
+      .check-circle {
+        display: inline-flex;
+        flex: 0 0 25px;
+        width: 25px;
+        height: 25px;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #208253;
+        border-radius: 50%;
+        color: #208253;
+        font-size: 18px;
+        font-weight: 700;
+      }
+      .check-passed {
+        background: #2076c7;
+        border-color: #2076c7;
+        color: white;
+      }
+      .check-failed {
+        background: #be393b;
+        border-color: #be393b;
+        color: white;
+      }
+      .check-not-checked {
+        border-color: #7a858c;
+        color: #65717a;
+      }
+      .check-reviewed,
+      .check-skipped {
+        border-color: #b2b8bb;
+        color: #7a858c;
+        background: #edf0f1;
+      }
+      .check-in-progress,
+      .check-checking {
+        background: #e3f3e8;
+      }
+      .check-label {
+        font-size: 12px;
+        font-weight: 500;
+        color: #59676a;
+        margin-left: auto;
+        padding-left: 10px;
+        white-space: nowrap;
+      }
+      .acceptance-list {
+        padding: 0 16px 16px;
+      }
+      .acceptance-item {
+        display: flex;
+        gap: 12px;
+        margin: 16px 0;
+      }
+      .acceptance-item > div {
+        min-width: 0;
+        flex: 1;
+      }
+      .acceptance-item p {
+        margin: 6px 0 10px;
+      }
+      .acceptance-item details {
+        margin: 8px 0;
+      }
+      .acceptance-item blockquote {
+        border-left: 2px solid #c9d5d0;
+        margin: 10px 0;
+        padding-left: 12px;
+        white-space: pre-wrap;
+      }
+      .evidence-button {
+        overflow-wrap: anywhere;
+        max-width: 100%;
+        text-align: left;
+        margin: 4px 0;
+      }
+      button.file-link {
+        display: inline;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: none;
+        color: #285747;
+        text-decoration: underline;
+        font: inherit;
+        overflow-wrap: anywhere;
+        text-align: inherit;
+      }
+      .required-decision {
+        border-left: 3px solid #b23c3c;
+        padding: 0 14px;
+        margin: 20px 0;
+      }
+      .check-notice {
+        background: #fff3df;
+        padding: 12px;
+        border-radius: 6px;
+      }
+      .step-shell {
+        position: relative;
+        margin: 0 auto 24px;
+      }
+      .step-shell:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        height: 24px;
+        width: 2px;
+        background: #bfc8c4;
+        left: 50%;
+        top: 100%;
+      }
+      .issue-step {
+        margin: 0;
+        overflow: visible;
+        background: #fff;
+      }
+      .step-shell.is-compact:has(> details:not([open])) {
+        width: min(100%, 320px);
+      }
+      .is-compact > details:not([open]) > summary {
+        min-height: 56px;
+        justify-content: center;
+        padding: 12px 42px;
+        text-align: center;
+      }
+      .is-compact > details:not([open]) .step-heading {
+        flex: initial;
+      }
+      .is-compact > details:not([open]) .step-heading strong {
+        font:
+          500 19px Georgia,
+          serif;
+        margin: 0;
+      }
+      .is-compact > details:not([open]) :is(.step-number, .step-description, .step-label, .step-chevron) {
+        display: none;
+      }
+      .issue-step > summary {
+        padding-right: 58px;
+      }
+      .issue-step.state-completed {
+        background: #e3edff;
+        border-color: #7da5d8;
+      }
+      .issue-step:is(.state-skipped, .state-planned-skip) {
+        background: #e7e8e6;
+        border-color: #babebb;
+      }
+      .issue-step:is(.state-ready, .state-working) {
+        background: #e4f2e8;
+        border-color: #6caa85;
+      }
+      .issue-step.state-blocked {
+        background: #fbe8e5;
+        border-color: #d18c84;
+      }
+      .issue-step.is-current {
+        border-width: 2px;
+        box-shadow: 0 3px 12px #203b3512;
+      }
+      .is-current.state-blocked .step-label {
+        color: #8b3029;
+      }
+      .state-blocked .next-action {
+        background: #fff6f4;
+        border-color: #ddb3ad;
+      }
+      .state-unchecked .next-action {
+        background: #f7f8f5;
+      }
+      .is-current.state-blocked .step-number {
+        color: #9c3d34;
+      }
+      .is-current > summary {
+        padding-top: 26px;
+        padding-bottom: 26px;
+      }
+      .step-info-button {
+        position: absolute;
+        right: 13px;
+        top: 14px;
+        background: transparent;
+        border: 0;
+        padding: 3px 6px;
+        font-size: 21px;
+        line-height: 1;
+        color: #465d55;
+        border-radius: 50%;
+      }
+      .step-help {
+        inset: auto;
+        top: clamp(8px, anchor(bottom), 20vh);
+        right: anchor(right);
+        width: min(360px, calc(100vw - 32px));
+        max-height: 75vh;
+        overflow: auto;
+        margin: 8px 0;
+        border: 1px solid #aebcb5;
+        border-radius: 10px;
+        padding: 20px;
+        color: #203b35;
+        background: #fffefa;
+        box-shadow: 0 8px 35px #203b3533;
+      }
+      .step-help::backdrop {
+        background: transparent;
+      }
+      .stage-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .stage-legend span {
+        padding: 4px 8px;
+        border: 1px solid #d7ded4;
+        border-radius: 5px;
+        background: #fff;
+      }
+      .stage-legend .legend-completed {
+        background: #e3edff;
+      }
+      .stage-legend .legend-skipped {
+        background: #e7e8e6;
+      }
+      .stage-legend .legend-ready {
+        background: #e4f2e8;
+      }
+      .stage-legend .legend-blocked {
+        background: #fbe8e5;
+      }
+      button:focus-visible {
+        outline: 2px solid #285747;
+        outline-offset: 3px;
+      }
+
+      @media (max-width: 700px) {
+        .next-action {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .issue-step > summary {
+          gap: 10px;
+          padding: 16px;
+          flex-wrap: wrap;
+        }
+        .step-label {
+          margin-left: 40px;
+          max-width: none;
+          text-align: left;
+        }
+        .step-heading {
+          flex-basis: 65%;
+        }
+        .step-body {
+          padding: 16px;
+        }
+        .layout {
+          display: block;
+        }
+        main {
+          padding: 0 16px;
+          margin-top: 20px;
+        }
+        header {
+          padding: 14px 16px;
+        }
+        td,
+        th {
+          padding: 10px 7px;
+        }
+        .card {
+          padding: 16px;
+        }
+      }
+      .live-output {
+        background: #17211e;
+        color: #e5eee9;
+        border-radius: 8px;
+        padding: 12px;
+        height: 300px;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          12px/1.5 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        text-align: left;
+      }
+      .activity-toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 12px 0 6px;
+      }
+      .activity-toolbar strong {
+        margin-right: auto;
+      }
+      .permission-choice {
+        margin-top: 10px;
+      }
+      .permission-choice code {
+        display: block;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        margin: 6px 0;
+      }
+
+      #server-controls {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-left: auto;
+        font-size: 12px;
+      }
+      #server-controls button {
+        padding: 5px 8px;
+        font-size: 12px;
+      }
+      .actions-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+      .actions-switch input {
+        appearance: none;
+        width: 30px;
+        height: 18px;
+        margin: 0;
+        border-radius: 12px;
+        background: #9aa5a0;
+        position: relative;
+        cursor: pointer;
+      }
+      .actions-switch input::after {
+        content: '';
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        top: 2px;
+        left: 2px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.12s;
+      }
+      .actions-switch input:checked {
+        background: #245bcc;
+      }
+      .actions-switch input:checked::after {
+        transform: translateX(12px);
+      }
+      .actions-switch input:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      .actions-switch input:focus-visible {
+        outline: 2px solid #245bcc;
+        outline-offset: 3px;
+      }
+      #server-controls small {
+        flex-basis: 100%;
+      }
+      .queue-lifecycle {
+        display: flex;
+        gap: 0;
+        width: min(290px, 55vw);
+        overflow-x: auto;
+        padding: 8px 5px 12px;
+      }
+      .queue-role-shell {
+        flex: 0 0 34px;
+        position: relative;
+        height: 56px;
+      }
+      .queue-role {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        position: relative;
+        z-index: 1;
+        width: 34px;
+        min-height: 48px;
+        background: none;
+        border: 0;
+        padding: 3px;
+        color: inherit;
+        border-radius: 5px;
+        text-decoration: none;
+      }
+      .queue-role-shell:is(.is-ahead, .is-skipped)::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 35px;
+        border-top: 1px dotted #93a0af;
+      }
+      .queue-role-shell.is-skipped .queue-square {
+        transform: translateY(12px);
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
+      }
+      .queue-square.status-future {
+        background: #fffef9;
+      }
+      .queue-role:focus-visible {
+        outline: 3px solid #245bcc;
+        outline-offset: 0;
+      }
+      .queue-square {
+        box-sizing: border-box;
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border: 2px solid #9aa5b2;
+        border-radius: 3px;
+        font-size: 12px;
+        font-weight: bold;
+      }
+      .queue-bubble {
+        box-sizing: border-box;
+        position: relative;
+        height: 16px;
+        width: 18px;
+        border-radius: 7px;
+        visibility: hidden;
+        font-weight: bold;
+        line-height: 16px;
+        font-size: 11px;
+        text-align: center;
+      }
+      .queue-bubble.has-input {
+        visibility: visible;
+        background: #ffdb4d;
+        color: #5b4400;
+      }
+      .queue-bubble.has-input::after {
+        content: '';
+        position: absolute;
+        bottom: -5px;
+        left: 6px;
+        border-left: 5px solid transparent;
+        border-top: 6px solid #ffdb4d;
+      }
+      .queue-square.status-completed {
+        background: #2463cd;
+        border-color: #2463cd;
+        color: white;
+      }
+      .queue-square:is(.status-skipped, .status-planned-skip) {
+        background: #e3e6eb;
+        border-color: #a2aab5;
+        color: #59616e;
+      }
+      .queue-square:is(.status-blocked, .status-failed) {
+        background: #ffdaaf;
+        border-color: #c36b11;
+        color: #8c4200;
+      }
+      .queue-square:is(.status-idle, .status-working) {
+        border-color: #2463cd;
+        color: #2463cd;
+      }
+      .queue-spinner {
+        width: 10px;
+        height: 10px;
+        border: 2px solid #b4c8ee;
+        border-top-color: #2463cd;
+        border-radius: 50%;
+        animation: queue-spin 1s linear infinite;
+      }
+      .queue-square.is-saving {
+        opacity: 0.55;
+      }
+      .queue-role[aria-disabled='true'] {
+        cursor: wait;
+      }
+      .queue-role-help {
+        display: none;
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        max-width: min(520px, 90vw);
+        padding: 12px;
+        background: #182333;
+        color: white;
+        border-radius: 6px;
+        z-index: 30;
+      }
+      .queue-role-shell:hover .queue-role-help,
+      .queue-role-shell:focus-within .queue-role-help {
+        display: block;
+      }
+      @keyframes queue-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .queue-spinner {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="#/queue"><b>Factory</b></a
+      ><span>Issue queue</span><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
+    </header>
+    <div
+      id="coordinator-strip"
+      role="status"
+      hidden
+      style="padding: 12px 24px; background: #d7e6dc; width: 100%; box-sizing: border-box"
+    ></div>
+    <main>
+      <div id="error" role="alert"></div>
+      <div id="app"></div>
+    </main>
+    <dialog id="model-settings" aria-labelledby="model-settings-title">
+      <h2 id="model-settings-title">Default model and effort</h2>
+      <form id="model-settings-form" class="model-settings-form">
+        <label>Default model<select id="default-model" aria-label="Default model"></select></label>
+        <p id="default-model-description" class="muted model-description"></p>
+        <label>Default effort<select id="default-effort" aria-label="Default effort"></select></label>
+        <p id="model-settings-status" class="muted model-save-status" role="status"></p>
+        <div class="actions">
+          <button type="submit" id="model-settings-save">Save defaults</button
+          ><button type="button" id="model-settings-cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="plan" aria-labelledby="plan-title" aria-describedby="plan-path">
+      <h2 id="plan-title">Implementation plan</h2>
+      <p id="plan-path" class="muted"></p>
+      <button id="close-plan">Close document</button>
+      <pre id="plan-content" class="prose" style="white-space: pre-wrap; overflow-wrap: anywhere"></pre>
+    </dialog>
+    <dialog id="confirm">
+      <div id="selection"></div>
+      <p id="confirmation-error" role="alert"></p>
+      <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
+    </dialog>
+    <script src="/issue-capture-ui.js"></script>
+    <script src="/server-control-ui.js"></script>
+    <script src="/queue-lifecycle-ui.js"></script>
+    <script src="/queue-sort-ui.js"></script>
+    <script src="/coordinator-ui.js"></script>
+    <script src="/file-link-ui.js"></script>
+    <script src="/issue-chat-ui.js"></script>
+    <script src="/discussion-ui.js"></script>
+    <script src="/site-review-ui.js"></script>
+    <script>
+      let data,
+        busy = false,
+        selection,
+        selectedChatTab = 'discussion';
+      let selectedChatIssue = null;
+      let refreshing = false,
+        refreshPending = false;
+      const runDetails = new Map();
+      const approvalStates = new Map();
+      const progressRequests = new Map();
+      const $ = (id) => document.getElementById(id);
+      const esc = (value) =>
+        String(value ?? '').replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+      const link = (id) =>
+        `<a href="#/issue/${encodeURIComponent(id)}">${esc(data.issues.find((i) => i.id === id)?.title || id)}</a>`;
+      async function request(path, value) {
+        const options =
+          value === undefined
+            ? {}
+            : {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
+                body: JSON.stringify(value),
+              };
+        const response = await fetch('/api/' + path, options);
+        const result = await response.json();
+        if (!response.ok) throw Error(result.error);
+        return result;
+      }
+      async function refresh() {
+        if (refreshing) return;
+        refreshing = true;
+        try {
+          const previous = JSON.stringify(data);
+          const issueId = issueRoute().id || '';
+          const [snapshot, runtime, conversation] = await Promise.all([
+            request('queue?issue=' + encodeURIComponent(issueId)),
+            request('runtime'),
+            issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
+          ]);
+          data = { ...snapshot, conversation };
+          coordinatorUI.update(data);
+          showRuntime(runtime);
+          if (runtime.server) serverControlUI.show(runtime.server, request);
+          $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
+          updateLiveOutput();
+          refreshPending ||= previous !== JSON.stringify(data);
+          if (
+            refreshPending &&
+            !busy &&
+            !document.getElementById('create-issue-dialog')?.open &&
+            !$('confirm').open &&
+            !$('model-settings').open &&
+            !$('plan').open &&
+            !document.querySelector(':popover-open') &&
+            (!document.activeElement.matches('input,textarea,select') ||
+              document.activeElement.closest('[data-temporary]'))
+          ) {
+            render();
+            refreshPending = false;
+          }
+        } catch (e) {
+          if (await serverControlUI.reconnect(request)) {
+            $('connection').textContent = 'Reconnecting after server restart…';
+            return;
+          }
+          $('error').textContent = e.message;
+          $('connection').textContent = 'Connection needs attention';
+        } finally {
+          refreshing = false;
+        }
+      }
+      function showRuntime(runtime) {
+        let status = $('runtime');
+        if (!status) {
+          status = document.createElement('small');
+          status.id = 'runtime';
+          document.querySelector('header').append(status);
+        }
+        status.textContent =
+          runtime.mode === 'preview'
+            ? 'Preview copy — approvals belong on the real issue'
+            : `Live factory · ${/^[a-f0-9]{7,40}$/i.test(runtime.revision || '') ? '…' + runtime.revision.slice(-4) : 'version unknown'}${runtime.sourceChanged ? ' · source changed' : ''}`;
+        status.title =
+          'Issue queue: ' + runtime.project + '\nUI source: ' + runtime.checkout + '\nRevision: ' + runtime.revision;
+        if (runtime.mode === 'preview' && runtime.authoritativeUrl) {
+          const url = new URL(runtime.authoritativeUrl);
+          if (['http:', 'https:'].includes(url.protocol)) {
+            const link = document.createElement('a');
+            link.href = url.origin + '/' + location.hash;
+            link.textContent = ' Open real issue';
+            status.append(link);
+          }
+        }
+      }
+      async function act(task) {
+        busy = true;
+        $('confirmation-error').textContent = '';
+        if ($('confirm').open) $('approve').disabled = true;
+        $('error').textContent = '';
+        try {
+          await task();
+          await refresh();
+        } catch (e) {
+          $('error').textContent = e.message;
+          if ($('confirm').open) $('confirmation-error').textContent = e.message;
+        } finally {
+          if ($('confirm').open) $('approve').disabled = false;
+          busy = false;
+          if (data) render();
+        }
+      }
+      function approvalKey(button) {
+        if (button.id === 'approve') return 'dialog';
+        return [
+          button.dataset.run,
+          button.dataset.answer,
+          button.dataset.lifecycleAnswer,
+          button.dataset.lifecycleUpdated,
+          button.dataset.decision,
+        ].join(':');
+      }
+      function applyApprovalFeedback() {
+        document.querySelectorAll('[data-answer], [data-lifecycle-answer], #approve').forEach((button) => {
+          if (button.nextElementSibling?.classList.contains('approval-feedback')) button.nextElementSibling.remove();
+          const state = approvalStates.get(approvalKey(button));
+          if (!state) return;
+          if (state.error) {
+            button.disabled = false;
+            button.textContent = state.text;
+            button.removeAttribute('aria-busy');
+            if (button.id === 'approve') return;
+            const feedback = document.createElement('p');
+            feedback.className = 'error approval-feedback';
+            feedback.setAttribute('role', 'alert');
+            feedback.textContent = state.error;
+            button.after(feedback);
+            return;
+          }
+          button.disabled = true;
+          button.textContent = state.text;
+          button.setAttribute('aria-busy', String(!state.accepted));
+        });
+      }
+      async function submitApproval(button, task) {
+        if (button.disabled) return;
+        const key = approvalKey(button),
+          original = button.textContent;
+        const approval = /^(Approve|Allow|Accept)/i.test(original.trim());
+        const state = { text: approval ? 'Approving…' : 'Sending…', accepted: false };
+        approvalStates.set(key, state);
+        applyApprovalFeedback();
+        await act(async () => {
+          try {
+            await task();
+            state.accepted = true;
+            state.text = approval ? 'Approved. Continuing…' : 'Sent. Continuing…';
+            applyApprovalFeedback();
+          } catch (error) {
+            approvalStates.set(key, { text: original, error: error.message });
+            button.textContent = original;
+            button.removeAttribute('aria-busy');
+            throw error;
+          }
+        });
+        if (key === 'dialog') {
+          approvalStates.delete(key);
+          button.textContent = original;
+        }
+      }
+      function actionCard(a, mode = 'all') {
+        const integrate =
+          mode !== 'work' &&
+          mode !== 'history' &&
+          a.status === 'completed' &&
+          ['implement', 'integrate'].includes(a.kind) &&
+          a.merge !== 'none';
+        return `<section class="card" data-view-id="action-${esc(a.id)}"><span class="badge">${esc(statusLabel(a.status))}</span><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p class="muted">${esc(a.reason)}</p><details><summary>Assignment, history and checks</summary>${actionHistory(a)}<p>${fileLinkUI.html(a.worker_prompt)}</p><p>Checks: ${fileLinkUI.html(a.verification)}</p><p>Integration: ${esc(mergeLabel(a.merge))}</p><p>${a.issues.map(link).join(' · ')}</p><p>Worker result: ${fileLinkUI.html(a.evidence || 'No result recorded yet.')}</p></details>${a.status === 'recommended' && mode !== 'integration' && mode !== 'history' ? `<button data-select="${esc(a.id)}" data-kind="launch" ${a.launchBlocked ? 'disabled' : ''}>Start worker</button>${a.launchBlocked ? `<p class="muted">${esc(a.launchBlocked)}</p>` : ''}` : ''}${integrate ? `<button data-select="${esc(a.id)}" data-kind="integrate" ${a.integrationBlocked ? 'disabled' : ''}>Review integration</button>${a.integrationBlocked ? `<p>${esc(a.integrationBlocked)}</p>` : ''}<p class="muted">The worker finished. Integration is a separate decision.</p>` : ''}</section>`;
+      }
+      function recordedDate(value) {
+        return value ? esc(new Date(value).toLocaleString()) : 'Not recorded';
+      }
+      function actionHistory(action) {
+        return `<dl class="action-history"><dt>Recommendation saved</dt><dd>${recordedDate(action.created)}</dd>${action.reserved ? `<dt>Worker requested</dt><dd>${recordedDate(action.reserved)}</dd>` : ''}${action.updated ? `<dt>Last recorded update</dt><dd>${recordedDate(action.updated)}</dd>` : ''}</dl>`;
+      }
+      function approvals(run) {
+        return (run.approvals || [])
+          .map(
+            (request) =>
+              `<div class="card" data-view-id="permission-${esc(run.id)}-${esc(request.id)}">${approvalDetails(request)}${request.method === 'item/tool/requestUserInput' ? request.params.questions.map((q) => `<label>${esc(q.question)}<textarea id="answer-${esc(run.id)}-${esc(request.id)}-${esc(q.id)}" data-question="${esc(q.id)}" data-request="${esc(request.id)}"></textarea></label>`).join('') + `<button data-answer="${esc(request.id)}" data-run="${esc(run.id)}" data-decision="answers">Send answers</button>` : permissionButtons(run, request)}</div>`
+          )
+          .join('');
+      }
+      function permissionButtons(run, request) {
+        return (request.options || [])
+          .map(
+            (option) =>
+              `<div class="permission-choice">${option.detail ? `<code>${fileLinkUI.html(option.detail)}</code>` : ''}<button data-answer="${esc(request.id)}" data-run="${esc(run.id)}" data-decision="${esc(option.id)}">${esc(option.label)}</button></div>`
+          )
+          .join('');
+      }
+      function approvalDetails(request) {
+        const params = request.params;
+        const permissions = params.permissions || params.additionalPermissions;
+        const paths = permissions
+          ? scopedPermissionPaths(permissions.fileSystem)
+          : permissionPaths(params.changes || {});
+        const network = params.permissions?.network || params.additionalPermissions?.network;
+        const title =
+          request.method === 'item/tool/requestUserInput'
+            ? 'Codex has a question'
+            : params.command
+              ? 'Permission to run a command'
+              : 'Permission to access files or network';
+        return `<b>${title}</b>${params.reason ? `<p>${fileLinkUI.html(params.reason)}</p>` : ''}${params.command ? `<pre class="prose">${fileLinkUI.html(params.command)}</pre>` : ''}${params.cwd ? `<p>In: <code>${fileLinkUI.html(params.cwd)}</code></p>` : ''}${paths.length ? `<p>Requested paths:</p><ul>${paths.map((path) => `<li>${fileLinkUI.html(path)}</li>`).join('')}</ul>` : ''}${network?.enabled ? '<p>Allow network access. This is not limited to one host or local service.</p>' : ''}${params.networkApprovalContext ? `<p>Network: ${esc(params.networkApprovalContext.host)}</p>` : ''}<details><summary>Request details</summary><pre>${esc(JSON.stringify(params, null, 2))}</pre></details>`;
+      }
+      function scopedPermissionPaths(fileSystem = {}) {
+        const names = { read: 'Read', write: 'Read and write', deny: 'No access' };
+        const legacy = ['read', 'write'].flatMap((access) =>
+          permissionPaths(fileSystem?.[access]).map((path) => `${names[access]}: ${path}`)
+        );
+        const entries = (fileSystem?.entries || []).flatMap((entry) =>
+          permissionPaths(entry.path).map((path) => `${names[entry.access] || entry.access}: ${path}`)
+        );
+        return [...new Set([...legacy, ...entries])];
+      }
+      function permissionPaths(value) {
+        if (typeof value === 'string') return value.startsWith('/') ? [value] : [];
+        if (!value || typeof value !== 'object') return [];
+        if (value.type === 'special')
+          return [
+            {
+              root: 'All files on this computer',
+              project_roots: 'Project folders',
+              tmpdir: 'Temporary folders',
+              slash_tmp: 'Temporary folders',
+            }[value.value?.kind] ||
+              value.value?.kind ||
+              'Special path',
+          ];
+        if (value.type === 'glob_pattern') return ['Matching paths: ' + value.pattern];
+        return [...new Set(Object.values(value).flatMap(permissionPaths))];
+      }
+      function reviewFileProblems(issue) {
+        const run = data.runs.findLast(
+          (r) => r.kind === 'coordinator' && r.issueId === issue.id && r.issueState === issue.state
+        );
+        if (run?.status !== 'blocked' || !run.fileProblems?.length) return '';
+        return `<section class="card"><h3>Couldn’t save the review</h3><p>The completed findings and ${run.reviewedEvidence?.length || 0} inspected files have been kept. The work has not been repeated.</p>${run.fileProblems.map((problem) => `<div><p><b>File:</b> ${fileLinkUI.html(problem.path)}</p><p>${fileLinkUI.html(problem.reason)}</p><p>${fileLinkUI.html(problem.purpose)}</p>${problem.code === 'REVIEW_FILE_SCOPE' ? `<button data-review-file="${esc(problem.path)}" data-file-run="${esc(run.id)}">Use this file and continue review</button><p class="muted">Allows this exact supporting file for this review only.</p>` : '<p>Continue in the same review chat after the named file is available. Codex will request access if it needs it.</p>'}</div>`).join('')}</section>`;
+      }
+      function chatLink(id) {
+        return id ? `<small><a href="codex://threads/${encodeURIComponent(id)}">Open chat in Codex ↗</a></small>` : '';
+      }
+      function reviewResult(run, interactive) {
+        if (run.kind !== 'coordinator' || !run.result || !['completed', 'blocked'].includes(run.status)) return '';
+        const recorded = run.status === 'completed';
+        const result = run.result;
+        const heading = recorded ? 'Worker result recorded' : 'Review result not recorded';
+        const stage = recorded
+          ? result.next_state
+            ? 'The issue advanced to the next stage after its requirements were checked.'
+            : 'This review did not advance the issue. The remaining work below still needs to be addressed.'
+          : 'The review stopped before recording finished. A completed review response does not mean this stage passed.';
+        const next = recorded
+          ? 'Use Progress to recommend the next task.'
+          : 'Follow the current step’s next-action panel before trying another review; the worker assignment will not be repeated.';
+        return `<h3>${heading}</h3><p>${fileLinkUI.html(result.summary)}</p><p>${esc(stage)}</p>${interactive && !result.next_state ? `<p>${next}</p>` : ''}${result.remaining?.length ? `<h4>What still needs work</h4><ul>${result.remaining.map((text) => `<li>${fileLinkUI.html(text)}</li>`).join('')}</ul>` : ''}<details><summary>Reviewer’s explanation</summary><p class="prose">${fileLinkUI.html(result.notes)}</p></details>`;
+      }
+      function routePreview(run) {
+        if (run.kind !== 'evaluation' || !run.result?.routes?.length) return '';
+        return routeDetails(run.result.routes, Boolean(run.savedRoutes));
+      }
+      function routeDetails(routes, saved) {
+        if (!routes.length) return '';
+        return `<details><summary>${saved ? 'Saved route' : 'Proposed route — not saved yet'}</summary>${routes.map((route) => `<h3>${link(route.issueId)}</h3><ul>${route.steps.map((step) => `<li><b>${esc(data.lifecycle.find((s) => s.state === step.state)?.name || 'Integrate')}</b>: ${esc({ take: 'Planned', skip: 'Planned to skip', undecided: 'Not decided' }[step.decision])}. ${esc(step.reason)}</li>`).join('')}</ul>`).join('')}</details>`;
+      }
+      function progress(run, interactive = true) {
+        const messages = run.events
+          .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
+          .map((e) => e.params.item.text);
+        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
+      }
+      let focusedStageRoute = null;
+      function issueRoute() {
+        const [path, query = ''] = location.hash.split('?');
+        return {
+          id: path.startsWith('#/issue/') ? decodeURIComponent(path.slice(8)) : null,
+          stage: new URLSearchParams(query).get('stage'),
+        };
+      }
+      function focusLinkedStage() {
+        const route = issueRoute();
+        if (!route.stage || focusedStageRoute === location.hash) return;
+        const target = [...document.querySelectorAll('[data-stage-state]')].find(
+          (element) => element.dataset.stageState === route.stage
+        );
+        if (!target) return;
+        target.open = true;
+        target.dataset.viewTouched = 'true';
+        viewMemory.expanded[target.dataset.viewKey] = true;
+        const summary = target.querySelector(':scope > summary');
+        summary.focus({ preventScroll: true });
+        summary.scrollIntoView({ block: 'start' });
+        focusedStageRoute = location.hash;
+      }
+      let queueRouteMessage = '';
+      const queueFilters = { search: '', roles: new Map(), sort: 'lastProgress', direction: 'desc' };
+      function closedIssueState(state) {
+        return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
+      }
+      function roleSelected(stage) {
+        return queueFilters.roles.has(stage.state) ? queueFilters.roles.get(stage.state) : stage.role !== 'closed';
+      }
+      function matchesQueueSearch(issue) {
+        const query = queueFilters.search.trim().toLowerCase();
+        return !query || JSON.stringify(issue).toLowerCase().includes(query);
+      }
+      function roleCount(stage) {
+        return data.issues.filter((issue) => issue.state === stage.state && matchesQueueSearch(issue)).length;
+      }
+      function queueIssues() {
+        return queueSortUI.sort(
+          data.issues.filter((issue) => {
+            const stage = data.lifecycle.find((item) => item.state === issue.state);
+            return (!stage || roleSelected(stage)) && matchesQueueSearch(issue);
+          }),
+          queueFilters
+        );
+      }
+      function issueNeighbors(issue) {
+        let ordered = queueIssues();
+        if (!ordered.some((entry) => entry.id === issue.id))
+          ordered = queueSortUI.sort([...ordered, issue], queueFilters);
+        return {
+          previous: queueSortUI.adjacent(ordered, issue.id, -1),
+          next: queueSortUI.adjacent(ordered, issue.id, 1),
+        };
+      }
+      function issueNavigation(issue) {
+        return Object.entries(issueNeighbors(issue))
+          .map(([direction, destination]) => {
+            const label = destination?.title || 'Untitled issue';
+            const symbol = direction === 'previous' ? '&lt;' : '&gt;';
+            return `<button type="button" class="issue-navigation" data-issue-navigation="${direction}" data-issue-id="${esc(issue.id)}" aria-label="${destination ? `Go to: ${esc(label)}` : `${direction} issue unavailable`}" title="${destination ? `Go to: ${esc(label)}` : ''}" ${destination ? '' : 'disabled'}>${symbol}</button>`;
+          })
+          .join('');
+      }
+      function refreshRoleCounts() {
+        for (const box of document.querySelectorAll('[data-role-filter]')) {
+          const stage = data.lifecycle.find((item) => item.state === box.dataset.roleFilter);
+          const count = box.parentElement.querySelector('b');
+          if (stage && count) count.textContent = String(roleCount(stage));
+        }
+      }
+      function bindQueueFilters() {
+        const filter = () => {
+          queueFilters.search = $('search').value;
+          $('issues').innerHTML = rows(queueIssues());
+          queueLifecycleUI.restore($('issues'));
+          bindPriorities();
+          refreshRoleCounts();
+        };
+        const applySearch = (event) => {
+          event.preventDefault();
+          filter();
+        };
+        queueSortUI.bind(queueFilters, filter);
+        queueLifecycleUI.bind($('issues'));
+        $('search').oninput = filter;
+        $('search').onkeydown = (event) => {
+          if (event.key === 'Enter') applySearch(event);
+        };
+        $('queue-search').onsubmit = applySearch;
+        for (const box of document.querySelectorAll('[data-role-filter]'))
+          box.onchange = () => {
+            queueFilters.roles.set(box.dataset.roleFilter, box.checked);
+            filter();
+          };
+      }
+      function roleFilters() {
+        return data.lifecycle
+          .map((stage) => {
+            const selected = roleSelected(stage);
+            return `<label class="role-filter"><input type="checkbox" data-role-filter="${esc(stage.state)}" aria-label="${esc(stage.name)}" ${selected ? 'checked' : ''}>${esc(stage.name)} <b>${roleCount(stage)}</b></label>`;
+          })
+          .join('');
+      }
+      function queue() {
+        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><p class="muted">Work runs by issue strategy. Scheduling uses priority, then oldest eligible issue.</p><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
+          data.actions
+            .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
+            .map(actionCard)
+            .join('') || '<p>No saved assignments. Choose the next issue or discuss the queue.</p>'
+        }</fieldset></details><h2>Queue selections</h2>${
+          data.runs
+            .filter((r) => r.kind === 'evaluation')
+            .slice()
+            .reverse()
+            .map((run) => progress(run, false))
+            .join('') || '<p>No selections made yet.</p>'
+        }`;
+      }
+      const priorityPending = new Set();
+      function priorityControls(issue) {
+        const info = issue.priorityInfo;
+        if (!info) return '';
+        const pending = priorityPending.has(issue.id);
+        return `<span class="issue-priority" style="--issue-priority:${esc(info.color)}"><span class="priority-dot" aria-hidden="true"></span><span title="${esc(info.meaning)}">${esc(info.name)}</span><button type="button" data-priority="up" data-priority-issue="${esc(issue.id)}" aria-label="Increase priority for ${esc(issue.title || issue.id)}" ${pending || info.index <= 0 ? 'disabled' : ''}>↑</button><button type="button" data-priority="down" data-priority-issue="${esc(issue.id)}" aria-label="Decrease priority for ${esc(issue.title || issue.id)}" ${pending || info.index < 0 || info.index >= data.priorities.length - 1 ? 'disabled' : ''}>↓</button><small role="status">${pending ? 'Saving…' : ''}</small></span>`;
+      }
+      function bindPriorities() {
+        document.querySelectorAll('[data-priority]').forEach((button) => {
+          button.onclick = () => {
+            const issue = data.issues.find((entry) => entry.id === button.dataset.priorityIssue);
+            if (priorityPending.has(issue.id)) return;
+            priorityPending.add(issue.id);
+            const direction = button.dataset.priority;
+            render();
+            void act(async () => {
+              try {
+                await request('issue-priority', { issueId: issue.id, direction, basis: issue.priorityInfo.basis });
+              } finally {
+                priorityPending.delete(issue.id);
+              }
+            });
+          };
+        });
+      }
+      function bindIssueNavigation() {
+        document.querySelectorAll('[data-issue-navigation]').forEach((button) => {
+          button.onclick = () => {
+            const issue = data.issues.find((entry) => entry.id === button.dataset.issueId);
+            const direction = button.dataset.issueNavigation;
+            const destination = issue && issueNeighbors(issue)[direction];
+            if (destination) location.hash = `#/issue/${encodeURIComponent(destination.id)}`;
+          };
+        });
+      }
+      function rows(issues) {
+        return issues
+          .map(
+            (i) =>
+              `<tr style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
+          )
+          .join('');
+      }
+      function inputStatus(i) {
+        const count = (i.human_input?.requests || []).length;
+        const checks = (i.human_checks || []).filter((c) => c.status !== 'passed' && checkDueNow(i, c)).length;
+        const items = [];
+        if (i.lifecycle?.status === 'waiting' && i.lifecycle.input && i.lifecycle.input.type !== 'retry')
+          items.push('Your response is needed in the request above');
+        if (i.lifecycle?.status === 'answering') items.push('Saving your response');
+        if (count) items.push(`${count} input requests`);
+        if (checks) items.push(`${checks} checks need attention`);
+        if (i.grill_later) items.push('Discussion needed');
+        return esc(items.join(' · ') || defaultInput(i));
+      }
+      function defaultInput(issue) {
+        return data.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-to-close')
+          ? 'Accept the result or request changes.'
+          : 'No current question recorded.';
+      }
+      function statusLabel(value) {
+        return (
+          {
+            recommended: 'Ready to start',
+            reserved: 'Starting',
+            setup: 'Starting',
+            preparing: 'Starting',
+            running: 'Chat connected',
+            checking: 'Running checks',
+            completed: 'Finished',
+            blocked: 'Needs attention',
+            integrated: 'Integrated',
+            reconciled: 'Reviewed',
+            failed: 'Failed',
+            cancelled: 'Cancelled',
+          }[value] || value
+        );
+      }
+      function mergeLabel(policy) {
+        return (
+          {
+            automatic: 'Checks and coordinator review',
+            'human-first': 'Your approval before integration',
+            none: 'No code integration',
+          }[policy] || policy
+        );
+      }
+      function reportText(text) {
+        return fileLinkUI.html(text.replace(/^---[\s\S]*?---\s*/, '')).replace(/^## (.+)$/gm, '<h3>$1</h3>');
+      }
+      function checkDueNow(issue, check) {
+        return (
+          check.blocks !== 'closure' ||
+          data.lifecycle.some((s) => s.state === issue.state && s.role === 'ready-to-close')
+        );
+      }
+      function humanChecks(i) {
+        const completed = (i.human_checks || []).filter((check) => !outstandingDecision(i, check));
+        const pending = (i.human_checks || []).filter((check) => outstandingDecision(i, check));
+        return (
+          pending
+            .map((check) =>
+              checkDueNow(i, check)
+                ? humanCheckText(check)
+                : `<details><summary>Final review — needed later</summary>${humanCheckText(check)}</details>`
+            )
+            .join('') +
+          (completed.length
+            ? `<details><summary>Completed checks (${completed.length})</summary>${completed.map(humanCheckText).join('')}</details>`
+            : '')
+        );
+      }
+      function humanCheckText(c) {
+        return `<h3>${esc(c.kind === 'judgment' ? 'Your judgment' : 'Manual check')}</h3><p>${esc(c.instructions)}</p><span class="badge">${esc(c.status)}</span><p>${esc(c.result || 'No result recorded.')}</p>`;
+      }
+      function relations(i) {
+        const reverse = data.issues.filter((other) => other.links.depends.includes(i.id));
+        const children = data.issues.filter((other) => other.links.parent.includes(i.id));
+        return (
+          [
+            ['Parent', i.links.parent],
+            ['Depends on', i.links.depends],
+            ['Unblocks', reverse.map((x) => x.id)],
+            ['Children', children.map((x) => x.id)],
+            ['Related', i.links.related],
+          ]
+            .filter(([, ids]) => ids.length)
+            .map(([label, ids]) => `<h3>${label}</h3><p>${ids.map(link).join('<br>')}</p>`)
+            .join('') || '<p>No links recorded.</p>'
+        );
+      }
+      const stepDescriptions = {
+        'ready-for-grilling': 'Agree on the problem, expected behavior and scope.',
+        'ready-for-repro': 'Reproduce the problem and understand its cause.',
+        'ready-to-prototype': 'Try an approach when the design still needs testing.',
+        'ready-to-fix': 'Make the agreed change in a worker chat.',
+        'ready-to-verify': 'Check the behavior and review the evidence.',
+        'ready-for-commit': 'Preserve the checked changes in a commit.',
+        'ready-to-close': 'Review the result and resolve any remaining human checks.',
+        closed: 'Close the issue after explicit acceptance.',
+        integration: 'Bring a finished worker’s changes into the project. This is a separate manual action.',
+      };
+      const stepFinish = {
+        'ready-for-grilling': 'Agree on the problem, expected behaviour and scope. Record the answers needed to begin.',
+        'ready-for-repro': 'Establish what is going wrong and agree on a specific change to make.',
+        'ready-to-prototype':
+          'Try the approach and resolve the design questions. If an experiment is unnecessary, record why this step can be skipped.',
+        'ready-to-fix': 'Make the agreed change and preserve the worker’s result for review.',
+        'ready-to-verify':
+          'Review the evidence and pass the automated checks relevant to the change. Record human checks separately; only those required now block this step.',
+        'ready-for-commit':
+          'Save the checked changes in a commit, or record the explicit decision not to make a commit.',
+        'ready-to-close': 'Review the finished result, address required manual checks and ask for explicit acceptance.',
+        closed: 'Record why the issue was closed.',
+        integration:
+          'Review the finished changes, approve them when required, then integrate and check the combined project. This needs its own manual action.',
+      };
+      const actionRoles = {
+        investigate: 'ready-for-repro',
+        prototype: 'ready-to-prototype',
+        implement: 'ready-to-fix',
+        integrate: 'ready-to-fix',
+        verify: 'ready-to-verify',
+        review: 'ready-to-close',
+      };
+      function issueSteps(i, actions) {
+        const steps = data.lifecycle.map((stage) => ({
+          ...stage,
+          description: stepDescriptions[stage.role] || 'Work recorded for this stage.',
+        }));
+        const reviewIndex = steps.findIndex((step) => ['ready-to-close', 'closed'].includes(step.role));
+        steps.splice(reviewIndex < 0 ? steps.length : reviewIndex, 0, {
+          role: 'integration',
+          name: 'Integrate',
+          description: stepDescriptions.integration,
+        });
+        if (actions.some((a) => !steps.some((step) => step.role === actionRoles[a.kind])))
+          steps.push({
+            role: 'other',
+            name: 'Other work',
+            description: 'Additional assignments recorded for this issue.',
+          });
+        return steps.map((step, index) => issueStep(i, step, index, actions)).join('');
+      }
+      function stepActions(step, actions) {
+        if (step.role === 'integration')
+          return actions.filter(
+            (a) => ['implement', 'integrate'].includes(a.kind) && ['completed', 'integrated'].includes(a.status)
+          );
+        if (step.role === 'other')
+          return actions.filter((a) => !data.lifecycle.some((stage) => stage.role === actionRoles[a.kind]));
+        return actions.filter((a) => actionRoles[a.kind] === step.role);
+      }
+      function stepWork(step, actions) {
+        return actions.map((action) => actionCard(action, 'history')).join('');
+      }
+      function stepExtra(i, step, actions) {
+        if (step.role === 'ready-for-grilling')
+          return i.grilling ? `<h3>Recorded discussion</h3><pre>${esc(JSON.stringify(i.grilling, null, 2))}</pre>` : '';
+        if (step.role === 'ready-to-verify' && i.implementation && step.state !== i.state)
+          return implementationChecklist({ ...i, implementation: { ...i.implementation, readOnly: true } });
+        if (step.role === 'ready-for-commit')
+          return actions
+            .filter((a) => a.worker_revision)
+            .map(
+              (a) =>
+                `<div class="commit-record"><b>${esc(a.title)}</b><p>Worker commit <code>${esc(a.worker_revision)}</code></p></div>`
+            )
+            .join('');
+        if (step.role === 'ready-to-close') return humanChecks(i);
+        if (step.role === 'closed' && i.state === step.state) return '<p>The issue report marks this issue closed.</p>';
+        return '';
+      }
+      function issueStep(i, step, index, allActions) {
+        const actions = stepActions(step, allActions),
+          current = step.state !== undefined && step.state === i.state;
+        const key = i.id + ':' + step.role + ':' + (step.state || '');
+        const open = current;
+        const extra = stepExtra(i, step, allActions);
+        const state = stepState(i, step, allActions);
+        const compact = ['completed', 'skipped', 'planned-skip', 'unknown'].includes(state.status);
+        const helpId = 'step-help-' + index;
+        const history = stageReviews(i, step, current);
+        return `<div class="step-shell ${compact ? 'is-compact' : ''}"><details class="issue-step state-${esc(state.status)} ${current ? 'is-current' : ''}" data-stage-state="${esc(step.state || '@' + step.role)}" data-step-id="${esc(key)}" ${open ? 'open' : ''}><summary><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-heading"><strong>${esc(step.name)}</strong><span class="step-description">${esc(step.description)}</span></span><span class="step-label">${current ? '<b>Current step</b><br>' : ''}${esc(state.label)}</span><span class="step-chevron" aria-hidden="true">⌄</span></summary><div class="step-body"><button data-grill-stage="${esc(step.state || '@' + step.role)}">Discuss this step</button>${stageGrilling(i, step)}${skipDecision(state)}${current || ['skipped', 'planned-skip'].includes(state.status) ? '' : `<p class="stage-explanation">${esc(state.summary)}</p>`}${current ? currentStageContent(i, step) : ''}${state.at ? `<p class="muted">Recorded ${recordedDate(state.at)}</p>` : ''}${stageEvidence(state)}${current ? liveStepWork(i, step) + currentDetails(i, allActions, stepWork(step, actions) + history + extra) : stepWork(step, actions) + history + extra}</div></details><button class="step-info-button" style="anchor-name:--help-${index}" popovertarget="${helpId}" aria-label="About ${esc(step.name)}" title="${esc(state.label)} — ${esc(state.summary)}">ⓘ</button><div class="step-help" id="${helpId}" popover style="position-anchor:--help-${index}"><h3>${esc(step.name)} · ${esc(state.label)}</h3><p>${esc(state.summary)}</p>${current ? `<p>${esc(readinessExplanation(i))}</p>${stepChatLinks(i)}` : ''}${stepRequirement(step, state)}<p>${compact ? 'Tap the step to expand its full view and inspect any recorded details.' : current ? 'Use Progress above to continue through the approved plan. Nothing starts just by opening this explanation.' : 'You can expand this step to inspect its details. Use Progress above to continue.'}</p><button popovertarget="${helpId}" popovertargetaction="hide">Close</button></div></div>`;
+      }
+      function skipDecision(state) {
+        if (!['skipped', 'planned-skip'].includes(state.status)) return '';
+        return `<div class="skip-decision"><p><b>${state.status === 'skipped' ? 'Skipped by' : 'Skip planned by'}: ${esc(state.sourceLabel || skipSourceLabel(state.source))}</b></p><p>${esc(state.summary)}</p></div>`;
+      }
+      function skipSourceLabel(source) {
+        if (!source) return 'Source not recorded';
+        if (source.kind === 'stage')
+          return data.lifecycle.find((stage) => stage.state === source.state)?.name || source.state;
+        return { 'original-report': 'Original report', user: 'User' }[source.kind] || 'Source not recorded';
+      }
+      function stageGrilling(issue, step) {
+        return (issue.stage_grilling || [])
+          .filter((record) => record.state === (step.state || '@' + step.role))
+          .map(
+            (record) =>
+              `<details><summary>Saved grilling · ${esc(record.name)} · ${recordedDate(record.at)}</summary><pre>${esc(record.summary)}</pre><p>These are confirmed discussion results. Stage completion, test evidence and approvals remain separate.</p></details>`
+          )
+          .join('');
+      }
+      function issueDeliveryCard(issue) {
+        const d = issue.issueDelivery;
+        if (!d) return '';
+        const active = ['running', 'answering'].includes(issue.lifecycle?.status);
+        const handoff = d.mode === 'draft-handoff';
+        const operations =
+          handoff || !d.pr
+            ? []
+            : d.state === 'verified'
+              ? ['refresh']
+              : d.merge
+                ? ['verify', 'reconcile']
+                : ['refresh', 'merge', 'reconcile'];
+        const status = d.pr
+          ? handoff
+            ? 'Handed off for manual repair and merge'
+            : d.state === 'verified'
+              ? 'Merged and checked'
+              : 'Pull request is open'
+          : d.readiness
+            ? 'Ready to open the pull request'
+            : 'Preparing the pull request';
+        const next = handoff
+          ? 'Prepare a draft PR with actual check results and remaining work. Passing checks are not required; you handle repair and merge manually.'
+          : d.readiness
+            ? 'The completed work and check results have been reviewed. Publication is the next step.'
+            : 'After verification, the coordinator will check the approved plan against the finished code and test results, then prepare the pull request. You do not need to upload anything.';
+        return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">${esc(status)}</p><p>Branch: ${esc(d.source)} → ${esc(d.target)}</p><details><summary>Code version and review details</summary><p>Candidate: ${esc(d.candidate)}<br>Original target: ${esc(d.targetRevision)}</p><p>${d.contributions.length} retained contribution(s).</p></details>${d.pr ? `<a href="${esc(d.pr.url)}" target="_blank" rel="noopener">Open pull request</a>` : `<p>${esc(next)}</p>${!issue.lifecycle?.input ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || issue.lifecycle?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : 'Continue toward pull request'}</button>` : ''}`}<ul>${(d.observation?.checks || []).map((c) => `<li>${esc(c.name)}: ${esc(c.state)}</li>`).join('')}</ul>${d.observation?.capability?.reason ? `<p>${esc(d.observation.capability.reason)}</p>` : ''}${operations.map((kind) => `<button data-delivery-kind="${kind}" data-delivery-issue="${esc(issue.id)}">${{ refresh: 'Refresh PR checks', merge: 'Review PR merge', reconcile: 'Check the saved operation', verify: 'Verify merged result' }[kind]}</button>`).join('')}<p>${handoff ? 'Factory work ends at this draft PR. No automatic repair, rebase or CI maintenance follows. Acceptance and closure remain outstanding.' : 'Opening or merging the pull request does not accept or close the issue.'}</p></section>`;
+      }
+      async function issueDeliveryAction(kind, input) {
+        const preview = await request('issue-delivery-preflight', { kind, input });
+        const d = preview.delivery;
+        const text = `${kind} issue pull request?\nCandidate: ${d?.candidate || ''}\nTarget: ${d?.targetRevision || ''}\nContributions: ${d?.contributions.map((c) => c.actionId).join(', ') || ''}\n${preview.requiresApproval ? 'Your approval covers this exact aggregate and target.' : ''}`;
+        if (!window.confirm(text)) return;
+        await request('issue-delivery-start', { token: preview.token, humanApproved: preview.requiresApproval });
+      }
+      function verificationRecovery(issue) {
+        const recovery = issue.verificationRecovery;
+        if (!recovery) return '';
+        const disabled = recovery.busy || busy ? 'disabled' : '';
+        verificationRecovery.choices ||= new Map();
+        const selected = verificationRecovery.choices.get(issue.id) ?? recovery.defaultBranch;
+        return `<section class="card verification-recovery"><h4>Verification needs attention</h4><p>Implementation is finished. A check failed; this may be outside this issue. You can fix it separately, then retry here.</p><p role="status">${fileLinkUI.html(recovery.error || 'Checking the existing work…')}</p><p>Working branch: <code>${esc(recovery.branch)}</code><br>Checkout: <code>${esc(recovery.checkout)}</code></p><button data-verification-retry="${esc(issue.id)}" ${disabled}>${recovery.busy ? 'Checking…' : 'Retry verification'}</button><p>Update brings all changes from the selected branch into this working branch. Codex resolves merge conflicts in the existing issue chat, then the combined result is checked. Publication, merging into the project branch and acceptance remain separate. Remote branches show the last fetched version.</p><label>Branch containing the fix<select id="verification-branch-${esc(issue.id)}" ${disabled}><option value="">Choose a branch…</option>${recovery.branches.map((b) => `<option value="${esc(b.ref)}" data-revision="${esc(b.revision)}" ${b.ref === selected ? 'selected' : ''}>${esc(b.name)} · ${esc(b.revision.slice(0, 7))} · ${esc(b.subject)}${b.ref.startsWith('refs/remotes/') ? ' (fetched remote)' : ''}${b.name === recovery.branch ? ' (current)' : ''}</option>`).join('')}</select></label><button data-verification-update="${esc(issue.id)}" ${disabled}>Update from branch and retry</button></section>`;
+      }
+      async function retryIssueVerification(button, update) {
+        const id = update ? button.dataset.verificationUpdate : button.dataset.verificationRetry;
+        const issue = data.issues.find((i) => i.id === id);
+        const recovery = issue.verificationRecovery;
+        const selected = $('verification-branch-' + id)?.selectedOptions[0];
+        if (update && !selected?.value) throw Error('Choose the branch containing the fix.');
+        button.disabled = true;
+        button.textContent = update ? 'Updating and checking…' : 'Checking…';
+        await request('verification-retry', {
+          issueId: id,
+          runId: recovery.runId,
+          basis: recovery.basis,
+          ...(update ? { branch: selected.value, branchRevision: selected.dataset.revision } : {}),
+        });
+      }
+      function currentStageContent(issue, step) {
+        if (issue.implementation && step.role === 'ready-to-verify')
+          return (
+            verificationRecovery(issue) +
+            issueDeliveryCard(issue) +
+            implementationChecklist(issue) +
+            reviewFileProblems(issue) +
+            progressControls(issue)
+          );
+        return (
+          verificationRecovery(issue) +
+          issueDeliveryCard(issue) +
+          latestReviewResult(issue) +
+          reviewFileProblems(issue) +
+          progressControls(issue)
+        );
+      }
+      const checkLabels = {
+        passed: 'Passed',
+        failed: 'Failed',
+        todo: 'To do',
+        'not-checked': 'Not checked',
+        skipped: 'Skipped',
+        reviewed: 'Finished with skips',
+        checking: 'Checking',
+        'in-progress': 'In progress',
+      };
+      function checkCircle(status) {
+        const symbol =
+          {
+            passed: '✓',
+            failed: '×',
+            skipped: '–',
+            reviewed: '–',
+            'in-progress': '…',
+            'not-checked': '?',
+            checking: '…',
+          }[status] || '';
+        return `<span class="check-circle check-${esc(status)}" aria-hidden="true">${symbol}</span>`;
+      }
+      function implementationChecklist(issue) {
+        const view = issue.implementation;
+        const record = view.record;
+        const grouped = new Map();
+        for (const step of record?.steps || []) {
+          if (!grouped.has(step.version)) grouped.set(step.version, []);
+          grouped.get(step.version).push(step);
+        }
+        const groups = [...grouped]
+          .map(
+            ([version, steps]) =>
+              `<section class="check-version"><h4>${esc(version)}</h4>${steps.map((step) => implementationStep(issue, step)).join('')}</section>`
+          )
+          .join('');
+        return `<section class="implementation-checklist">${!view.readOnly && issue.siteReview?.checks.length ? `<div data-site-review="${esc(issue.id)}"></div>` : ''}<h3>Implementation checks</h3><p>${esc(implementationSummary(view))}</p>${record && !view.fresh ? '<p class="check-notice">These earlier results need another check because the plan, work or supporting information changed.</p>' : ''}${view.problem ? `<p class="check-notice">${esc(view.problem)}</p>` : ''}${groups || '<p>Build a checklist from this issue’s plan, then check each acceptance criterion against the existing results.</p>'}<div class="toolbar">${skipAllChecks(issue)}<button data-check-plan="${esc(issue.id)}" ${view.readOnly || !view.canCheck ? 'disabled' : ''}>${view.running ? 'Checking implementation…' : record ? 'Check implementation again' : 'Check implementation steps'}</button><button data-open-plan="${esc(view.path)}">View implementation plan</button></div>${view.paths.length > 1 ? `<label>Implementation plan<select id="implementation-plan">${view.paths.map((path) => `<option ${path === view.path ? 'selected' : ''}>${esc(path)}</option>`).join('')}</select></label>` : ''}<p class="muted">Technical checks are work for Codex. You can skip checks you no longer require; they stay marked Skipped. Required human decisions remain separate.</p>${requiredPlanDecisions(issue)}</section>`;
+      }
+      function implementationSummary(view) {
+        if (view.running) return 'Checking the plan and saved results.';
+        if (!view.record) return 'Check the plan against the existing work and saved test results.';
+        if (!view.fresh) return 'The earlier results need another check.';
+        const criteria = view.record.steps.flatMap((step) => step.criteria);
+        const passed = criteria.filter((criterion) => criterion.status === 'passed').length;
+        const skipped = criteria.filter((criterion) => criterion.status === 'skipped').length;
+        const remaining = criteria.length - passed - skipped;
+        return `${passed} passed · ${skipped} skipped · ${remaining} remaining. ${remaining ? 'Expand a step to see what remains.' : 'Implementation checks are finished. Use Progress to continue.'}`;
+      }
+      function implementationStatus(criteria) {
+        const statuses = criteria.map((c) => c.status);
+        if (statuses.includes('failed')) return 'failed';
+        if (statuses.includes('not-checked')) return 'not-checked';
+        if (statuses.includes('in-progress')) return 'in-progress';
+        if (statuses.includes('todo')) return 'todo';
+        if (statuses.every((s) => s === 'skipped')) return 'skipped';
+        return statuses.includes('skipped') ? 'reviewed' : 'passed';
+      }
+      function implementationStep(issue, step) {
+        const view = issue.implementation;
+        const status = view.running ? 'checking' : implementationStatus(step.criteria);
+        const key = issue.id + ':' + step.id;
+        const open = status === 'failed';
+        return `<details class="implementation-step" data-plan-step="${esc(key)}" ${open ? 'open' : ''}><summary>${checkCircle(status)}<strong>${esc(step.name)}</strong><span class="check-label">${view.fresh ? '' : 'Earlier result · '}${step.criteria.filter((c) => c.status === 'passed').length}/${step.criteria.length} passed · ${esc(checkLabels[status])}</span></summary><div class="acceptance-list"><p class="muted">This step passes when:</p>${step.criteria.map((c, index) => implementationCriterion(issue, c, step.id, index)).join('')}<button data-open-plan="${esc(view.path)}">Read original requirements</button></div></details>`;
+      }
+      function implementationCriterion(issue, criterion, stepId, criterionIndex) {
+        const fresh = issue.implementation.fresh;
+        const status = criterion.status;
+        const evidence = criterion.evidence
+          .map(
+            (path) =>
+              `<button class="evidence-button" data-check-evidence="${esc(path)}" data-evidence-issue="${esc(issue.id)}">${esc(path.split('/').pop())}</button>`
+          )
+          .join(' ');
+        return `<div class="acceptance-item" data-view-id="criterion-${esc(issue.id)}-${esc(stepId)}-${criterionIndex}">${checkCircle(status)}<div><b>${esc(criterion.name)}</b><span class="check-label">${fresh ? '' : 'Earlier result · '}${esc(checkLabels[status])}</span>${fresh ? `<p>${fileLinkUI.html(criterion.explanation)}</p>${criterion.next_action ? `<p><b>Next:</b> ${fileLinkUI.html(criterion.next_action)}</p>` : ''}` : '<p>Check again before relying on the earlier result.</p>'}<details><summary>Supporting details</summary><blockquote>${fileLinkUI.html(criterion.source)}</blockquote>${evidence || '<p>No supporting file recorded yet.</p>'}</details>${criterionSkip(issue, criterion, stepId, criterionIndex)}</div></div>`;
+      }
+      function skippableCriterion(criterion) {
+        return !criterion.human_check_id && !['passed', 'skipped'].includes(criterion.status);
+      }
+      function criterionSkip(issue, criterion, stepId, criterionIndex) {
+        if (issue.implementation.readOnly || !skippableCriterion(criterion)) return '';
+        return `<button data-skip-check="${esc(issue.id)}" data-skip-step="${esc(stepId)}" data-skip-index="${criterionIndex}" ${!issue.implementation.fresh || issue.implementation.running ? 'disabled' : ''}>Skip</button>`;
+      }
+      function skipAllChecks(issue) {
+        if (issue.implementation.readOnly) return '';
+        if (!issue.implementation.record?.steps.some((step) => step.criteria.some(skippableCriterion))) return '';
+        return `<button data-skip-all="${esc(issue.id)}" ${!issue.implementation.fresh || issue.implementation.running ? 'disabled' : ''}>Skip all remaining checks</button>`;
+      }
+      function selectCheckSkip(button, all) {
+        const issue = data.issues.find((i) => i.id === (all ? button.dataset.skipAll : button.dataset.skipCheck));
+        const step = issue.implementation.record.steps.find((s) => s.id === button.dataset.skipStep);
+        const criterionIndex = Number(button.dataset.skipIndex);
+        const criteria = all
+          ? issue.implementation.record.steps.flatMap((s) => s.criteria).filter(skippableCriterion)
+          : [step.criteria[criterionIndex]];
+        selection = {
+          planSkip: true,
+          issueId: issue.id,
+          state: issue.state,
+          basis: data.reviewBasis,
+          all,
+          stepId: step?.id,
+          criterionIndex,
+        };
+        $('selection').innerHTML =
+          `<h2>${all ? 'Skip all remaining implementation checks?' : 'Skip this check?'}</h2><p>${criteria.length} check${criteria.length === 1 ? '' : 's'} will be marked Skipped, not Passed. They will stop blocking checklist completion. Human approval, worker launches and integration remain separate.</p><details ${all ? '' : 'open'}><summary>Checks to skip</summary><ul>${criteria.map((c) => `<li>${esc(c.name)}</li>`).join('')}</ul></details><label>Reason<textarea id="skip-check-reason" maxlength="4000">These checks are no longer required for this issue.</textarea></label>`;
+        $('approve').textContent = all ? 'Skip these checks' : 'Skip check';
+        $('approve').disabled = false;
+        $('confirm').showModal();
+      }
+      function outstandingDecision(issue, check) {
+        if (check.status !== 'passed') return true;
+        const revisions = [data.head, issue.prototype_preview?.revision, check.review_target?.revision].filter(Boolean);
+        return !revisions.includes(check.revision);
+      }
+      function requiredPlanDecisions(issue) {
+        if (issue.implementation.readOnly) return '';
+        const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
+        const siteChecks = new Set((issue.siteReview?.checks || []).map((check) => check.id));
+        const checks = (issue.human_checks || []).filter(
+          (check) => !siteChecks.has(check.id) && outstandingDecision(issue, check)
+        );
+        return checks
+          .filter((c) => c.blocks !== 'closure' || role === 'ready-to-close')
+          .map(
+            (check) =>
+              `<section class="required-decision"><h4>${check.kind === 'judgment' ? 'Needs your approval' : 'Needs your observation'}</h4><p>${esc(check.instructions)}</p><button data-plan-decision="${esc(check.id)}" data-decision-issue="${esc(issue.id)}" data-check-outcome="passed" ${!issue.implementation.fresh ? 'disabled' : ''}>${check.kind === 'judgment' ? 'Approve result' : 'Record observation'}</button><button data-plan-decision="${esc(check.id)}" data-decision-issue="${esc(issue.id)}" data-check-outcome="failed" ${!issue.implementation.fresh ? 'disabled' : ''}>Needs changes</button></section>`
+          )
+          .join('');
+      }
+      function selectPlanDecision(button) {
+        const issue = data.issues.find((i) => i.id === button.dataset.decisionIssue);
+        const check = issue.human_checks.find((c) => c.id === button.dataset.planDecision);
+        const status = button.dataset.checkOutcome;
+        selection = {
+          planDecision: true,
+          issueId: issue.id,
+          state: issue.state,
+          checkId: check.id,
+          status,
+          basis: data.reviewBasis,
+        };
+        $('selection').innerHTML =
+          `<h2>${status === 'passed' ? 'Record your review' : 'What needs to change?'}</h2><p>${esc(check.instructions)}</p><p>This records this check only. Closing the issue remains a separate decision.</p><label>Your result<textarea id="plan-decision-result" maxlength="4000">${status === 'passed' && check.kind === 'judgment' ? 'I reviewed the result and approve it.' : ''}</textarea></label>`;
+        $('approve').textContent = status === 'passed' ? 'Record approval or observation' : 'Record needed changes';
+        $('approve').disabled = false;
+        $('confirm').showModal();
+      }
+      async function openCheckEvidence(button) {
+        const file = await request(
+          'check-evidence?issue=' +
+            encodeURIComponent(button.dataset.evidenceIssue) +
+            '&path=' +
+            encodeURIComponent(button.dataset.checkEvidence)
+        );
+        $('plan-title').textContent = 'Supporting result';
+        $('plan-path').textContent = file.path;
+        $('plan-content').textContent = file.content;
+        $('plan').showModal();
+      }
+      function currentDetails(issue, actions, content) {
+        const source = [issue.content, ...actions.map((a) => a.worker_prompt || '')].join('\n');
+        const plans = [...new Set(source.match(/docs\/plans\/[\w/-]+\.md/g) || [])];
+        const links = plans
+          .map(
+            (path) =>
+              `<button data-open-plan="${esc(path)}">${esc(path.includes('implementation') ? 'View implementation plan' : path.split('/').pop().replace(/\.md$/, '').replaceAll('-', ' '))}</button>`
+          )
+          .join(' ');
+        return `${links ? `<div class="toolbar">${links}</div>` : ''}<details><summary>Task details and earlier reviews</summary><p class="muted">These are saved records. Earlier instructions may describe work that has since finished.</p>${content}</details>`;
+      }
+      async function openSavedReport(id) {
+        $('error').textContent = '';
+        const report = await request('issue-report?issue=' + encodeURIComponent(id));
+        $('plan-title').textContent = 'Saved issue report';
+        $('plan-path').textContent = report.path;
+        $('plan-content').textContent = report.content;
+        $('plan').showModal();
+      }
+      async function openPlan(path) {
+        const plan = await request('document?path=' + encodeURIComponent(path));
+        $('plan-title').textContent = plan.content.match(/^# (.+)/m)?.[1] || 'Project plan';
+        $('plan-path').textContent = plan.path;
+        $('plan-content').textContent = plan.content;
+        $('plan').showModal();
+      }
+      async function openShownFile(path) {
+        const file = await request('shown-file?path=' + encodeURIComponent(path));
+        $('plan-title').textContent = file.path.split('/').pop();
+        $('plan-path').textContent = file.path;
+        $('plan-content').textContent = file.content;
+        $('plan').showModal();
+      }
+      function stageEvidence(state) {
+        if (!state.evidence?.length) return '';
+        return `<details><summary>Recorded evidence</summary><ul>${state.evidence.map((item) => `<li>${fileLinkUI.html(item.path || item)}</li>`).join('')}</ul>${chatLink(state.chat)}</details>`;
+      }
+      function stepRequirement(step, state) {
+        if (state.status === 'skipped')
+          return '<p>This step was skipped, not performed. Its decision source and reason appear in the expanded view.</p>';
+        if (state.status === 'planned-skip')
+          return '<p>The saved plan does not require this step. That can change if new requirements make it necessary.</p>';
+        return `<p><b>${state.status === 'completed' ? 'What this step required' : 'To finish this step'}:</b> ${esc(stepFinish[step.role] || step.exit || step.description)}</p>`;
+      }
+      function stepState(issue, step, actions) {
+        if (step.state)
+          return (
+            issue.stageStates?.[step.state] || {
+              status: 'unknown',
+              label: 'No outcome recorded',
+              summary: 'No outcome has been recorded for this step.',
+            }
+          );
+        if (step.role === 'integration') {
+          if (issue.stageStates?.['@integration']) return issue.stageStates['@integration'];
+          const integrated = actions.filter((a) => ['implement', 'integrate'].includes(a.kind));
+          if (integrated.length && integrated.every((a) => a.status === 'integrated'))
+            return {
+              status: 'completed',
+              label: 'Completed',
+              summary: 'The recorded code changes were integrated after their required checks.',
+            };
+          const planned = [...data.runs]
+            .reverse()
+            .flatMap((r) => r.savedRoutes || [])
+            .find((r) => r.issueId === issue.id)
+            ?.steps.find((s) => s.state === '@integration');
+          if (planned)
+            return {
+              status: planned.decision === 'skip' ? 'planned-skip' : 'future',
+              label: planned.decision === 'skip' ? 'Planned to skip' : 'Planned',
+              summary: planned.reason,
+            };
+          return {
+            status: 'future',
+            label: 'Separate manual action',
+            summary:
+              'Code changes need a separate integration action after the worker finishes. This does not accept or close the issue.',
+          };
+        }
+        return {
+          status: 'unknown',
+          label: 'Recorded work',
+          summary: 'These assignments do not belong to a configured lifecycle step.',
+        };
+      }
+      function stepChatLinks(issue) {
+        const relevant = data.runs.filter((r) => r.actionId === issue.progress?.actionId);
+        const coordinator = [...relevant].reverse().find((r) => r.kind === 'coordinator' && r.threadId);
+        const worker = [...relevant].reverse().find((r) => r.workerThreadId);
+        return `<p>${coordinator ? `<a href="codex://threads/${encodeURIComponent(coordinator.threadId)}">Open review chat ↗</a>` : ''}${coordinator && worker ? ' · ' : ''}${worker ? `<a href="codex://threads/${encodeURIComponent(worker.workerThreadId)}">Open original worker chat ↗</a>` : ''}</p>`;
+      }
+      function readinessExplanation(issue) {
+        if (issue.readiness?.status === 'blocked')
+          return issue.readiness.summary + ' Use Progress to try again after addressing the problem.';
+        return 'Use Progress to try the recommended action. It checks the current work and required permissions as part of that action, and explains anything that prevents it from continuing.';
+      }
+      function reviewConclusion(summary) {
+        const full = summary.trim();
+        const lead = full
+          .split(/(?<=[.!?])\s+/)
+          .slice(0, 2)
+          .join(' ');
+        return `<p>${esc(lead)}</p>${lead !== full ? `<details><summary>Full conclusion and limits</summary><p class="prose">${esc(full)}</p></details>` : ''}`;
+      }
+      function latestReviewResult(issue) {
+        const result = issue.latestResult;
+        if (!result) return '';
+        return `<section class="card latest-result" id="latest-review-result"><small>${result.fresh ? 'Result of your last review' : 'Earlier review — information has changed'}</small><h3>Review finished</h3><p><b>${result.recommendations.length ? `${result.recommendations.length} suggested assignment${result.recommendations.length === 1 ? '' : 's'}` : 'No new worker recommended'}</b></p>${reviewConclusion(result.summary)}${result.recommendations.map((a) => `<div class="suggestion"><h4>${esc(a.title)}</h4><p>${esc(a.scope)}</p><p><b>Why:</b> ${esc(a.reason)}</p></div>`).join('')}${routeDetails(result.routes, result.saved)}<h4>What to do next</h4><p>${esc(issue.lifecycle?.status === 'running' ? 'Work is continuing. Follow progress above; any questions will appear here.' : result.nextStep)}</p>${result.fresh && result.saveProblem ? `<p class="plan-problem"><b>The proposed route cannot be saved:</b> ${esc(result.saveProblem)} Use Progress to check existing work before planning another assignment. This read-only review has not changed the issue.</p>` : ''}${result.saved ? '<p>The task and route are saved.</p>' : ''}${chatLink(result.threadId)}</section>`;
+      }
+      function finalControls(issue, role) {
+        const closed = role === 'closed';
+        const recordOnly =
+          issue.lifecycle_history?.findLast((event) => event.outcome === 'completed')?.work_kind === 'record-update';
+        const description = recordOnly
+          ? 'The issue record is updated. No new worker or code commit was needed. Review the result, then close the issue if you accept it.'
+          : 'Close issue accepts the recorded result and closes this issue. It does not re-run verification or certify later source changes. Review the result first, or reopen it if more work is needed.';
+        return `<section class="next-action"><div><small>${closed ? 'Issue closed' : 'Your decision'}</small><h3>${closed ? 'This issue is closed' : 'Ready for final review'}</h3><p>${closed ? 'You can review the result or reopen the issue if more work is needed.' : description}</p>${recordOnly ? `<p>${esc(issue.record_update.summary)}</p><ul>${issue.record_update.remaining.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${humanChecks(issue)}${decisionErrors.has(issue.id) ? `<p role="alert" class="decision-error">${esc(decisionErrors.get(issue.id))}</p>` : ''}<div class="toolbar">${closed ? '' : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Close issue</button>`}<button data-review-result="${esc(issue.id)}">Review result</button><button data-issue-decision="reopen" data-issue-id="${esc(issue.id)}" data-issue-state="${esc(issue.state)}">Reopen issue</button></div></div></section>`;
+      }
+      const decisionErrors = new Map();
+      const decisionRequests = new Map();
+      let reviewOpenFor = null;
+      function reviewRecordedResult(id) {
+        reviewOpenFor = id;
+        const result = $('recorded-result');
+        if (!result) return;
+        result.open = true;
+        result.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        result.querySelector('summary').focus();
+      }
+      function selectIssueDecision(button) {
+        const issue = data.issues.find((entry) => entry.id === button.dataset.issueId);
+        const chooseReason = button.dataset.issueDecision === 'choose-close';
+        const kind = chooseReason ? 'close' : button.dataset.issueDecision;
+        selection = {
+          decision: true,
+          issueId: button.dataset.issueId,
+          state: button.dataset.issueState,
+          kind,
+          basis: issue.decisionBasis || data.reviewBasis,
+        };
+        if (chooseReason) {
+          const choices = data.closureReasons;
+          $('selection').innerHTML =
+            `<h2>Close this issue</h2><p>Choose why you are closing it. Reasons other than Fixed leave unfinished work, including an unreviewed worker result, as they are. Fixed still requires that review.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}">${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`;
+          $('approve').textContent = 'Close issue';
+          $('approve').disabled = choices.length === 0;
+          $('confirm').showModal();
+          return;
+        }
+        if (kind === 'close') {
+          if (decisionRequests.get(issue.id)?.pending) return;
+          return sendIssueDecision(selection, button).catch(() => {});
+        }
+        $('selection').innerHTML =
+          '<h2>Reopen this issue?</h2><p>This returns the issue to investigation. The existing result, checks and commits are kept. No worker starts automatically.</p><label>What still needs work? (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>';
+        $('approve').textContent = 'Reopen issue';
+        $('approve').disabled = false;
+        $('confirm').showModal();
+      }
+      function decisionStatus(issue) {
+        const state = decisionRequests.get(issue.id);
+        const error = decisionErrors.get(issue.id);
+        return `<p data-issue-decision-status="${esc(issue.id)}" role="${error ? 'alert' : 'status'}">${esc(error || state?.message || '')}</p>`;
+      }
+      async function sendIssueDecision(decision, button) {
+        if (decisionRequests.get(decision.issueId)?.pending) return;
+        const id = decision.issueId;
+        decisionErrors.delete(id);
+        decisionRequests.set(id, {
+          pending: true,
+          message: 'Closing issue… Waiting for the server to save your decision.',
+        });
+        if (button) {
+          button.disabled = true;
+          button.textContent = 'Closing…';
+        }
+        render();
+        try {
+          const result = await request('issue-decision', decision);
+          const issue = data.issues.find((entry) => entry.id === id);
+          issue.state = result.state;
+          issue.stage = data.lifecycle.find((stage) => stage.state === result.state)?.name || result.state;
+          if (decision.kind === 'close') {
+            const reason = data.closureReasons.find((choice) => choice.id === (decision.resolution || 'fixed'));
+            issue.closure = {
+              reason: reason?.id || 'fixed',
+              label: reason?.label || 'Fixed',
+              details: decision.reason || '',
+            };
+          } else {
+            delete issue.closure;
+          }
+          const accepted = decision.kind === 'close' && (!decision.resolution || decision.resolution === 'fixed');
+          decisionRequests.set(id, {
+            pending: false,
+            message: accepted
+              ? 'Accepted and closed.'
+              : decision.kind === 'close'
+                ? 'Issue closed.'
+                : 'Issue reopened.',
+          });
+          render();
+          // The saved decision is visible immediately, even if conversation polling is slow.
+          void refresh();
+          return result;
+        } catch (error) {
+          decisionRequests.delete(id);
+          decisionErrors.set(id, error.message);
+          render();
+          throw error;
+        }
+      }
+      function progressControls(issue) {
+        const role = data.lifecycle.find((s) => s.state === issue.state)?.role;
+        if (role === 'closed' || (role === 'ready-to-close' && issue.progress?.disabled))
+          return finalControls(issue, role);
+        if (/UI lost the link/.test(issue.readiness?.summary || ''))
+          return `<section class="next-action"><div><h3>Find the existing work</h3><p>The UI lost the link to the Codex chat that worked on this task. It can look it up and restore the link so you can review the finished result.</p><button class="primary" data-find-worker="${esc(issue.id)}" data-worker-state="${esc(issue.state)}">Find existing chat</button></div></section>`;
+        return '';
+      }
+      const lifecycleDrafts = new Map();
+      function integrationRecoveryPanel(issue, record) {
+        const recovery = record?.integrationRecovery;
+        if (!recovery) return '';
+        return `<section class="card"><h4>Finish recording the existing integration</h4><p>The changes and existing merge are kept. ${esc(recovery.reason)}</p><p>Retry first checks saved evidence. If new checks are needed, it runs them on the existing merged code. It will not restart implementation or merge again.</p><button data-integration-recovery="${esc(issue.id)}" data-recovery-updated="${esc(record.updated)}" ${busy || record.status === 'running' ? 'disabled' : ''}>${record.status === 'running' ? 'Checking existing result…' : 'Retry finishing integration'}</button></section>`;
+      }
+      function assemblyRecoveryPanel(issue) {
+        const recovery = issue.assemblyRecovery;
+        if (!recovery) return '';
+        return `<section class="card"><h4>Finish the existing operation</h4><p>${fileLinkUI.html(recovery.reason)}</p><details><summary>Failure details</summary><pre class="prose">${fileLinkUI.html(recovery.detail)}</pre>${recovery.output ? `<pre class="prose">${fileLinkUI.html(recovery.output)}</pre>` : ''}${recovery.checkout ? `<p>Saved issue branch: <code>${esc(recovery.checkout)}</code></p>` : ''}${recovery.log ? `<p>Check log: ${fileLinkUI.html(recovery.log)}</p>` : ''}</details><p>Retry uses the saved work. It will not restart implementation or repeat the original merge. A changed source result still needs review.</p><button class="primary" data-assembly-retry="${esc(issue.id)}" data-retry-run="${esc(recovery.runId)}" data-retry-updated="${esc(recovery.updated)}" ${busy ? 'disabled' : ''}>Retry existing operation</button></section>`;
+      }
+      function currentProgressSummary(issue, record, child, summary, input) {
+        if (input || record?.status === 'answering') return summary;
+        const coordinator = data.coordinator;
+        const queued = coordinator?.waiting?.findIndex((entry) => entry.issueId === issue.id) ?? -1;
+        if (record?.status === 'running' && queued >= 0)
+          return `Waiting for the coordinator. Queue position ${queued + 1}; another review is running.`;
+        if (child?.connected && child.summary && !/^Preparing the conversation\.?$/.test(child.summary))
+          return child.summary;
+        if (record?.status === 'running' && coordinator?.active?.issueId === issue.id)
+          return summary + ' Waiting for the review result.';
+        return summary;
+      }
+      function lifecyclePanel(issue) {
+        const record = issue.lifecycle;
+        const stage = data.lifecycle.find((s) => s.state === issue.state);
+        if (stage?.role === 'closed') return '';
+        const active =
+          ['running', 'answering'].includes(record?.status) ||
+          (!record?.input &&
+            data.runs.some(
+              (run) =>
+                run.connected &&
+                (run.issueId === issue.id ||
+                  data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+            ));
+        const child =
+          data.runs.find(
+            (run) =>
+              run.connected &&
+              (run.issueId === issue.id ||
+                data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+          ) || data.runs.find((r) => r.id === record?.childRunId);
+        const input = record?.input?.type === 'retry' ? null : record?.input;
+        const blocker = !active && !input ? issue.progress?.blocker : null;
+        const stopped = record?.status === 'blocked' || record?.legacyRetry || record?.input?.type === 'retry';
+        const issueWork = data.runs.find(
+          (run) =>
+            run.connected &&
+            (run.issueId === issue.id ||
+              data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id)))
+        );
+        const title = record?.deliveryHandoff
+          ? 'Handed off for manual repair and merge'
+          : blocker
+            ? 'Uncommitted changes'
+            : record?.status === 'answering'
+              ? 'Saving your answer'
+              : active
+                ? 'Working on this issue'
+                : input
+                  ? 'Your input is needed'
+                  : stopped
+                    ? record?.canResume && !blocker
+                      ? 'Ready to continue'
+                      : 'Progress stopped'
+                    : stage?.role === 'ready-to-close'
+                      ? 'Ready for final review'
+                      : 'Move this issue forward';
+        const summary = blocker
+          ? issue.progress.summary
+          : record?.status === 'answering'
+            ? 'Saving your response before continuing this issue.'
+            : input
+              ? issueWork
+                ? `Work on this issue is still connected. ${issueWork.summary || 'Follow its live output below.'}`
+                : 'Waiting for your answer. No work is running for this issue.'
+              : record?.summary ||
+                'Continue through this issue’s approved plan. We’ll stop here if we need your input.';
+        const previewLink = prototypePreview(issue);
+        const stageNote =
+          previewLink ||
+          (stage?.role === 'ready-to-prototype' && input
+            ? '<p>Prototype is the workflow stage; it does not mean a prototype is being built or is ready to view. The request below explains what is needed before work can continue.</p>'
+            : '');
+        const acceptanceOnly = stage?.role === 'ready-to-close' && (!record?.canResume || issue.progress?.disabled);
+        const canStart =
+          !input && !record?.deliveryHandoff && !record?.deliveryWaiting && !issue.assemblyRecovery && !acceptanceOnly;
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(currentProgressSummary(issue, record, child, summary, input))}</p>${stopped && !active ? '<p>No action is running.</p>' : ''}${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p data-progress-stop-reason>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${
+          record?.events?.length
+            ? `<details><summary>What happened</summary><ol>${lifecycleHistory(record)}</ol></details>`
+            : ''
+        }</section>`;
+      }
+      function lifecycleHistory(record) {
+        let previousStage;
+        return record.events
+          .map((event) => {
+            const stage = data.lifecycle.find((candidate) => candidate.state === event.stage);
+            const transitioned = stage && stage.state !== previousStage;
+            if (stage) previousStage = stage.state;
+            const role = transitioned
+              ? `<strong style="color:${historyRoleColor(stage.role)}">${esc(stage.name)}: </strong>`
+              : '';
+            const interrupted =
+              event.interrupted || event.result === 'interrupted'
+                ? ' <span class="history-interrupted">(interrupted)</span>'
+                : '';
+            const timestamp = event.at
+              ? ` <time class="history-time" datetime="${esc(event.at)}">[${esc(new Date(event.at).toLocaleString())}]</time>`
+              : '';
+            return `<li>${role}${fileLinkUI.html(event.message)}${interrupted}${timestamp}</li>`;
+          })
+          .join('');
+      }
+      function historyRoleColor(role) {
+        return (
+          {
+            'ready-for-grilling': '#9a3412',
+            'ready-for-repro': '#6b21a8',
+            'ready-to-prototype': '#6d28d9',
+            'ready-to-fix': '#1d4ed8',
+            'ready-to-verify': '#0f766e',
+            'ready-for-commit': '#166534',
+            'ready-to-close': '#92400e',
+            closed: '#475569',
+          }[role] || '#334155'
+        );
+      }
+      function launchBlockDetails(blocker) {
+        if (!blocker) return '';
+        return `<ul>${blocker.files
+          .slice(0, 20)
+          .map((path) => `<li>${fileLinkUI.html(path)}</li>`)
+          .join('')}</ul><p>${esc(blocker.nextStep)}</p>`;
+      }
+      function prototypePreview(issue) {
+        try {
+          const url = new URL(issue.prototype_preview?.url);
+          if (!['http:', 'https:'].includes(url.protocol)) return '';
+          const status =
+            issue.prototype_preview.status === 'approved' ? 'Prototype approved.' : 'Preview ready for your review.';
+          return `<p><a href="${esc(url.href)}" target="_blank" rel="noopener">Open prototype</a> · ${status}</p>`;
+        } catch {
+          return '';
+        }
+      }
+      function liveHealth(run) {
+        if (!run) return '';
+        const at = run.health?.lastActivityAt || run.events?.at(-1)?.at;
+        const activity = at ? `Last live update: ${recordedDate(at)}.` : 'No live update received yet.';
+        const labels = { waiting: 'Waiting for your input.', active: 'Codex confirmed this chat is active.' };
+        const status = run.connected
+          ? labels[run.health?.state] || 'Connected; live status not yet confirmed.'
+          : 'Chat is not connected here.';
+        const phase = run.status === 'checking' ? 'Checking the returned result. ' : '';
+        return `<p class="muted" data-live-health="${esc(run.id)}">${esc(phase + status + ' ' + activity)}${run.health?.checkedAt ? ' Status checked: ' + recordedDate(run.health.checkedAt) + '.' : ''}</p>`;
+      }
+      function activityText(issue) {
+        return data.runs
+          .filter(
+            (run) =>
+              run.issueId === issue.id ||
+              data.actions.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+          )
+          .flatMap((run) =>
+            (run.output || []).map((line) => {
+              const time = line.at ? new Date(line.at).toLocaleTimeString() : '';
+              const command = line.command ? '$ ' + line.command + '\n' : '';
+              const outcome = line.exitCode !== undefined ? '\nExit ' + line.exitCode : '';
+              const status = line.status === 'inProgress' ? 'running' : line.status;
+              return '[' + time + '] ' + (status ? '[' + status + '] ' : '') + command + line.text + outcome;
+            })
+          )
+          .join('\n\n');
+      }
+      function outputStatus(issue) {
+        const runs = data.runs.filter(
+          (run) =>
+            run.issueId === issue.id ||
+            data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+        );
+        if (runs.some((run) => run.connected))
+          return 'Work is connected. Output appears as messages and commands arrive.';
+        return 'No action is running. Output below is saved history, not live activity.';
+      }
+      function lifecycleActivity(issue) {
+        return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${fileLinkUI.html(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p>`;
+      }
+      function lifecycleInput(issue, record) {
+        const input = record.input;
+        const common = `data-lifecycle-answer="${esc(issue.id)}" data-lifecycle-updated="${esc(record.updated)}"`;
+        const draftKey =
+          issue.id +
+          ':' +
+          input.type +
+          ':' +
+          (input.reportHash || input.plan?.sha256 || input.question || input.request?.source_key || 'answer');
+        const textarea = `<label>Your answer<textarea id="lifecycle-answer-${esc(issue.id)}" data-draft-key="${esc(draftKey)}" rows="4">${esc(lifecycleDrafts.get(draftKey) || '')}</textarea></label>`;
+        const approve = `<button class="primary" ${common} data-decision="approve">${input.type === 'integration' ? 'Approve these changes and continue' : 'Approve plan and continue'}</button>`;
+        if (input.type === 'plan')
+          return `<p>Shall we carry out this plan?</p><p>${esc(input.plan.summary)}</p><p>Approval lets work continue within this plan. Required checks and separate human decisions still apply. To change the plan before work continues, use Request changes.</p><details open><summary>Implementation plan · ${esc(input.plan.path || 'Proposed plan')}</summary><pre class="prose" style="white-space:pre-wrap">${esc(input.plan.content)}</pre></details>${approve}<details><summary>Request changes</summary>${textarea}<button ${common} data-decision="changes">Send requested changes</button></details>`;
+        if (input.type === 'publication') {
+          const approved = record.publicationApproval?.identity === input.identity;
+          return `<p>${approved ? 'Publication was approved. Retry will continue the saved operation and avoid creating a duplicate pull request.' : 'Open a pull request with these changes?'}</p><p><strong>${esc(input.repository)}</strong>: <code>${esc(input.source)}</code> → <code>${esc(input.target)}</code></p><p>This publishes only this issue branch to GitHub at commit <code>${esc(input.candidate)}</code>. It does not merge into ${esc(input.target)} or close the issue.</p><button class="primary" ${common} data-decision="${approved ? 'retry' : 'approve'}">${approved ? 'Retry opening pull request' : 'Publish branch and open pull request'}</button>`;
+        }
+        if (input.type === 'integration')
+          return `<p>Shall we add these changes to the issue branch?</p><p>Review commit <code>${esc(input.candidate)}</code> against revision <code>${esc(input.target)}</code> below. Approval allows this integration to continue; final acceptance remains separate. Leave this request unanswered to keep integration paused.</p><details><summary>Review the changes</summary><pre>${esc(input.diff)}</pre></details>${approve}`;
+        if (!['questions', 'worker', 'human', 'scope', 'delivery-setup'].includes(input.type)) return '';
+        const question =
+          input.type === 'questions'
+            ? input.questions
+                .map(
+                  (q) =>
+                    `<p><strong>${esc(q.question)}</strong></p>${q.why && q.why !== record.summary ? `<p>${esc(q.why)}</p>` : ''}${q.expected ? `<p>${esc(q.expected)}</p>` : ''}`
+                )
+                .join('')
+            : input.request?.prompt === record.summary || input.question === record.summary
+              ? ''
+              : `<p>${esc(input.request?.prompt || input.question)}</p>`;
+        return `${question}${input.expected ? `<p>${esc(input.expected)}</p>` : ''}${input.request?.expected ? `<p>${esc(input.request.expected)}</p>` : ''}<p>Send your answer to continue with this request. If you need more time, leave it unanswered; work that needs this answer stays paused.</p>${textarea}<button class="primary" ${common} data-decision="${input.type === 'human' ? 'approve' : 'answer'}">Send answer and continue</button>`;
+      }
+      function liveStepWork(issue, stage) {
+        return data.runs
+          .filter(
+            (run) => run.connected && run.id !== issue.lifecycle?.childRunId && belongsInStage(run, issue, stage, true)
+          )
+          .map((run) => progress(run, true))
+          .join('');
+      }
+      function stageReviews(issue, stage, current) {
+        return data.runs
+          .filter(
+            (run) =>
+              !(current && run.connected) &&
+              !(current && run.id === issue.latestResult?.runId) &&
+              (run.kind !== 'readiness' || run.connected) &&
+              belongsInStage(run, issue, stage, current)
+          )
+          .slice()
+          .reverse()
+          .map((run) => progress(run, current))
+          .join('');
+      }
+      function belongsInStage(run, issue, stage, current) {
+        const action = data.actions.find((action) => action.id === run.actionId);
+        const belongs = run.issueId === issue.id || action?.issues.includes(issue.id);
+        if (!belongs) return false;
+        if (run.connected) return current;
+        if (run.issueId) return run.issueState === stage.state;
+        const role = run.kind === 'integration' ? 'integration' : actionRoles[action.kind];
+        return role === stage.role;
+      }
+      function recordedResultIndex(sections) {
+        const latest = sections.findLastIndex((s) => /^## (Issue progress review|Worker result review)/.test(s));
+        if (latest >= 0) return latest;
+        return Math.max(
+          0,
+          sections.findLastIndex((s) => /^## (Evidence and progress|Result|Verification)/.test(s))
+        );
+      }
+      function issueGitLabel(issue) {
+        const work = issue.workingGit;
+        if (!work) return '<p class="muted">Working branch: no checkout recorded</p>';
+        if (work.unavailable) return '<p class="muted">Working branch: checkout unavailable</p>';
+        return `<p class="muted">Working branch: <code>${esc(work.branch || 'Detached HEAD')}</code> · <code title="${esc(work.revision)}">${esc(work.revision.slice(0, 8))}</code></p>`;
+      }
+      function modelLabel(model) {
+        return data.modelSettings.models.find((choice) => choice.id === model)?.name || model;
+      }
+      function issueModelSettings(issue) {
+        const selected = issue.modelSelection;
+        const models = data.modelSettings.models
+          .map(
+            (choice) =>
+              `<option value="${esc(choice.id)}" ${selected.model === choice.id ? 'selected' : ''}>${esc(choice.name)}</option>`
+          )
+          .join('');
+        const efforts = data.modelSettings.efforts
+          .map(
+            (effort) =>
+              `<option value="${esc(effort)}" ${selected.effort === effort ? 'selected' : ''}>${esc(effort)}</option>`
+          )
+          .join('');
+        const modelDescription =
+          data.modelSettings.models.find((choice) => choice.id === selected.effectiveModel)?.description || '';
+        return `<section class="card issue-model-settings" data-issue-model-settings="${esc(issue.id)}"><h2>New work settings</h2><p class="muted">An empty choice follows the current default. These settings apply to work started after you save them; running chats keep their current settings.</p><label>Model<select aria-label="Model for new work on this issue" data-issue-model="${esc(issue.id)}"><option value="" ${selected.model ? '' : 'selected'}>Use default · ${esc(modelLabel(data.modelSettings.defaults.model))}</option>${models}</select></label><p class="muted model-description" data-issue-model-description="${esc(issue.id)}">${esc(modelDescription)}</p><label>Effort<select aria-label="Effort for new work on this issue" data-issue-effort="${esc(issue.id)}"><option value="" ${selected.effort ? '' : 'selected'}>Use default · ${esc(data.modelSettings.defaults.effort)}</option>${efforts}</select></label><p class="muted model-save-status" role="status" data-issue-model-status="${esc(issue.id)}"></p></section>`;
+      }
+      function issueNotes(i) {
+        const text = i.content.replace(/^---[\s\S]*?---\s*/, '');
+        const sections = text.split(/(?=^## )/m).filter((section) => section.trim());
+        const resultIndex = recordedResultIndex(sections);
+        return `<section class="card"><h2>Recorded issue notes</h2><p class="muted">Notes are shown in the order they appear in the issue report.</p>${sections
+          .map((section, index) => {
+            const match = section.match(/^## ([^\n]+)\n([\s\S]*)/);
+            return `<details ${index === resultIndex ? `id="recorded-result" ${reviewOpenFor === i.id ? 'open' : ''}` : ''}><summary tabindex="-1">${esc(match ? match[1] : 'Issue description')}</summary><div class="prose">${reportText(match ? match[2] : section)}</div></details>`;
+          })
+          .join('')}</section>`;
+      }
+      function strategyPanel(issue) {
+        const work = issue.strategy;
+        if (!work || closedIssueState(issue.state)) return '';
+        const current = data.runs.find((run) => run.id === work.runId);
+        return `<section class="card" data-view-id="strategy-${esc(issue.id)}"><h2>Issue strategy</h2><p><b>${esc(work.status)}</b> ${fileLinkUI.html(work.summary || 'Choose a finish line and start this issue.')}</p>${/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(work.prUrl || '') ? `<p><a href="${esc(work.prUrl)}" target="_blank" rel="noreferrer">Open pull request #${esc(work.pr)}</a></p>` : ''}<label>Strategy<select id="issue-strategy" aria-label="Strategy" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}><option value="full-stop" ${work.strategy === 'full-stop' ? 'selected' : ''}>Full Stop — merge-ready PR</option><option value="full-send" ${work.strategy === 'full-send' ? 'selected' : ''}>Full Send — merge after required checks</option></select></label><label>Optional Sol Loop<select id="strategy-sol" aria-label="Optional Sol Loop" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}>${[
+          [0, 'Off'],
+          [1, 'One review round'],
+          [3, 'Up to three review rounds'],
+        ]
+          .map(
+            ([value, title]) =>
+              `<option value="${value}" ${work.solRounds === value ? 'selected' : ''}>${title}</option>`
+          )
+          .join(
+            ''
+          )}</select></label><p class="muted">Continuing starts the issue’s system prompt immediately and preserves saved work and conversation. The prompt determines what happens next. Full Stop publishes a merge-ready PR without merging; Full Send also authorizes a protected merge. Deployment and human acceptance remain separate. Required checks and real permissions still apply.</p><label>Instruction or answer (optional)<textarea id="strategy-instruction" placeholder="Clarify scope or explain what changed"></textarea></label><button data-strategy-start="${esc(issue.id)}" ${work.active ? 'disabled' : ''}>Continue issue</button>${work.checkout && !work.active && work.status !== 'merged' ? `<button data-strategy-review="${esc(issue.id)}">Run Sol Loop on saved work</button>` : ''}${work.active ? `<button data-strategy-stop="${esc(issue.id)}" data-strategy-run="${esc(work.runId)}">Stop</button>` : ''}<p id="strategy-feedback" role="status"></p>${current ? progress(current) : ''}</section>`;
+      }
+      function issue(id) {
+        const i = data.issues.find((x) => x.id === id);
+        if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
+        const actions = data.actions.filter((a) => a.issues.includes(id));
+        const discussionSelected = selectedChatTab === 'discussion';
+        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(closedIssueState(i.state) ? i.stage : i.strategy?.status || i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue chats"><div class="issue-chat-tablist" role="tablist"><button class="issue-chat-tab" role="tab" aria-selected="${discussionSelected}" data-chat-tab="discussion">Discussion</button><button class="issue-chat-tab" role="tab" aria-selected="${!discussionSelected}" data-chat-tab="issue">${esc(i.title || i.id)}</button></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="discussion" data-chat-active="${discussionSelected}"><div id="discussion-slot"></div></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="issue" data-chat-active="${!discussionSelected}"><div id="issue-chat-slot"></div></div></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${i.strategy?.runId ? '' : lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;      }
+      const viewMemory = {
+        route: null,
+        expanded: loadExpanded(),
+        fields: new Map(),
+        scrolls: new Map(),
+        positions: new Map(),
+        logs: new Map(),
+        focus: null,
+      };
+      function loadExpanded() {
+        try {
+          return JSON.parse(localStorage.getItem('factory-expanded-v2') || '{}');
+        } catch {
+          return {};
+        }
+      }
+      function detailKey(element, route = location.hash) {
+        const owner = element.closest('[data-view-id],[data-step-id],[data-plan-step]');
+        const names = [];
+        for (let node = element; node && node !== owner; node = node.parentElement) {
+          if (node.tagName === 'DETAILS')
+            names.unshift(node.querySelector(':scope > summary')?.textContent.trim() || 'Details');
+        }
+        const group =
+          owner?.dataset.viewId ||
+          owner?.dataset.stepId ||
+          owner?.dataset.planStep ||
+          element.closest('section')?.querySelector('h2,h3')?.textContent ||
+          'page';
+        return route + '|' + group + '|' + names.join('|');
+      }
+      function scrollKey(element, route = location.hash) {
+        if (element.id) return route + '|' + element.id;
+        const owner = element.closest('details,section') || $('app');
+        return detailKey(element, route) + '|' + [...owner.querySelectorAll('pre,textarea,input')].indexOf(element);
+      }
+      function rememberView() {
+        if (viewMemory.route === null) return;
+        document.querySelectorAll('#app details:not([data-temporary] *)').forEach((element) => {
+          if (element.dataset.viewTouched === 'true') viewMemory.expanded[element.dataset.viewKey] = element.open;
+        });
+        document
+          .querySelectorAll(
+            '#app textarea:not([data-temporary] *),#app input:not([data-temporary] *),#app select[data-preserve-draft]'
+          )
+          .forEach((field) => {
+            if (field.id && !['checkbox', 'radio'].includes(field.type))
+              viewMemory.fields.set(viewMemory.route + '|' + (field.dataset.draftKey || field.id), field.value);
+          });
+        document
+          .querySelectorAll('#app pre:not([data-temporary] *),#app textarea:not([data-temporary] *)')
+          .forEach((element) => {
+            viewMemory.scrolls.set(scrollKey(element, viewMemory.route), {
+              top: element.scrollTop,
+              left: element.scrollLeft,
+            });
+          });
+        viewMemory.positions.set(viewMemory.route, window.scrollY);
+        const active = document.activeElement;
+        const focused = active?.closest('[data-temporary]') ? null : active;
+        viewMemory.focus = focused?.id
+          ? {
+              route: viewMemory.route,
+              id: focused.id,
+              start: focused.selectionStart,
+              end: focused.selectionEnd,
+              direction: focused.selectionDirection,
+            }
+          : null;
+        rememberOutput();
+        try {
+          localStorage.setItem('factory-expanded-v2', JSON.stringify(viewMemory.expanded));
+        } catch {}
+      }
+      function restoreView() {
+        viewMemory.route = location.hash;
+        document.querySelectorAll('#app details:not([data-temporary] *)').forEach((element) => {
+          const key = detailKey(element);
+          element.dataset.viewKey = key;
+          if (Object.hasOwn(viewMemory.expanded, key)) element.open = viewMemory.expanded[key];
+          element.dataset.viewTouched = Object.hasOwn(viewMemory.expanded, key) ? 'true' : 'false';
+          element.querySelector(':scope > summary')?.addEventListener('click', () => {
+            element.dataset.viewTouched = 'true';
+          });
+          element.addEventListener('toggle', () => {
+            if (element.dataset.viewTouched !== 'true') return;
+            viewMemory.expanded[key] = element.open;
+            try {
+              localStorage.setItem('factory-expanded-v2', JSON.stringify(viewMemory.expanded));
+            } catch {}
+          });
+        });
+        document
+          .querySelectorAll(
+            '#app textarea:not([data-temporary] *),#app input:not([data-temporary] *),#app select[data-preserve-draft]'
+          )
+          .forEach((field) => {
+            const saved = viewMemory.fields.get(location.hash + '|' + (field.dataset.draftKey || field.id));
+            if (saved !== undefined) field.value = saved;
+          });
+        const focus = viewMemory.focus;
+        if (focus?.route === location.hash && $(focus.id)) {
+          $(focus.id).focus({ preventScroll: true });
+          if (focus.start != null) $(focus.id).setSelectionRange(focus.start, focus.end, focus.direction);
+        }
+        document
+          .querySelectorAll('#app pre:not([data-temporary] *),#app textarea:not([data-temporary] *)')
+          .forEach((element) => {
+            const saved = viewMemory.scrolls.get(scrollKey(element));
+            if (saved) {
+              element.scrollTop = saved.top;
+              element.scrollLeft = saved.left;
+            }
+          });
+        window.scrollTo(0, viewMemory.positions.get(location.hash) || 0);
+        bindOutput();
+      }
+      function rememberOutput() {
+        const output = $('live-output');
+        if (output)
+          viewMemory.logs.set(viewMemory.route, {
+            top: output.scrollTop,
+            follow: output.scrollHeight - output.scrollTop - output.clientHeight < 32,
+          });
+      }
+      function bindOutput() {
+        const output = $('live-output');
+        if (!output) return;
+        const saved = viewMemory.logs.get(location.hash) || { follow: true, top: 0 };
+        output.scrollTop = saved.follow ? output.scrollHeight : saved.top;
+        output.onscroll = rememberOutput;
+        document.querySelector('[data-follow-output]').onclick = () => {
+          output.scrollTop = output.scrollHeight;
+          viewMemory.logs.set(location.hash, { top: output.scrollTop, follow: true });
+        };
+        document.querySelector('[data-copy-output]').onclick = async (event) => {
+          try {
+            await navigator.clipboard.writeText(output.textContent);
+            event.target.textContent = 'Copied';
+          } catch {
+            event.target.textContent = 'Select output to copy';
+          }
+        };
+      }
+      function updateLiveOutput() {
+        const output = $('live-output'),
+          issueId = issueRoute().id;
+        const issue = data?.issues.find((item) => item.id === issueId);
+        if (!output || !issue) return;
+        for (const element of document.querySelectorAll('[data-live-health]')) {
+          const run = data.runs.find((r) => r.id === element.dataset.liveHealth);
+          element.outerHTML = liveHealth(run);
+        }
+        const status = document.querySelector('[data-output-status]');
+        if (status) status.textContent = outputStatus(issue);
+        rememberOutput();
+        const saved = viewMemory.logs.get(location.hash);
+        const text = activityText(issue) || outputStatus(issue);
+        if (output.rawOutput !== text) {
+          output.rawOutput = text;
+          output.innerHTML = fileLinkUI.html(text);
+          output.querySelectorAll('[data-open-file]').forEach((button) => {
+            button.onclick = () =>
+              openShownFile(button.dataset.openFile).catch((error) => ($('error').textContent = error.message));
+          });
+        }
+        output.scrollTop = saved?.follow ? output.scrollHeight : saved?.top || 0;
+      }
+      function render() {
+        issueChatUI.beforeRender();
+        rememberView();
+        const route = issueRoute();
+        if (route.id !== selectedChatIssue) {
+          selectedChatIssue = route.id;
+          selectedChatTab = 'discussion';
+        }
+        if (coordinatorUI.mount(data, request, refresh)) {
+          issueChatUI.mount(null, data, request, refresh);
+          return;
+        }
+        coordinatorUI.update(data);
+        $('app').innerHTML = route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id) : queue();
+        const currentIssue = data.issues.find((entry) => entry.id === route.id);
+        const record = currentIssue?.lifecycle;
+        const pending =
+          record?.input && record.input.type !== 'retry'
+            ? '<h3>Waiting for you · ' + esc(currentIssue.stage) + '</h3>' + lifecycleInput(currentIssue, record, true)
+            : '';
+        const permissions = data.runs
+          .filter(
+            (run) =>
+              run.connected &&
+              (run.issueId === route.id ||
+                data.actions.some((action) => action.id === run.actionId && action.issues.includes(route.id)))
+          )
+          .map((run) => approvals(run))
+          .join('');
+        issueChatUI.mount(route.id, data, request, refresh, data.conversation ? pending + permissions : '');
+        document.querySelectorAll('[data-chat-tab]').forEach((tab) => {
+          tab.onclick = () => {
+            const selected = tab.dataset.chatTab;
+            selectedChatTab = selected;
+            document.querySelectorAll('[data-chat-tab]').forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+            document.querySelectorAll('[data-chat-panel]').forEach((panel) => panel.setAttribute('data-chat-active', String(panel.dataset.chatPanel === selected)));
+          };
+        });
+        bind();
+        bindPriorities();
+        bindIssueNavigation();
+        applyApprovalFeedback();
+        applyProgressFeedback();
+        siteReviewUI.mount(data, request, refresh);
+        restoreView();
+        discussionUI.mount(route.id, request);
+        document.querySelectorAll('[data-grill-stage]').forEach((button) => {
+          button.onclick = () => {
+            const stage = data.lifecycle.find((stage) => stage.state === button.dataset.grillStage);
+            const extra = { '@integration': 'Integrate', '@other': 'Other work' };
+            discussionUI.grill(stage || { state: button.dataset.grillStage, name: extra[button.dataset.grillStage] });
+          };
+        });
+        focusLinkedStage();
+      }
+      async function findExistingWorker(button) {
+        const issueId = button.dataset.findWorker,
+          state = button.dataset.workerState;
+        const found = await request('find-worker', { issueId, state, basis: data.reviewBasis });
+        if (found.connected) return;
+        selection = { connection: true, issueId, state, basis: found.basis };
+        $('selection').innerHTML =
+          `<h2>Connect the chat that did this task</h2><p>Choose its Codex chat below, or paste a Codex chat link. This keeps the existing work and does not start another worker.</p>${found.candidates.length ? `<label>Matching chats<select id="worker-choice"><option value="">Choose a chat</option>${found.candidates.map((t) => `<option value="${esc(t.id)}">${esc(t.title)}</option>`).join('')}</select></label>` : '<p>No matching chat was found automatically.</p>'}<label>Codex chat link<input id="worker-link" placeholder="codex://threads/…"></label>`;
+        $('approve').textContent = 'Connect this chat';
+        $('approve').disabled = false;
+        $('confirm').showModal();
+      }
+      function startIssueProgress(issue) {
+        if (progressRequests.get(issue.id)?.pending) return;
+        progressRequests.set(issue.id, {
+          pending: true,
+          previousUpdated: issue.lifecycle?.updated,
+          message:
+            'Sending Continue… Requesting the next unfinished task under your approved plan. Waiting for the server to acknowledge it.',
+        });
+        applyProgressFeedback();
+        return act(async () => {
+          try {
+            await request('lifecycle-start', {
+              issueId: issue.id,
+              issueBasis: issue.progressBasis,
+              state: issue.state,
+              basis: data.reviewBasis,
+            });
+            progressRequests.set(issue.id, {
+              pending: false,
+              previousUpdated: issue.lifecycle?.updated,
+              message:
+                'Continue accepted by the server. Checking saved work for the next step; progress will appear below.',
+            });
+          } catch (error) {
+            progressRequests.set(issue.id, {
+              pending: false,
+              error: true,
+              message:
+                'Continue could not be confirmed: ' + error.message + ' Refresh to check progress before retrying.',
+            });
+            throw error;
+          } finally {
+            applyProgressFeedback();
+          }
+        });
+      }
+      function applyProgressFeedback() {
+        document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
+          const state = progressRequests.get(button.dataset.lifecycleStart);
+          if (!state) return;
+          const issue = data.issues?.find((i) => i.id === button.dataset.lifecycleStart);
+          if (!state.pending && !state.error && issue?.lifecycle?.updated !== state.previousUpdated) {
+            progressRequests.delete(button.dataset.lifecycleStart);
+            return;
+          }
+          const panel = button.closest('.lifecycle-progress');
+          if (panel) {
+            panel.querySelector('h3').textContent = state.error
+              ? 'Continue needs attention'
+              : state.pending
+                ? 'Sending Continue…'
+                : 'Waiting for current progress';
+            panel
+              .querySelectorAll('[data-resume-summary], [data-progress-stop-reason], [role="alert"]')
+              .forEach((element) => {
+                element.hidden = true;
+              });
+            const status = panel.querySelector('[role="status"]');
+            if (status) status.textContent = state.message;
+          }
+          let feedback = button.nextElementSibling;
+          if (!feedback?.classList.contains('progress-feedback')) {
+            feedback = document.createElement('p');
+            feedback.className = 'progress-feedback';
+            button.after(feedback);
+          }
+          feedback.setAttribute('role', state.error ? 'alert' : 'status');
+          feedback.textContent = state.message;
+          feedback.hidden = Boolean(panel);
+          button.setAttribute('aria-busy', String(state.pending));
+          if (state.pending) {
+            button.disabled = true;
+            button.textContent = 'Sending Continue…';
+          }
+        });
+      }
+      function bind() {
+        issueCaptureUI.bind(request, refresh);
+        const settingsButton = $('model-settings-open');
+        if (settingsButton)
+          settingsButton.onclick = () => {
+            $('default-model').innerHTML = data.modelSettings.models
+              .map((choice) => `<option value="${esc(choice.id)}">${esc(choice.name)}</option>`)
+              .join('');
+            $('default-effort').innerHTML = data.modelSettings.efforts
+              .map((effort) => `<option value="${esc(effort)}">${esc(effort)}</option>`)
+              .join('');
+            $('default-model').value = data.modelSettings.defaults.model;
+            $('default-effort').value = data.modelSettings.defaults.effort;
+            updateDefaultModelDescription();
+            $('model-settings-status').textContent = '';
+            $('model-settings').showModal();
+          };
+        $('default-model').onchange = updateDefaultModelDescription;
+        $('model-settings-cancel').onclick = () => $('model-settings').close();
+        $('model-settings-form').onsubmit = (event) => {
+          event.preventDefault();
+          if (busy) return;
+          $('model-settings-status').textContent = 'Saving…';
+          void act(async () => {
+            await request('model-settings', {
+              model: $('default-model').value,
+              effort: $('default-effort').value,
+            });
+            $('model-settings').close();
+          });
+        };
+        document.querySelectorAll('[data-issue-model], [data-issue-effort]').forEach((select) => {
+          select.onchange = () => {
+            if (busy) return;
+            const issueId = select.dataset.issueModel || select.dataset.issueEffort;
+            const model = document.querySelector(`[data-issue-model="${CSS.escape(issueId)}"]`);
+            const effort = document.querySelector(`[data-issue-effort="${CSS.escape(issueId)}"]`);
+            const description = document.querySelector(`[data-issue-model-description="${CSS.escape(issueId)}"]`);
+            const selectedModel = model.value || data.modelSettings.defaults.model;
+            const modelChoice = data.modelSettings.models.find((choice) => choice.id === selectedModel);
+            if (description) description.textContent = modelChoice?.description || '';
+            const status = document.querySelector(`[data-issue-model-status="${CSS.escape(issueId)}"]`);
+            if (status) status.textContent = 'Saving…';
+            void act(() => request('issue-model-settings', { issueId, model: model.value, effort: effort.value }));
+          };
+        });
+        document.querySelectorAll('[data-review-file]').forEach(
+          (button) =>
+            (button.onclick = () =>
+              act(() =>
+                request('approve-review-file', {
+                  runId: button.dataset.fileRun,
+                  path: button.dataset.reviewFile,
+                  basis: data.reviewBasis,
+                })
+              ))
+        );
+        document
+          .querySelectorAll('[data-skip-check]')
+          .forEach((button) => (button.onclick = () => selectCheckSkip(button, false)));
+        document
+          .querySelectorAll('[data-skip-all]')
+          .forEach((button) => (button.onclick = () => selectCheckSkip(button, true)));
+        if ($('implementation-plan'))
+          $('implementation-plan').onchange = () => {
+            const issue = data.issues.find(
+              (i) => i.id === document.querySelector('[data-check-plan]').dataset.checkPlan
+            );
+            document.querySelector('[data-check-plan]').disabled =
+              issue.implementation.running ||
+              (!issue.implementation.canCheck && $('implementation-plan').value === issue.implementation.path);
+          };
+        document.querySelectorAll('[data-check-plan]').forEach((button) => {
+          button.onclick = () =>
+            act(() => {
+              const issue = data.issues.find((i) => i.id === button.dataset.checkPlan);
+              return request('check-implementation', {
+                issueId: issue.id,
+                state: issue.state,
+                path: $('implementation-plan')?.value || issue.implementation.path,
+                basis: data.reviewBasis,
+              });
+            });
+        });
+        document
+          .querySelectorAll('[data-check-evidence]')
+          .forEach((button) => (button.onclick = () => act(() => openCheckEvidence(button))));
+        document
+          .querySelectorAll('[data-plan-decision]')
+          .forEach((button) => (button.onclick = () => selectPlanDecision(button)));
+        document.querySelectorAll('[data-open-report]').forEach((button) => {
+          button.onclick = () =>
+            openSavedReport(button.dataset.openReport).catch((error) => ($('error').textContent = error.message));
+        });
+        document.querySelectorAll('[data-open-plan]').forEach((button) => {
+          button.onclick = () => act(() => openPlan(button.dataset.openPlan));
+        });
+        document.querySelectorAll('[data-open-file]').forEach((button) => {
+          button.onclick = () =>
+            openShownFile(button.dataset.openFile).catch((error) => ($('error').textContent = error.message));
+        });
+        document.querySelectorAll('[data-find-worker]').forEach((button) => {
+          button.onclick = () => act(() => findExistingWorker(button));
+        });
+        document.querySelectorAll('[data-review-result]').forEach((button) => {
+          button.onclick = () => reviewRecordedResult(button.dataset.reviewResult);
+        });
+        document.querySelectorAll('[data-issue-decision]').forEach((button) => {
+          button.onclick = () => selectIssueDecision(button);
+        });
+        document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
+          button.onclick = () => startIssueProgress(data.issues.find((i) => i.id === button.dataset.lifecycleStart));
+        });
+        document.querySelectorAll('[id^=lifecycle-answer-]').forEach((field) => {
+          field.oninput = () => lifecycleDrafts.set(field.dataset.draftKey, field.value);
+        });
+        document.querySelectorAll('[data-lifecycle-answer]').forEach((button) => {
+          button.onclick = () =>
+            submitApproval(button, () =>
+              request('lifecycle-answer', {
+                issueId: button.dataset.lifecycleAnswer,
+                updated: button.dataset.lifecycleUpdated,
+                decision: button.dataset.decision,
+                text: $('lifecycle-answer-' + button.dataset.lifecycleAnswer)?.value || '',
+              })
+            );
+        });
+        document.querySelectorAll('[data-assembly-retry]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              button.disabled = true;
+              button.textContent = 'Continuing existing work…';
+              await request('assembly-retry', {
+                issueId: button.dataset.assemblyRetry,
+                runId: button.dataset.retryRun,
+                updated: button.dataset.retryUpdated,
+              });
+            });
+        });
+        document.querySelectorAll('[data-integration-recovery]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              button.disabled = true;
+              button.textContent = 'Checking existing result…';
+              await request('integration-recovery-retry', {
+                issueId: button.dataset.integrationRecovery,
+                updated: button.dataset.recoveryUpdated,
+              });
+            });
+        });
+        document.querySelectorAll('[data-verification-retry]').forEach((button) => {
+          button.onclick = () => act(() => retryIssueVerification(button, false));
+        });
+        document.querySelectorAll('[id^="verification-branch-"]').forEach((select) => {
+          select.onchange = () =>
+            verificationRecovery.choices.set(select.id.slice('verification-branch-'.length), select.value);
+        });
+        document.querySelectorAll('[data-verification-update]').forEach((button) => {
+          button.onclick = () => act(() => retryIssueVerification(button, true));
+        });
+        document.querySelectorAll('[data-lifecycle-pause]').forEach((button) => {
+          button.onclick = () => act(() => request('lifecycle-pause', { issueId: button.dataset.lifecyclePause }));
+        });
+        document
+          .querySelectorAll('[data-select]')
+          .forEach((b) => (b.onclick = () => act(() => select(b.dataset.select, b.dataset.kind))));
+        document
+          .querySelectorAll('[data-save]')
+          .forEach(
+            (b) =>
+              (b.onclick = () => act(() => request('save-review', { runId: b.dataset.save, basis: data.reviewBasis })))
+          );
+        document
+          .querySelectorAll('[data-resume]')
+          .forEach(
+            (b) =>
+              (b.onclick = () =>
+                act(() => request('resume', { runId: b.dataset.resume, text: $('resume-' + b.dataset.resume).value })))
+          );
+        document
+          .querySelectorAll('[data-answer]')
+          .forEach((b) => (b.onclick = () => submitApproval(b, () => answer(b))));
+        document.querySelectorAll('[data-strategy-start], [data-strategy-review]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              const id = button.dataset.strategyStart || button.dataset.strategyReview;
+              const issue = data.issues.find((entry) => entry.id === id);
+              const review = Boolean(button.dataset.strategyReview);
+              const rounds = Number($('strategy-sol').value);
+              if (review && !rounds) throw Error('Choose one or three Sol review rounds first.');
+              button.disabled = true;
+              $('strategy-feedback').textContent = 'Sending request…';
+              await request('issue-strategy-start', {
+                issueId: id,
+                basis: issue.strategy.basis,
+                strategy: $('issue-strategy').value,
+                solRounds: rounds,
+                approved: true,
+                operation: review ? 'review' : 'work',
+                instruction: $('strategy-instruction').value,
+              });
+              $('strategy-feedback').textContent = 'Accepted. The issue is working in its owning chat.';
+            });
+        });
+        document.querySelectorAll('[data-strategy-stop]').forEach((button) => {
+          button.onclick = () =>
+            act(() =>
+              request('issue-strategy-stop', {
+                issueId: button.dataset.strategyStop,
+                runId: button.dataset.strategyRun,
+              })
+            );
+        });
+        if ($('review'))
+          $('review').onclick = () =>
+            act(async () => {
+              $('review').disabled = true;
+              $('review').textContent = 'Selecting…';
+              await request('evaluate', { basis: data.reviewBasis });
+            });
+        document
+          .querySelectorAll('[data-delivery-kind]')
+          .forEach(
+            (button) =>
+              (button.onclick = () =>
+                act(() => issueDeliveryAction(button.dataset.deliveryKind, { issueId: button.dataset.deliveryIssue })))
+          );
+        if ($('search')) bindQueueFilters();
+      }
+      function updateDefaultModelDescription() {
+        const choice = data.modelSettings.models.find((item) => item.id === $('default-model').value);
+        $('default-model-description').textContent = choice?.description || '';
+      }
+      async function select(actionId, kind) {
+        selection = await request('preflight', { actionId, kind });
+        const a = selection.action;
+        $('selection').innerHTML =
+          `<h2>${kind === 'launch' ? 'Start this worker?' : 'Assemble this issue contribution?'}</h2><h3>${esc(a.title)}</h3><p>${a.issues.map(link).join(' · ')}</p><p>${esc(a.scope)}</p><p>Checks: ${esc(a.verification)}</p><p>Integration policy: ${esc(mergeLabel(a.merge))}</p><p>Target: ${esc(data.root)}</p><p>Current revision: ${esc(selection.head)}</p>${kind === 'integrate' ? `<p>Candidate: ${esc(a.worker_revision)}</p><details><summary>Review candidate changes</summary><pre>${esc(selection.diff)}</pre></details><details><summary>Worker evidence</summary><pre>${esc(a.evidence)}</pre></details><p>The server will assemble this candidate on the issue branch and run the required checks. A failed check stops completion and keeps the result for review.</p>` : '<p>Codex starts one chat in a separate checkout. No other workers or integrations start automatically.</p>'}<details><summary>Human input reviewed for this action</summary><pre>${esc(JSON.stringify(selection.guards, null, 2))}</pre></details>${selection.requiresApproval ? '<label><input type="checkbox" id="human-approval"> I reviewed and approve this exact candidate for integration.</label>' : ''}`;
+        $('approve').textContent = kind === 'launch' ? 'Start worker' : 'Assemble contribution';
+        $('approve').disabled = selection.requiresApproval;
+        if (selection.requiresApproval)
+          $('human-approval').onchange = () => {
+            $('approve').disabled = !$('human-approval').checked;
+          };
+        $('confirm').showModal();
+      }
+      async function answer(button) {
+        const response = { decision: button.dataset.decision };
+        if (response.decision === 'answers') {
+          response.answers = {};
+          document.querySelectorAll('[data-question]').forEach((q) => {
+            if (q.dataset.request === button.dataset.answer) response.answers[q.dataset.question] = q.value;
+          });
+        }
+        await request('answer', { runId: button.dataset.run, requestId: button.dataset.answer, response });
+      }
+      $('close-plan').onclick = () => $('plan').close();
+      $('cancel').onclick = () => $('confirm').close();
+      $('confirm').onclose = () => {
+        $('confirmation-error').textContent = '';
+      };
+      $('approve').onclick = () =>
+        submitApproval($('approve'), async () => {
+          if (selection.planSkip)
+            await request('skip-plan-checks', { ...selection, reason: $('skip-check-reason').value });
+          else if (selection.planDecision)
+            await request('plan-decision', { ...selection, result: $('plan-decision-result').value });
+          else if (selection.connection)
+            await request('connect-worker', {
+              ...selection,
+              link: $('worker-link').value || $('worker-choice')?.value || '',
+            });
+          else if (selection.decision)
+            await sendIssueDecision({
+              ...selection,
+              reason: $('reopen-reason')?.value || '',
+              resolution: $('closure-reason')?.value || 'fixed',
+            });
+          else if (selection.progress)
+            await request('progress-start', {
+              token: selection.token,
+              humanApproved: $('human-approval')?.checked === true,
+            });
+          else if (selection.review) await request('evaluate', { basis: selection.basis });
+          else await request('start', { token: selection.token, humanApproved: $('human-approval')?.checked === true });
+          $('confirm').close();
+        });
+      document.addEventListener(
+        'toggle',
+        (event) => {
+          const details = event.target;
+          if (!details.open || !details.dataset.runDetails) return;
+          const id = details.dataset.runDetails;
+          const current = data.runs.find((run) => run.id === id);
+          if (!current?.historyAvailable) return;
+          const cached = runDetails.get(id);
+          const load =
+            cached?.updated === current?.updated
+              ? Promise.resolve(cached)
+              : request('run?id=' + encodeURIComponent(id));
+          load
+            .then((run) => {
+              runDetails.set(id, run);
+              if (runDetails.size > 20) runDetails.delete(runDetails.keys().next().value);
+              details.querySelector('pre').textContent =
+                (run.output || []).map((entry) => entry.text).join('\n\n') || 'No completed output yet.';
+            })
+            .catch((error) => {
+              details.querySelector('pre').textContent = error.message;
+            });
+        },
+        true
+      );
+      window.onhashchange = () => {
+        focusedStageRoute = null;
+        if (data) render();
+        void refresh();
+      };
+      refresh();
+      setInterval(refresh, 4000);
+    </script>
+  </body>
+</html>

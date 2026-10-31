@@ -1,0 +1,49 @@
+name: Verify
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install browser
+        run: pnpm exec playwright-cli install-browser chromium --with-deps
+
+      - name: Verify snapshot
+        env:
+          AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$AUDIT_BASE" ] || ! git rev-parse --verify "$AUDIT_BASE^{commit}" >/dev/null 2>&1; then
+            AUDIT_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"
+          fi
+          pnpm run verify -- --base "$AUDIT_BASE"
+
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-evidence
+          path: .issues/evidence/
+          include-hidden-files: true
