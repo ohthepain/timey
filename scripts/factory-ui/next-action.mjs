@@ -11,7 +11,7 @@ import { chatConnectionProblem } from './worker-history.mjs';
 import { reviewFollowup, reviewInput } from './review-followup.mjs';
 import { digest, requireThat, git } from './common.mjs';
 export { progressBasis, progressIssue } from '../progress-basis.mjs';
-import { progressIssue } from '../progress-basis.mjs';
+import { progressBasis, progressIssue } from '../progress-basis.mjs';
 export function resolveNextAction(queue, issue, runs) {
   const choice = nextProgress(queue, issue, runs);
   return { choice, structuralBlocker: choice.disabled ? choice.summary : null };
