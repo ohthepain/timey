@@ -21,6 +21,7 @@ async function main() {
   });
   const close = () => {
     service.close();
+    server.closeAllConnections();
     server.close(() => process.exit(0));
   };
   process.once('SIGINT', close);

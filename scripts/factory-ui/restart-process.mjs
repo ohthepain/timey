@@ -22,8 +22,8 @@ export function handoffRestart(service, server) {
     child.once('spawn', () => {
       child.unref();
       service.close();
+      server.closeAllConnections();
       server.close(() => process.exit(0));
-      server.closeIdleConnections();
       resolve();
     });
   });
