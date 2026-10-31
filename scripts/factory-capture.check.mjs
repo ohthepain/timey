@@ -84,6 +84,30 @@ test('semantic grouping and bug/clarification/prototype routing preserve the ass
   }
 });
 
+test('capture accepts a valid lifecycle with no Clarify role and keeps remaining transitions connected', () => {
+  const stages = [
+    ['ready-for-repro', 'to-do', 'prototype'],
+    ['ready-to-prototype', 'prototype', 'implement'],
+    ['ready-to-fix', 'implement', 'verify'],
+    ['ready-to-verify', 'verify', 'commit'],
+    ['ready-for-commit', 'commit', 'final'],
+    ['ready-to-close', 'final', 'closed'],
+    ['closed', 'closed', '—'],
+  ].map(([role, state, next]) => ({ role, state, next }));
+  const route = captureRoute(stages, proposal('Make managing old issues easier.'));
+  assert.equal(route.state, 'implement');
+  assert.deepEqual(
+    route.skipped.map((item) => item.state),
+    ['to-do', 'prototype']
+  );
+  const clarified = captureRoute(stages, proposal('Make managing old issues easier.', 'ready-for-grilling'));
+  assert.equal(clarified.state, 'prototype');
+  assert.deepEqual(
+    clarified.skipped.map((item) => item.state),
+    ['to-do']
+  );
+});
+
 test('invalid requests/output and model failures publish no reports and can retry', async (t) => {
   const { root, service } = captureFixture(t);
   let calls = 0;
