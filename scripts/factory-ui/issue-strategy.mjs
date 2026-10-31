@@ -50,6 +50,13 @@ export function strategyView(service, issue) {
     active: service.lifecycleTasks.has(issue.id),
   };
 }
+function requireSavedContinuationSettings(old, input) {
+  requireThat(
+    !old?.runId ||
+      (input.strategy === old.strategy && (input.operation === 'review' || input.solRounds === old.solRounds)),
+    'Continue using the saved issue strategy and Sol Loop setting.'
+  );
+}
 function selected(service, input) {
   const queue = readQueue(service.root),
     issue = queue.issues.find((item) => item.id === input.issueId);
@@ -94,6 +101,7 @@ export function startIssueStrategy(service, input) {
   };
   const old = record.work;
   requireThat(!old || old.strategy !== 'full-send' || record.status !== 'merged', 'This issue was already merged.');
+  requireSavedContinuationSettings(old, input);
   requireThat(
     input.operation !== 'review' || old?.strategy === input.strategy,
     'Use Start to change the delivery strategy; a review alone grants no new merge permission.'
