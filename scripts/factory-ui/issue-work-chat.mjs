@@ -27,6 +27,10 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
     !service.store.runs.some((r) => r.id !== run.id && r.threadId === threadId && service.store.connected.has(r.id)),
     'This issue chat is still working. Wait for its current action; no replacement chat was created.'
   );
+  // The discussion surface keeps a read-only Codex connection open for the
+  // owning thread. Release that idle connection before the execution turn so
+  // the provider does not reject the same thread as an active writer.
+  service.issueChats.release(issueId);
   const unloaded = await loadSavedChat(service.codex, threadId, cwd, sandbox);
   if (previous?.threadId === threadId && !previous.resultTurnId) {
     const completed = previous.events?.findLast(

@@ -144,6 +144,14 @@ class IssueChats {
     });
     return active.stopTask;
   }
+  release(issueId) {
+    requireThat(!this.tasks.has(issueId) && !this.active.has(issueId), 'Wait for the issue chat response to finish.');
+    const connection = this.connections.get(issueId);
+    if (!connection) return false;
+    connection.close();
+    this.connections.delete(issueId);
+    return true;
+  }
   async interrupt(active) {
     if (!active.threadId) return { stopping: true };
     return active.connection.interrupt(active.threadId);
