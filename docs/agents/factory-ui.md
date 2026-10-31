@@ -788,6 +788,12 @@ and provider responses are persistent local records and go to the configured mod
 provider under the account's policies. This is a deliberate retention change from
 the former temporary chat; sent messages no longer expire or disappear on reload.
 
+Typing `/` in either composer opens the current enabled-skill list, filtered by
+skill name and description. Options show an icon, name, short description and
+source. Selecting an option adds a read-only removable chip; selected skills are
+validated again on the server and attached to that turn. Token-only messages are
+allowed. Reply and continue remains a lifecycle answer and does not dispatch skills.
+
 The composer distinguishes **Comment**, **Request revision**, and **Reply and
 continue**. Comments save during implementation and become available on subsequent
 role turns; they do not interrupt an already executing instruction. A revision
@@ -823,6 +829,9 @@ workflow actions. Execution details remain expandable under lifecycle progress.
 Each issue has a collapsed **Chat** toggle above its lifecycle. The borderless
 toggle opens joined conversation output and full-width input; an inset circular
 up-arrow sends. Enter sends; Shift+Enter adds a line. Opening starts no model turn.
+The slash selector uses the same skill metadata and removable chips as the persistent
+issue chat. Selected skill instructions are copied into the temporary runtime and
+removed when it ends; discussion history and selected skill names remain unsaved.
 Sending starts a dedicated ephemeral process in an empty workspace, separate from
 coordinator/worker recovery and RunStore. Its context contains the selected report
 and lifecycle policy, not other reports or saved chats. Proposed skips remain
@@ -851,7 +860,8 @@ After recording changes context, start a new chat for further questions.
 Every configured lifecycle stage offers **Discuss this step**. It opens the temporary
 chat and starts the installed `grilling` skill through a native skill input. An exact hash-checked copy is registered in
 the isolated runtime’s temporary skill directory and verified through `skills/list`;
-it is removed with that runtime. No unrelated skills or tools are enabled. The
+it is removed with that runtime. Only selected skill instructions are loaded; tools
+remain disabled. The
 chat names the selected stage, including earlier or future stages, without moving
 the issue. The skill asks numbered rounds of currently answerable design questions;
 project facts come from supplied context and missing evidence remains explicit.

@@ -274,8 +274,10 @@ sessions, issue context, expiry and one-use clicked intents),
 `discussion-codex.mjs` (dedicated ephemeral model process),
 `discussion-record.mjs` (guarded selected-output append), and `discussion-ui.js`
 (temporary panel DOM, excluded from generic draft restoration). `http.mjs` exposes
-only fixed discussion operations; `service.mjs` owns shutdown. These modules do
-not use worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).
+only fixed discussion operations; `service.mjs` owns shutdown. `skills.mjs` lists
+enabled Codex skills and validates selected names before dispatch; the shared
+slash selector and removable chips live in `issue-chat-ui.js`. These modules do not use
+worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).
 
 `factory-ui/site-review.mjs` owns Verify review targets, available browser choices,
 open receipts and guarded human results. `site-review-ui.js` renders Open site,
@@ -310,7 +312,8 @@ that history with role results and actual answer receipts without rewriting thos
 owners. `conversation-context.mjs` supplies selected-issue context and full timeline
 snapshots to execution/review turns. `issue-chat-runtime.mjs` keeps the conversational
 model read-only and separate from worker/review connections; `issue-chat-ui.js`
-preserves the composer while polling role updates. Stop uses the current message ID
+preserves the composer while polling role updates and dispatches validated selected
+skills. Stop uses the current message ID
 and the dedicated connection’s exact native turn; lifecycle and worker connections
 are outside its cancellation path. `scripts/factory-chat.check.mjs`
 checks persistence, provenance, routing, isolation, pagination and UI drafts.
