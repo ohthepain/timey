@@ -6,6 +6,7 @@ import { readQueue } from './data.mjs';
 import { digest, requireThat } from './common.mjs';
 import { createDiscussionRuntime } from './discussion-codex.mjs';
 import { recordDiscussion } from './discussion-record.mjs';
+import { listAvailableSkills, publicSkills, selectedSkills } from './skills.mjs';
 
 const idle = 15 * 60 * 1000,
   lifetime = 60 * 60 * 1000;
@@ -75,14 +76,22 @@ export function createDiscussions(
       session.touched = this.now();
       return { session, ...context };
     },
+    async skills(input, owner) {
+      this.get(input, owner);
+      return publicSkills(await listAvailableSkills(this.service.codex, this.service.root));
+    },
     async turn(input, owner, internal = false) {
       const { session, context } = this.get(input, owner);
-      validateTurn(session, input.text);
+      validateTurn(session, input.text, Boolean(internal || input.skills?.length));
+      const selected =
+        internal || !input.skills?.length
+          ? []
+          : selectedSkills(await listAvailableSkills(this.service.codex, this.service.root), input.skills);
       session.busy = true;
       session.turns++;
       try {
         await this.ensureRuntime(session, context);
-        const text = await session.runtime.ask(input.text, internal ? session.skill : null);
+        const text = await session.runtime.ask(input.text, internal ? [session.skill] : selected);
         this.get(input, owner);
         requireThat(typeof text === 'string' && text.length <= 32000, 'Discussion response exceeded its limit.');
         retainActualAnswer(session, input.text, internal);
@@ -162,12 +171,12 @@ export function createDiscussions(
   return manager;
 }
 
-function validateTurn(session, text) {
+function validateTurn(session, text, hasSkills) {
   requireThat(!session.busy, 'Wait for this turn to finish.');
   requireThat(session.turns < 40, 'Discussion reached its limit. End it to start again.');
   requireThat(
-    typeof text === 'string' && text.trim() && text.length <= 8000,
-    'Enter a message under 8,000 characters.'
+    typeof text === 'string' && text.length <= 8000 && (text.trim() || hasSkills),
+    'Enter a message under 8,000 characters or choose a skill.'
   );
 }
 function validateSelection(kind, text) {

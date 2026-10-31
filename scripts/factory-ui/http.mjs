@@ -49,6 +49,7 @@ async function mutation(service, path, value, owner) {
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
     '/api/discussion-open': () => service.discussions.open(value, owner),
     '/api/discussion-turn': () => service.discussions.turn(value, owner),
+    '/api/discussion-skills': () => service.discussions.skills(value, owner),
     '/api/discussion-summary': () => service.discussions.summarize(value, owner),
     '/api/discussion-prepare': () => service.discussions.prepare(value, owner),
     '/api/discussion-commit': () => service.discussions.commit(value, owner),
@@ -157,6 +158,7 @@ function read(service, request, response, owner) {
     '/api/coordinator': () => service.coordinator.view(),
     '/api/issue-chat': () =>
       service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
+    '/api/issue-chat-skills': () => service.issueChats.skills(url.searchParams.get('issue')),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
     '/api/issue-report': () => service.readSavedReport(url.searchParams.get('issue')),
@@ -214,6 +216,7 @@ function requireLiveMutation(service, path) {
       [
         '/api/discussion-open',
         '/api/discussion-turn',
+        '/api/discussion-skills',
         '/api/discussion-prepare',
         '/api/discussion-summary',
         '/api/discussion-end',

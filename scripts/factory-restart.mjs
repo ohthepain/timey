@@ -10,9 +10,16 @@ import { observeRuntime } from './factory-deploy-readiness.mjs';
 function candidate(options) {
   const checkout = realpathSync(options.checkout || process.cwd());
   const revision = git(checkout, 'rev-parse', 'HEAD'),
-    tree = git(checkout, 'rev-parse', 'HEAD^{tree}');
+    tree = git(checkout, 'rev-parse', 'HEAD^{tree}'),
+    sourceChanged = Boolean(git(checkout, 'status', '--porcelain', '--untracked-files=all'));
   requireThat(existsSync(join(checkout, 'scripts/factory-ui.mjs')), 'The selected checkout has no factory server.');
-  return { checkout, revision, tree, verification: options.verification ? resolve(options.verification) : null };
+  return {
+    checkout,
+    revision,
+    tree,
+    sourceChanged,
+    verification: options.verification ? resolve(options.verification) : null,
+  };
 }
 async function until(check, description, timeout) {
   const end = Date.now() + timeout;
@@ -113,7 +120,7 @@ export async function restartFactory(options = {}) {
           revision: target.revision,
           pid: child.pid,
           mode: 'live',
-          sourceChanged: false,
+          sourceChanged: target.sourceChanged,
         });
         receipt.readiness = observed;
         return observed.outcome === 'ready';

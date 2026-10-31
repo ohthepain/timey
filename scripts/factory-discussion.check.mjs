@@ -35,12 +35,17 @@ function fixture(t) {
   service.discussions.close();
   let time = 1000;
   const calls = [],
+    skillCalls = [],
     runtimes = [];
+  const skillPath = join(root, '.agents/skills/sample/SKILL.md');
+  mkdirSync(join(root, '.agents/skills/sample'), { recursive: true });
+  writeFileSync(skillPath, 'A sample skill.\n');
   const create = () => {
     const runtime = {
       begin: async (context) => calls.push(context),
-      ask: async (text) => {
+      ask: async (text, skills) => {
         calls.push(text);
+        skillCalls.push(skills);
         return 'SYNTHETIC_REPLY';
       },
       close: () => {
@@ -68,6 +73,8 @@ function fixture(t) {
     owner,
     input: { issueId, session },
     calls,
+    skillCalls,
+    skillPath,
     runtimes,
     tick: (ms) => {
       time += ms;
@@ -92,6 +99,37 @@ test('ordinary turns isolate context and never write history; reset and expiry d
   f.discussion.sweep();
   assert.equal(f.discussion.sessions.size, 0);
   assert.ok(f.runtimes[1].closed);
+});
+
+test('temporary discussion lists enabled skills and invokes selected skills without persisting the transcript', async (t) => {
+  const f = fixture(t);
+  f.service.codex.ready = async () => {};
+  f.service.codex.call = async (method) => {
+    assert.equal(method, 'skills/list');
+    return {
+      data: [
+        {
+          skills: [
+            { name: 'sample', path: f.skillPath, enabled: true, shortDescription: 'Sample skill', source: 'Personal' },
+          ],
+        },
+      ],
+    };
+  };
+  assert.deepEqual(await f.discussion.skills(f.input, f.owner), [
+    { name: 'sample', description: 'Sample skill', source: 'Personal', icon: '✦' },
+  ]);
+  await f.discussion.turn({ ...f.input, text: '', skills: ['sample'] }, f.owner);
+  assert.deepEqual(f.skillCalls[0], [
+    {
+      name: 'sample',
+      path: f.skillPath,
+      description: 'Sample skill',
+      source: 'Personal',
+      sha256: (await import('./factory-ui/common.mjs')).digest(readFileSync(f.skillPath)),
+    },
+  ]);
+  assert.equal(f.service.store.list(new Map()).length, 0);
 });
 
 test('actual guarded report append retains only chosen output and human confirmation; replays rejected', async (t) => {
@@ -251,7 +289,9 @@ test('temporary panel survives redraw without storage, rejects scripted actions 
   t.after(() => dom.window.close());
   const calls = [];
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') + '\nwindow.chatTest = discussionUI;'
+    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      '\nwindow.chatTest = discussionUI;'
   );
   const api = async (...args) => {
     calls.push(args);
@@ -640,7 +680,9 @@ test('stage button opens the temporary chat with a bound stage and preserves it 
   });
   t.after(() => dom.window.close());
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') + '\nwindow.chatTest = discussionUI;'
+    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      '\nwindow.chatTest = discussionUI;'
   );
   const calls = [],
     stage = { name: 'Clarify', state: 'backlog' };
