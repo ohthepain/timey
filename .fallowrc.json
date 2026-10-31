@@ -6,6 +6,7 @@
     "gate": "new-only"
   },
   "ignoreCommandEntries": ["node"],
+  "ignoreDependencies": ["@timey/local-issues"],
   "framework": [
     {
       "name": "factory-tooling",

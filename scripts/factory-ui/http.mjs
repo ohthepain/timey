@@ -13,6 +13,8 @@ import { randomBytes } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { uiDirectory } from './ui-source.mjs';
 import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
+import { startIssueStrategy, stopIssueStrategy } from './issue-strategy.mjs';
+import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 async function body(request) {
   let text = '';
   for await (const chunk of request) {
@@ -65,8 +67,8 @@ async function mutation(service, path, value, owner) {
       service.ownServer();
       return prepareNativeChat(service.root, value);
     },
-    '/api/issue-strategy-stop': () => service.stopIssueStrategy(value),
-    '/api/issue-strategy-start': () => service.startIssueStrategy(value),
+    '/api/issue-strategy-stop': () => stopIssueStrategy(service, value),
+    '/api/issue-strategy-start': () => startIssueStrategy(service, value),
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
@@ -87,8 +89,8 @@ async function mutation(service, path, value, owner) {
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
     '/api/issue-priority': () => changePriority(service, value),
-    '/api/model-settings': () => service.saveModelSettings(value),
-    '/api/issue-model-settings': () => service.saveIssueModelSettings(value),
+    '/api/model-settings': () => saveDefaultModelSettings(service, value),
+    '/api/issue-model-settings': () => saveIssueModelSettings(service, value),
     '/api/toggle-route': () => toggleRoute(service, value),
     '/api/skip-plan-checks': () => service.skipPlanChecks(value),
     '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),

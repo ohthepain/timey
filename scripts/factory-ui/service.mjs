@@ -1,4 +1,4 @@
-import { startIssueStrategy, stopIssueStrategy, strategyView } from './issue-strategy.mjs';
+import { strategyView } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
 import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
@@ -75,8 +75,6 @@ import { approveReviewFile } from './review-file-access.mjs';
 import {
   readIssueModelSettings,
   readModelSettings,
-  saveDefaultModelSettings,
-  saveIssueModelSettings,
   newChatModelSettings,
 } from './model-settings.mjs';
 
@@ -185,12 +183,6 @@ export class FactoryUI {
       modelSelection: readIssueModelSettings(this.root, issue.id),
     };
   }
-  saveModelSettings(input) {
-    return saveDefaultModelSettings(this, input);
-  }
-  saveIssueModelSettings(input) {
-    return saveIssueModelSettings(this, input);
-  }
   lifecycleStatus(queue, issue, runs) {
     const record = lifecycleView(this, issue);
     if (!record) return null;
@@ -247,12 +239,6 @@ export class FactoryUI {
       issue = queue.issues.find((i) => i.id === issueId);
     requireThat(issue, 'The saved issue no longer exists.');
     return this.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
-  }
-  stopIssueStrategy(input) {
-    return stopIssueStrategy(this, input);
-  }
-  startIssueStrategy(input) {
-    return startIssueStrategy(this, input);
   }
   startLifecycle(input) {
     return startLifecycle(this, input);

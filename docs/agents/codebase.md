@@ -433,8 +433,9 @@ Implement candidates reach pre-publication review without first requiring target
 integration. Stage advancement, custom-stage obligations and publication/merge
 permissions remain separate gates.
 
-`factory-ui/completion-repair.mjs` turns a completion finding into one durable,
-plan-linked repair recommendation. `issue-verification-start.mjs` validates both
+`factory-ui/completion-repair.mjs` defines the completion-review repair schema;
+retained repair work stays on the completion-review run until later commit-stage
+routing saves or launches it. `issue-verification-start.mjs` validates both
 verification-only starts and approved-plan repair starts against the issue branch.
 `factory-ui/run-stream.mjs` restores output after the last history checkpoint.
 Stream fragments append immediately to the existing per-run log; the full run

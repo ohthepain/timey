@@ -15,7 +15,7 @@ import { gitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
-import { createFactoryServer } from './factory-ui/http.mjs';
+import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { checkCandidate } from './factory-ui/checks.mjs';
 
@@ -203,7 +203,7 @@ test('a claimed successful integration cannot bypass independent verification', 
 
 test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => {
   const { root, service } = fixture(t);
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
   const expired = await fetch(url + '/api/lifecycle-answer', {
@@ -1599,7 +1599,7 @@ test('saved report rejects paths, absent files, wrong identity, symlinks and non
 
 test('saved report resource requires authentication and leaves the plans-only resource intact', async (t) => {
   const { service, root } = fixture(t);
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const headers = { cookie: page.headers.get('set-cookie').split(';')[0] };
   assert.equal((await fetch(url + '/api/issue-report?issue=20261022-one')).status, 400);
   const response = await fetch(url + '/api/issue-report?issue=20261022-one', { headers });
@@ -4484,7 +4484,7 @@ test('runtime identifies the issue project separately from UI source and run det
   const { service, root } = fixture(t, { preview: true });
   const run = service.store.add({ id: 'history' }, 'worker', 'base');
   service.store.update(run, { output: [{ text: 'FULL_TRANSCRIPT_CANARY' }], instructions: 'PRIVATE_INSTRUCTIONS' });
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   const headers = { cookie };
   const runtime = await (await fetch(url + '/api/runtime', { headers })).json();
@@ -4500,14 +4500,6 @@ test('runtime identifies the issue project separately from UI source and run det
   assert.equal((await fetch(url + '/api/run?id=' + run.id)).status, 400);
 });
 
-async function httpFixture(t, service) {
-  const server = createFactoryServer(service);
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  return { url, page: await fetch(url) };
-}
 
 test('an already integrated action resumes bookkeeping without another Codex turn or merge', async (t) => {
   const { root, git, api, proposal, service } = fixture(t);

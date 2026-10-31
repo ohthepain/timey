@@ -1,4 +1,4 @@
-import { checkLifecycleScope } from './lifecycle-review.mjs';
+import { checkLifecycleScope } from './lifecycle-scope.mjs';
 import { approvedPlan } from '../issue-delivery-policy.mjs';
 import { planAuthorization } from '../factory-authorization.mjs';
 import { launchProblem, readQueue } from './data.mjs';

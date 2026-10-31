@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { parse } from 'yaml';
 import { captureFixture, proposal } from './factory-capture-fixture.mjs';
 import { createCaptures } from './factory-ui/issue-capture.mjs';
-import { createFactoryServer } from './factory-ui/http.mjs';
+import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { captureRoute } from './factory-ui/capture-routing.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 
@@ -254,13 +253,7 @@ test('custom stages are retained; malformed lifecycle and unjustified investigat
 test('real HTTP guards, pause/drain, capture and replay leave work untouched', async (t) => {
   const { root, service } = captureFixture(t);
   forbidWork(service);
-  const server = createFactoryServer(service);
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  const page = await fetch(url),
-    cookie = page.headers.get('set-cookie').split(';')[0];
+  const { url, cookie } = await startFactoryHttp(t, service);
   const request = input('<script>data</script>');
   const headers = { cookie, origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' };
   const post = (extra = {}, body = request) =>

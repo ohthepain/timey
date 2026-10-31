@@ -226,7 +226,7 @@ async function checkoutFor(service, record, run, issue) {
   service.store.update(run, { checkout: work.checkout, base: work.base });
   saveLifecycle(service, record);
 }
-export async function ownerTurn(service, record, run, issue, instruction = '') {
+async function ownerTurn(service, record, run, issue, instruction = '') {
   requireThat(!record.stopRequested && !record.pauseRequested, 'Paused by you. Saved work is retained.');
   const work = record.work;
   const conversation = conversationState(service.root, issue.id);

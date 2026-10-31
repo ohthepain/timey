@@ -1,4 +1,4 @@
-import { strategyBasis } from './issue-strategy.mjs';
+import { startIssueStrategy, strategyBasis } from './issue-strategy.mjs';
 import { readQueue } from './data.mjs';
 import { requireThat } from './common.mjs';
 import {
@@ -67,7 +67,7 @@ class IssueChats {
         'The saved strategy changed. Refresh before replying and continuing.'
       );
       const { issue } = this.selected(input.issueId);
-      const started = this.service.startIssueStrategy({
+      const started = startIssueStrategy(this.service, {
         issueId: issue.id,
         basis: strategyBasis(this.service, issue),
         strategy: record.work.strategy,
