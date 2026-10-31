@@ -1,4 +1,10 @@
 export default async function strategyBrowserChecks(page) {
+  async function expectEnabled(locator, message) {
+    if (await locator.isDisabled()) throw Error(message);
+  }
+  async function expectDisabled(locator, message) {
+    if (!(await locator.isDisabled())) throw Error(message);
+  }
   const errors = [],
     submissions = [],
     legacy = [];
@@ -12,6 +18,8 @@ export default async function strategyBrowserChecks(page) {
   await page.route('**/api/queue?**', async (route) => {
     const response = await route.fetch();
     const snapshot = await response.json();
+    const issue = snapshot.issues.find((entry) => entry.id === 'b');
+    Object.assign(issue.strategy, { status: 'blocked', runId: null, active: false });
     if (running) {
       const issue = snapshot.issues.find((entry) => entry.id === 'b');
       Object.assign(issue.strategy, {
@@ -51,6 +59,8 @@ export default async function strategyBrowserChecks(page) {
   if ((await page.getByLabel('Strategy', { exact: true }).inputValue()) !== 'full-stop')
     throw Error('Full Stop is not the default.');
   if ((await page.getByLabel('Optional Sol Loop').inputValue()) !== '0') throw Error('Sol review must default off.');
+  const continueButton = page.getByRole('button', { name: 'Continue issue', exact: true });
+  await expectEnabled(continueButton, 'Continue must be enabled for blocked issues with no prior work.');
   await page.getByLabel('Strategy', { exact: true }).selectOption('full-send');
   await page.getByLabel('Optional Sol Loop').selectOption('3');
   await page.locator('#strategy-instruction').fill('Preserve the existing implementation.');
@@ -62,12 +72,14 @@ export default async function strategyBrowserChecks(page) {
     (await page.getByLabel('Optional Sol Loop').inputValue()) !== '3'
   )
     throw Error('Polling reset the pending strategy choices.');
-  await page.getByRole('button', { name: 'Start selected strategy', exact: true }).click();
+  await continueButton.click();
   await page.locator('#strategy-feedback').filter({ hasText: 'Sending request' }).waitFor();
   if (!(await page.locator('[data-strategy-start]').isDisabled()))
     throw Error('Duplicate start was not disabled immediately.');
   release();
   await page.getByRole('button', { name: 'Stop', exact: true }).waitFor();
+  await expectDisabled(page.locator('[data-strategy-start]'), 'Continue remained enabled while the issue was working.');
+  await expectDisabled(page.getByLabel('Strategy', { exact: true }), 'The saved strategy became editable during work.');
   if (
     submissions.length !== 1 ||
     submissions[0].strategy !== 'full-send' ||

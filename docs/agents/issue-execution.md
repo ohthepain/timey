@@ -11,6 +11,11 @@ scope and destination consent. Required checks, real permissions, acceptance and
 closure stay distinct. Full Stop never merges or enables automatic merging.
 Failures retain their evidence and require manual attention; changed conditions
 never launch another recovery. Queue order is priority, then oldest eligible issue.
+The issue page exposes **Continue issue** whenever no work is running, including
+before any work starts and after a blocked attempt. It starts the same issue system
+prompt immediately, retaining the existing conversation and checkout for that prompt
+to handle. A saved strategy and Sol setting remain fixed when continuing; the control
+disables while the issue is active.
 
 The following describes the retained legacy execution records and adapters.
 

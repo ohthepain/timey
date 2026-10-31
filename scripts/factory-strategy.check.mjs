@@ -92,6 +92,7 @@ test('Full Stop uses one chat/branch, checks once and hands off without merge or
   assert.equal(receipt.actor, 'human');
   assert.equal(receipt.strategy, 'full-stop');
   const checkout = record.work.checkout;
+  assert.throws(() => startIssueStrategy(f.service, f.input('full-send')), /saved issue strategy/);
   startIssueStrategy(f.service, f.input());
   await f.service.lifecycleTasks.get(f.issue.id);
   assert.equal(f.service.lifecycleRuns[f.issue.id].work.checkout, checkout);
