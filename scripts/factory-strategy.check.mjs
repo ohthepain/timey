@@ -7,6 +7,10 @@ import { FactoryUI } from './factory-ui/service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { git, writeJson } from './factory-ui/common.mjs';
 import { strategyView, startIssueStrategy } from './factory-ui/issue-strategy.mjs';
+import { GitHubAppCredentials } from './factory-ui/github-app.mjs';
+import { generateKeyPairSync, verify } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
 import { strategyPrompt } from './factory-ui/strategy-prompt.mjs';
 import { runSolLoop } from './factory-ui/strategy-review.mjs';
@@ -144,7 +148,7 @@ test('an existing active assignment is not replaced by a strategy worker', (t) =
 
 function providerFixture() {
   const config = { repository: 'fixture/timey', target: 'main' };
-  const provider = new StrategyProvider('.', config);
+  const provider = new StrategyProvider('.', config, join(tmpdir(), 'timey-provider-fixture-no-credentials'));
   const pr = {
     number: 12,
     user: { login: 'fixture' },
@@ -164,7 +168,10 @@ function providerFixture() {
     bypass = 'always',
     classicReviews = false,
     conclusion = 'SUCCESS',
-    reviewRules = [{ type: 'pull_request', ruleset_id: 42 }];
+    reviewRules = [
+      { type: 'required_status_checks', ruleset_id: 42 },
+      { type: 'pull_request', ruleset_id: 43 },
+    ];
   provider.gh = (args) => {
     commands.push(args);
     if (args.includes('graphql'))
@@ -180,15 +187,31 @@ function providerFixture() {
     if (args[1] === 'user') return JSON.stringify({ login: 'fixture' });
     if (args[1]?.includes('/rules/branches/')) return JSON.stringify([reviewRules]);
     if (args[1]?.endsWith('/rulesets/42'))
-      return JSON.stringify({ id: 42, enforcement: 'active', current_user_can_bypass: bypass });
+      return JSON.stringify({
+        id: 42,
+        enforcement: 'active',
+        current_user_can_bypass: admin ? 'never' : 'always',
+        rules: [
+          {
+            type: 'required_status_checks',
+            parameters: {
+              strict_required_status_checks_policy: strict,
+              required_status_checks: [{ context: 'verify' }],
+            },
+          },
+        ],
+      });
+    if (args[1]?.endsWith('/rulesets/43'))
+      return JSON.stringify({
+        id: 43,
+        enforcement: 'active',
+        current_user_can_bypass: bypass,
+        rules: [],
+      });
     if (args[1]?.endsWith('/merge')) return JSON.stringify({ merged: true, sha: 'merged' });
     if (args[1] === 'repos/fixture/timey') return JSON.stringify({ allow_squash_merge: true });
     if (args[1]?.endsWith('/protection'))
-      return JSON.stringify({
-        required_status_checks: { strict, contexts: ['verify'] },
-        enforce_admins: { enabled: admin },
-        required_pull_request_reviews: classicReviews ? { required_approving_review_count: 1 } : null,
-      });
+      return JSON.stringify({ required_pull_request_reviews: classicReviews ? {} : null });
     return '{}';
   };
   return {
@@ -255,12 +278,13 @@ test('owner-authored PR respects its verified ruleset review bypass without bypa
   );
   f.change({ conclusion: 'FAILURE' });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /pending or failed/);
-  f.change({ conclusion: 'SUCCESS', reviewRules: [] });
+  f.change({ conclusion: 'SUCCESS', reviewRules: [{ type: 'required_status_checks', ruleset_id: 42 }] });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
   f.change({
     reviewRules: [
-      { type: 'pull_request', ruleset_id: 42 },
+      { type: 'required_status_checks', ruleset_id: 42 },
       { type: 'pull_request', ruleset_id: 43 },
+      { type: 'pull_request', ruleset_id: 44 },
     ],
   });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
@@ -417,4 +441,67 @@ test('Reply and continue explicitly resumes the same strategy and owning chat', 
   assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'handed-off');
   assert.equal(f.counts().calls, 2);
   assert.equal(f.counts().merges, 0);
+});
+
+test('installation credentials sign JWTs, restrict repository, share refresh and renew expiring tokens', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'timey-app-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const keyPath = join(directory, 'key.pem');
+  writeFileSync(keyPath, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  let time = 1000000000000,
+    minted = 0;
+  const auth = new GitHubAppCredentials(
+    { appId: 5, repository: 'fixture/timey', privateKeyPath: keyPath },
+    'fixture/timey',
+    {
+      now: () => time,
+      request: async (url, options) => {
+        const jwt = options.headers.Authorization.slice(7);
+        const [header, payload, signature] = jwt.split('.');
+        assert.ok(
+          verify('RSA-SHA256', Buffer.from(header + '.' + payload), publicKey, Buffer.from(signature, 'base64url'))
+        );
+        const claims = JSON.parse(Buffer.from(payload, 'base64url'));
+        assert.equal(claims.iss, '5');
+        assert.equal(claims.iat, Math.floor(time / 1000) - 60);
+        if (url.endsWith('/app')) return { ok: true, json: async () => ({ id: 5, slug: 'factory' }) };
+        if (url.endsWith('/installation')) return { ok: true, json: async () => ({ id: 9, app_id: 5 }) };
+        assert.equal(url, 'https://api.github.com/app/installations/9/access_tokens');
+        assert.deepEqual(JSON.parse(options.body), { repositories: ['timey'] });
+        minted++;
+        return {
+          ok: true,
+          json: async () => ({ token: 'secret-' + minted, expires_at: new Date(time + 3600000).toISOString() }),
+        };
+      },
+    }
+  );
+  const [first, second] = await Promise.all([auth.session(), auth.session()]);
+  assert.equal(first.token, second.token);
+  assert.equal(minted, 1);
+  time += 3550000;
+  assert.notEqual((await auth.session()).token, first.token);
+  assert.equal(minted, 2);
+  const failing = new GitHubAppCredentials(auth.config, 'fixture/timey', {
+    request: async () => {
+      throw Error('secret-token');
+    },
+  });
+  await assert.rejects(
+    () => failing.session(),
+    (e) => e.message === 'GitHub App authentication request failed.'
+  );
+  assert.throws(() => new GitHubAppCredentials(auth.config, 'other/repo'), /different repository/);
+});
+
+test('factory app honors review bypass without user identity endpoint or CI bypass', async () => {
+  const f = providerFixture();
+  f.provider.credentials = { session: async () => ({ slug: 'factory' }) };
+  f.change({ bypass: 'pull_requests_only' });
+  f.change({ reviewDecision: 'REVIEW_REQUIRED', clean: false });
+  assert.equal((await f.provider.ready(f.pr, 'codex/issue-one', 'head')).head, 'head');
+  assert.ok(!f.commands.some((args) => args[1] === 'user'));
+  f.change({ admin: false });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /prevent this credential/);
 });

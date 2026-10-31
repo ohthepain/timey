@@ -99,14 +99,34 @@
         font-weight: 650;
         cursor: pointer;
       }
-      .issue-chat-tab[data-chat-tab='discussion'] { background: #e8f1ed; color: #24453b; }
-      .issue-chat-tab[data-chat-tab='issue'] { background: #f3e9dc; color: #62452d; }
-      .issue-chat-tab[aria-selected='true'] { padding-bottom: 11px; }
-      .issue-chat-panel { display: none; padding: 0 12px 12px; border-radius: 0 8px 8px 8px; }
-      .issue-chat-panel[data-chat-panel='discussion'] { background: #e8f1ed; }
-      .issue-chat-panel[data-chat-panel='issue'] { background: #f3e9dc; }
-      .issue-chat-panel[data-chat-active='true'] { display: block; }
-      .issue-chat-panel > .discussion { margin: 0; }
+      .issue-chat-tab[data-chat-tab='discussion'] {
+        background: #e8f1ed;
+        color: #24453b;
+      }
+      .issue-chat-tab[data-chat-tab='issue'] {
+        background: #f3e9dc;
+        color: #62452d;
+      }
+      .issue-chat-tab[aria-selected='true'] {
+        padding-bottom: 11px;
+      }
+      .issue-chat-panel {
+        display: none;
+        padding: 0 12px 12px;
+        border-radius: 0 8px 8px 8px;
+      }
+      .issue-chat-panel[data-chat-panel='discussion'] {
+        background: #e8f1ed;
+      }
+      .issue-chat-panel[data-chat-panel='issue'] {
+        background: #f3e9dc;
+      }
+      .issue-chat-panel[data-chat-active='true'] {
+        display: block;
+      }
+      .issue-chat-panel > .discussion {
+        margin: 0;
+      }
       .discussion .discussion-toggle {
         display: inline-flex;
         align-items: center;
@@ -147,6 +167,84 @@
       .discussion-compose {
         position: relative;
         margin: 0;
+      }
+      .skill-selector {
+        max-height: 260px;
+        overflow: auto;
+        border: 1px solid #d7d9cd;
+        border-radius: 8px;
+        background: #fffefa;
+        box-shadow: 0 8px 24px #203b3520;
+        margin: 0 0 8px;
+        padding: 4px;
+      }
+      .skill-option {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        width: 100%;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        padding: 8px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .skill-option[aria-selected='true'],
+      .skill-option:hover {
+        background: #e9eee5;
+      }
+      .skill-option-icon {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: #dce8dc;
+        color: #284f43;
+        font-size: 18px;
+      }
+      .skill-option-details {
+        display: grid;
+        min-width: 0;
+      }
+      .skill-option-details strong,
+      .skill-option-details > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .skill-option-details > span,
+      .skill-option small {
+        color: #758071;
+        font-size: 12px;
+      }
+      .skill-chips,
+      .message-skills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px 10px 0;
+      }
+      .skill-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #b9d2c3;
+        border-radius: 16px;
+        background: #e4f1e8;
+        color: #244d3d;
+        padding: 4px 9px;
+        font-size: 12px;
+      }
+      button.skill-chip {
+        cursor: pointer;
+      }
+      .skill-chip-remove {
+        font-size: 16px;
+        line-height: 1;
       }
       .discussion-compose textarea {
         display: block;
@@ -1564,6 +1662,7 @@
       }
       function roleFilters() {
         return data.lifecycle
+          .filter(visibleLifecycleStage)
           .map((stage) => {
             const selected = roleSelected(stage);
             return `<label class="role-filter"><input type="checkbox" data-role-filter="${esc(stage.state)}" aria-label="${esc(stage.name)}" ${selected ? 'checked' : ''}>${esc(stage.name)} <b>${roleCount(stage)}</b></label>`;
@@ -1750,8 +1849,18 @@
         verify: 'ready-to-verify',
         review: 'ready-to-close',
       };
+      const removedLifecycleRoles = new Set([
+        'ready-to-prototype',
+        'ready-to-fix',
+        'ready-to-verify',
+        'ready-for-commit',
+        'ready-to-close',
+      ]);
+      function visibleLifecycleStage(stage) {
+        return !removedLifecycleRoles.has(stage.role);
+      }
       function issueSteps(i, actions) {
-        const steps = data.lifecycle.map((stage) => ({
+        const steps = data.lifecycle.filter(visibleLifecycleStage).map((stage) => ({
           ...stage,
           description: stepDescriptions[stage.role] || 'Work recorded for this stage.',
         }));
@@ -1775,7 +1884,9 @@
             (a) => ['implement', 'integrate'].includes(a.kind) && ['completed', 'integrated'].includes(a.status)
           );
         if (step.role === 'other')
-          return actions.filter((a) => !data.lifecycle.some((stage) => stage.role === actionRoles[a.kind]));
+          return actions.filter(
+            (a) => !data.lifecycle.some((stage) => visibleLifecycleStage(stage) && stage.role === actionRoles[a.kind])
+          );
         return actions.filter((a) => actionRoles[a.kind] === step.role);
       }
       function stepWork(step, actions) {
@@ -1816,8 +1927,10 @@
       }
       function skipSourceLabel(source) {
         if (!source) return 'Source not recorded';
-        if (source.kind === 'stage')
-          return data.lifecycle.find((stage) => stage.state === source.state)?.name || source.state;
+        if (source.kind === 'stage') {
+          const stage = data.lifecycle.find((entry) => entry.state === source.state);
+          return stage && visibleLifecycleStage(stage) ? stage.name : 'Earlier saved work';
+        }
         return { 'original-report': 'Original report', user: 'User' }[source.kind] || 'Source not recorded';
       }
       function stageGrilling(issue, step) {
@@ -2387,9 +2500,10 @@
             const stage = data.lifecycle.find((candidate) => candidate.state === event.stage);
             const transitioned = stage && stage.state !== previousStage;
             if (stage) previousStage = stage.state;
-            const role = transitioned
-              ? `<strong style="color:${historyRoleColor(stage.role)}">${esc(stage.name)}: </strong>`
-              : '';
+            const role =
+              transitioned && visibleLifecycleStage(stage)
+                ? `<strong style="color:${historyRoleColor(stage.role)}">${esc(stage.name)}: </strong>`
+                : '';
             const interrupted =
               event.interrupted || event.result === 'interrupted'
                 ? ' <span class="history-interrupted">(interrupted)</span>'
@@ -2607,7 +2721,13 @@
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
         const discussionSelected = selectedChatTab === 'discussion';
-        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(closedIssueState(i.state) ? i.stage : i.strategy?.status || i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue chats"><div class="issue-chat-tablist" role="tablist"><button class="issue-chat-tab" role="tab" aria-selected="${discussionSelected}" data-chat-tab="discussion">Discussion</button><button class="issue-chat-tab" role="tab" aria-selected="${!discussionSelected}" data-chat-tab="issue">${esc(i.title || i.id)}</button></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="discussion" data-chat-active="${discussionSelected}"><div id="discussion-slot"></div></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="issue" data-chat-active="${!discussionSelected}"><div id="issue-chat-slot"></div></div></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${i.strategy?.runId ? '' : lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;      }
+        const stage = data.lifecycle.find((entry) => entry.state === i.state);
+        const issueStatus = closedIssueState(i.state)
+          ? i.stage
+          : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
+        const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
+        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue chats"><div class="issue-chat-tablist" role="tablist"><button class="issue-chat-tab" role="tab" aria-selected="${discussionSelected}" data-chat-tab="discussion">Discussion</button><button class="issue-chat-tab" role="tab" aria-selected="${!discussionSelected}" data-chat-tab="issue">${esc(i.title || i.id)}</button></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="discussion" data-chat-active="${discussionSelected}"><div id="discussion-slot"></div></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="issue" data-chat-active="${!discussionSelected}"><div id="issue-chat-slot"></div></div></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${showLifecycleProgress ? lifecyclePanel(i) : ''}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+      }
       const viewMemory = {
         route: null,
         expanded: loadExpanded(),
@@ -2810,8 +2930,12 @@
           tab.onclick = () => {
             const selected = tab.dataset.chatTab;
             selectedChatTab = selected;
-            document.querySelectorAll('[data-chat-tab]').forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
-            document.querySelectorAll('[data-chat-panel]').forEach((panel) => panel.setAttribute('data-chat-active', String(panel.dataset.chatPanel === selected)));
+            document
+              .querySelectorAll('[data-chat-tab]')
+              .forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+            document
+              .querySelectorAll('[data-chat-panel]')
+              .forEach((panel) => panel.setAttribute('data-chat-active', String(panel.dataset.chatPanel === selected)));
           };
         });
         bind();
