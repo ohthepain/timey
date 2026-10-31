@@ -15,15 +15,26 @@ function fixture(t) {
     service = new FactoryUI(f.queue.root),
     calls = [];
   t.after(() => service.close());
+  const skillPath = join(f.queue.root, 'sample-skill.md');
+  writeFileSync(skillPath, 'A sample Codex skill.\n');
   const connection = {
     close() {},
+    async ready() {},
+    async call(method) {
+      assert.equal(method, 'skills/list');
+      return {
+        data: [
+          { skills: [{ name: 'sample-skill', path: skillPath, enabled: true, shortDescription: 'A sample skill' }] },
+        ],
+      };
+    },
     async attach(_root, state, retain) {
       calls.push({ attach: state.threadId || 'new', sandbox: 'read-only' });
       retain({ threadId: state.threadId || 'persistent-issue-chat' });
       return 'persistent-issue-chat';
     },
-    async turn(id, root, prompt) {
-      calls.push({ id, root, prompt });
+    async turn(id, root, prompt, _schema, skills) {
+      calls.push({ id, root, prompt, skills });
       return 'I can see the saved lifecycle questions and your message.';
     },
   };
@@ -93,6 +104,51 @@ test('message IDs are idempotent and failed provider replies leave comments avai
   assert.equal(history.filter((m) => m.actor === 'human').length, 1);
   assert.ok(history.some((m) => m.kind === 'response-error'));
   assert.equal(f.service.issueChats.view(f.input.issueId).status, 'attention');
+});
+test('selected skills invoke through the issue thread and token-only messages are accepted', async (t) => {
+  const f = fixture(t);
+  await f.send('', 'skill-only', 'comment', { skills: ['sample-skill'] });
+  await f.finish();
+  const userMessage = conversationMessages(f.queue.root, f.input.issueId).find(
+    (message) => message.id === 'skill-only'
+  );
+  assert.deepEqual(userMessage.skills, ['sample-skill']);
+  assert.deepEqual(f.calls.find((call) => call.prompt).skills, [
+    { type: 'skill', name: 'sample-skill', path: join(f.queue.root, 'sample-skill.md') },
+  ]);
+  assert.equal((await f.send('', 'skill-only', 'comment', { skills: ['sample-skill'] })).repeated, true);
+  await assert.rejects(
+    f.send('yes', 'answer-with-skill', 'answer', { skills: ['sample-skill'] }),
+    /does not accept skill/
+  );
+  await f.send('', 'unknown-skill', 'comment', { skills: ['unknown'] });
+  await f.finish();
+  assert.ok(conversationMessages(f.queue.root, f.input.issueId).some((message) => message.kind === 'response-error'));
+});
+test('slash skill selector filters metadata and inserts a removable read-only composer token', async () => {
+  const dom = new JSDOM('<form><textarea></textarea><button type="submit">Send</button></form>', {
+    runScripts: 'outside-only',
+  });
+  dom.window.eval(readFileSync(join(process.cwd(), 'scripts/factory-ui/issue-chat-ui.js'), 'utf8'));
+  const form = dom.window.document.querySelector('form'),
+    draft = form.querySelector('textarea'),
+    skill = { name: 'practice', description: 'Practice timing', source: 'Personal', icon: '✦' },
+    composer = dom.window.createSkillComposer(form, draft, async () => ({ skills: [skill] }));
+  draft.value = '/practice';
+  draft.setSelectionRange(draft.value.length, draft.value.length);
+  draft.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const option = form.querySelector('[role="option"]');
+  assert.match(option.textContent, /practice.*Practice timing.*Personal/);
+  draft.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.deepEqual(Array.from(composer.skills()), ['practice']);
+  assert.equal(draft.value, '');
+  assert.equal(form.querySelector('.skill-chip').textContent, '✦practice×');
+  assert.equal(composer.canSubmit(''), true);
+  draft.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+  assert.deepEqual(Array.from(composer.skills()), []);
+  assert.equal(form.querySelector('.skill-chips').hidden, true);
+  dom.window.close();
 });
 test('selected issues keep separate conversations; bounded pages retain full role context for retro', async (t) => {
   const f = fixture(t),
@@ -175,7 +231,7 @@ test('the conversational model uses read-only access and refuses an uncertain ex
 });
 
 test('persistent chat view escapes text, preserves draft/focus across role updates and reuses one panel', (t) => {
-  const dom = new JSDOM('<div id="app"><div id="discussion-slot"></div></div>', {
+  const dom = new JSDOM('<div id="app"><div id="issue-chat-slot"></div></div>', {
     url: 'http://127.0.0.1/#/issue/one',
     runScripts: 'outside-only',
   });
@@ -203,7 +259,7 @@ test('persistent chat view escapes text, preserves draft/focus across role updat
   draft.focus();
   assert.equal(panel.querySelector('script'), null);
   ui.beforeRender();
-  document.getElementById('app').innerHTML = '<div id="discussion-slot"></div>';
+  document.getElementById('app').innerHTML = '<div id="issue-chat-slot"></div>';
   data.conversation.messages.push({
     id: 'review',
     at: new Date().toISOString(),
@@ -428,7 +484,7 @@ test('native Stop awaits the original start, targets its exact turn and ignores 
 });
 
 test('Stop control retains the draft, binds the displayed response and shows cancellation failures', async (t) => {
-  const dom = new JSDOM('<div id="discussion-slot"></div>', { runScripts: 'outside-only' });
+  const dom = new JSDOM('<div id="issue-chat-slot"></div>', { runScripts: 'outside-only' });
   t.after(() => dom.window.close());
   dom.window.eval(readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') + '\nwindow.chatTest=issueChatUI;');
   const data = { issues: [{ id: 'one' }], conversation: { issueId: 'one', responseId: 'current', connected: true } };
@@ -456,7 +512,7 @@ test('Stop control retains the draft, binds the displayed response and shows can
   assert.match(dom.window.document.querySelector('[role="status"]').textContent, /Cancellation unavailable/);
   const mount = () => {
     dom.window.chatTest.beforeRender();
-    dom.window.document.body.innerHTML = '<div id="discussion-slot"></div>';
+    dom.window.document.body.innerHTML = '<div id="issue-chat-slot"></div>';
     dom.window.chatTest.mount(
       'one',
       data,

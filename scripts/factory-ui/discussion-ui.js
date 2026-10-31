@@ -108,10 +108,12 @@ const discussionUI = (() => {
     const submit = () =>
       run(async () => {
         const text = draft.value.trim();
-        if (!text) return;
+        if (!skillComposer.canSubmit(text)) return;
+        const skills = skillComposer.skills();
         draft.value = '';
-        add('You', text);
-        const result = await call('turn', { text });
+        add('You', text, skills);
+        const result = await call('turn', { text, skills });
+        skillComposer.reset();
         add('Codex', result.text);
         draft.focus();
       });
@@ -126,6 +128,7 @@ const discussionUI = (() => {
       }
     });
     form.append(draft, send);
+    const skillComposer = createSkillComposer(form, draft, () => call('skills', {}));
     const status = document.createElement('p');
     status.className = 'discussion-status';
     status.setAttribute('role', 'status');
@@ -182,12 +185,20 @@ const discussionUI = (() => {
       return '';
     }
     details.append(summary, notice, grill, reset);
-    function add(who, text) {
+    function add(who, text, skills = []) {
       empty.remove();
       const entry = document.createElement('p');
       const speaker = document.createElement('strong');
       speaker.textContent = who;
       entry.append(speaker, document.createTextNode(text));
+      if (skills.length) {
+        for (const name of skills) {
+          const token = document.createElement('span');
+          token.className = 'skill-chip';
+          token.textContent = '✦ ' + name;
+          entry.append(document.createTextNode(' '), token);
+        }
+      }
       log.append(entry);
       log.scrollTop = log.scrollHeight;
     }
