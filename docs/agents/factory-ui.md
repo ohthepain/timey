@@ -27,15 +27,17 @@ worker checkout. Detached or unavailable checkouts and issues without assigned
 work are labeled explicitly. Only the selected issue's Git identity is read
 on refresh; the running server's branch is never substituted.
 
-The issue screen shows every configured lifecycle stage as a numbered expandable
-step. The current stage opens by default. Saved assignments and worker results
-appear under their matching stage; worker commits and manual integration have
-separate steps. Opening a step does not advance the issue. Stage expansion is
-preserved while live results refresh. Earlier stages are not marked complete
-merely because the issue currently sits later in the lifecycle. Saved timestamps
-and report notes provide history where it exists; missing historical transitions
-are not reconstructed. Unmatched assignment kinds stay visible under Other work.
-New lifecycle stages use the same step layout without requiring another screen.
+The issue screen shows configured lifecycle history as numbered expandable steps,
+except Prototype, Implement, Verify, Commit and Final review. Their saved report
+events and assignments remain unchanged, but they are omitted from the issue's
+step list and queue filters. Issues currently in one of those states remain in the
+queue, display a generic queued status, and do not offer lifecycle Progress
+controls. Strategy controls remain the active work path. Opening a visible step
+does not advance the issue. Stage expansion is preserved while live results
+refresh. Earlier visible stages are not marked complete merely because the issue
+currently sits later in the lifecycle. Saved timestamps and report notes provide
+history where it exists; missing historical transitions are not reconstructed.
+Unmatched assignment kinds stay visible under Other work.
 
 ## Queue sorting
 
@@ -558,11 +560,13 @@ This path does not prove a self-healing exercise or any other unperformed test.
 Those limits remain in the result for final acceptance. It cannot change source,
 registry entries, other reports or human check outcomes, and never closes the issue.
 
-The queue lists each lifecycle role with a checkbox and the number of issues in that
-role that match the current search. Every role starts selected except Closed. Clearing
-a role hides its issues; selecting Closed shows closed issues. Search text applies when
-Return is pressed, and also as the text changes. Search, role, and sort choices survive
-live refreshes while the page is open.
+The queue lists visible lifecycle roles with a checkbox and the number of issues in
+that role that match the current search. Prototype, Implement, Verify, Commit and
+Final review have no filters; their issues remain included unless another visible
+filter hides them. Every visible role starts selected except Closed. Clearing a role
+hides its issues; selecting Closed shows closed issues. Search text applies when
+Return is pressed, and also as the text changes. Search, role, and sort choices
+survive live refreshes while the page is open.
 Filtering is read-only; issue links and saved reports remain available.
 
 ## Live worker status
@@ -1434,3 +1438,31 @@ but retain the previous plan and receipt in approval history. Reassessment that
 returns no replacement plan retains that plan for review rather than failing with
 “no plan to approve”. A historical missing plan can be recovered only from the
 original human plan-approval receipt, with its content hash and issue identity checked.
+
+## Factory GitHub App credentials
+
+Server-owned issue strategy operations may use `.issues/github-app.json` in the
+owning project (this directory is excluded from Git):
+
+```json
+{
+  "appId": 123456,
+  "repository": "owner/repo",
+  "privateKeyPath": "/absolute/private/location/factory.pem"
+}
+```
+
+Keep the private key outside the repository. No client secret or permanent token
+is needed. The server discovers the installation, limits tokens to the configured
+repository and refreshes them before expiry. It passes the token only to the
+strategy provider's GitHub CLI calls; personal Git/SourceTree credentials and
+worker publication are unchanged. Installation authentication does not use
+`gh auth login` or the user identity endpoint. A configured app failure stops
+rather than falling back to personal credentials.
+
+Give the app Contents and Pull requests read/write, Checks, Commit statuses,
+Actions and Administration read-only, and install only on the intended repository.
+Grant PR-only bypass of review rules, and no bypass of the separate strict CI
+ruleset requiring the existing GitHub Actions `test` check. Owner bypass can remain
+for personal direct pushes. Reload through `pnpm factory:restart` after changing
+credentials; restarting never retries an issue automatically.

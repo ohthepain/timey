@@ -20,19 +20,30 @@ It does not rank lifecycle stages. Optional queue discussion remains separate.
 Full Stop leaves an open, non-draft, merge-ready PR with green required checks,
 review findings addressed, and neither auto-merge nor merge-queue enrollment.
 Full Send adds a server-owned merge. Its adapter uses an exact-head merge and
-requires GitHub strict required checks, including enforcement for administrators.
-GitHub [strict required checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches) must enforce current-target freshness; local reads and locks cannot replace
-that protection. Classic protection currently supplies the required status-check
-API used by this adapter; review rules can live in a separate ruleset. For a PR
-authored by the authenticated personal repository owner, Full Send may honor
-GitHub's current bypass permission on every applicable review ruleset, provided
-classic protection has no review requirement. This permits the owner's own issues
-to merge without self-approval. Requested changes still block. Strict CI and
-administrator enforcement remain mandatory; the ordinary exact-head merge lets
-GitHub reject any remaining constraint. No admin merge flag, default-branch push
-or automatic queue enrollment is allowed. Missing enforcement blocks merge. This refines ADR 0004's production
-merge restriction for the explicitly selected strategy path; the legacy delivery
-adapter retains its existing refusal. No existing issue receives this merge grant.
+requires an active GitHub ruleset with strict required status checks. GitHub must
+enforce current-target freshness; local reads and locks cannot replace that rule.
+The merging credential must not bypass any applicable CI ruleset. Review rulesets
+are evaluated separately: for owner-authored or factory-app-authored PRs, the
+factory may use its verified PR-only review bypass. Requested changes still block.
+No classic protection is required; if one exists, its review requirement still
+applies. Merges use the ordinary exact-head REST endpoint without an admin flag,
+default-branch push, auto-merge or queue enrollment.
+
+The factory can authenticate its server-owned GitHub operations as an installed
+GitHub App. The project-local `.issues/github-app.json` stores public app ID,
+repository and an absolute private-key path; the key stays outside the repository.
+The server signs a short-lived app JWT, discovers the installation and requests a
+token restricted to that repository. Tokens remain in memory, refresh before
+expiry, and are passed only to the provider's `gh` subprocesses. Personal Git and
+CLI logins remain separate; worker publication is unchanged. Worktree providers
+use the owning project's credentials, not a worktree-local configuration. Failed
+app authentication stops rather than falling back to the personal login.
+
+The review ruleset grants the factory app PR-only bypass. The separate CI ruleset
+requires the GitHub Actions `test` check and up-to-date branches, with no factory
+app bypass. The owner may retain personal bypass for direct pushes. These grants
+do not authorize the factory to merge an issue that was not started as Full Send.
+The legacy delivery adapter retains its existing policy.
 
 Sol Loop is explicitly off, one round, or up to three rounds. One available Sol
 reviewer reviews the scoped candidate; the owning chat makes minimal in-scope

@@ -55,7 +55,7 @@ export async function previewGrilling(manager, input, owner) {
   session.intents.clear();
   try {
     const prompt = `Prepare a concise result for the ${session.grilling.name} interview. Return decisions, unresolved questions, and only relevant exact quotes from actual user answers. Quotes must be exact substrings of these user messages: ${JSON.stringify(session.answers)}. Do not treat instructions, questions or recommendations as human answers. Do not claim tests, stage completion, implementation approval or acceptance. This draft will be reviewed before saving.`;
-    const result = JSON.parse(await session.runtime.ask(prompt, null, summarySchema));
+    const result = JSON.parse(await session.runtime.ask(prompt, [], summarySchema));
     const { issue } = manager.get(input, owner);
     validateSummary(result, session.answers);
     return summaryIntent(manager, session, issue, result);
