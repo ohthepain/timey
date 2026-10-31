@@ -22,8 +22,15 @@ review findings addressed, and neither auto-merge nor merge-queue enrollment.
 Full Send adds a server-owned merge. Its adapter uses an exact-head merge and
 requires GitHub strict required checks, including enforcement for administrators.
 GitHub [strict required checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches) must enforce current-target freshness; local reads and locks cannot replace
-that protection. No admin bypass, default-branch push or automatic queue enrollment
-is allowed. Missing enforcement blocks merge. This refines ADR 0004's production
+that protection. Classic protection currently supplies the required status-check
+API used by this adapter; review rules can live in a separate ruleset. For a PR
+authored by the authenticated personal repository owner, Full Send may honor
+GitHub's current bypass permission on every applicable review ruleset, provided
+classic protection has no review requirement. This permits the owner's own issues
+to merge without self-approval. Requested changes still block. Strict CI and
+administrator enforcement remain mandatory; the ordinary exact-head merge lets
+GitHub reject any remaining constraint. No admin merge flag, default-branch push
+or automatic queue enrollment is allowed. Missing enforcement blocks merge. This refines ADR 0004's production
 merge restriction for the explicitly selected strategy path; the legacy delivery
 adapter retains its existing refusal. No existing issue receives this merge grant.
 

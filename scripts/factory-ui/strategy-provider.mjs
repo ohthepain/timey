@@ -3,8 +3,8 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 import { cleanEnvironment, requireThat } from './common.mjs';
 
-// GitHub enforces freshness through strict required checks. Never bypass protection
-// or replace that enforcement with a local fetch/lock.
+// GitHub enforces freshness through strict required checks. A verified ruleset
+// review bypass never bypasses CI or replaces server enforcement with a local lock.
 export class StrategyProvider {
   constructor(root, config) {
     this.root = root;
@@ -69,12 +69,13 @@ export class StrategyProvider {
         'reviewDecision,statusCheckRollup,mergeStateStatus',
       ])
     );
+    const reviewBypass = view.reviewDecision === 'REVIEW_REQUIRED' && (await this.canBypassOwnReview(pr));
     requireThat(
-      !['CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(view.reviewDecision),
+      view.reviewDecision !== 'CHANGES_REQUESTED' && (view.reviewDecision !== 'REVIEW_REQUIRED' || reviewBypass),
       'The PR is waiting for required human review.'
     );
     requireThat(
-      view.mergeStateStatus === 'CLEAN',
+      view.mergeStateStatus === 'CLEAN' || (reviewBypass && view.mergeStateStatus === 'BLOCKED'),
       'GitHub reports unfinished checks, conflicts or an out-of-date branch.'
     );
     requireThat(
@@ -86,6 +87,41 @@ export class StrategyProvider {
       'PR checks are pending or failed. Their real results are retained.'
     );
     return { number: pr.number, url: pr.html_url, head, target: pr.base.sha, checks: view.statusCheckRollup };
+  }
+  async canBypassOwnReview(pr) {
+    const [owner] = this.config.repository.split('/');
+    const viewer = JSON.parse(await this.gh(['api', 'user']));
+    if (!viewer.login || viewer.login !== owner || pr.user?.login !== viewer.login) return false;
+    await this.assertMergeProtection();
+    const protection = JSON.parse(
+      await this.gh([
+        'api',
+        `repos/${this.config.repository}/branches/${encodeURIComponent(this.config.target)}/protection`,
+      ])
+    );
+    // Ruleset bypass permission does not bypass a classic review requirement.
+    if (protection.required_pull_request_reviews) return false;
+    const pages = JSON.parse(
+      await this.gh([
+        'api',
+        `repos/${this.config.repository}/rules/branches/${encodeURIComponent(this.config.target)}?per_page=100`,
+        '--paginate',
+        '--slurp',
+      ])
+    );
+    const reviewRules = pages.flat().filter((rule) => rule.type === 'pull_request');
+    if (!reviewRules.length) return false;
+    for (const id of new Set(reviewRules.map((rule) => rule.ruleset_id))) {
+      if (!Number.isSafeInteger(id) || id <= 0) return false;
+      const ruleset = JSON.parse(await this.gh(['api', `repos/${this.config.repository}/rulesets/${id}`]));
+      if (
+        ruleset.id !== id ||
+        ruleset.enforcement !== 'active' ||
+        !['always', 'pull_requests'].includes(ruleset.current_user_can_bypass)
+      )
+        return false;
+    }
+    return true;
   }
   async assertMergeProtection() {
     const path = `repos/${this.config.repository}/branches/${encodeURIComponent(this.config.target)}/protection`;

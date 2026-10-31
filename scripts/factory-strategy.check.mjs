@@ -147,6 +147,7 @@ function providerFixture() {
   const provider = new StrategyProvider('.', config);
   const pr = {
     number: 12,
+    user: { login: 'fixture' },
     state: 'open',
     mergeable: true,
     draft: false,
@@ -158,7 +159,12 @@ function providerFixture() {
   let strict = true,
     admin = true,
     queued = false,
-    clean = true;
+    clean = true,
+    reviewDecision = null,
+    bypass = 'always',
+    classicReviews = false,
+    conclusion = 'SUCCESS',
+    reviewRules = [{ type: 'pull_request', ruleset_id: 42 }];
   provider.gh = (args) => {
     commands.push(args);
     if (args.includes('graphql'))
@@ -167,15 +173,21 @@ function providerFixture() {
       });
     if (args[0] === 'pr' && args[1] === 'view')
       return JSON.stringify({
+        reviewDecision,
         mergeStateStatus: clean ? 'CLEAN' : 'BLOCKED',
-        statusCheckRollup: [{ status: 'COMPLETED', conclusion: 'SUCCESS' }],
+        statusCheckRollup: [{ status: 'COMPLETED', conclusion }],
       });
+    if (args[1] === 'user') return JSON.stringify({ login: 'fixture' });
+    if (args[1]?.includes('/rules/branches/')) return JSON.stringify([reviewRules]);
+    if (args[1]?.endsWith('/rulesets/42'))
+      return JSON.stringify({ id: 42, enforcement: 'active', current_user_can_bypass: bypass });
     if (args[1]?.endsWith('/merge')) return JSON.stringify({ merged: true, sha: 'merged' });
     if (args[1] === 'repos/fixture/timey') return JSON.stringify({ allow_squash_merge: true });
     if (args[1]?.endsWith('/protection'))
       return JSON.stringify({
         required_status_checks: { strict, contexts: ['verify'] },
         enforce_admins: { enabled: admin },
+        required_pull_request_reviews: classicReviews ? { required_approving_review_count: 1 } : null,
       });
     return '{}';
   };
@@ -188,6 +200,11 @@ function providerFixture() {
       if ('admin' in options) admin = options.admin;
       if ('queued' in options) queued = options.queued;
       if ('clean' in options) clean = options.clean;
+      if ('reviewDecision' in options) reviewDecision = options.reviewDecision;
+      if ('bypass' in options) bypass = options.bypass;
+      if ('classicReviews' in options) classicReviews = options.classicReviews;
+      if ('conclusion' in options) conclusion = options.conclusion;
+      if ('reviewRules' in options) reviewRules = options.reviewRules;
     },
   };
 }
@@ -216,6 +233,38 @@ test('Full Send refuses unsafe protection and uses an exact-head merge without b
   assert.ok(args.includes('PUT'));
   assert.ok(!args.includes('--admin'));
   assert.ok(!args.includes('--auto'));
+});
+test('owner-authored PR respects its verified ruleset review bypass without bypassing CI', async () => {
+  const f = providerFixture();
+  f.change({ reviewDecision: 'REVIEW_REQUIRED', clean: false });
+  assert.equal((await f.provider.ready(f.pr, 'codex/issue-one', 'head')).head, 'head');
+  f.change({ bypass: 'never' });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
+  f.change({ bypass: 'always', classicReviews: true });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
+  f.change({ classicReviews: false, strict: false });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /strict required checks/);
+  f.change({ strict: true, admin: false });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /administrators/);
+  f.change({ admin: true, reviewDecision: 'CHANGES_REQUESTED' });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
+  f.change({ reviewDecision: 'REVIEW_REQUIRED' });
+  await assert.rejects(
+    () => f.provider.ready({ ...f.pr, user: { login: 'another' } }, 'codex/issue-one', 'head'),
+    /required human review/
+  );
+  f.change({ conclusion: 'FAILURE' });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /pending or failed/);
+  f.change({ conclusion: 'SUCCESS', reviewRules: [] });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
+  f.change({
+    reviewRules: [
+      { type: 'pull_request', ruleset_id: 42 },
+      { type: 'pull_request', ruleset_id: 43 },
+    ],
+  });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
+  assert.ok(!f.commands.some((args) => args[1]?.endsWith('/merge')));
 });
 test('Sol Loop is optional and unavailable Sol never silently substitutes a model', async () => {
   const service = { codex: { ready: async () => {}, call: async () => ({ data: [{ id: 'other' }] }) } };
