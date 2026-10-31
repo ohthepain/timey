@@ -61,7 +61,17 @@ adds the `.nvmrc` Node bin, then Homebrew, and runs the staged audit with that
 node. Fallow is pinned to 3.35.0. Checkpoint paths invoke the installed binary,
 `fallow audit --base <resolved-commit> --format json`, in the exported snapshot,
 using the existing local dependency and `.fallowrc.json`
-`audit.gate: new-only`. The helper passes one Fallow `PATH` derived from the Git changed-file list (a single
+`audit.gate: new-only`. Full-tree `fallow dupes` and `fallow health` skip Vitest
+files (`*.test.ts(x)`) and factory script tests (`scripts/**/*.check.mjs`,
+`scripts/**/*fixture*.mjs`) via `duplicates.ignore` and `health.ignore`, and use
+`production` mode for other conventional test paths. Dead-code analysis still
+uses factory check scripts as tooling entry points. Checkpoint audit still
+analyzes changed files in the diff, including tests, when those paths are not
+ignored for that sub-analysis. A bare `npx fallow` (same as `pnpm run fallow:full`)
+prints every function above the complexity threshold and can flood the terminal;
+prefer `pnpm run fallow` (`fallow --summary`) for a short rollup, `pnpm run
+audit:staged` or `audit:diff` for checkpoint scope, or `pnpm run fallow:health`
+for the top 15 complexity hits only. The helper passes one Fallow `PATH` derived from the Git changed-file list (a single
 file, their common directory prefix, or `.` when changes span unrelated roots) so
 reported findings stay scoped to the diff instead of defaulting to the whole tree. Fallow may still build a project graph for import
 resolution; the verdict uses only **introduced** findings in those changed files.
