@@ -6,8 +6,8 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
-import { handoffRestart } from './factory-ui/restart-process.mjs';
 import { serverControl } from './factory-ui/server-control.mjs';
+import { runtimeInfo } from './factory-ui/runtime.mjs';
 import { factoryEntry, uiDirectory } from './factory-ui/ui-source.mjs';
 import { JSDOM } from 'jsdom';
 
@@ -294,9 +294,9 @@ test('header restart requests server-restart and hides when unsupported', async 
   dom.window.close();
 });
 
-test('restart rejects source updates before opening a replacement process', () => {
+test('runtime identity reports source updates so WIP restarts remain visible', () => {
   const service = { runtimeIdentity: { revision: 'not-the-installed-revision' } };
-  assert.throws(() => handoffRestart(service, {}), /Deploy a clean, verified checkout/);
+  assert.equal(runtimeInfo(service).sourceChanged, true);
 });
 
 test('restart readiness ignores an HTTP error rather than mistaking a missing PID for a replacement', async (t) => {

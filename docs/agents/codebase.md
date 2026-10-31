@@ -529,7 +529,8 @@ failures, explicit starts and missing review capabilities.
 summaries against their recorded candidate and retains their evidence for explicit
 acceptance. It does not run checks or contact the provider during closure.
 
-`factory-restart.mjs` is the external `pnpm factory:restart` launcher. It reuses
-saved verification and deployment transport/readiness probes, permits changed
-installed source, and restarts only an owned, drained listener. Its disposable
-server checks live in `factory-restart.check.mjs`.
+`factory-restart.mjs` is the external `pnpm factory:restart` launcher. It restarts
+the current checkout as-is, including WIP, and carries that source-changed state
+through readiness. It uses deployment transport/readiness probes and restarts only
+an owned, drained listener. Its disposable server checks live in
+`factory-restart.check.mjs`.
