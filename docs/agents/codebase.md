@@ -472,16 +472,12 @@ before the other behavior/type/build checks and records artifact hashes in the
 full summary. `factory-ui/checks.mjs`, candidate caching and issue delivery retain
 and validate this browser evidence against the same candidate tree.
 
-Combined Clarify is configured by `factory.config.json` and projected by
-`scripts/factory-ui/clarify-policy.mjs`. `data.mjs` keeps each report's original
-content and exposes legacy state aliases; `lifecycle-runs.mjs` recognizes existing
-assignments under either state name. `lifecycle-assessment.mjs` gathers context
-through the diagnostic branch of `lifecycle-review.mjs` before plan approval.
-`plan-adaptation.mjs` retains scope comparisons without replacing human approval;
-`scope-coverage.mjs` avoids treating ordinary source commits as new understanding.
-`capture-grilling.mjs` starts opt-in post-capture conversations through the existing
-persistent chat owner after durable creation; capture identities deduplicate retries.
-See [ADR 0006](../adr/0006-combine-clarification-and-investigation.md).
+Clarification and grilling remain human input independently of lifecycle position.
+`capture-routing.mjs` validates explicit lifecycle transitions while allowing
+projects to omit the optional `ready-for-grilling` role; old reports and custom
+stages retain their saved states. `capture-grilling.mjs` starts opt-in
+post-capture conversations through the existing persistent chat owner after durable
+creation; capture identities deduplicate retries. See [ADR 0001](../adr/0001-human-input-separate-from-lifecycle.md).
 
 `factory-ui/turn-failure.mjs` formats structured provider failures for both
 `codex.mjs` errors and retained `activity.mjs` output. Issue output shows explicit

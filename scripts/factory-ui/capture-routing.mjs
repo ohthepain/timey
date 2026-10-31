@@ -2,28 +2,25 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireThat } from './common.mjs';
 
-const required = [
-  'ready-for-grilling',
-  'ready-to-fix',
-  'ready-to-verify',
-  'ready-for-commit',
-  'ready-to-close',
-  'closed',
-];
+const required = ['ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close', 'closed'];
 export function validateCaptureLifecycle(stages) {
   requireThat(stages.length > 0, 'The capture lifecycle is missing.');
   const states = new Set(stages.map((s) => s.state));
   requireThat(states.size === stages.length, 'The lifecycle repeats a state.');
   const combined = stages.some((s) => s.combinedClarify === true);
+  const hasClarify = stages.some((s) => s.role === 'ready-for-grilling');
   const hasInvestigation = stages.some((s) => s.role === 'ready-for-repro');
   if (!combined) requireThat(hasInvestigation, 'Invalid lifecycle mapping for ready-for-repro.');
   if (hasInvestigation)
     requireThat(stages.filter((s) => s.role === 'ready-for-repro').length === 1, 'The lifecycle repeats Investigate.');
   for (const role of required)
     requireThat(stages.filter((s) => s.role === role).length === 1, `Invalid lifecycle mapping for ${role}.`);
+  requireThat(stages.filter((s) => s.role === 'ready-for-grilling').length <= 1, 'The lifecycle repeats Clarify.');
   requireThat(stages.filter((s) => s.role === 'ready-to-prototype').length <= 1, 'The lifecycle repeats Prototype.');
   requireThat(
-    stages.every((s) => [...required, 'ready-for-repro', 'ready-to-prototype', 'custom'].includes(s.role)),
+    stages.every((s) =>
+      [...required, 'ready-for-grilling', 'ready-for-repro', 'ready-to-prototype', 'custom'].includes(s.role)
+    ),
     'Unknown lifecycle role.'
   );
   const path = [],
@@ -46,10 +43,10 @@ export function validateCaptureLifecycle(stages) {
   requireThat(path.length === stages.length && path.at(-1).role === 'closed', 'The lifecycle has unreachable stages.');
   const order = path.filter((s) => s.role !== 'custom').map((s) => s.role);
   const expected = [
-    required[0],
+    ...(hasClarify ? ['ready-for-grilling'] : []),
     ...(hasInvestigation ? ['ready-for-repro'] : []),
     ...(order.includes('ready-to-prototype') ? ['ready-to-prototype'] : []),
-    ...required.slice(1),
+    ...required,
   ];
   requireThat(JSON.stringify(order) === JSON.stringify(expected), 'The lifecycle roles are out of progression.');
   return path;
@@ -58,13 +55,12 @@ export function validateCaptureLifecycle(stages) {
 export function captureRoute(stages, proposal) {
   const path = validateCaptureLifecycle(stages);
   const combined = path.some((s) => s.combinedClarify === true);
-  const initialRole =
+  const proposedRole =
     combined && proposal.initialRole === 'ready-for-repro' ? 'ready-for-grilling' : proposal.initialRole;
+  const initialRole = captureInitialRole(path, proposal, proposedRole);
   const target = path.findIndex((s) => s.role === initialRole);
   requireThat(target >= 0, 'The proposed capture stage is not configured.');
-  const applicable = combined
-    ? proposal.skips.filter((s) => s.role !== 'ready-for-repro' && s.role !== initialRole)
-    : proposal.skips;
+  const applicable = captureSkips(path, proposal, proposedRole, initialRole, combined);
   const reasons = new Map(applicable.map((s) => [s.role, s.reason]));
   requireThat(reasons.size === applicable.length, 'The capture assessment repeats a skip.');
   const bypassed = path.slice(0, target);
@@ -88,6 +84,25 @@ export function captureRoute(stages, proposal) {
   };
 }
 
+function captureInitialRole(path, proposal, proposedRole) {
+  if (proposedRole !== 'ready-for-grilling' || path.some((s) => s.role === 'ready-for-grilling')) return proposedRole;
+  if (proposal.category === 'bug' && path.some((s) => s.role === 'ready-for-repro')) return 'ready-for-repro';
+  return path.some((s) => s.role === 'ready-to-prototype') ? 'ready-to-prototype' : 'ready-to-fix';
+}
+
+function captureSkips(path, proposal, proposedRole, initialRole, combined) {
+  let skips = proposal.skips;
+  if (combined) skips = skips.filter((s) => s.role !== 'ready-for-repro' && s.role !== initialRole);
+  else if (!path.some((s) => s.role === 'ready-for-grilling'))
+    skips = skips.filter((s) => s.role !== 'ready-for-grilling');
+  if (combined || proposedRole !== 'ready-for-grilling' || path.some((s) => s.role === 'ready-for-grilling'))
+    return skips;
+  const reasons = new Map(skips.map((skip) => [skip.role, skip.reason]));
+  if (proposal.category === 'enhancement' && path.some((s) => s.role === 'ready-for-repro'))
+    reasons.set('ready-for-repro', 'The request describes an enhancement and has no existing failure to reproduce.');
+  return [...reasons].map(([role, reason]) => ({ role, reason }));
+}
+
 // Read the complete lifecycle table, including custom or invalid rows, so validation
 // cannot silently omit a required stage. Canonical legacy tables use row order.
 export function captureLifecycle(root) {
@@ -109,7 +124,9 @@ export function captureLifecycle(root) {
 function legacyStage([, state, exit]) {
   return {
     state,
-    role: [...required, 'ready-for-repro', 'ready-to-prototype'].includes(state) ? state : 'custom',
+    role: [...required, 'ready-for-grilling', 'ready-for-repro', 'ready-to-prototype'].includes(state)
+      ? state
+      : 'custom',
     exit,
   };
 }
