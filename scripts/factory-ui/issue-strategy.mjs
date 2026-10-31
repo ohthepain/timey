@@ -178,6 +178,10 @@ export function startIssueStrategy(service, input) {
     .finally(() => {
       service.store.connected.delete(run.id);
       service.lifecycleTasks.delete(issue.id);
+      // Comments sent while the owning worker was busy are queued against the
+      // same issue chat. Let them become real Codex turns after that writer
+      // releases the thread instead of leaving them stranded as saved text.
+      service.issueChats?.resumePending(issue.id);
     });
   service.lifecycleTasks.set(issue.id, task);
   return { runId: run.id, issueId: issue.id, accepted: true };

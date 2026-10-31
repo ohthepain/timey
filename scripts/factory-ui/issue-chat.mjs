@@ -126,6 +126,12 @@ class IssueChats {
     this.pending.set(id, pending);
     if (!this.tasks.has(id)) this.startResponses(id);
   }
+  resumePending(issueId) {
+    if (this.closed || this.tasks.has(issueId) || this.active.has(issueId)) return false;
+    if (!this.pending.get(issueId)?.length) return false;
+    this.startResponses(issueId);
+    return true;
+  }
   nextMessage(id) {
     if (this.closed) return null;
     return this.pending.get(id)?.shift();
