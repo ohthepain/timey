@@ -27,15 +27,17 @@ worker checkout. Detached or unavailable checkouts and issues without assigned
 work are labeled explicitly. Only the selected issue's Git identity is read
 on refresh; the running server's branch is never substituted.
 
-The issue screen shows every configured lifecycle stage as a numbered expandable
-step. The current stage opens by default. Saved assignments and worker results
-appear under their matching stage; worker commits and manual integration have
-separate steps. Opening a step does not advance the issue. Stage expansion is
-preserved while live results refresh. Earlier stages are not marked complete
-merely because the issue currently sits later in the lifecycle. Saved timestamps
-and report notes provide history where it exists; missing historical transitions
-are not reconstructed. Unmatched assignment kinds stay visible under Other work.
-New lifecycle stages use the same step layout without requiring another screen.
+The issue screen shows configured lifecycle history as numbered expandable steps,
+except Prototype, Implement, Verify, Commit and Final review. Their saved report
+events and assignments remain unchanged, but they are omitted from the issue's
+step list and queue filters. Issues currently in one of those states remain in the
+queue, display a generic queued status, and do not offer lifecycle Progress
+controls. Strategy controls remain the active work path. Opening a visible step
+does not advance the issue. Stage expansion is preserved while live results
+refresh. Earlier visible stages are not marked complete merely because the issue
+currently sits later in the lifecycle. Saved timestamps and report notes provide
+history where it exists; missing historical transitions are not reconstructed.
+Unmatched assignment kinds stay visible under Other work.
 
 ## Queue sorting
 
@@ -558,11 +560,13 @@ This path does not prove a self-healing exercise or any other unperformed test.
 Those limits remain in the result for final acceptance. It cannot change source,
 registry entries, other reports or human check outcomes, and never closes the issue.
 
-The queue lists each lifecycle role with a checkbox and the number of issues in that
-role that match the current search. Every role starts selected except Closed. Clearing
-a role hides its issues; selecting Closed shows closed issues. Search text applies when
-Return is pressed, and also as the text changes. Search, role, and sort choices survive
-live refreshes while the page is open.
+The queue lists visible lifecycle roles with a checkbox and the number of issues in
+that role that match the current search. Prototype, Implement, Verify, Commit and
+Final review have no filters; their issues remain included unless another visible
+filter hides them. Every visible role starts selected except Closed. Clearing a role
+hides its issues; selecting Closed shows closed issues. Search text applies when
+Return is pressed, and also as the text changes. Search, role, and sort choices
+survive live refreshes while the page is open.
 Filtering is read-only; issue links and saved reports remain available.
 
 ## Live worker status

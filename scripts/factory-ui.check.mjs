@@ -2218,12 +2218,24 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
     links
   );
-  const render = new Function('data', 'esc', 'busy', 'approvals', 'fileLinkUI', source + ';return lifecyclePanel;')(
+  const render = new Function(
+    'data',
+    'esc',
+    'busy',
+    'approvals',
+    'fileLinkUI',
+    'visibleLifecycleStage',
+    source + ';return lifecyclePanel;'
+  )(
     screen,
     (value) => String(value || ''),
     false,
     () => '',
-    links.fileLinkUI
+    links.fileLinkUI,
+    (stage) =>
+      !new Set(['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close']).has(
+        stage.role
+      )
   );
   const issue = { id: 'one', state: 'investigate' };
   assert.match(render(issue), /data-lifecycle-start/);
@@ -2276,8 +2288,7 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   };
   const history = render(issue);
   assert.equal((history.match(/<li>/g) || []).length, 35);
-  assert.match(history, /<strong style="color:#6d28d9">Prototype:/);
-  assert.match(history, /<strong style="color:#1d4ed8">Implement:/);
+  assert.doesNotMatch(history, /Prototype:|Implement:/);
   assert.match(history, /class="history-interrupted">\(interrupted\)/);
   assert.match(history, /class="history-time" datetime="2026-10-29T12:00:00.000Z">\[/);
   assert.match(history, /History item 34/);
