@@ -80,6 +80,30 @@ test('comments are accepted during implementation, serialized for replies and ca
   assert.equal(f.service.codex, originalWorkerConnection);
   assert.equal(f.service.api.inspect().registry.actions.length, 0);
 });
+test('additional messages queue while the issue assistant is responding', async (t) => {
+  const f = fixture(t);
+  let releaseFirst;
+  f.connection.turn = () =>
+    new Promise((resolve) => {
+      releaseFirst = resolve;
+    });
+  await f.send('First queued comment', 'first-queued-comment');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.service.issueChats.view(f.input.issueId).responseId, 'first-queued-comment');
+
+  await f.send('Second queued comment', 'second-queued-comment');
+  assert.equal(
+    conversationMessages(f.queue.root, f.input.issueId).filter((message) => message.actor === 'human').length,
+    2
+  );
+  f.connection.turn = async () => 'Second response';
+  releaseFirst('First response');
+  await f.finish();
+
+  const messages = conversationMessages(f.queue.root, f.input.issueId);
+  assert.equal(messages.find((message) => message.id === 'reply:first-queued-comment').body, 'First response');
+  assert.equal(messages.find((message) => message.id === 'reply:second-queued-comment').body, 'Second response');
+});
 test('message IDs are idempotent and failed provider replies leave comments available', async (t) => {
   const f = fixture(t);
   f.connection.turn = async () => {
@@ -175,7 +199,7 @@ test('the conversational model uses read-only access and refuses an uncertain ex
 });
 
 test('persistent chat view escapes text, preserves draft/focus across role updates and reuses one panel', (t) => {
-  const dom = new JSDOM('<div id="app"><div id="discussion-slot"></div></div>', {
+  const dom = new JSDOM('<div id="app"><div id="issue-chat-slot"></div></div>', {
     url: 'http://127.0.0.1/#/issue/one',
     runScripts: 'outside-only',
   });
@@ -203,7 +227,7 @@ test('persistent chat view escapes text, preserves draft/focus across role updat
   draft.focus();
   assert.equal(panel.querySelector('script'), null);
   ui.beforeRender();
-  document.getElementById('app').innerHTML = '<div id="discussion-slot"></div>';
+  document.getElementById('app').innerHTML = '<div id="issue-chat-slot"></div>';
   data.conversation.messages.push({
     id: 'review',
     at: new Date().toISOString(),
@@ -428,7 +452,7 @@ test('native Stop awaits the original start, targets its exact turn and ignores 
 });
 
 test('Stop control retains the draft, binds the displayed response and shows cancellation failures', async (t) => {
-  const dom = new JSDOM('<div id="discussion-slot"></div>', { runScripts: 'outside-only' });
+  const dom = new JSDOM('<div id="issue-chat-slot"></div>', { runScripts: 'outside-only' });
   t.after(() => dom.window.close());
   dom.window.eval(readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') + '\nwindow.chatTest=issueChatUI;');
   const data = { issues: [{ id: 'one' }], conversation: { issueId: 'one', responseId: 'current', connected: true } };
@@ -443,6 +467,7 @@ test('Stop control retains the draft, binds the displayed response and shows can
     async () => {}
   );
   const stop = dom.window.document.querySelector('[aria-label="Stop response"]');
+  assert.equal(dom.window.document.querySelector('[aria-label="Send message"]').disabled, false);
   const draft = dom.window.document.querySelector('textarea');
   draft.value = 'Unsent draft';
   assert.equal(stop.hidden, false);
@@ -456,7 +481,7 @@ test('Stop control retains the draft, binds the displayed response and shows can
   assert.match(dom.window.document.querySelector('[role="status"]').textContent, /Cancellation unavailable/);
   const mount = () => {
     dom.window.chatTest.beforeRender();
-    dom.window.document.body.innerHTML = '<div id="discussion-slot"></div>';
+    dom.window.document.body.innerHTML = '<div id="issue-chat-slot"></div>';
     dom.window.chatTest.mount(
       'one',
       data,
