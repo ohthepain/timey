@@ -92,7 +92,7 @@ export class StrategyProvider {
     const [owner] = this.config.repository.split('/');
     const viewer = JSON.parse(await this.gh(['api', 'user']));
     if (!viewer.login || viewer.login !== owner || pr.user?.login !== viewer.login) return false;
-    await this.assertMergeProtection();
+    await this.assertMergeProtection({ allowBypass: true });
     const protection = JSON.parse(
       await this.gh([
         'api',
@@ -123,17 +123,36 @@ export class StrategyProvider {
     }
     return true;
   }
-  async assertMergeProtection() {
-    const path = `repos/${this.config.repository}/branches/${encodeURIComponent(this.config.target)}/protection`;
-    const protection = JSON.parse(await this.gh(['api', path]));
-    const checks = protection.required_status_checks;
+  async assertMergeProtection({ allowBypass = false } = {}) {
+    const pages = JSON.parse(
+      await this.gh([
+        'api',
+        `repos/${this.config.repository}/rules/branches/${encodeURIComponent(this.config.target)}?per_page=100`,
+        '--paginate',
+        '--slurp',
+      ])
+    );
+    const rules = pages.flat(),
+      rulesetIds = [...new Set(rules.map((rule) => rule.ruleset_id).filter((id) => Number.isSafeInteger(id)))];
+    const rulesets = await Promise.all(
+      rulesetIds.map(async (id) => JSON.parse(await this.gh(['api', `repos/${this.config.repository}/rulesets/${id}`])))
+    );
+    const active = rulesets.filter((ruleset) => ruleset.enforcement === 'active');
+    const checks = active
+      .flatMap((ruleset) => ruleset.rules || [])
+      .filter((rule) => rule.type === 'required_status_checks')
+      .map((rule) => rule.parameters || {});
     requireThat(
-      checks?.strict === true && (checks.contexts?.length || 0) + (checks.checks?.length || 0) > 0,
-      'Full Send needs provider-enforced strict required checks on the target branch. No merge was attempted.'
+      checks.some(
+        (parameters) =>
+          parameters.strict_required_status_checks_policy === true &&
+          (parameters.required_status_checks?.length || 0) > 0
+      ),
+      'Full Send needs an active ruleset with strict required checks on the target branch. No merge was attempted.'
     );
     requireThat(
-      protection.enforce_admins?.enabled === true,
-      'Full Send requires branch protection to apply to administrators too. No merge was attempted.'
+      allowBypass || active.every((ruleset) => ruleset.current_user_can_bypass === 'never'),
+      'Full Send requires the target rulesets to prevent administrators from bypassing them. No merge was attempted.'
     );
     return true;
   }

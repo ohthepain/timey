@@ -180,15 +180,30 @@ function providerFixture() {
     if (args[1] === 'user') return JSON.stringify({ login: 'fixture' });
     if (args[1]?.includes('/rules/branches/')) return JSON.stringify([reviewRules]);
     if (args[1]?.endsWith('/rulesets/42'))
-      return JSON.stringify({ id: 42, enforcement: 'active', current_user_can_bypass: bypass });
+      return JSON.stringify({
+        id: 42,
+        enforcement: 'active',
+        current_user_can_bypass: admin ? bypass : 'always',
+        rules: [
+          {
+            type: 'required_status_checks',
+            parameters: {
+              strict_required_status_checks_policy: strict,
+              required_status_checks: [{ context: 'verify' }],
+            },
+          },
+        ],
+      });
+    if (args[1]?.endsWith('/rulesets/43'))
+      return JSON.stringify({
+        id: 43,
+        enforcement: 'active',
+        current_user_can_bypass: admin ? bypass : 'always',
+        rules: [],
+      });
     if (args[1]?.endsWith('/merge')) return JSON.stringify({ merged: true, sha: 'merged' });
     if (args[1] === 'repos/fixture/timey') return JSON.stringify({ allow_squash_merge: true });
-    if (args[1]?.endsWith('/protection'))
-      return JSON.stringify({
-        required_status_checks: { strict, contexts: ['verify'] },
-        enforce_admins: { enabled: admin },
-        required_pull_request_reviews: classicReviews ? { required_approving_review_count: 1 } : null,
-      });
+    if (args[1]?.endsWith('/protection')) return JSON.stringify({});
     return '{}';
   };
   return {
