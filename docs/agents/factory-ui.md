@@ -1434,3 +1434,31 @@ but retain the previous plan and receipt in approval history. Reassessment that
 returns no replacement plan retains that plan for review rather than failing with
 “no plan to approve”. A historical missing plan can be recovered only from the
 original human plan-approval receipt, with its content hash and issue identity checked.
+
+## Factory GitHub App credentials
+
+Server-owned issue strategy operations may use `.issues/github-app.json` in the
+owning project (this directory is excluded from Git):
+
+```json
+{
+  "appId": 123456,
+  "repository": "owner/repo",
+  "privateKeyPath": "/absolute/private/location/factory.pem"
+}
+```
+
+Keep the private key outside the repository. No client secret or permanent token
+is needed. The server discovers the installation, limits tokens to the configured
+repository and refreshes them before expiry. It passes the token only to the
+strategy provider's GitHub CLI calls; personal Git/SourceTree credentials and
+worker publication are unchanged. Installation authentication does not use
+`gh auth login` or the user identity endpoint. A configured app failure stops
+rather than falling back to personal credentials.
+
+Give the app Contents and Pull requests read/write, Checks, Commit statuses,
+Actions and Administration read-only, and install only on the intended repository.
+Grant PR-only bypass of review rules, and no bypass of the separate strict CI
+ruleset requiring the existing GitHub Actions `test` check. Owner bypass can remain
+for personal direct pushes. Reload through `pnpm factory:restart` after changing
+credentials; restarting never retries an issue automatically.

@@ -521,8 +521,9 @@ receipts, reuse of the issue checkout/chat, and final candidate checks. It does 
 use lifecycle role planning or completion manifests. `strategy-prompt.mjs` bounds
 the owning assignment; `strategy-review.mjs` implements optional bounded Sol review;
 `strategy-provider.mjs` reads live PR readiness and enforces strict protected merges.
-It honors a verified review-ruleset bypass for owner-authored PRs while keeping
-classic strict CI protection enforced for administrators.
+It evaluates review bypass separately from non-bypassable strict CI rulesets.
+`github-app.mjs` owns repository-scoped installation authentication, in-memory token
+refresh and project-local credential configuration shared with worktree providers.
 The issue screen shows strategy/status and collapses legacy roles into disabled
 history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
 failures, explicit starts and missing review capabilities.

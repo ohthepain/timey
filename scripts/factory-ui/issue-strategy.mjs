@@ -258,7 +258,7 @@ export async function ownerTurn(service, record, run, issue, instruction = '') {
 async function executeStrategy(service, record, run, issue, input) {
   const preflightProvider =
     service.strategyProvider?.(service.root, record.work.config) ||
-    new StrategyProvider(service.root, record.work.config);
+    new StrategyProvider(service.root, record.work.config, service.root);
   if (record.work.strategy === 'full-send' && input.operation !== 'review')
     await preflightProvider.assertMergeProtection();
   requireThat(!record.stopRequested && !record.pauseRequested, 'Paused by you. Saved work is retained.');
@@ -285,7 +285,8 @@ async function executeStrategy(service, record, run, issue, input) {
   );
   requireThat(!record.stopRequested && !record.pauseRequested, 'Stopped by you. Checks and saved work are retained.');
   const provider =
-    service.strategyProvider?.(work.checkout, work.config) || new StrategyProvider(work.checkout, work.config);
+    service.strategyProvider?.(work.checkout, work.config) ||
+    new StrategyProvider(work.checkout, work.config, service.root);
   const readiness = await provider.ready(await provider.inspect(work.pr), work.branch, head);
   writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
   work.readiness = readiness;
