@@ -1,9 +1,10 @@
-import { redactValue } from './activity.mjs';
+import { activityForRun, redactValue } from './activity.mjs';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { conversationMessages, conversationState, conversationFiles } from './conversation-store.mjs';
 
 function roleFor(queue, run) {
+  if (run.kind === 'issue-work') return 'Issue assistant';
   const roles = { integration: 'Integrate', coordinator: 'Review', reconciliation: 'Review', 'plan-review': 'Review' };
   return roles[run.kind] || stageRole(queue, run);
 }
@@ -20,7 +21,19 @@ function selectedRun(queue, issue, run) {
 }
 function runMessage(queue, run) {
   const result = run.result || {},
-    questions = result.questions || [];
+    questions = result.questions || [],
+    activity = activityForRun(run)
+      .slice(-24)
+      .map((entry) => {
+        const label = entry.kind === 'command' ? 'Command' : entry.kind === 'files' ? 'Files' : 'Assistant';
+        const text = String(entry.text || entry.command || '').trim();
+        return text ? `${label} (${entry.status || 'completed'}):\n${text}` : null;
+      })
+      .filter(Boolean)
+      .join('\n\n');
+  const summary = [result.summary || run.summary, ...questions.map((question) => question.question), result.notes]
+    .filter(Boolean)
+    .join('\n\n');
   return {
     id: 'run:' + run.id,
     actor: 'agent',
@@ -30,10 +43,7 @@ function runMessage(queue, run) {
     status: run.status,
     source: { runId: run.id, threadId: run.threadId },
     body: redactValue(
-      [result.summary || run.summary, ...questions.map((question) => question.question), result.notes]
-        .filter(Boolean)
-        .join('\n\n')
-        .slice(0, 12000)
+      [summary, activity ? `Live work output:\n${activity}` : ''].filter(Boolean).join('\n\n').slice(0, 24000)
     ),
   };
 }
