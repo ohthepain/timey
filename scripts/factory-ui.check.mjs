@@ -3429,6 +3429,9 @@ async function activityScreen(t) {
       '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'
   );
   const snapshot = service.snapshot();
+  // Exercise the legacy lifecycle view at a visible stage. Clarify remains saved
+  // in the fixture's history but is intentionally absent from the issue list.
+  snapshot.issues[0].state = 'investigate';
   snapshot.issues[0].lifecycle = { status: 'running', summary: 'Reading source', childRunId: 'live', events: [] };
   snapshot.runs.push({
     id: 'live',
@@ -3715,7 +3718,12 @@ test('activity header shows live confirmation, last activity and result checks w
 test('activity screen shows the current step and preserves expanded details, native drafts and log reading position', async (t) => {
   const { window, snapshot } = await activityScreen(t),
     document = window.document;
-  assert.match(document.querySelector('.lifecycle-progress').textContent, /Workflow stage: Clarify/);
+  assert.match(document.querySelector('.lifecycle-progress').textContent, /Workflow stage: Investigate/);
+  assert.equal(document.querySelector('[data-stage-state="clarify"]'), null);
+  assert.doesNotMatch(
+    [...document.querySelectorAll('.step-heading strong')].map((node) => node.textContent).join(' '),
+    /Clarify/
+  );
   assert.match(document.querySelector('[data-lifecycle-start]').textContent, /Working…/);
   assert.doesNotMatch(document.body.textContent, /Progress in progress/);
   const notes = [...document.querySelectorAll('details')].find(
@@ -3991,13 +3999,11 @@ test('an explicit file or checklist decision resumes a stopped lifecycle without
 test('automatic stage expansion follows the current step while explicit user expansion stays open', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   const stage = (name) => window.document.querySelector('[data-step-id="20261022-one:' + name + '"]');
-  const oldKey = 'ready-for-grilling:clarify',
-    nextKey = 'ready-for-repro:investigate';
-  assert.equal(stage(oldKey).open, true);
-  assert.equal(stage(nextKey).open, false);
+  const nextKey = 'ready-for-repro:investigate';
+  assert.equal(stage('ready-for-grilling:clarify'), null);
+  assert.equal(stage(nextKey).open, true);
   snapshot.issues[0].state = 'investigate';
   window.screenTest.show(snapshot);
-  assert.equal(stage(oldKey).open, false);
   assert.equal(stage(nextKey).open, true);
 });
 
@@ -4499,7 +4505,6 @@ test('runtime identifies the issue project separately from UI source and run det
   assert.match(JSON.stringify(detail), /FULL_TRANSCRIPT_CANARY/);
   assert.equal((await fetch(url + '/api/run?id=' + run.id)).status, 400);
 });
-
 
 test('an already integrated action resumes bookkeeping without another Codex turn or merge', async (t) => {
   const { root, git, api, proposal, service } = fixture(t);
