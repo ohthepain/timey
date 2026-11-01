@@ -1039,6 +1039,52 @@
         padding: 5px 8px;
         font-size: 12px;
       }
+      #server-controls [data-server-count] {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+      }
+      #server-actions-dialog {
+        width: min(760px, calc(100vw - 32px));
+        max-height: min(80vh, 760px);
+        overflow: auto;
+        border: 1px solid #bac7bd;
+        border-radius: 12px;
+        color: #203b35;
+        background: #fffefa;
+        box-shadow: 0 18px 50px #17211e40;
+        padding: 20px;
+      }
+      #server-actions-dialog::backdrop {
+        background: #17211e70;
+      }
+      .server-action-card {
+        border-top: 1px solid #d7d9cd;
+        padding: 14px 0;
+      }
+      .server-action-card h3 {
+        margin-bottom: 6px;
+      }
+      .server-action-links,
+      .server-action-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .server-action-controls textarea {
+        min-width: min(300px, 100%);
+        min-height: 42px;
+      }
+      .server-action-controls small {
+        flex-basis: 100%;
+      }
+      .server-action-controls button:disabled {
+        opacity: 0.55;
+      }
       .actions-switch {
         display: inline-flex;
         align-items: center;
@@ -1564,11 +1610,13 @@
         return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
       let focusedStageRoute = null;
+      let focusedRunRoute = null;
       function issueRoute() {
         const [path, query = ''] = location.hash.split('?');
         return {
           id: path.startsWith('#/issue/') ? decodeURIComponent(path.slice(8)) : null,
           stage: new URLSearchParams(query).get('stage'),
+          run: new URLSearchParams(query).get('run'),
         };
       }
       function focusLinkedStage() {
@@ -2592,6 +2640,25 @@
       function lifecycleActivity(issue) {
         return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${fileLinkUI.html(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p>`;
       }
+      function focusedRunOutput(issue) {
+        const runId = issueRoute().run;
+        if (!runId) return '';
+        const run = data.runs.find((item) => item.id === runId);
+        if (
+          !run ||
+          (run.issueId !== issue.id &&
+            !data.actions.some((item) => item.id === run.actionId && item.issues.includes(issue.id)))
+        )
+          return '';
+        const output = (run.output || [])
+          .map(
+            (entry) =>
+              `${entry.command ? '$ ' + entry.command + '\n' : ''}${entry.text || ''}${entry.exitCode === undefined ? '' : `\nExit ${entry.exitCode}`}`
+          )
+          .filter(Boolean)
+          .join('\n\n');
+        return `<section class="card" id="focused-action-output"><h2>Action output · ${esc(run.kind)}</h2><p>${esc(run.summary || 'Current action output')}</p><pre class="live-output" tabindex="0" aria-label="Action output">${esc(output || 'No output has arrived yet.')}</pre><p><a href="#/issue/${encodeURIComponent(issue.id)}">Back to issue</a></p></section>`;
+      }
       function evidencePanel(issue) {
         const runs = data.runs.filter(
           (run) =>
@@ -2931,6 +2998,12 @@
         }
         coordinatorUI.update(data);
         $('app').innerHTML = route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id) : queue();
+        if (route.run && route.id) {
+          const selected = data.issues.find((entry) => entry.id === route.id);
+          const output = selected && focusedRunOutput(selected);
+          const column = document.querySelector('#app .layout > div');
+          if (output && column) column.insertAdjacentHTML('afterbegin', output);
+        }
         const currentIssue = data.issues.find((entry) => entry.id === route.id);
         const record = currentIssue?.lifecycle;
         const pending =
@@ -2966,6 +3039,10 @@
         applyProgressFeedback();
         siteReviewUI.mount(data, request, refresh);
         restoreView();
+        if (route.run && focusedRunRoute !== location.hash) {
+          document.getElementById('focused-action-output')?.scrollIntoView({ block: 'start' });
+          focusedRunRoute = location.hash;
+        }
         discussionUI.mount(route.id, request);
         document.querySelectorAll('[data-grill-stage]').forEach((button) => {
           button.onclick = () => {

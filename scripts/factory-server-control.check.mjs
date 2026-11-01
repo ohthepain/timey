@@ -1,12 +1,13 @@
 import { createServer as createHTTPServer } from 'node:http';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync, cpSync, symlinkSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, writeFileSync, readFileSync, cpSync, symlinkSync, realpathSync, existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { serverControl } from './factory-ui/server-control.mjs';
+import { controlServerAction } from './factory-ui/server-action.mjs';
 import { runtimeInfo } from './factory-ui/runtime.mjs';
 import { factoryEntry, uiDirectory } from './factory-ui/ui-source.mjs';
 import { JSDOM } from 'jsdom';
@@ -56,6 +57,15 @@ function project(t) {
     '| Role | State | Next |\n| ready-for-repro | investigate | closed |\n| closed | closed | — |\n'
   );
   return root;
+}
+function installedDependencies() {
+  let directory = realpathSync(process.cwd());
+  while (!existsSync(join(directory, 'node_modules'))) {
+    const parent = dirname(directory);
+    if (parent === directory) throw Error('Could not find the installed repository dependencies.');
+    directory = parent;
+  }
+  return realpathSync(join(directory, 'node_modules'));
 }
 test('restart counts actual work once, blocks new work and waits for chats, permissions and locks', async (t) => {
   const root = project(t),
@@ -170,7 +180,7 @@ test('real restart changes the listener PID and preserves existing chat and prog
   cpSync(resolve('scripts'), join(installed.root, 'scripts'), { recursive: true });
   writeFileSync(join(installed.root, 'package.json'), '{"type":"module"}');
   writeFileSync(join(installed.root, '.gitignore'), 'node_modules\n');
-  symlinkSync(resolve('node_modules'), join(installed.root, 'node_modules'), 'dir');
+  symlinkSync(installedDependencies(), join(installed.root, 'node_modules'), 'dir');
   installed.git('add', '.');
   installed.git('commit', '-qm', 'Installed factory');
   mkdirSync(join(root, 'scripts/factory-ui'), { recursive: true });
@@ -184,20 +194,26 @@ test('real restart changes the listener PID and preserves existing chat and prog
       stdio: ['ignore', 'pipe', 'pipe'],
     }
   );
-  let newPid = null;
+  let newPid = null,
+    stderr = '';
   t.after(() => {
     child.kill('SIGTERM');
     if (newPid) process.kill(newPid, 'SIGTERM');
   });
   const url = await new Promise((done, fail) => {
     let output = '';
+    child.stderr.on('data', (data) => {
+      stderr += data;
+    });
     child.stdout.on('data', (data) => {
       output += data;
       const match = output.match(/Factory UI: (http:\/\/127\.0\.0\.1:\d+)/);
       if (match) done(match[1]);
     });
     child.once('error', fail);
-    child.once('exit', (code) => fail(Error('Fixture server exited before readiness: ' + code)));
+    child.once('exit', (code) =>
+      fail(Error('Fixture server exited before readiness: ' + code + (stderr ? '\n' + stderr : '')))
+    );
   });
   assert.match(await (await fetch(url)).text(), /<div id="app"/);
   const headers = await session(url);
@@ -292,6 +308,162 @@ test('header restart requests server-restart and hides when unsupported', async 
   dom.window.controls.show({ ...value, supported: false }, async () => value);
   assert.equal(dom.window.document.querySelector('[data-server-restart]').hidden, true);
   dom.window.close();
+});
+
+test('running-action status opens linked issue details and exposes guarded controls', async (t) => {
+  const root = project(t);
+  const issueId = '20261101T000000000-0123456789abcdef';
+  writeFileSync(
+    join(root, '.issues', issueId + '.md'),
+    `---\nid: ${issueId}\ntitle: Running example\nstate: investigate\n---\n\n## Original request\n\nA saved issue.\n`
+  );
+  const service = new FactoryUI(root);
+  const control = serverControl(service);
+  try {
+    const run = service.store.add(
+      { id: 'action-one', title: 'Implement the issue', issues: [issueId] },
+      'worker',
+      'base'
+    );
+    service.store.update(run, {
+      issueId,
+      title: 'Implement the issue',
+      threadId: 'thread-one',
+      status: 'running',
+      summary: 'Editing the issue.',
+    });
+    service.codex.turns.set('thread-one', { id: 'turn-one' });
+    service.lifecycleTasks.set(issueId, Promise.resolve());
+    writeFileSync(
+      join(root, '.issues', 'factory.json'),
+      JSON.stringify({
+        version: 1,
+        actions: [
+          {
+            id: 'action-stopped',
+            title: 'Stopped implementation',
+            scope: 'Retain the original checkout',
+            kind: 'implement',
+            status: 'blocked',
+            issues: [issueId],
+          },
+        ],
+      })
+    );
+    const stopped = service.store.add({ id: 'action-stopped', title: 'Stopped implementation' }, 'worker', 'base');
+    service.store.update(stopped, { issueId, status: 'blocked', summary: 'Waiting to be resumed.' });
+    service.store.connected.delete(stopped.id);
+    const items = control.actions();
+    assert.equal(items.length, 2);
+    const current = items.find((item) => item.id === run.id);
+    const restartable = items.find((item) => item.id === stopped.id);
+    assert.equal(current.issues[0].title, 'Running example');
+    assert.equal(current.canSteer, true);
+    assert.equal(current.canPause, true);
+    assert.equal(current.canRestart, false);
+    assert.equal(current.canSkip, false);
+    assert.equal(restartable.status, 'blocked');
+    assert.equal(restartable.details, 'Retain the original checkout');
+    assert.equal(restartable.canRestart, true);
+
+    const dom = loadServerControlDom();
+    const calls = [];
+    dom.window.controls.show({ ...idleServerControl(), actions: 1 }, async (path, value) => {
+      calls.push([path, value]);
+      return path === 'server-actions' ? items : {};
+    });
+    dom.window.document.querySelector('[data-server-count]').click();
+    await delay(0);
+    const dialog = dom.window.document.querySelector('#server-actions-dialog');
+    assert.match(dialog.textContent, /Implement the issue/);
+    assert.match(dialog.textContent, /Issue: Running example/);
+    assert.equal(dialog.querySelector('a[href*="run="]')?.textContent, 'Action output');
+    const steer = dialog.querySelector('[data-steer-text]');
+    steer.value = 'Please retain the existing scope';
+    [...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Steer' && !button.disabled).click();
+    await delay(0);
+    const steerCall = calls.find(([path]) => path === 'server-action');
+    assert.equal(steerCall[1].operation, 'steer');
+    assert.equal(steerCall[1].text, 'Please retain the existing scope');
+    dom.window.close();
+  } finally {
+    control.close();
+    service.lifecycleTasks.delete(issueId);
+    service.close();
+  }
+});
+
+test('action controls pause after the current turn, steer its exact turn, and stop it safely', async () => {
+  const calls = [];
+  const issueId = '20261101T000000000-0123456789abcdef';
+  const run = { id: 'run-one', issueId, threadId: 'thread-one', kind: 'issue-work' };
+  const turn = { id: 'turn-one', started: Promise.resolve({ turn: { id: 'turn-one' } }) };
+  const service = {
+    ownServer() {},
+    store: { runs: [run], connected: new Set([run.id]) },
+    lifecycleTasks: new Map([[issueId, Promise.resolve()]]),
+    lifecycleRuns: { [issueId]: {} },
+    api: { inspect: () => ({ registry: { actions: [] } }) },
+    pauseLifecycle: (input) => calls.push(['pause', input]),
+    codex: {
+      turns: new Map([[run.threadId, turn]]),
+      call: async (method, input) => calls.push([method, input]),
+    },
+    issueChats: { connections: new Map() },
+  };
+  await controlServerAction(service, { runId: run.id, operation: 'pause' });
+  assert.deepEqual(calls.pop(), ['pause', { issueId }]);
+  assert.equal(service.store.connected.has(run.id), true, 'pause leaves the current action connected');
+  await controlServerAction(service, { runId: run.id, operation: 'steer', text: 'Keep the current scope.' });
+  assert.deepEqual(calls.pop(), [
+    'turn/steer',
+    {
+      threadId: run.threadId,
+      expectedTurnId: turn.id,
+      input: [{ type: 'text', text: 'Keep the current scope.' }],
+    },
+  ]);
+  await controlServerAction(service, { runId: run.id, operation: 'stop' });
+  assert.deepEqual(calls.pop(), ['turn/interrupt', { threadId: run.threadId, turnId: turn.id }]);
+});
+
+test('skip interrupts a worker, then cancels only its stopped assignment and retains its checkout', async () => {
+  const run = {
+    id: 'run-skip',
+    actionId: 'action-skip',
+    issueId: '20261101T000000000-0123456789abcdef',
+    kind: 'worker',
+    threadId: 'thread-skip',
+    checkout: '/saved/checkout',
+  };
+  const action = { id: run.actionId, status: 'running', issues: [run.issueId] };
+  const turn = { id: 'turn-skip', started: Promise.resolve({ turn: { id: 'turn-skip' } }) };
+  const service = {
+    ownServer() {},
+    store: {
+      runs: [run],
+      connected: new Set([run.id]),
+      update: (target, values) => Object.assign(target, values),
+    },
+    api: {
+      inspect: () => ({ registry: { actions: [action] } }),
+      record: (id, update) => Object.assign(action, update),
+    },
+    codex: {
+      turns: new Map([[run.threadId, turn]]),
+      call: async (method) => {
+        assert.equal(method, 'turn/interrupt');
+        service.store.connected.delete(run.id);
+        action.status = 'blocked';
+      },
+    },
+  };
+  const result = await controlServerAction(service, { runId: run.id, operation: 'skip' });
+  assert.deepEqual(result, { skipped: true });
+  assert.equal(action.status, 'cancelled');
+  assert.match(action.evidence, /checkout and conversation remain preserved/);
+  assert.equal(run.status, 'cancelled');
+  assert.equal(run.checkout, '/saved/checkout');
 });
 
 test('runtime identity reports source updates so WIP restarts remain visible', () => {

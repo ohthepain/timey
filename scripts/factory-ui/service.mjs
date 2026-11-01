@@ -72,11 +72,7 @@ import { checkImplementation } from './plan-review.mjs';
 import { decidePlanCheck } from './plan-approval.mjs';
 import { skipPlanChecks } from './plan-skips.mjs';
 import { approveReviewFile } from './review-file-access.mjs';
-import {
-  readIssueModelSettings,
-  readModelSettings,
-  newChatModelSettings,
-} from './model-settings.mjs';
+import { readIssueModelSettings, readModelSettings, newChatModelSettings } from './model-settings.mjs';
 
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
@@ -87,6 +83,11 @@ const operation = (action) =>
       : action.kind === 'verify'
         ? 'verify'
         : 'investigate';
+
+async function recoverWorkerTurn(service, run, error) {
+  if (run.skipRequested) throw error;
+  return recoverWorkerText(service, run, error);
+}
 
 export class FactoryUI {
   constructor(project, options = {}) {
@@ -434,7 +435,7 @@ export class FactoryUI {
         run.issueId ? newChatModelSettings(this.root, run.issueId) : null
       );
     } catch (error) {
-      recovered = await recoverWorkerText(this, run, error);
+      recovered = await recoverWorkerTurn(this, run, error);
       text = recovered.text;
     }
     let result;

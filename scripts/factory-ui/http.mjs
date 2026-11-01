@@ -15,6 +15,7 @@ import { uiDirectory } from './ui-source.mjs';
 import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
 import { startIssueStrategy, stopIssueStrategy } from './issue-strategy.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
+import { controlServerAction } from './server-action.mjs';
 async function body(request) {
   let text = '';
   for await (const chunk of request) {
@@ -84,6 +85,7 @@ async function mutation(service, path, value, owner) {
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),
+    '/api/server-action': () => controlServerAction(service, value),
     '/api/lifecycle-start': () => service.startLifecycle(value),
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
@@ -157,6 +159,7 @@ function read(service, request, response, owner) {
     '/api/native-chat': () => nativeChatStatus(service.root, url.searchParams.get('issue')),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
+    '/api/server-actions': () => service.serverControl.actions(),
     '/api/coordinator': () => service.coordinator.view(),
     '/api/issue-chat': () =>
       service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
