@@ -2581,7 +2581,9 @@
         const runs = data.runs.filter(
           (run) =>
             run.issueId === issue.id ||
-            data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+            data.actions?.some(
+              (action) => action.id === run.actionId && Array.isArray(action.issues) && action.issues.includes(issue.id)
+            )
         );
         if (runs.some((run) => run.connected))
           return 'Work is connected. Output appears as messages and commands arrive.';
@@ -2589,6 +2591,24 @@
       }
       function lifecycleActivity(issue) {
         return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${fileLinkUI.html(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p>`;
+      }
+      function evidencePanel(issue) {
+        const runs = data.runs.filter(
+          (run) =>
+            run.issueId === issue.id ||
+            data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+        );
+        const links = runs
+          .flatMap((run) => {
+            const files = run.result?.evidence || run.evidence || [];
+            return files.map((file) => ({ run, path: typeof file === 'string' ? file : file.path }));
+          })
+          .filter((entry) => entry.path);
+        if (!links.length) return '<p class="muted">No saved evidence is recorded yet.</p>';
+        return `<ul>${links
+          .slice(-20)
+          .map((entry) => `<li><strong>${esc(entry.run.kind || 'run')}</strong> · ${fileLinkUI.html(entry.path)}</li>`)
+          .join('')}</ul>`;
       }
       function lifecycleInput(issue, record) {
         const input = record.input;
@@ -2727,7 +2747,7 @@
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
-        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue chats"><div class="issue-chat-tablist" role="tablist"><button class="issue-chat-tab" role="tab" aria-selected="${discussionSelected}" data-chat-tab="discussion">Discussion</button><button class="issue-chat-tab" role="tab" aria-selected="${!discussionSelected}" data-chat-tab="issue">${esc(i.title || i.id)}</button></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="discussion" data-chat-active="${discussionSelected}"><div id="discussion-slot"></div></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="issue" data-chat-active="${!discussionSelected}"><div id="issue-chat-slot"></div></div></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${showLifecycleProgress ? lifecyclePanel(i) : ''}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue chats"><div class="issue-chat-tablist" role="tablist"><button class="issue-chat-tab" role="tab" aria-selected="${discussionSelected}" data-chat-tab="discussion">Discussion</button><button class="issue-chat-tab" role="tab" aria-selected="${!discussionSelected}" data-chat-tab="issue">${esc(i.title || i.id)}</button></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="discussion" data-chat-active="${discussionSelected}"><div id="discussion-slot"></div></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="issue" data-chat-active="${!discussionSelected}"><div id="issue-chat-slot"></div></div></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><section class="card"><h2>Evidence</h2>${evidencePanel(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${showLifecycleProgress ? lifecyclePanel(i) : ''}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
