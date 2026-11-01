@@ -2939,6 +2939,7 @@
               .forEach((panel) => panel.setAttribute('data-chat-active', String(panel.dataset.chatPanel === selected)));
           };
         });
+        document.querySelector('[data-chat-tab="issue"]')?.replaceChildren(document.createTextNode('Issue thread'));
         bind();
         bindPriorities();
         bindIssueNavigation();
@@ -3235,7 +3236,12 @@
               const rounds = Number($('strategy-sol').value);
               if (review && !rounds) throw Error('Choose one or three Sol review rounds first.');
               button.disabled = true;
-              $('strategy-feedback').textContent = 'Sending request…';
+              $('strategy-feedback').textContent = 'Starting… Previous status is cleared until fresh evidence arrives.';
+              const strategyCard = button.closest('[data-view-id^="strategy-"]');
+              const summary = strategyCard?.querySelector('p b');
+              const details = strategyCard?.querySelector('p:nth-of-type(1)');
+              if (summary) summary.textContent = 'working';
+              if (details) details.textContent = 'Waiting for fresh worker output…';
               await request('issue-strategy-start', {
                 issueId: id,
                 basis: issue.strategy.basis,
