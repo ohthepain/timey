@@ -378,7 +378,7 @@ test('running-action status opens linked issue details and exposes guarded contr
     assert.match(dialog.textContent, /Implement the issue/);
     assert.match(dialog.textContent, /Issue: Running example/);
     assert.equal(dialog.querySelector('a[href*="run="]')?.textContent, 'Action output');
-    const steer = dialog.querySelector('[data-steer-text]');
+    const steer = [...dialog.querySelectorAll('[data-steer-text]')].find((field) => !field.disabled);
     steer.value = 'Please retain the existing scope';
     [...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Steer' && !button.disabled).click();
     await delay(0);
