@@ -95,7 +95,7 @@ export default async function strategyBrowserChecks(page) {
   )
     throw Error('Polling reset the pending strategy choices.');
   await continueButton.click();
-  await page.locator('#strategy-feedback').filter({ hasText: 'Sending request' }).waitFor();
+  await page.locator('#strategy-feedback').filter({ hasText: 'Starting' }).waitFor();
   if (!(await page.locator('[data-strategy-start]').isDisabled()))
     throw Error('Duplicate start was not disabled immediately.');
   release();

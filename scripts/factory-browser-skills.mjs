@@ -18,7 +18,7 @@ export default async function skillsBrowserChecks(page) {
   await page.goto(new URL('/#/issue/b', page.url()).href);
   await page.getByRole('heading', { name: 'Older urgent issue', exact: true }).waitFor();
 
-  await page.getByRole('tab', { name: 'Older urgent issue', exact: true }).click();
+  await page.locator('[data-chat-tab="issue"]').click();
   let composer = page.locator('[data-chat-panel="issue"] textarea[aria-label="Chat input"]');
   await composer.fill('/practice');
   let option = page.getByRole('option').filter({ hasText: 'practice' });
