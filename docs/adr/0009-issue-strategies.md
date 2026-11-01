@@ -31,7 +31,10 @@ default-branch push, auto-merge or queue enrollment.
 
 The factory can authenticate its server-owned GitHub operations as an installed
 GitHub App. The project-local `.issues/github-app.json` stores public app ID,
-repository and an absolute private-key path; the key stays outside the repository.
+repository and an absolute private-key path; deployed servers may instead use
+`TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID`,
+`TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY`, and
+`TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID`; the key stays outside the repository.
 The server signs a short-lived app JWT, discovers the installation and requests a
 token restricted to that repository. Tokens remain in memory, refresh before
 expiry, and are passed only to the provider's `gh` subprocesses. Personal Git and

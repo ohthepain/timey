@@ -7,7 +7,7 @@ import { FactoryUI } from './factory-ui/service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { git, writeJson } from './factory-ui/common.mjs';
 import { strategyView, startIssueStrategy } from './factory-ui/issue-strategy.mjs';
-import { GitHubAppCredentials } from './factory-ui/github-app.mjs';
+import { GitHubAppCredentials, githubAppCredentials } from './factory-ui/github-app.mjs';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -493,6 +493,29 @@ test('installation credentials sign JWTs, restrict repository, share refresh and
     (e) => e.message === 'GitHub App authentication request failed.'
   );
   assert.throws(() => new GitHubAppCredentials(auth.config, 'other/repo'), /different repository/);
+});
+
+test('installation credentials can be loaded from server environment settings', (t) => {
+  const names = [
+    'TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID',
+    'TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY',
+    'TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID',
+  ];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  t.after(() => {
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  });
+  process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID = '5';
+  process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----';
+  process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID = '9';
+  const credentials = githubAppCredentials('/tmp/project', 'fixture/timey');
+  assert.equal(credentials.config.appId, 5);
+  assert.equal(credentials.config.installationId, 9);
+  assert.equal(credentials.config.repository, 'fixture/timey');
+  assert.equal(credentials.config.privateKey, '-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----');
 });
 
 test('factory app honors review bypass without user identity endpoint or CI bypass', async () => {

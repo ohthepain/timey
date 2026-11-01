@@ -1452,6 +1452,16 @@ owning project (this directory is excluded from Git):
 }
 ```
 
+For a deployed server, the same credentials may be supplied as environment
+secrets instead of a local configuration file:
+`TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID`,
+`TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY`, and
+`TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID`. The private key may be a PEM value
+with escaped newlines. The client ID is not used for installation API
+authentication. Environment settings take precedence over the local file and a
+partial or invalid set stops authentication rather than falling back to a
+personal `gh` login.
+
 Keep the private key outside the repository. No client secret or permanent token
 is needed. The server discovers the installation, limits tokens to the configured
 repository and refreshes them before expiry. It passes the token only to the

@@ -7,7 +7,10 @@ import { requireThat } from './common.mjs';
 export class GitHubAppCredentials {
   constructor(config, repository, { request = fetch, now = Date.now } = {}) {
     requireThat(Number.isSafeInteger(config.appId) && config.appId > 0, 'Invalid GitHub App ID.');
-    requireThat(isAbsolute(config.privateKeyPath || ''), 'GitHub App key path must be absolute.');
+    requireThat(
+      typeof config.privateKey === 'string' || isAbsolute(config.privateKeyPath || ''),
+      'GitHub App key path must be absolute or private key material must be configured.'
+    );
     requireThat(config.repository === repository, 'GitHub App configuration belongs to a different repository.');
     this.config = config;
     this.repository = repository;
@@ -52,7 +55,11 @@ export class GitHubAppCredentials {
       jwt =
         payload +
         '.' +
-        sign('RSA-SHA256', Buffer.from(payload), readFileSync(this.config.privateKeyPath)).toString('base64url');
+        sign(
+          'RSA-SHA256',
+          Buffer.from(payload),
+          this.config.privateKey || readFileSync(this.config.privateKeyPath)
+        ).toString('base64url');
     } catch {
       throw Error('Cannot read or sign with the configured GitHub App private key.');
     }
@@ -63,7 +70,11 @@ export class GitHubAppCredentials {
       installation.app_id === app.id && Number.isSafeInteger(installation.id),
       'Invalid GitHub App installation.'
     );
-    const token = await this.api(`app/installations/${installation.id}/access_tokens`, jwt, {
+    requireThat(
+      !this.config.installationId || installation.id === this.config.installationId,
+      'GitHub App installation does not match configuration.'
+    );
+    const token = await this.api(`app/installations/${this.config.installationId || installation.id}/access_tokens`, jwt, {
       repositories: [this.repository.split('/')[1]],
     });
     const expires = Date.parse(token.expires_at);
@@ -85,6 +96,28 @@ export class GitHubAppCredentials {
 }
 
 export function githubAppCredentials(root, repository) {
+  const appId = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID;
+  const privateKey = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY;
+  const installationId = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID;
+  if (appId || privateKey || installationId) {
+    const parsedAppId = Number(appId);
+    const parsedInstallationId = Number(installationId);
+    requireThat(Number.isSafeInteger(parsedAppId) && parsedAppId > 0, 'Invalid GitHub App ID environment setting.');
+    requireThat(typeof privateKey === 'string' && privateKey.trim(), 'Missing GitHub App private key environment setting.');
+    requireThat(
+      Number.isSafeInteger(parsedInstallationId) && parsedInstallationId > 0,
+      'Invalid GitHub App installation ID environment setting.'
+    );
+    return new GitHubAppCredentials(
+      {
+        appId: parsedAppId,
+        repository,
+        installationId: parsedInstallationId,
+        privateKey: privateKey.replace(/\\n/g, '\n'),
+      },
+      repository
+    );
+  }
   const path = join(root, '.issues/github-app.json');
   return existsSync(path) ? new GitHubAppCredentials(JSON.parse(readFileSync(path, 'utf8')), repository) : null;
 }
