@@ -1325,7 +1325,40 @@ them. Stable conversation message IDs prevent duplicate grilling on capture retr
 or server restart. Conversation failures leave the issue saved and report the
 problem. This option starts discussion, not lifecycle execution or implementation.
 
-### Stopped progress and issue output
+### Progress tab and issue output
+
+The issue opens on **Progress**, beside **Issue output**, **Issue thread** and
+**Discussion**. Tab selection remains stable while viewing the issue. Progress
+shows the current operation, what is happening, confirmed milestones, next action
+and status. It derives these from existing operation, question, approval and
+conversation records plus public output events; it saves no independent workflow
+record. Issue thread remains the work conversation; Discussion remains conversation
+about the work.
+
+Blocking questions and permissions take precedence, with concurrent work still
+visible. Progress reuses the existing answer controls, freshness checks and drafts.
+An explicit capture-grilling or grilling-skill conversation can show its latest
+question round verbatim with a reply sent through the existing comment handler;
+this never starts implementation. Plan and candidate approvals retain their own
+controls. Prose alone never establishes approval or passed verification.
+
+Continue immediately shows **Request sent; waiting for updated progress**, hiding
+old questions and status until updated records/output arrive. A failed request
+shows that it could not be confirmed and asks for a refresh before retrying. New
+active work outranks old failures. Completed operations name their finish line;
+publication, merge, issue acceptance and closure remain distinct. Earlier confirmed
+milestones remain visible, with superseded candidate checks labelled explicitly.
+
+Statuses are running, waiting for you, blocked, failed, complete, not started and
+progress unavailable. Lost connections show the last known update; quiet output
+alone proves neither failure nor blockage. Verification shows the current command
+and exit result when available, otherwise **Running verification** without invented
+check names. Issue output keeps its recent public diagnostic stream and offers
+**Load retained output history** to page backward through saved public events across
+runs. Full retained events load only on demand, retain redaction and exclude private
+reasoning; runs without a retained log remain unavailable rather than fabricated.
+
+### Stopped progress
 
 Retryable stops retain their concrete failure reason and show the next saved
 action separately. A retry being available does not mean work is running. A

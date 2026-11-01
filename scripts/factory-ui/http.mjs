@@ -1,3 +1,4 @@
+import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
 import { prepareDeployment } from './deployment.mjs';
@@ -167,6 +168,8 @@ function read(service, request, response, owner) {
     '/api/check-evidence': () =>
       service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
     '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),
+    '/api/output-history': () =>
+      outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
   };
   if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(routes[url.pathname]()));
@@ -194,6 +197,7 @@ function readResource(service, request, response, owner) {
     '/queue-sort-ui.js': 'queue-sort-ui.js',
     '/file-link-ui.js': 'file-link-ui.js',
     '/coordinator-ui.js': 'coordinator-ui.js',
+    '/issue-progress-ui.js': 'issue-progress-ui.js',
     '/issue-chat-ui.js': 'issue-chat-ui.js',
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',

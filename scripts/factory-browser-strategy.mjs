@@ -109,6 +109,7 @@ export default async function strategyBrowserChecks(page) {
     !submissions[0].approved
   )
     throw Error('Strategy consent or review choice was not submitted exactly.');
+  await page.getByRole('tab', { name: 'Issue output', exact: true }).click();
   const output = page.getByLabel('Live output for this issue', { exact: true });
   await output.waitFor({ state: 'visible', timeout: 3000 });
   if (!(await output.textContent()).includes('Strategy worker is implementing the issue.'))

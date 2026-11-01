@@ -88,6 +88,7 @@
       .issue-chat-tablist {
         display: flex;
         align-items: end;
+        flex-wrap: wrap;
         gap: 4px;
       }
       .issue-chat-tab {
@@ -98,6 +99,18 @@
         font: inherit;
         font-weight: 650;
         cursor: pointer;
+      }
+      .issue-chat-tab[data-chat-tab='progress'],
+      .issue-chat-panel[data-chat-panel='progress'] {
+        background: #e8eef9;
+        color: #243959;
+      }
+      .issue-chat-tab[data-chat-tab='output'],
+      .issue-chat-panel[data-chat-panel='output'] {
+        background: #eef0f3;
+      }
+      [data-view-id^='issue-progress-'] code {
+        overflow-wrap: anywhere;
       }
       .issue-chat-tab[data-chat-tab='discussion'] {
         background: #e8f1ed;
@@ -1274,6 +1287,7 @@
     <script src="/queue-sort-ui.js"></script>
     <script src="/coordinator-ui.js"></script>
     <script src="/file-link-ui.js"></script>
+    <script src="/issue-progress-ui.js"></script>
     <script src="/issue-chat-ui.js"></script>
     <script src="/discussion-ui.js"></script>
     <script src="/site-review-ui.js"></script>
@@ -1281,11 +1295,14 @@
       let data,
         busy = false,
         selection,
-        selectedChatTab = 'discussion';
+        selectedChatTab = 'progress';
       let selectedChatIssue = null;
       let refreshing = false,
         refreshPending = false;
       const runDetails = new Map();
+      const outputHistories = new Map();
+      const grillingReplies = new Map();
+      let progressUnavailable = false;
       const approvalStates = new Map();
       const progressRequests = new Map();
       const $ = (id) => document.getElementById(id);
@@ -1322,6 +1339,8 @@
             issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
           ]);
           data = { ...snapshot, conversation };
+          progressUnavailable = false;
+          updateProgressView();
           coordinatorUI.update(data);
           showRuntime(runtime);
           if (runtime.server) serverControlUI.show(runtime.server, request);
@@ -1343,6 +1362,8 @@
             refreshPending = false;
           }
         } catch (e) {
+          progressUnavailable = true;
+          updateProgressView();
           if (await serverControlUI.reconnect(request)) {
             $('connection').textContent = 'Reconnecting after server restart…';
             return;
@@ -1561,7 +1582,7 @@
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
+        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive && !issueRoute().id ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
       let focusedStageRoute = null;
       function issueRoute() {
@@ -2488,7 +2509,7 @@
         const acceptanceOnly = stage?.role === 'ready-to-close' && (!record?.canResume || issue.progress?.disabled);
         const canStart =
           !input && !record?.deliveryHandoff && !record?.deliveryWaiting && !issue.assemblyRecovery && !acceptanceOnly;
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(currentProgressSummary(issue, record, child, summary, input))}</p>${stopped && !active ? '<p>No action is running.</p>' : ''}${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p data-progress-stop-reason>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(currentProgressSummary(issue, record, child, summary, input))}</p>${stopped && !active ? '<p>No action is running.</p>' : ''}${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p data-progress-stop-reason>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<p>Respond to the pending request in Progress.</p>' : ''}${active ? liveHealth(child) : ''}<div data-live-approvals></div>${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${lifecycleHistory(record)}</ol></details>`
             : ''
@@ -2590,7 +2611,123 @@
         return 'No action is running. Output below is saved history, not live activity.';
       }
       function lifecycleActivity(issue) {
-        return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${fileLinkUI.html(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p>`;
+        return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button><button data-output-history>Load retained output history</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${fileLinkUI.html(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p><div id="output-history">${outputHistoryHtml(issue)}</div>`;
+      }
+      function progressBasis(issue) {
+        return issueProgressUI.basis(issue, issueProgressUI.runsFor(issue, data));
+      }
+      function progressFeedback(issue) {
+        const feedback = progressRequests.get(issue.id);
+        if (!feedback) return null;
+        const fresh = feedback.strategy
+          ? feedback.expectedRunId
+            ? issue.strategy?.runId === feedback.expectedRunId ||
+              data.runs.some((run) => run.id === feedback.expectedRunId)
+            : progressBasis(issue) !== feedback.previousBasis
+          : issue.lifecycle?.updated !== feedback.previousUpdated;
+        if (!feedback.pending && !feedback.error && fresh) {
+          progressRequests.delete(issue.id);
+          return null;
+        }
+        return feedback;
+      }
+      function progressSummary(issue) {
+        const view = issueProgressUI.derive(issue, data, progressFeedback(issue), progressUnavailable);
+        const command = view.command;
+        const result =
+          command?.exitCode !== undefined
+            ? `Exit ${command.exitCode}${command.exitCode === 0 ? ' · passed' : ' · failed'}`
+            : command?.status === 'inProgress'
+              ? 'running'
+              : command?.status || '';
+        return `<h2>Progress</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p><h3 data-progress-step>${esc(view.step)}</h3><p><strong>What is happening:</strong> ${esc(view.explanation)}</p>${command ? `<p><strong>${view.running && ['running', 'inProgress'].includes(command.status) ? 'Current command' : 'Last recorded command'}:</strong> <code>${esc(command.command)}</code> · ${esc(result)}</p>` : ''}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>Next action:</strong> ${esc(view.next)}</p>${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
+      }
+      function progressInput(issue) {
+        if (progressFeedback(issue) || progressUnavailable) return '';
+        const record = issue.lifecycle;
+        const input =
+          record?.input && record.input.type !== 'retry'
+            ? '<h3>Waiting for you</h3>' + lifecycleInput(issue, record)
+            : '';
+        const permissions = issueProgressUI
+          .runsFor(issue, data)
+          .filter((run) => run.connected)
+          .map((run) => approvals(run))
+          .join('');
+        const round = issueProgressUI.derive(issue, data).interview;
+        const grilling =
+          !input && round
+            ? `<h3>Current grilling round</h3><pre class="prose" style="white-space:pre-wrap">${esc(round.body)}</pre><label>Your answer<textarea id="progress-grill-answer" data-draft-key="${esc(issue.id + ':' + round.id)}" rows="4"></textarea></label><button data-progress-grill="${esc(issue.id)}" data-round="${esc(round.id)}">Send grilling answer</button><p class="muted">Answers continue the interview in Issue thread. They do not start implementation.</p>`
+            : '';
+        return (
+          (record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : '') + input + permissions + grilling
+        );
+      }
+      function updateProgressView() {
+        const issue = data?.issues.find((entry) => entry.id === issueRoute().id);
+        const summary = $('issue-progress-summary');
+        if (!issue || !summary) return;
+        summary.innerHTML = progressSummary(issue);
+        // Keep a focused answer intact. Full refresh reconciles request identity safely.
+        if (progressFeedback(issue) || progressUnavailable) {
+          const input = $('issue-progress-input');
+          if (input) input.hidden = true;
+        } else if ($('issue-progress-input')) $('issue-progress-input').hidden = false;
+      }
+      function outputHistoryHtml(issue) {
+        const history = outputHistories.get(issue.id);
+        if (!history) return '';
+        return `<p role="status">${esc(history.message || 'Retained public events, including earlier output. Private reasoning is excluded.')}</p><pre class="live-output" tabindex="0" aria-label="Retained output events">${esc(history.text || '')}</pre>${history.queue?.length ? '<button data-output-history>Load earlier retained output</button>' : ''}`;
+      }
+      function bindOutputHistory() {
+        document.querySelectorAll('[data-output-history]').forEach((button) => {
+          const selectedIssue = data.issues.find((entry) => entry.id === issueRoute().id);
+          const saved = outputHistories.get(selectedIssue?.id);
+          button.disabled =
+            !selectedIssue ||
+            !issueProgressUI.runsFor(selectedIssue, data).length ||
+            Boolean(saved && (saved.loading || !saved.queue.length));
+          button.onclick = async () => {
+            const issue = data.issues.find((entry) => entry.id === issueRoute().id);
+            const id = issue.id;
+            let history = outputHistories.get(id);
+            if (!history) {
+              history = {
+                text: '',
+                queue: issueProgressUI
+                  .runsFor(issue, data)
+                  .reverse()
+                  .map((run) => ({ id: run.id, before: '' })),
+              };
+              outputHistories.set(id, history);
+            }
+            if (history.loading || !history.queue.length) return;
+            history.loading = true;
+            button.disabled = true;
+            try {
+              const cursor = history.queue[0];
+              const page = await request(
+                'output-history?id=' + encodeURIComponent(cursor.id) + '&before=' + cursor.before
+              );
+              const text = page.events.map((event) => JSON.stringify(event)).join('\n');
+              history.text = text + (text && history.text ? '\n' : '') + history.text;
+              if (page.before > 0) cursor.before = page.before;
+              else history.queue.shift();
+              history.message = history.queue.length
+                ? 'Retained public events. Load earlier output for more history.'
+                : 'All available retained public events loaded. Older runs may have no retained log.';
+            } catch (error) {
+              history.message = error.message;
+            } finally {
+              history.loading = false;
+              button.disabled = false;
+              if (issueRoute().id === id && $('output-history')) {
+                $('output-history').innerHTML = outputHistoryHtml(issue);
+                bindOutputHistory();
+              }
+            }
+          };
+        });
       }
       function evidencePanel(issue) {
         const runs = data.runs.filter(
@@ -2741,13 +2878,41 @@
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        const discussionSelected = selectedChatTab === 'discussion';
+
         const stage = data.lifecycle.find((entry) => entry.state === i.state);
         const issueStatus = closedIssueState(i.state)
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
-        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue chats"><div class="issue-chat-tablist" role="tablist"><button class="issue-chat-tab" role="tab" aria-selected="${discussionSelected}" data-chat-tab="discussion">Discussion</button><button class="issue-chat-tab" role="tab" aria-selected="${!discussionSelected}" data-chat-tab="issue">Issue thread</button></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="discussion" data-chat-active="${discussionSelected}"><div id="discussion-slot"></div></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="issue" data-chat-active="${!discussionSelected}"><div id="issue-chat-slot"></div></div></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><section class="card"><h2>Evidence</h2>${evidencePanel(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${showLifecycleProgress ? lifecyclePanel(i) : ''}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+          ['progress', 'Progress'],
+          ['output', 'Issue output'],
+          ['issue', 'Issue thread'],
+          ['discussion', 'Discussion'],
+        ]
+          .map(
+            ([key, title]) =>
+              `<button id="issue-tab-${key}" class="issue-chat-tab" role="tab" aria-controls="issue-panel-${key}" aria-selected="${selectedChatTab === key}" data-chat-tab="${key}">${title}</button>`
+          )
+          .join('')}</div>${[
+          [
+            'progress',
+            `<section class="card" data-view-id="issue-progress-${esc(i.id)}"><div id="issue-progress-summary">${progressSummary(i)}</div><div id="issue-progress-input">${progressInput(i)}</div></section>`,
+          ],
+          [
+            'output',
+            `<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section>`,
+          ],
+          ['issue', '<div id="issue-chat-slot"></div>'],
+          ['discussion', '<div id="discussion-slot"></div>'],
+        ]
+          .map(
+            ([key, html]) =>
+              `<div id="issue-panel-${key}" class="issue-chat-panel" role="tabpanel" aria-labelledby="issue-tab-${key}" data-chat-panel="${key}" data-chat-active="${selectedChatTab === key}">${html}</div>`
+          )
+          .join(
+            ''
+          )}</div><div class="layout"><div>${strategyPanel(i)}<section class="card"><h2>Evidence</h2>${evidencePanel(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${showLifecycleProgress ? lifecyclePanel(i) : ''}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
       }
       const viewMemory = {
         route: null,
@@ -2884,6 +3049,7 @@
           output.scrollTop = output.scrollHeight;
           viewMemory.logs.set(location.hash, { top: output.scrollTop, follow: true });
         };
+        bindOutputHistory();
         document.querySelector('[data-copy-output]').onclick = async (event) => {
           try {
             await navigator.clipboard.writeText(output.textContent);
@@ -2923,7 +3089,7 @@
         const route = issueRoute();
         if (route.id !== selectedChatIssue) {
           selectedChatIssue = route.id;
-          selectedChatTab = 'discussion';
+          selectedChatTab = 'progress';
         }
         if (coordinatorUI.mount(data, request, refresh)) {
           issueChatUI.mount(null, data, request, refresh);
@@ -2931,22 +3097,7 @@
         }
         coordinatorUI.update(data);
         $('app').innerHTML = route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id) : queue();
-        const currentIssue = data.issues.find((entry) => entry.id === route.id);
-        const record = currentIssue?.lifecycle;
-        const pending =
-          record?.input && record.input.type !== 'retry'
-            ? '<h3>Waiting for you · ' + esc(currentIssue.stage) + '</h3>' + lifecycleInput(currentIssue, record, true)
-            : '';
-        const permissions = data.runs
-          .filter(
-            (run) =>
-              run.connected &&
-              (run.issueId === route.id ||
-                data.actions.some((action) => action.id === run.actionId && action.issues.includes(route.id)))
-          )
-          .map((run) => approvals(run))
-          .join('');
-        issueChatUI.mount(route.id, data, request, refresh, data.conversation ? pending + permissions : '');
+        issueChatUI.mount(route.id, data, request, refresh);
         document.querySelectorAll('[data-chat-tab]').forEach((tab) => {
           tab.onclick = () => {
             const selected = tab.dataset.chatTab;
@@ -3025,6 +3176,7 @@
         });
       }
       function applyProgressFeedback() {
+        updateProgressView();
         document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
           const state = progressRequests.get(button.dataset.lifecycleStart);
           if (!state) return;
@@ -3065,6 +3217,28 @@
         });
       }
       function bind() {
+        document.querySelectorAll('[data-progress-grill]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              const text = $('progress-grill-answer').value.trim();
+              if (!text) throw Error('Enter your grilling answer.');
+              const key = button.dataset.progressGrill + ':' + button.dataset.round;
+              let reply = grillingReplies.get(key);
+              if (!reply || reply.text !== text) {
+                reply = { id: crypto.randomUUID(), text };
+                grillingReplies.set(key, reply);
+              }
+              await request('issue-chat-send', {
+                issueId: button.dataset.progressGrill,
+                id: reply.id,
+                text,
+                mode: 'comment',
+                skills: [],
+              });
+              viewMemory.fields.delete(location.hash + '|' + $('progress-grill-answer').dataset.draftKey);
+              $('progress-grill-answer').value = '';
+            });
+        });
         issueCaptureUI.bind(request, refresh);
         const settingsButton = $('model-settings-open');
         if (settingsButton)
@@ -3254,6 +3428,14 @@
               const review = Boolean(button.dataset.strategyReview);
               const rounds = Number($('strategy-sol').value);
               if (review && !rounds) throw Error('Choose one or three Sol review rounds first.');
+              if (progressRequests.get(id)?.pending) return;
+              progressRequests.set(id, {
+                pending: true,
+                strategy: true,
+                previousBasis: progressBasis(issue),
+                message: 'Request sent; waiting for updated progress.',
+              });
+              updateProgressView();
               button.disabled = true;
               $('strategy-feedback').textContent = 'Starting… Previous status is cleared until fresh evidence arrives.';
               const strategyCard = button.closest('[data-view-id^="strategy-"]');
@@ -3261,16 +3443,33 @@
               const details = strategyCard?.querySelector('p:nth-of-type(1)');
               if (summary) summary.textContent = 'working';
               if (details) details.textContent = 'Waiting for fresh worker output…';
-              await request('issue-strategy-start', {
-                issueId: id,
-                basis: issue.strategy.basis,
-                strategy: $('issue-strategy').value,
-                solRounds: rounds,
-                approved: true,
-                operation: review ? 'review' : 'work',
-                instruction: $('strategy-instruction').value,
-              });
-              $('strategy-feedback').textContent = 'Accepted. The issue is working in its owning chat.';
+              try {
+                const accepted = await request('issue-strategy-start', {
+                  issueId: id,
+                  basis: issue.strategy.basis,
+                  strategy: $('issue-strategy').value,
+                  solRounds: rounds,
+                  approved: true,
+                  operation: review ? 'review' : 'work',
+                  instruction: $('strategy-instruction').value,
+                });
+                progressRequests.set(id, {
+                  ...progressRequests.get(id),
+                  pending: false,
+                  expectedRunId: accepted.runId,
+                });
+                $('strategy-feedback').textContent = 'Request sent; waiting for updated progress.';
+              } catch (error) {
+                progressRequests.set(id, {
+                  ...progressRequests.get(id),
+                  pending: false,
+                  error: true,
+                  message: 'Continue could not be confirmed: ' + error.message,
+                });
+                throw error;
+              } finally {
+                updateProgressView();
+              }
             });
         });
         document.querySelectorAll('[data-strategy-stop]').forEach((button) => {

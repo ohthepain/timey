@@ -2206,7 +2206,7 @@ test('input summary includes pending lifecycle questions and approvals', () => {
   );
 });
 
-test('lifecycle Progress is direct, shows inline questions and disables duplicate clicks during work', () => {
+test('lifecycle Progress is direct, delegates questions to Progress and disables duplicate clicks during work', () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const source = html.slice(
     html.indexOf('      const lifecycleDrafts ='),
@@ -2225,7 +2225,7 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     'approvals',
     'fileLinkUI',
     'visibleLifecycleStage',
-    source + ';return lifecyclePanel;'
+    source + ';return Object.assign(lifecyclePanel, { input: lifecycleInput });'
   )(
     screen,
     (value) => String(value || ''),
@@ -2248,8 +2248,9 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     updated: 'now',
     input: { type: 'questions', questions: [{ question: 'Which behavior do you want?' }] },
   };
-  assert.match(render(issue), /Which behavior do you want/);
-  assert.match(render(issue), /Send answer and continue/);
+  assert.match(render(issue), /Respond to the pending request in Progress/);
+  assert.match(render.input(issue, issue.lifecycle), /Which behavior do you want/);
+  assert.match(render.input(issue, issue.lifecycle), /Send answer and continue/);
   assert.doesNotMatch(render(issue), /data-lifecycle-start/);
   screen.lifecycle = [{ state: 'prototype', role: 'ready-to-prototype', name: 'Prototype' }];
   issue.state = 'prototype';
@@ -3421,6 +3422,8 @@ async function activityScreen(t) {
       '\n' +
       readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
+      readFileSync(resolve('scripts/factory-ui/issue-progress-ui.js'), 'utf8') +
+      '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
@@ -3617,7 +3620,7 @@ test('failed approval shows the error and restores an enabled button for retry',
   assert.match(window.document.getElementById('error').textContent, /Approval could not be saved/);
 });
 
-test('publication failures stay beside both approval controls through rendering and clear on explicit retry', async (t) => {
+test('publication failures stay beside the single Progress approval control through rendering and clear on explicit retry', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   snapshot.conversation = { issueId: '20261022-one', messages: [] };
   snapshot.issues[0].lifecycle = {
@@ -3641,7 +3644,7 @@ test('publication failures stay beside both approval controls through rendering 
   };
   window.screenTest.show(snapshot);
   const buttons = () => [...window.document.querySelectorAll('[data-lifecycle-answer]')];
-  assert.equal(buttons().length, 2);
+  assert.equal(buttons().length, 1);
   buttons()[0].click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   for (const button of buttons()) {
@@ -3650,15 +3653,15 @@ test('publication failures stay beside both approval controls through rendering 
     assert.match(button.nextElementSibling.textContent, /Reload this page/);
   }
   window.screenTest.show(snapshot);
-  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
-  buttons()[1].click();
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 1);
+  buttons()[0].click();
   buttons()[0].click();
   assert.equal(posts, 2, 'Only the explicit retry sends another request');
   assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
   assert.ok(buttons().every((button) => button.disabled));
   retry({ ok: false, json: async () => ({ error: 'Publication is unavailable.' }) });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 1);
   snapshot.issues[0].lifecycle.updated = 'replacement-request';
   window.screenTest.show(snapshot);
   assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
@@ -4789,8 +4792,8 @@ test('a real pending question stays prominent even while its issue chat is conne
     events: [],
   };
   window.screenTest.show(snapshot);
-  const panel = window.document.querySelector('.lifecycle-progress');
-  assert.match(panel.textContent, /Your input is needed/);
+  const panel = window.document.querySelector('[data-view-id^="issue-progress-"]');
+  assert.match(panel.textContent, /waiting for you/);
   assert.match(panel.textContent, /Which behavior should be preserved/);
   assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
 });
@@ -4911,6 +4914,7 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
     new Promise((resolve) => {
       finish = resolve;
     });
+  window.updateProgressView = () => {};
   window.eval('var progressRequests = new Map(); var data = {}; ' + source);
   const button = window.document.querySelector('button');
   const pending = window.startIssueProgress({ id: 'one', state: 'in-progress' });
@@ -5160,4 +5164,26 @@ test('strategy acceptance reuses exact saved checks without a legacy final-revie
   const accepted = service.snapshot().issues[0].accepted_result;
   assert.equal(accepted.revision, checked.head);
   assert.ok(accepted.evidence.some((entry) => entry.source === result.verification_summary));
+});
+
+test('retained output history is authenticated, read-only and restricted to saved runs', async (t) => {
+  const { service } = fixture(t);
+  service.store.runs.push({ id: 'retained-one' });
+  mkdirSync(service.store.directory, { recursive: true });
+  const log =
+    JSON.stringify({
+      method: 'item/completed',
+      params: { item: { type: 'agentMessage', text: 'Earlier public output' } },
+    }) + '\n';
+  writeFileSync(join(service.store.directory, 'retained-one.jsonl'), log);
+  const before = JSON.stringify(service.store.runs);
+  const { url, cookie } = await startFactoryHttp(t, service);
+  assert.equal((await fetch(url + '/api/output-history?id=retained-one')).status, 400);
+  const response = await fetch(url + '/api/output-history?id=retained-one', { headers: { cookie } });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).events[0].params.item.text, 'Earlier public output');
+  assert.equal((await fetch(url + '/api/output-history?id=../outside', { headers: { cookie } })).status, 400);
+  assert.equal((await fetch(url + '/issue-progress-ui.js', { headers: { cookie } })).status, 200);
+  assert.equal(JSON.stringify(service.store.runs), before);
+  assert.equal(readFileSync(join(service.store.directory, 'retained-one.jsonl'), 'utf8'), log);
 });

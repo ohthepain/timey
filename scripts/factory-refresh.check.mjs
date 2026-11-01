@@ -39,7 +39,7 @@ function refreshFixture(t) {
     'serverControlUI',
     'issueRoute',
     'coordinatorUI',
-    'let data,refreshing=false,refreshPending=false;\n' +
+    'let data,refreshing=false,refreshPending=false,progressUnavailable=false; function updateProgressView() {}\n' +
       html.slice(start, end).replace('!busy', '!isBusy()') +
       ';return refresh;'
   )(

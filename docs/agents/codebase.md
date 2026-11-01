@@ -213,6 +213,12 @@ existing chats for bounded corrections. The issue screen renders the complete
 “What happened” lifecycle event history with inline timestamps and role-transition
 labels. See the UI guide for consent boundaries.
 
+`factory-ui/issue-progress-ui.js` derives the default Progress tab from existing
+issue, run, input and conversation records. `index.html` renders that projection,
+reuses existing input handlers and overlays transient Continue acknowledgment until
+fresh evidence arrives. It maintains no separate workflow record.
+`factory-ui/output-history.mjs` reads earlier public JSONL events using stable byte
+cursors through the authenticated read-only output-history endpoint.
 `factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
 `approval-options.mjs` exposes native approval choices and binds replies to pending
 requests. `lifecycle-planning.mjs` separates actual human questions from unfinished
