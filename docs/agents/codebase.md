@@ -510,10 +510,11 @@ source hashes; current-context usage controls early rotation rather than billing
 or turn counts. Predecessor archival follows successful replacement attachment. `coordinator-ui.js` renders its dedicated page and compact activity strip.
 Only optional queue discussion uses its separate connection. Issue planning and
 reviews use the owning issue chat; queue scheduling uses no chat. Failed or interrupted
-operations retain their results and stop for manual attention. They do not trigger AI
+legacy operations retain their results and stop for manual attention. They do not trigger AI
 recovery reviews, automatic worker continuations, completion repair assignments or
 replanning when inputs change. Explicit retry controls retain their approval guards.
-Workers and independent reviews retain their existing connections.
+Workers and independent reviews retain their existing connections. The explicit
+strategy path below permits bounded blocker repair within its active owning run.
 Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.
 
 Factory verification recovery is covered by `scripts/factory-recovery.check.mjs`:
@@ -533,6 +534,14 @@ refresh and project-local credential configuration shared with worktree provider
 The issue screen shows strategy/status and collapses legacy roles into disabled
 history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
 failures, explicit starts and missing review capabilities.
+
+`strategy-repair.mjs` owns the active run's bounded repair ledger and infrastructure
+retries; `strategy-target.mjs` fetches/merges the configured target and preserves
+conflicts for the owner. `strategy-readiness.mjs` classifies PR blockers, observes
+pending CI and reconciles an externally merged candidate. The controller retains
+implementation and independent verification before later delivery can fail;
+repair turns reuse a completed owner's chat without replaying chat creation.
+The policy is recorded in each explicit start receipt and never wakes inactive work.
 
 `factory-ui/strategy-closure.mjs` validates saved strategy verification and step
 summaries against their recorded candidate and retains their evidence for explicit

@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 import { sign } from 'node:crypto';
 import { requireThat } from './common.mjs';
+import { infrastructureFailure, permissionFailure } from './strategy-repair.mjs';
 
 // Only paths and public IDs live on disk. Installation tokens stay in memory.
 export class GitHubAppCredentials {
@@ -33,10 +34,10 @@ export class GitHubAppCredentials {
         ...(body ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(30000),
       });
-    } catch {
-      throw Error('GitHub App authentication request failed.');
+    } catch (error) {
+      throw authenticationTransportFailure(error);
     }
-    requireThat(response.ok, `GitHub App authentication failed (HTTP ${response.status}).`);
+    assertAuthenticationResponse(response);
     try {
       return await response.json();
     } catch {
@@ -97,6 +98,21 @@ export class GitHubAppCredentials {
       });
     return this.pending;
   }
+}
+
+function authenticationTransportFailure(error) {
+  const cause = error.cause || error;
+  const failure = Error('GitHub App authentication request failed.');
+  failure.transient = infrastructureFailure(cause) || error.name === 'TimeoutError';
+  if (permissionFailure(cause)) failure.code = 'EACCES';
+  return failure;
+}
+
+function assertAuthenticationResponse(response) {
+  if (response.ok) return;
+  const failure = Error(`GitHub App authentication failed (HTTP ${response.status}).`);
+  failure.transient = [429, 500, 502, 503, 504].includes(response.status);
+  throw failure;
 }
 
 export function githubAppCredentials(root, repository) {

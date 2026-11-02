@@ -16,6 +16,10 @@ import { strategyPrompt } from './factory-ui/strategy-prompt.mjs';
 import { runSolLoop } from './factory-ui/strategy-review.mjs';
 import { saveConversationState } from './factory-ui/conversation-store.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
+import { infrastructureFailure, repairableBlocker, retryInfrastructure } from './factory-ui/strategy-repair.mjs';
+import { synchronizeStrategyTarget } from './factory-ui/strategy-target.mjs';
+import { gitFixture } from './git-fixture.mjs';
+import { validateSummary } from './factory-ui/checks.mjs';
 
 function fixture(t) {
   const { queue } = deliveryFixture(t);
@@ -29,6 +33,8 @@ function fixture(t) {
   t.after(() => service.close());
   service.ownServer = () => {};
   service.guard = () => [];
+  service.strategySyncTarget = async () => false;
+  service.strategyDelay = async () => {};
   let calls = 0,
     merges = 0,
     checks = 0;
@@ -44,12 +50,24 @@ function fixture(t) {
     assert.match(prompt, /No lifecycle roles or stage transitions/);
     assert.match(prompt, /Never push the target branch/);
     assert.equal(cwd, service.lifecycleRuns['20261025-one'].work.checkout);
-    if (!existsSync(join(cwd, 'change.js'))) {
+    const repairing = prompt.includes('Required repair attempt:');
+    if (repairing) {
+      writeFileSync(join(cwd, 'repair.js'), `export const attempt = ${calls};\n`);
+      git(cwd, 'add', 'repair.js');
+      git(cwd, 'commit', '-qm', 'repair blocker');
+    } else if (!existsSync(join(cwd, 'change.js'))) {
       writeFileSync(join(cwd, 'change.js'), 'export const changed = true;\n');
       git(cwd, 'add', 'change.js');
       git(cwd, 'commit', '-qm', 'issue implementation');
     }
-    return JSON.stringify({ outcome: 'completed', summary: 'Ready for handoff', pr: 12, remaining: [] });
+    return JSON.stringify({
+      outcome: 'completed',
+      summary: 'Ready for handoff',
+      pr: 12,
+      remaining: [],
+      repair: repairing ? { approach: `Repair approach ${calls}`, evidence: [] } : null,
+      blocker: null,
+    });
   };
   service.check = async (cwd) => {
     checks++;
@@ -115,7 +133,7 @@ test('Full Send uses the protected provider after checks and keeps acceptance se
   assert.equal(readQueue(f.queue.root).issues[0].state, f.issue.state);
 });
 
-test('failed checks preserve the candidate and stop without publication readiness, merge or retry', async (t) => {
+test('persistent failed checks stop after three repair approaches and preserve all evidence without merging', async (t) => {
   const f = fixture(t);
   f.service.check = async () => {
     throw Error('Required check failed');
@@ -125,9 +143,353 @@ test('failed checks preserve the candidate and stop without publication readines
   const record = f.service.lifecycleRuns[f.issue.id];
   assert.equal(record.status, 'blocked');
   assert.match(record.summary, /Required check failed/);
-  assert.equal(f.counts().calls, 1);
+  assert.equal(f.counts().calls, 4);
+  assert.match(record.summary, /three repair approaches/);
+  assert.equal(record.work.repairs[0].attempts.length, 3);
+  assert.ok(existsSync(f.service.store.runs[0].repairEvidence));
   assert.equal(f.counts().merges, 0);
   assert.equal(git(record.work.checkout, 'status', '--porcelain'), '');
+});
+
+test('verification failure returns real evidence to the same owning chat, enforces Fallow and verifies the repaired candidate', async (t) => {
+  const f = fixture(t);
+  const prompts = [];
+  const original = f.service.codex.turn;
+  f.service.codex.turn = async (thread, cwd, prompt, ...args) => {
+    prompts.push({ thread, prompt });
+    return original(thread, cwd, prompt, ...args);
+  };
+  let checks = 0;
+  const heads = [];
+  const log = join(f.queue.root, 'failed-check.log');
+  writeFileSync(log, 'actual failing test output');
+  f.service.check = async (cwd, _base, _folder, options) => {
+    assert.equal(options.auditPolicy, 'required');
+    heads.push(git(cwd, 'rev-parse', 'HEAD'));
+    if (++checks === 1)
+      throw Object.assign(Error('Inherited publication-controls test failed.'), {
+        verificationFailure: { logs: [log], summaries: [], blockerKey: 'publication-controls' },
+      });
+    return { head: heads.at(-1), passed: true };
+  };
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'merged', record.summary);
+  assert.equal(checks, 2);
+  assert.notEqual(heads[0], heads[1]);
+  assert.equal(prompts.length, 2);
+  assert.ok(prompts.every((entry) => entry.thread === 'owning-chat'));
+  assert.match(prompts[1].prompt, /Inherited publication-controls/);
+  assert.ok(prompts[1].prompt.includes(log));
+  assert.equal(record.work.repairs[0].attempts.length, 1);
+  assert.equal(record.work.blockerRepair.version, 1);
+  assert.equal(f.counts().merges, 1);
+});
+
+test('readiness conflicts are repaired and old verification is never used for the changed candidate', async (t) => {
+  const f = fixture(t);
+  const provider = f.service.strategyProvider();
+  const ready = provider.ready;
+  let reads = 0;
+  provider.ready = (...args) => {
+    if (++reads === 1) throw repairableBlocker('target-conflict', 'Resolve target merge conflicts.');
+    return ready(...args);
+  };
+  f.service.strategyProvider = () => provider;
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'handed-off');
+  assert.deepEqual(f.counts(), { calls: 2, checks: 2, merges: 0 });
+});
+
+test('pending CI is observed without spending a code repair or repeating candidate verification', async (t) => {
+  const f = fixture(t);
+  const provider = f.service.strategyProvider();
+  const ready = provider.ready;
+  let observations = 0;
+  provider.ready = (...args) => {
+    if (++observations < 3) throw Object.assign(Error('PR checks are pending.'), { code: 'STRATEGY_PENDING' });
+    return ready(...args);
+  };
+  f.service.strategyProvider = () => provider;
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'handed-off');
+  assert.deepEqual(f.counts(), { calls: 1, checks: 1, merges: 0 });
+  assert.equal(observations, 3);
+});
+
+test('a timed-out merge is reconciled before retrying and cannot perform a second merge', async (t) => {
+  const f = fixture(t);
+  const provider = f.service.strategyProvider();
+  const ready = provider.ready;
+  let merged = false;
+  let writes = 0;
+  provider.ready = (...args) => ({
+    ...ready(...args),
+    ...(merged ? { merged: true, merge: { url: 'merged-pr', revision: 'merged' } } : {}),
+  });
+  provider.merge = () => {
+    writes++;
+    merged = true;
+    throw Object.assign(Error('ETIMEDOUT after merge'), { code: 'ETIMEDOUT' });
+  };
+  f.service.strategyProvider = () => provider;
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'merged', record.summary);
+  assert.equal(record.work.merge.revision, 'merged');
+  assert.equal(writes, 1);
+  assert.equal(f.counts().checks, 1);
+});
+
+test('repeating an approach stops and explicit Continue retains history without waking inactive work', async (t) => {
+  const f = fixture(t);
+  const owner = f.service.codex.turn;
+  f.service.codex.turn = async (...args) => {
+    const result = JSON.parse(await owner(...args));
+    if (result.repair) result.repair.approach = 'The same approach';
+    return JSON.stringify(result);
+  };
+  f.service.check = async () => {
+    throw Error('Required check failed');
+  };
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.match(record.summary, /repeated an earlier repair approach/);
+  const previous = JSON.stringify(record.work.repairs);
+  assert.equal(f.service.lifecycleTasks.size, 0);
+  f.service.check = async (cwd) => ({ head: git(cwd, 'rev-parse', 'HEAD'), passed: true });
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'handed-off');
+  assert.equal(JSON.stringify(record.work.repairs), previous);
+});
+
+test('strict strategy evidence rejects a previously skipped audit and a passing warning verdict', (t) => {
+  const { input } = deliveryFixture(t);
+  const summary = JSON.parse(readFileSync(input.verification[0]));
+  const fallow = summary.checks.find((check) => check.name === 'fallow');
+  const options = { auditPolicy: 'required' };
+  validateSummary(summary, summary.base, summary.snapshot_tree, options);
+  fallow.skipped = true;
+  fallow.command = ['skipped'];
+  assert.throws(() => validateSummary(summary, summary.base, summary.snapshot_tree, options), /enforced Fallow/);
+  delete fallow.skipped;
+  const raw = JSON.parse(readFileSync(fallow.log, 'utf8'));
+  raw.verdict = 'warn';
+  raw.attribution.gate = 'new-only';
+  raw.attribution.complexity_introduced = 1;
+  writeFileSync(fallow.log, JSON.stringify(raw));
+  assert.throws(() => validateSummary(summary, summary.base, summary.snapshot_tree, options), /raw Fallow evidence/);
+});
+
+test('a repair with no committed change stops without repeating unchanged checks', async (t) => {
+  const f = fixture(t);
+  const owner = f.service.codex.turn;
+  f.service.codex.turn = async (thread, cwd, prompt, ...args) =>
+    prompt.includes('Required repair attempt:')
+      ? JSON.stringify({
+          outcome: 'completed',
+          summary: 'No change',
+          pr: 12,
+          remaining: [],
+          repair: { approach: 'Observe again', evidence: [] },
+        })
+      : owner(thread, cwd, prompt, ...args);
+  let checks = 0;
+  f.service.check = async () => {
+    checks++;
+    throw Error('Required check failed');
+  };
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.match(f.service.lifecycleRuns[f.issue.id].summary, /no committed source change/);
+  assert.equal(checks, 1);
+});
+
+test('explicit permission denial stops immediately without repair or infrastructure retries', async (t) => {
+  const f = fixture(t);
+  let checks = 0;
+  f.service.check = async () => {
+    checks++;
+    throw Object.assign(Error('Permission denied by the user'), { code: 'EACCES' });
+  };
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.match(f.service.lifecycleRuns[f.issue.id].summary, /Permission denied/);
+  assert.equal(f.counts().calls, 1);
+  assert.equal(checks, 1);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].work.repairs, undefined);
+});
+
+test('an empty repair commit cannot masquerade as source progress or trigger unchanged verification', async (t) => {
+  const f = fixture(t);
+  const owner = f.service.codex.turn;
+  f.service.codex.turn = async (thread, cwd, prompt, ...args) => {
+    if (!prompt.includes('Required repair attempt:')) return owner(thread, cwd, prompt, ...args);
+    git(cwd, 'commit', '--allow-empty', '-qm', 'empty repair');
+    return JSON.stringify({
+      outcome: 'completed',
+      summary: 'Empty commit',
+      pr: 12,
+      remaining: [],
+      repair: { approach: 'Empty commit', evidence: [] },
+    });
+  };
+  let checks = 0;
+  f.service.check = async () => {
+    checks++;
+    throw Error('Required check failed');
+  };
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.match(f.service.lifecycleRuns[f.issue.id].summary, /no committed source change/);
+  assert.equal(checks, 1);
+});
+
+test('temporary infrastructure failures receive only three delayed retries and never retry an explicit denial', async (t) => {
+  const f = fixture(t);
+  const record = { issueId: f.issue.id, events: [], work: {} };
+  const delays = [];
+  f.service.strategyDelay = async (ms) => delays.push(ms);
+  let calls = 0;
+  await assert.rejects(
+    retryInfrastructure(f.service, record, async () => {
+      calls++;
+      throw Error('HTTP 503');
+    }),
+    /503/
+  );
+  assert.equal(calls, 4);
+  assert.deepEqual(delays, [1000, 2000, 4000]);
+  calls = 0;
+  await assert.rejects(
+    retryInfrastructure(f.service, record, async () => {
+      calls++;
+      throw Error('HTTP 403 permission denied');
+    }),
+    /403/
+  );
+  assert.equal(calls, 1);
+});
+
+test('common DNS, connection and Git transport failures are retryable without disguising denied access', () => {
+  for (const message of [
+    'ENOTFOUND api.github.com',
+    'ECONNREFUSED',
+    'fatal: Could not resolve host: github.com',
+    'Failed to connect to github.com port 443',
+    'Operation timed out',
+  ])
+    assert.equal(infrastructureFailure(Error(message)), true, message);
+  assert.equal(infrastructureFailure(Object.assign(Error('EACCES permission denied'), { transient: true })), false);
+});
+
+test('GitHub App authentication preserves retryable transport failures while rejecting actual access denials', async (t) => {
+  const f = fixture(t);
+  const record = { issueId: f.issue.id, events: [], work: {} };
+  let requests = 0;
+  const auth = new GitHubAppCredentials(
+    { appId: 1, repository: 'fixture/timey', privateKey: 'unused' },
+    'fixture/timey',
+    {
+      request: async () => {
+        requests++;
+        throw Object.assign(Error('fetch failed'), { cause: Object.assign(Error('timeout'), { code: 'ETIMEDOUT' }) });
+      },
+    }
+  );
+  await assert.rejects(
+    retryInfrastructure(f.service, record, () => auth.api('app', 'unused')),
+    /authentication request failed/
+  );
+  assert.equal(requests, 4);
+  requests = 0;
+  auth.request = async () => {
+    requests++;
+    return { ok: false, status: 403 };
+  };
+  await assert.rejects(
+    retryInfrastructure(f.service, record, () => auth.api('app', 'unused')),
+    /HTTP 403/
+  );
+  assert.equal(requests, 1);
+  auth.request = async () => ({ ok: false, status: 503 });
+  await assert.rejects(auth.api('app', 'unused'), (error) => error.transient === true);
+});
+
+test('repair after an externally merged PR uses a linked follow-up branch without replacing completed work', async (t) => {
+  const f = fixture(t);
+  const original = f.service.codex.turn;
+  f.service.codex.turn = async (...args) => {
+    const result = JSON.parse(await original(...args));
+    if (args[2].includes('Required repair attempt:')) result.pr = 13;
+    return JSON.stringify(result);
+  };
+  const provider = f.service.strategyProvider();
+  provider.inspect = (number) =>
+    number === 12
+      ? {
+          merged_at: '2026-11-01T00:00:00Z',
+          html_url: 'https://github.com/fixture/timey/pull/12',
+          head: { ref: f.service.lifecycleRuns[f.issue.id].work.branch },
+          base: { ref: 'main' },
+        }
+      : {};
+  f.service.strategyProvider = () => provider;
+  let checks = 0;
+  f.service.check = async (cwd) => {
+    if (++checks === 1) throw Error('Required check failed');
+    return { head: git(cwd, 'rev-parse', 'HEAD'), passed: true };
+  };
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'handed-off', record.summary);
+  assert.match(record.work.branch, /-repair-/);
+  assert.equal(record.work.pr, 13);
+  assert.equal(record.work.followup.originalPr, 12);
+  assert.equal(record.work.followup.status, 'ready');
+  assert.ok(existsSync(join(record.work.checkout, 'change.js')));
+});
+
+test('real target synchronization fetches and merges updates and preserves merge conflicts for the owner', async (t) => {
+  const upstream = gitFixture(t, 'strategy-upstream-');
+  writeFileSync(join(upstream.root, 'feature.js'), 'export const value = 1;\n');
+  upstream.git('add', '.');
+  upstream.git('commit', '-qm', 'base');
+  upstream.git('branch', '-M', 'main');
+  const checkout = gitFixture(t, 'strategy-sync-');
+  writeFileSync(join(checkout.root, '.git/info/exclude'), '.issues/\n');
+  checkout.git('remote', 'add', 'origin', upstream.root);
+  checkout.git('fetch', 'origin');
+  checkout.git('checkout', '-b', 'codex/issue', 'origin/main');
+  const service = { root: checkout.root, lifecycleRuns: {} };
+  const record = {
+    issueId: 'sync',
+    events: [],
+    work: { checkout: checkout.root, branch: 'codex/issue', config: { remote: 'origin', target: 'main' } },
+  };
+  writeFileSync(join(upstream.root, 'target.js'), 'export const target = true;\n');
+  upstream.git('add', '.');
+  upstream.git('commit', '-qm', 'target advances');
+  assert.equal(await synchronizeStrategyTarget(service, record), true);
+  assert.equal(await synchronizeStrategyTarget(service, record), false);
+  assert.ok(existsSync(join(checkout.root, 'target.js')));
+  writeFileSync(join(checkout.root, 'feature.js'), 'export const value = 2;\n');
+  checkout.git('add', '.');
+  checkout.git('commit', '-qm', 'issue side');
+  writeFileSync(join(upstream.root, 'feature.js'), 'export const value = 3;\n');
+  upstream.git('add', '.');
+  upstream.git('commit', '-qm', 'target side');
+  await assert.rejects(synchronizeStrategyTarget(service, record), (error) => error.code === 'target-conflict');
+  assert.ok(checkout.git('ls-files', '-u').includes('feature.js'));
+  assert.equal(checkout.git('branch', '--show-current'), 'codex/issue');
+  assert.equal(upstream.git('show', 'main:feature.js'), 'export const value = 3;');
 });
 
 test('Fixed closure shows the saved strategy failure while another closure reason preserves unfinished work', async (t) => {
@@ -282,6 +644,36 @@ test('live readiness rejects draft, changed head, queue enrollment, failing chec
   f.change({ queued: false, clean: false });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /unfinished checks/);
 });
+
+test('readiness reconciles an externally merged candidate using the latest check attempt without hiding other checks', async () => {
+  const f = providerFixture();
+  Object.assign(f.pr, { merged_at: 'now', merge_commit_sha: 'merged', state: 'closed', mergeable: false });
+  const gh = f.provider.gh;
+  const checks = [
+    {
+      __typename: 'CheckRun',
+      name: 'test',
+      workflowName: 'Verify',
+      status: 'COMPLETED',
+      conclusion: 'FAILURE',
+      startedAt: '2026-11-01T00:00:00Z',
+    },
+    {
+      __typename: 'CheckRun',
+      name: 'test',
+      workflowName: 'Verify',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: '2026-11-02T00:00:00Z',
+    },
+  ];
+  f.provider.gh = (args) => (args[0] === 'pr' ? JSON.stringify({ statusCheckRollup: checks }) : gh(args));
+  const result = await f.provider.ready(f.pr, 'codex/issue-one', 'head');
+  assert.equal(result.merged, true);
+  assert.equal(result.merge.revision, 'merged');
+  checks.push({ __typename: 'CheckRun', name: 'security', status: 'COMPLETED', conclusion: 'FAILURE' });
+  await assert.rejects(f.provider.ready(f.pr, 'codex/issue-one', 'head'), (error) => error.code === 'ci-failure');
+});
 test('Full Send refuses unsafe protection and uses an exact-head merge without bypass or auto-merge', async () => {
   const f = providerFixture();
   f.change({ strict: false });
@@ -311,7 +703,10 @@ test('owner-authored PR respects its verified ruleset review bypass without bypa
   f.change({ strict: true, admin: false });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /administrators/);
   f.change({ admin: true, reviewDecision: 'CHANGES_REQUESTED' });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
+  await assert.rejects(
+    () => f.provider.ready(f.pr, 'codex/issue-one', 'head'),
+    (error) => error.code === 'review-findings'
+  );
   f.change({ reviewDecision: 'REVIEW_REQUIRED' });
   await assert.rejects(
     () => f.provider.ready({ ...f.pr, user: { login: 'another' } }, 'codex/issue-one', 'head'),
@@ -416,6 +811,31 @@ test('Sol budget exhaustion retains findings and stops rather than inventing app
   assert.equal(reviews, 1);
   assert.equal(f.counts().merges, 0);
   assert.ok(existsSync(record.work.review.ledger));
+});
+
+test('Sol findings in a newly created issue chat resume its owner rather than replaying chat startup', async (t) => {
+  const f = fixture(t);
+  const start = f.service.codex.start;
+  f.service.codex.start = async (...args) => (args[1] === 'read-only' ? 'sol-review-chat' : start(...args));
+  const call = f.service.codex.call;
+  f.service.codex.call = async (method, ...args) =>
+    method === 'model/list' ? { data: [{ id: 'gpt-6.1-sol' }] } : call(method, ...args);
+  const owner = f.service.codex.turn;
+  f.service.codex.turn = async (thread, ...args) =>
+    thread === 'sol-review-chat'
+      ? JSON.stringify({
+          verdict: 'changes',
+          summary: 'A scoped finding',
+          findings: [{ id: 'S1', severity: 'should', detail: 'Fix it.' }],
+        })
+      : owner(thread, ...args);
+  startIssueStrategy(f.service, { ...f.input(), solRounds: 1 });
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.match(record.summary, /round budget/);
+  assert.equal(f.counts().calls, 2);
+  assert.equal(record.workThreadId, 'owning-chat');
+  assert.equal(f.counts().merges, 0);
 });
 
 test('No new actions pauses a Full Send before merge even if readiness just became available', async (t) => {

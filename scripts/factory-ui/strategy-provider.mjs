@@ -3,6 +3,8 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
+import { inspectReadiness } from './strategy-readiness.mjs';
+import { infrastructureFailure, repairableBlocker } from './strategy-repair.mjs';
 
 // GitHub enforces freshness through strict required checks. A verified ruleset
 // review bypass never bypasses CI or replaces server enforcement with a local lock.
@@ -31,11 +33,7 @@ export class StrategyProvider {
       });
       return stdout.trim();
     } catch (error) {
-      if (!session) throw error;
-      const status = /HTTP (\d{3})/.exec(error.stderr || '')?.[1];
-      const safe = Error('Factory GitHub App request failed' + (status ? ` (HTTP ${status})` : '') + '.');
-      safe.githubStatus = Number(status) || null;
-      throw safe;
+      throw githubFailure(error, session);
     }
   }
 
@@ -44,68 +42,7 @@ export class StrategyProvider {
     return JSON.parse(await this.gh(['api', `repos/${this.config.repository}/pulls/${number}`]));
   }
   async ready(pr, branch, head) {
-    requireThat(
-      pr.base?.repo?.full_name === this.config.repository && pr.head?.repo?.full_name === this.config.repository,
-      'The PR belongs to a different repository.'
-    );
-    requireThat(
-      pr.base.ref === this.config.target && pr.head.ref === branch && pr.head.sha === head,
-      'The PR branch, target or candidate changed. No handoff or merge was recorded.'
-    );
-    requireThat(
-      pr.state === 'open' && !pr.merged_at && !pr.draft && pr.mergeable === true,
-      'The issue PR must be open, non-draft and mergeable.'
-    );
-    requireThat(!pr.auto_merge, 'Disable auto-merge before Full Stop handoff.');
-    const [owner, name] = this.config.repository.split('/');
-    const enrollment = JSON.parse(
-      await this.gh([
-        'api',
-        'graphql',
-        '-f',
-        'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}',
-        '-f',
-        'owner=' + owner,
-        '-f',
-        'name=' + name,
-        '-F',
-        'number=' + pr.number,
-      ])
-    );
-    const live = enrollment.data?.repository?.pullRequest;
-    requireThat(
-      live && !live.autoMergeRequest && !live.mergeQueueEntry,
-      'Remove this PR from auto-merge and the merge queue before handoff.'
-    );
-    const view = JSON.parse(
-      await this.gh([
-        'pr',
-        'view',
-        String(pr.number),
-        '--repo',
-        this.config.repository,
-        '--json',
-        'reviewDecision,statusCheckRollup,mergeStateStatus',
-      ])
-    );
-    const reviewBypass = view.reviewDecision === 'REVIEW_REQUIRED' && (await this.canBypassOwnReview(pr));
-    requireThat(
-      view.reviewDecision !== 'CHANGES_REQUESTED' && (view.reviewDecision !== 'REVIEW_REQUIRED' || reviewBypass),
-      'The PR is waiting for required human review.'
-    );
-    requireThat(
-      view.mergeStateStatus === 'CLEAN' || (reviewBypass && view.mergeStateStatus === 'BLOCKED'),
-      'GitHub reports unfinished checks, conflicts or an out-of-date branch.'
-    );
-    requireThat(
-      (view.statusCheckRollup || []).every((check) =>
-        check.__typename === 'StatusContext'
-          ? check.state === 'SUCCESS'
-          : check.status === 'COMPLETED' && ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(check.conclusion)
-      ),
-      'PR checks are pending or failed. Their real results are retained.'
-    );
-    return { number: pr.number, url: pr.html_url, head, target: pr.base.sha, checks: view.statusCheckRollup };
+    return inspectReadiness(this, pr, branch, head, () => this.canBypassOwnReview(pr));
   }
   async canBypassOwnReview(pr) {
     const [owner] = this.config.repository.split('/');
@@ -220,4 +157,26 @@ export class StrategyProvider {
     );
     return { url: pr.html_url, revision: pr.merge_commit_sha };
   }
+}
+
+function githubStatus(error) {
+  return /HTTP (\d{3})/.exec(error.stderr || '')?.[1];
+}
+
+function githubFailure(error, session) {
+  const status = githubStatus(error);
+  if (status === '409')
+    return repairableBlocker(
+      'target-outdated',
+      'GitHub rejected the merge because its candidate or target changed. Fetch and merge the current target, then verify the repaired candidate.'
+    );
+  if (!session) return error;
+  return safeGitHubFailure(error, status);
+}
+
+function safeGitHubFailure(error, status) {
+  const safe = Error('Factory GitHub App request failed' + (status ? ` (HTTP ${status})` : '') + '.');
+  safe.githubStatus = Number(status) || null;
+  safe.transient = infrastructureFailure(error);
+  return safe;
 }

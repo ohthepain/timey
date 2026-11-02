@@ -98,24 +98,30 @@ retain strict validation and cannot infer empty scope from a saved tool report.
 ### Commit and step-completion checkpoints
 
 Before a commit, the pre-commit hook runs `pnpm run audit:staged`, which exports
-the staged snapshot for verification bookkeeping. **Fallow is skipped by default**
-so commits and CI `verify` are not blocked by audit findings. Set
+the staged snapshot for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
+Strategy candidate checks and CI enforce Fallow with
+`TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Their new findings, including
+warnings, must be repaired. Skipped or warning-bearing evidence cannot satisfy
+these strategy checks or be reused from the legacy cache. Set
 `TIMEY_FALLOW_ENFORCE=1` when you want the pinned Fallow audit to fail the hook,
 `audit:step`, or full `verify`. Before declaring an implementation step complete,
 including an uncommitted step, run `pnpm run audit:step -- --base <step-start-commit>`.
 Use the recorded starting revision, not the new HEAD after committing (which could
 hide that step's changes). Full `verify -- --base REF` still runs types, tests,
-build, and factory checks; only Fallow enforcement is opt-in. A successful audit
+build, and factory checks. Fallow enforcement is opt-in outside strategy and CI checks. A successful audit
 does not establish type/build/device success.
 
 A checkpoint fails on a nonzero Fallow process exit, a `fail` or `error` audit
 verdict, warning text on stderr, degraded analysis, missing/unsupported JSON, or a
-mismatched gate. A `warn` verdict with exit zero passes (introduced warn-severity
-findings are reported in evidence but do not block commits).
+mismatched gate. A `warn` verdict with exit zero passes only for legacy commands without
+`TIMEY_FALLOW_WARNINGS=error`; strict strategy/CI checks reject new warnings.
+The verifier uses `--no-cache` for Fallow so base/head analysis does not reuse an
+incompatible graph cache or produce cache-mismatch warnings. Analysis is unchanged.
 Inspect and fix findings, then rerun. Do not suppress warnings, add exclusions,
-weaken thresholds, or select a later base to make the checkpoint green. Findings
-outside the authorized scope remain explicit blockers for a human decision;
-record the failed evidence and say the step is incomplete.
+weaken thresholds, or select a later base to make the checkpoint green. An active strategy authorizes necessary blocker repairs outside the original
+feature under the [approved repair policy](../plans/autonomous-blocker-repair.md).
+Preserve product intent and record repair evidence. Other workflows retain their
+existing scope boundaries; actual human decisions and permission denials still stop.
 
 Summary evidence records the full resolved base, source HEAD, exported Git tree,
 changed files, checkpoint kind, actual command, raw log/JSON, reasons and pass/fail.
