@@ -1090,6 +1090,19 @@ normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
 
+The running-action count opens a list of connected actions and recent stopped
+work that can be resumed or skipped. Each entry shows its saved issue and current
+details, links to the issue and that run's output, and
+Stop, Restart, Skip, Pause issue and Steer controls. Stop interrupts an
+interruptible current response while retaining its saved work. Pause asks the
+issue to finish its current action before stopping later work; it does not
+interrupt the current response. Steer sends text to the exact active turn.
+Restart is available for stopped or failed work and continues its saved issue
+strategy or worker assignment within the existing scope. Skip cancels a stopped
+or interruptible worker assignment while retaining its checkout and conversation;
+it is disabled for an issue strategy whose approved checks and delivery would be
+discarded. Unavailable controls explain why they cannot run in the current state.
+
 **Restart server** in the header uses the same restart path as deployment and
 maintenance: it drains current work, permission replies, temporary chats and
 coordinator locks before handing the installed listener to a replacement on the
