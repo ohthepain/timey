@@ -975,7 +975,9 @@ Verification and commit operations continue to require current source checks.
 Run `pnpm factory:restart` from the selected checkout. It defaults to this checkout,
 this project and `http://127.0.0.1:52995`. It starts the current working folder as-is,
 including uncommitted WIP, and never runs tests, pulls code, merges branches or accepts
-an issue.
+an issue. Both `pnpm factory:restart` and its alias `pnpm factory:reset` load
+`.env` from the current working directory before starting; the replacement server
+inherits those environment settings. The `.env` file must exist.
 
 ```sh
 pnpm factory:restart

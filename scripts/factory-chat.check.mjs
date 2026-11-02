@@ -60,6 +60,11 @@ test('one issue conversation persists messages, role contributions and native ch
   await f.finish();
   assert.equal(conversationState(f.queue.root, f.input.issueId).threadId, 'persistent-issue-chat');
   assert.match(f.calls.find((call) => call.prompt).prompt, /Implementation result with actual proof/);
+  assert.match(f.calls.find((call) => call.prompt).prompt, /For this discussion turn only/);
+  assert.match(
+    f.calls.find((call) => call.prompt).prompt,
+    /this discussion restriction does not apply to that later assignment/
+  );
   f.service.issueChats.close();
   f.service.issueChats = createIssueChats(f.service, () => f.connection);
   await f.send('Continue our discussion.', 'second-message');

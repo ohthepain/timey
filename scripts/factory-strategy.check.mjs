@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
 import { strategyPrompt } from './factory-ui/strategy-prompt.mjs';
 import { runSolLoop } from './factory-ui/strategy-review.mjs';
+import { saveConversationState } from './factory-ui/conversation-store.mjs';
 
 function fixture(t) {
   const { queue } = deliveryFixture(t);
@@ -412,6 +413,34 @@ test('comments during strategy work save feedback without starting another write
   assert.equal(f.service.issueChats.connections.size, 0);
 });
 
+test('strategy execution replaces discussion-only instructions in the same writable chat', async (t) => {
+  const f = fixture(t);
+  saveConversationState(f.queue.root, f.issue.id, {
+    threadId: 'discussion-chat',
+    status: 'idle',
+  });
+  const resumes = [];
+  f.service.codex.start = async () => assert.fail('The existing issue chat must be reused.');
+  f.service.codex.resume = async (...args) => resumes.push(args);
+  const owner = f.service.codex.turn;
+  f.service.codex.turn = async (thread, cwd, prompt, ...args) => {
+    assert.equal(thread, 'discussion-chat');
+    assert.deepEqual(resumes.at(-1), [thread, cwd, 'workspace-write']);
+    assert.match(prompt, /Earlier discussion-only instructions apply only to their original turns/);
+    assert.match(prompt, /This is the explicit factory handler for implementation and PR operations/);
+    assert.match(prompt, /Backlog and empty lifecycle history do not block this authorized strategy/);
+    assert.match(prompt, /Never override an actual sandbox restriction or permission denial/);
+    return owner(thread, cwd, prompt, ...args);
+  };
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'handed-off', record.summary);
+  assert.equal(record.workThreadId, 'discussion-chat');
+  assert.equal(f.counts().calls, 1);
+  assert.equal(f.counts().merges, 0);
+});
+
 test('Reply and continue explicitly resumes the same strategy and owning chat', async (t) => {
   const f = fixture(t);
   startIssueStrategy(f.service, f.input());
@@ -509,7 +538,8 @@ test('installation credentials can be loaded from server environment settings', 
     }
   });
   process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID = '5';
-  process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----';
+  process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY =
+    '-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----';
   process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID = '9';
   const credentials = githubAppCredentials('/tmp/project', 'fixture/timey');
   assert.equal(credentials.config.appId, 5);

@@ -7,6 +7,13 @@ deployment, data deletion, unrelated changes, human acceptance or issue closure.
 Existing reports, approvals, contributions, branches and history remain evidence;
 starting or refreshing the UI does not migrate or launch them.
 
+Discussion-only restrictions apply to their individual turns. An explicit strategy
+Start/Continue resumes the same owning chat with workspace-write access and an
+execution assignment that replaces earlier discussion-only instructions for the
+authorized scope. The assignment must still respect actual sandbox restrictions
+and permission denials. Backlog labels and empty lifecycle history do not require
+another handler or fresh feedback before authorized strategy work can begin.
+
 Each issue has one owning work chat and branch. Investigation, implementation,
 checks and review are activities within the assignment, not separately planned
 roles. Starting records human authorization of the displayed issue scope, linked

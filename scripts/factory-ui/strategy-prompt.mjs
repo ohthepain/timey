@@ -11,6 +11,8 @@ export const strategyResultSchema = {
 };
 export function strategyPrompt(root, issue, work, instruction = '') {
   return `Own this ONE issue from its current saved work to a merge-ready PR. No lifecycle roles or stage transitions.
+This is the explicit factory handler for implementation and PR operations in this issue's existing owning chat. Earlier discussion-only instructions apply only to their original turns; this execution assignment supersedes them for the work authorized below. The handler resumes this turn with workspace-write access in the working checkout. Use the current tools and permission policy, not earlier assistant claims about read-only access. Never override an actual sandbox restriction or permission denial; request needed access through the available approval flow and report the concrete failed operation if access remains unavailable. Do not refuse solely because an earlier discussion turn was read-only or tell the person to move to another chat or invoke a handler: this is that handler.
+Backlog and empty lifecycle history do not block this authorized strategy. Start/Continue and the saved authorization below authorize the selected work; no new feedback or lifecycle transition is required merely to begin or resume it. Read the current issue, saved answers and existing checkout before deciding what remains.
 Strategy: ${work.strategy}. ${work.strategy === 'full-stop' ? 'Never merge or enable auto-merge.' : 'The server alone performs the protected merge; do not merge or enable auto-merge yourself.'}
 Human scope/strategy authorization: ${work.receipt}. Issue report: ${root}/.issues/${issue.id}.md.
 Working checkout: ${work.checkout}; branch: ${work.branch}; original base: ${work.base}.

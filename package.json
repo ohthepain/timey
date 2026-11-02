@@ -31,7 +31,7 @@
     "factory:ui": "node scripts/factory-ui.mjs",
     "test:workflow": "node --test scripts/factory-workflow.check.mjs",
     "factory:deploy": "node scripts/factory-deploy.mjs",
-    "factory:restart": "node scripts/factory-restart.mjs",
+    "factory:restart": "node --env-file=.env scripts/factory-restart.mjs",
     "test:chat": "node --test scripts/factory-chat.check.mjs scripts/factory-native-chat.check.mjs",
     "test:browser": "node scripts/factory-browser.mjs"
   },
