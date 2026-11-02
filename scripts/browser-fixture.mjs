@@ -6,6 +6,7 @@ import { join } from 'node:path';
 export function browserFixture(root) {
   const lifecycle = [
     ['ready-for-grilling', 'backlog', 'qa', 'Clarify'],
+    ['ready-to-close', 'final', 'closed', 'Final review'],
     ['closed', 'closed', '—', 'Closed'],
     ['custom', 'qa', 'closed', 'QA'],
   ].map(([role, state, next, name]) => ({ role, state, next, name, exit: 'Fixture stage' }));

@@ -2630,7 +2630,9 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
 });
 
 test('direct closure exposes the exact blocker and enables retry without a model call', async (t) => {
-  const { window } = await activityScreen(t);
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].state = 'final';
+  window.screenTest.show(snapshot);
   window.fetch = async () => ({
     ok: false,
     json: async () => ({ error: 'Manual observation timing-check still needs a result.' }),

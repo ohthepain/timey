@@ -8,8 +8,9 @@ export default async function closeBrowserChecks(page) {
   await page.route('**/api/queue?**', async (route) => {
     const response = await route.fetch();
     const snapshot = await response.json();
+    const issue = snapshot.issues.find((entry) => entry.id === 'b');
+    if (!closed) Object.assign(issue, { state: 'final', stage: 'Final review' });
     if (closed) {
-      const issue = snapshot.issues.find((entry) => entry.id === 'b');
       Object.assign(issue, { state: 'closed', stage: 'Closed', closure: { reason: 'fixed', label: 'Fixed' } });
     }
     await route.fulfill({ json: snapshot });
