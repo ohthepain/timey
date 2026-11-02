@@ -59,6 +59,11 @@ expiry, and are passed only to the provider's `gh` subprocesses. Personal Git an
 CLI logins remain separate; worker publication is unchanged. Worktree providers
 use the owning project's credentials, not a worktree-local configuration. Failed
 app authentication stops rather than falling back to the personal login.
+Temporary connection failures while fetching or reading an authentication response,
+including timeouts and malformed JSON, use the strategy's bounded infrastructure
+retries. Errors retain only the handshake stage and known failure category; response
+bodies, tokens and raw exception messages are never recorded. HTTP authentication
+and permission denials still stop immediately.
 
 The review ruleset grants the factory app PR-only bypass. The separate CI ruleset
 requires the GitHub Actions `test` check and up-to-date branches, with no factory

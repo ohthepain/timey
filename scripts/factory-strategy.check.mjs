@@ -422,6 +422,48 @@ test('GitHub App authentication preserves retryable transport failures while rej
   await assert.rejects(auth.api('app', 'unused'), (error) => error.transient === true);
 });
 
+test('GitHub App response-body failures retain safe diagnostics and bounded retries', async (t) => {
+  const f = fixture(t);
+  const record = { issueId: f.issue.id, events: [], work: {} };
+  for (const [error, diagnostic] of [
+    [Object.assign(Error('secret body'), { name: 'TimeoutError' }), 'timeout'],
+    [Object.assign(Error('secret body'), { cause: { code: 'UND_ERR_SOCKET' } }), 'connection interrupted'],
+    [new SyntaxError('secret body'), 'malformed JSON'],
+  ]) {
+    let requests = 0;
+    const auth = new GitHubAppCredentials(
+      { appId: 1, repository: 'fixture/timey', privateKey: 'unused' },
+      'fixture/timey',
+      {
+        request: async () => {
+          requests++;
+          return {
+            ok: true,
+            status: 201,
+            json: async () => {
+              throw error;
+            },
+          };
+        },
+      }
+    );
+    await assert.rejects(
+      retryInfrastructure(f.service, record, () => auth.api('app/installations/9/access_tokens', 'secret')),
+      (failure) => {
+        assert.equal(failure.transient, true);
+        assert.ok(failure.message.includes('installation token'));
+        assert.ok(failure.message.includes(diagnostic));
+        assert.doesNotMatch(failure.message, /secret/);
+        assert.equal(failure.cause, undefined);
+        return true;
+      }
+    );
+    assert.equal(requests, 4);
+    auth.request = async () => ({ ok: true, json: async () => ({ id: 1 }) });
+    assert.deepEqual(await auth.api('app', 'secret'), { id: 1 });
+  }
+});
+
 test('repair after an externally merged PR uses a linked follow-up branch without replacing completed work', async (t) => {
   const f = fixture(t);
   const original = f.service.codex.turn;
