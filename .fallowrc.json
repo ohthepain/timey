@@ -7,20 +7,10 @@
     "dupes": true
   },
   "duplicates": {
-    "ignore": [
-      "**/*.test.ts",
-      "**/*.test.tsx",
-      "scripts/**/*.check.mjs",
-      "scripts/**/*fixture*.mjs"
-    ]
+    "ignore": ["**/*.test.ts", "**/*.test.tsx", "scripts/**/*.check.mjs", "scripts/**/*fixture*.mjs"]
   },
   "health": {
-    "ignore": [
-      "**/*.test.ts",
-      "**/*.test.tsx",
-      "scripts/**/*.check.mjs",
-      "scripts/**/*fixture*.mjs"
-    ]
+    "ignore": ["**/*.test.ts", "**/*.test.tsx", "scripts/**/*.check.mjs", "scripts/**/*fixture*.mjs"]
   },
   "audit": {
     "gate": "new-only"
