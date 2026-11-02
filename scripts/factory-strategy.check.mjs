@@ -15,6 +15,7 @@ import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
 import { strategyPrompt } from './factory-ui/strategy-prompt.mjs';
 import { runSolLoop } from './factory-ui/strategy-review.mjs';
 import { saveConversationState } from './factory-ui/conversation-store.mjs';
+import { decisionBasis } from './factory-ui/recorded-result.mjs';
 
 function fixture(t) {
   const { queue } = deliveryFixture(t);
@@ -127,6 +128,45 @@ test('failed checks preserve the candidate and stop without publication readines
   assert.equal(f.counts().calls, 1);
   assert.equal(f.counts().merges, 0);
   assert.equal(git(record.work.checkout, 'status', '--porcelain'), '');
+});
+
+test('Fixed closure shows the saved strategy failure while another closure reason preserves unfinished work', async (t) => {
+  const f = fixture(t);
+  f.service.codex.turn = async () =>
+    JSON.stringify({
+      outcome: 'blocked',
+      summary: 'Opened PR #33, but the required GitHub test check failed.',
+      pr: 33,
+      remaining: ['test:factory passed 621/622 tests; publication-controls expected one control but found two.'],
+    });
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  const before = readFileSync(join(f.queue.root, '.issues', f.issue.id + '.md'), 'utf8');
+  const saved = JSON.stringify(record);
+  const calls = f.counts();
+  const queue = readQueue(f.queue.root);
+  const issue = queue.issues[0];
+  const basis = decisionBasis(queue, issue);
+  assert.throws(
+    () => f.service.decideIssue(issue.id, issue.state, 'close', basis),
+    (error) => {
+      assert.match(error.message, /PR #33/);
+      assert.match(error.message, /test:factory passed 621\/622/);
+      assert.match(error.message, /Close with reason/);
+      return true;
+    }
+  );
+  assert.equal(readFileSync(join(f.queue.root, '.issues', f.issue.id + '.md'), 'utf8'), before);
+  assert.equal(JSON.stringify(record), saved);
+  assert.deepEqual(f.counts(), calls, 'Closure must not run checks, AI work or merges.');
+  const closed = f.service.decideIssue(issue.id, issue.state, 'close', basis, 'Superseded by other work.', 'obsolete');
+  assert.equal(closed.state, 'closed');
+  const result = readQueue(f.queue.root).issues[0];
+  assert.equal(result.closure.reason, 'obsolete');
+  assert.equal(result.accepted_result, undefined);
+  assert.equal(JSON.stringify(record), saved);
+  assert.deepEqual(f.counts(), calls);
 });
 
 test('start requires current scope and explicit strategy permission; selecting or reading never runs work', (t) => {
