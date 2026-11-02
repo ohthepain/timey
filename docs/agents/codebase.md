@@ -128,6 +128,9 @@ The local queue/issue interface is `scripts/factory-ui.mjs`; its HTTP, CLI,
 human-input and result-checking modules are in `scripts/factory-ui/`. See
 [its operating guide](factory-ui.md). `scripts/factory-ui.check.mjs` exercises
 disposable queues, chat protocol fixtures and manual action boundaries.
+The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
+and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
+links routed by `scripts/factory-ui/index.html`.
 
 Current-stage recommendations and dispatch are in `scripts/factory-ui/next-action.mjs`
 and `progress.mjs`. `worker-history.mjs` reads the original worker through CLI RPC;
