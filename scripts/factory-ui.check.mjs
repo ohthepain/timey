@@ -2594,6 +2594,10 @@ test('closing retains a changed administrative task log without changing test ou
 
 test('direct closure gives immediate feedback, prevents duplicates, and confirms before conversation refresh finishes', async (t) => {
   const { window, snapshot } = await activityScreen(t);
+  assert.equal(window.document.querySelector('[data-issue-decision="close"]'), null);
+  snapshot.issues[0].state = 'final';
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelector('[data-issue-decision="close"]').textContent, 'Accept fix and close');
   let release,
     posts = 0,
     conversation = 0;
