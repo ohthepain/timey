@@ -19,6 +19,28 @@ export default async function strategyBrowserChecks(page) {
     const response = await route.fetch();
     const snapshot = await response.json();
     const issue = snapshot.issues.find((entry) => entry.id === 'b');
+    snapshot.lifecycle.push(
+      ...[
+        ['ready-to-prototype', 'prototype', 'Prototype'],
+        ['ready-to-fix', 'implement', 'Implement'],
+        ['ready-to-verify', 'verify', 'Verify'],
+        ['ready-for-commit', 'commit', 'Commit'],
+        ['ready-to-close', 'final', 'Final review'],
+      ].map(([role, state, name]) => ({ role, state, name, next: null, exit: 'Fixture stage' }))
+    );
+    issue.state = 'implement';
+    issue.stage = 'Implement';
+    snapshot.actions.push({
+      id: 'saved-implementation',
+      title: 'Saved implementation',
+      issues: ['b'],
+      kind: 'implement',
+      status: 'completed',
+      scope: 'Previously completed work',
+      reason: 'Retained for history',
+      merge: 'none',
+      evidence: 'Saved implementation evidence',
+    });
     Object.assign(issue.strategy, { status: 'blocked', runId: null, active: false });
     if (running) {
       const issue = snapshot.issues.find((entry) => entry.id === 'b');
@@ -73,7 +95,7 @@ export default async function strategyBrowserChecks(page) {
   )
     throw Error('Polling reset the pending strategy choices.');
   await continueButton.click();
-  await page.locator('#strategy-feedback').filter({ hasText: 'Sending request' }).waitFor();
+  await page.locator('#strategy-feedback').filter({ hasText: 'Starting' }).waitFor();
   if (!(await page.locator('[data-strategy-start]').isDisabled()))
     throw Error('Duplicate start was not disabled immediately.');
   release();
@@ -87,6 +109,7 @@ export default async function strategyBrowserChecks(page) {
     !submissions[0].approved
   )
     throw Error('Strategy consent or review choice was not submitted exactly.');
+  await page.getByRole('tab', { name: 'Issue output', exact: true }).click();
   const output = page.getByLabel('Live output for this issue', { exact: true });
   await output.waitFor({ state: 'visible', timeout: 3000 });
   if (!(await output.textContent()).includes('Strategy worker is implementing the issue.'))
@@ -103,8 +126,29 @@ export default async function strategyBrowserChecks(page) {
   if (legacy.length) throw Error('Strategy execution dispatched a lifecycle-role operation.');
   const history = page.getByText('Earlier lifecycle history and saved work', { exact: true });
   if (!(await history.isVisible())) throw Error('Saved lifecycle history is missing.');
+  await history.click();
+  const obsoleteNames = ['Prototype', 'Implement', 'Verify', 'Commit', 'Final review'];
+  const visibleSteps = await page.locator('.issue-steps .step-heading strong').allTextContents();
+  if (obsoleteNames.some((name) => visibleSteps.includes(name)))
+    throw Error('Removed lifecycle stages remain in issue history controls.');
+  if (
+    !visibleSteps.includes('Other work') ||
+    !(await page.locator('.issue-steps').textContent()).includes('Saved implementation')
+  )
+    throw Error('Saved work from a removed stage is no longer available in issue history.');
+  if (await page.locator('[data-lifecycle-start]').count())
+    throw Error('A removed lifecycle stage still offers stage-based progress controls.');
+  const issueStatus = await page.locator('.issue-title .badge').textContent();
+  if (obsoleteNames.includes(issueStatus))
+    throw Error('An issue in a removed stage still displays its lifecycle stage as the status.');
   const fieldset = page.locator('fieldset[disabled]');
   if ((await fieldset.count()) !== 1) throw Error('Legacy controls must be read-only history.');
+  await page.goto(new URL('/#/queue', page.url()).href);
+  const roleFilters = await page
+    .locator('[data-role-filter]')
+    .evaluateAll((boxes) => boxes.map((box) => box.getAttribute('aria-label')));
+  if (obsoleteNames.some((name) => roleFilters.includes(name)))
+    throw Error('Removed lifecycle stages remain as queue filters.');
   if (errors.length) throw Error(errors.join('; '));
   await page.screenshot({ path: 'issue-strategy.png', fullPage: false });
   await page.unroute('**/api/issue-strategy-start');
@@ -118,7 +162,8 @@ export default async function strategyBrowserChecks(page) {
       'immediate feedback',
       'no duplicate start',
       'no lifecycle dispatch',
-      'legacy history retained',
+      'removed stage controls hidden while saved history remains',
+      'queue filters and issue status hide removed stages',
       'issue channel visible and updates during strategy work',
     ],
   };

@@ -3,11 +3,12 @@ import { readRuntime } from './factory-ui/runtime.mjs';
 import { writeJson } from './factory-ui/common.mjs';
 
 // Deliberately exclude arbitrary response fields, bodies, headers and cookie values.
-export async function observeRuntime(url, expected) {
+export async function observeRuntime(url, expected, options = {}) {
   const http = [],
     start = Date.now();
+  const timeoutMs = options.timeoutMs ?? 10000;
   try {
-    const runtime = await readRuntime(url, (event) => http.push(event), true);
+    const runtime = await readRuntime(url, (event) => http.push(event), true, { timeoutMs });
     const mismatches = Object.keys(expected).filter((key) => runtime[key] !== expected[key]);
     return {
       ...attempt(start, expected, http),

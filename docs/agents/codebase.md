@@ -128,6 +128,9 @@ The local queue/issue interface is `scripts/factory-ui.mjs`; its HTTP, CLI,
 human-input and result-checking modules are in `scripts/factory-ui/`. See
 [its operating guide](factory-ui.md). `scripts/factory-ui.check.mjs` exercises
 disposable queues, chat protocol fixtures and manual action boundaries.
+The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
+and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
+links routed by `scripts/factory-ui/index.html`.
 
 Current-stage recommendations and dispatch are in `scripts/factory-ui/next-action.mjs`
 and `progress.mjs`. `worker-history.mjs` reads the original worker through CLI RPC;
@@ -213,6 +216,12 @@ existing chats for bounded corrections. The issue screen renders the complete
 “What happened” lifecycle event history with inline timestamps and role-transition
 labels. See the UI guide for consent boundaries.
 
+`factory-ui/issue-progress-ui.js` derives the default Progress tab from existing
+issue, run, input and conversation records. `index.html` renders that projection,
+reuses existing input handlers and overlays transient Continue acknowledgment until
+fresh evidence arrives. It maintains no separate workflow record.
+`factory-ui/output-history.mjs` reads earlier public JSONL events using stable byte
+cursors through the authenticated read-only output-history endpoint.
 `factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
 `approval-options.mjs` exposes native approval choices and binds replies to pending
 requests. `lifecycle-planning.mjs` separates actual human questions from unfinished
@@ -274,8 +283,10 @@ sessions, issue context, expiry and one-use clicked intents),
 `discussion-codex.mjs` (dedicated ephemeral model process),
 `discussion-record.mjs` (guarded selected-output append), and `discussion-ui.js`
 (temporary panel DOM, excluded from generic draft restoration). `http.mjs` exposes
-only fixed discussion operations; `service.mjs` owns shutdown. These modules do
-not use worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).
+only fixed discussion operations; `service.mjs` owns shutdown. `skills.mjs` lists
+enabled Codex skills and validates selected names before dispatch; the shared
+slash selector and removable chips live in `issue-chat-ui.js`. These modules do not use
+worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).
 
 `factory-ui/site-review.mjs` owns Verify review targets, available browser choices,
 open receipts and guarded human results. `site-review-ui.js` renders Open site,
@@ -310,7 +321,8 @@ that history with role results and actual answer receipts without rewriting thos
 owners. `conversation-context.mjs` supplies selected-issue context and full timeline
 snapshots to execution/review turns. `issue-chat-runtime.mjs` keeps the conversational
 model read-only and separate from worker/review connections; `issue-chat-ui.js`
-preserves the composer while polling role updates. Stop uses the current message ID
+preserves the composer while polling role updates and dispatches validated selected
+skills. Stop uses the current message ID
 and the dedicated connection’s exact native turn; lifecycle and worker connections
 are outside its cancellation path. `scripts/factory-chat.check.mjs`
 checks persistence, provenance, routing, isolation, pagination and UI drafts.
@@ -430,8 +442,9 @@ Implement candidates reach pre-publication review without first requiring target
 integration. Stage advancement, custom-stage obligations and publication/merge
 permissions remain separate gates.
 
-`factory-ui/completion-repair.mjs` turns a completion finding into one durable,
-plan-linked repair recommendation. `issue-verification-start.mjs` validates both
+`factory-ui/completion-repair.mjs` defines the completion-review repair schema;
+retained repair work stays on the completion-review run until later commit-stage
+routing saves or launches it. `issue-verification-start.mjs` validates both
 verification-only starts and approved-plan repair starts against the issue branch.
 `factory-ui/run-stream.mjs` restores output after the last history checkpoint.
 Stream fragments append immediately to the existing per-run log; the full run
@@ -469,16 +482,12 @@ before the other behavior/type/build checks and records artifact hashes in the
 full summary. `factory-ui/checks.mjs`, candidate caching and issue delivery retain
 and validate this browser evidence against the same candidate tree.
 
-Combined Clarify is configured by `factory.config.json` and projected by
-`scripts/factory-ui/clarify-policy.mjs`. `data.mjs` keeps each report's original
-content and exposes legacy state aliases; `lifecycle-runs.mjs` recognizes existing
-assignments under either state name. `lifecycle-assessment.mjs` gathers context
-through the diagnostic branch of `lifecycle-review.mjs` before plan approval.
-`plan-adaptation.mjs` retains scope comparisons without replacing human approval;
-`scope-coverage.mjs` avoids treating ordinary source commits as new understanding.
-`capture-grilling.mjs` starts opt-in post-capture conversations through the existing
-persistent chat owner after durable creation; capture identities deduplicate retries.
-See [ADR 0006](../adr/0006-combine-clarification-and-investigation.md).
+Clarification and grilling remain human input independently of lifecycle position.
+`capture-routing.mjs` validates explicit lifecycle transitions while allowing
+projects to omit the optional `ready-for-grilling` role; old reports and custom
+stages retain their saved states. `capture-grilling.mjs` starts opt-in
+post-capture conversations through the existing persistent chat owner after durable
+creation; capture identities deduplicate retries. See [ADR 0001](../adr/0001-human-input-separate-from-lifecycle.md).
 
 `factory-ui/turn-failure.mjs` formats structured provider failures for both
 `codex.mjs` errors and retained `activity.mjs` output. Issue output shows explicit
@@ -518,8 +527,9 @@ receipts, reuse of the issue checkout/chat, and final candidate checks. It does 
 use lifecycle role planning or completion manifests. `strategy-prompt.mjs` bounds
 the owning assignment; `strategy-review.mjs` implements optional bounded Sol review;
 `strategy-provider.mjs` reads live PR readiness and enforces strict protected merges.
-It honors a verified review-ruleset bypass for owner-authored PRs while keeping
-classic strict CI protection enforced for administrators.
+It evaluates review bypass separately from non-bypassable strict CI rulesets.
+`github-app.mjs` owns repository-scoped installation authentication, in-memory token
+refresh and project-local credential configuration shared with worktree providers.
 The issue screen shows strategy/status and collapses legacy roles into disabled
 history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
 failures, explicit starts and missing review capabilities.
@@ -528,7 +538,8 @@ failures, explicit starts and missing review capabilities.
 summaries against their recorded candidate and retains their evidence for explicit
 acceptance. It does not run checks or contact the provider during closure.
 
-`factory-restart.mjs` is the external `pnpm factory:restart` launcher. It reuses
-saved verification and deployment transport/readiness probes, permits changed
-installed source, and restarts only an owned, drained listener. Its disposable
-server checks live in `factory-restart.check.mjs`.
+`factory-restart.mjs` is the external `pnpm factory:restart` launcher. It restarts
+the current checkout as-is, including WIP, and carries that source-changed state
+through readiness. It uses deployment transport/readiness probes and restarts only
+an owned, drained listener. Its disposable server checks live in
+`factory-restart.check.mjs`.

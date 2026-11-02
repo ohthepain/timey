@@ -33,7 +33,9 @@ export default async function refreshStateChecks(page) {
     await route.fulfill({ json: snapshot });
   });
   await page.route('**/api/issue-chat?**', (route) => route.fulfill({ json: conversation }));
-  await page.goto(new URL('/?refresh-regression=1#/issue/b', page.url()).href);
+  await page.goto(new URL('/#/issue/b', page.url()).href);
+  await page.getByRole('heading', { name: 'Older urgent issue', exact: true }).waitFor();
+  await page.locator('[data-chat-tab="issue"]').click();
   await page.waitForFunction(
     () => document.getElementById('error').textContent || document.querySelector('[aria-label="Issue conversation"]')
   );
@@ -85,7 +87,7 @@ export default async function refreshStateChecks(page) {
   async function assertReading(label) {
     const state = await page.evaluate(() => {
       const log = document.querySelector('[aria-label="Issue conversation"]');
-      const field = document.querySelector('[aria-label="Chat input"]');
+      const field = document.querySelector('[data-chat-panel="issue"] [aria-label="Chat input"]');
       return {
         top: log.scrollTop,
         draftTop: field.scrollTop,

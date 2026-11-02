@@ -15,15 +15,26 @@ function fixture(t) {
     service = new FactoryUI(f.queue.root),
     calls = [];
   t.after(() => service.close());
+  const skillPath = join(f.queue.root, 'sample-skill.md');
+  writeFileSync(skillPath, 'A sample Codex skill.\n');
   const connection = {
     close() {},
+    async ready() {},
+    async call(method) {
+      assert.equal(method, 'skills/list');
+      return {
+        data: [
+          { skills: [{ name: 'sample-skill', path: skillPath, enabled: true, shortDescription: 'A sample skill' }] },
+        ],
+      };
+    },
     async attach(_root, state, retain) {
       calls.push({ attach: state.threadId || 'new', sandbox: 'read-only' });
       retain({ threadId: state.threadId || 'persistent-issue-chat' });
       return 'persistent-issue-chat';
     },
-    async turn(id, root, prompt) {
-      calls.push({ id, root, prompt });
+    async turn(id, root, prompt, _schema, skills) {
+      calls.push({ id, root, prompt, skills });
       return 'I can see the saved lifecycle questions and your message.';
     },
   };
@@ -49,6 +60,11 @@ test('one issue conversation persists messages, role contributions and native ch
   await f.finish();
   assert.equal(conversationState(f.queue.root, f.input.issueId).threadId, 'persistent-issue-chat');
   assert.match(f.calls.find((call) => call.prompt).prompt, /Implementation result with actual proof/);
+  assert.match(f.calls.find((call) => call.prompt).prompt, /For this discussion turn only/);
+  assert.match(
+    f.calls.find((call) => call.prompt).prompt,
+    /this discussion restriction does not apply to that later assignment/
+  );
   f.service.issueChats.close();
   f.service.issueChats = createIssueChats(f.service, () => f.connection);
   await f.send('Continue our discussion.', 'second-message');
@@ -117,6 +133,51 @@ test('message IDs are idempotent and failed provider replies leave comments avai
   assert.equal(history.filter((m) => m.actor === 'human').length, 1);
   assert.ok(history.some((m) => m.kind === 'response-error'));
   assert.equal(f.service.issueChats.view(f.input.issueId).status, 'attention');
+});
+test('selected skills invoke through the issue thread and token-only messages are accepted', async (t) => {
+  const f = fixture(t);
+  await f.send('', 'skill-only', 'comment', { skills: ['sample-skill'] });
+  await f.finish();
+  const userMessage = conversationMessages(f.queue.root, f.input.issueId).find(
+    (message) => message.id === 'skill-only'
+  );
+  assert.deepEqual(userMessage.skills, ['sample-skill']);
+  assert.deepEqual(f.calls.find((call) => call.prompt).skills, [
+    { type: 'skill', name: 'sample-skill', path: join(f.queue.root, 'sample-skill.md') },
+  ]);
+  assert.equal((await f.send('', 'skill-only', 'comment', { skills: ['sample-skill'] })).repeated, true);
+  await assert.rejects(
+    f.send('yes', 'answer-with-skill', 'answer', { skills: ['sample-skill'] }),
+    /does not accept skill/
+  );
+  await f.send('', 'unknown-skill', 'comment', { skills: ['unknown'] });
+  await f.finish();
+  assert.ok(conversationMessages(f.queue.root, f.input.issueId).some((message) => message.kind === 'response-error'));
+});
+test('slash skill selector filters metadata and inserts a removable read-only composer token', async () => {
+  const dom = new JSDOM('<form><textarea></textarea><button type="submit">Send</button></form>', {
+    runScripts: 'outside-only',
+  });
+  dom.window.eval(readFileSync(join(process.cwd(), 'scripts/factory-ui/issue-chat-ui.js'), 'utf8'));
+  const form = dom.window.document.querySelector('form'),
+    draft = form.querySelector('textarea'),
+    skill = { name: 'practice', description: 'Practice timing', source: 'Personal', icon: '✦' },
+    composer = dom.window.createSkillComposer(form, draft, async () => ({ skills: [skill] }));
+  draft.value = '/practice';
+  draft.setSelectionRange(draft.value.length, draft.value.length);
+  draft.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const option = form.querySelector('[role="option"]');
+  assert.match(option.textContent, /practice.*Practice timing.*Personal/);
+  draft.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.deepEqual(Array.from(composer.skills()), ['practice']);
+  assert.equal(draft.value, '');
+  assert.equal(form.querySelector('.skill-chip').textContent, '✦practice×');
+  assert.equal(composer.canSubmit(''), true);
+  draft.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+  assert.deepEqual(Array.from(composer.skills()), []);
+  assert.equal(form.querySelector('.skill-chips').hidden, true);
+  dom.window.close();
 });
 test('selected issues keep separate conversations; bounded pages retain full role context for retro', async (t) => {
   const f = fixture(t),

@@ -15,7 +15,7 @@ import { gitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
-import { createFactoryServer } from './factory-ui/http.mjs';
+import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { checkCandidate } from './factory-ui/checks.mjs';
 
@@ -203,7 +203,7 @@ test('a claimed successful integration cannot bypass independent verification', 
 
 test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => {
   const { root, service } = fixture(t);
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
   const expired = await fetch(url + '/api/lifecycle-answer', {
@@ -288,6 +288,65 @@ test('queue-wide review still reconsiders grouping after an unrelated issue chan
   await settle(service, runId);
   writeFileSync(join(root, '.issues/20261022-other.md'), '---\nid: 20261022-other\nstate: investigate\n---\nNew work');
   assert.throws(() => service.saveReview(runId, service.snapshot().reviewBasis), /stale/);
+});
+
+test('queue shows the latest decision and next action, with evaluation diagnostics collapsed', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function queueEvaluationHistory('),
+    html.indexOf('      function queue()', html.indexOf('      function queueEvaluationHistory('))
+  );
+  const render = new Function(
+    'data',
+    'progress',
+    'statusLabel',
+    'link',
+    'esc',
+    source + '; return queueEvaluationHistory;'
+  )(
+    {
+      runs: [
+        {
+          id: 'old',
+          kind: 'evaluation',
+          status: 'completed',
+          summary: 'Older selection',
+          result: { recommendations: ['old evidence'] },
+        },
+        {
+          id: 'current',
+          kind: 'evaluation',
+          status: 'completed',
+          displaySummary: 'Latest selection',
+          summary: 'Latest selection',
+          result: {
+            summary: 'Selected the highest priority issue.',
+            next_action: 'work',
+            next_step: 'Continue the selected issue. <script>unsafe()</script>',
+            recommendations: ['raw evidence'],
+          },
+        },
+      ],
+    },
+    (run) => `<section data-run="${run.id}">${run.result.recommendations}</section>`,
+    (status) => status,
+    (id) => `<a href="#/issue/${id}">${id}</a>`,
+    (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  );
+  const output = render();
+  assert.match(output, /<strong>Current decision:<\/strong>\s*Selected the highest priority issue/);
+  assert.match(
+    output,
+    /<strong>Next action:<\/strong>\s*Continue the selected issue\. &lt;script&gt;unsafe\(\)&lt;\/script&gt;/
+  );
+  assert.match(output, /<details class="queue-history"><summary>History and diagnostics<\/summary>/);
+  assert.doesNotMatch(
+    output.match(/<details class="queue-history"[\s\S]*?<\/details>/)?.[0] || '',
+    /<details[^>]*open/
+  );
+  assert.match(output, /data-run="old"/);
+  assert.match(output, /data-run="current"/);
+  assert.doesNotMatch(output.slice(0, output.indexOf('<details class="queue-history"')), /raw evidence|data-run="old"/);
 });
 
 test('queue review, saving and launching are separate explicit operations', async (t) => {
@@ -1599,7 +1658,7 @@ test('saved report rejects paths, absent files, wrong identity, symlinks and non
 
 test('saved report resource requires authentication and leaves the plans-only resource intact', async (t) => {
   const { service, root } = fixture(t);
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const headers = { cookie: page.headers.get('set-cookie').split(';')[0] };
   assert.equal((await fetch(url + '/api/issue-report?issue=20261022-one')).status, 400);
   const response = await fetch(url + '/api/issue-report?issue=20261022-one', { headers });
@@ -2206,7 +2265,7 @@ test('input summary includes pending lifecycle questions and approvals', () => {
   );
 });
 
-test('lifecycle Progress is direct, shows inline questions and disables duplicate clicks during work', () => {
+test('lifecycle Progress is direct, delegates questions to Progress and disables duplicate clicks during work', () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const source = html.slice(
     html.indexOf('      const lifecycleDrafts ='),
@@ -2218,12 +2277,24 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
     links
   );
-  const render = new Function('data', 'esc', 'busy', 'approvals', 'fileLinkUI', source + ';return lifecyclePanel;')(
+  const render = new Function(
+    'data',
+    'esc',
+    'busy',
+    'approvals',
+    'fileLinkUI',
+    'visibleLifecycleStage',
+    source + ';return Object.assign(lifecyclePanel, { input: lifecycleInput });'
+  )(
     screen,
     (value) => String(value || ''),
     false,
     () => '',
-    links.fileLinkUI
+    links.fileLinkUI,
+    (stage) =>
+      !new Set(['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close']).has(
+        stage.role
+      )
   );
   const issue = { id: 'one', state: 'investigate' };
   assert.match(render(issue), /data-lifecycle-start/);
@@ -2236,8 +2307,9 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     updated: 'now',
     input: { type: 'questions', questions: [{ question: 'Which behavior do you want?' }] },
   };
-  assert.match(render(issue), /Which behavior do you want/);
-  assert.match(render(issue), /Send answer and continue/);
+  assert.match(render(issue), /Respond to the pending request in Progress/);
+  assert.match(render.input(issue, issue.lifecycle), /Which behavior do you want/);
+  assert.match(render.input(issue, issue.lifecycle), /Send answer and continue/);
   assert.doesNotMatch(render(issue), /data-lifecycle-start/);
   screen.lifecycle = [{ state: 'prototype', role: 'ready-to-prototype', name: 'Prototype' }];
   issue.state = 'prototype';
@@ -2276,8 +2348,7 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   };
   const history = render(issue);
   assert.equal((history.match(/<li>/g) || []).length, 35);
-  assert.match(history, /<strong style="color:#6d28d9">Prototype:/);
-  assert.match(history, /<strong style="color:#1d4ed8">Implement:/);
+  assert.doesNotMatch(history, /Prototype:|Implement:/);
   assert.match(history, /class="history-interrupted">\(interrupted\)/);
   assert.match(history, /class="history-time" datetime="2026-10-29T12:00:00.000Z">\[/);
   assert.match(history, /History item 34/);
@@ -3410,6 +3481,8 @@ async function activityScreen(t) {
       '\n' +
       readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
+      readFileSync(resolve('scripts/factory-ui/issue-progress-ui.js'), 'utf8') +
+      '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
@@ -3418,6 +3491,9 @@ async function activityScreen(t) {
       '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'
   );
   const snapshot = service.snapshot();
+  // Exercise the legacy lifecycle view at a visible stage. Clarify remains saved
+  // in the fixture's history but is intentionally absent from the issue list.
+  snapshot.issues[0].state = 'investigate';
   snapshot.issues[0].lifecycle = { status: 'running', summary: 'Reading source', childRunId: 'live', events: [] };
   snapshot.runs.push({
     id: 'live',
@@ -3603,7 +3679,7 @@ test('failed approval shows the error and restores an enabled button for retry',
   assert.match(window.document.getElementById('error').textContent, /Approval could not be saved/);
 });
 
-test('publication failures stay beside both approval controls through rendering and clear on explicit retry', async (t) => {
+test('publication failures stay beside the single Progress approval control through rendering and clear on explicit retry', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   snapshot.conversation = { issueId: '20261022-one', messages: [] };
   snapshot.issues[0].lifecycle = {
@@ -3627,7 +3703,7 @@ test('publication failures stay beside both approval controls through rendering 
   };
   window.screenTest.show(snapshot);
   const buttons = () => [...window.document.querySelectorAll('[data-lifecycle-answer]')];
-  assert.equal(buttons().length, 2);
+  assert.equal(buttons().length, 1);
   buttons()[0].click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   for (const button of buttons()) {
@@ -3636,15 +3712,15 @@ test('publication failures stay beside both approval controls through rendering 
     assert.match(button.nextElementSibling.textContent, /Reload this page/);
   }
   window.screenTest.show(snapshot);
-  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
-  buttons()[1].click();
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 1);
+  buttons()[0].click();
   buttons()[0].click();
   assert.equal(posts, 2, 'Only the explicit retry sends another request');
   assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
   assert.ok(buttons().every((button) => button.disabled));
   retry({ ok: false, json: async () => ({ error: 'Publication is unavailable.' }) });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 1);
   snapshot.issues[0].lifecycle.updated = 'replacement-request';
   window.screenTest.show(snapshot);
   assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
@@ -3704,7 +3780,12 @@ test('activity header shows live confirmation, last activity and result checks w
 test('activity screen shows the current step and preserves expanded details, native drafts and log reading position', async (t) => {
   const { window, snapshot } = await activityScreen(t),
     document = window.document;
-  assert.match(document.querySelector('.lifecycle-progress').textContent, /Workflow stage: Clarify/);
+  assert.match(document.querySelector('.lifecycle-progress').textContent, /Workflow stage: Investigate/);
+  assert.equal(document.querySelector('[data-stage-state="clarify"]'), null);
+  assert.doesNotMatch(
+    [...document.querySelectorAll('.step-heading strong')].map((node) => node.textContent).join(' '),
+    /Clarify/
+  );
   assert.match(document.querySelector('[data-lifecycle-start]').textContent, /Working…/);
   assert.doesNotMatch(document.body.textContent, /Progress in progress/);
   const notes = [...document.querySelectorAll('details')].find(
@@ -3980,13 +4061,11 @@ test('an explicit file or checklist decision resumes a stopped lifecycle without
 test('automatic stage expansion follows the current step while explicit user expansion stays open', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   const stage = (name) => window.document.querySelector('[data-step-id="20261022-one:' + name + '"]');
-  const oldKey = 'ready-for-grilling:clarify',
-    nextKey = 'ready-for-repro:investigate';
-  assert.equal(stage(oldKey).open, true);
-  assert.equal(stage(nextKey).open, false);
+  const nextKey = 'ready-for-repro:investigate';
+  assert.equal(stage('ready-for-grilling:clarify'), null);
+  assert.equal(stage(nextKey).open, true);
   snapshot.issues[0].state = 'investigate';
   window.screenTest.show(snapshot);
-  assert.equal(stage(oldKey).open, false);
   assert.equal(stage(nextKey).open, true);
 });
 
@@ -4473,7 +4552,7 @@ test('runtime identifies the issue project separately from UI source and run det
   const { service, root } = fixture(t, { preview: true });
   const run = service.store.add({ id: 'history' }, 'worker', 'base');
   service.store.update(run, { output: [{ text: 'FULL_TRANSCRIPT_CANARY' }], instructions: 'PRIVATE_INSTRUCTIONS' });
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   const headers = { cookie };
   const runtime = await (await fetch(url + '/api/runtime', { headers })).json();
@@ -4488,15 +4567,6 @@ test('runtime identifies the issue project separately from UI source and run det
   assert.match(JSON.stringify(detail), /FULL_TRANSCRIPT_CANARY/);
   assert.equal((await fetch(url + '/api/run?id=' + run.id)).status, 400);
 });
-
-async function httpFixture(t, service) {
-  const server = createFactoryServer(service);
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  return { url, page: await fetch(url) };
-}
 
 test('an already integrated action resumes bookkeeping without another Codex turn or merge', async (t) => {
   const { root, git, api, proposal, service } = fixture(t);
@@ -4781,8 +4851,8 @@ test('a real pending question stays prominent even while its issue chat is conne
     events: [],
   };
   window.screenTest.show(snapshot);
-  const panel = window.document.querySelector('.lifecycle-progress');
-  assert.match(panel.textContent, /Your input is needed/);
+  const panel = window.document.querySelector('[data-view-id^="issue-progress-"]');
+  assert.match(panel.textContent, /waiting for you/);
   assert.match(panel.textContent, /Which behavior should be preserved/);
   assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
 });
@@ -4903,6 +4973,7 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
     new Promise((resolve) => {
       finish = resolve;
     });
+  window.updateProgressView = () => {};
   window.eval('var progressRequests = new Map(); var data = {}; ' + source);
   const button = window.document.querySelector('button');
   const pending = window.startIssueProgress({ id: 'one', state: 'in-progress' });
@@ -5152,4 +5223,26 @@ test('strategy acceptance reuses exact saved checks without a legacy final-revie
   const accepted = service.snapshot().issues[0].accepted_result;
   assert.equal(accepted.revision, checked.head);
   assert.ok(accepted.evidence.some((entry) => entry.source === result.verification_summary));
+});
+
+test('retained output history is authenticated, read-only and restricted to saved runs', async (t) => {
+  const { service } = fixture(t);
+  service.store.runs.push({ id: 'retained-one' });
+  mkdirSync(service.store.directory, { recursive: true });
+  const log =
+    JSON.stringify({
+      method: 'item/completed',
+      params: { item: { type: 'agentMessage', text: 'Earlier public output' } },
+    }) + '\n';
+  writeFileSync(join(service.store.directory, 'retained-one.jsonl'), log);
+  const before = JSON.stringify(service.store.runs);
+  const { url, cookie } = await startFactoryHttp(t, service);
+  assert.equal((await fetch(url + '/api/output-history?id=retained-one')).status, 400);
+  const response = await fetch(url + '/api/output-history?id=retained-one', { headers: { cookie } });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).events[0].params.item.text, 'Earlier public output');
+  assert.equal((await fetch(url + '/api/output-history?id=../outside', { headers: { cookie } })).status, 400);
+  assert.equal((await fetch(url + '/issue-progress-ui.js', { headers: { cookie } })).status, 200);
+  assert.equal(JSON.stringify(service.store.runs), before);
+  assert.equal(readFileSync(join(service.store.directory, 'retained-one.jsonl'), 'utf8'), log);
 });

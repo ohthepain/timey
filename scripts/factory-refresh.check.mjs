@@ -17,6 +17,7 @@ function refreshFixture(t) {
       '\nwindow.coordinatorUI = coordinatorUI;\n' +
       readFileSync('scripts/factory-ui/server-control-ui.js', 'utf8') +
       '\nwindow.serverControlUI = serverControlUI;\n' +
+      readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') +
       readFileSync('scripts/factory-ui/discussion-ui.js', 'utf8') +
       '\nwindow.chatTest = discussionUI;'
   );
@@ -38,7 +39,7 @@ function refreshFixture(t) {
     'serverControlUI',
     'issueRoute',
     'coordinatorUI',
-    'let data,refreshing=false,refreshPending=false;\n' +
+    'let data,refreshing=false,refreshPending=false,progressUnavailable=false; function updateProgressView() {}\n' +
       html.slice(start, end).replace('!busy', '!isBusy()') +
       ';return refresh;'
   )(

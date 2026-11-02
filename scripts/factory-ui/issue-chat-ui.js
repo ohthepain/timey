@@ -1,3 +1,180 @@
+window.createSkillComposer = function createSkillComposer(form, draft, load) {
+  const selector = document.createElement('div');
+  selector.className = 'skill-selector';
+  selector.setAttribute('role', 'listbox');
+  selector.hidden = true;
+  const chips = document.createElement('div');
+  chips.className = 'skill-chips';
+  chips.hidden = true;
+  form.insertBefore(selector, draft);
+  form.insertBefore(chips, draft);
+  let options = [],
+    selected = [],
+    loaded = null,
+    query = '',
+    start = 0,
+    active = 0,
+    allowed = true,
+    busy = false,
+    generation = 0;
+  const matches = () =>
+    options.filter(
+      (skill) =>
+        !selected.some((item) => item.name === skill.name) &&
+        `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+    );
+  function render() {
+    chips.replaceChildren();
+    for (const skill of selected) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'skill-chip';
+      chip.setAttribute('aria-label', `Remove ${skill.name} skill`);
+      const icon = document.createElement('span');
+      icon.textContent = skill.icon || '✦';
+      const label = document.createElement('span');
+      label.textContent = skill.name;
+      const remove = document.createElement('span');
+      remove.className = 'skill-chip-remove';
+      remove.setAttribute('aria-hidden', 'true');
+      remove.textContent = '×';
+      chip.append(icon, label, remove);
+      chip.addEventListener('click', (event) => {
+        if (!event.isTrusted) return;
+        selected = selected.filter((item) => item.name !== skill.name);
+        render();
+        draft.focus();
+      });
+      chips.append(chip);
+    }
+    chips.hidden = selected.length === 0;
+  }
+  function close() {
+    generation++;
+    selector.hidden = true;
+    selector.replaceChildren();
+  }
+  function show() {
+    if (!allowed || !matches().length) {
+      close();
+      return;
+    }
+    const found = matches();
+    active = Math.min(active, found.length - 1);
+    selector.replaceChildren();
+    found.forEach((skill, index) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'skill-option';
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', String(index === active));
+      const icon = document.createElement('span');
+      icon.className = 'skill-option-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = skill.icon || '✦';
+      const details = document.createElement('span');
+      details.className = 'skill-option-details';
+      const name = document.createElement('strong');
+      name.textContent = skill.name;
+      const description = document.createElement('span');
+      description.textContent = skill.description;
+      const source = document.createElement('small');
+      source.textContent = skill.source;
+      details.append(name, description);
+      option.append(icon, details, source);
+      option.addEventListener('click', (event) => {
+        if (event.isTrusted) choose(skill);
+      });
+      selector.append(option);
+    });
+    selector.hidden = false;
+  }
+  function choose(skill) {
+    if (selected.length >= 8 || selected.some((item) => item.name === skill.name)) return;
+    selected.push(skill);
+    draft.setRangeText('', start, draft.selectionStart, 'end');
+    render();
+    close();
+    draft.focus();
+  }
+  async function querySkills(value, slashStart) {
+    const request = ++generation;
+    query = value;
+    start = slashStart;
+    if (!loaded) {
+      if (!busy) {
+        busy = true;
+        loaded = Promise.resolve()
+          .then(load)
+          .then((result) => (options = result.skills || result));
+      }
+      try {
+        await loaded;
+      } catch (error) {
+        if (request !== generation) return;
+        loaded = null;
+        selector.replaceChildren();
+        const message = document.createElement('p');
+        message.textContent = `Skills could not load: ${error.message}`;
+        selector.append(message);
+        selector.hidden = false;
+        return;
+      } finally {
+        busy = false;
+      }
+    }
+    if (request !== generation) return;
+    active = 0;
+    show();
+  }
+  draft.addEventListener('input', () => {
+    const before = draft.value.slice(0, draft.selectionStart);
+    const match = /(?:^|\s)\/([^\s/]*)$/.exec(before);
+    if (!match) return close();
+    const slash = before.lastIndexOf('/');
+    void querySkills(match[1], slash);
+  });
+  draft.addEventListener('keydown', (event) => {
+    if (event.key === 'Backspace' && !draft.value && selected.length && allowed) {
+      event.preventDefault();
+      selected.pop();
+      render();
+      return;
+    }
+    if (selector.hidden) return;
+    const count = matches().length;
+    if (event.key === 'ArrowDown' && count) {
+      event.preventDefault();
+      active = (active + 1) % count;
+      show();
+    } else if (event.key === 'ArrowUp' && count) {
+      event.preventDefault();
+      active = (active + count - 1) % count;
+      show();
+    } else if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && count) {
+      event.preventDefault();
+      choose(matches()[active]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+    }
+  });
+  return {
+    skills: () => selected.map((skill) => skill.name),
+    reset: () => {
+      selected = [];
+      render();
+      close();
+    },
+    allow: (value) => {
+      allowed = Boolean(value);
+      if (!allowed) close();
+    },
+    canSubmit: (text) => Boolean(text.trim() || (allowed && selected.length)),
+    render,
+  };
+};
+
 /* The issue conversation is saved by the server. This view retains only unsent drafts. */
 const issueChatUI = (() => {
   let current = null,
@@ -6,6 +183,7 @@ const issueChatUI = (() => {
     api = null,
     after = null;
   let log, draft, mode, status, pending, toggle, body, historyButton, stop;
+  let skillComposer;
   let sending = new Set(),
     requestKey = null,
     requestId = null;
@@ -123,6 +301,9 @@ const issueChatUI = (() => {
       if (event.isTrusted) void stopResponse();
     };
     form.append(draft, send);
+    skillComposer = createSkillComposer(form, draft, () =>
+      api('issue-chat-skills?issue=' + encodeURIComponent(current))
+    );
     mode = node('select');
     mode.setAttribute('aria-label', 'Send as');
     for (const [value, label] of [
@@ -136,6 +317,7 @@ const issueChatUI = (() => {
     }
     mode.onchange = () => {
       requestId = null;
+      skillComposer.allow(mode.value !== 'answer');
     };
     status = node('p');
     status.className = 'discussion-status';
@@ -191,6 +373,16 @@ const issueChatUI = (() => {
     item.append(node('strong', entry.role || entry.actor), node('small', ' · ' + date));
     const text = node('p', entry.body);
     text.style.whiteSpace = 'pre-wrap';
+    if (entry.skills?.length) {
+      const tokens = node('div');
+      tokens.className = 'message-skills';
+      for (const name of entry.skills) {
+        const token = node('span', '✦ ' + name);
+        token.className = 'skill-chip';
+        tokens.append(token);
+      }
+      item.append(tokens);
+    }
     item.append(text);
     if (entry.status) item.append(node('small', entry.status));
     return item;
@@ -256,7 +448,7 @@ const issueChatUI = (() => {
     }
   }
   async function submit() {
-    if (sending.has(current) || !draft.value.trim()) return;
+    if (sending.has(current) || !skillComposer.canSubmit(draft.value)) return;
     const input = composeMessage();
     sending.add(input.issueId);
     status.textContent = 'Saving your message…';
@@ -278,12 +470,14 @@ const issueChatUI = (() => {
       id: requestId,
       text: draft.value,
       mode: mode.value,
+      skills: mode.value === 'answer' ? [] : skillComposer.skills(),
       updated: record?.updated,
       decision: inputType(record) === 'human' ? 'approve' : 'answer',
     };
   }
   function acceptedMessage(input, result) {
     drafts.set(input.issueId, '');
+    skillComposer.reset();
     if (current !== input.issueId) return;
     draft.value = '';
     requestId = null;

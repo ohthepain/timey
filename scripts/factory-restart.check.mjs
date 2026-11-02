@@ -7,7 +7,6 @@ import {
   readFileSync,
   symlinkSync,
   writeFileSync,
-  rmSync,
   existsSync,
   readdirSync,
 } from 'node:fs';
@@ -108,19 +107,16 @@ test('restart replaces a changed installed source using saved evidence and verif
   assert.equal(JSON.parse(readFileSync(result.receipt)).status, 'ready');
 });
 
-test('dirty source or stale verification fails before pausing or stopping the server', async (t) => {
+test('restart runs the current working tree without requiring clean or saved verification', async (t) => {
   const f = await fixture(t);
   const path = join(f.source.root, 'uncommitted.js');
   writeFileSync(path, 'keep me');
-  await assert.rejects(restartFactory(f.options), /uncommitted changes were left untouched/);
+  const result = await restartFactory({ ...f.options, verification: undefined });
+  assert.equal(result.status, 'ready');
   assert.equal(readFileSync(path, 'utf8'), 'keep me');
-  rmSync(path);
-  const summary = JSON.parse(readFileSync(f.verification));
-  summary.snapshot_tree = 'wrong';
-  writeFileSync(f.verification, JSON.stringify(summary));
-  await assert.rejects(restartFactory(f.options), /exact candidate tree/);
   const runtime = await readRuntime(f.url);
-  assert.equal(runtime.pid, f.child.pid);
+  assert.equal(runtime.pid, result.pid);
+  assert.equal(runtime.sourceChanged, true);
   assert.equal(runtime.server.phase, 'idle');
 });
 

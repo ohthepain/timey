@@ -20,6 +20,10 @@ stage, worker completion and code integration. Links use the report's Parent,
 Blocked by and Related sections; reverse links are computed from those explicit
 references. Reports are displayed as escaped text, never executable HTML.
 
+Below the issue table, the queue shows the latest saved evaluation's decision and
+next action. Earlier evaluations and the full diagnostics for the latest one are
+inside the collapsed **History and diagnostics** disclosure.
+
 Under the issue number, the issue screen shows the working checkout's current
 branch and short HEAD commit, with the full hash available on hover. It uses
 unfinished worker work first, then the assembled issue branch, then the last
@@ -27,15 +31,17 @@ worker checkout. Detached or unavailable checkouts and issues without assigned
 work are labeled explicitly. Only the selected issue's Git identity is read
 on refresh; the running server's branch is never substituted.
 
-The issue screen shows every configured lifecycle stage as a numbered expandable
-step. The current stage opens by default. Saved assignments and worker results
-appear under their matching stage; worker commits and manual integration have
-separate steps. Opening a step does not advance the issue. Stage expansion is
-preserved while live results refresh. Earlier stages are not marked complete
-merely because the issue currently sits later in the lifecycle. Saved timestamps
-and report notes provide history where it exists; missing historical transitions
-are not reconstructed. Unmatched assignment kinds stay visible under Other work.
-New lifecycle stages use the same step layout without requiring another screen.
+The issue screen shows configured lifecycle history as numbered expandable steps,
+except Prototype, Implement, Verify, Commit and Final review. Their saved report
+events and assignments remain unchanged, but they are omitted from the issue's
+step list and queue filters. Issues currently in one of those states remain in the
+queue, display a generic queued status, and do not offer lifecycle Progress
+controls. Strategy controls remain the active work path. Opening a visible step
+does not advance the issue. Stage expansion is preserved while live results
+refresh. Earlier visible stages are not marked complete merely because the issue
+currently sits later in the lifecycle. Saved timestamps and report notes provide
+history where it exists; missing historical transitions are not reconstructed.
+Unmatched assignment kinds stay visible under Other work.
 
 ## Queue sorting
 
@@ -558,11 +564,13 @@ This path does not prove a self-healing exercise or any other unperformed test.
 Those limits remain in the result for final acceptance. It cannot change source,
 registry entries, other reports or human check outcomes, and never closes the issue.
 
-The queue lists each lifecycle role with a checkbox and the number of issues in that
-role that match the current search. Every role starts selected except Closed. Clearing
-a role hides its issues; selecting Closed shows closed issues. Search text applies when
-Return is pressed, and also as the text changes. Search, role, and sort choices survive
-live refreshes while the page is open.
+The queue lists visible lifecycle roles with a checkbox and the number of issues in
+that role that match the current search. Prototype, Implement, Verify, Commit and
+Final review have no filters; their issues remain included unless another visible
+filter hides them. Every visible role starts selected except Closed. Clearing a role
+hides its issues; selecting Closed shows closed issues. Search text applies when
+Return is pressed, and also as the text changes. Search, role, and sort choices
+survive live refreshes while the page is open.
 Filtering is read-only; issue links and saved reports remain available.
 
 ## Live worker status
@@ -788,6 +796,12 @@ and provider responses are persistent local records and go to the configured mod
 provider under the account's policies. This is a deliberate retention change from
 the former temporary chat; sent messages no longer expire or disappear on reload.
 
+Typing `/` in either composer opens the current enabled-skill list, filtered by
+skill name and description. Options show an icon, name, short description and
+source. Selecting an option adds a read-only removable chip; selected skills are
+validated again on the server and attached to that turn. Token-only messages are
+allowed. Reply and continue remains a lifecycle answer and does not dispatch skills.
+
 The composer distinguishes **Comment**, **Request revision**, and **Reply and
 continue**. Comments save during implementation and become available on subsequent
 role turns; they do not interrupt an already executing instruction. A revision
@@ -823,6 +837,9 @@ workflow actions. Execution details remain expandable under lifecycle progress.
 Each issue has a collapsed **Chat** toggle above its lifecycle. The borderless
 toggle opens joined conversation output and full-width input; an inset circular
 up-arrow sends. Enter sends; Shift+Enter adds a line. Opening starts no model turn.
+The slash selector uses the same skill metadata and removable chips as the persistent
+issue chat. Selected skill instructions are copied into the temporary runtime and
+removed when it ends; discussion history and selected skill names remain unsaved.
 Sending starts a dedicated ephemeral process in an empty workspace, separate from
 coordinator/worker recovery and RunStore. Its context contains the selected report
 and lifecycle policy, not other reports or saved chats. Proposed skips remain
@@ -851,7 +868,8 @@ After recording changes context, start a new chat for further questions.
 Every configured lifecycle stage offers **Discuss this step**. It opens the temporary
 chat and starts the installed `grilling` skill through a native skill input. An exact hash-checked copy is registered in
 the isolated runtime’s temporary skill directory and verified through `skills/list`;
-it is removed with that runtime. No unrelated skills or tools are enabled. The
+it is removed with that runtime. Only selected skill instructions are loaded; tools
+remain disabled. The
 chat names the selected stage, including earlier or future stages, without moving
 the issue. The skill asks numbered rounds of currently answerable design questions;
 project facts come from supplied context and missing evidence remains explicit.
@@ -961,7 +979,9 @@ Verification and commit operations continue to require current source checks.
 Run `pnpm factory:restart` from the selected checkout. It defaults to this checkout,
 this project and `http://127.0.0.1:52995`. It starts the current working folder as-is,
 including uncommitted WIP, and never runs tests, pulls code, merges branches or accepts
-an issue.
+an issue. Both `pnpm factory:restart` and its alias `pnpm factory:reset` load
+`.env` from the current working directory before starting; the replacement server
+inherits those environment settings. The `.env` file must exist.
 
 ```sh
 pnpm factory:restart
@@ -1075,6 +1095,19 @@ and saving/ending a temporary chat remain available. Turning it off restores
 normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
+
+The running-action count opens a list of connected actions and recent stopped
+work that can be resumed or skipped. Each entry shows its saved issue and current
+details, links to the issue and that run's output, and
+Stop, Restart, Skip, Pause issue and Steer controls. Stop interrupts an
+interruptible current response while retaining its saved work. Pause asks the
+issue to finish its current action before stopping later work; it does not
+interrupt the current response. Steer sends text to the exact active turn.
+Restart is available for stopped or failed work and continues its saved issue
+strategy or worker assignment within the existing scope. Skip cancels a stopped
+or interruptible worker assignment while retaining its checkout and conversation;
+it is disabled for an issue strategy whose approved checks and delivery would be
+discarded. Unavailable controls explain why they cannot run in the current state.
 
 **Restart server** in the header uses the same restart path as deployment and
 maintenance: it drains current work, permission replies, temporary chats and
@@ -1311,7 +1344,40 @@ them. Stable conversation message IDs prevent duplicate grilling on capture retr
 or server restart. Conversation failures leave the issue saved and report the
 problem. This option starts discussion, not lifecycle execution or implementation.
 
-### Stopped progress and issue output
+### Progress tab and issue output
+
+The issue opens on **Progress**, beside **Issue output**, **Issue thread** and
+**Discussion**. Tab selection remains stable while viewing the issue. Progress
+shows the current operation, what is happening, confirmed milestones, next action
+and status. It derives these from existing operation, question, approval and
+conversation records plus public output events; it saves no independent workflow
+record. Issue thread remains the work conversation; Discussion remains conversation
+about the work.
+
+Blocking questions and permissions take precedence, with concurrent work still
+visible. Progress reuses the existing answer controls, freshness checks and drafts.
+An explicit capture-grilling or grilling-skill conversation can show its latest
+question round verbatim with a reply sent through the existing comment handler;
+this never starts implementation. Plan and candidate approvals retain their own
+controls. Prose alone never establishes approval or passed verification.
+
+Continue immediately shows **Request sent; waiting for updated progress**, hiding
+old questions and status until updated records/output arrive. A failed request
+shows that it could not be confirmed and asks for a refresh before retrying. New
+active work outranks old failures. Completed operations name their finish line;
+publication, merge, issue acceptance and closure remain distinct. Earlier confirmed
+milestones remain visible, with superseded candidate checks labelled explicitly.
+
+Statuses are running, waiting for you, blocked, failed, complete, not started and
+progress unavailable. Lost connections show the last known update; quiet output
+alone proves neither failure nor blockage. Verification shows the current command
+and exit result when available, otherwise **Running verification** without invented
+check names. Issue output keeps its recent public diagnostic stream and offers
+**Load retained output history** to page backward through saved public events across
+runs. Full retained events load only on demand, retain redaction and exclude private
+reasoning; runs without a retained log remain unavailable rather than fabricated.
+
+### Stopped progress
 
 Retryable stops retain their concrete failure reason and show the next saved
 action separately. A retry being available does not mean work is running. A
@@ -1424,3 +1490,41 @@ but retain the previous plan and receipt in approval history. Reassessment that
 returns no replacement plan retains that plan for review rather than failing with
 “no plan to approve”. A historical missing plan can be recovered only from the
 original human plan-approval receipt, with its content hash and issue identity checked.
+
+## Factory GitHub App credentials
+
+Server-owned issue strategy operations may use `.issues/github-app.json` in the
+owning project (this directory is excluded from Git):
+
+```json
+{
+  "appId": 123456,
+  "repository": "owner/repo",
+  "privateKeyPath": "/absolute/private/location/factory.pem"
+}
+```
+
+For a deployed server, the same credentials may be supplied as environment
+secrets instead of a local configuration file:
+`TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID`,
+`TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY`, and
+`TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID`. The private key may be a PEM value
+with escaped newlines. The client ID is not used for installation API
+authentication. Environment settings take precedence over the local file and a
+partial or invalid set stops authentication rather than falling back to a
+personal `gh` login.
+
+Keep the private key outside the repository. No client secret or permanent token
+is needed. The server discovers the installation, limits tokens to the configured
+repository and refreshes them before expiry. It passes the token only to the
+strategy provider's GitHub CLI calls; personal Git/SourceTree credentials and
+worker publication are unchanged. Installation authentication does not use
+`gh auth login` or the user identity endpoint. A configured app failure stops
+rather than falling back to personal credentials.
+
+Give the app Contents and Pull requests read/write, Checks, Commit statuses,
+Actions and Administration read-only, and install only on the intended repository.
+Grant PR-only bypass of review rules, and no bypass of the separate strict CI
+ruleset requiring the existing GitHub Actions `test` check. Owner bypass can remain
+for personal direct pushes. Reload through `pnpm factory:restart` after changing
+credentials; restarting never retries an issue automatically.

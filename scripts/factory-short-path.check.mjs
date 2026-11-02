@@ -127,7 +127,7 @@ test('loading a saved chat still refuses busy or uncertain native state', async 
 
 test('unchanged positive scope checks are reused, but changes to scope or approval evidence are not', async (t) => {
   const f = await setup(t),
-    { checkLifecycleScope } = await import('./factory-ui/lifecycle-review.mjs');
+    { checkLifecycleScope } = await import('./factory-ui/lifecycle-scope.mjs');
   let turns = 0;
   f.service.codex.start = async () => 'primary';
   f.service.codex.ready = async () => {};

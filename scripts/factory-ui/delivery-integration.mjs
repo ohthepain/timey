@@ -4,7 +4,7 @@ import { digest, writeJson, requireThat, git } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { finalizeDelivery } from './delivery.mjs';
 
-export function recordIntegratedIssues(service, action, run, checked, result) {
+function recordIntegratedIssues(service, action, run, checked, result) {
   const authorization = join(service.store.directory, run.id + '-delivery-authorization.json');
   writeJson(authorization, {
     actionId: action.id,

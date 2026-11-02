@@ -261,7 +261,7 @@ function browserFixture(t) {
       },
     ],
   };
-  win.eval(`const $ = id => document.getElementById(id); const esc = value => String(value ?? ''); const link = id => '<a>'+id+'</a>'; let data = ${JSON.stringify(queue)}; const actionCard = () => ''; const progress = () => ''; ${code}
+  win.eval(`const $ = id => document.getElementById(id); const esc = value => String(value ?? ''); const link = id => '<a>'+id+'</a>'; function visibleLifecycleStage(stage) { return !['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(stage.role); } let data = ${JSON.stringify(queue)}; const actionCard = () => ''; const progress = () => ''; ${code}
 window.queueTest = { render() { $('app').innerHTML = queue(); bindQueueFilters(); }, replace(issues) { data.issues = issues; this.render(); }, issues: data.issues };`);
   const fixture = win.queueTest;
   fixture.render();
@@ -289,7 +289,9 @@ test('all five controls order actual queue rows, preserve filters and selection 
   };
   assert.equal(direction().textContent, '▼');
   assert.equal(document.querySelector('[data-role-filter="closed"]').checked, false);
-  assert.equal(document.querySelector('[data-role-filter="work"]').checked, true);
+  assert.equal(document.querySelector('[data-role-filter="start"]').checked, true);
+  for (const state of ['review', 'experiment', 'work'])
+    assert.equal(document.querySelector(`[data-role-filter="${state}"]`), null);
   assert.equal(document.getElementById('create-issue').textContent, '+');
   assert.equal(document.querySelector('.queue-heading').contains(document.getElementById('create-issue')), true);
   assert.equal(document.body.textContent.includes('Choose what to work on'), false);
@@ -330,7 +332,7 @@ test('all five controls order actual queue rows, preserve filters and selection 
   assert.deepEqual(ids(), ['b', 'a', 'z']);
   assert.equal(document.getElementById('queue-sort').value, 'lastProgress');
   assert.equal(direction().textContent, '▲');
-  for (const state of ['review', 'start', 'experiment', 'custom', 'closed']) setRole(state, false);
+  for (const state of ['start', 'custom', 'closed']) setRole(state, false);
   assert.deepEqual(ids(), ['b']);
   const search = document.getElementById('search');
   search.value = 'Alpha';
@@ -342,7 +344,6 @@ test('all five controls order actual queue rows, preserve filters and selection 
   setRole('start', true);
   assert.deepEqual(ids(), ['a']);
   assert.equal(document.querySelector('[data-role-filter="start"]').parentElement.querySelector('b').textContent, '1');
-  assert.equal(document.querySelector('[data-role-filter="work"]').parentElement.querySelector('b').textContent, '0');
 });
 
 test('issue navigation follows the visible sort order and has bounded neighbors', (t) => {

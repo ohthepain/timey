@@ -10,9 +10,16 @@ import { observeRuntime } from './factory-deploy-readiness.mjs';
 function candidate(options) {
   const checkout = realpathSync(options.checkout || process.cwd());
   const revision = git(checkout, 'rev-parse', 'HEAD'),
-    tree = git(checkout, 'rev-parse', 'HEAD^{tree}');
+    tree = git(checkout, 'rev-parse', 'HEAD^{tree}'),
+    sourceChanged = Boolean(git(checkout, 'status', '--porcelain', '--untracked-files=all'));
   requireThat(existsSync(join(checkout, 'scripts/factory-ui.mjs')), 'The selected checkout has no factory server.');
-  return { checkout, revision, tree, verification: options.verification ? resolve(options.verification) : null };
+  return {
+    checkout,
+    revision,
+    tree,
+    sourceChanged,
+    verification: options.verification ? resolve(options.verification) : null,
+  };
 }
 async function until(check, description, timeout) {
   const end = Date.now() + timeout;
@@ -35,8 +42,9 @@ export async function restartFactory(options = {}) {
   const target = candidate(options),
     project = realpathSync(options.project || process.cwd());
   const timeout = options.timeout ?? 30000,
+    requestTimeout = options.requestTimeout ?? 120000,
     progress = options.progress || console.log;
-  const session = await deploymentSession(options.url || 'http://127.0.0.1:52995');
+  const session = await deploymentSession(options.url || 'http://127.0.0.1:52995', { timeoutMs: requestTimeout });
   const previous = session.runtime;
   requireThat(previous.mode === 'live' && previous.project === project, 'Select the live factory for this project.');
   requireThat(
@@ -59,7 +67,10 @@ export async function restartFactory(options = {}) {
     if (previous.server?.phase === 'idle') await session.request('/api/server-pause');
     await until(
       async () => {
-        const current = await readRuntime(previous.url);
+        const current = await readRuntime(previous.url, () => {}, false, {
+          cookie: session.cookie,
+          timeoutMs: requestTimeout,
+        });
         requireThat(
           current.pid === previous.pid && current.project === project,
           'The running server changed; no process was stopped.'
@@ -107,14 +118,18 @@ export async function restartFactory(options = {}) {
     await until(
       async () => {
         requireThat(!spawnError && child.exitCode === null, 'The replacement server exited. See ' + receipt.log);
-        const observed = await observeRuntime(previous.url, {
-          checkout: target.checkout,
-          project,
-          revision: target.revision,
-          pid: child.pid,
-          mode: 'live',
-          sourceChanged: false,
-        });
+        const observed = await observeRuntime(
+          previous.url,
+          {
+            checkout: target.checkout,
+            project,
+            revision: target.revision,
+            pid: child.pid,
+            mode: 'live',
+            sourceChanged: target.sourceChanged,
+          },
+          { timeoutMs: requestTimeout }
+        );
         receipt.readiness = observed;
         return observed.outcome === 'ready';
       },
@@ -146,17 +161,22 @@ function argumentsForCLI(args) {
     if (key === '--') continue;
     if (key === '--help') return null;
     requireThat(
-      ['--checkout', '--project', '--url', '--verification', '--timeout'].includes(key) &&
+      ['--checkout', '--project', '--url', '--verification', '--timeout', '--request-timeout'].includes(key) &&
         args[i + 1] &&
         !args[i + 1].startsWith('--'),
       'Unknown or incomplete option: ' + key
     );
-    options[key.slice(2)] = key === '--timeout' ? Number(args[++i]) : args[++i];
+    const flag = key.slice(2);
+    const value = flag === 'timeout' || flag === 'request-timeout' ? Number(args[++i]) : args[++i];
+    if (flag === 'request-timeout') options.requestTimeout = value;
+    else options[flag] = value;
   }
-  requireThat(
-    options.timeout === undefined || (Number.isFinite(options.timeout) && options.timeout > 0),
-    'Use a positive timeout in milliseconds.'
-  );
+  for (const name of ['timeout', 'requestTimeout']) {
+    requireThat(
+      options[name] === undefined || (Number.isFinite(options[name]) && options[name] > 0),
+      'Use a positive timeout in milliseconds for --' + name.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()) + '.'
+    );
+  }
   return options;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -165,7 +185,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (options) await restartFactory(options);
     else
       console.log(
-        'pnpm factory:restart [--checkout PATH] [--project PATH] [--url http://127.0.0.1:52995] [--verification PATH] [--timeout MS]\nUses saved full verification; never runs tests, pulls, merges, or force-kills work. Paused issue work remains saved for explicit continuation.'
+        'pnpm factory:restart [--checkout PATH] [--project PATH] [--url http://127.0.0.1:52995] [--verification PATH] [--timeout MS] [--request-timeout MS]\nUses saved full verification; never runs tests, pulls, merges, or force-kills work. Paused issue work remains saved for explicit continuation. --request-timeout defaults to 120000 for slow local servers.'
       );
   } catch (error) {
     console.error(error.message);

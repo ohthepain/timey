@@ -11,6 +11,17 @@ import { StrategyProvider } from './strategy-provider.mjs';
 import { strategyPrompt, strategyResultSchema } from './strategy-prompt.mjs';
 import { runSolLoop } from './strategy-review.mjs';
 
+const issueDeliveryConfigPath = (root) => join(root, '.issues/issue-delivery-config.json');
+
+function readIssueDeliveryConfig(root) {
+  const path = issueDeliveryConfigPath(root);
+  return existsSync(path) ? readJson(path) : null;
+}
+
+function strategyConfig(service, record) {
+  return record?.work?.config || readIssueDeliveryConfig(service.root);
+}
+
 export function strategyBasis(service, issue) {
   const record = service.lifecycleRuns[issue.id];
   return digest(
@@ -18,34 +29,56 @@ export function strategyBasis(service, issue) {
       report: issue.content,
       plan: record?.plan,
       work: record?.work,
-      config:
-        record?.work?.config ||
-        (existsSync(join(service.root, '.issues/issue-delivery-config.json'))
-          ? readJson(join(service.root, '.issues/issue-delivery-config.json'))
-          : null),
+      config: strategyConfig(service, record),
     })
   );
 }
+
+const interruptedSummary =
+  'Work was interrupted. Inspect the saved chat before continuing; no automatic retry was started.';
+
+function strategyInterrupted(service, issue, record) {
+  return record?.status === 'running' && !service.lifecycleTasks.has(issue.id);
+}
+
+function strategyDisplay(service, record, issue) {
+  if (strategyInterrupted(service, issue, record)) return { status: 'paused', summary: interruptedSummary };
+  return { status: record?.status || 'queued', summary: record?.summary || '' };
+}
+
+function configField(saved, config, key) {
+  if (saved?.[key]) return saved[key];
+  if (config?.[key]) return config[key];
+  return null;
+}
+
+function strategyConfigFields(work, config) {
+  const saved = work?.config;
+  return {
+    target: configField(saved, config, 'target'),
+    repository: configField(saved, config, 'repository'),
+  };
+}
+
+function strategyWorkFields(work) {
+  if (!work) return { strategy: 'full-stop', solRounds: 0, prUrl: null };
+  return {
+    strategy: work.strategy || 'full-stop',
+    solRounds: work.solRounds || 0,
+    runId: work.runId,
+    pr: work.pr,
+    prUrl: work.readiness?.url || null,
+    checkout: work.checkout,
+  };
+}
+
 export function strategyView(service, issue) {
   const record = service.lifecycleRuns[issue.id];
-  const config = existsSync(join(service.root, '.issues/issue-delivery-config.json'))
-    ? readJson(join(service.root, '.issues/issue-delivery-config.json'))
-    : null;
+  const work = record?.work;
   return {
-    target: record?.work?.config?.target || config?.target || null,
-    repository: record?.work?.config?.repository || config?.repository || null,
-    strategy: record?.work?.strategy || 'full-stop',
-    solRounds: record?.work?.solRounds || 0,
-    status:
-      record?.status === 'running' && !service.lifecycleTasks.has(issue.id) ? 'paused' : record?.status || 'queued',
-    summary:
-      record?.status === 'running' && !service.lifecycleTasks.has(issue.id)
-        ? 'Work was interrupted. Inspect the saved chat before continuing; no automatic retry was started.'
-        : record?.summary || '',
-    runId: record?.work?.runId,
-    pr: record?.work?.pr,
-    prUrl: record?.work?.readiness?.url || null,
-    checkout: record?.work?.checkout,
+    ...strategyConfigFields(work, readIssueDeliveryConfig(service.root)),
+    ...strategyWorkFields(work),
+    ...strategyDisplay(service, record, issue),
     basis: strategyBasis(service, issue),
     active: service.lifecycleTasks.has(issue.id),
   };
@@ -56,6 +89,122 @@ function requireSavedContinuationSettings(old, input) {
       (input.strategy === old.strategy && (input.operation === 'review' || input.solRounds === old.solRounds)),
     'Continue using the saved issue strategy and Sol Loop setting.'
   );
+}
+
+function assertStrategyChoices(input) {
+  requireThat(input.approved === true, 'Explicitly start this strategy for the displayed issue scope.');
+  requireThat(['full-stop', 'full-send'].includes(input.strategy), 'Choose Full Stop or Full Send.');
+  requireThat([0, 1, 3].includes(input.solRounds), 'Choose no Sol review, one round, or three rounds.');
+  requireThat(['work', 'review'].includes(input.operation || 'work'), 'Choose work or an optional Sol review.');
+}
+
+function assertNotMergedFullSend(old, record) {
+  requireThat(!old || old.strategy !== 'full-send' || record.status !== 'merged', 'This issue was already merged.');
+}
+
+function assertReviewContinuation(input, old) {
+  requireThat(
+    input.operation !== 'review' || old?.strategy === input.strategy,
+    'Use Start to change the delivery strategy; a review alone grants no new merge permission.'
+  );
+  requireThat(
+    input.operation !== 'review' || (old?.checkout && input.solRounds > 0),
+    'Complete or retain issue work before requesting a Sol review.'
+  );
+}
+
+function assertStrategyContinuation(input, old, record) {
+  assertNotMergedFullSend(old, record);
+  requireSavedContinuationSettings(old, input);
+  assertReviewContinuation(input, old);
+}
+
+function assertStrategyStartInput(input, old, record) {
+  assertStrategyChoices(input);
+  assertStrategyContinuation(input, old, record);
+}
+
+function strategyRecord(service, issue) {
+  return (
+    service.lifecycleRuns[issue.id] || {
+      id: randomUUID(),
+      issueId: issue.id,
+      events: [],
+      attempts: [],
+      retriedRuns: [],
+    }
+  );
+}
+
+function validatedDeliveryConfig(service, old) {
+  const config = old?.config || readIssueDeliveryConfig(service.root);
+  requireThat(
+    config.provider === 'github' && /^[\w.-]+\/[\w.-]+$/.test(config.repository) && config.remote && config.target,
+    'Configure the issue repository, remote and target before starting.'
+  );
+  return config;
+}
+
+function writeStrategyApproval(service, run, issue, record, input, config) {
+  const receipt = join(service.store.directory, run.id, 'strategy-approval.json');
+  writeJson(receipt, {
+    actor: 'human',
+    type: 'issue-strategy-start',
+    issueId: issue.id,
+    strategy: input.strategy,
+    report: digest(issue.content),
+    plan: record.plan?.sha256 || null,
+    solRounds: input.solRounds,
+    config,
+    operation: input.operation || 'work',
+    instruction: String(input.instruction || ''),
+    at: new Date().toISOString(),
+  });
+  return receipt;
+}
+
+function strategyStartMessage(input, receipt, instruction) {
+  const sol = input.solRounds ? `${input.solRounds} Sol review round(s)` : 'no Sol Loop';
+  return `Started ${input.strategy}; ${sol}. Scope and permissions: ${receipt}. ${instruction || ''}`;
+}
+
+function strategyWorkState(service, issue, old, record, input, run, receipt, config) {
+  return {
+    ...old,
+    priorInput: old?.priorInput || record.input || null,
+    modelSettings: newChatModelSettings(service.root, issue.id),
+    strategy: input.strategy,
+    solRounds: input.solRounds,
+    receipt,
+    config,
+    runId: run.id,
+  };
+}
+
+function scheduleStrategyTask(service, record, run, issue, input) {
+  const task = Promise.resolve()
+    .then(() => executeStrategy(service, record, run, issue, input))
+    .catch((error) => {
+      const status = record.stopRequested || record.pauseRequested ? 'paused' : 'blocked';
+      service.store.update(run, { status, summary: error.message, threadId: record.workThreadId || run.threadId });
+      saveLifecycle(service, record, { status, summary: error.message });
+      appendMessage(service.root, issue.id, {
+        id: 'strategy-failed:' + run.id,
+        actor: 'agent',
+        role: 'Issue assistant',
+        kind: 'strategy-result',
+        body: error.message,
+      });
+    })
+    .finally(() => {
+      service.store.connected.delete(run.id);
+      service.lifecycleTasks.delete(issue.id);
+      // Comments sent while the owning worker was busy are queued against the
+      // same issue chat. Let them become real Codex turns after that writer
+      // releases the thread instead of leaving them stranded as saved text.
+      service.issueChats?.resumePending(issue.id);
+    });
+  service.lifecycleTasks.set(issue.id, task);
 }
 function selected(service, input) {
   const queue = readQueue(service.root),
@@ -88,33 +237,10 @@ function selected(service, input) {
 export function startIssueStrategy(service, input) {
   service.ownServer();
   const { queue, issue } = selected(service, input);
-  requireThat(input.approved === true, 'Explicitly start this strategy for the displayed issue scope.');
-  requireThat(['full-stop', 'full-send'].includes(input.strategy), 'Choose Full Stop or Full Send.');
-  requireThat([0, 1, 3].includes(input.solRounds), 'Choose no Sol review, one round, or three rounds.');
-  requireThat(['work', 'review'].includes(input.operation || 'work'), 'Choose work or an optional Sol review.');
-  const record = service.lifecycleRuns[issue.id] || {
-    id: randomUUID(),
-    issueId: issue.id,
-    events: [],
-    attempts: [],
-    retriedRuns: [],
-  };
+  const record = strategyRecord(service, issue);
   const old = record.work;
-  requireThat(!old || old.strategy !== 'full-send' || record.status !== 'merged', 'This issue was already merged.');
-  requireSavedContinuationSettings(old, input);
-  requireThat(
-    input.operation !== 'review' || old?.strategy === input.strategy,
-    'Use Start to change the delivery strategy; a review alone grants no new merge permission.'
-  );
-  requireThat(
-    input.operation !== 'review' || (old?.checkout && input.solRounds > 0),
-    'Complete or retain issue work before requesting a Sol review.'
-  );
-  const config = old?.config || readJson(join(service.root, '.issues/issue-delivery-config.json'));
-  requireThat(
-    config.provider === 'github' && /^[\w.-]+\/[\w.-]+$/.test(config.repository) && config.remote && config.target,
-    'Configure the issue repository, remote and target before starting.'
-  );
+  assertStrategyStartInput(input, old, record);
+  const config = validatedDeliveryConfig(service, old);
   const run = service.store.add({ id: 'issue-' + issue.id }, 'issue-work', old?.base || queue.head);
   service.store.update(run, {
     issueId: issue.id,
@@ -122,30 +248,8 @@ export function startIssueStrategy(service, input) {
     summary: 'Starting the selected issue strategy.',
   });
   mkdirSync(join(service.store.directory, run.id), { recursive: true });
-  const receipt = join(service.store.directory, run.id, 'strategy-approval.json');
-  writeJson(receipt, {
-    actor: 'human',
-    type: 'issue-strategy-start',
-    issueId: issue.id,
-    strategy: input.strategy,
-    report: digest(issue.content),
-    plan: record.plan?.sha256 || null,
-    solRounds: input.solRounds,
-    config,
-    operation: input.operation || 'work',
-    instruction: String(input.instruction || ''),
-    at: new Date().toISOString(),
-  });
-  const work = {
-    ...old,
-    priorInput: old?.priorInput || record.input || null,
-    modelSettings: newChatModelSettings(service.root, issue.id),
-    strategy: input.strategy,
-    solRounds: input.solRounds,
-    receipt,
-    config,
-    runId: run.id,
-  };
+  const receipt = writeStrategyApproval(service, run, issue, record, input, config);
+  const work = strategyWorkState(service, issue, old, record, input, run, receipt, config);
   saveLifecycle(service, record, {
     work,
     stopRequested: false,
@@ -159,72 +263,78 @@ export function startIssueStrategy(service, input) {
     actor: 'human',
     role: 'You',
     kind: 'strategy-start',
-    body: `Started ${input.strategy}; ${input.solRounds ? input.solRounds + ' Sol review round(s)' : 'no Sol Loop'}. Scope and permissions: ${receipt}. ${input.instruction || ''}`,
+    body: strategyStartMessage(input, receipt, input.instruction),
   });
-  const task = Promise.resolve()
-    .then(() => executeStrategy(service, record, run, issue, input))
-    .catch((error) => {
-      const status = record.stopRequested || record.pauseRequested ? 'paused' : 'blocked';
-      service.store.update(run, { status, summary: error.message, threadId: record.workThreadId || run.threadId });
-      saveLifecycle(service, record, { status, summary: error.message });
-      appendMessage(service.root, issue.id, {
-        id: 'strategy-failed:' + run.id,
-        actor: 'agent',
-        role: 'Issue assistant',
-        kind: 'strategy-result',
-        body: error.message,
-      });
-    })
-    .finally(() => {
-      service.store.connected.delete(run.id);
-      service.lifecycleTasks.delete(issue.id);
-    });
-  service.lifecycleTasks.set(issue.id, task);
+  scheduleStrategyTask(service, record, run, issue, input);
   return { runId: run.id, issueId: issue.id, accepted: true };
 }
-async function checkoutFor(service, record, run, issue) {
-  const work = record.work;
-  if (!work.checkout) {
-    const legacy = service.store.runs.findLast(
-      (item) =>
-        item.id !== run.id && item.issueId === issue.id && item.checkout && ['worker', 'issue-work'].includes(item.kind)
-    );
-    const delivery = service.deliveries.inspect(issue.id);
-    const checkout = delivery?.checkout || legacy?.checkout;
-    if (checkout) {
-      work.checkout = realpathSync(checkout);
-      work.branch = git(checkout, 'branch', '--show-current');
-      work.base = legacy?.base || delivery?.contributions?.[0]?.originalBase || run.base;
-      requireThat(
-        work.branch && work.branch !== work.config.target,
-        'Existing work is on the target branch. Preserve it before starting.'
-      );
-    } else {
-      work.checkout = join(service.root, '.issues/issue-work', issue.id);
-      work.branch = 'codex/issue-' + issue.id;
-      work.base = run.base;
-      mkdirSync(join(service.root, '.issues/issue-work'), { recursive: true });
-      requireThat(!existsSync(work.checkout), 'An existing issue checkout needs manual reconciliation.');
-      // Record identity before the effect, so uncertain creation never creates a second branch.
-      saveLifecycle(service, record);
-      git(service.root, 'worktree', 'add', '-b', work.branch, work.checkout, work.base);
-    }
-  }
-  requireThat(
-    realpathSync(resolve(work.checkout, git(work.checkout, 'rev-parse', '--git-common-dir'))) ===
-      realpathSync(resolve(service.root, git(service.root, 'rev-parse', '--git-common-dir'))),
-    'The checkout belongs to another repository.'
+function legacyIssueCheckout(service, run, issue) {
+  return service.store.runs.findLast(
+    (item) =>
+      item.id !== run.id && item.issueId === issue.id && item.checkout && ['worker', 'issue-work'].includes(item.kind)
   );
+}
+
+function adoptExistingCheckout(work, checkout, legacy, delivery, run) {
+  work.checkout = realpathSync(checkout);
+  work.branch = git(checkout, 'branch', '--show-current');
+  work.base = legacy?.base || delivery?.contributions?.[0]?.originalBase || run.base;
+  requireThat(
+    work.branch && work.branch !== work.config.target,
+    'Existing work is on the target branch. Preserve it before starting.'
+  );
+}
+
+function createIssueCheckout(service, record, run, issue, work) {
+  work.checkout = join(service.root, '.issues/issue-work', issue.id);
+  work.branch = 'codex/issue-' + issue.id;
+  work.base = run.base;
+  mkdirSync(join(service.root, '.issues/issue-work'), { recursive: true });
+  requireThat(!existsSync(work.checkout), 'An existing issue checkout needs manual reconciliation.');
+  // Record identity before the effect, so uncertain creation never creates a second branch.
+  saveLifecycle(service, record);
+  git(service.root, 'worktree', 'add', '-b', work.branch, work.checkout, work.base);
+}
+
+function ensureIssueCheckout(service, record, run, issue, work) {
+  if (work.checkout) return;
+  const legacy = legacyIssueCheckout(service, run, issue);
+  const delivery = service.deliveries.inspect(issue.id);
+  const checkout = delivery?.checkout || legacy?.checkout;
+  if (checkout) adoptExistingCheckout(work, checkout, legacy, delivery, run);
+  else createIssueCheckout(service, record, run, issue, work);
+}
+
+function assertCheckoutRepository(service, work) {
+  const repoRoot = realpathSync(resolve(service.root, git(service.root, 'rev-parse', '--git-common-dir')));
+  const checkoutRoot = realpathSync(resolve(work.checkout, git(work.checkout, 'rev-parse', '--git-common-dir')));
+  requireThat(checkoutRoot === repoRoot, 'The checkout belongs to another repository.');
+}
+
+function assertCheckoutBranch(work) {
   requireThat(
     git(work.checkout, 'branch', '--show-current') === work.branch && work.branch !== work.config.target,
     'The saved issue checkout changed branches. No work was started.'
   );
+}
+
+async function checkoutFor(service, record, run, issue) {
+  const work = record.work;
+  ensureIssueCheckout(service, record, run, issue, work);
+  assertCheckoutRepository(service, work);
+  assertCheckoutBranch(work);
   service.store.update(run, { checkout: work.checkout, base: work.base });
   saveLifecycle(service, record);
 }
-export async function ownerTurn(service, record, run, issue, instruction = '') {
-  requireThat(!record.stopRequested && !record.pauseRequested, 'Paused by you. Saved work is retained.');
-  const work = record.work;
+function assertStrategyActive(record, message) {
+  requireThat(!record.stopRequested && !record.pauseRequested, message);
+}
+
+function strategyProvider(service, config, root) {
+  return service.strategyProvider?.(root, config) || new StrategyProvider(root, config, service.root);
+}
+
+async function runOwnerTurn(service, record, run, issue, work, instruction) {
   const conversation = conversationState(service.root, issue.id);
   if (!record.workThreadId && conversation.threadId)
     saveLifecycle(service, record, { workThreadId: conversation.threadId });
@@ -235,7 +345,7 @@ export async function ownerTurn(service, record, run, issue, instruction = '') {
     status: 'running',
     summary: 'Working toward a merge-ready PR in the issue chat.',
   });
-  const result = JSON.parse(
+  return JSON.parse(
     await service.codex.turn(
       threadId,
       work.checkout,
@@ -245,36 +355,36 @@ export async function ownerTurn(service, record, run, issue, instruction = '') {
       work.modelSettings
     )
   );
-  service.store.update(run, { result, summary: result.summary });
+}
+
+function assertOwnerTurnResult(result) {
   requireThat(
     result.outcome === 'completed',
     result.summary + (result.remaining?.length ? '\n' + result.remaining.join('\n') : '')
   );
   requireThat(Number.isSafeInteger(result.pr) && result.pr > 0, 'The worker did not return an actual PR number.');
+}
+
+async function ownerTurn(service, record, run, issue, instruction = '') {
+  assertStrategyActive(record, 'Paused by you. Saved work is retained.');
+  const work = record.work;
+  const result = await runOwnerTurn(service, record, run, issue, work, instruction);
+  service.store.update(run, { result, summary: result.summary });
+  assertOwnerTurnResult(result);
   work.pr = result.pr;
   saveLifecycle(service, record);
   return result;
 }
-async function executeStrategy(service, record, run, issue, input) {
-  const preflightProvider =
-    service.strategyProvider?.(service.root, record.work.config) ||
-    new StrategyProvider(service.root, record.work.config);
-  if (record.work.strategy === 'full-send' && input.operation !== 'review')
-    await preflightProvider.assertMergeProtection();
-  requireThat(!record.stopRequested && !record.pauseRequested, 'Paused by you. Saved work is retained.');
-  await checkoutFor(service, record, run, issue);
-  const work = record.work;
-  service.guard(
-    service.root,
-    { id: run.actionId, issues: [issue.id] },
-    'implement',
-    git(work.checkout, 'rev-parse', 'HEAD')
-  );
+
+async function runStrategyWork(service, record, run, issue, input, work) {
   if (input.operation !== 'review') await ownerTurn(service, record, run, issue, input.instruction);
-  requireThat(!record.stopRequested && !record.pauseRequested, 'Paused by you. Saved work is retained.');
+  assertStrategyActive(record, 'Paused by you. Saved work is retained.');
   if (work.solRounds) await runSolLoop(service, record, run, issue, ownerTurn);
   requireThat(!git(work.checkout, 'status', '--porcelain'), 'Preserve the issue changes in a commit before handoff.');
-  requireThat(!record.stopRequested && !record.pauseRequested, 'Stopped by you. Saved work is retained.');
+}
+
+async function verifyStrategyCandidate(service, record, run, work) {
+  assertStrategyActive(record, 'Stopped by you. Saved work is retained.');
   const head = git(work.checkout, 'rev-parse', 'HEAD');
   lifecycleEvent(service, record, 'Checking the final committed candidate.');
   service.store.update(run, { status: 'checking' });
@@ -283,32 +393,43 @@ async function executeStrategy(service, record, run, issue, input) {
     checked.head === head && git(work.checkout, 'rev-parse', 'HEAD') === head,
     'The candidate changed during checks.'
   );
-  requireThat(!record.stopRequested && !record.pauseRequested, 'Stopped by you. Checks and saved work are retained.');
-  const provider =
-    service.strategyProvider?.(work.checkout, work.config) || new StrategyProvider(work.checkout, work.config);
+  assertStrategyActive(record, 'Stopped by you. Checks and saved work are retained.');
+  return { head, checked };
+}
+
+async function inspectStrategyReadiness(service, work, head) {
+  const provider = strategyProvider(service, work.config, work.checkout);
   const readiness = await provider.ready(await provider.inspect(work.pr), work.branch, head);
-  writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
-  work.readiness = readiness;
-  if (work.strategy === 'full-send' && input.operation !== 'review') {
-    service.guard(
-      service.root,
-      { id: run.actionId, issues: [issue.id], worker_revision: head },
-      'merge',
-      readiness.target
-    );
-    // Recheck the live PR immediately before the provider-enforced merge.
-    await provider.ready(await provider.inspect(work.pr), work.branch, head);
-    requireThat(!record.stopRequested && !record.pauseRequested, 'Stopped before merging. The PR remains open.');
-    work.merge = await provider.merge(work.pr, head);
-  }
+  return { provider, readiness };
+}
+
+async function maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness) {
+  if (work.strategy !== 'full-send' || input.operation === 'review') return;
+  service.guard(
+    service.root,
+    { id: run.actionId, issues: [issue.id], worker_revision: head },
+    'merge',
+    readiness.target
+  );
+  // Recheck the live PR immediately before the provider-enforced merge.
+  await provider.ready(await provider.inspect(work.pr), work.branch, head);
+  assertStrategyActive(record, 'Stopped before merging. The PR remains open.');
+  work.merge = await provider.merge(work.pr, head);
+}
+
+function strategyOutcome(work, readiness) {
   const status = work.merge ? 'merged' : 'handed-off';
   const summary = work.merge
     ? `Merged ${work.merge.url}. Human acceptance remains separate.`
     : `Ready for you to merge: ${readiness.url}. The PR is open and unmerged.`;
-  saveLifecycle(service, record, { status, summary, work });
+  return { status, summary };
+}
+
+function recordStrategyOutcome(service, record, run, issue, work, readiness, checked, outcome) {
+  saveLifecycle(service, record, { status: outcome.status, summary: outcome.summary, work });
   service.store.update(run, {
     status: 'completed',
-    summary,
+    summary: outcome.summary,
     result: { ...run.result, readiness, checked, merge: work.merge || null },
   });
   appendMessage(service.root, issue.id, {
@@ -316,8 +437,30 @@ async function executeStrategy(service, record, run, issue, input) {
     actor: 'agent',
     role: 'Issue assistant',
     kind: 'strategy-result',
-    body: summary,
+    body: outcome.summary,
   });
+}
+
+async function executeStrategy(service, record, run, issue, input) {
+  const preflightProvider = strategyProvider(service, record.work.config, service.root);
+  if (record.work.strategy === 'full-send' && input.operation !== 'review')
+    await preflightProvider.assertMergeProtection();
+  assertStrategyActive(record, 'Paused by you. Saved work is retained.');
+  await checkoutFor(service, record, run, issue);
+  const work = record.work;
+  service.guard(
+    service.root,
+    { id: run.actionId, issues: [issue.id] },
+    'implement',
+    git(work.checkout, 'rev-parse', 'HEAD')
+  );
+  await runStrategyWork(service, record, run, issue, input, work);
+  const { head, checked } = await verifyStrategyCandidate(service, record, run, work);
+  const { provider, readiness } = await inspectStrategyReadiness(service, work, head);
+  writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
+  work.readiness = readiness;
+  await maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness);
+  recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
 }
 
 export async function stopIssueStrategy(service, input) {

@@ -3,7 +3,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { digest, writeJson } from './common.mjs';
 
 const maxNotes = 8;
-export const workingNotesSchema = {
+const workingNotesSchema = {
   type: 'array',
   maxItems: maxNotes,
   items: {

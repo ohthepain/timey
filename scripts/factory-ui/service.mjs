@@ -1,4 +1,4 @@
-import { startIssueStrategy, stopIssueStrategy, strategyView } from './issue-strategy.mjs';
+import { strategyView } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
 import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
@@ -72,13 +72,7 @@ import { checkImplementation } from './plan-review.mjs';
 import { decidePlanCheck } from './plan-approval.mjs';
 import { skipPlanChecks } from './plan-skips.mjs';
 import { approveReviewFile } from './review-file-access.mjs';
-import {
-  readIssueModelSettings,
-  readModelSettings,
-  saveDefaultModelSettings,
-  saveIssueModelSettings,
-  newChatModelSettings,
-} from './model-settings.mjs';
+import { readIssueModelSettings, readModelSettings, newChatModelSettings } from './model-settings.mjs';
 
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
@@ -89,6 +83,11 @@ const operation = (action) =>
       : action.kind === 'verify'
         ? 'verify'
         : 'investigate';
+
+async function recoverWorkerTurn(service, run, error) {
+  if (run.skipRequested) throw error;
+  return recoverWorkerText(service, run, error);
+}
 
 export class FactoryUI {
   constructor(project, options = {}) {
@@ -185,12 +184,6 @@ export class FactoryUI {
       modelSelection: readIssueModelSettings(this.root, issue.id),
     };
   }
-  saveModelSettings(input) {
-    return saveDefaultModelSettings(this, input);
-  }
-  saveIssueModelSettings(input) {
-    return saveIssueModelSettings(this, input);
-  }
   lifecycleStatus(queue, issue, runs) {
     const record = lifecycleView(this, issue);
     if (!record) return null;
@@ -247,12 +240,6 @@ export class FactoryUI {
       issue = queue.issues.find((i) => i.id === issueId);
     requireThat(issue, 'The saved issue no longer exists.');
     return this.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
-  }
-  stopIssueStrategy(input) {
-    return stopIssueStrategy(this, input);
-  }
-  startIssueStrategy(input) {
-    return startIssueStrategy(this, input);
   }
   startLifecycle(input) {
     return startLifecycle(this, input);
@@ -448,7 +435,7 @@ export class FactoryUI {
         run.issueId ? newChatModelSettings(this.root, run.issueId) : null
       );
     } catch (error) {
-      recovered = await recoverWorkerText(this, run, error);
+      recovered = await recoverWorkerTurn(this, run, error);
       text = recovered.text;
     }
     let result;

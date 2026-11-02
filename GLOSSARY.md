@@ -97,6 +97,12 @@ A coordinator update to one local issue that records corrections already made.
 It checks preservation of other records and source, requires no code commit, and
 leaves unperformed demonstrations and final acceptance explicit.
 
+**Progress view**:
+An explanation of an issue's current work, confirmed milestones, outstanding input
+and next action. An operation's completion names its finish line and remains
+separate from issue acceptance.
+_Avoid_: Lifecycle stage, issue acceptance
+
 ## Lifecycle Progress
 
 An explicitly started run that continues one issue through work covered by its

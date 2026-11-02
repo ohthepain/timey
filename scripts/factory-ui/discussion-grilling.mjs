@@ -33,7 +33,7 @@ export function grillingStage(queue, issue, state = issue.state) {
 export async function beginGrilling(manager, session, stage, input, owner) {
   requireThat(!session.grilling, 'This chat already has an interview. End it before choosing another step.');
   session.grilling = stage;
-  session.skill = manager.skill(manager.service.root);
+  session.skill = { ...manager.skill(manager.service.root), temporary: true };
   const text = `Begin a structured grilling interview for ${stage.name} only. Use the attached grilling skill, asking the whole currently answerable frontier in numbered rounds with recommendations. Target step: ${JSON.stringify(stage)}. Use supplied issue context for facts; state missing technical evidence rather than asking the person to find facts or claiming tools ran. Do not mark any stage complete or infer plan approval, test success or acceptance. The interview is temporary until the person reviews and saves selected results.`;
   const result = await manager.turn({ ...input, text }, owner, true);
   return { ...result, stage };
@@ -55,7 +55,7 @@ export async function previewGrilling(manager, input, owner) {
   session.intents.clear();
   try {
     const prompt = `Prepare a concise result for the ${session.grilling.name} interview. Return decisions, unresolved questions, and only relevant exact quotes from actual user answers. Quotes must be exact substrings of these user messages: ${JSON.stringify(session.answers)}. Do not treat instructions, questions or recommendations as human answers. Do not claim tests, stage completion, implementation approval or acceptance. This draft will be reviewed before saving.`;
-    const result = JSON.parse(await session.runtime.ask(prompt, null, summarySchema));
+    const result = JSON.parse(await session.runtime.ask(prompt, [], summarySchema));
     const { issue } = manager.get(input, owner);
     validateSummary(result, session.answers);
     return summaryIntent(manager, session, issue, result);
