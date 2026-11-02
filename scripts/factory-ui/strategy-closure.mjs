@@ -9,7 +9,7 @@ export function strategyClosureResult(service, issue) {
   if (!record?.work) return null;
   const work = record.work;
   const run = service.store.runs.find((entry) => entry.id === work.runId && entry.issueId === issue.id);
-  requireThat(run?.status === 'completed', 'This strategy has no completed, verified result to accept.');
+  requireThat(run?.status === 'completed', incompleteStrategyMessage(record, run));
   const checked = run.result?.checked;
   requireThat(checked?.summaries?.length, 'The strategy result is missing its saved verification summaries.');
   requireThat(
@@ -46,4 +46,16 @@ export function strategyClosureResult(service, issue) {
     checkout: work.checkout,
     evidence: [...new Set(paths)].map((path) => ({ path, sha256: digest(readFileSync(path)) })),
   };
+}
+
+function incompleteStrategyMessage(record, run) {
+  const summary = run?.summary || run?.result?.summary || record.summary;
+  const details = [summary, ...(run?.result?.remaining || [])].filter(
+    (text, index) => typeof text === 'string' && text.trim() && (index === 0 || !summary?.includes(text))
+  );
+  return [
+    `Cannot accept this issue as Fixed: ${run ? `the saved strategy is ${run.status}` : 'its saved strategy run is missing'}.`,
+    ...details,
+    'A completed, verified strategy result is required. Resolve the saved blocker before accepting the fix, or use Close with reason… to end work without accepting a fix.',
+  ].join('\n');
 }

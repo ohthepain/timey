@@ -8,9 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { requireThat, digest } from './common.mjs';
 import { lifecycleEvent, saveLifecycle } from './lifecycle-store.mjs';
 
-const scopeAnchor = digest(
-  readScopeAnchor(join(dirname(fileURLToPath(import.meta.url)), 'lifecycle-review.mjs'))
-);
+const scopeAnchor = digest(readScopeAnchor(join(dirname(fileURLToPath(import.meta.url)), 'lifecycle-review.mjs')));
 
 const coverageSchema = {
   type: 'object',
