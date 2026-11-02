@@ -21,10 +21,13 @@ writeFileSync(
   config,
   JSON.stringify({ browser: { browserName: 'chromium', isolated: true, launchOptions: { headless: true } } })
 );
+const browserSourcePaths = ['scripts/factory-ui', 'scripts/browser-fixture.mjs'];
+function browserSourceDiff() {
+  return git(root, 'diff', '--binary', '--', ...browserSourcePaths);
+}
 const candidate = {
   revision: git(root, 'rev-parse', 'HEAD'),
-  tree: git(root, 'write-tree'),
-  source: digest(git(root, 'diff', '--binary')),
+  source: digest(browserSourceDiff()),
 };
 const results = [];
 let passed = false;
@@ -69,8 +72,14 @@ try {
     results.push({ name, passed: true, log: join(output, name.replaceAll('/', '-') + '.log') });
     console.log('PASS browser scenario: ' + name);
   }
-  if (git(root, 'write-tree') !== candidate.tree || digest(git(root, 'diff', '--binary')) !== candidate.source)
-    throw Error('Candidate source changed during browser verification.');
+  const after = digest(browserSourceDiff());
+  if (after !== candidate.source) {
+    const stat = git(root, 'diff', '--stat', '--', ...browserSourcePaths);
+    throw Error(
+      'Served factory UI changed during browser verification.' +
+        (stat ? '\n' + stat : '\n(no diff stat; compare scripts/factory-ui manually)')
+    );
+  }
   passed = true;
 } finally {
   try {

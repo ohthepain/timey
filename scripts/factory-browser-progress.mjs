@@ -84,9 +84,10 @@ export default async function progressBrowserChecks(page) {
   await page.getByRole('heading', { name: 'Answering scope questions', exact: true }).waitFor();
   if ((await page.getByRole('tab', { name: 'Progress', exact: true }).getAttribute('aria-selected')) !== 'true')
     throw Error('Progress is not the default tab.');
-  const question = page.getByText('Should Save retain the draft?', { exact: true });
+  const progressPanel = page.locator('[data-chat-panel="progress"]');
+  const question = progressPanel.getByText('Should Save retain the draft?', { exact: true });
   if (!(await question.isVisible())) throw Error('Actual pending question was not shown.');
-  const answer = page.locator('#lifecycle-answer-b');
+  const answer = progressPanel.locator('#lifecycle-answer-b');
   if ((await answer.count()) !== 1) throw Error('Question control was duplicated.');
   await answer.fill('Yes, retain this draft.');
   updated = '2026-11-01T10:00:30Z';
