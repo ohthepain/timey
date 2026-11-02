@@ -1738,20 +1738,39 @@
           })
           .join('');
       }
+      function queueEvaluationHistory() {
+        const evaluations = data.runs.filter((run) => run.kind === 'evaluation');
+        const current = evaluations.at(-1);
+        if (!current) return '<h2>Current decision and next action</h2><p>No selections made yet.</p>';
+        const decision = current.result?.summary || current.displaySummary || current.summary;
+        const nextAction = current.result?.next_step
+          ? esc(current.result.next_step)
+          : current.result?.next_issue_id
+            ? `Continue with ${link(current.result.next_issue_id)}.`
+            : current.status === 'completed'
+              ? 'No next action was recorded.'
+              : `This selection is ${statusLabel(current.status)}.`;
+        const actionLabel =
+          {
+            work: 'Work',
+            reconcile: 'Update the issue record',
+            question: 'Answer a question',
+            blocked: 'Blocked',
+          }[current.result?.next_action] || statusLabel(current.status);
+        const prior = evaluations
+          .slice(0, -1)
+          .reverse()
+          .map((run) => progress(run, false))
+          .join('');
+        return `<h2>Current decision and next action</h2><section class="card queue-decision" data-current-evaluation="${esc(current.id)}"><span class="badge">${esc(actionLabel)}</span><p><strong>Current decision:</strong> ${esc(decision || 'No decision summary recorded.')}</p><p><strong>Next action:</strong> ${nextAction}</p></section><details class="queue-history"><summary>History and diagnostics</summary>${prior || '<p>No older evaluations.</p>'}<h3>Current evaluation diagnostics</h3>${progress(current, false)}</details>`;
+      }
       function queue() {
         return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><p class="muted">Work runs by issue strategy. Scheduling uses priority, then oldest eligible issue.</p><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
             .join('') || '<p>No saved assignments. Choose the next issue or discuss the queue.</p>'
-        }</fieldset></details><h2>Queue selections</h2>${
-          data.runs
-            .filter((r) => r.kind === 'evaluation')
-            .slice()
-            .reverse()
-            .map((run) => progress(run, false))
-            .join('') || '<p>No selections made yet.</p>'
-        }`;
+        }</fieldset></details>${queueEvaluationHistory()}`;
       }
       const priorityPending = new Set();
       function priorityControls(issue) {

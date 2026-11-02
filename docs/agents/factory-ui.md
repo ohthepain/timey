@@ -20,6 +20,10 @@ stage, worker completion and code integration. Links use the report's Parent,
 Blocked by and Related sections; reverse links are computed from those explicit
 references. Reports are displayed as escaped text, never executable HTML.
 
+Below the issue table, the queue shows the latest saved evaluation's decision and
+next action. Earlier evaluations and the full diagnostics for the latest one are
+inside the collapsed **History and diagnostics** disclosure.
+
 Under the issue number, the issue screen shows the working checkout's current
 branch and short HEAD commit, with the full hash available on hover. It uses
 unfinished worker work first, then the assembled issue branch, then the last

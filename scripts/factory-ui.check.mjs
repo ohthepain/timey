@@ -290,6 +290,65 @@ test('queue-wide review still reconsiders grouping after an unrelated issue chan
   assert.throws(() => service.saveReview(runId, service.snapshot().reviewBasis), /stale/);
 });
 
+test('queue shows the latest decision and next action, with evaluation diagnostics collapsed', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function queueEvaluationHistory('),
+    html.indexOf('      function queue()', html.indexOf('      function queueEvaluationHistory('))
+  );
+  const render = new Function(
+    'data',
+    'progress',
+    'statusLabel',
+    'link',
+    'esc',
+    source + '; return queueEvaluationHistory;'
+  )(
+    {
+      runs: [
+        {
+          id: 'old',
+          kind: 'evaluation',
+          status: 'completed',
+          summary: 'Older selection',
+          result: { recommendations: ['old evidence'] },
+        },
+        {
+          id: 'current',
+          kind: 'evaluation',
+          status: 'completed',
+          displaySummary: 'Latest selection',
+          summary: 'Latest selection',
+          result: {
+            summary: 'Selected the highest priority issue.',
+            next_action: 'work',
+            next_step: 'Continue the selected issue. <script>unsafe()</script>',
+            recommendations: ['raw evidence'],
+          },
+        },
+      ],
+    },
+    (run) => `<section data-run="${run.id}">${run.result.recommendations}</section>`,
+    (status) => status,
+    (id) => `<a href="#/issue/${id}">${id}</a>`,
+    (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  );
+  const output = render();
+  assert.match(output, /<strong>Current decision:<\/strong>\s*Selected the highest priority issue/);
+  assert.match(
+    output,
+    /<strong>Next action:<\/strong>\s*Continue the selected issue\. &lt;script&gt;unsafe\(\)&lt;\/script&gt;/
+  );
+  assert.match(output, /<details class="queue-history"><summary>History and diagnostics<\/summary>/);
+  assert.doesNotMatch(
+    output.match(/<details class="queue-history"[\s\S]*?<\/details>/)?.[0] || '',
+    /<details[^>]*open/
+  );
+  assert.match(output, /data-run="old"/);
+  assert.match(output, /data-run="current"/);
+  assert.doesNotMatch(output.slice(0, output.indexOf('<details class="queue-history"')), /raw evidence|data-run="old"/);
+});
+
 test('queue review, saving and launching are separate explicit operations', async (t) => {
   const { service, api } = fixture(t);
   transport(t, service);
