@@ -74,9 +74,13 @@ export class GitHubAppCredentials {
       !this.config.installationId || installation.id === this.config.installationId,
       'GitHub App installation does not match configuration.'
     );
-    const token = await this.api(`app/installations/${this.config.installationId || installation.id}/access_tokens`, jwt, {
-      repositories: [this.repository.split('/')[1]],
-    });
+    const token = await this.api(
+      `app/installations/${this.config.installationId || installation.id}/access_tokens`,
+      jwt,
+      {
+        repositories: [this.repository.split('/')[1]],
+      }
+    );
     const expires = Date.parse(token.expires_at);
     requireThat(
       typeof token.token === 'string' && token.token && expires > this.now() + 60000,
@@ -103,7 +107,10 @@ export function githubAppCredentials(root, repository) {
     const parsedAppId = Number(appId);
     const parsedInstallationId = Number(installationId);
     requireThat(Number.isSafeInteger(parsedAppId) && parsedAppId > 0, 'Invalid GitHub App ID environment setting.');
-    requireThat(typeof privateKey === 'string' && privateKey.trim(), 'Missing GitHub App private key environment setting.');
+    requireThat(
+      typeof privateKey === 'string' && privateKey.trim(),
+      'Missing GitHub App private key environment setting.'
+    );
     requireThat(
       Number.isSafeInteger(parsedInstallationId) && parsedInstallationId > 0,
       'Invalid GitHub App installation ID environment setting.'

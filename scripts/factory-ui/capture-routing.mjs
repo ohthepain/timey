@@ -26,12 +26,16 @@ function assertUniqueStates(stages) {
 function assertRoleMappings(stages, flags) {
   const { combined, hasInvestigation } = flags;
   if (!combined) requireThat(flags.hasInvestigation, 'Invalid lifecycle mapping for ready-for-repro.');
-  if (hasInvestigation) requireThat(stageRoles(stages, 'ready-for-repro').length === 1, 'The lifecycle repeats Investigate.');
+  if (hasInvestigation)
+    requireThat(stageRoles(stages, 'ready-for-repro').length === 1, 'The lifecycle repeats Investigate.');
   for (const role of required)
     requireThat(stageRoles(stages, role).length === 1, `Invalid lifecycle mapping for ${role}.`);
   requireThat(stageRoles(stages, 'ready-for-grilling').length <= 1, 'The lifecycle repeats Clarify.');
   requireThat(stageRoles(stages, 'ready-to-prototype').length <= 1, 'The lifecycle repeats Prototype.');
-  requireThat(stages.every((s) => knownRoles.includes(s.role)), 'Unknown lifecycle role.');
+  requireThat(
+    stages.every((s) => knownRoles.includes(s.role)),
+    'Unknown lifecycle role.'
+  );
 }
 
 function walkLifecyclePath(stages) {
