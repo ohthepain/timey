@@ -112,6 +112,9 @@ A checkpoint fails on a nonzero Fallow process exit, a `fail` or `error` audit
 verdict, warning text on stderr, degraded analysis, missing/unsupported JSON, or a
 mismatched gate. A `warn` verdict with exit zero passes (introduced warn-severity
 findings are reported in evidence but do not block commits).
+Fallow runs with `--no-cache` in exported verification snapshots so stale graph
+cache metadata from prior base/candidate snapshots cannot produce warning output;
+the audit scope, analysis and gates are unchanged.
 Inspect and fix findings, then rerun. Do not suppress warnings, add exclusions,
 weaken thresholds, or select a later base to make the checkpoint green. Findings
 outside the authorized scope remain explicit blockers for a human decision;
