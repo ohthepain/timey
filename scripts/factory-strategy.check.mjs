@@ -190,6 +190,7 @@ test('an existing active assignment is not replaced by a strategy worker', (t) =
 function providerFixture() {
   const config = { repository: 'fixture/timey', target: 'main' };
   const provider = new StrategyProvider('.', config, join(tmpdir(), 'timey-provider-fixture-no-credentials'));
+  provider.credentials = null;
   const pr = {
     number: 12,
     user: { login: 'fixture' },
