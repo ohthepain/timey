@@ -50,7 +50,7 @@ export default async function closeBrowserChecks(page) {
   return {
     passed: true,
     assertions: [
-      'close outside final review',
+      'close after completed work',
       'immediate feedback',
       'precise blocker',
       'explicit retry',

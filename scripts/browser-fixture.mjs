@@ -6,6 +6,7 @@ import { join } from 'node:path';
 export function browserFixture(root) {
   const lifecycle = [
     ['ready-for-grilling', 'backlog', 'qa', 'Clarify'],
+    ['ready-to-close', 'final', 'closed', 'Final review'],
     ['closed', 'closed', '—', 'Closed'],
     ['custom', 'qa', 'closed', 'QA'],
   ].map(([role, state, next, name]) => ({ role, state, next, name, exit: 'Fixture stage' }));
@@ -16,7 +17,7 @@ export function browserFixture(root) {
     meaning: 'Fixture priority',
   }));
   const issues = [
-    ['b', 'Older urgent issue', 'backlog', 0, '2026-01-01', '2026-03-01'],
+    ['b', 'Older urgent issue', 'final', 0, '2026-01-01', '2026-03-01'],
     ['a', 'Newer low issue', 'qa', 2, '2026-02-01', '2026-01-01'],
     ['c', 'Newest closed issue', 'closed', 1, '2026-03-01', '2026-02-01'],
     ['x', 'Unknown metadata', 'unknown', -1, 'invalid', null],

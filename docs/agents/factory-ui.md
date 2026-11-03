@@ -541,9 +541,12 @@ The live factory task log is administrative context. If completing a review chan
 it, final acceptance retains its current contents and earlier hash separately;
 unchanged source, plan, behavioral evidence and no outstanding work are still required.
 
-Close issue records explicit acceptance and closes in one tap, without a
-confirmation dialog. The button disables during the request and the screen refreshes
-after success. Reopen keeps its confirmation and optional reason.
+Accept fix and close appears after the issue reaches final review or its saved
+strategy/checklist records completed work. It records explicit acceptance and
+closes in one tap, without a confirmation dialog. The button disables during the
+request and the screen refreshes after success. Close with reason remains available
+for ending work without accepting a fix. Reopen keeps its confirmation and optional
+reason.
 
 Older issues already at Final review can be accepted without backfilling stage
 history when the registry records integration and both worker and checked
