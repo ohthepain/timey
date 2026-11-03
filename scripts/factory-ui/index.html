@@ -15,6 +15,12 @@
         background: #f4f3ed;
         color: #203b35;
       }
+      #connection-banner {
+        padding: 10px 24px;
+        background: #991b1b;
+        color: #fff;
+        font-weight: 650;
+      }
       h1,
       h2,
       h3,
@@ -1289,6 +1295,7 @@
     </style>
   </head>
   <body>
+    <div id="connection-banner" role="alert" hidden></div>
     <header>
       <a href="#/queue"><b>Factory</b></a
       ><span>Issue queue</span><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
@@ -1386,6 +1393,8 @@
           ]);
           data = { ...snapshot, conversation };
           progressUnavailable = false;
+          $('connection-banner').hidden = true;
+          $('connection').hidden = false;
           updateProgressView();
           coordinatorUI.update(data);
           showRuntime(runtime);
@@ -1411,11 +1420,15 @@
           progressUnavailable = true;
           updateProgressView();
           if (await serverControlUI.reconnect(request)) {
+            $('connection-banner').hidden = true;
+            $('connection').hidden = false;
             $('connection').textContent = 'Reconnecting after server restart…';
             return;
           }
           $('error').textContent = e.message;
-          $('connection').textContent = 'Connection needs attention';
+          $('connection-banner').textContent = 'Connection needs attention';
+          $('connection-banner').hidden = false;
+          $('connection').hidden = true;
         } finally {
           refreshing = false;
         }
