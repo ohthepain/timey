@@ -128,6 +128,9 @@ The local queue/issue interface is `scripts/factory-ui.mjs`; its HTTP, CLI,
 human-input and result-checking modules are in `scripts/factory-ui/`. See
 [its operating guide](factory-ui.md). `scripts/factory-ui.check.mjs` exercises
 disposable queues, chat protocol fixtures and manual action boundaries.
+`factory-ui/guard.mjs` invokes the pinned human-input helper for dispatch checks;
+subprocess failures retain exit status or signal and bounded structured helper
+diagnostics while omitting raw process output. The guard remains fail-closed.
 The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
 links routed by `scripts/factory-ui/index.html`.
