@@ -128,6 +128,9 @@ The local queue/issue interface is `scripts/factory-ui.mjs`; its HTTP, CLI,
 human-input and result-checking modules are in `scripts/factory-ui/`. See
 [its operating guide](factory-ui.md). `scripts/factory-ui.check.mjs` exercises
 disposable queues, chat protocol fixtures and manual action boundaries.
+`factory-ui/guard.mjs` invokes the pinned human-input helper for dispatch checks;
+subprocess failures retain exit status or signal and bounded structured helper
+diagnostics while omitting raw process output. The guard remains fail-closed.
 The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
 links routed by `scripts/factory-ui/index.html`.
@@ -303,6 +306,16 @@ and issue project. `factory-ui/queue-response.mjs` projects bounded polling data
 `factory-ui/issue-git.mjs` reads the selected issue's working branch and HEAD
 from its worker or delivery checkout, independently of the server source;
 full saved runs remain available through the authenticated on-demand endpoint.
+`queue-human-input.mjs` batches shared display-only human-input reads within one
+snapshot. Issue-specific readiness facts keep separate reads, and each new snapshot
+reads fresh state. Execution guards remain independent. This avoids per-issue
+synchronous helper launches starving the server's GitHub authentication requests.
+
+`factory-ui/strategy-publication.mjs` creates new strategy PRs through the App-authenticated
+`StrategyProvider` after independent verification. Workers return the prepared
+description and a null PR number. Publication reconciles open PRs on retry and
+validates App authorship, the pushed candidate and approved target; saved existing
+PRs retain their identity and history.
 
 `scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;
 `factory-workflow.check.mjs` owns the cross-format issue-decision compatibility
@@ -510,10 +523,11 @@ source hashes; current-context usage controls early rotation rather than billing
 or turn counts. Predecessor archival follows successful replacement attachment. `coordinator-ui.js` renders its dedicated page and compact activity strip.
 Only optional queue discussion uses its separate connection. Issue planning and
 reviews use the owning issue chat; queue scheduling uses no chat. Failed or interrupted
-operations retain their results and stop for manual attention. They do not trigger AI
+legacy operations retain their results and stop for manual attention. They do not trigger AI
 recovery reviews, automatic worker continuations, completion repair assignments or
 replanning when inputs change. Explicit retry controls retain their approval guards.
-Workers and independent reviews retain their existing connections.
+Workers and independent reviews retain their existing connections. The explicit
+strategy path below permits bounded blocker repair within its active owning run.
 Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.
 
 Factory verification recovery is covered by `scripts/factory-recovery.check.mjs`:
@@ -533,6 +547,14 @@ refresh and project-local credential configuration shared with worktree provider
 The issue screen shows strategy/status and collapses legacy roles into disabled
 history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
 failures, explicit starts and missing review capabilities.
+
+`strategy-repair.mjs` owns the active run's bounded repair ledger and infrastructure
+retries; `strategy-target.mjs` fetches/merges the configured target and preserves
+conflicts for the owner. `strategy-readiness.mjs` classifies PR blockers, observes
+pending CI and reconciles an externally merged candidate. The controller retains
+implementation and independent verification before later delivery can fail;
+repair turns reuse a completed owner's chat without replaying chat creation.
+The policy is recorded in each explicit start receipt and never wakes inactive work.
 
 `factory-ui/strategy-closure.mjs` validates saved strategy verification and step
 summaries against their recorded candidate and retains their evidence for explicit

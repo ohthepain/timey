@@ -18,7 +18,7 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
       actions.some((a) => a.id === r.actionId && a.issues.length === 1 && a.issues[0] === issueId)
   );
   const threadId = record.workThreadId || previous?.threadId || record.assessmentThreadId;
-  if (!threadId || run.startup) {
+  if (needsStartup(run, threadId)) {
     const created = await startChat(service, run, cwd, sandbox);
     saveLifecycle(service, record, { workThreadId: created, assessmentThreadId: created });
     return created;
@@ -51,6 +51,17 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
   service.store.update(run, { threadId, reusedIssueChat: true });
   saveLifecycle(service, record, { workThreadId: threadId, assessmentThreadId: threadId });
   return nameIssueChat(service, run, threadId);
+}
+
+function recordedOwnerTurn(run, threadId) {
+  if (run.startup?.status !== 'ready') return false;
+  return run.startup.threadId === threadId && Boolean(run.resultRevision);
+}
+
+function needsStartup(run, threadId) {
+  if (!threadId) return true;
+  if (!run.startup) return false;
+  return !recordedOwnerTurn(run, threadId);
 }
 
 export async function loadSavedChat(cli, threadId, cwd, sandbox) {

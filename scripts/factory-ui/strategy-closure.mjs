@@ -26,7 +26,7 @@ export function strategyClosureResult(service, issue) {
   for (const path of checked.summaries) {
     const summary = readJson(path);
     try {
-      validateSummary(summary, work.base, checked.tree);
+      validateSummary(summary, work.base, checked.tree, strategyAuditOptions(work));
     } catch (error) {
       const failed = (summary.checks || []).filter((check) => !check.passed).map((check) => check.name);
       throw Error(
@@ -46,6 +46,10 @@ export function strategyClosureResult(service, issue) {
     checkout: work.checkout,
     evidence: [...new Set(paths)].map((path) => ({ path, sha256: digest(readFileSync(path)) })),
   };
+}
+
+function strategyAuditOptions(work) {
+  return { auditPolicy: work.blockerRepair ? 'required' : 'legacy' };
 }
 
 function incompleteStrategyMessage(record, run) {

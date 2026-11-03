@@ -10,6 +10,7 @@ import { factory } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { createDiscussions } from './factory-ui/discussion.mjs';
 import { humanGuard } from './factory-ui/guard.mjs';
+import { digest } from './factory-ui/common.mjs';
 
 function fixture(t) {
   const { root, git } = gitFixture(t, 'discussion-check-');
@@ -81,6 +82,57 @@ function fixture(t) {
     },
   };
 }
+
+function installFailingHumanInputHelper(root, { signal = null, diagnostic }) {
+  const scripts = join(root, '.agents/skills/issues/scripts');
+  const helper = join(scripts, 'human-input.mjs');
+  const source = `
+if (process.argv[2] === 'capabilities') {
+  console.log(JSON.stringify({ capabilities: ['read', 'guards'] }));
+} else {
+  process.stdout.write(${JSON.stringify(JSON.stringify({ diagnostics: [diagnostic] }))});
+  process.stderr.write('PRIVATE_STDERR_CANARY');
+  ${signal ? `process.kill(process.pid, ${JSON.stringify(signal)});` : 'process.exit(4);'}
+}
+`;
+  writeFileSync(helper, source);
+  const manifestPath = join(scripts, 'human-input-version.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  writeFileSync(manifestPath, JSON.stringify({ ...manifest, bundle_sha256: `sha256:${digest(source)}` }));
+}
+
+test('human-input helper failures retain safe status and structured diagnostics without bypassing the guard', (t) => {
+  const f = fixture(t);
+  installFailingHumanInputHelper(f.root, {
+    diagnostic: { code: 'REPORT_INVALID', message: 'Cannot read report at /Users/private/report.md' },
+  });
+  assert.throws(
+    () => humanGuard(f.root, { issues: ['20261025-a'] }, 'implement', 'candidate-head'),
+    (error) => {
+      assert.match(error.message, /exit status 4/);
+      assert.match(error.message, /REPORT_INVALID: Cannot read report at \[path\]/);
+      assert.doesNotMatch(error.message, /PRIVATE_STDERR_CANARY|private\/report/);
+      return true;
+    }
+  );
+});
+
+test('human-input helper signal failures identify the signal and retain structured context', (t) => {
+  const f = fixture(t);
+  installFailingHumanInputHelper(f.root, {
+    signal: 'SIGTERM',
+    diagnostic: { code: 'IO_FAILURE', message: 'Unable to process input' },
+  });
+  assert.throws(
+    () => humanGuard(f.root, { issues: ['20261025-a'] }, 'implement', 'candidate-head'),
+    (error) => {
+      assert.match(error.message, /signal SIGTERM/);
+      assert.match(error.message, /IO_FAILURE: Unable to process input/);
+      assert.doesNotMatch(error.message, /PRIVATE_STDERR_CANARY/);
+      return true;
+    }
+  );
+});
 
 test('ordinary turns isolate context and never write history; reset and expiry destroy runtimes', async (t) => {
   const f = fixture(t),

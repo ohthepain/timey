@@ -18,8 +18,19 @@ Each issue has one owning work chat and branch. Investigation, implementation,
 checks and review are activities within the assignment, not separately planned
 roles. Starting records human authorization of the displayed issue scope, linked
 plan, delivery destination, strategy and review budget. Existing idle work is
-adopted; active or uncertain work is never duplicated. Failures stop with evidence
-for manual attention. The previous lifecycle is retained as disabled history.
+adopted; active or uncertain work is never duplicated. The previous lifecycle is
+retained as disabled history.
+
+On 2026-11-02 the user approved [autonomous blocker repair](../plans/autonomous-blocker-repair.md).
+Explicit Start/Continue grants necessary technical repairs beyond the initial
+feature, including inherited tests/formatting, target merges/conflicts and new
+Fallow findings including warnings. Repairs stay on the issue PR in separate
+commits, or a linked follow-up PR if the original merged. The server sends failed
+verification and readiness evidence back to the same owner and verifies changed
+candidates. Three different failed approaches to the same blocker stop the run;
+temporary infrastructure failures allow three delayed retries. Actual permission
+denials and human decisions stop immediately. Inactive work never revives itself.
+Full Stop/Full Send boundaries, protected merging and verified Fixed closure remain.
 
 The scheduler selects by configured priority, then oldest eligible issue, then ID.
 It does not rank lifecycle stages. Optional queue discussion remains separate.
@@ -45,9 +56,24 @@ repository and an absolute private-key path; deployed servers may instead use
 The server signs a short-lived app JWT, discovers the installation and requests a
 token restricted to that repository. Tokens remain in memory, refresh before
 expiry, and are passed only to the provider's `gh` subprocesses. Personal Git and
-CLI logins remain separate; worker publication is unchanged. Worktree providers
+CLI logins remain separate. Strategy workers commit and push their issue branch,
+then return a PR title/body and a null PR number. After independent candidate
+verification the server creates the non-draft PR using the installed App, checks
+its author and exact candidate/target, and retains its number before readiness or
+merge. Missing App credentials stop publication without a personal-login fallback.
+Every retry discovers matching PRs first to reconcile uncertain creation; a closed
+or merged match stops rather than creating a replacement.
+Existing saved PRs retain their authorship and history; workers cannot adopt a new
+personally authored PR, replace a PR or reopen a closed PR to change its author.
+The legacy draft-handoff adapter retains its existing publication policy.
+Worktree providers
 use the owning project's credentials, not a worktree-local configuration. Failed
 app authentication stops rather than falling back to the personal login.
+Temporary connection failures while fetching or reading an authentication response,
+including timeouts and malformed JSON, use the strategy's bounded infrastructure
+retries. Errors retain only the handshake stage and known failure category; response
+bodies, tokens and raw exception messages are never recorded. HTTP authentication
+and permission denials still stop immediately.
 
 The review ruleset grants the factory app PR-only bypass. The separate CI ruleset
 requires the GitHub Actions `test` check and up-to-date branches, with no factory

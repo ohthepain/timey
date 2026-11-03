@@ -8,8 +8,18 @@ import { issueWorkChat } from './issue-work-chat.mjs';
 import { appendMessage, conversationState, saveConversationState } from './conversation-store.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
+import { waitStrategyReadiness } from './strategy-readiness.mjs';
 import { strategyPrompt, strategyResultSchema } from './strategy-prompt.mjs';
 import { runSolLoop } from './strategy-review.mjs';
+import {
+  blockerRepairPolicy,
+  permissionFailure,
+  repairableBlocker,
+  repairInstruction,
+  retryInfrastructure,
+  runRepairableStrategy,
+} from './strategy-repair.mjs';
+import { synchronizeStrategyTarget } from './strategy-target.mjs';
 
 const issueDeliveryConfigPath = (root) => join(root, '.issues/issue-delivery-config.json');
 
@@ -158,6 +168,7 @@ function writeStrategyApproval(service, run, issue, record, input, config) {
     config,
     operation: input.operation || 'work',
     instruction: String(input.instruction || ''),
+    blockerRepair: blockerRepairPolicy,
     at: new Date().toISOString(),
   });
   return receipt;
@@ -171,6 +182,9 @@ function strategyStartMessage(input, receipt, instruction) {
 function strategyWorkState(service, issue, old, record, input, run, receipt, config) {
   return {
     ...old,
+    pr: inheritedPr(service, old),
+    publicationOwner: 'server',
+    blockerRepair: blockerRepairPolicy,
     priorInput: old?.priorInput || record.input || null,
     modelSettings: newChatModelSettings(service.root, issue.id),
     strategy: input.strategy,
@@ -179,6 +193,23 @@ function strategyWorkState(service, issue, old, record, input, run, receipt, con
     config,
     runId: run.id,
   };
+}
+
+function priorRunResult(service, old) {
+  if (!old) return {};
+  const previous = service.store.runs.find((entry) => entry.id === old.runId);
+  if (!previous) return {};
+  return previous.result || {};
+}
+
+function inheritedPr(service, old) {
+  if (old?.publicationOwner === 'server') return old.pr || null;
+  return legacyPr(service, old);
+}
+
+function legacyPr(service, old) {
+  const result = priorRunResult(service, old);
+  return old?.pr || result.pr || null;
 }
 
 function scheduleStrategyTask(service, record, run, issue, input) {
@@ -357,29 +388,53 @@ async function runOwnerTurn(service, record, run, issue, work, instruction) {
   );
 }
 
-function assertOwnerTurnResult(result) {
+function assertOwnerTurnResult(result, work) {
+  assertOwnerBlocker(result);
   requireThat(
     result.outcome === 'completed',
     result.summary + (result.remaining?.length ? '\n' + result.remaining.join('\n') : '')
   );
-  requireThat(Number.isSafeInteger(result.pr) && result.pr > 0, 'The worker did not return an actual PR number.');
+  requireThat(
+    workerPRIsSaved(result.pr, work.pr),
+    'The server owns PR publication. Return null for a new PR or the already saved PR number; do not create a PR with the worker login.'
+  );
+}
+
+function workerPRIsSaved(pr, saved) {
+  return pr === null || [Number.isSafeInteger(pr), pr > 0, pr === saved].every(Boolean);
+}
+
+function assertOwnerBlocker(result) {
+  if (result.outcome !== 'completed' && result.blocker?.kind === 'repair')
+    throw Object.assign(
+      repairableBlocker(
+        'worker-repair',
+        result.blocker.cause + '\n' + result.summary + '\n' + result.remaining.join('\n')
+      ),
+      { repairResult: result }
+    );
 }
 
 async function ownerTurn(service, record, run, issue, instruction = '') {
   assertStrategyActive(record, 'Paused by you. Saved work is retained.');
   const work = record.work;
   const result = await runOwnerTurn(service, record, run, issue, work, instruction);
-  service.store.update(run, { result, summary: result.summary });
-  assertOwnerTurnResult(result);
-  work.pr = result.pr;
+  const revision = git(work.checkout, 'rev-parse', 'HEAD');
+  service.store.update(run, {
+    result: { ...run.result, ...result },
+    resultRevision: revision,
+    summary: result.summary,
+  });
+  work.implementation = { revision, outcome: result.outcome, summary: result.summary, at: new Date().toISOString() };
   saveLifecycle(service, record);
+  assertOwnerTurnResult(result, work);
+  work.lastOwnerRevision = revision;
   return result;
 }
 
 async function runStrategyWork(service, record, run, issue, input, work) {
   if (input.operation !== 'review') await ownerTurn(service, record, run, issue, input.instruction);
   assertStrategyActive(record, 'Paused by you. Saved work is retained.');
-  if (work.solRounds) await runSolLoop(service, record, run, issue, ownerTurn);
   requireThat(!git(work.checkout, 'status', '--porcelain'), 'Preserve the issue changes in a commit before handoff.');
 }
 
@@ -388,12 +443,17 @@ async function verifyStrategyCandidate(service, record, run, work) {
   const head = git(work.checkout, 'rev-parse', 'HEAD');
   lifecycleEvent(service, record, 'Checking the final committed candidate.');
   service.store.update(run, { status: 'checking' });
-  const checked = await service.check(work.checkout, work.base, join(service.store.directory, run.id));
+  const checked = await service.check(work.checkout, work.base, join(service.store.directory, run.id), {
+    auditPolicy: 'required',
+  });
   requireThat(
     checked.head === head && git(work.checkout, 'rev-parse', 'HEAD') === head,
     'The candidate changed during checks.'
   );
   assertStrategyActive(record, 'Stopped by you. Checks and saved work are retained.');
+  service.store.update(run, { result: { ...run.result, checked } });
+  work.verification = { head, checked, at: new Date().toISOString() };
+  saveLifecycle(service, record);
   return { head, checked };
 }
 
@@ -403,8 +463,22 @@ async function inspectStrategyReadiness(service, work, head) {
   return { provider, readiness };
 }
 
+async function publishVerifiedCandidate(service, record, run, head) {
+  const work = record.work;
+  if (work.pr) return;
+  const provider = strategyProvider(service, work.config, work.checkout);
+  const pr = await retryInfrastructure(service, record, () => provider.publish(work, head, run.result.publication));
+  work.pr = pr.number;
+  service.store.update(run, { result: { ...run.result, pr: pr.number } });
+  saveLifecycle(service, record);
+}
+
 async function maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness) {
-  if (work.strategy !== 'full-send' || input.operation === 'review') return;
+  if (readiness.merged) {
+    work.merge = readiness.merge;
+    return;
+  }
+  if (!automaticMergeSelected(work, input)) return;
   service.guard(
     service.root,
     { id: run.actionId, issues: [issue.id], worker_revision: head },
@@ -412,9 +486,17 @@ async function maybeAutoMerge(service, record, run, issue, input, work, head, pr
     readiness.target
   );
   // Recheck the live PR immediately before the provider-enforced merge.
-  await provider.ready(await provider.inspect(work.pr), work.branch, head);
+  const latest = await provider.ready(await provider.inspect(work.pr), work.branch, head);
+  if (latest.merged) {
+    work.merge = latest.merge;
+    return;
+  }
   assertStrategyActive(record, 'Stopped before merging. The PR remains open.');
   work.merge = await provider.merge(work.pr, head);
+}
+
+function automaticMergeSelected(work, input) {
+  return work.strategy === 'full-send' && input.operation !== 'review';
 }
 
 function strategyOutcome(work, readiness) {
@@ -444,7 +526,7 @@ function recordStrategyOutcome(service, record, run, issue, work, readiness, che
 async function executeStrategy(service, record, run, issue, input) {
   const preflightProvider = strategyProvider(service, record.work.config, service.root);
   if (record.work.strategy === 'full-send' && input.operation !== 'review')
-    await preflightProvider.assertMergeProtection();
+    await retryInfrastructure(service, record, () => preflightProvider.assertMergeProtection());
   assertStrategyActive(record, 'Paused by you. Saved work is retained.');
   await checkoutFor(service, record, run, issue);
   const work = record.work;
@@ -454,13 +536,123 @@ async function executeStrategy(service, record, run, issue, input) {
     'implement',
     git(work.checkout, 'rev-parse', 'HEAD')
   );
-  await runStrategyWork(service, record, run, issue, input, work);
-  const { head, checked } = await verifyStrategyCandidate(service, record, run, work);
-  const { provider, readiness } = await inspectStrategyReadiness(service, work, head);
-  writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
-  work.readiness = readiness;
-  await maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness);
-  recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
+  let initialWork = true;
+  await runRepairableStrategy(
+    service,
+    record,
+    run,
+    async () => {
+      await synchronizeCycleTarget(service, record, initialWork, input);
+      if (initialWork) {
+        initialWork = false;
+        await runStrategyWork(service, record, run, issue, input, work);
+      }
+      if (await synchronizeStrategyTarget(service, record)) throw updatedTargetBlocker();
+      if (work.solRounds) await runSolLoop(service, record, run, issue, ownerTurn);
+      const { head, checked } = await verifiedRepairCandidate(service, record, run, work);
+      assertStrategyActive(record, 'Stopped by you. No PR was published.');
+      await publishVerifiedCandidate(service, record, run, head);
+      const { provider, readiness } = await waitStrategyReadiness(service, record, () =>
+        retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
+      );
+      assertCurrentTarget(work, readiness);
+      writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
+      work.readiness = readiness;
+      saveLifecycle(service, record);
+      await waitStrategyReadiness(service, record, () =>
+        retryInfrastructure(service, record, () =>
+          maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness)
+        )
+      );
+      recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
+    },
+    async (error, blocker) => {
+      initialWork = false;
+      await prepareRepairBranch(service, record, run);
+      return ownerTurn(service, record, run, issue, repairInstruction(error, blocker));
+    }
+  );
+}
+
+function updatedTargetBlocker() {
+  return Object.assign(
+    repairableBlocker(
+      'target-updated',
+      'The target advanced. The server merged it; check and publish the updated issue branch.'
+    ),
+    { candidateUpdated: true }
+  );
+}
+
+function ownerWillPublish(initialWork, input) {
+  return initialWork && input.operation !== 'review';
+}
+
+async function synchronizeCycleTarget(service, record, initialWork, input) {
+  if (!(await synchronizeStrategyTarget(service, record))) return;
+  if (ownerWillPublish(initialWork, input)) return;
+  throw updatedTargetBlocker();
+}
+
+function assertCurrentTarget(work, readiness) {
+  if (!work.targetRevision || readiness.merged) return;
+  if (work.targetRevision !== readiness.target)
+    throw repairableBlocker(
+      'target-outdated',
+      'The target advanced during verification. Fetch and merge it before final delivery.'
+    );
+}
+
+async function verifiedRepairCandidate(service, record, run, work) {
+  try {
+    return await retryInfrastructure(service, record, () => verifyStrategyCandidate(service, record, run, work));
+  } catch (error) {
+    if (!canRepairCheck(record, error)) throw error;
+    // The original command and exact failed summaries remain the repair evidence.
+    throw verificationBlocker(error);
+  }
+}
+
+function canRepairCheck(record, error) {
+  return ![record.stopRequested, record.pauseRequested, permissionFailure(error)].some(Boolean);
+}
+
+function verificationBlocker(error) {
+  const failure = error.verificationFailure || {};
+  const evidence = [...(failure.summaries || []), ...(failure.logs || [])];
+  return Object.assign(repairableBlocker('verification', error.message, evidence), {
+    blockerKey: failure.blockerKey,
+    stderr: error.stderr,
+  });
+}
+
+async function prepareRepairBranch(service, record, run) {
+  const work = record.work;
+  if (!work.pr) return;
+  const provider = strategyProvider(service, work.config, work.checkout);
+  const pr = await retryInfrastructure(service, record, () => provider.inspect(work.pr));
+  if (!pr.merged_at) return;
+  requireThat(pr.head.ref === work.branch, 'The merged PR does not match the saved issue branch.');
+  requireThat(pr.base.ref === work.config.target, 'The merged PR does not match the saved issue target.');
+  const branch = `codex/issue-${record.issueId}-repair-${run.id.slice(0, 8)}-${work.pr}`;
+  retainMergedPr(work, pr);
+  work.followup = { originalPr: work.pr, url: pr.html_url, branch, status: 'preparing' };
+  saveLifecycle(service, record);
+  git(work.checkout, 'checkout', '-b', branch);
+  Object.assign(work, { branch, pr: null, readiness: null, merge: null });
+  work.followup.status = 'ready';
+  saveLifecycle(service, record);
+}
+
+function retainMergedPr(work, pr) {
+  if (!work.prHistory) work.prHistory = [];
+  work.prHistory.push({
+    number: work.pr,
+    branch: work.branch,
+    url: pr.html_url,
+    mergedAt: pr.merged_at,
+    revision: pr.merge_commit_sha,
+  });
 }
 
 export async function stopIssueStrategy(service, input) {

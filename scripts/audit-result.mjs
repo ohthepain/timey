@@ -135,7 +135,7 @@ function introducedFindingSummaries(audit) {
   return lines;
 }
 // Warning verdicts and some warnings still exit zero; inspect evidence, too.
-export function assessAudit(result, changedFiles) {
+export function assessAudit(result, changedFiles, options = {}) {
   // Only the caller's exported/indexed Git diff can establish empty scope.
   // A zero count in the tool's report is never sufficient evidence.
   const scope = sourceScope(changedFiles);
@@ -150,6 +150,7 @@ export function assessAudit(result, changedFiles) {
     ...introducedFindingSummaries(audit),
     ...diagnostics.reasons,
     ...scopeResult.reasons,
+    ...warningFindingErrors(audit, options),
   ];
   return {
     passed: reasons.length === 0,
@@ -158,4 +159,20 @@ export function assessAudit(result, changedFiles) {
     scope,
     audit,
   };
+}
+
+function warningFindingErrors(audit, options) {
+  if (!options.warningsAsErrors) return [];
+  const findings = [audit.dead_code, audit.complexity, audit.duplication].some(hasIntroducedFinding);
+  const reasons = [audit.verdict === 'warn', newAttribution(audit.attribution), findings];
+  return reasons.some(Boolean) ? ['New Fallow findings, including warnings, must be repaired.'] : [];
+}
+
+function newAttribution(attribution = {}) {
+  return Object.entries(attribution).some(([key, count]) => key.endsWith('_introduced') && Number(count) > 0);
+}
+
+function hasIntroducedFinding(value) {
+  if (!value || typeof value !== 'object') return false;
+  return value.introduced === true || Object.values(value).some(hasIntroducedFinding);
 }

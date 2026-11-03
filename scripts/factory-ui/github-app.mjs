@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 import { sign } from 'node:crypto';
 import { requireThat } from './common.mjs';
+import { infrastructureFailure, permissionFailure } from './strategy-repair.mjs';
 
 // Only paths and public IDs live on disk. Installation tokens stay in memory.
 export class GitHubAppCredentials {
@@ -33,15 +34,11 @@ export class GitHubAppCredentials {
         ...(body ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(30000),
       });
-    } catch {
-      throw Error('GitHub App authentication request failed.');
+    } catch (error) {
+      throw authenticationTransportFailure(error, path);
     }
-    requireThat(response.ok, `GitHub App authentication failed (HTTP ${response.status}).`);
-    try {
-      return await response.json();
-    } catch {
-      throw Error('Invalid GitHub App authentication response.');
-    }
+    assertAuthenticationResponse(response);
+    return readAuthenticationResponse(response, path);
   }
   async refresh() {
     const seconds = Math.floor(this.now() / 1000);
@@ -97,6 +94,69 @@ export class GitHubAppCredentials {
       });
     return this.pending;
   }
+}
+
+function authenticationTransportFailure(error, path) {
+  const cause = error.cause || error;
+  const reason = authenticationFailureReason(error);
+  const context = authenticationContext(path, reason);
+  const failure = Error(`GitHub App authentication request failed${context}.`);
+  failure.transient = infrastructureFailure(cause) || Boolean(reason);
+  if (permissionFailure(cause)) failure.code = 'EACCES';
+  return failure;
+}
+
+async function readAuthenticationResponse(response, path) {
+  try {
+    return await response.json();
+  } catch (error) {
+    throw authenticationResponseFailure(error, path);
+  }
+}
+
+function authenticationResponseFailure(error, path) {
+  const failure = authenticationTransportFailure(error, path);
+  const malformed = error instanceof SyntaxError;
+  const reason = malformed ? 'malformed JSON' : authenticationFailureReason(error) || 'unreadable body';
+  failure.message = `Invalid GitHub App authentication response (${authenticationStage(path)}; ${reason}).`;
+  if (malformed) failure.transient = true;
+  return failure;
+}
+
+function authenticationContext(path, reason) {
+  return reason ? ` (${authenticationStage(path)}; ${reason})` : '';
+}
+
+function authenticationStage(path) {
+  if (path === 'app') return 'app identity';
+  return path.endsWith('/access_tokens') ? 'installation token' : 'installation lookup';
+}
+
+// Never copy response bodies, raw exception messages or nested causes: token
+// responses contain credentials. Only known transport categories leave this module.
+const authenticationReasons = new Map([
+  ['TimeoutError', 'timeout'],
+  ['AbortError', 'timeout'],
+  ['ENOTFOUND', 'DNS lookup failed'],
+  ['EAI_AGAIN', 'DNS lookup failed'],
+  ['ETIMEDOUT', 'timeout'],
+  ['UND_ERR_CONNECT_TIMEOUT', 'timeout'],
+  ['UND_ERR_HEADERS_TIMEOUT', 'timeout'],
+  ['UND_ERR_BODY_TIMEOUT', 'timeout'],
+  ['UND_ERR_SOCKET', 'connection interrupted'],
+  ['ECONNRESET', 'connection interrupted'],
+  ['ECONNABORTED', 'connection interrupted'],
+  ['EPIPE', 'connection interrupted'],
+]);
+function authenticationFailureReason(error) {
+  return [error.name, error.cause?.code, error.code].map((code) => authenticationReasons.get(code)).find(Boolean);
+}
+
+function assertAuthenticationResponse(response) {
+  if (response.ok) return;
+  const failure = Error(`GitHub App authentication failed (HTTP ${response.status}).`);
+  failure.transient = [429, 500, 502, 503, 504].includes(response.status);
+  throw failure;
 }
 
 export function githubAppCredentials(root, repository) {

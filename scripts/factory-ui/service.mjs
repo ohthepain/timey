@@ -4,7 +4,7 @@ import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
 import { createCoordinator } from './coordinator.mjs';
 import { progressBasis } from './next-action.mjs';
-import { queueHumanInput } from './queue-human-input.mjs';
+import { queueHumanInput, queueHumanInputReader } from './queue-human-input.mjs';
 import { deliveryMode, draftHandoff, draftAssembly } from './delivery-mode.mjs';
 import { checkHandoff } from './handoff-checks.mjs';
 import { createCaptures } from './issue-capture.mjs';
@@ -141,12 +141,13 @@ export class FactoryUI {
     if (!this.serverLock) this.store.reload();
     const queue = readQueue(this.root);
     const runs = this.store.list(this.codex.requests);
+    const humanInputs = queueHumanInputReader(queue);
     return {
       ...queue,
       modelSettings: readModelSettings(this.root),
       coordinator: this.coordinator.view(),
       reviewBasis: digest(JSON.stringify(queue)),
-      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner)),
+      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner, humanInputs)),
       runs: runs.map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
       actions: queue.actions.map((a) => ({
         ...a,
@@ -157,13 +158,13 @@ export class FactoryUI {
       })),
     };
   }
-  issueView(queue, issue, runs, owner) {
+  issueView(queue, issue, runs, owner, humanInputs = (entry) => queueHumanInput(queue, entry)) {
     const readiness = readinessView(queue, issue, runs);
     const { choice: progress } = resolveNextAction(queue, issue, runs);
     const lifecycle = visibleLifecycle(this.lifecycleStatus(queue, issue, runs), progress);
     const { stageStates, queueLifecycle } = issueLifecycleView(queue, { ...issue, lifecycle }, runs, readiness);
     const issueDelivery = this.deliveries.inspect(issue.id);
-    const humanInputView = queueHumanInput(queue, { ...issue, issueDelivery });
+    const humanInputView = humanInputs({ ...issue, issueDelivery });
     return {
       ...issue,
       strategy: strategyView(this, issue),

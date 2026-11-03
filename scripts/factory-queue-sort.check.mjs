@@ -4,12 +4,15 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
-import { queueHumanInput } from './factory-ui/queue-human-input.mjs';
+import { queueHumanInput, queueHumanInputReader } from './factory-ui/queue-human-input.mjs';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { queueSortValues } from './factory-ui/queue-sort.mjs';
 import { queueResponse } from './factory-ui/queue-response.mjs';
 import { browserFixture as pageFixture } from './browser-fixture.mjs';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { FactoryUI } from './factory-ui/service.mjs';
 
 const lifecycle = [
   { state: 'review', role: 'ready-to-close', next: 'closed', name: 'Final review' },
@@ -23,6 +26,33 @@ const date = (day) => `2026-10-${String(day).padStart(2, '0')}T12:00:00.000Z`;
 const base = () => ({ lifecycle, actions: [], runs: [] });
 const issue = (values = {}) => ({ id: 'one', state: 'start', created: date(1), ...values });
 const event = (state, next, at, outcome = 'completed') => ({ state, next, at, outcome });
+
+test('a queue poll batches human-input reads and never caches them across snapshots', (t) => {
+  const f = deliveryFixture(t);
+  writeFileSync(
+    join(f.queue.root, '.issues/20261025-two.md'),
+    '---\nid: 20261025-two\nstate: backlog\ntitle: Second\n---\n'
+  );
+  const service = new FactoryUI(f.queue.root, { preview: true });
+  t.after(() => service.close());
+  const original = childProcess.execFileSync;
+  let reads = 0;
+  childProcess.execFileSync = function (file, args, ...options) {
+    if (args[0]?.endsWith('/human-input.mjs') && args[1] === 'read') reads++;
+    return original.call(this, file, args, ...options);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    childProcess.execFileSync = original;
+    syncBuiltinESMExports();
+  });
+  const first = service.snapshot();
+  assert.ok(first.issues.length > 1);
+  assert.equal(reads, 1, 'one shared helper read rather than one subprocess per issue');
+  service.snapshot();
+  assert.equal(reads, 2, 'the next snapshot must read fresh human-input state');
+  first.issues.forEach((issue) => assert.deepEqual(issue.humanInputView, queueHumanInput(first, issue)));
+});
 
 test('progress follows Next links and counts starts without promoting planned/skipped stages', () => {
   assert.equal(queueSortValues(base(), issue({ state: 'work' })).progress, 3);
@@ -137,6 +167,8 @@ test('shared reader resolves readiness prerequisites and revision-bound deferral
     writeFileSync(report, '---\n' + YAML.stringify(metadata, { aliasDuplicateObjects: false }) + '---\n');
     const before = readFileSync(report, 'utf8');
     const view = queueHumanInput(queue, { ...selected, ...metadata });
+    const batched = queueHumanInputReader({ ...queue, issues: [{ ...selected, ...metadata }] });
+    assert.deepEqual(batched({ ...selected, ...metadata }), view);
     assert.equal(readFileSync(report, 'utf8'), before);
     return view;
   };

@@ -164,6 +164,13 @@ merge-ready PR and leaves it unmerged. Full Send additionally merges through
 provider-enforced protection. Neither implies deployment or human acceptance.
 Lifecycle roles are historical context rather than execution requirements.
 
+**Blocker repair**:
+A necessary technical correction within an explicitly active issue strategy,
+including inherited test/format failures, target-branch conflicts and new audit
+findings. It retains the original issue scope and base, separate repair commits
+and bounded attempts. It does not authorize unrelated product changes or weaken
+verification, merge protection or acceptance.
+
 **Sol Loop**:
 An optional bounded review of an issue's current candidate by one Sol reviewer.
 It may be selected with either strategy or requested afterward on retained work.
