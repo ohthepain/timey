@@ -7,6 +7,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { git, digest } from './factory-ui/common.mjs';
 import sortingBrowserChecks from './browser-scenarios/queue-sorting.mjs';
 import { browserFixture } from './browser-fixture.mjs';
+import { routeQueueIssue, updateProgressSnapshot } from './browser-queue-route.mjs';
 
 const source = dirname(fileURLToPath(import.meta.url));
 const checkoutFlag = process.argv.indexOf('--checkout');
@@ -66,7 +67,10 @@ try {
         ? sortingBrowserChecks
         : (await import(pathToFileURL(join(source, name)))).default;
     const path = join(output, name.replaceAll('/', '-'));
-    writeFileSync(path, '(' + check.toString() + ')');
+    writeFileSync(
+      path,
+      `(({ routeQueueIssue, updateProgressSnapshot }) => (${check.toString()}))({ routeQueueIssue: (${routeQueueIssue.toString()}), updateProgressSnapshot: (${updateProgressSnapshot.toString()}) })`
+    );
     const raw = await run(name, ['run-code', '--filename', path]);
     if (!/"passed":\s*true/.test(raw)) throw Error('Browser scenario returned no passing assertions: ' + name);
     results.push({ name, passed: true, log: join(output, name.replaceAll('/', '-') + '.log') });

@@ -107,6 +107,7 @@ test('real empty working and index snapshots record no unrelated analysis', (t) 
   const { root, run } = auditFixture(t);
   const working = run('--step', '--base', 'HEAD');
   assert.equal(working.status, 0, working.stdout + working.stderr);
+  assert.ok(auditSummary(root).checks[0].command.includes('--no-cache'));
   assert.deepEqual(auditSummary(root).changed_files, []);
   assert.equal(auditSummary(root).checks[0].scope, 'empty');
   assert.ok(auditSummary(root).checks[0].limitations.some((entry) => entry.kind === 'empty-source-diff'));

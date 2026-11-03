@@ -1,3 +1,5 @@
+import { routeQueueIssue } from './browser-queue-route.mjs';
+
 export default async function strategyBrowserChecks(page) {
   async function expectEnabled(locator, message) {
     if (await locator.isDisabled()) throw Error(message);
@@ -15,10 +17,7 @@ export default async function strategyBrowserChecks(page) {
   const sent = new Promise((resolve) => {
     release = resolve;
   });
-  await page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch();
-    const snapshot = await response.json();
-    const issue = snapshot.issues.find((entry) => entry.id === 'b');
+  await routeQueueIssue(page, 'b', (snapshot, issue) => {
     snapshot.lifecycle.push(
       ...[
         ['ready-to-prototype', 'prototype', 'Prototype'],
@@ -64,7 +63,6 @@ export default async function strategyBrowserChecks(page) {
         summary: 'Working in the owning chat.',
       });
     }
-    await route.fulfill({ json: snapshot });
   });
   page.on('request', (request) => {
     if (/\/api\/(lifecycle-start|save-review|route)/.test(request.url()) && request.method() === 'POST')
