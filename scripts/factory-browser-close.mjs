@@ -1,3 +1,5 @@
+import { routeQueueIssue } from './browser-queue-route.mjs';
+
 export default async function closeBrowserChecks(page) {
   let attempts = 0,
     closed = false,
@@ -5,14 +7,10 @@ export default async function closeBrowserChecks(page) {
   const sent = new Promise((resolve) => {
     release = resolve;
   });
-  await page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch();
-    const snapshot = await response.json();
-    if (closed) {
-      const issue = snapshot.issues.find((entry) => entry.id === 'b');
+  await routeQueueIssue(page, 'b', (_snapshot, issue) => {
+    if (!closed) Object.assign(issue, { state: 'final', stage: 'Final review' });
+    if (closed)
       Object.assign(issue, { state: 'closed', stage: 'Closed', closure: { reason: 'fixed', label: 'Fixed' } });
-    }
-    await route.fulfill({ json: snapshot });
   });
   await page.route('**/api/issue-decision', async (route) => {
     attempts++;

@@ -61,7 +61,10 @@ adds the `.nvmrc` Node bin, then Homebrew, and runs the staged audit with that
 node. Fallow is pinned to 3.35.0. Checkpoint paths invoke the installed binary,
 `fallow audit --base <resolved-commit> --format json`, in the exported snapshot,
 using the existing local dependency and `.fallowrc.json`
-`audit.gate: new-only`. Full-tree `fallow dupes` and `fallow health` skip Vitest
+`audit.gate: new-only`. Enforced checkpoints disable only Fallow's incremental
+cache because each audit runs from a disposable export root and stale cross-root
+cache warnings fail strict audits; the full configured audit and gate still run.
+Full-tree `fallow dupes` and `fallow health` skip Vitest
 files (`*.test.ts(x)`) and factory script tests (`scripts/**/*.check.mjs`,
 `scripts/**/*fixture*.mjs`) via `duplicates.ignore` and `health.ignore`, and use
 `production` mode for other conventional test paths. Dead-code analysis still
