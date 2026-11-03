@@ -308,6 +308,12 @@ snapshot. Issue-specific readiness facts keep separate reads, and each new snaps
 reads fresh state. Execution guards remain independent. This avoids per-issue
 synchronous helper launches starving the server's GitHub authentication requests.
 
+`factory-ui/strategy-publication.mjs` creates new strategy PRs through the App-authenticated
+`StrategyProvider` after independent verification. Workers return the prepared
+description and a null PR number. Publication reconciles open PRs on retry and
+validates App authorship, the pushed candidate and approved target; saved existing
+PRs retain their identity and history.
+
 `scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;
 `factory-workflow.check.mjs` owns the cross-format issue-decision compatibility
 matrix. `CODING_STANDARDS.md` guides semantic review of workflow gates.

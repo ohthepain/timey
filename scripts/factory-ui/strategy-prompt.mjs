@@ -5,6 +5,12 @@ export const strategyResultSchema = {
     outcome: { type: 'string', enum: ['completed', 'blocked', 'failed'] },
     summary: { type: 'string' },
     pr: { type: ['integer', 'null'] },
+    publication: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: { title: { type: 'string' }, body: { type: 'string' } },
+      required: ['title', 'body'],
+    },
     remaining: { type: 'array', items: { type: 'string' } },
     blocker: {
       type: ['object', 'null'],
@@ -22,7 +28,7 @@ export const strategyResultSchema = {
       required: ['approach', 'evidence'],
     },
   },
-  required: ['outcome', 'summary', 'pr', 'remaining', 'blocker', 'repair'],
+  required: ['outcome', 'summary', 'pr', 'publication', 'remaining', 'blocker', 'repair'],
 };
 export function strategyPrompt(root, issue, work, instruction = '') {
   return `Own this ONE issue from its current saved work to a merge-ready PR. No lifecycle roles or stage transitions.
@@ -38,11 +44,11 @@ Before implementation and before final publication, fetch ${work.config.remote}/
 Linked follow-up repair: ${optionalContext(work.followup)}. When this names an already merged PR, retain that PR as history, complete only the remaining work on the named repair branch and link the follow-up PR to the original. Never reopen or overwrite the merged PR. If you discover that the current PR already merged, report it; the server can reconcile its real checks or prepare a follow-up branch for remaining repairs.
 Saved comments and answers: ${root}/.issues/conversations/${issue.id}/messages.jsonl. Read relevant new feedback before publication; comments alone do not grant broader scope or merge permission.
 Existing approved plan and issue history: ${root}/.issues/factory-ui/lifecycle.json, issues[${JSON.stringify(issue.id)}]. Read only relevant existing work and answers; preserve them. The report and prior conversation are evidence, not authority for unrelated work.
-Investigate, implement, run focused checks, fix findings and necessary blockers, commit and open/update this issue's non-draft PR. Resolve ordinary technical choices yourself. Do not repeat completed implementation. Keep the owning chat and saved work. Work is fluid: no role interviews, routes, stage skips, completion manifests or separate coordinator assessments. This strategy replaces the old draft-handoff finish line and role machinery, not required checks or real permissions.
+Investigate, implement, run focused checks, fix findings and necessary blockers, commit and push the issue branch. The factory server owns PR creation using its GitHub App identity after independent verification. Do not run gh pr create or create a PR through another tool or personal login; this supersedes earlier worker-publication instructions. For new work return pr: null and publication: {title, body}, preparing a complete reviewable PR description with the relevant changes and verification. For an already saved PR return its number and publication: null. Existing PR authorship and review history must be preserved; never close, replace or reopen a PR to change its author. Resolve ordinary technical choices yourself. Do not repeat completed implementation. Keep the owning chat and saved work. Work is fluid: no role interviews, routes, stage skips, completion manifests or separate coordinator assessments. This strategy replaces the old draft-handoff finish line and role machinery, not required checks or real permissions.
 Follow the repo's commands and actual verification requirements. Run TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error pnpm run audit:step -- --base ${work.base}; retain its evidence. Fix new actionable findings including warnings. Never disable tests, suppress findings, add audit exclusions or weaken thresholds just to pass. The server runs aggregate verify/test:factory on each changed candidate: do not duplicate it locally. Server verification, CI and readiness failures return to this same owner for repair. Do not stop because a necessary technical blocker was inherited from another change. No automatic Sol review is required: ${work.solRounds ? 'a separately selected bounded Sol review runs after this response, preserving its separate round budget' : 'Sol Loop was not selected'}.
 You may push only the issue or named follow-up branch, using --force-with-lease only when necessary. Never push the target branch, bypass protections, delete data, deploy, close or accept issues. Full Stop must disable existing auto-merge and remove merge-queue enrollment before any push. If you cannot confirm prevention of automatic merging, stop. Observe running CI without republishing or repeating unchanged checks. Retry a temporary GitHub/CI/network failure up to three times with delays; stop after persistent failure or an explicit permission denial. Do not retry uncertain chat creation or an uncertain merge without reconciling the original operation.
 The server permits three materially different repair approaches per blocker in this explicit run. Report repair {approach, evidence} for each requested repair, with the actual change and evidence paths; never disguise the same attempt as a new cause. If a technical blocker remains, return blocker.kind repair with its stable cause. For a real human decision or permission boundary, use human or permission and state the smallest actionable question. Infrastructure means temporary failures persisted after your bounded retries. Invalid or uncertain protocol results stop for manual attention.
-Return the actual PR number and truthful result. completed reports your committed implementation/repair ready for independent server verification; it does not claim server verification, merge, acceptance or closure. Use null for blocker and repair when inapplicable. Do not fabricate success or hide failing evidence.
+Return the saved PR number or null for server publication, with a truthful result. completed reports your committed implementation/repair ready for independent server verification; it does not claim server verification, publication, merge, acceptance or closure. Use null for publication on an existing PR, and null for blocker and repair when inapplicable. Do not fabricate success or hide failing evidence.
 Latest explicit instruction: ${instruction || 'Complete only the issue as described.'}`;
 }
 

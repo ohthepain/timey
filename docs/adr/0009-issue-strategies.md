@@ -56,7 +56,17 @@ repository and an absolute private-key path; deployed servers may instead use
 The server signs a short-lived app JWT, discovers the installation and requests a
 token restricted to that repository. Tokens remain in memory, refresh before
 expiry, and are passed only to the provider's `gh` subprocesses. Personal Git and
-CLI logins remain separate; worker publication is unchanged. Worktree providers
+CLI logins remain separate. Strategy workers commit and push their issue branch,
+then return a PR title/body and a null PR number. After independent candidate
+verification the server creates the non-draft PR using the installed App, checks
+its author and exact candidate/target, and retains its number before readiness or
+merge. Missing App credentials stop publication without a personal-login fallback.
+Every retry discovers matching PRs first to reconcile uncertain creation; a closed
+or merged match stops rather than creating a replacement.
+Existing saved PRs retain their authorship and history; workers cannot adopt a new
+personally authored PR, replace a PR or reopen a closed PR to change its author.
+The legacy draft-handoff adapter retains its existing publication policy.
+Worktree providers
 use the owning project's credentials, not a worktree-local configuration. Failed
 app authentication stops rather than falling back to the personal login.
 Temporary connection failures while fetching or reading an authentication response,

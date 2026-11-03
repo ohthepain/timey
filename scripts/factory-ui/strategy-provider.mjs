@@ -5,6 +5,7 @@ import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
 import { inspectReadiness } from './strategy-readiness.mjs';
 import { infrastructureFailure, repairableBlocker } from './strategy-repair.mjs';
+import { publishStrategyPR } from './strategy-publication.mjs';
 
 // GitHub enforces freshness through strict required checks. A verified ruleset
 // review bypass never bypasses CI or replaces server enforcement with a local lock.
@@ -40,6 +41,9 @@ export class StrategyProvider {
   async inspect(number) {
     requireThat(Number.isSafeInteger(number) && number > 0, 'Return the actual issue PR number.');
     return JSON.parse(await this.gh(['api', `repos/${this.config.repository}/pulls/${number}`]));
+  }
+  async publish(work, head, publication) {
+    return publishStrategyPR(this, work, head, publication);
   }
   async ready(pr, branch, head) {
     return inspectReadiness(this, pr, branch, head, () => this.canBypassOwnReview(pr));

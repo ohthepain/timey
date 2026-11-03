@@ -20,6 +20,7 @@ import { infrastructureFailure, repairableBlocker, retryInfrastructure } from '.
 import { synchronizeStrategyTarget } from './factory-ui/strategy-target.mjs';
 import { gitFixture } from './git-fixture.mjs';
 import { validateSummary } from './factory-ui/checks.mjs';
+import { publishStrategyPR } from './factory-ui/strategy-publication.mjs';
 
 function fixture(t) {
   const { queue } = deliveryFixture(t);
@@ -63,7 +64,8 @@ function fixture(t) {
     return JSON.stringify({
       outcome: 'completed',
       summary: 'Ready for handoff',
-      pr: 12,
+      pr: service.lifecycleRuns['20261025-one'].work.pr || null,
+      publication: { title: 'Issue fix', body: 'Implemented and checked the issue.' },
       remaining: [],
       repair: repairing ? { approach: `Repair approach ${calls}`, evidence: [] } : null,
       blocker: null,
@@ -75,6 +77,7 @@ function fixture(t) {
   };
   service.strategyProvider = () => ({
     assertMergeProtection: async () => true,
+    publish: async () => ({ number: 12 }),
     inspect: () => ({}),
     ready: (_pr, _branch, head) => ({
       head,
@@ -121,6 +124,118 @@ test('Full Stop uses one chat/branch, checks once and hands off without merge or
   await f.service.lifecycleTasks.get(f.issue.id);
   assert.equal(f.service.lifecycleRuns[f.issue.id].work.checkout, checkout);
   assert.equal(f.service.lifecycleRuns[f.issue.id].workThreadId, 'owning-chat');
+});
+
+test('new strategy publication is server-owned, follows verification and retains the PR before readiness', async (t) => {
+  const f = fixture(t);
+  const provider = f.service.strategyProvider();
+  let publications = 0;
+  provider.publish = async (work, head, publication) => {
+    publications++;
+    assert.equal(f.counts().checks, 1);
+    assert.equal(work.verification.head, head);
+    assert.equal(publication.title, 'Issue fix');
+    return { number: 12 };
+  };
+  provider.inspect = () => {
+    assert.equal(f.service.lifecycleRuns[f.issue.id].work.pr, 12);
+    return {};
+  };
+  f.service.strategyProvider = () => provider;
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'handed-off');
+  assert.equal(publications, 1);
+});
+
+function publicationFixture() {
+  const work = { branch: 'codex/issue-one' };
+  const pr = {
+    number: 12,
+    state: 'open',
+    draft: false,
+    user: { login: 'factory[bot]' },
+    head: { ref: work.branch, sha: 'head', repo: { full_name: 'fixture/timey' } },
+    base: { ref: 'main', repo: { full_name: 'fixture/timey' } },
+  };
+  const calls = [];
+  const provider = {
+    config: { repository: 'fixture/timey', target: 'main' },
+    credentials: { session: async () => ({ slug: 'factory' }) },
+    gh: async (args) => {
+      calls.push(args);
+      if (args[1].includes('/pulls?')) return '[]';
+      if (args[1].includes('/git/ref/')) return JSON.stringify({ object: { sha: 'head' } });
+      return JSON.stringify(pr);
+    },
+  };
+  return { work, pr, calls, provider, publication: { title: 'Fix issue', body: 'Changes and evidence.' } };
+}
+
+test('App publication validates author and exact pushed candidate without personal fallback', async () => {
+  const f = publicationFixture();
+  assert.equal((await publishStrategyPR(f.provider, f.work, 'head', f.publication)).number, 12);
+  assert.ok(f.calls.at(-1).includes('draft=false'));
+  f.provider.credentials = null;
+  f.calls.length = 0;
+  await assert.rejects(publishStrategyPR(f.provider, f.work, 'head', f.publication), /requires configured GitHub App/);
+  assert.equal(f.calls.length, 0);
+});
+
+test('an uncertain App create is discovered on retry; personal and closed PRs are preserved', async () => {
+  const f = publicationFixture();
+  let created = false;
+  const original = f.provider.gh;
+  f.provider.gh = async (args) => {
+    if (created && args[1].includes('/pulls?')) return JSON.stringify([f.pr]);
+    const result = await original(args);
+    if (args.includes('POST')) {
+      created = true;
+      throw Object.assign(Error('connection reset'), { transient: true });
+    }
+    return result;
+  };
+  await assert.rejects(publishStrategyPR(f.provider, f.work, 'head', f.publication), /connection reset/);
+  await publishStrategyPR(f.provider, f.work, 'head', f.publication);
+  assert.equal(f.calls.filter((args) => args.includes('POST')).length, 1);
+  f.pr.user.login = 'owner';
+  await assert.rejects(publishStrategyPR(f.provider, f.work, 'head', f.publication), /personal account/);
+  f.pr.user.login = 'factory[bot]';
+  f.pr.state = 'closed';
+  await assert.rejects(publishStrategyPR(f.provider, f.work, 'head', f.publication), /open, non-draft/);
+  assert.equal(f.calls.filter((args) => args.includes('POST')).length, 1);
+});
+
+test('App publication refuses an unpushed candidate and wrong PR identity', async () => {
+  const f = publicationFixture();
+  await assert.rejects(publishStrategyPR(f.provider, f.work, 'other', f.publication), /Push the verified/);
+  assert.equal(
+    f.calls.some((args) => args.includes('POST')),
+    false
+  );
+  f.pr.head.sha = 'other';
+  await assert.rejects(publishStrategyPR(f.provider, f.work, 'head', f.publication), /candidate changed/);
+});
+
+test('a worker cannot introduce a personally published PR into new strategy work', async (t) => {
+  const f = fixture(t);
+  const owner = f.service.codex.turn;
+  f.service.codex.turn = async (...args) => {
+    const result = JSON.parse(await owner(...args));
+    return JSON.stringify({ ...result, pr: 99 });
+  };
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'blocked');
+  assert.match(record.summary, /server owns PR publication/);
+  assert.equal(record.work.pr, null);
+  assert.equal(f.counts().checks, 0);
+  assert.equal(f.counts().merges, 0);
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].work.pr, null, 'Continue cannot adopt the rejected worker PR');
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'blocked');
 });
 
 test('Full Send uses the protected provider after checks and keeps acceptance separate', async (t) => {
@@ -295,7 +410,7 @@ test('a repair with no committed change stops without repeating unchanged checks
       ? JSON.stringify({
           outcome: 'completed',
           summary: 'No change',
-          pr: 12,
+          pr: null,
           remaining: [],
           repair: { approach: 'Observe again', evidence: [] },
         })
@@ -335,7 +450,7 @@ test('an empty repair commit cannot masquerade as source progress or trigger unc
     return JSON.stringify({
       outcome: 'completed',
       summary: 'Empty commit',
-      pr: 12,
+      pr: null,
       remaining: [],
       repair: { approach: 'Empty commit', evidence: [] },
     });
@@ -469,10 +584,14 @@ test('repair after an externally merged PR uses a linked follow-up branch withou
   const original = f.service.codex.turn;
   f.service.codex.turn = async (...args) => {
     const result = JSON.parse(await original(...args));
-    if (args[2].includes('Required repair attempt:')) result.pr = 13;
+    if (!args[2].includes('Required repair attempt:')) {
+      f.service.lifecycleRuns[f.issue.id].work.pr = 12;
+      result.pr = 12;
+    }
     return JSON.stringify(result);
   };
   const provider = f.service.strategyProvider();
+  provider.publish = async () => ({ number: 13 });
   provider.inspect = (number) =>
     number === 12
       ? {
@@ -594,6 +713,7 @@ test('an existing active assignment is not replaced by a strategy worker', (t) =
 function providerFixture() {
   const config = { repository: 'fixture/timey', target: 'main' };
   const provider = new StrategyProvider('.', config, join(tmpdir(), 'timey-provider-fixture-no-credentials'));
+  provider.credentials = null;
   const pr = {
     number: 12,
     user: { login: 'fixture' },
@@ -885,6 +1005,7 @@ test('No new actions pauses a Full Send before merge even if readiness just beca
   let merges = 0;
   f.service.strategyProvider = () => ({
     assertMergeProtection: async () => true,
+    publish: async () => ({ number: 12 }),
     inspect: () => ({}),
     ready: (_pr, _branch, head) => {
       f.service.lifecycleRuns[f.issue.id].pauseRequested = true;

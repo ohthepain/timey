@@ -183,6 +183,7 @@ function strategyWorkState(service, issue, old, record, input, run, receipt, con
   return {
     ...old,
     pr: inheritedPr(service, old),
+    publicationOwner: 'server',
     blockerRepair: blockerRepairPolicy,
     priorInput: old?.priorInput || record.input || null,
     modelSettings: newChatModelSettings(service.root, issue.id),
@@ -202,6 +203,11 @@ function priorRunResult(service, old) {
 }
 
 function inheritedPr(service, old) {
+  if (old?.publicationOwner === 'server') return old.pr || null;
+  return legacyPr(service, old);
+}
+
+function legacyPr(service, old) {
   const result = priorRunResult(service, old);
   return old?.pr || result.pr || null;
 }
@@ -382,13 +388,20 @@ async function runOwnerTurn(service, record, run, issue, work, instruction) {
   );
 }
 
-function assertOwnerTurnResult(result) {
+function assertOwnerTurnResult(result, work) {
   assertOwnerBlocker(result);
   requireThat(
     result.outcome === 'completed',
     result.summary + (result.remaining?.length ? '\n' + result.remaining.join('\n') : '')
   );
-  requireThat(Number.isSafeInteger(result.pr) && result.pr > 0, 'The worker did not return an actual PR number.');
+  requireThat(
+    workerPRIsSaved(result.pr, work.pr),
+    'The server owns PR publication. Return null for a new PR or the already saved PR number; do not create a PR with the worker login.'
+  );
+}
+
+function workerPRIsSaved(pr, saved) {
+  return pr === null || [Number.isSafeInteger(pr), pr > 0, pr === saved].every(Boolean);
 }
 
 function assertOwnerBlocker(result) {
@@ -413,9 +426,8 @@ async function ownerTurn(service, record, run, issue, instruction = '') {
     summary: result.summary,
   });
   work.implementation = { revision, outcome: result.outcome, summary: result.summary, at: new Date().toISOString() };
-  if (Number.isSafeInteger(result.pr) && result.pr > 0) work.pr = result.pr;
   saveLifecycle(service, record);
-  assertOwnerTurnResult(result);
+  assertOwnerTurnResult(result, work);
   work.lastOwnerRevision = revision;
   return result;
 }
@@ -449,6 +461,16 @@ async function inspectStrategyReadiness(service, work, head) {
   const provider = strategyProvider(service, work.config, work.checkout);
   const readiness = await provider.ready(await provider.inspect(work.pr), work.branch, head);
   return { provider, readiness };
+}
+
+async function publishVerifiedCandidate(service, record, run, head) {
+  const work = record.work;
+  if (work.pr) return;
+  const provider = strategyProvider(service, work.config, work.checkout);
+  const pr = await retryInfrastructure(service, record, () => provider.publish(work, head, run.result.publication));
+  work.pr = pr.number;
+  service.store.update(run, { result: { ...run.result, pr: pr.number } });
+  saveLifecycle(service, record);
 }
 
 async function maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness) {
@@ -528,6 +550,8 @@ async function executeStrategy(service, record, run, issue, input) {
       if (await synchronizeStrategyTarget(service, record)) throw updatedTargetBlocker();
       if (work.solRounds) await runSolLoop(service, record, run, issue, ownerTurn);
       const { head, checked } = await verifiedRepairCandidate(service, record, run, work);
+      assertStrategyActive(record, 'Stopped by you. No PR was published.');
+      await publishVerifiedCandidate(service, record, run, head);
       const { provider, readiness } = await waitStrategyReadiness(service, record, () =>
         retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
       );
