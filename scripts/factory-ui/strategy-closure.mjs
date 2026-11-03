@@ -49,13 +49,32 @@ export function strategyClosureResult(service, issue) {
 }
 
 function incompleteStrategyMessage(record, run) {
-  const summary = run?.summary || run?.result?.summary || record.summary;
-  const details = [summary, ...(run?.result?.remaining || [])].filter(
-    (text, index) => typeof text === 'string' && text.trim() && (index === 0 || !summary?.includes(text))
-  );
+  const summary = strategySummary(record, run);
   return [
-    `Cannot accept this issue as Fixed: ${run ? `the saved strategy is ${run.status}` : 'its saved strategy run is missing'}.`,
-    ...details,
+    `Cannot accept this issue as Fixed: ${strategyRunStatus(run)}.`,
+    ...strategyDetails(summary, run),
     'A completed, verified strategy result is required. Resolve the saved blocker before accepting the fix, or use Close with reason… to end work without accepting a fix.',
   ].join('\n');
+}
+
+function strategySummary(record, run) {
+  return [run?.summary, run?.result?.summary, record.summary].find(Boolean);
+}
+
+function strategyDetails(summary, run) {
+  return [summary, ...(run?.result?.remaining || [])]
+    .filter(isNonEmptyStrategyDetail)
+    .filter(isAdditionalStrategyDetail(summary));
+}
+
+function isNonEmptyStrategyDetail(text) {
+  return typeof text === 'string' && Boolean(text.trim());
+}
+
+function isAdditionalStrategyDetail(summary) {
+  return (text, index) => index === 0 || !summary?.includes(text);
+}
+
+function strategyRunStatus(run) {
+  return run ? `the saved strategy is ${run.status}` : 'its saved strategy run is missing';
 }

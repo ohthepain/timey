@@ -1,3 +1,5 @@
+import { routeQueueIssue, updateProgressSnapshot } from './browser-queue-route.mjs';
+
 export default async function progressBrowserChecks(page) {
   const errors = [],
     submissions = [],
@@ -6,53 +8,7 @@ export default async function progressBrowserChecks(page) {
   let mode = 'questions',
     strategyStarts = 0;
   let updated = '2026-11-01T10:00:00Z';
-  await page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch();
-    const snapshot = await response.json();
-    const issue = snapshot.issues.find((entry) => entry.id === 'b');
-    issue.lifecycle = {
-      id: 'progress-record',
-      updated,
-      status: 'waiting',
-      events: [],
-      summary: 'Waiting for scope answers.',
-      input: {
-        type: 'questions',
-        questions: [{ question: 'Should Save retain the draft?', expected: 'Choose yes or no.' }],
-      },
-    };
-    if (mode !== 'questions') {
-      issue.lifecycle = {
-        id: 'progress-record',
-        updated,
-        status: mode === 'complete' ? 'handed-off' : 'failed',
-        summary: 'Old failure must not override active work.',
-        work: {},
-      };
-      Object.assign(issue.strategy, {
-        runId: 'worker',
-        status: mode === 'complete' ? 'handed-off' : 'failed',
-        active: mode === 'checking',
-      });
-    }
-    if (mode === 'checking')
-      snapshot.runs.push({
-        id: 'worker',
-        issueId: 'b',
-        kind: 'issue-work',
-        connected: true,
-        status: 'checking',
-        created: updated,
-        events: [],
-        approvals: [],
-        output: [{ id: 'check', kind: 'command', command: 'pnpm test', status: 'inProgress', text: 'Starting tests' }],
-      });
-    if (mode === 'grill') {
-      issue.lifecycle = null;
-      Object.assign(issue.strategy, { runId: null, status: 'queued', active: false });
-    }
-    await route.fulfill({ json: snapshot });
-  });
+  await routeQueueIssue(page, 'b', (snapshot, issue) => updateProgressSnapshot(snapshot, issue, mode, updated));
   await page.route('**/api/issue-chat?**', (route) =>
     route.fulfill({
       json: {
