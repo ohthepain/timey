@@ -1372,7 +1372,9 @@ publication, merge, issue acceptance and closure remain distinct. Earlier confir
 milestones remain visible, with superseded candidate checks labelled explicitly.
 
 Statuses are running, waiting for you, blocked, failed, complete, not started and
-progress unavailable. Lost connections show the last known update; quiet output
+progress unavailable. When the factory UI cannot reconnect to its local server,
+“Connection needs attention” appears in a red banner above the header; it clears
+after a successful refresh. Lost connections show the last known update; quiet output
 alone proves neither failure nor blockage. Verification shows the current command
 and exit result when available, otherwise **Running verification** without invented
 check names. Issue output keeps its recent public diagnostic stream and offers
