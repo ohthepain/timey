@@ -303,6 +303,10 @@ and issue project. `factory-ui/queue-response.mjs` projects bounded polling data
 `factory-ui/issue-git.mjs` reads the selected issue's working branch and HEAD
 from its worker or delivery checkout, independently of the server source;
 full saved runs remain available through the authenticated on-demand endpoint.
+`queue-human-input.mjs` batches shared display-only human-input reads within one
+snapshot. Issue-specific readiness facts keep separate reads, and each new snapshot
+reads fresh state. Execution guards remain independent. This avoids per-issue
+synchronous helper launches starving the server's GitHub authentication requests.
 
 `scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;
 `factory-workflow.check.mjs` owns the cross-format issue-decision compatibility
