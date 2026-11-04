@@ -21,6 +21,7 @@ import { synchronizeStrategyTarget } from './factory-ui/strategy-target.mjs';
 import { gitFixture } from './git-fixture.mjs';
 import { validateSummary } from './factory-ui/checks.mjs';
 import { publishStrategyPR } from './factory-ui/strategy-publication.mjs';
+import { humanGuard } from './factory-ui/guard.mjs';
 
 function fixture(t) {
   const { queue, source } = deliveryFixture(t);
@@ -359,12 +360,57 @@ test('a worker cannot introduce a personally published PR into new strategy work
 
 test('Full Send uses the protected provider after checks and keeps acceptance separate', async (t) => {
   const f = fixture(t);
+  const guards = [];
+  f.service.guard = (...args) => {
+    guards.push(args);
+    return humanGuard(...args);
+  };
   startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
   const record = f.service.lifecycleRuns[f.issue.id];
   assert.equal(record.status, 'merged', record.summary);
   assert.equal(f.counts().merges, 1);
+  const mergeGuard = guards.find(([, , operation]) => operation === 'merge');
+  assert.match(mergeGuard[1].id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(mergeGuard[1].id, record.work.runId);
+  assert.equal(mergeGuard[1].worker_revision, record.work.verification.head);
+  assert.equal(mergeGuard[3], record.work.readiness.target);
   assert.equal(readQueue(f.queue.root).issues[0].state, f.issue.state);
+});
+
+test('Full Send merge guard rejects an invalid strategy identity through the human-input helper', async (t) => {
+  const f = fixture(t);
+  f.service.guard = (root, action, operation, target, ...rest) =>
+    humanGuard(root, operation === 'merge' ? { ...action, id: f.issue.id } : action, operation, target, ...rest);
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'blocked');
+  assert.match(record.summary, /Exact candidate tuple required/);
+  assert.equal(f.counts().merges, 0);
+});
+
+test('Full Send merge guard still blocks a required human check', async (t) => {
+  const f = fixture(t);
+  const report = join(f.queue.root, '.issues/20261025-one.md');
+  const original = readFileSync(report, 'utf8');
+  f.service.guard = (root, action, operation, target, ...rest) => {
+    if (operation === 'merge')
+      writeFileSync(
+        report,
+        original.replace(
+          'state: verify',
+          `state: verify\nhuman_checks:\n  - id: required-review\n    kind: judgment\n    status: pending\n    instructions: Review the verified candidate.\n    blocks: dependent-work\n    revision: ${action.worker_revision}\n    result: null`
+        )
+      );
+    return humanGuard(root, action, operation, target, ...rest);
+  };
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'blocked');
+  assert.match(record.summary, /Human input blocks merge/);
+  assert.equal(f.counts().merges, 0);
 });
 
 test('persistent failed checks stop after three repair approaches and preserve all evidence without merging', async (t) => {
@@ -920,6 +966,10 @@ test('live readiness rejects draft, changed head, queue enrollment, failing chec
   assert.equal((await f.provider.ready(f.pr, 'codex/issue-one', 'head')).head, 'head');
   await assert.rejects(() => f.provider.ready({ ...f.pr, draft: true }, 'codex/issue-one', 'head'), /non-draft/);
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'other'), /candidate changed/);
+  await assert.rejects(
+    () => f.provider.ready({ ...f.pr, base: { ...f.pr.base, ref: 'other' } }, 'codex/issue-one', 'head'),
+    /target changed/
+  );
   f.change({ queued: true });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /merge queue/);
   f.change({ queued: false, clean: false });

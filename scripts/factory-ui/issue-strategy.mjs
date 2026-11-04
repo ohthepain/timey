@@ -501,12 +501,7 @@ async function maybeAutoMerge(service, record, run, issue, input, work, head, pr
     return;
   }
   if (!automaticMergeSelected(work, input)) return;
-  service.guard(
-    service.root,
-    { id: run.actionId, issues: [issue.id], worker_revision: head },
-    'merge',
-    readiness.target
-  );
+  service.guard(service.root, { id: run.id, issues: [issue.id], worker_revision: head }, 'merge', readiness.target);
   // Recheck the live PR immediately before the provider-enforced merge.
   const latest = await provider.ready(await provider.inspect(work.pr), work.branch, head);
   if (latest.merged) {
