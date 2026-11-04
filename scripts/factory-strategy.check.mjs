@@ -203,7 +203,11 @@ test('Continue recognizes a manually merged, unchanged checked PR after pending 
   const closed = f.service.decideIssue(f.issue.id, f.issue.state, 'close', decisionBasis(queue, queue.issues[0]));
   assert.equal(closed.state, 'closed');
   assert.equal(readQueue(f.queue.root).issues[0].accepted_result.revision, prHead);
-  assert.deepEqual(f.counts(), { calls: 1, merges: 0, checks: 1 }, 'Fixed closure uses the retained result without work');
+  assert.deepEqual(
+    f.counts(),
+    { calls: 1, merges: 0, checks: 1 },
+    'Fixed closure uses the retained result without work'
+  );
 });
 
 test('Continue does not accept a manual merge that changed the checked candidate tree', async (t) => {

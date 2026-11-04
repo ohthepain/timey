@@ -640,9 +640,7 @@ function hasSpecificInstruction(instruction) {
 
 function usableSavedPR(pr, readiness, checked, checkout) {
   return Boolean(
-    readiness &&
-      readinessMatchesSavedPR(pr, readiness, checked) &&
-      sameCheckedTree(checkout, checked, readiness)
+    readiness && readinessMatchesSavedPR(pr, readiness, checked) && sameCheckedTree(checkout, checked, readiness)
   );
 }
 
