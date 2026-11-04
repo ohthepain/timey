@@ -54,9 +54,49 @@ export function updateProgressSnapshot(snapshot, issue, mode, updated) {
         output: [{ id: 'check', kind: 'command', command: 'pnpm test', status: 'inProgress', text: 'Starting tests' }],
       },
     },
+    blocked: {
+      lifecycle: {
+        id: 'progress-record',
+        updated,
+        status: 'failed',
+        events: [],
+        summary: 'The server owns PR publication. Return null for a new PR or the already saved PR number.',
+        work: {},
+      },
+      strategy: {
+        runId: 'worker',
+        status: 'failed',
+        summary: 'The server owns PR publication. Return null for a new PR or the already saved PR number.',
+        active: false,
+        pr: null,
+      },
+      run: {
+        id: 'worker',
+        issueId: 'b',
+        kind: 'issue-work',
+        status: 'failed',
+        created: updated,
+        events: [],
+        summary: 'The server owns PR publication. Return null for a new PR or the already saved PR number.',
+        result: { pr: 37 },
+        output: [
+          {
+            id: 'verify',
+            kind: 'command',
+            command: 'pnpm run verify',
+            status: 'completed',
+            exitCode: 0,
+            text: 'Passed',
+          },
+        ],
+      },
+    },
     grill: { lifecycle: null, strategy: { runId: null, status: 'queued', active: false } },
   }[mode];
   issue.lifecycle = states.lifecycle;
   if (states.strategy) Object.assign(issue.strategy, states.strategy);
-  if (states.run) snapshot.runs.push(states.run);
+  if (states.run) {
+    snapshot.runs = (snapshot.runs || []).filter((run) => run.id !== states.run.id);
+    snapshot.runs.push(states.run);
+  }
 }
