@@ -551,7 +551,9 @@ failures, explicit starts and missing review capabilities.
 `strategy-repair.mjs` owns the active run's bounded repair ledger and infrastructure
 retries; `strategy-target.mjs` fetches/merges the configured target and preserves
 conflicts for the owner. `strategy-readiness.mjs` classifies PR blockers, observes
-pending CI and reconciles an externally merged candidate. The controller retains
+pending CI and reconciles an externally merged candidate. The controller preserves
+the checked PR head across Continue and reuses verification only when the confirmed
+merge has the same tree; changed merge content remains on the repair path. It retains
 implementation and independent verification before later delivery can fail;
 repair turns reuse a completed owner's chat without replaying chat creation.
 The policy is recorded in each explicit start receipt and never wakes inactive work.

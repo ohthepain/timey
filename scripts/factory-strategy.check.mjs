@@ -23,7 +23,7 @@ import { validateSummary } from './factory-ui/checks.mjs';
 import { publishStrategyPR } from './factory-ui/strategy-publication.mjs';
 
 function fixture(t) {
-  const { queue } = deliveryFixture(t);
+  const { queue, source } = deliveryFixture(t);
   writeJson(join(queue.root, '.issues/issue-delivery-config.json'), {
     provider: 'github',
     repository: 'fixture/timey',
@@ -73,7 +73,12 @@ function fixture(t) {
   };
   service.check = async (cwd) => {
     checks++;
-    return { head: git(cwd, 'rev-parse', 'HEAD'), passed: true };
+    return {
+      head: git(cwd, 'rev-parse', 'HEAD'),
+      tree: git(cwd, 'rev-parse', 'HEAD^{tree}'),
+      summaries: [],
+      passed: true,
+    };
   };
   service.strategyProvider = () => ({
     assertMergeProtection: async () => true,
@@ -98,7 +103,7 @@ function fixture(t) {
     solRounds: 0,
     approved: true,
   });
-  return { queue, service, issue, input, counts: () => ({ calls, merges, checks }) };
+  return { queue, source, service, issue, input, counts: () => ({ calls, merges, checks }) };
 }
 
 test('Full Stop uses one chat/branch, checks once and hands off without merge or stage transitions', async (t) => {
@@ -124,6 +129,116 @@ test('Full Stop uses one chat/branch, checks once and hands off without merge or
   await f.service.lifecycleTasks.get(f.issue.id);
   assert.equal(f.service.lifecycleRuns[f.issue.id].work.checkout, checkout);
   assert.equal(f.service.lifecycleRuns[f.issue.id].workThreadId, 'owning-chat');
+  assert.deepEqual(f.counts(), { calls: 1, merges: 0, checks: 1 }, 'Continue reuses the unchanged checked PR');
+});
+
+test('Continue recognizes a manually merged, unchanged checked PR after pending checks without replaying work', async (t) => {
+  const f = fixture(t);
+  f.service.strategyReadinessTimeout = -1;
+  const checkCandidate = f.service.check;
+  f.service.check = async (cwd, base, folder) => {
+    const checked = await checkCandidate(cwd, base, folder);
+    const summaries = ['verification', 'step'].map((checkpoint) => {
+      const summary = JSON.parse(readFileSync(join(f.source.root, '.issues', checkpoint + '.json')));
+      summary.base = base;
+      summary.snapshot_tree = checked.tree;
+      const path = join(folder, 'fixture-' + checkpoint + '.json');
+      writeJson(path, summary);
+      return path;
+    });
+    return { ...checked, summaries };
+  };
+  const provider = f.service.strategyProvider();
+  provider.ready = async () => {
+    throw Object.assign(Error('PR checks are pending.'), { code: 'STRATEGY_PENDING' });
+  };
+  f.service.strategyProvider = () => provider;
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  const checkout = record.work.checkout;
+  const prHead = record.work.verification.head;
+  const checked = record.work.verification.checked;
+  assert.equal(record.status, 'blocked');
+  assert.equal(record.work.prHead, prHead);
+  assert.equal(f.service.store.runs.at(-1).result.checked.head, prHead);
+
+  git(checkout, 'commit', '--allow-empty', '-qm', 'manual merge with matching tree');
+  const mergeRevision = git(checkout, 'rev-parse', 'HEAD');
+  provider.inspect = () => ({
+    number: 12,
+    state: 'closed',
+    merged_at: '2026-11-04T17:00:00Z',
+    merge_commit_sha: mergeRevision,
+    html_url: 'https://github.com/fixture/timey/pull/12',
+  });
+  const readinessHeads = [];
+  provider.ready = async (_pr, branch, head) => {
+    assert.equal(branch, record.work.branch);
+    readinessHeads.push(head);
+    return {
+      number: 12,
+      url: 'https://github.com/fixture/timey/pull/12',
+      head,
+      target: 'target-after-merge',
+      checks: [{ name: 'verify', status: 'success' }],
+      merged: true,
+      merge: { url: 'https://github.com/fixture/timey/pull/12', revision: mergeRevision },
+    };
+  };
+  f.service.strategyProvider = () => provider;
+
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+
+  assert.equal(record.status, 'merged', record.summary);
+  assert.equal(record.work.prHead, prHead);
+  assert.equal(record.work.verification.head, prHead);
+  assert.equal(record.work.verification.checked, checked);
+  assert.deepEqual(f.counts(), { calls: 1, merges: 0, checks: 1 });
+  assert.equal(record.work.merge.revision, mergeRevision);
+  assert.deepEqual(readinessHeads, [prHead], 'readiness stays bound to the verified PR head');
+  assert.equal(f.service.store.runs.at(-1).result.checked, checked);
+  const queue = readQueue(f.queue.root);
+  const closed = f.service.decideIssue(f.issue.id, f.issue.state, 'close', decisionBasis(queue, queue.issues[0]));
+  assert.equal(closed.state, 'closed');
+  assert.equal(readQueue(f.queue.root).issues[0].accepted_result.revision, prHead);
+  assert.deepEqual(f.counts(), { calls: 1, merges: 0, checks: 1 }, 'Fixed closure uses the retained result without work');
+});
+
+test('Continue does not accept a manual merge that changed the checked candidate tree', async (t) => {
+  const f = fixture(t);
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  const prHead = record.work.verification.head;
+  const checkout = record.work.checkout;
+
+  writeFileSync(join(checkout, 'change.js'), 'export const changed = false;\n');
+  git(checkout, 'add', 'change.js');
+  git(checkout, 'commit', '-qm', 'manual merge resolution changed verified content');
+  const mergeRevision = git(checkout, 'rev-parse', 'HEAD');
+  const provider = f.service.strategyProvider();
+  provider.inspect = () => ({
+    number: 12,
+    state: 'closed',
+    merged_at: '2026-11-04T17:00:00Z',
+    merge_commit_sha: mergeRevision,
+    html_url: 'https://github.com/fixture/timey/pull/12',
+  });
+  provider.ready = async (_pr, _branch, head) => {
+    if (head !== prHead) throw Error('The PR branch, target or candidate changed.');
+    return { head, merged: true, merge: { revision: mergeRevision } };
+  };
+  f.service.strategyProvider = () => provider;
+
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+
+  assert.notEqual(record.status, 'merged');
+  assert.equal(record.work.merge, undefined);
+  assert.equal(f.counts().merges, 0);
+  assert.ok(f.counts().calls > 1, 'changed content stays on the repair path');
 });
 
 test('new strategy publication is server-owned, follows verification and retains the PR before readiness', async (t) => {
@@ -618,7 +733,7 @@ test('repair after an externally merged PR uses a linked follow-up branch withou
   assert.ok(existsSync(join(record.work.checkout, 'change.js')));
 });
 
-test('real target synchronization fetches and merges updates and preserves merge conflicts for the owner', async (t) => {
+test('an earlier issue resumes with a shared fix from a later merged PR and preserves conflicts for the owner', async (t) => {
   const upstream = gitFixture(t, 'strategy-upstream-');
   writeFileSync(join(upstream.root, 'feature.js'), 'export const value = 1;\n');
   upstream.git('add', '.');
@@ -635,12 +750,12 @@ test('real target synchronization fetches and merges updates and preserves merge
     events: [],
     work: { checkout: checkout.root, branch: 'codex/issue', config: { remote: 'origin', target: 'main' } },
   };
-  writeFileSync(join(upstream.root, 'target.js'), 'export const target = true;\n');
+  writeFileSync(join(upstream.root, 'shared-fix.js'), 'export const earlierIssueFix = true;\n');
   upstream.git('add', '.');
-  upstream.git('commit', '-qm', 'target advances');
+  upstream.git('commit', '-qm', 'later issue PR #37 merges shared fix');
   assert.equal(await synchronizeStrategyTarget(service, record), true);
   assert.equal(await synchronizeStrategyTarget(service, record), false);
-  assert.ok(existsSync(join(checkout.root, 'target.js')));
+  assert.equal(readFileSync(join(checkout.root, 'shared-fix.js'), 'utf8'), 'export const earlierIssueFix = true;\n');
   writeFileSync(join(checkout.root, 'feature.js'), 'export const value = 2;\n');
   checkout.git('add', '.');
   checkout.git('commit', '-qm', 'issue side');
