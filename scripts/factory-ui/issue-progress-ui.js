@@ -1,6 +1,7 @@
 /* A projection of existing records and public events; never a workflow record. */
 const issueProgressUI = (() => {
   const activeStatuses = new Set(['preparing', 'running', 'checking', 'inProgress']);
+  const stoppedStatuses = new Set(['blocked', 'failed', 'attention']);
   const completeStatuses = new Set(['completed', 'handed-off', 'merged', 'finished', 'reconciled']);
   const time = (value) => Date.parse(value || '') || 0;
   function runsFor(issue, data) {
@@ -55,7 +56,73 @@ const issueProgressUI = (() => {
   }
   function currentCommand(run) {
     const commands = (run?.output || []).filter((entry) => entry.kind === 'command');
+    if (stoppedStatuses.has(run?.status)) return commands.findLast(commandFailed) || null;
     return commands.findLast((entry) => activeStatuses.has(entry.status)) || commands.at(-1);
+  }
+  function commandFailed(entry) {
+    return ['failed', 'error'].includes(entry.status) || (entry.exitCode !== undefined && entry.exitCode !== 0);
+  }
+  function commandPurpose(command) {
+    const value = String(command || '').replace(/^(?:[A-Z][A-Z0-9_]*=\S+\s+)+/, '');
+    const purposes = [
+      [/\bpnpm\s+run\s+test:factory\b/, 'Runs the automated checks for the factory and issue workflows.'],
+      [/\bpnpm\s+run\s+test:browser\b/, 'Runs browser checks for the app and factory screens.'],
+      [/\bpnpm\s+run\s+audit:step\b/, 'Checks changed code against the project’s design and maintainability rules.'],
+      [
+        /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:verify|test(?::[\w-]+)?|typecheck|build)\b/,
+        'Runs the project’s automated checks for the requested task.',
+      ],
+      [/\bgit\s+fetch\b/, 'Downloads updates from the named remote repository.'],
+      [/\bgit\s+merge\b/, 'Combines the named branch with the current branch.'],
+    ];
+    return purposes.find(([pattern]) => pattern.test(value))?.[1] || 'The command’s purpose was not recorded.';
+  }
+  function failedCommandDetails(command) {
+    const result = command.exitCode === undefined ? 'a reported error' : `failure code ${command.exitCode}`;
+    return {
+      step: 'Command failed',
+      explanation: `${commandPurpose(command.command)} It stopped with ${result}.`,
+      next: 'Review the command output, fix the reported problem, then continue.',
+      diagnostics: command.text || null,
+    };
+  }
+  function formatPR(number) {
+    return Number.isSafeInteger(number) ? `PR #${number}` : 'no PR number';
+  }
+  function pullRequestCheckDetails(issue, run, reason) {
+    const reported = run.result.pr;
+    const saved = issue.strategy.pr;
+    if (reported === saved) return null;
+    return {
+      step: 'Checking pull request details',
+      explanation: `The factory check stopped because the work response named ${formatPR(reported)}, while this issue has ${formatPR(saved)} saved. This does not show who created that PR or whether it belongs to this issue.`,
+      next: 'Check the issue branch and matching pull request to confirm what is already published, then continue with the correct record.',
+      commandNotice: 'No failed shell command was recorded.',
+      diagnostics: `Factory check: ${reason}\nWork response: ${formatPR(reported)}
+Saved issue record: ${formatPR(saved)}`,
+    };
+  }
+  function internalCheckDetails(reason) {
+    return {
+      step: 'Factory check stopped',
+      explanation: 'The factory stopped work during an internal check. No failed shell command was recorded.',
+      next: 'Check the issue, branch, and pull request records for the cause before retrying.',
+      commandNotice: 'No failed shell command was recorded.',
+      diagnostics: reason || null,
+    };
+  }
+  function stoppedFailureDetails(issue, run) {
+    const command = currentCommand(run);
+    if (command) return failedCommandDetails(command);
+    const reason = run?.displaySummary || run?.summary || '';
+    if (reason.includes('server owns PR publication')) {
+      const details = pullRequestCheckDetails(issue, run, reason);
+      if (details) return details;
+    }
+    return internalCheckDetails(reason);
+  }
+  function stoppedDetails(issue, run, status) {
+    return stoppedStatuses.has(status) ? stoppedFailureDetails(issue, run) : {};
   }
   function pendingInput(issue, run, conversation) {
     if (issue.lifecycle?.status === 'answering')
@@ -157,6 +224,7 @@ const issueProgressUI = (() => {
         step: 'Operation failed',
         explanation: explanation || 'The operation stopped with an error. Inspect Issue output.',
         next: 'Inspect the failure, then Continue when ready.',
+        ...stoppedDetails(issue, run, status),
       };
     if (['blocked', 'paused', 'stopped'].includes(status))
       return {
@@ -164,6 +232,7 @@ const issueProgressUI = (() => {
         step: status === 'paused' ? 'Work paused' : 'Work blocked',
         explanation: explanation || 'The operation stopped and needs attention.',
         next: 'Resolve the stop reason, then Continue when ready.',
+        ...stoppedDetails(issue, run, status),
       };
     if (!run && !issue.lifecycle && !conversation?.messages?.length)
       return {
@@ -226,5 +295,5 @@ const issueProgressUI = (() => {
       };
     return { ...base, ...(pendingInput(issue, run, conversation) || operationState(issue, run, conversation)) };
   }
-  return { derive, runsFor, basis };
+  return { derive, runsFor, basis, purpose: commandPurpose };
 })();

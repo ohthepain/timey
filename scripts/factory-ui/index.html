@@ -2720,7 +2720,21 @@
             : command?.status === 'inProgress'
               ? 'running'
               : command?.status || '';
-        return `<h2>Progress</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p><h3 data-progress-step>${esc(view.step)}</h3><p><strong>What is happening:</strong> ${esc(view.explanation)}</p>${command ? `<p><strong>${view.running && ['running', 'inProgress'].includes(command.status) ? 'Current command' : 'Last recorded command'}:</strong> <code>${esc(command.command)}</code> · ${esc(result)}</p>` : ''}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>Next action:</strong> ${esc(view.next)}</p>${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
+        const stopped = ['blocked', 'failed'].includes(view.status);
+        const commandName = view.running && ['running', 'inProgress'].includes(command?.status)
+          ? 'Current command'
+          : stopped
+            ? 'Command that stopped progress'
+            : 'Last recorded command';
+        const commandDetails = command
+          ? `<p><strong>${commandName}:</strong> <code>${esc(command.command)}</code> · ${esc(result)}</p>${stopped ? `<p><strong>What it does:</strong> ${esc(issueProgressUI.purpose(command.command))}</p>` : ''}`
+          : view.commandNotice
+            ? `<p><strong>Command:</strong> ${esc(view.commandNotice)}</p>`
+            : '';
+        const diagnostics = view.diagnostics
+          ? `<details class="progress-diagnostics"><summary>Technical details (optional)</summary><pre>${esc(view.diagnostics)}</pre></details>`
+          : '';
+        return `<h2>Progress</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p><h3 data-progress-step>${esc(view.step)}</h3><p><strong>${stopped ? 'What stopped the work' : 'What is happening'}:</strong> ${esc(view.explanation)}</p>${commandDetails}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>${stopped ? 'Recommended next steps' : 'Next action'}:</strong> ${esc(view.next)}</p>${diagnostics}${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
       }
       function progressInput(issue) {
         if (progressFeedback(issue) || progressUnavailable) return '';

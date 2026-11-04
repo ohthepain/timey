@@ -28,6 +28,7 @@ import { startChat } from './chat-start.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
 import { resumeDelivery } from './delivery-integration.mjs';
+import { redactValue } from './activity.mjs';
 
 import { createSiteReviews } from './site-review.mjs';
 import { createDiscussions } from './discussion.mjs';
@@ -148,7 +149,11 @@ export class FactoryUI {
       coordinator: this.coordinator.view(),
       reviewBasis: digest(JSON.stringify(queue)),
       issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner, humanInputs)),
-      runs: runs.map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
+      runs: runs.map((run) => ({
+        ...run,
+        output: redactValue(run.output || []),
+        displaySummary: redactValue(explainBlock(run.summary)),
+      })),
       actions: queue.actions.map((a) => ({
         ...a,
         launchBlocked: describeLaunch(queue, a),

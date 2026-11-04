@@ -80,6 +80,49 @@ test('verification exposes command identity and exact exit result, never stdout 
   assert.equal(result.step, 'Running verification');
   assert.equal(result.command.exitCode, 1);
 });
+test('blocked progress points to the failed command even when later commands succeeded', () => {
+  const result = view(
+    { strategy: { status: 'blocked', active: false } },
+    [
+      {
+        ...run,
+        connected: false,
+        status: 'blocked',
+        output: [
+          { kind: 'command', command: 'pnpm run test:factory', status: 'completed', exitCode: 1, text: 'failure details' },
+          { kind: 'command', command: 'git status --short', status: 'completed', exitCode: 0, text: 'clean' },
+        ],
+      },
+    ]
+  );
+  assert.equal(result.command.command, 'pnpm run test:factory');
+  assert.equal(result.step, 'Command failed');
+  assert.match(result.explanation, /automated checks for the factory/);
+  assert.match(result.next, /Review the command output/);
+});
+test('blocked progress does not present a successful command as the cause', () => {
+  const result = view(
+    { strategy: { status: 'blocked', active: false, summary: 'An internal check stopped.' } },
+    [{ ...run, connected: false, status: 'blocked', output: [{ kind: 'command', command: 'pnpm run verify', status: 'completed', exitCode: 0 }] }]
+  );
+  assert.equal(result.command, null);
+  assert.equal(result.commandNotice, 'No failed shell command was recorded.');
+  assert.match(result.explanation, /internal check/);
+});
+test('pull request check explains conflicting saved facts without assigning blame', () => {
+  const summary = 'The server owns PR publication. Return null for a new PR or the already saved PR number.';
+  const result = view(
+    { strategy: { status: 'failed', active: false, pr: null } },
+    [{ ...run, connected: false, status: 'failed', summary, result: { pr: 37 }, output: [] }]
+  );
+  assert.equal(result.step, 'Checking pull request details');
+  assert.match(result.explanation, /work response named PR #37/);
+  assert.match(result.explanation, /no PR number saved/);
+  assert.match(result.explanation, /does not show who created/);
+  assert.match(result.next, /Check the issue branch and matching pull request/);
+  assert.match(result.diagnostics, /Factory check:/);
+  assert.equal(result.command, null);
+});
 test('capture grilling displays the actual outstanding round without granting implementation', () => {
   const conversation = {
     issueId: 'one',
