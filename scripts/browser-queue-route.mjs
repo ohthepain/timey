@@ -79,7 +79,16 @@ export function updateProgressSnapshot(snapshot, issue, mode, updated) {
         events: [],
         summary: 'The server owns PR publication. Return null for a new PR or the already saved PR number.',
         result: { pr: 37 },
-        output: [{ id: 'verify', kind: 'command', command: 'pnpm run verify', status: 'completed', exitCode: 0, text: 'Passed' }],
+        output: [
+          {
+            id: 'verify',
+            kind: 'command',
+            command: 'pnpm run verify',
+            status: 'completed',
+            exitCode: 0,
+            text: 'Passed',
+          },
+        ],
       },
     },
     grill: { lifecycle: null, strategy: { runId: null, status: 'queued', active: false } },

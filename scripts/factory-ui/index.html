@@ -2721,11 +2721,12 @@
               ? 'running'
               : command?.status || '';
         const stopped = ['blocked', 'failed'].includes(view.status);
-        const commandName = view.running && ['running', 'inProgress'].includes(command?.status)
-          ? 'Current command'
-          : stopped
-            ? 'Command that stopped progress'
-            : 'Last recorded command';
+        const commandName =
+          view.running && ['running', 'inProgress'].includes(command?.status)
+            ? 'Current command'
+            : stopped
+              ? 'Command that stopped progress'
+              : 'Last recorded command';
         const commandDetails = command
           ? `<p><strong>${commandName}:</strong> <code>${esc(command.command)}</code> · ${esc(result)}</p>${stopped ? `<p><strong>What it does:</strong> ${esc(issueProgressUI.purpose(command.command))}</p>` : ''}`
           : view.commandNotice

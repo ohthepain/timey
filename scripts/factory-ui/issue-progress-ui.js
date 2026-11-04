@@ -130,7 +130,7 @@ Saved issue record: ${formatPR(saved)}`,
     return command ? failedCommandDetails(command) : noCommandFailureDetails(issue, run);
   }
   function stoppedDetails(issue, run, status) {
-    return stoppedStatuses.has(status) ? stoppedFailureDetails(issue, run) : {};
+    return stoppedStatuses.has(status) && run ? stoppedFailureDetails(issue, run) : {};
   }
   function pendingInput(issue, run, conversation) {
     if (issue.lifecycle?.status === 'answering')
