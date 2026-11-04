@@ -21,6 +21,7 @@ import { synchronizeStrategyTarget } from './factory-ui/strategy-target.mjs';
 import { gitFixture } from './git-fixture.mjs';
 import { validateSummary } from './factory-ui/checks.mjs';
 import { publishStrategyPR } from './factory-ui/strategy-publication.mjs';
+import { humanGuard } from './factory-ui/guard.mjs';
 
 function fixture(t) {
   const { queue } = deliveryFixture(t);
@@ -246,6 +247,39 @@ test('Full Send uses the protected provider after checks and keeps acceptance se
   assert.equal(record.status, 'merged', record.summary);
   assert.equal(f.counts().merges, 1);
   assert.equal(readQueue(f.queue.root).issues[0].state, f.issue.state);
+});
+
+test('Full Send reaches merge through the installed human-input guard', async (t) => {
+  const f = fixture(t);
+  f.service.guard = humanGuard;
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'merged', record.summary);
+  assert.equal(f.counts().merges, 1);
+  assert.equal(readQueue(f.queue.root).issues[0].state, f.issue.state);
+});
+
+test('Full Send Continue checks the new run identity through the installed guard', async (t) => {
+  const f = fixture(t);
+  f.service.guard = humanGuard;
+  const provider = f.service.strategyProvider();
+  const merge = provider.merge;
+  provider.merge = async () => {
+    throw Error('Simulated interrupted merge');
+  };
+  f.service.strategyProvider = () => provider;
+  const first = startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'blocked');
+  provider.merge = merge;
+  const continued = startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.notEqual(continued.runId, first.runId);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'merged', record.summary);
+  assert.equal(f.counts().merges, 1);
+  assert.equal(f.counts().checks, 2, 'Each run reaches verification before merging');
 });
 
 test('persistent failed checks stop after three repair approaches and preserve all evidence without merging', async (t) => {
