@@ -55,9 +55,13 @@ const issueProgressUI = (() => {
     return latest?.kind === 'reply' && /(?:❓|\bQ\d+\b|\?)/u.test(latest.body) ? latest : null;
   }
   function currentCommand(run) {
-    const commands = (run?.output || []).filter((entry) => entry.kind === 'command');
-    if (stoppedStatuses.has(run?.status)) return commands.findLast(commandFailed) || null;
-    return commands.findLast((entry) => activeStatuses.has(entry.status)) || commands.at(-1);
+    return selectCommand(run?.output || [], stoppedStatuses.has(run?.status));
+  }
+  function selectCommand(output, stopped) {
+    const commands = output.filter((entry) => entry.kind === 'command');
+    return stopped
+      ? commands.findLast(commandFailed) || null
+      : commands.findLast((entry) => activeStatuses.has(entry.status)) || commands.at(-1);
   }
   function commandFailed(entry) {
     return ['failed', 'error'].includes(entry.status) || (entry.exitCode !== undefined && entry.exitCode !== 0);
@@ -111,15 +115,19 @@ Saved issue record: ${formatPR(saved)}`,
       diagnostics: reason || null,
     };
   }
+  function publicationFailureDetails(issue, run, reason) {
+    return reason.includes('server owns PR publication') ? pullRequestCheckDetails(issue, run, reason) : null;
+  }
+  function stopReason(run) {
+    return run.displaySummary || run.summary || '';
+  }
+  function noCommandFailureDetails(issue, run) {
+    const reason = stopReason(run);
+    return publicationFailureDetails(issue, run, reason) || internalCheckDetails(reason);
+  }
   function stoppedFailureDetails(issue, run) {
     const command = currentCommand(run);
-    if (command) return failedCommandDetails(command);
-    const reason = run?.displaySummary || run?.summary || '';
-    if (reason.includes('server owns PR publication')) {
-      const details = pullRequestCheckDetails(issue, run, reason);
-      if (details) return details;
-    }
-    return internalCheckDetails(reason);
+    return command ? failedCommandDetails(command) : noCommandFailureDetails(issue, run);
   }
   function stoppedDetails(issue, run, status) {
     return stoppedStatuses.has(status) ? stoppedFailureDetails(issue, run) : {};
