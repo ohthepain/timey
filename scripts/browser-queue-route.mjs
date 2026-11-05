@@ -9,6 +9,9 @@ export function routeQueueIssue(page, issueId, updateIssue) {
 }
 
 export function updateProgressSnapshot(snapshot, issue, mode, updated) {
+  // Progress scenarios need an open workflow stage so the issue's Progress view renders.
+  issue.state = 'backlog';
+  issue.stage = 'Backlog';
   const states = {
     questions: {
       lifecycle: {
