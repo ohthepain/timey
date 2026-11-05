@@ -763,13 +763,7 @@ async function recordStrategyOutcome(service, record, run, issue, work, readines
     kind: 'strategy-result',
     body: outcome.summary,
   });
-  await updateIssueChatTitle(
-    service,
-    issue.id,
-    record.workThreadId,
-    'Execute',
-    outcome.status === 'merged' ? 'archiveable' : 'waiting'
-  );
+  await updateIssueChatTitle(service, issue.id, record.workThreadId, 'Execute', 'waiting');
 }
 
 async function executeStrategy(service, record, run, issue, input) {

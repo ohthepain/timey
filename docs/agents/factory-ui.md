@@ -801,7 +801,8 @@ Thread titles begin with the current role (`Issue:`, `Grill:`, `Execute:` or
 `Retro:`), include the issue title and end with `active`, `waiting` or
 `archiveable`. The issue conversation is reused as work moves between roles;
 `archiveable` is shown only after the current work has no pending question or
-handoff.
+handoff. A merged strategy result remains `waiting` while explicit issue
+acceptance is outstanding; merge alone does not make the conversation archiveable.
 
 Human messages are retained under `.issues/conversations/ISSUE_ID/messages.jsonl`;
 `chat.json` keeps the conversational model's identity and response status. The
