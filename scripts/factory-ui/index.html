@@ -583,6 +583,31 @@
       h3 {
         font-size: 18px;
       }
+      .progress-heading,
+      .progress-operation {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .progress-timer {
+        color: #526b63;
+        font:
+          600 14px/1.3 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      @media (max-width: 480px) {
+        .progress-heading,
+        .progress-operation {
+          gap: 8px;
+        }
+        .progress-timer {
+          font-size: 12px;
+        }
+      }
       .actions {
         display: flex;
         gap: 10px;
@@ -2857,7 +2882,19 @@
         const diagnostics = view.diagnostics
           ? `<details class="progress-diagnostics"><summary>Technical details (optional)</summary><pre>${esc(view.diagnostics)}</pre></details>`
           : '';
-        return `<h2>Progress</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p><h3 data-progress-step>${esc(view.step)}</h3><p><strong>${stopped ? 'What stopped the work' : 'What is happening'}:</strong> ${esc(view.explanation)}</p>${commandDetails}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>${stopped ? 'Recommended next steps' : 'Next action'}:</strong> ${esc(view.next)}</p>${diagnostics}${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
+        const timer = (value, label) =>
+          value
+            ? `<time class="progress-timer" data-progress-timer data-base-ms="${Math.floor(value.base)}" data-started-at="${esc(value.startedAt || '')}" aria-label="${label}" title="${label}">${issueProgressUI.formatDuration(value.value)}</time>`
+            : '';
+        return `<h2 class="progress-heading"><span>Progress</span>${timer(view.totalOperationTime, 'Total operation time')}</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p><h3 class="progress-operation"><span data-progress-step>${esc(view.step)}</span>${timer(view.operationTime, 'Current operation time')}</h3><p><strong>${stopped ? 'What stopped the work' : 'What is happening'}:</strong> ${esc(view.explanation)}</p>${commandDetails}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>${stopped ? 'Recommended next steps' : 'Next action'}:</strong> ${esc(view.next)}</p>${diagnostics}${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
+      }
+      function updateProgressTimers() {
+        document.querySelectorAll('[data-progress-timer]').forEach((timer) => {
+          const base = Number(timer.dataset.baseMs) || 0;
+          const startedAt = Date.parse(timer.dataset.startedAt || '');
+          const elapsed = base + (startedAt ? Math.max(0, Date.now() - startedAt) : 0);
+          timer.textContent = issueProgressUI.formatDuration(elapsed);
+        });
       }
       function progressInput(issue) {
         if (progressFeedback(issue) || progressUnavailable) return '';
@@ -2885,6 +2922,7 @@
         const summary = $('issue-progress-summary');
         if (!issue || !summary) return;
         summary.innerHTML = progressSummary(issue);
+        updateProgressTimers();
         // Keep a focused answer intact. Full refresh reconciles request identity safely.
         if (progressFeedback(issue) || progressUnavailable) {
           const input = $('issue-progress-input');
@@ -3877,6 +3915,7 @@
       };
       refresh();
       setInterval(refresh, 4000);
+      setInterval(updateProgressTimers, 1000);
     </script>
   </body>
 </html>
