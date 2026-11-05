@@ -60,7 +60,8 @@ export default async function progressBrowserChecks(page) {
   await page.getByRole('tab', { name: 'Progress', exact: true }).click();
   if ((await answer.inputValue()) !== 'Yes, retain this draft.') throw Error('Tab switching lost the draft.');
   await page.getByRole('button', { name: 'Send answer and continue', exact: true }).click();
-  await page.getByRole('heading', { name: 'Running verification', exact: true }).waitFor();
+  const operationStep = page.locator('[data-progress-step]').filter({ hasText: /^Running verification$/ });
+  await operationStep.waitFor();
   if (
     submissions.length !== 1 ||
     submissions[0].text !== 'Yes, retain this draft.' ||
@@ -96,7 +97,7 @@ export default async function progressBrowserChecks(page) {
   await page.evaluate(async () => {
     await refresh();
   });
-  await page.getByRole('heading', { name: 'Running verification', exact: true }).waitFor();
+  await operationStep.waitFor();
   await page.getByRole('tab', { name: 'Issue output', exact: true }).click();
   await page.route('**/api/output-history?**', (route) =>
     route.fulfill({

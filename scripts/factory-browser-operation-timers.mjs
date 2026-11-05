@@ -21,7 +21,10 @@ export default async function operationTimerChecks(page) {
     };
   });
   await page.goto(new URL('/#/issue/b', page.url()).href);
-  await page.getByRole('heading', { name: 'Running verification', exact: true }).waitFor();
+  await page
+    .locator('[data-progress-step]')
+    .filter({ hasText: /^Running verification$/ })
+    .waitFor();
 
   const total = page.locator('.progress-heading time[aria-label="Total operation time"]');
   const operation = page.locator('.progress-operation time[aria-label="Current operation time"]');
