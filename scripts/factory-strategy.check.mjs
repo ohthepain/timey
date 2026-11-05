@@ -88,6 +88,19 @@ function fixture(t) {
     assertMergeProtection: async () => true,
     publish: async () => ({ number: 12 }),
     inspect: () => ({}),
+    findByBranch: async () => {
+      const work = service.lifecycleRuns['20261025-one']?.work;
+      if (!work?.pr || !work.prHead) return null;
+      return {
+        number: work.pr,
+        state: work.merge ? 'closed' : 'open',
+        merged_at: work.merge ? '2026-11-04T17:00:00Z' : null,
+        merge_commit_sha: work.merge?.revision,
+        head: { ref: work.branch, sha: work.prHead, repo: { full_name: 'fixture/timey' } },
+        base: { ref: 'main', repo: { full_name: 'fixture/timey' } },
+        html_url: 'https://github.com/fixture/timey/pull/' + work.pr,
+      };
+    },
     ready: (_pr, _branch, head) => ({
       head,
       number: 12,
@@ -163,6 +176,7 @@ test('Continue recognizes a manually merged, unchanged checked PR after pending 
   const checkout = record.work.checkout;
   const prHead = record.work.verification.head;
   const checked = record.work.verification.checked;
+  record.work.pr = null;
   assert.equal(record.status, 'blocked');
   assert.equal(record.work.prHead, prHead);
   assert.equal(f.service.store.runs.at(-1).result.checked.head, prHead);
@@ -174,6 +188,15 @@ test('Continue recognizes a manually merged, unchanged checked PR after pending 
     state: 'closed',
     merged_at: '2026-11-04T17:00:00Z',
     merge_commit_sha: mergeRevision,
+    html_url: 'https://github.com/fixture/timey/pull/12',
+  });
+  provider.findByBranch = async (branch) => ({
+    number: 12,
+    state: 'closed',
+    merged_at: '2026-11-04T17:00:00Z',
+    merge_commit_sha: mergeRevision,
+    head: { ref: branch, sha: prHead, repo: { full_name: 'fixture/timey' } },
+    base: { ref: 'main', repo: { full_name: 'fixture/timey' } },
     html_url: 'https://github.com/fixture/timey/pull/12',
   });
   const readinessHeads = [];
@@ -196,6 +219,7 @@ test('Continue recognizes a manually merged, unchanged checked PR after pending 
   await f.service.lifecycleTasks.get(f.issue.id);
 
   assert.equal(record.status, 'merged', record.summary);
+  assert.equal(record.work.pr, 12, 'the matching PR is recovered from the issue branch');
   assert.equal(record.work.prHead, prHead);
   assert.equal(record.work.verification.head, prHead);
   assert.equal(record.work.verification.checked, checked);
@@ -221,6 +245,7 @@ test('Continue does not accept a manual merge that changed the checked candidate
   const record = f.service.lifecycleRuns[f.issue.id];
   const prHead = record.work.verification.head;
   const checkout = record.work.checkout;
+  record.work.pr = 99;
 
   writeFileSync(join(checkout, 'change.js'), 'export const changed = false;\n');
   git(checkout, 'add', 'change.js');
@@ -234,6 +259,15 @@ test('Continue does not accept a manual merge that changed the checked candidate
     merge_commit_sha: mergeRevision,
     html_url: 'https://github.com/fixture/timey/pull/12',
   });
+  provider.findByBranch = async (branch) => ({
+    number: 12,
+    state: 'closed',
+    merged_at: '2026-11-04T17:00:00Z',
+    merge_commit_sha: mergeRevision,
+    head: { ref: branch, sha: prHead, repo: { full_name: 'fixture/timey' } },
+    base: { ref: 'main', repo: { full_name: 'fixture/timey' } },
+    html_url: 'https://github.com/fixture/timey/pull/12',
+  });
   provider.ready = async (_pr, _branch, head) => {
     if (head !== prHead) throw Error('The PR branch, target or candidate changed.');
     return { head, merged: true, merge: { revision: mergeRevision } };
@@ -244,6 +278,10 @@ test('Continue does not accept a manual merge that changed the checked candidate
   await f.service.lifecycleTasks.get(f.issue.id);
 
   assert.notEqual(record.status, 'merged');
+  assert.deepEqual(
+    record.work.prDiscrepancy && [record.work.prDiscrepancy.saved, record.work.prDiscrepancy.discovered],
+    [99, 12]
+  );
   assert.equal(record.work.merge, undefined);
   assert.equal(f.counts().merges, 0);
   assert.ok(f.counts().calls > 1, 'changed content stays on the repair path');

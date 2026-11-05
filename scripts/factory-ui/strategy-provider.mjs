@@ -5,7 +5,7 @@ import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
 import { inspectReadiness } from './strategy-readiness.mjs';
 import { infrastructureFailure, repairableBlocker } from './strategy-repair.mjs';
-import { publishStrategyPR } from './strategy-publication.mjs';
+import { findStrategyPR, publishStrategyPR } from './strategy-publication.mjs';
 
 // GitHub enforces freshness through strict required checks. A verified ruleset
 // review bypass never bypasses CI or replaces server enforcement with a local lock.
@@ -44,6 +44,9 @@ export class StrategyProvider {
   }
   async publish(work, head, publication) {
     return publishStrategyPR(this, work, head, publication);
+  }
+  async findByBranch(branch, target) {
+    return findStrategyPR(this, branch, target);
   }
   async ready(pr, branch, head) {
     return inspectReadiness(this, pr, branch, head, () => this.canBypassOwnReview(pr));
