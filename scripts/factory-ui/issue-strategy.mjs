@@ -276,6 +276,37 @@ function validatedDeliveryConfig(service, old) {
   return config;
 }
 
+function issueStartingRevision(service, queue, old, config) {
+  // Continue from the exact saved branch/base. Only a genuinely new issue
+  // resolves a starting point, and that point must come from the configured
+  // remote target rather than the coordinator checkout's current HEAD.
+  if (old?.checkout) return old.base || queue.head;
+  return fetchIssueStartingRevision(service, config);
+}
+
+function fetchIssueStartingRevision(service, config) {
+  const ref = `refs/remotes/${config.remote}/${config.target}`;
+  validateTargetRef(service, config);
+  try {
+    git(service.root, 'fetch', '--no-tags', config.remote, `+refs/heads/${config.target}:${ref}`);
+    return git(service.root, 'rev-parse', '--verify', ref);
+  } catch (error) {
+    throw Error(
+      `Could not fetch and verify ${config.remote}/${config.target}; no issue branch or workspace was created. ${error.message}`
+    );
+  }
+}
+
+function validateTargetRef(service, config) {
+  try {
+    git(service.root, 'check-ref-format', '--branch', config.target);
+  } catch (error) {
+    throw Error(
+      `Invalid configured target ${config.target}; no issue branch or workspace was created. ${error.message}`
+    );
+  }
+}
+
 function writeStrategyApproval(service, run, issue, record, input, config) {
   const receipt = join(service.store.directory, run.id, 'strategy-approval.json');
   writeJson(receipt, {
@@ -315,6 +346,7 @@ function strategyWorkState(service, issue, old, record, input, run, receipt, con
     solRounds: input.solRounds,
     receipt,
     config,
+    startingInstruction: input.instruction,
     runId: run.id,
   };
 }
@@ -416,7 +448,8 @@ export function startIssueStrategy(service, input) {
   const old = record.work;
   assertStrategyStartInput(input, old, record);
   const config = validatedDeliveryConfig(service, old);
-  const run = service.store.add({ id: 'issue-' + issue.id }, 'issue-work', old?.base || queue.head);
+  const base = issueStartingRevision(service, queue, old, config);
+  const run = service.store.add({ id: 'issue-' + issue.id }, 'issue-work', base);
   service.store.update(run, {
     issueId: issue.id,
     issueState: issue.state,
@@ -469,6 +502,7 @@ function createIssueCheckout(service, record, run, issue, work) {
   // Record identity before the effect, so uncertain creation never creates a second branch.
   saveLifecycle(service, record);
   git(service.root, 'worktree', 'add', '-b', work.branch, work.checkout, work.base);
+  work.createdCheckout = true;
 }
 
 function ensureIssueCheckout(service, record, run, issue, work) {
@@ -497,10 +531,63 @@ function assertCheckoutBranch(work) {
 async function checkoutFor(service, record, run, issue) {
   const work = record.work;
   ensureIssueCheckout(service, record, run, issue, work);
+  if (work.createdCheckout && !work.startingInclusion)
+    work.startingInclusion = applyExplicitStartingInclusion(service, record, run, work);
   assertCheckoutRepository(service, work);
   assertCheckoutBranch(work);
   service.store.update(run, { checkout: work.checkout, base: work.base });
   saveLifecycle(service, record);
+}
+
+function applyExplicitStartingInclusion(service, record, run, work) {
+  const report = coordinatorCommitsAfterTarget(service, work.base);
+  const decision = intentionalInclusion(work.startingInstruction, report.commits);
+  const evidence = {
+    issueId: record.issueId,
+    phase: 'starting work',
+    checkout: service.root,
+    branch: git(service.root, 'branch', '--show-current'),
+    base: work.base,
+    head: git(service.root, 'rev-parse', 'HEAD'),
+    commits: report.commits,
+    authorization: decision.approved ? decision.reasons : null,
+  };
+  const evidencePath = join(service.store.directory, run.id, 'starting-inclusion.json');
+  writeJson(evidencePath, evidence);
+  if (!decision.approved || !report.commits.length) return { ...evidence, evidencePath };
+  const included = cherryPickAuthorizedCommits(work, report.commits, decision.reasons);
+  return { ...evidence, evidencePath, included };
+}
+
+function coordinatorCommitsAfterTarget(service, target) {
+  const head = git(service.root, 'rev-parse', 'HEAD');
+  const commits = git(service.root, 'rev-list', '--reverse', `${target}..${head}`)
+    .split('\n')
+    .filter(Boolean)
+    .map((revision) => ({
+      revision,
+      subject: git(service.root, 'show', '-s', '--format=%s', revision),
+      files: git(service.root, 'diff-tree', '--root', '--no-commit-id', '--name-status', '-r', '-m', revision)
+        .split('\n')
+        .filter(Boolean),
+    }));
+  return { head, commits };
+}
+
+function cherryPickAuthorizedCommits(work, commits, reasons) {
+  const included = [];
+  for (const [index, commit] of commits.entries()) {
+    git(work.checkout, 'cherry-pick', commit.revision);
+    included.push({
+      source: commit.revision,
+      revision: git(work.checkout, 'rev-parse', 'HEAD'),
+      reason: reasons[index].reason,
+    });
+  }
+  work.startingInstruction = included
+    .map(({ revision, reason }) => `Include commit ${revision} intentionally: ${reason}`)
+    .join('\n');
+  return included;
 }
 function assertStrategyActive(record, message) {
   requireThat(!record.stopRequested && !record.pauseRequested, message);
@@ -679,6 +766,7 @@ async function executeStrategy(service, record, run, issue, input) {
   assertStrategyActive(record, 'Paused by you. Saved work is retained.');
   await checkoutFor(service, record, run, issue);
   const work = record.work;
+  applyIncludedStartInstruction(input, work);
   service.guard(
     service.root,
     { id: run.actionId, issues: [issue.id] },
@@ -701,6 +789,10 @@ async function executeStrategy(service, record, run, issue, input) {
       return ownerTurn(service, record, run, issue, repairInstruction(error, blocker));
     }
   );
+}
+
+function applyIncludedStartInstruction(input, work) {
+  if (work.startingInclusion?.included?.length) input.instruction = work.startingInstruction;
 }
 
 async function runStrategyCycle(service, record, run, issue, input, work, firstWork) {

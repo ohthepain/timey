@@ -325,6 +325,10 @@ synchronous helper launches starving the server's GitHub authentication requests
 description and a null PR number. Publication reconciles open PRs on retry and
 validates App authorship, the pushed candidate and approved target; saved existing
 PRs retain their identity and history.
+`factory-ui/issue-strategy.mjs` resolves the configured remote target before creating
+a new issue checkout. It records coordinator commits absent from that target and
+imports them only when each exact revision and reason is supplied in the start
+instruction; existing issue checkouts retain their saved base.
 
 `scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;
 `factory-workflow.check.mjs` owns the cross-format issue-decision compatibility

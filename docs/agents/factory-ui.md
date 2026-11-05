@@ -1195,13 +1195,14 @@ review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
 
 Explicit issue strategies inspect the saved branch, checkout, starting commit and
-configured target before owner work and again before PR publication. A dirty
-existing checkout or commits in the starting point that are absent from the target
-stop the operation with the exact paths and commit evidence; no files or commits
-are discarded or rewritten. The instruction field can confirm intentional
-inclusion with one line per full commit SHA and a reason. Without that exact
-confirmation, the issue remains stopped so the user can preserve the checkout for
-reconciliation.
+configured target before owner work and again before PR publication. A new issue
+fetches its configured remote target before creating the dedicated branch, so
+unpublished commits and unsaved files in the coordinator checkout stay there and
+are excluded by default. The start instruction can intentionally include committed
+work with one line per full commit SHA and a reason; the server cherry-picks only
+those authorized commits and retains a source-to-branch revision record. Existing
+issue checkouts keep their saved branch and base; dirty existing checkouts stop
+with exact path evidence and are preserved.
 
 Before a Continue starts another owner turn, it searches GitHub for the unique PR
 matching the saved issue branch and target. This recovers a missing or stale saved
