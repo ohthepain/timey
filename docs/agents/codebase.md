@@ -542,6 +542,12 @@ use lifecycle role planning or completion manifests. `strategy-prompt.mjs` bound
 the owning assignment; `strategy-review.mjs` implements optional bounded Sol review;
 `strategy-provider.mjs` reads live PR readiness and enforces strict protected merges.
 It evaluates review bypass separately from non-bypassable strict CI rulesets.
+`strategy-inclusion.mjs` inspects the original base against the fetched target,
+records exact branch/checkout/commit evidence, and blocks unreviewed earlier work
+before owner turns and PR publication while preserving the original base.
+Full Send binds the human-input merge guard's candidate tuple to the UUID of the
+active strategy run, the exact verified head and current PR target; the issue
+label remains display identity only.
 `github-app.mjs` owns repository-scoped installation authentication, in-memory token
 refresh and project-local credential configuration shared with worktree providers.
 The issue screen shows strategy/status and collapses legacy roles into disabled
@@ -551,7 +557,9 @@ failures, explicit starts and missing review capabilities.
 `strategy-repair.mjs` owns the active run's bounded repair ledger and infrastructure
 retries; `strategy-target.mjs` fetches/merges the configured target and preserves
 conflicts for the owner. `strategy-readiness.mjs` classifies PR blockers, observes
-pending CI and reconciles an externally merged candidate. The controller retains
+pending CI and reconciles an externally merged candidate. The controller preserves
+the checked PR head across Continue and reuses verification only when the confirmed
+merge has the same tree; changed merge content remains on the repair path. It retains
 implementation and independent verification before later delivery can fail;
 repair turns reuse a completed owner's chat without replaying chat creation.
 The policy is recorded in each explicit start receipt and never wakes inactive work.
