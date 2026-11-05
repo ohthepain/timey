@@ -79,6 +79,18 @@ retries. Errors retain only the handshake stage and known failure category; resp
 bodies, tokens and raw exception messages are never recorded. HTTP authentication
 and permission denials still stop immediately.
 
+An issue may also record delivery through another PR as a distinct relationship.
+The verifier requires that PR to be merged into the configured repository and
+target, that the current target still contains its merge commit, and that its
+recorded checks pass. The saved record includes the PR, merge and target revisions,
+checks, changed paths, a behavior note citing at least one changed path, and any
+requirements that remain outstanding. Partial delivery stays available as context
+for implementation, which must focus on the outstanding requirements. Rechecking
+compares against the current target and records whether its revision changed, so a
+later removal can be reviewed and recorded as remaining work. This does not change
+publication ownership, create a duplicate PR, accept the issue, or close it. The
+issue remains open for explicit human acceptance.
+
 The review ruleset grants the factory app PR-only bypass. The separate CI ruleset
 requires the GitHub Actions `test` check and up-to-date branches, with no factory
 app bypass. The owner may retain personal bypass for direct pushes. These grants

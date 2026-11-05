@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
-import { inspectReadiness } from './strategy-readiness.mjs';
+import { assertChecks, inspectReadiness, latestChecks } from './strategy-readiness.mjs';
 import { infrastructureFailure, repairableBlocker } from './strategy-repair.mjs';
 import { findStrategyPR, publishStrategyPR } from './strategy-publication.mjs';
 
@@ -41,6 +41,45 @@ export class StrategyProvider {
   async inspect(number) {
     requireThat(Number.isSafeInteger(number) && number > 0, 'Return the actual issue PR number.');
     return JSON.parse(await this.gh(['api', `repos/${this.config.repository}/pulls/${number}`]));
+  }
+  async inspectExternalDelivery(number) {
+    requireThat(Number.isSafeInteger(number) && number > 0, 'Enter the pull request number to verify.');
+    const pr = await this.inspect(number);
+    assertExternalPRState(pr);
+    assertExternalPRRepository(pr, this.config.repository);
+    assertExternalPRTarget(pr, this.config.target, this.config.repository);
+    const comparison = JSON.parse(
+      await this.gh([
+        'api',
+        `repos/${this.config.repository}/compare/${encodeURIComponent(pr.merge_commit_sha)}...${encodeURIComponent(this.config.target)}`,
+      ])
+    );
+    assertCurrentTargetContainsPR(comparison);
+    const view = JSON.parse(
+      await this.gh([
+        'pr',
+        'view',
+        String(number),
+        '--repo',
+        this.config.repository,
+        '--json',
+        'statusCheckRollup,files',
+      ])
+    );
+    const checks = latestChecks(view.statusCheckRollup || []);
+    assertChecks(checks);
+    assertExternalFiles(view.files);
+    return {
+      number,
+      url: pr.html_url,
+      target: pr.base.ref,
+      targetRevision: comparison.head_sha,
+      head: pr.head.sha,
+      mergedAt: pr.merged_at,
+      mergeCommit: pr.merge_commit_sha,
+      checks,
+      files: view.files.map((file) => file.path),
+    };
   }
   async publish(work, head, publication) {
     return publishStrategyPR(this, work, head, publication);
@@ -164,6 +203,43 @@ export class StrategyProvider {
     );
     return { url: pr.html_url, revision: pr.merge_commit_sha };
   }
+}
+
+function assertExternalPRState(pr) {
+  requireThat(pr.state === 'closed', 'The other pull request must be merged before it can count as delivered.');
+  assertExternalMergeTime(pr);
+  assertExternalRevisions(pr);
+}
+
+function assertExternalMergeTime(pr) {
+  requireThat(pr.merged_at, 'The other pull request must be merged before it can count as delivered.');
+}
+
+function assertExternalRevisions(pr) {
+  requireThat(pr.merge_commit_sha, 'The merged pull request has no merge revision.');
+  requireThat(pr.head?.sha, 'The merged pull request has no head revision.');
+}
+
+function assertExternalPRRepository(pr, repository) {
+  requireThat(pr.base?.repo?.full_name === repository, 'The other pull request belongs to a different repository.');
+}
+
+function assertExternalPRTarget(pr, target, repository) {
+  requireThat(
+    pr.base?.ref === target,
+    `The pull request must be merged into ${repository}:${target}.`
+  );
+}
+
+function assertCurrentTargetContainsPR(comparison) {
+  requireThat(
+    comparison.behind_by === 0 && ['ahead', 'identical'].includes(comparison.status),
+    'The current target no longer contains the other pull request merge.'
+  );
+}
+
+function assertExternalFiles(files) {
+  requireThat(files?.length, 'GitHub returned no changed files for the pull request.');
 }
 
 function githubStatus(error) {

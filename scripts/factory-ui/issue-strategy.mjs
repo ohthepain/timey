@@ -80,6 +80,7 @@ function strategyWorkFields(work) {
     pr: work.pr,
     prUrl: work.readiness?.url || null,
     checkout: work.checkout,
+    externalDelivery: work.externalDelivery,
   };
 }
 
@@ -93,6 +94,108 @@ export function strategyView(service, issue) {
     basis: strategyBasis(service, issue),
     active: service.lifecycleTasks.has(issue.id),
   };
+}
+
+export async function verifyExternalIssueDelivery(service, input) {
+  const issue = externalDeliveryIssue(service, input.issueId);
+  const number = externalDeliveryNumber(input.number);
+  const note = String(input.behaviorEvidence ?? '').trim();
+  const remainingCriteria = String(input.remainingCriteria ?? '').trim();
+  const evidenceFiles = parseBehaviorEvidence(note);
+  const record = strategyRecord(service, issue);
+  const config = validatedDeliveryConfig(service, record);
+  assertExternalPRIsNotOwn(record.work, number);
+  const provider = new StrategyProvider(service.root, config);
+  const delivery = await provider.inspectExternalDelivery(number);
+  assertBehaviorEvidenceFiles(evidenceFiles, delivery.files);
+  return retainExternalDelivery(
+    service,
+    record,
+    issue,
+    config,
+    number,
+    delivery,
+    note,
+    evidenceFiles,
+    remainingCriteria
+  );
+}
+
+function externalDeliveryIssue(service, issueId) {
+  const issue = readQueue(service.root).issues.find((entry) => entry.id === issueId);
+  requireThat(issue, 'Select an existing issue before verifying external delivery.');
+  requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for this issue’s active work to finish before recording external delivery.');
+  return issue;
+}
+
+function externalDeliveryNumber(value) {
+  const number = Number(value);
+  requireThat(Number.isSafeInteger(number) && number > 0, 'Enter the other pull request number.');
+  return number;
+}
+
+function assertExternalPRIsNotOwn(work, number) {
+  requireThat(
+    !work?.pr || work.pr !== number,
+    'This is already recorded as this issue’s own PR; continue its saved delivery instead.'
+  );
+}
+
+function parseBehaviorEvidence(note) {
+  const paths = [...new Set(note.match(/(?:^|\s)([\w./-]+\.[\w-]+)(?=\s|$)/g) || [])].map((path) => path.trim());
+  requireThat(
+    note.length >= 30 && paths.length > 0,
+    'Describe how the PR implements the issue and name at least one changed file path.'
+  );
+  return paths.map((path) => path.replace(/^\//, ''));
+}
+
+function assertBehaviorEvidenceFiles(evidenceFiles, files) {
+  const changedFiles = new Set(files);
+  requireThat(
+    evidenceFiles.every((path) => changedFiles.has(path)),
+    'Every cited behavior file must appear in the other pull request’s changed files.'
+  );
+}
+
+function retainExternalDelivery(service, record, issue, config, number, delivery, note, evidenceFiles, remainingCriteria) {
+  const work = record.work || { strategy: 'full-stop', solRounds: 0, config, publicationOwner: null };
+  const previous = work.externalDelivery;
+  const state = externalDeliveryState(remainingCriteria, number, config.target);
+  work.externalDelivery = {
+    status: state.deliveryStatus,
+    ...delivery,
+    behaviorEvidence: note,
+    evidenceFiles,
+    remainingCriteria,
+    previousTargetRevision: previous?.targetRevision || null,
+    targetChangedSincePreviousCheck: targetChangedSincePreviousCheck(previous, delivery),
+    checkedAt: new Date().toISOString(),
+  };
+  record.work = work;
+  record.status = state.recordStatus;
+  record.summary = state.summary;
+  record.input = null;
+  saveLifecycle(service, record);
+  return { issueId: issue.id, delivery: work.externalDelivery };
+}
+
+function externalDeliveryState(remainingCriteria, number, target) {
+  if (remainingCriteria)
+    return {
+      deliveryStatus: 'partial-awaiting-acceptance',
+      recordStatus: 'partial-delivery',
+      summary: `PR #${number} delivered part of this issue; remaining requirements are recorded and issue acceptance is pending.`,
+    };
+  return {
+    deliveryStatus: 'verified-awaiting-acceptance',
+    recordStatus: 'verified-awaiting-acceptance',
+    summary: `Delivery through PR #${number} is verified against ${target}; issue acceptance is still pending.`,
+  };
+}
+
+function targetChangedSincePreviousCheck(previous, delivery) {
+  return Boolean(previous && previous.targetRevision !== delivery.targetRevision);
 }
 function requireSavedContinuationSettings(old, input) {
   requireThat(
@@ -126,6 +229,10 @@ function assertReviewContinuation(input, old) {
 
 function assertStrategyContinuation(input, old, record) {
   assertNotMergedFullSend(old, record);
+  requireThat(
+    !old?.externalDelivery || old.externalDelivery.status === 'partial-awaiting-acceptance',
+    'Delivery through another PR is already verified. Keep this issue open for explicit acceptance.'
+  );
   requireSavedContinuationSettings(old, input);
   assertReviewContinuation(input, old);
 }
