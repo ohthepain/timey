@@ -542,6 +542,9 @@ use lifecycle role planning or completion manifests. `strategy-prompt.mjs` bound
 the owning assignment; `strategy-review.mjs` implements optional bounded Sol review;
 `strategy-provider.mjs` reads live PR readiness and enforces strict protected merges.
 It evaluates review bypass separately from non-bypassable strict CI rulesets.
+`strategy-inclusion.mjs` inspects the original base against the fetched target,
+records exact branch/checkout/commit evidence, and blocks unreviewed earlier work
+before owner turns and PR publication while preserving the original base.
 Full Send binds the human-input merge guard's candidate tuple to the UUID of the
 active strategy run, the exact verified head and current PR target; the issue
 label remains display identity only.

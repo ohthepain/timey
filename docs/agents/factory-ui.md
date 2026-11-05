@@ -1168,6 +1168,15 @@ Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-i
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
 
+Explicit issue strategies inspect the saved branch, checkout, starting commit and
+configured target before owner work and again before PR publication. A dirty
+existing checkout or commits in the starting point that are absent from the target
+stop the operation with the exact paths and commit evidence; no files or commits
+are discarded or rewritten. The instruction field can confirm intentional
+inclusion with one line per full commit SHA and a reason. Without that exact
+confirmation, the issue remains stopped so the user can preserve the checkout for
+reconciliation.
+
 ## Create an issue from the list
 
 **Create issue** accepts one required description. Save asks the configured model

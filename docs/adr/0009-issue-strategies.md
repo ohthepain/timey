@@ -38,7 +38,11 @@ It does not rank lifecycle stages. Optional queue discussion remains separate.
 Full Stop leaves an open, non-draft, merge-ready PR with green required checks,
 review findings addressed, and neither auto-merge nor merge-queue enrollment.
 Full Send adds a server-owned merge. Its adapter uses an exact-head merge and
-requires an active GitHub ruleset with strict required status checks. GitHub must
+binds the human-input merge check to the current strategy run UUID, verified
+candidate and target revision. The issue label used to link stored actions is
+not a candidate approval identity. Explicit Continue uses its newly authorized
+run identity; it never carries candidate-bound approval from another run.
+The adapter requires an active GitHub ruleset with strict required status checks. GitHub must
 enforce current-target freshness; local reads and locks cannot replace that rule.
 The merging credential must not bypass any applicable CI ruleset. Review rulesets
 are evaluated separately: for owner-authored or factory-app-authored PRs, the
