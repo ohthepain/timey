@@ -182,6 +182,7 @@ function strategyStartMessage(input, receipt, instruction) {
 function strategyWorkState(service, issue, old, record, input, run, receipt, config) {
   return {
     ...old,
+    prHead: savedPRHead(service, old, issue.id),
     pr: inheritedPr(service, old),
     publicationOwner: 'server',
     blockerRepair: blockerRepairPolicy,
@@ -193,6 +194,25 @@ function strategyWorkState(service, issue, old, record, input, run, receipt, con
     config,
     runId: run.id,
   };
+}
+
+function savedPRHead(service, work, issueId) {
+  if (!work || !work.pr) return null;
+  const prior = priorRunResult(service, work);
+  const saved = service.store.runs.find((run) => isPRVerificationRun(run, issueId, work.pr));
+  return [work.prHead, savedReadinessHead(work, prior), savedCheckedHead(saved, prior)].find(Boolean) || null;
+}
+
+function savedReadinessHead(work, prior) {
+  return Object.assign({}, prior.readiness, work.readiness).head;
+}
+
+function savedCheckedHead(saved, prior) {
+  return Object.assign({}, prior.checked, saved?.result?.checked).head;
+}
+
+function isPRVerificationRun(run, issueId, pr) {
+  return run.issueId === issueId && run.result && run.result.pr === pr && run.result.checked;
 }
 
 function priorRunResult(service, old) {
@@ -213,7 +233,8 @@ function legacyPr(service, old) {
 }
 
 function scheduleStrategyTask(service, record, run, issue, input) {
-  const task = Promise.resolve()
+  let task;
+  task = Promise.resolve()
     .then(() => executeStrategy(service, record, run, issue, input))
     .catch((error) => {
       const status = record.stopRequested || record.pauseRequested ? 'paused' : 'blocked';
@@ -229,7 +250,7 @@ function scheduleStrategyTask(service, record, run, issue, input) {
     })
     .finally(() => {
       service.store.connected.delete(run.id);
-      service.lifecycleTasks.delete(issue.id);
+      if (service.lifecycleTasks.get(issue.id) === task) service.lifecycleTasks.delete(issue.id);
       // Comments sent while the owning worker was busy are queued against the
       // same issue chat. Let them become real Codex turns after that writer
       // releases the thread instead of leaving them stranded as saved text.
@@ -469,6 +490,7 @@ async function publishVerifiedCandidate(service, record, run, head) {
   const provider = strategyProvider(service, work.config, work.checkout);
   const pr = await retryInfrastructure(service, record, () => provider.publish(work, head, run.result.publication));
   work.pr = pr.number;
+  work.prHead = head;
   service.store.update(run, { result: { ...run.result, pr: pr.number } });
   saveLifecycle(service, record);
 }
@@ -537,29 +559,9 @@ async function executeStrategy(service, record, run, issue, input) {
     record,
     run,
     async () => {
-      await synchronizeCycleTarget(service, record, initialWork, input);
-      if (initialWork) {
-        initialWork = false;
-        await runStrategyWork(service, record, run, issue, input, work);
-      }
-      if (await synchronizeStrategyTarget(service, record)) throw updatedTargetBlocker();
-      if (work.solRounds) await runSolLoop(service, record, run, issue, ownerTurn);
-      const { head, checked } = await verifiedRepairCandidate(service, record, run, work);
-      assertStrategyActive(record, 'Stopped by you. No PR was published.');
-      await publishVerifiedCandidate(service, record, run, head);
-      const { provider, readiness } = await waitStrategyReadiness(service, record, () =>
-        retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
-      );
-      assertCurrentTarget(work, readiness);
-      writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
-      work.readiness = readiness;
-      saveLifecycle(service, record);
-      await waitStrategyReadiness(service, record, () =>
-        retryInfrastructure(service, record, () =>
-          maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness)
-        )
-      );
-      recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
+      const firstWork = initialWork;
+      initialWork = false;
+      await runStrategyCycle(service, record, run, issue, input, work, firstWork);
     },
     async (error, blocker) => {
       initialWork = false;
@@ -567,6 +569,116 @@ async function executeStrategy(service, record, run, issue, input) {
       return ownerTurn(service, record, run, issue, repairInstruction(error, blocker));
     }
   );
+}
+
+async function runStrategyCycle(service, record, run, issue, input, work, firstWork) {
+  await synchronizeCycleTarget(service, record, firstWork, input);
+  if (firstWork && (await runInitialStrategyWork(service, record, run, issue, input, work))) return;
+  await finishStrategyCycle(service, record, run, issue, input, work);
+}
+
+async function finishStrategyCycle(service, record, run, issue, input, work) {
+  if (await synchronizeStrategyTarget(service, record)) throw updatedTargetBlocker();
+  if (work.solRounds) await runSolLoop(service, record, run, issue, ownerTurn);
+  const { head, checked } = await verifiedRepairCandidate(service, record, run, work);
+  assertStrategyActive(record, 'Stopped by you. No PR was published.');
+  await publishVerifiedCandidate(service, record, run, head);
+  const { provider, readiness } = await waitStrategyReadiness(service, record, () =>
+    retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
+  );
+  assertCurrentTarget(work, readiness);
+  writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
+  work.readiness = readiness;
+  saveLifecycle(service, record);
+  await waitStrategyReadiness(service, record, () =>
+    retryInfrastructure(service, record, () =>
+      maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness)
+    )
+  );
+  recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
+}
+
+async function runInitialStrategyWork(service, record, run, issue, input, work) {
+  if (await reconcilePriorDelivery(service, record, run, issue, input, work)) return true;
+  await runStrategyWork(service, record, run, issue, input, work);
+  return false;
+}
+
+async function reconcileSavedDelivery(service, record, run, issue, input, work) {
+  const checked = savedPRCheck(service, run, issue.id, work.prHead);
+  if (!checked) return false;
+  return reconcileCheckedDelivery(service, record, run, issue, input, work, checked);
+}
+
+async function reconcileCheckedDelivery(service, record, run, issue, input, work, checked) {
+  const { provider, pr, readiness } = await inspectSavedPR(service, record, work);
+  if (!usableSavedPR(pr, readiness, checked, work.checkout)) return false;
+
+  retainSavedPRVerification(service, run, work, readiness, checked);
+  assertCurrentTarget(work, readiness);
+  if (!readiness.merged && automaticMergeSelected(work, input))
+    await maybeAutoMerge(service, record, run, issue, input, work, checked.head, provider, readiness);
+  recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
+  return true;
+}
+
+function reconcilePriorDelivery(service, record, run, issue, input, work) {
+  if (input.operation === 'review' || hasSpecificInstruction(input.instruction)) return false;
+  return reconcileSavedDelivery(service, record, run, issue, input, work);
+}
+
+function hasSpecificInstruction(instruction) {
+  return Boolean(
+    instruction && !/^(?:Continue the same approved issue strategy|Retry the same saved assignment)/.test(instruction)
+  );
+}
+
+function usableSavedPR(pr, readiness, checked, checkout) {
+  return Boolean(
+    readiness && readinessMatchesSavedPR(pr, readiness, checked) && sameCheckedTree(checkout, checked, readiness)
+  );
+}
+
+function savedPRCheck(service, run, issueId, head) {
+  return (
+    service.store.runs.findLast(
+      (entry) => entry.id !== run.id && entry.issueId === issueId && entry.result?.checked?.head === head
+    )?.result?.checked || null
+  );
+}
+
+async function inspectSavedPR(service, record, work) {
+  const provider = strategyProvider(service, work.config, work.checkout);
+  const pr = await retryInfrastructure(service, record, () => provider.inspect(work.pr));
+  if (!pr) return { provider, pr, readiness: null };
+  const readiness = await waitStrategyReadiness(service, record, () =>
+    retryInfrastructure(service, record, () => provider.ready(pr, work.branch, work.prHead))
+  );
+  return { provider, pr, readiness };
+}
+
+function readinessMatchesSavedPR(pr, readiness, checked) {
+  return readiness.head === checked.head && Boolean(pr?.merged_at) === Boolean(readiness.merged);
+}
+
+function sameCheckedTree(checkout, checked, readiness) {
+  const revision = readiness.merged ? readiness.merge?.revision : 'HEAD';
+  return treeAt(checkout, revision) === checked.tree && treeAt(checkout, checked.head) === checked.tree;
+}
+
+function treeAt(checkout, revision) {
+  try {
+    return git(checkout, 'rev-parse', revision + '^{tree}');
+  } catch {
+    return null;
+  }
+}
+
+function retainSavedPRVerification(service, run, work, readiness, checked) {
+  work.verification = { ...work.verification, head: checked.head, checked };
+  work.readiness = readiness;
+  if (readiness.merged) work.merge = readiness.merge;
+  writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
 }
 
 function updatedTargetBlocker() {
