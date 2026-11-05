@@ -411,10 +411,22 @@ test('drag handles save visible reordering while preserving filtered issues', as
   );
   const handle = document.querySelector('[data-implementation-drag="a"]');
   handle.ondragstart({ dataTransfer: { setData() {}, effectAllowed: '' } });
+  assert.equal(document.querySelector('[data-issue-row="a"]').classList.contains('is-dragged'), true);
+  document.querySelector('[data-issue-row="b"]').ondragover({
+    preventDefault() {}, clientY: 0,
+  });
+  assert.equal(document.querySelector('[data-issue-row="b"]').classList.contains('drop-before'), true);
   document.querySelector('[data-issue-row="b"]').ondrop({
     preventDefault() {},
+    clientY: 0,
     dataTransfer: { getData: () => 'a' },
   });
+  assert.deepEqual(
+    Array.from(document.querySelectorAll('#issues tr[data-issue-row]'), (row) => row.dataset.issueRow),
+    ['a', 'b'],
+    'the displayed order updates immediately after dropping'
+  );
+  assert.equal(document.querySelector('.is-dragged, .drop-before, .drop-after'), null);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(fixture.requests.at(-1).path, 'implementation-order');
   assert.deepEqual(Array.from(fixture.requests.at(-1).value.order), ['a', 'b', 'z']);
