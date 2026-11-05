@@ -9,6 +9,7 @@ import { createIssueChats } from './factory-ui/issue-chat.mjs';
 import { conversationMessages, conversationState, appendMessage } from './factory-ui/conversation-store.mjs';
 import { conversationPrompt } from './factory-ui/conversation-context.mjs';
 import { createIssueChatConnection } from './factory-ui/issue-chat-runtime.mjs';
+import { nameIssueChat } from './factory-ui/chat-name.mjs';
 
 function fixture(t) {
   const f = deliveryFixture(t),
@@ -20,11 +21,16 @@ function fixture(t) {
   const connection = {
     close() {},
     async ready() {},
-    async call(method) {
+    async call(method, args) {
+      if (method === 'thread/name/set') {
+        calls.push({ name: args.name });
+        return {};
+      }
       assert.equal(method, 'skills/list');
       return {
         data: [
           { skills: [{ name: 'sample-skill', path: skillPath, enabled: true, shortDescription: 'A sample skill' }] },
+          { skills: [{ name: 'retro', path: skillPath, enabled: true, shortDescription: 'Retrospective' }] },
         ],
       };
     },
@@ -33,8 +39,10 @@ function fixture(t) {
       retain({ threadId: state.threadId || 'persistent-issue-chat' });
       return 'persistent-issue-chat';
     },
-    async turn(id, root, prompt, _schema, skills) {
-      calls.push({ id, root, prompt, skills });
+    async turn(id, root, prompt, schema, skills) {
+      calls.push({ id, root, prompt, schema, skills });
+      if (schema?.properties?.recommendations)
+        return JSON.stringify({ summary: 'No follow-up needed.', recommendations: [] });
       return 'I can see the saved lifecycle questions and your message.';
     },
   };
@@ -74,6 +82,35 @@ test('one issue conversation persists messages, role contributions and native ch
   assert.ok(page.messages.some((message) => message.role === 'Verify'));
   assert.equal(f.calls.filter((call) => call.attach === 'new').length, 1);
   assert.equal(f.calls.filter((call) => call.attach === 'persistent-issue-chat').length, 1);
+  assert.match(f.calls.findLast((call) => call.name)?.name, /^Issue: .* · waiting$/);
+});
+
+test('retro runs and retains its request and result in the saved issue conversation', async (t) => {
+  const f = fixture(t);
+  f.service.codex.ready = async () => {};
+  f.service.codex.call = async () => ({
+    data: [{ skills: [{ name: 'retro', path: join(f.queue.root, 'sample-skill.md'), enabled: true }] }],
+  });
+  const result = await f.service.issueChats.retro(f.input.issueId);
+  assert.deepEqual(result, { summary: 'No follow-up needed.', recommendations: [] });
+  const messages = conversationMessages(f.queue.root, f.input.issueId);
+  assert.ok(messages.some((message) => message.kind === 'retro-request'));
+  assert.ok(messages.some((message) => message.kind === 'retro-result' && message.body.includes('No follow-up needed.')));
+  assert.match(f.calls.findLast((call) => call.name)?.name, /^Retro: .* · waiting$/);
+  assert.equal(f.calls.filter((call) => call.attach === 'new').length, 1);
+  assert.equal(conversationState(f.queue.root, f.input.issueId).threadId, 'persistent-issue-chat');
+});
+
+test('execution names the saved issue thread with the role first', async (t) => {
+  const f = fixture(t);
+  f.service.codex.call = async (_method, args) => {
+    f.calls.push({ name: args.name });
+    return {};
+  };
+  const run = f.service.store.add({ id: 'issue-work' }, 'issue-work', f.queue.head);
+  f.service.store.update(run, { issueId: f.input.issueId });
+  await nameIssueChat(f.service, run, 'persistent-issue-chat');
+  assert.match(f.calls.findLast((call) => call.name)?.name, /^Execute: .* · active$/);
 });
 test('comments are accepted during implementation, serialized for replies and cannot dispatch work', async (t) => {
   const f = fixture(t),
