@@ -27,5 +27,13 @@ export default async function queueDragBrowserChecks(page) {
     const feedbackRemains = document.querySelector('#issues .is-dragged, #issues .drop-before, #issues .drop-after');
     if (ids.join(',') !== 'a,b,x' || feedbackRemains) throw Error('Drop did not clear feedback after optimistic reorder');
   })()`);
-  return { passed: true, assertions: ['dragged issue highlight', 'drop position marker', 'optimistic visual reorder', 'feedback clears after drop'] };
+  return {
+    passed: true,
+    assertions: [
+      'dragged issue highlight',
+      'drop position marker',
+      'optimistic visual reorder',
+      'feedback clears after drop',
+    ],
+  };
 }

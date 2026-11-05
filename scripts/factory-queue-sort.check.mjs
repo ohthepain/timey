@@ -413,7 +413,8 @@ test('drag handles save visible reordering while preserving filtered issues', as
   handle.ondragstart({ dataTransfer: { setData() {}, effectAllowed: '' } });
   assert.equal(document.querySelector('[data-issue-row="a"]').classList.contains('is-dragged'), true);
   document.querySelector('[data-issue-row="b"]').ondragover({
-    preventDefault() {}, clientY: 0,
+    preventDefault() {},
+    clientY: 0,
   });
   assert.equal(document.querySelector('[data-issue-row="b"]').classList.contains('drop-before'), true);
   document.querySelector('[data-issue-row="b"]').ondrop({

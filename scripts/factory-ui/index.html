@@ -1838,9 +1838,11 @@
         let draggedId = null;
         const clearDragFeedback = () => {
           draggedId = null;
-          document.querySelectorAll('#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after').forEach((row) => {
-            row.classList.remove('is-dragged', 'drop-before', 'drop-after');
-          });
+          document
+            .querySelectorAll('#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after')
+            .forEach((row) => {
+              row.classList.remove('is-dragged', 'drop-before', 'drop-after');
+            });
         };
         document.querySelectorAll('[data-implementation-drag]').forEach((handle) => {
           handle.ondragstart = (event) => {
