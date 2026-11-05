@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
@@ -35,7 +35,10 @@ function fixture(t) {
   t.after(() => service.close());
   service.ownServer = () => {};
   service.guard = () => [];
-  service.strategySyncTarget = async () => false;
+  service.strategySyncTarget = async (work) => {
+    work.targetRevision = work.base;
+    return false;
+  };
   service.strategyDelay = async () => {};
   let calls = 0,
     merges = 0,
@@ -904,6 +907,136 @@ test('start requires current scope and explicit strategy permission; selecting o
   assert.throws(() => startIssueStrategy(f.service, { ...f.input(), basis: 'stale' }), /issue or strategy changed/);
   assert.throws(() => startIssueStrategy(f.service, { ...f.input(), solRounds: 20 }), /three rounds/);
   assert.equal(f.service.store.runs.length, 0);
+});
+
+test('an unreviewed starting commit is shown and blocks before issue work while preserving the checkout', async (t) => {
+  const f = fixture(t);
+  const target = git(f.queue.root, 'rev-parse', 'HEAD');
+  writeFileSync(join(f.queue.root, 'earlier-fix.js'), 'export const earlier = true;\n');
+  git(f.queue.root, 'add', 'earlier-fix.js');
+  git(f.queue.root, 'commit', '-qm', 'Fix a separate issue');
+  const earlier = git(f.queue.root, 'rev-parse', 'HEAD');
+  f.service.strategySyncTarget = async (work) => {
+    work.targetRevision = target;
+    return false;
+  };
+
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'blocked');
+  assert.match(record.summary, new RegExp(earlier));
+  assert.match(record.summary, /Fix a separate issue/);
+  assert.match(record.summary, /earlier-fix\.js/);
+  assert.match(record.summary, /Include commit .* intentionally/);
+  assert.match(record.summary, /stop here and leave the checkout unchanged/);
+  assert.equal(f.counts().calls, 0);
+  assert.equal(f.counts().checks, 0);
+  assert.ok(existsSync(join(record.work.inclusionCheck.evidencePath)));
+  assert.equal(git(record.work.checkout, 'rev-parse', 'HEAD'), earlier);
+});
+
+test('an explicit commit-specific dependency reason permits intended earlier work', async (t) => {
+  const f = fixture(t);
+  const target = git(f.queue.root, 'rev-parse', 'HEAD');
+  writeFileSync(join(f.queue.root, 'shared-contract.js'), 'export const contract = true;\n');
+  git(f.queue.root, 'add', 'shared-contract.js');
+  git(f.queue.root, 'commit', '-qm', 'Add a shared contract');
+  const dependency = git(f.queue.root, 'rev-parse', 'HEAD');
+  f.service.strategySyncTarget = async (work) => {
+    work.targetRevision = target;
+    return false;
+  };
+  const provider = f.service.strategyProvider();
+  const ready = provider.ready;
+  provider.ready = async (...args) => ({ ...(await ready(...args)), target });
+  f.service.strategyProvider = () => provider;
+  const input = f.input();
+  input.instruction = `Include commit ${dependency} intentionally: This contract is required by the selected issue.`;
+
+  startIssueStrategy(f.service, input);
+  await f.service.lifecycleTasks.get(f.issue.id);
+
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'handed-off', record.summary);
+  assert.equal(record.work.inclusionCheck.authorization[0].revision, dependency);
+  assert.match(record.work.inclusionCheck.authorization[0].reason, /required by the selected issue/);
+  assert.equal(record.work.inclusionCheck.phase, 'PR publication');
+  assert.equal(f.counts().calls, 1);
+});
+
+test('an existing dirty issue checkout is preserved and reported before work starts', async (t) => {
+  const f = fixture(t);
+  const issueWork = join(f.queue.root, '.issues/issue-work');
+  mkdirSync(issueWork, { recursive: true });
+  const checkout = join(issueWork, f.issue.id);
+  const base = git(f.queue.root, 'rev-parse', 'HEAD');
+  const branch = `codex/issue-${f.issue.id}`;
+  git(f.queue.root, 'worktree', 'add', '-b', branch, checkout, base);
+  writeFileSync(join(checkout, 'saved-work.js'), 'export const saved = true;\n');
+  f.service.lifecycleRuns[f.issue.id] = {
+    id: 'prior-run',
+    issueId: f.issue.id,
+    events: [],
+    attempts: [],
+    retriedRuns: [],
+    work: {
+      checkout,
+      branch,
+      base,
+      config: { provider: 'github', repository: 'fixture/timey', remote: 'origin', target: 'main' },
+    },
+  };
+  f.service.strategySyncTarget = async (work) => {
+    work.targetRevision = base;
+    return false;
+  };
+
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'blocked');
+  assert.match(record.summary, /uncommitted changes/);
+  assert.match(record.summary, /saved-work\.js/);
+  assert.equal(readFileSync(join(checkout, 'saved-work.js'), 'utf8'), 'export const saved = true;\n');
+  assert.equal(f.counts().calls, 0);
+  assert.ok(existsSync(record.work.inclusionCheck.evidencePath));
+});
+
+test('an existing issue checkout on a different branch stops with the expected and actual branch', async (t) => {
+  const f = fixture(t);
+  const issueWork = join(f.queue.root, '.issues/issue-work');
+  mkdirSync(issueWork, { recursive: true });
+  const checkout = join(issueWork, f.issue.id);
+  const base = git(f.queue.root, 'rev-parse', 'HEAD');
+  const expectedBranch = `codex/issue-${f.issue.id}`;
+  const actualBranch = 'codex/fix-another-issue';
+  git(f.queue.root, 'worktree', 'add', '-b', actualBranch, checkout, base);
+  f.service.lifecycleRuns[f.issue.id] = {
+    id: 'prior-run',
+    issueId: f.issue.id,
+    events: [],
+    attempts: [],
+    retriedRuns: [],
+    work: {
+      checkout,
+      branch: expectedBranch,
+      base,
+      config: { provider: 'github', repository: 'fixture/timey', remote: 'origin', target: 'main' },
+    },
+  };
+
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'blocked');
+  assert.match(record.summary, new RegExp(expectedBranch));
+  assert.match(record.summary, new RegExp(actualBranch));
+  assert.match(record.summary, /No work was started/);
+  assert.equal(f.counts().calls, 0);
 });
 
 test('an existing active assignment is not replaced by a strategy worker', (t) => {

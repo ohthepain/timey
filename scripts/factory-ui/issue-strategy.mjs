@@ -20,6 +20,7 @@ import {
   runRepairableStrategy,
 } from './strategy-repair.mjs';
 import { synchronizeStrategyTarget } from './strategy-target.mjs';
+import { inclusionPrompt, inspectPriorIssueInclusion, intentionalInclusion } from './strategy-inclusion.mjs';
 
 const issueDeliveryConfigPath = (root) => join(root, '.issues/issue-delivery-config.json');
 
@@ -183,6 +184,7 @@ function strategyWorkState(service, issue, old, record, input, run, receipt, con
   return {
     ...old,
     prHead: savedPRHead(service, old, issue.id),
+    inclusionCheck: null,
     pr: inheritedPr(service, old),
     publicationOwner: 'server',
     blockerRepair: blockerRepairPolicy,
@@ -364,9 +366,10 @@ function assertCheckoutRepository(service, work) {
 }
 
 function assertCheckoutBranch(work) {
+  const branch = git(work.checkout, 'branch', '--show-current');
   requireThat(
-    git(work.checkout, 'branch', '--show-current') === work.branch && work.branch !== work.config.target,
-    'The saved issue checkout changed branches. No work was started.'
+    branch === work.branch && branch !== work.config.target,
+    `Saved issue checkout branch mismatch: expected ${work.branch}, found ${branch || '(detached)'} at ${work.checkout}. No work was started.`
   );
 }
 
@@ -572,9 +575,53 @@ async function executeStrategy(service, record, run, issue, input) {
 }
 
 async function runStrategyCycle(service, record, run, issue, input, work, firstWork) {
-  await synchronizeCycleTarget(service, record, firstWork, input);
-  if (firstWork && (await runInitialStrategyWork(service, record, run, issue, input, work))) return;
+  if (firstWork) return runInitialStrategyCycle(service, record, run, issue, input, work);
+  await synchronizeCycleTarget(service, record, false, input);
   await finishStrategyCycle(service, record, run, issue, input, work);
+}
+
+async function runInitialStrategyCycle(service, record, run, issue, input, work) {
+  assertCleanIssueCheckout(service, record, run, work);
+  await synchronizeCycleTarget(service, record, true, input);
+  checkPriorIssueInclusion(service, record, run, input, work, 'starting work');
+  if (await runInitialStrategyWork(service, record, run, issue, input, work)) return;
+  await finishStrategyCycle(service, record, run, issue, input, work);
+}
+
+function assertCleanIssueCheckout(service, record, run, work) {
+  const changes = git(work.checkout, 'status', '--porcelain=v1', '--untracked-files=all').split('\n').filter(Boolean);
+  if (!changes.length) return;
+  const evidencePath = join(service.store.directory, run.id, 'checkout-preflight.json');
+  const evidence = {
+    branch: git(work.checkout, 'branch', '--show-current'),
+    checkout: work.checkout,
+    base: work.base,
+    head: git(work.checkout, 'rev-parse', 'HEAD'),
+    changes,
+  };
+  writeJson(evidencePath, evidence);
+  work.inclusionCheck = { phase: 'starting work', checkout: evidence, evidencePath };
+  saveLifecycle(service, record);
+  throw Error(
+    `Cross-issue inclusion check stopped before starting work because the existing checkout has uncommitted changes. Branch: ${evidence.branch}; checkout: ${evidence.checkout}; starting commit: ${evidence.base}; HEAD: ${evidence.head}; changed paths: ${changes.map((entry) => entry.slice(3)).join(', ')}. Preserve this work and either commit it to the intended issue or stop for reconciliation. Nothing was changed. Evidence: ${evidencePath}`
+  );
+}
+
+function checkPriorIssueInclusion(service, record, run, input, work, phase) {
+  const report = inspectPriorIssueInclusion(work, work.targetRevision);
+  const authorization = intentionalInclusion(input.instruction, report.commits);
+  const evidencePath = join(service.store.directory, run.id, 'inclusion-' + phase.replaceAll(' ', '-') + '.json');
+  const evidence = {
+    issueId: record.issueId,
+    phase,
+    evidencePath,
+    ...report,
+    authorization: authorization.approved ? authorization.reasons : null,
+  };
+  writeJson(evidencePath, evidence);
+  work.inclusionCheck = evidence;
+  saveLifecycle(service, record);
+  if (report.commits.length && !authorization.approved) throw Error(inclusionPrompt(report, phase, evidencePath));
 }
 
 async function finishStrategyCycle(service, record, run, issue, input, work) {
@@ -582,6 +629,7 @@ async function finishStrategyCycle(service, record, run, issue, input, work) {
   if (work.solRounds) await runSolLoop(service, record, run, issue, ownerTurn);
   const { head, checked } = await verifiedRepairCandidate(service, record, run, work);
   assertStrategyActive(record, 'Stopped by you. No PR was published.');
+  checkPriorIssueInclusion(service, record, run, input, work, 'PR publication');
   await publishVerifiedCandidate(service, record, run, head);
   const { provider, readiness } = await waitStrategyReadiness(service, record, () =>
     retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
