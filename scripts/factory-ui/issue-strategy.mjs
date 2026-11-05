@@ -5,6 +5,7 @@ import { readQueue } from './data.mjs';
 import { digest, git, readJson, requireThat, writeJson } from './common.mjs';
 import { saveLifecycle, lifecycleEvent } from './lifecycle-store.mjs';
 import { issueWorkChat } from './issue-work-chat.mjs';
+import { updateIssueChatTitle } from './chat-name.mjs';
 import { appendMessage, conversationState, saveConversationState } from './conversation-store.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
@@ -395,6 +396,7 @@ function scheduleStrategyTask(service, record, run, issue, input) {
       const status = record.stopRequested || record.pauseRequested ? 'paused' : 'blocked';
       service.store.update(run, { status, summary: error.message, threadId: record.workThreadId || run.threadId });
       saveLifecycle(service, record, { status, summary: error.message });
+      nameFailedExecution(service, record, run);
       appendMessage(service.root, issue.id, {
         id: 'strategy-failed:' + run.id,
         actor: 'agent',
@@ -412,6 +414,10 @@ function scheduleStrategyTask(service, record, run, issue, input) {
       service.issueChats?.resumePending(issue.id);
     });
   service.lifecycleTasks.set(issue.id, task);
+}
+function nameFailedExecution(service, record, run) {
+  const threadId = record.workThreadId || run.threadId;
+  if (threadId) void updateIssueChatTitle(service, run.issueId, threadId, 'Execute', 'waiting');
 }
 function selected(service, input) {
   const queue = readQueue(service.root),
@@ -743,7 +749,7 @@ function prDiscrepancyNote(work) {
   return ` Reconciled PR #${work.prDiscrepancy.discovered} from branch ${work.prDiscrepancy.branch}; the saved reference ${saved}.`;
 }
 
-function recordStrategyOutcome(service, record, run, issue, work, readiness, checked, outcome) {
+async function recordStrategyOutcome(service, record, run, issue, work, readiness, checked, outcome) {
   saveLifecycle(service, record, { status: outcome.status, summary: outcome.summary, work });
   service.store.update(run, {
     status: 'completed',
@@ -757,6 +763,13 @@ function recordStrategyOutcome(service, record, run, issue, work, readiness, che
     kind: 'strategy-result',
     body: outcome.summary,
   });
+  await updateIssueChatTitle(
+    service,
+    issue.id,
+    record.workThreadId,
+    'Execute',
+    outcome.status === 'merged' ? 'archiveable' : 'waiting'
+  );
 }
 
 async function executeStrategy(service, record, run, issue, input) {
@@ -864,7 +877,7 @@ async function finishStrategyCycle(service, record, run, issue, input, work) {
       maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness)
     )
   );
-  recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
+  await recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
 }
 
 async function runInitialStrategyWork(service, record, run, issue, input, work) {
@@ -894,7 +907,7 @@ async function reconcileCheckedDelivery(service, record, run, issue, input, work
   retainSavedPRVerification(service, run, work, readiness, checked);
   assertCurrentTarget(work, readiness);
   await mergeReconciledPR(service, record, run, issue, input, work, provider, readiness);
-  recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
+  await recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
   return true;
 }
 

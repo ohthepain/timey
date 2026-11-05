@@ -793,6 +793,11 @@ navigation and server restarts preserve sent messages. Each issue has its own
 conversation and native conversational thread. Earlier expired temporary chats
 cannot be imported; their surviving explicitly recorded outputs remain in reports.
 Legacy temporary endpoints remain available only for older clients.
+Thread titles begin with the current role (`Issue:`, `Grill:`, `Execute:` or
+`Retro:`), include the issue title and end with `active`, `waiting` or
+`archiveable`. The issue conversation is reused as work moves between roles;
+`archiveable` is shown only after the current work has no pending question or
+handoff.
 
 Human messages are retained under `.issues/conversations/ISSUE_ID/messages.jsonl`;
 `chat.json` keeps the conversational model's identity and response status. The
@@ -904,14 +909,14 @@ missing stage history. Confirmation of discussion results is separate from
 implementation-plan approval, test evidence and final acceptance.
 
 The issue detail's **Run retro…** action invokes the installed `retro` skill in
-the same isolated temporary runtime, supplied only the selected issue report and
-its saved conversation. Recommendations are returned as structured, unchecked
-choices in the temporary discussion panel. Only checked choices are sent through
-the normal issue-capture path; each has a stable submission identity so a partial
-failure can be retried without duplicating completed captures. Unchecked choices
-are never submitted, and the discussion transcript/recommendation list is not
-persisted when the temporary chat ends. Preview mode may run the retro but cannot
-file issues.
+the selected issue's saved conversation. The request and structured result remain
+in that conversation, and the thread is named `Retro: <issue title>` with an
+active, waiting or archiveable marker. Recommendations are returned as unchecked
+choices in the panel. Only checked choices are sent through the normal
+issue-capture path; each has a stable submission identity so a partial failure
+can be retried without duplicating completed captures. Unchecked choices are
+never submitted. The temporary grilling panel remains separate from the saved
+issue conversation.
 
 **Save and continue** is offered only for the current unfinished stage when the
 summary has no open questions. It saves first, then invokes the usual lifecycle

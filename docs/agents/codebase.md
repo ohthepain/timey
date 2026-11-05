@@ -135,8 +135,9 @@ The header's running-action list is served by `scripts/factory-ui/server-control
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
 links routed by `scripts/factory-ui/index.html`.
 The issue detail's retro button runs the installed `retro` skill through
-`discussion.mjs` and `discussion-ui.js`; only checked recommendations go through
-`issue-capture.mjs`.
+`issue-chat.mjs`, retaining its request and result in the issue's saved
+conversation. `discussion.mjs` and `discussion-ui.js` hold only the temporary
+selection panel; checked recommendations go through `issue-capture.mjs`.
 
 Current-stage recommendations and dispatch are in `scripts/factory-ui/next-action.mjs`
 and `progress.mjs`. `worker-history.mjs` reads the original worker through CLI RPC;
@@ -480,7 +481,8 @@ for state transitions. Reload replays the uncheckpointed complete log records.
 
 [Issue execution](issue-execution.md) owns the short-path and reuse contracts.
 `issue-work-chat.mjs` selects the primary conversation without replacing uncertain
-work; `direct-task.mjs` saves approved assessment tasks through existing guards.
+work; `chat-name.mjs` gives threads a role-first title and a conservative activity
+marker; `direct-task.mjs` saves approved assessment tasks through existing guards.
 `scope-coverage.mjs` retains input-specific scope decisions; `candidate-cache.mjs`
 validates immutable automated evidence before reuse. `combined-completion.mjs`
 applies final independent review findings through `completion-contract.mjs` and

@@ -155,7 +155,7 @@ const discussionUI = (() => {
     summary.textContent = 'Temporary chat · Enter to send, Shift+Enter for a new line';
     const notice = document.createElement('p');
     notice.textContent =
-      'This factory does not save or restore the conversation. Select conversation text to record agreed output with a separate confirmation. Messages go to your configured model provider under your account’s data policies. Chat ends on navigation, reload, 15 minutes of inactivity or after one hour. Typed instructions never authorize workflow changes.';
+      'This panel chat and its grilling transcript are temporary. Run retro uses the saved issue conversation, which retains its request and result. Select panel text to record agreed output with a separate confirmation. Messages go to your configured model provider under your account’s data policies. Panel chat ends on navigation, reload, 15 minutes of inactivity or after one hour. Typed instructions never authorize workflow changes.';
     const idForMount = issueId,
       requestForMount = sendRequest,
       refreshForMount = refreshPage;
@@ -348,7 +348,7 @@ const discussionUI = (() => {
       } catch (error) {
         updateStatus(
           current,
-          `Chat could not complete: ${error.message} Check the issue before retrying, then start a fresh temporary chat.`
+          `Chat could not complete: ${error.message} Check the saved issue conversation before retrying.`
         );
       } finally {
         settle(current);
