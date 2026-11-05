@@ -204,10 +204,31 @@ test('temporary discussion lists enabled skills and invokes selected skills with
 
 test('issue retro runs the installed skill and files only selected recommendations', async (t) => {
   const f = fixture(t);
-  f.service.codex.ready = async () => {};
-  f.service.codex.call = async () => ({
-    data: [{ skills: [{ name: 'retro', path: f.skillPath, enabled: true, shortDescription: 'Retrospective' }] }],
-  });
+  let retroIssue;
+  f.service.issueChats = {
+    connections: new Map(),
+    close() {},
+    retro: async (issueId) => {
+      retroIssue = issueId;
+      return {
+        summary: 'One issue-specific improvement.',
+        recommendations: [
+          {
+            title: 'Add a regression check',
+            description: 'Cover the failing case.',
+            reason: 'Prevent recurrence.',
+            verification: 'Run the focused check.',
+          },
+          {
+            title: 'Document the trigger',
+            description: 'Record the trigger condition.',
+            reason: 'Improve diagnosis.',
+            verification: 'Confirm the steps reproduce it.',
+          },
+        ],
+      };
+    },
+  };
   const captured = [];
   f.service.captures = {
     save: async (input) => {
@@ -217,9 +238,8 @@ test('issue retro runs the installed skill and files only selected recommendatio
   };
   const result = await f.discussion.retro(f.input, f.owner);
   assert.equal(result.recommendations.length, 2);
-  assert.match(f.calls.at(-1), /Selected issue/);
-  assert.match(f.calls.at(-1), /Saved discussion/);
-  assert.equal(f.skillCalls.at(-1)[0].name, 'retro');
+  assert.equal(retroIssue, f.input.issueId);
+  assert.equal(f.runtimes.length, 0, 'retro does not create a temporary chat');
   const filed = await f.discussion.fileRetro(
     { ...f.input, selected: [1], requestIds: { 1: '59fc2dd4-5d7c-40a8-b06e-73b5d51ef2ab' } },
     f.owner

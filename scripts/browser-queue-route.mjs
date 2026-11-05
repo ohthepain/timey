@@ -1,6 +1,6 @@
 export function routeQueueIssue(page, issueId, updateIssue) {
   return page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch({ maxRetries: 1 });
     const snapshot = await response.json();
     const issue = snapshot.issues.find((entry) => entry.id === issueId);
     await updateIssue(snapshot, issue);
