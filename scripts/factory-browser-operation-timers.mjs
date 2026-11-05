@@ -30,7 +30,21 @@ export default async function operationTimerChecks(page) {
   const operation = page.locator('.progress-operation time[aria-label="Current operation time"]');
   const before = [Number.parseInt(await total.innerText(), 10), Number.parseInt(await operation.innerText(), 10)];
   if (!timersHaveElapsed(before)) throw Error('Progress timers omitted saved or current elapsed time.');
-  await page.waitForTimeout(1200);
+  await page.waitForFunction(
+    ({ previous }) => {
+      const timers = [
+        ...document.querySelectorAll(
+          '.progress-heading time[aria-label="Total operation time"], .progress-operation time[aria-label="Current operation time"]'
+        ),
+      ];
+      return (
+        timers.length === previous.length &&
+        timers.every((timer, index) => Number.parseInt(timer.textContent, 10) > previous[index])
+      );
+    },
+    { previous: before },
+    { timeout: 5000 }
+  );
   const after = [Number.parseInt(await total.innerText(), 10), Number.parseInt(await operation.innerText(), 10)];
   if (!timersHaveAdvanced(before, after)) throw Error('Progress timers did not keep ticking.');
   await page.setViewportSize({ width: 390, height: 844 });
