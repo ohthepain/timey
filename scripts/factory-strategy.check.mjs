@@ -43,6 +43,7 @@ function fixture(t) {
   let calls = 0,
     merges = 0,
     checks = 0;
+  service.issueTitleUpdates = [];
   service.codex.start = async (_cwd, _sandbox, retain) => {
     retain?.({ status: 'ready', threadId: 'owning-chat' });
     return 'owning-chat';
@@ -50,6 +51,11 @@ function fixture(t) {
   service.codex.resume = async () => {};
   service.codex.ready = async () => {};
   service.codex.call = async (method) => (method === 'thread/read' ? { thread: { status: { type: 'idle' } } } : {});
+  const codexCall = service.codex.call;
+  service.codex.call = async (method, params) => {
+    if (method === 'thread/name/set') service.issueTitleUpdates.push(params.name);
+    return codexCall(method, params);
+  };
   service.codex.turn = async (_thread, cwd, prompt) => {
     calls++;
     assert.match(prompt, /No lifecycle roles or stage transitions/);
@@ -219,6 +225,8 @@ test('Continue recognizes a manually merged, unchanged checked PR after pending 
   await f.service.lifecycleTasks.get(f.issue.id);
 
   assert.equal(record.status, 'merged', record.summary);
+  assert.match(f.service.issueTitleUpdates.at(-1), / · waiting$/);
+  assert.doesNotMatch(f.service.issueTitleUpdates.at(-1), / · archiveable$/);
   assert.equal(record.work.pr, 12, 'the matching PR is recovered from the issue branch');
   assert.equal(record.work.prHead, prHead);
   assert.equal(record.work.verification.head, prHead);

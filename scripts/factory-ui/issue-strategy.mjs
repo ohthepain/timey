@@ -681,7 +681,7 @@ async function recordStrategyOutcome(service, record, run, issue, work, readines
     issue.id,
     record.workThreadId,
     'Execute',
-    outcome.status === 'merged' ? 'archiveable' : 'waiting'
+    'waiting'
   );
 }
 
