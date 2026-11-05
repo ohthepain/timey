@@ -362,9 +362,7 @@ test('external delivery requires a merged PR to the configured target, current t
       return JSON.stringify({ status: 'ahead', behind_by: 0, head_sha: 'target-sha' });
     return JSON.stringify({
       files: [{ path: 'src/feature.ts' }],
-      statusCheckRollup: [
-        { __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' },
-      ],
+      statusCheckRollup: [{ __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }],
     });
   };
   const result = await provider.inspectExternalDelivery(19);
@@ -390,7 +388,13 @@ test('external delivery requires a merged PR to the configured target, current t
 test('external delivery is recorded distinctly and never accepts the issue', async (t) => {
   const f = fixture(t);
   const issueState = f.issue.state;
-  f.service.lifecycleRuns[f.issue.id] = { id: 'external', issueId: f.issue.id, events: [], attempts: [], retriedRuns: [] };
+  f.service.lifecycleRuns[f.issue.id] = {
+    id: 'external',
+    issueId: f.issue.id,
+    events: [],
+    attempts: [],
+    retriedRuns: [],
+  };
   const provider = StrategyProvider.prototype.inspectExternalDelivery;
   StrategyProvider.prototype.inspectExternalDelivery = async () => ({
     number: 19,

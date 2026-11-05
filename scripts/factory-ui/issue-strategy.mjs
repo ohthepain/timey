@@ -124,7 +124,10 @@ export async function verifyExternalIssueDelivery(service, input) {
 function externalDeliveryIssue(service, issueId) {
   const issue = readQueue(service.root).issues.find((entry) => entry.id === issueId);
   requireThat(issue, 'Select an existing issue before verifying external delivery.');
-  requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for this issue’s active work to finish before recording external delivery.');
+  requireThat(
+    !service.lifecycleTasks.has(issue.id),
+    'Wait for this issue’s active work to finish before recording external delivery.'
+  );
   return issue;
 }
 
@@ -158,7 +161,17 @@ function assertBehaviorEvidenceFiles(evidenceFiles, files) {
   );
 }
 
-function retainExternalDelivery(service, record, issue, config, number, delivery, note, evidenceFiles, remainingCriteria) {
+function retainExternalDelivery(
+  service,
+  record,
+  issue,
+  config,
+  number,
+  delivery,
+  note,
+  evidenceFiles,
+  remainingCriteria
+) {
   const work = record.work || { strategy: 'full-stop', solRounds: 0, config, publicationOwner: null };
   const previous = work.externalDelivery;
   const state = externalDeliveryState(remainingCriteria, number, config.target);

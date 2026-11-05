@@ -225,10 +225,7 @@ function assertExternalPRRepository(pr, repository) {
 }
 
 function assertExternalPRTarget(pr, target, repository) {
-  requireThat(
-    pr.base?.ref === target,
-    `The pull request must be merged into ${repository}:${target}.`
-  );
+  requireThat(pr.base?.ref === target, `The pull request must be merged into ${repository}:${target}.`);
 }
 
 function assertCurrentTargetContainsPR(comparison) {
