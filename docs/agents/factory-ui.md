@@ -903,6 +903,16 @@ not saved. Saved interviews appear under their selected stage, without inventing
 missing stage history. Confirmation of discussion results is separate from
 implementation-plan approval, test evidence and final acceptance.
 
+The issue detail's **Run retro…** action invokes the installed `retro` skill in
+the same isolated temporary runtime, supplied only the selected issue report and
+its saved conversation. Recommendations are returned as structured, unchecked
+choices in the temporary discussion panel. Only checked choices are sent through
+the normal issue-capture path; each has a stable submission identity so a partial
+failure can be retried without duplicating completed captures. Unchecked choices
+are never submitted, and the discussion transcript/recommendation list is not
+persisted when the temporary chat ends. Preview mode may run the retro but cannot
+file issues.
+
 **Save and continue** is offered only for the current unfinished stage when the
 summary has no open questions. It saves first, then invokes the usual lifecycle
 controller with fresh inputs. Clarify answers are reassessed against their actual

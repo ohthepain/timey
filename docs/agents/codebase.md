@@ -134,6 +134,9 @@ diagnostics while omitting raw process output. The guard remains fail-closed.
 The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
 links routed by `scripts/factory-ui/index.html`.
+The issue detail's retro button runs the installed `retro` skill through
+`discussion.mjs` and `discussion-ui.js`; only checked recommendations go through
+`issue-capture.mjs`.
 
 Current-stage recommendations and dispatch are in `scripts/factory-ui/next-action.mjs`
 and `progress.mjs`. `worker-history.mjs` reads the original worker through CLI RPC;

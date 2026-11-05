@@ -12,6 +12,7 @@ const finishing = new Set([
   '/api/issue-strategy-stop',
   '/api/server-action',
   '/api/discussion-summary',
+  '/api/discussion-retro-file',
   '/api/discussion-prepare',
   '/api/discussion-commit',
   '/api/discussion-end',

@@ -183,6 +183,25 @@
         font-size: 12px;
         color: #758071;
       }
+      .retro-recommendations {
+        border: 1px solid #d7d9cd;
+        border-radius: 6px;
+        background: #fffefa;
+        padding: 12px;
+        margin: 12px 0;
+      }
+      .retro-recommendations label {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 0;
+        border-top: 1px solid #e3e4dc;
+      }
+      .retro-recommendations label > span,
+      .retro-recommendations label > span > span {
+        display: block;
+        margin-bottom: 5px;
+      }
       .discussion-compose {
         position: relative;
         margin: 0;
@@ -3061,7 +3080,7 @@
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
-        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
           ['progress', 'Progress'],
           ['output', 'Issue output'],
           ['issue', 'Issue thread'],
@@ -3304,7 +3323,7 @@
           document.getElementById('focused-action-output')?.scrollIntoView({ block: 'start' });
           focusedRunRoute = location.hash;
         }
-        discussionUI.mount(route.id, request);
+        discussionUI.mount(route.id, request, refresh);
         document.querySelectorAll('[data-grill-stage]').forEach((button) => {
           button.onclick = () => {
             const stage = data.lifecycle.find((stage) => stage.state === button.dataset.grillStage);
@@ -3319,6 +3338,12 @@
             document.querySelector('[data-chat-tab="discussion"]')?.click();
             const stage = data.lifecycle.find((entry) => entry.state === issue.state);
             discussionUI.grill({ state: issue.state, name: stage?.name || issue.stage || 'Issue' });
+          };
+        });
+        document.querySelectorAll('[data-issue-retro]').forEach((button) => {
+          button.onclick = () => {
+            document.querySelector('[data-chat-tab="discussion"]')?.click();
+            discussionUI.retro();
           };
         });
         focusLinkedStage();
