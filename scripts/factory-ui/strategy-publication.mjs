@@ -2,17 +2,21 @@ import { requireThat } from './common.mjs';
 
 // Every retry discovers an existing PR before writing. A lost create response
 // must never result in another PR, a personal-login fallback or a reopened PR.
-export async function publishStrategyPR(provider, work, head, publication) {
-  requireThat(provider.credentials, 'PR publication requires configured GitHub App credentials.');
-  const identity = await provider.credentials.session();
+export async function findStrategyPR(provider, branch, target = provider.config.target) {
   const query = new URLSearchParams({
     state: 'all',
-    head: provider.config.repository.split('/')[0] + ':' + work.branch,
-    base: provider.config.target,
+    head: provider.config.repository.split('/')[0] + ':' + branch,
+    base: target,
   });
   const existing = JSON.parse(await provider.gh(['api', `repos/${provider.config.repository}/pulls?${query}`]));
   requireThat(existing.length <= 1, 'Multiple PRs match this issue branch; reconcile them before publication.');
-  const pr = existing[0] || (await createPR(provider, work, head, publication));
+  return existing[0] || null;
+}
+
+export async function publishStrategyPR(provider, work, head, publication) {
+  requireThat(provider.credentials, 'PR publication requires configured GitHub App credentials.');
+  const identity = await provider.credentials.session();
+  const pr = (await findStrategyPR(provider, work.branch)) || (await createPR(provider, work, head, publication));
   assertPublishedPR(provider, pr, work.branch, head, identity.slug);
   return pr;
 }

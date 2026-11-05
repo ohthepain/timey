@@ -1177,6 +1177,16 @@ inclusion with one line per full commit SHA and a reason. Without that exact
 confirmation, the issue remains stopped so the user can preserve the checkout for
 reconciliation.
 
+Before a Continue starts another owner turn, it searches GitHub for the unique PR
+matching the saved issue branch and target. This recovers a missing or stale saved
+PR number and checks an existing delivery before asking for more implementation.
+The PR must match the configured repository, branch and target, and its head and
+merged tree must match verified evidence. Missing verification is run on the
+existing candidate; unchanged saved checks are reused. Multiple matches,
+mismatched identity or changed content stop recovery without inferring acceptance,
+replacing a PR, or weakening the required checks. A verified manual merge is
+recorded as delivered while human acceptance remains separate.
+
 ## Create an issue from the list
 
 **Create issue** accepts one required description. Save asks the configured model

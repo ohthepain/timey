@@ -184,6 +184,7 @@ function strategyWorkState(service, issue, old, record, input, run, receipt, con
   return {
     ...old,
     prHead: savedPRHead(service, old, issue.id),
+    prDiscrepancy: null,
     inclusionCheck: null,
     pr: inheritedPr(service, old),
     publicationOwner: 'server',
@@ -199,9 +200,9 @@ function strategyWorkState(service, issue, old, record, input, run, receipt, con
 }
 
 function savedPRHead(service, work, issueId) {
-  if (!work || !work.pr) return null;
+  if (!work) return null;
   const prior = priorRunResult(service, work);
-  const saved = service.store.runs.find((run) => isPRVerificationRun(run, issueId, work.pr));
+  const saved = work.pr ? service.store.runs.findLast((run) => isPRVerificationRun(run, issueId, work.pr)) : null;
   return [work.prHead, savedReadinessHead(work, prior), savedCheckedHead(saved, prior)].find(Boolean) || null;
 }
 
@@ -520,11 +521,19 @@ function automaticMergeSelected(work, input) {
 }
 
 function strategyOutcome(work, readiness) {
-  const status = work.merge ? 'merged' : 'handed-off';
-  const summary = work.merge
-    ? `Merged ${work.merge.url}. Human acceptance remains separate.`
-    : `Ready for you to merge: ${readiness.url}. The PR is open and unmerged.`;
-  return { status, summary };
+  const discrepancy = prDiscrepancyNote(work);
+  if (work.merge)
+    return { status: 'merged', summary: `Merged ${work.merge.url}. Human acceptance remains separate.${discrepancy}` };
+  return {
+    status: 'handed-off',
+    summary: `Ready for you to merge: ${readiness.url}. The PR is open and unmerged.${discrepancy}`,
+  };
+}
+
+function prDiscrepancyNote(work) {
+  if (!work.prDiscrepancy) return '';
+  const saved = work.prDiscrepancy.saved ? `#${work.prDiscrepancy.saved} was stale` : 'was missing';
+  return ` Reconciled PR #${work.prDiscrepancy.discovered} from branch ${work.prDiscrepancy.branch}; the saved reference ${saved}.`;
 }
 
 function recordStrategyOutcome(service, record, run, issue, work, readiness, checked, outcome) {
@@ -653,21 +662,64 @@ async function runInitialStrategyWork(service, record, run, issue, input, work) 
 }
 
 async function reconcileSavedDelivery(service, record, run, issue, input, work) {
-  const checked = savedPRCheck(service, run, issue.id, work.prHead);
-  if (!checked) return false;
-  return reconcileCheckedDelivery(service, record, run, issue, input, work, checked);
+  const { provider, pr } = await findSavedPR(service, record, work);
+  if (!pr) return false;
+
+  retainDiscoveredPR(work, pr);
+  saveLifecycle(service, record);
+
+  let checked = savedPRCheck(service, run, issue.id, work.prHead);
+  if (!checked) {
+    checked = await verifyDiscoveredPR(service, record, run, work);
+  }
+  return reconcileCheckedDelivery(service, record, run, issue, input, work, checked, provider, pr);
 }
 
-async function reconcileCheckedDelivery(service, record, run, issue, input, work, checked) {
-  const { provider, pr, readiness } = await inspectSavedPR(service, record, work);
+async function reconcileCheckedDelivery(service, record, run, issue, input, work, checked, knownProvider, knownPR) {
+  const { provider, pr, readiness } = await inspectReconciledPR(service, record, work, knownProvider, knownPR);
   if (!usableSavedPR(pr, readiness, checked, work.checkout)) return false;
 
   retainSavedPRVerification(service, run, work, readiness, checked);
   assertCurrentTarget(work, readiness);
-  if (!readiness.merged && automaticMergeSelected(work, input))
-    await maybeAutoMerge(service, record, run, issue, input, work, checked.head, provider, readiness);
+  await mergeReconciledPR(service, record, run, issue, input, work, provider, readiness);
   recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
   return true;
+}
+
+async function inspectReconciledPR(service, record, work, knownProvider, knownPR) {
+  if (knownPR) {
+    const readiness = await waitStrategyReadiness(service, record, () =>
+      retryInfrastructure(service, record, () => knownProvider.ready(knownPR, work.branch, work.prHead))
+    );
+    return { provider: knownProvider, pr: knownPR, readiness };
+  }
+  return inspectSavedPR(service, record, work);
+}
+
+async function mergeReconciledPR(service, record, run, issue, input, work, provider, readiness) {
+  if (readiness.merged || !automaticMergeSelected(work, input)) return;
+  await maybeAutoMerge(service, record, run, issue, input, work, work.prHead, provider, readiness);
+}
+
+function retainDiscoveredPR(work, pr) {
+  if (work.pr !== pr.number)
+    work.prDiscrepancy = {
+      saved: work.pr || null,
+      discovered: pr.number,
+      branch: work.branch,
+      at: new Date().toISOString(),
+    };
+  work.pr = pr.number;
+  work.prHead = pr.head.sha;
+}
+
+async function verifyDiscoveredPR(service, record, run, work) {
+  const { checked } = await verifiedRepairCandidate(service, record, run, work);
+  requireThat(
+    treeAt(work.checkout, work.prHead) === checked.tree,
+    'A PR exists for this issue branch, but its candidate differs from the saved checkout. No new implementation was started.'
+  );
+  return checked;
 }
 
 function reconcilePriorDelivery(service, record, run, issue, input, work) {
@@ -705,13 +757,60 @@ async function inspectSavedPR(service, record, work) {
   return { provider, pr, readiness };
 }
 
+async function findSavedPR(service, record, work) {
+  const provider = strategyProvider(service, work.config, work.checkout);
+  if (typeof provider.findByBranch !== 'function') return providerWithoutBranchLookup(provider, work);
+  const pr = await retryInfrastructure(service, record, () => provider.findByBranch(work.branch, work.config.target));
+  if (!pr) return noDiscoveredPR(provider, work);
+  assertDiscoveredPRIdentity(pr, work);
+  return { provider, pr };
+}
+
+function providerWithoutBranchLookup(provider, work) {
+  requireThat(!work.pr, 'The GitHub provider cannot reconcile the saved PR before continuing.');
+  return { provider, pr: null };
+}
+
+function noDiscoveredPR(provider, work) {
+  if (work.pr)
+    throw Error(`Saved PR #${work.pr} was not found for issue branch ${work.branch}. No implementation was started.`);
+  return { provider, pr: null };
+}
+
+function assertDiscoveredPRIdentity(pr, work) {
+  assertDiscoveredPRLocation(pr, work);
+  assertDiscoveredPRRepository(pr, work);
+  assertDiscoveredPRNumber(pr);
+}
+
+function assertDiscoveredPRLocation(pr, work) {
+  requireThat(
+    pr.head?.ref === work.branch && pr.base?.ref === work.config.target,
+    'The discovered PR branch or target does not match the saved issue delivery. No implementation was started.'
+  );
+}
+
+function assertDiscoveredPRRepository(pr, work) {
+  requireThat(
+    pr.head?.repo?.full_name === work.config.repository && pr.base?.repo?.full_name === work.config.repository,
+    'The discovered PR belongs to a different repository. No implementation was started.'
+  );
+}
+
+function assertDiscoveredPRNumber(pr) {
+  requireThat(
+    Number.isSafeInteger(pr.number) && pr.number > 0 && pr.head?.sha,
+    'The discovered PR identity is incomplete. No implementation was started.'
+  );
+}
+
 function readinessMatchesSavedPR(pr, readiness, checked) {
-  return readiness.head === checked.head && Boolean(pr?.merged_at) === Boolean(readiness.merged);
+  return readiness.head === pr?.head?.sha && Boolean(pr?.merged_at) === Boolean(readiness.merged);
 }
 
 function sameCheckedTree(checkout, checked, readiness) {
-  const revision = readiness.merged ? readiness.merge?.revision : 'HEAD';
-  return treeAt(checkout, revision) === checked.tree && treeAt(checkout, checked.head) === checked.tree;
+  const revisions = [readiness.merged ? readiness.merge?.revision : 'HEAD', checked.head, readiness.head];
+  return revisions.every((revision) => treeAt(checkout, revision) === checked.tree);
 }
 
 function treeAt(checkout, revision) {
@@ -724,9 +823,11 @@ function treeAt(checkout, revision) {
 
 function retainSavedPRVerification(service, run, work, readiness, checked) {
   work.verification = { ...work.verification, head: checked.head, checked };
+  work.prHead = readiness.head;
   work.readiness = readiness;
   if (readiness.merged) work.merge = readiness.merge;
   writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
+  service.store.update(run, { result: { ...run.result, pr: work.pr, checked } });
 }
 
 function updatedTargetBlocker() {
