@@ -1,11 +1,12 @@
 import { startIssueStrategy, stopIssueStrategy, strategyBasis } from './issue-strategy.mjs';
 import { readQueue } from './data.mjs';
 import { requireThat } from './common.mjs';
+import { cancelBlockedAction } from './issue-action-cancellation.mjs';
 
 export async function controlServerAction(service, input) {
   requireThat(typeof input.runId === 'string', 'Select a current action.');
   requireThat(
-    ['stop', 'restart', 'skip', 'pause', 'steer'].includes(input.operation),
+    ['stop', 'restart', 'skip', 'cancel', 'pause', 'steer'].includes(input.operation),
     'Choose an available action control.'
   );
   service.ownServer();
@@ -20,6 +21,7 @@ function dispatchAction(service, run, issueId, input) {
   const commands = {
     restart: () => restart(service, run, issueId, input.text),
     skip: () => skip(service, run),
+    cancel: () => cancelBlockedAction(service, run, run.issueId),
     pause: () => requireRunning(service, run, () => pauseIssue(service, issueId)),
     stop: () => requireRunning(service, run, () => stopAction(service, run, issueId)),
     steer: () => requireRunning(service, run, () => steerAction(service, run, issueId, input.text)),

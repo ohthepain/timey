@@ -47,6 +47,7 @@ function fixture(t) {
   let calls = 0,
     merges = 0,
     checks = 0;
+  service.issueTitleUpdates = [];
   service.codex.start = async (_cwd, _sandbox, retain) => {
     retain?.({ status: 'ready', threadId: 'owning-chat' });
     return 'owning-chat';
@@ -54,6 +55,11 @@ function fixture(t) {
   service.codex.resume = async () => {};
   service.codex.ready = async () => {};
   service.codex.call = async (method) => (method === 'thread/read' ? { thread: { status: { type: 'idle' } } } : {});
+  const codexCall = service.codex.call;
+  service.codex.call = async (method, params) => {
+    if (method === 'thread/name/set') service.issueTitleUpdates.push(params.name);
+    return codexCall(method, params);
+  };
   service.codex.turn = async (_thread, cwd, prompt) => {
     calls++;
     assert.match(prompt, /No lifecycle roles or stage transitions/);
@@ -223,6 +229,9 @@ test('Continue recognizes a manually merged, unchanged checked PR after pending 
   await f.service.lifecycleTasks.get(f.issue.id);
 
   assert.equal(record.status, 'merged', record.summary);
+  assert.match(f.service.issueTitleUpdates.at(-1), / · waiting$/);
+  assert.doesNotMatch(f.service.issueTitleUpdates.at(-1), / · archiveable$/);
+  assert.equal(readQueue(f.queue.root).issues[0].accepted_result, undefined, 'merge does not accept the issue');
   assert.equal(record.work.pr, 12, 'the matching PR is recovered from the issue branch');
   assert.equal(record.work.prHead, prHead);
   assert.equal(record.work.verification.head, prHead);
@@ -1022,7 +1031,7 @@ test('an earlier issue resumes with a shared fix from a later merged PR and pres
   assert.equal(upstream.git('show', 'main:feature.js'), 'export const value = 3;');
 });
 
-test('Fixed closure shows the saved strategy failure while another closure reason preserves unfinished work', async (t) => {
+test('Fixed closure shows the saved strategy failure while obsolete closure cancels and retains its work', async (t) => {
   const f = fixture(t);
   f.service.codex.turn = async () =>
     JSON.stringify({
@@ -1057,7 +1066,10 @@ test('Fixed closure shows the saved strategy failure while another closure reaso
   const result = readQueue(f.queue.root).issues[0];
   assert.equal(result.closure.reason, 'obsolete');
   assert.equal(result.accepted_result, undefined);
-  assert.equal(JSON.stringify(record), saved);
+  assert.notEqual(JSON.stringify(record), saved);
+  assert.equal(record.status, 'cancelled');
+  assert.equal(record.work.implementation.outcome, 'blocked');
+  assert.match(record.events.at(-1).message, /Stopped issue action cancelled/);
   assert.deepEqual(f.counts(), calls);
 });
 

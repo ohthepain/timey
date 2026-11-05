@@ -133,7 +133,9 @@ subprocess failures retain exit status or signal and bounded structured helper
 diagnostics while omitting raw process output. The guard remains fail-closed.
 The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
-links routed by `scripts/factory-ui/index.html`.
+links routed by `scripts/factory-ui/index.html`. `issue-action-cancellation.mjs`
+cancels stopped actions directly or when an issue closes, preserving work history
+and leaving actions shared with another open issue untouched.
 The issue detail's retro button runs the installed `retro` skill through
 `issue-chat.mjs`, retaining its request and result in the issue's saved
 conversation. `discussion.mjs` and `discussion-ui.js` hold only the temporary
@@ -161,7 +163,9 @@ launches workers, merges code or accepts issues.
 `factory-ui/issue-decision.mjs` owns direct human acceptance/closure independently of lifecycle stages and
 reopening, with current report/evidence guards and preserved historical outcomes.
 `factory-ui/issue-cleanup.mjs` previews issue-owned branches, the issue worktree and
-linked chats, then rechecks each selected resource before removal/archive. It keeps
+linked chats, then rechecks each selected resource before removal/archive. Issue
+closure also archives eligible idle issue chats while preserving active or unknown
+threads. It keeps
 durable per-resource outcomes outside the removable workspace and supports retry
 without reopening the issue.
 

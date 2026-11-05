@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { requireThat, writeJson } from './common.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import { readQueue } from './data.mjs';
+import { openSiblingIssueIds } from './linked-issues.mjs';
 
 const finishing = new Set([
   '/api/server-cancel-restart',
@@ -166,7 +167,7 @@ function actionEntry(run, service, queue) {
   const activeIssue = issueIds.find((id) => service.lifecycleTasks.has(id));
   const strategy = strategyForIssue(service, issueIds, run);
   const connected = service.store.connected.has(run.id);
-  const controls = actionCapabilities(run, action, strategy, activeIssue, connected, turn);
+  const controls = actionCapabilities(run, action, strategy, activeIssue, connected, turn, queue);
   return {
     id: run.id,
     title: actionTitle(action, run),
@@ -200,19 +201,49 @@ function actionDetails(action, run) {
   return action?.scope || run.summary || '';
 }
 
-function actionCapabilities(run, action, strategy, activeIssue, connected, turn) {
+function actionCapabilities(run, action, strategy, activeIssue, connected, turn, queue) {
   const canRestart = restartable(run, action, strategy, connected);
   const canSkip = skippable(run, action, connected, turn);
+  const canCancel = cancellableAction(run, action, strategy, activeIssue, connected, queue);
   return {
     currentStrategy: isCurrentStrategy(run, strategy),
     canStop: canStopAction(activeIssue, turn),
     canRestart,
     canSkip,
+    canCancel,
     canPause: Boolean(activeIssue),
     canSteer: canSteerAction(turn),
     restartReason: controlReason(canRestart, 'Restart is available after this action stops or fails.'),
     skipReason: controlReason(canSkip, 'This action cannot be skipped while its required work is running.'),
+    cancelReason: controlReason(canCancel, 'Only a stopped action without another open issue can be cancelled.'),
   };
+}
+
+function cancellableAction(run, action, strategy, activeIssue, connected, queue) {
+  return (
+    actionCanBeCancelled(run, activeIssue, connected) &&
+    (cancelableStrategyRun(run, strategy) || cancelableLedgerAction(run, action, queue))
+  );
+}
+
+function actionCanBeCancelled(run, activeIssue, connected) {
+  return !connected && !activeIssue && stoppedRun(run);
+}
+
+function cancelableLedgerAction(run, action, queue) {
+  return stoppedAction(action) && openSiblingIssueIds(queue, action.issues, run.issueId).length === 0;
+}
+
+function cancelableStrategyRun(run, strategy) {
+  return run.kind === 'issue-work' && Boolean(strategy) && ['blocked', 'failed', 'paused'].includes(strategy.status);
+}
+
+function stoppedAction(action) {
+  return Boolean(action && ['blocked', 'failed'].includes(action.status));
+}
+
+function stoppedRun(run) {
+  return ['blocked', 'failed', 'paused'].includes(run.status);
 }
 
 function isCurrentStrategy(run, strategy) {

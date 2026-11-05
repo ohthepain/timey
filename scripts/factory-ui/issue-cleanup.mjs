@@ -5,6 +5,7 @@ import { StrategyProvider } from './strategy-provider.mjs';
 import { conversationState } from './conversation-store.mjs';
 import { readQueue as queueReader } from './data.mjs';
 import { DeliveryStore } from '../issue-delivery-store.mjs';
+import { openSiblingIssueIds } from './linked-issues.mjs';
 
 const activeRunStates = new Set(['preparing', 'running', 'checking']);
 
@@ -15,6 +16,29 @@ export async function previewIssueCleanup(service, issueId, resolution = null) {
   applyCleanupDefaults(resources, issue.closure?.reason || resolution, isDelivered(service, issueId, work));
   const basis = digest(JSON.stringify({ issue: issueId, resources }));
   return { issueId, basis, resources };
+}
+
+export async function archiveIssueChatsOnClose(service, issueId, resolution, requestedCleanup = null) {
+  const preview = await previewIssueCleanup(service, issueId, resolution);
+  const chats = preview.resources.filter((resource) => resource.kind === 'chat');
+  const selected = closeChatSelections(chats, requestedCleanup);
+  if (!selected.length)
+    return { status: 'complete', results: [], retainedChats: chats.filter((item) => !item.eligible) };
+  const input = closeCleanupInput(preview, requestedCleanup, resolution, selected);
+  const result = await executeIssueCleanup(service, issueId, input);
+  return { ...result.cleanup, retainedChats: chats.filter((item) => !item.eligible) };
+}
+
+function closeChatSelections(chats, requestedCleanup) {
+  return [...new Set([...(requestedCleanup?.selected || []), ...chats.map((item) => item.id)])];
+}
+
+function closeCleanupInput(preview, requestedCleanup, resolution, selected) {
+  return requestedCleanup ? { ...requestedCleanup, selected } : { basis: preview.basis, resolution, selected };
+}
+
+export function issueHasChats(service, issueId) {
+  return issueChatRuns(service, issueId).length > 0;
 }
 
 async function cleanupResources(service, issueId, work) {
@@ -420,10 +444,24 @@ function findIssueTitle(service, issueId) {
 }
 
 function issueChatRuns(service, issueId) {
-  const runs = service.store.runs.filter((run) => run.issueId === issueId && run.threadId);
+  const queue = queueReader(service.root);
+  const runs = service.store.runs.filter(
+    (run) => run.issueId === issueId && run.threadId && !sharedWithOpenIssue(service, queue, run, issueId)
+  );
   const saved = conversationState(service.root, issueId).threadId;
-  if (saved && !runs.some((run) => run.threadId === saved)) runs.push({ threadId: saved, kind: 'issue-chat' });
+  if (
+    saved &&
+    !runs.some((run) => run.threadId === saved) &&
+    !sharedWithOpenIssue(service, queue, { threadId: saved }, issueId)
+  )
+    runs.push({ threadId: saved, kind: 'issue-chat' });
   return [...new Map(runs.map((run) => [run.threadId, run])).values()];
+}
+
+function sharedWithOpenIssue(service, queue, run, issueId) {
+  const owner = run.actionId ? run : service.store.runs.find((entry) => entry.threadId === run.threadId);
+  const action = queue.actions.find((item) => item.id === owner?.actionId);
+  return Boolean(action && openSiblingIssueIds(queue, action.issues, issueId).length);
 }
 
 function issueChatActive(service, issueId) {

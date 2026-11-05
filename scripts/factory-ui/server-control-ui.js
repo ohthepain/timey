@@ -137,6 +137,7 @@ const serverControlUI = (() => {
       ['stop', 'Stop', item.canStop, 'This action has no interruptible response.'],
       ['restart', 'Restart', item.canRestart, item.restartReason],
       ['skip', 'Skip', item.canSkip, item.skipReason],
+      ['cancel', 'Cancel', item.canCancel, item.cancelReason],
       ['pause', 'Pause issue', item.canPause, 'No future issue work can be paused.'],
     ];
     for (const [operation, label, enabled, reason] of definitions)
@@ -169,13 +170,16 @@ const serverControlUI = (() => {
     button.disabled = true;
     setActionFeedback(feedback, operation === 'steer' ? 'Sending…' : `${operation} requested…`);
     try {
-      await request('server-action', { runId: item.id, operation, text });
+      await request('server-action', { runId: item.id, issueId: firstIssueId(item), operation, text });
       setActionFeedback(feedback, operation === 'steer' ? 'Message sent.' : `${operation} request saved.`);
     } catch (error) {
       setActionFeedback(feedback, error.message);
     } finally {
       button.disabled = false;
     }
+  }
+  function firstIssueId(item) {
+    return item.issues.length ? item.issues[0].id : null;
   }
   function actionFeedback(dialog, id) {
     return [...dialog.querySelectorAll('[data-action-feedback]')].find(

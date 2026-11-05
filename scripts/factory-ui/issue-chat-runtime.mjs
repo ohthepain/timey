@@ -45,7 +45,7 @@ class IssueChatConnection extends CodexConnection {
   async attach(root, state, retain) {
     this.readOnlyThreads ||= new Set();
     if (state.threadId) {
-      if (!this.readOnlyThreads.has(state.threadId)) await this.resume(state.threadId, root, 'read-only');
+      if (!this.readOnlyThreads.has(state.threadId)) await resumeSavedThread(this, state.threadId, root);
       const { thread } = await this.call('thread/read', { threadId: state.threadId, includeTurns: false });
       requireIdle(thread, root);
       this.readOnlyThreads.add(state.threadId);
@@ -60,6 +60,17 @@ class IssueChatConnection extends CodexConnection {
     return threadId;
   }
 }
+
+async function resumeSavedThread(connection, threadId, root) {
+  try {
+    await connection.resume(threadId, root, 'read-only');
+  } catch (error) {
+    if (!error.message.includes(threadId) || !/\bis archived\b/.test(error.message)) throw error;
+    await connection.unarchive(threadId);
+    await connection.resume(threadId, root, 'read-only');
+  }
+}
+
 export function createIssueChatConnection() {
   return new IssueChatConnection();
 }

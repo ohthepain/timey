@@ -548,6 +548,12 @@ The live factory task log is administrative context. If completing a review chan
 it, final acceptance retains its current contents and earlier hash separately;
 unchanged source, plan, behavioral evidence and no outstanding work are still required.
 
+A blocked or failed stopped action exposes **Cancel** in the action menu. Cancel
+retains its checkout, conversation, failure summary and registry history while
+preventing that action from being restarted. Shared actions remain available while
+another linked issue is open. Repeated cancellation is safe, and stale or running
+actions cannot be cancelled through this control.
+
 Accept fix and close appears after the issue reaches final review or its saved
 strategy/checklist records completed work. Both closure paths show a confirmation
 with the exact remote/local branches, issue workspace path and estimated storage,
@@ -556,7 +562,9 @@ and distinguishable. Unmerged work is unchecked by default; dirty, shared and ac
 resources are preserved. The server rechecks each selected resource immediately
 before acting and records per-resource results outside the workspace. Issue closure
 still completes if cleanup fails; the issue then shows Cleanup incomplete and a
-bounded Retry cleanup action. Archiving a chat is not reported as disk savings.
+bounded Retry cleanup action. Eligible idle chats associated with the issue are
+archived automatically when it closes; active or unknown chats are preserved.
+Archiving a chat is not reported as disk savings.
 Reopen keeps its confirmation and optional reason.
 
 Older issues already at Final review can be accepted without backfilling stage
@@ -801,7 +809,8 @@ Thread titles begin with the current role (`Issue:`, `Grill:`, `Execute:` or
 `Retro:`), include the issue title and end with `active`, `waiting` or
 `archiveable`. The issue conversation is reused as work moves between roles;
 `archiveable` is shown only after the current work has no pending question or
-handoff.
+handoff. A merged strategy result remains `waiting` while explicit issue
+acceptance is outstanding; merge alone does not make the conversation archiveable.
 
 Human messages are retained under `.issues/conversations/ISSUE_ID/messages.jsonl`;
 `chat.json` keeps the conversational model's identity and response status. The

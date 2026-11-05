@@ -30,6 +30,24 @@ async function body(request) {
 function authenticated(request, token, port) {
   return (request.headers.cookie || '').split(';').some((value) => value.trim() === `timey_factory_${port}=${token}`);
 }
+
+async function decideIssueAndCleanup(service, value) {
+  const decision = await service.decideIssue(
+    value.issueId,
+    value.state,
+    value.kind,
+    value.basis,
+    value.reason,
+    value.resolution,
+    value.cleanup
+  );
+  const pendingCleanup = service.issueCleanupTasks?.get(value.issueId);
+  if (!pendingCleanup || value.cleanup) return decision;
+  const cleanup = await pendingCleanup;
+  service.issueCleanupTasks.delete(value.issueId);
+  return { ...decision, cleanup };
+}
+
 function authorize(request, token, port) {
   requireThat(request.headers.host === `127.0.0.1:${port}`, 'Use the local URL printed by this server.');
   requireThat(
@@ -109,16 +127,7 @@ async function mutation(service, path, value, owner) {
       service.decidePlanCheck(value.issueId, value.state, value.checkId, value.status, value.basis, value.result),
     '/api/find-worker': () => service.findConnection(value.issueId, value.state, value.basis),
     '/api/connect-worker': () => service.connectWorker(value.issueId, value.state, value.basis, value.link),
-    '/api/issue-decision': () =>
-      service.decideIssue(
-        value.issueId,
-        value.state,
-        value.kind,
-        value.basis,
-        value.reason,
-        value.resolution,
-        value.cleanup
-      ),
+    '/api/issue-decision': () => decideIssueAndCleanup(service, value),
     '/api/check-readiness': () => service.checkReadiness(value.issueId, value.state),
     '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),
     '/api/progress-start': () => service.progressStart(value.token, value.humanApproved),
