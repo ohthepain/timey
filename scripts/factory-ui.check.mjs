@@ -3515,6 +3515,36 @@ async function activityScreen(t) {
   return { window: dom.window, snapshot };
 }
 
+test('external delivery shows its PR evidence, partial scope, target recheck and pending acceptance', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].strategy = {
+    status: 'partial-delivery',
+    summary: 'PR #37 delivered part of this issue.',
+    strategy: 'full-stop',
+    solRounds: 0,
+    externalDelivery: {
+      status: 'partial-awaiting-acceptance',
+      number: 37,
+      url: 'https://github.com/fixture/timey/pull/37',
+      target: 'dev',
+      mergeCommit: 'merge-sha',
+      targetRevision: 'target-new',
+      previousTargetRevision: 'target-old',
+      targetChangedSincePreviousCheck: true,
+      behaviorEvidence: 'The first requested behavior is implemented in src/feature.ts.',
+      remainingCriteria: 'The second requested behavior remains unimplemented.',
+      checks: [{ name: 'test', conclusion: 'SUCCESS' }],
+    },
+  };
+  window.screenTest.show(snapshot);
+  const card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.match(card.textContent, /PR #37/);
+  assert.match(card.textContent, /Target changed since the previous verification/);
+  assert.match(card.textContent, /second requested behavior remains unimplemented/);
+  assert.match(card.textContent, /acceptance remains pending/);
+  assert.equal(card.querySelector('[data-external-delivery]')?.textContent, 'Verify and record other PR');
+});
+
 test('a handed-off draft PR shows manual ownership without merge or maintenance controls', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   const issue = snapshot.issues[0];

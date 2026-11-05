@@ -80,7 +80,7 @@ function isNewer(check, previous) {
   return checkTime(check) >= checkTime(previous);
 }
 
-function latestChecks(checks) {
+export function latestChecks(checks) {
   const latest = new Map();
   for (const check of checks) {
     const key = checkIdentity(check);
@@ -107,7 +107,7 @@ function describeCheck(check) {
   return name + ': ' + [check.detailsUrl, check.targetUrl, check.conclusion, check.state].find(Boolean);
 }
 
-function assertChecks(checks) {
+export function assertChecks(checks) {
   if (!checks.length)
     throw Object.assign(Error('Required PR checks have not appeared yet.'), { code: 'STRATEGY_PENDING' });
   const failed = checks.filter(failedCheck);

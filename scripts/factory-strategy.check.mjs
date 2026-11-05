@@ -6,7 +6,7 @@ import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { git, writeJson } from './factory-ui/common.mjs';
-import { strategyView, startIssueStrategy } from './factory-ui/issue-strategy.mjs';
+import { strategyView, startIssueStrategy, verifyExternalIssueDelivery } from './factory-ui/issue-strategy.mjs';
 import { GitHubAppCredentials, githubAppCredentials } from './factory-ui/github-app.mjs';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -341,6 +341,126 @@ test('App publication validates author and exact pushed candidate without person
   f.calls.length = 0;
   await assert.rejects(publishStrategyPR(f.provider, f.work, 'head', f.publication), /requires configured GitHub App/);
   assert.equal(f.calls.length, 0);
+});
+
+test('external delivery requires a merged PR to the configured target, current target ancestry and passing checks', async () => {
+  const provider = new StrategyProvider('/tmp', { repository: 'fixture/timey', target: 'dev' });
+  const pr = {
+    number: 19,
+    state: 'closed',
+    merged_at: '2026-11-04T18:00:00Z',
+    merge_commit_sha: 'merge-sha',
+    html_url: 'https://github.com/fixture/timey/pull/19',
+    head: { sha: 'head-sha', repo: { full_name: 'contributor/timey' } },
+    base: { ref: 'dev', repo: { full_name: 'fixture/timey' } },
+  };
+  const calls = [];
+  provider.gh = async (args) => {
+    calls.push(args);
+    if (args[0] === 'api' && args[1].includes('/pulls/19')) return JSON.stringify(pr);
+    if (args[0] === 'api' && args[1].includes('/compare/'))
+      return JSON.stringify({ status: 'ahead', behind_by: 0, head_sha: 'target-sha' });
+    return JSON.stringify({
+      files: [{ path: 'src/feature.ts' }],
+      statusCheckRollup: [{ __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+    });
+  };
+  const result = await provider.inspectExternalDelivery(19);
+  assert.equal(result.targetRevision, 'target-sha');
+  assert.equal(result.mergeCommit, 'merge-sha');
+  assert.deepEqual(result.files, ['src/feature.ts']);
+  assert.equal(calls.length, 3);
+
+  provider.gh = async (args) => {
+    if (args[1].includes('/pulls/19')) return JSON.stringify({ ...pr, base: { ...pr.base, ref: 'main' } });
+    throw Error('unexpected call');
+  };
+  await assert.rejects(provider.inspectExternalDelivery(19), /merged into fixture\/timey:dev/);
+
+  provider.gh = async (args) => {
+    if (args[1].includes('/pulls/19')) return JSON.stringify(pr);
+    if (args[1].includes('/compare/')) return JSON.stringify({ status: 'behind', behind_by: 1 });
+    throw Error('unexpected call');
+  };
+  await assert.rejects(provider.inspectExternalDelivery(19), /no longer contains/);
+});
+
+test('external delivery is recorded distinctly and never accepts the issue', async (t) => {
+  const f = fixture(t);
+  const issueState = f.issue.state;
+  f.service.lifecycleRuns[f.issue.id] = {
+    id: 'external',
+    issueId: f.issue.id,
+    events: [],
+    attempts: [],
+    retriedRuns: [],
+  };
+  const provider = StrategyProvider.prototype.inspectExternalDelivery;
+  StrategyProvider.prototype.inspectExternalDelivery = async () => ({
+    number: 19,
+    url: 'https://github.com/fixture/timey/pull/19',
+    target: 'main',
+    targetRevision: 'target-sha',
+    head: 'head-sha',
+    mergedAt: '2026-11-04T18:00:00Z',
+    mergeCommit: 'merge-sha',
+    checks: [{ name: 'test', conclusion: 'SUCCESS' }],
+    files: ['src/feature.ts'],
+  });
+  t.after(() => (StrategyProvider.prototype.inspectExternalDelivery = provider));
+  const result = await verifyExternalIssueDelivery(f.service, {
+    issueId: f.issue.id,
+    number: 19,
+    behaviorEvidence: 'Implements the requested behavior in src/feature.ts and retains the expected current behavior.',
+  });
+  assert.equal(result.delivery.status, 'verified-awaiting-acceptance');
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'verified-awaiting-acceptance');
+  assert.equal(f.service.lifecycleRuns[f.issue.id].work.pr, undefined);
+  assert.equal(f.issue.state, issueState);
+});
+
+test('partial external delivery records outstanding requirements and continuation avoids repeating covered behavior', async (t) => {
+  const f = fixture(t);
+  const provider = StrategyProvider.prototype.inspectExternalDelivery;
+  let targetRevision = 'target-before';
+  StrategyProvider.prototype.inspectExternalDelivery = async () => ({
+    number: 19,
+    url: 'https://github.com/fixture/timey/pull/19',
+    target: 'main',
+    targetRevision,
+    head: 'head-sha',
+    mergedAt: '2026-11-04T18:00:00Z',
+    mergeCommit: 'merge-sha',
+    checks: [{ name: 'test', conclusion: 'SUCCESS' }],
+    files: ['src/feature.ts'],
+  });
+  t.after(() => (StrategyProvider.prototype.inspectExternalDelivery = provider));
+  await verifyExternalIssueDelivery(f.service, {
+    issueId: f.issue.id,
+    number: 19,
+    behaviorEvidence: 'Implements the first requested behavior in src/feature.ts and passes its checks.',
+  });
+  targetRevision = 'target-after-change';
+  const result = await verifyExternalIssueDelivery(f.service, {
+    issueId: f.issue.id,
+    number: 19,
+    behaviorEvidence: 'The current target was rechecked; src/feature.ts still implements the first behavior.',
+    remainingCriteria: 'The second requested behavior is absent from the current target.',
+  });
+  assert.equal(result.delivery.status, 'partial-awaiting-acceptance');
+  assert.equal(result.delivery.targetChangedSincePreviousCheck, true);
+  assert.equal(result.delivery.previousTargetRevision, 'target-before');
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'partial-delivery');
+
+  const originalTurn = f.service.codex.turn;
+  f.service.codex.turn = async (...args) => {
+    assert.match(args[2], /remainingCriteria.*second requested behavior/);
+    assert.match(args[2], /do not repeat behavior already covered/);
+    return originalTurn(...args);
+  };
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].work.externalDelivery.status, 'partial-awaiting-acceptance');
 });
 
 test('an uncertain App create is discovered on retry; personal and closed PRs are preserved', async () => {

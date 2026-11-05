@@ -2975,7 +2975,11 @@
         const work = issue.strategy;
         if (!work || closedIssueState(issue.state)) return '';
         const current = data.runs.find((run) => run.id === work.runId);
-        return `<section class="card" data-view-id="strategy-${esc(issue.id)}"><h2>Issue strategy</h2><p><b>${esc(work.status)}</b> ${fileLinkUI.html(work.summary || 'Choose a finish line and start this issue.')}</p>${/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(work.prUrl || '') ? `<p><a href="${esc(work.prUrl)}" target="_blank" rel="noreferrer">Open pull request #${esc(work.pr)}</a></p>` : ''}<label>Strategy<select id="issue-strategy" aria-label="Strategy" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}><option value="full-stop" ${work.strategy === 'full-stop' ? 'selected' : ''}>Full Stop — merge-ready PR</option><option value="full-send" ${work.strategy === 'full-send' ? 'selected' : ''}>Full Send — merge after required checks</option></select></label><label>Optional Sol Loop<select id="strategy-sol" aria-label="Optional Sol Loop" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}>${[
+        const external = work.externalDelivery;
+        const externalView = external
+          ? `<section class="card" aria-label="Delivery through another PR"><h3>Delivery through another PR</h3><p><b>${esc(external.status)}</b> · <a href="${esc(external.url)}" target="_blank" rel="noreferrer">PR #${esc(external.number)}</a></p><p>Merged into ${esc(external.target)} at ${esc(external.mergeCommit)}; checked against ${esc(external.targetRevision)}.</p>${external.targetChangedSincePreviousCheck ? `<p>Target changed since the previous verification (${esc(external.previousTargetRevision)}); review whether the delivered behavior remains present.</p>` : ''}<p>${esc(external.behaviorEvidence)}</p>${external.remainingCriteria ? `<p>Still outstanding: ${esc(external.remainingCriteria)}</p>` : ''}<p>Checks: ${esc(external.checks.map((check) => check.name ?? check.context ?? check.workflowName).join(', '))}</p><p>Issue acceptance remains pending.</p></section>`
+          : '';
+        return `<section class="card" data-view-id="strategy-${esc(issue.id)}"><h2>Issue strategy</h2><p><b>${esc(work.status)}</b> ${fileLinkUI.html(work.summary || 'Choose a finish line and start this issue.')}</p>${/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(work.prUrl || '') ? `<p><a href="${esc(work.prUrl)}" target="_blank" rel="noreferrer">Open pull request #${esc(work.pr)}</a></p>` : ''}${externalView}<details><summary>Already delivered through another PR?</summary><p class="muted">The factory checks that the PR merged into the configured target, that the current target still contains its merge, and that its checks passed. Describe the behavior it covers, cite at least one changed file, and list any requirements still outstanding. A later recheck compares against the current target. This records delivery only; it does not accept or close the issue.</p><label>Other PR number<input type="number" min="1" step="1" data-external-pr-number="${esc(issue.id)}" value="${esc(external?.number || '')}"></label><label>Behavior evidence and changed file path<textarea data-external-pr-evidence="${esc(issue.id)}" placeholder="Explain what the PR implements and cite a changed path, such as src/example.ts.">${esc(external?.behaviorEvidence || '')}</textarea></label><label>Requirements still outstanding<textarea data-external-pr-remaining="${esc(issue.id)}" placeholder="Leave blank only if the PR covers the full issue scope.">${esc(external?.remainingCriteria || '')}</textarea></label><button data-external-delivery="${esc(issue.id)}">Verify and record other PR</button></details><label>Strategy<select id="issue-strategy" aria-label="Strategy" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}><option value="full-stop" ${work.strategy === 'full-stop' ? 'selected' : ''}>Full Stop — merge-ready PR</option><option value="full-send" ${work.strategy === 'full-send' ? 'selected' : ''}>Full Send — merge after required checks</option></select></label><label>Optional Sol Loop<select id="strategy-sol" aria-label="Optional Sol Loop" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}>${[
           [0, 'Off'],
           [1, 'One review round'],
           [3, 'Up to three review rounds'],
@@ -3614,6 +3618,20 @@
                 runId: button.dataset.strategyRun,
               })
             );
+        });
+        document.querySelectorAll('[data-external-delivery]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              button.disabled = true;
+              button.textContent = 'Checking merged PR and checks…';
+              const id = button.dataset.externalDelivery;
+              await request('issue-strategy-external-delivery', {
+                issueId: id,
+                number: Number(document.querySelector(`[data-external-pr-number="${CSS.escape(id)}"]`).value),
+                behaviorEvidence: document.querySelector(`[data-external-pr-evidence="${CSS.escape(id)}"]`).value,
+                remainingCriteria: document.querySelector(`[data-external-pr-remaining="${CSS.escape(id)}"]`).value,
+              });
+            });
         });
         if ($('review'))
           $('review').onclick = () =>
