@@ -38,7 +38,7 @@ export async function updateIssueChatTitle(service, issueId, threadId, role, sta
 }
 
 function roleFor(run) {
-  if (run.kind === 'issue-work') return 'Execute';
+  if (run.kind === 'issue-work' || run.issueWorkChat) return 'Execute';
   if (run.kind === 'review') return 'Review';
   return 'Issue';
 }

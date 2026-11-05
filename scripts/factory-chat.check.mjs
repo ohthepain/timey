@@ -95,7 +95,9 @@ test('retro runs and retains its request and result in the saved issue conversat
   assert.deepEqual(result, { summary: 'No follow-up needed.', recommendations: [] });
   const messages = conversationMessages(f.queue.root, f.input.issueId);
   assert.ok(messages.some((message) => message.kind === 'retro-request'));
-  assert.ok(messages.some((message) => message.kind === 'retro-result' && message.body.includes('No follow-up needed.')));
+  assert.ok(
+    messages.some((message) => message.kind === 'retro-result' && message.body.includes('No follow-up needed.'))
+  );
   assert.match(f.calls.findLast((call) => call.name)?.name, /^Retro: .* · waiting$/);
   assert.equal(f.calls.filter((call) => call.attach === 'new').length, 1);
   assert.equal(conversationState(f.queue.root, f.input.issueId).threadId, 'persistent-issue-chat');
