@@ -69,6 +69,22 @@ test('finish lines distinguish publication, merge and issue acceptance', () => {
   assert.match(view({ strategy: { status: 'merged' } }).next, /acceptance remains separate/);
   assert.equal(view({ lifecycle: { status: 'finished', deliveryHandoff: true } }).step, 'Draft PR handoff complete');
 });
+test('Progress retains a valid PR link after closure and omits it when no matching PR exists', () => {
+  const savedPR = {
+    pr: 42,
+    prUrl: 'https://github.com/ohthepain/timey/pull/42',
+    status: 'merged',
+  };
+  const merged = view({ strategy: savedPR }).pullRequest;
+  assert.equal(merged.url, savedPR.prUrl);
+  assert.equal(merged.number, 42);
+  const failed = view({ strategy: { ...savedPR, status: 'failed' } }).pullRequest;
+  assert.equal(failed.url, savedPR.prUrl);
+  assert.equal(failed.number, 42);
+  assert.equal(view({ strategy: { status: 'running', pr: null, prUrl: null } }).pullRequest, null);
+  assert.equal(view({ strategy: { ...savedPR, prUrl: 'https://example.com/pull/42' } }).pullRequest, null);
+  assert.equal(view({ strategy: { ...savedPR, pr: 41 } }).pullRequest, null);
+});
 test('retries mark earlier validated checks as superseded', () => {
   const prior = { ...run, id: 'prior', created: '2026-10-30', connected: false, result: { checked: { head: 'old' } } };
   const result = view({}, [prior, run]);
