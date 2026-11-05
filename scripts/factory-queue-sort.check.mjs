@@ -269,6 +269,8 @@ function browserFixture(t) {
   const code = html.slice(first, Math.min(last < 0 ? end : last, end));
   const queue = {
     root: 'fixture',
+    implementationOrderBasis: 'fixture-basis',
+    implementationOrder: ['b', 'a', 'z'],
     lifecycle,
     actions: [],
     runs: [],
@@ -277,24 +279,27 @@ function browserFixture(t) {
         id: 'b',
         title: 'Beta',
         state: 'work',
+        implementationOrder: 0,
         queueSort: { progress: 3, lastProgress: 20, created: 10, completed: null, humanInput: 0 },
       },
       {
         id: 'a',
         title: 'Alpha',
         state: 'start',
+        implementationOrder: 1,
         queueSort: { progress: 0, lastProgress: 10, created: 20, completed: 30, humanInput: 1 },
       },
       {
         id: 'z',
         title: 'Closed',
         state: 'closed',
+        implementationOrder: 2,
         queueSort: { progress: 5, lastProgress: null, created: null, completed: null, humanInput: 0 },
       },
     ],
   };
-  win.eval(`const $ = id => document.getElementById(id); const esc = value => String(value ?? ''); const link = id => '<a>'+id+'</a>'; function visibleLifecycleStage(stage) { return !['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(stage.role); } let data = ${JSON.stringify(queue)}; const actionCard = () => ''; const progress = () => ''; ${code}
-window.queueTest = { render() { $('app').innerHTML = queue(); bindQueueFilters(); }, replace(issues) { data.issues = issues; this.render(); }, issues: data.issues };`);
+  win.eval(`const $ = id => document.getElementById(id); const esc = value => String(value ?? ''); const link = id => '<a>'+id+'</a>'; const requests = []; const request = async (path,value) => { requests.push({path,value}); return {}; }; const refresh = async () => {}; const act = task => { void task().catch(() => {}); }; function visibleLifecycleStage(stage) { return !['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(stage.role); } let data = ${JSON.stringify(queue)}; const actionCard = () => ''; const progress = () => ''; ${code}
+window.queueTest = { render() { $('app').innerHTML = queue(); bindQueueFilters(); }, replace(issues) { data.issues = issues; this.render(); }, issues: data.issues, requests };`);
   const fixture = win.queueTest;
   fixture.render();
   return { win, fixture, document: win.document };
@@ -395,6 +400,26 @@ test('issue navigation follows the visible sort order and has bounded neighbors'
   assert.match(source, /title="\$\{destination \? `Go to: \$\{esc\(label\)\}`/);
   assert.match(source, /function issueNeighbors\(issue\)/);
   assert.ok(document.querySelector('#issues'));
+});
+
+test('drag handles save visible reordering while preserving filtered issues', async (t) => {
+  const { win, fixture, document } = browserFixture(t);
+  assert.ok(document.querySelector('[data-implementation-drag="b"]'));
+  assert.equal(document.querySelector('[data-implementation-drag="b"]').getAttribute('aria-label'), 'Drag to reorder Beta');
+  const handle = document.querySelector('[data-implementation-drag="a"]');
+  handle.ondragstart({ dataTransfer: { setData() {}, effectAllowed: '' } });
+  document.querySelector('[data-issue-row="b"]').ondrop({
+    preventDefault() {},
+    dataTransfer: { getData: () => 'a' },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(fixture.requests.at(-1).path, 'implementation-order');
+  assert.deepEqual(Array.from(fixture.requests.at(-1).value.order), ['a', 'b', 'z']);
+  assert.equal(fixture.requests.at(-1).value.basis, 'fixture-basis');
+  const selector = document.getElementById('queue-sort');
+  selector.value = 'created';
+  selector.dispatchEvent(new win.Event('change'));
+  assert.equal(document.querySelector('[data-implementation-drag="a"]'), null);
 });
 
 test('ties and missing values remain deterministic in both directions without mutating source', (t) => {

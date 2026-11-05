@@ -12,11 +12,18 @@ export function queueResponse(snapshot, issueId) {
     issues: (snapshot.issues || []).map((issue) => {
       let row = issue;
       if (issue.id === issueId) row = { ...row, workingGit: issueGit(snapshot, issue) };
-      if (row.queueLifecycle) return { ...row, queueSort: queueSortValues(snapshot, row) };
+      if (row.queueLifecycle)
+        return {
+          ...row,
+          queueSort: { ...queueSortValues(snapshot, row), implementationOrder: row.implementationOrder },
+        };
       const readiness = issue.readiness ?? readinessView(snapshot, issue, snapshot.runs);
       const { queueLifecycle: strip } = issueLifecycleView(snapshot, issue, snapshot.runs, readiness);
       const view = { ...issue, queueLifecycle: strip };
-      return { ...view, queueSort: queueSortValues(snapshot, view) };
+      return {
+        ...view,
+        queueSort: { ...queueSortValues(snapshot, view), implementationOrder: view.implementationOrder },
+      };
     }),
     runs: snapshot.runs.map((run) => ({
       ...run,
