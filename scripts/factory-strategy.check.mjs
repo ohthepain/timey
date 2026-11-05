@@ -231,6 +231,7 @@ test('Continue recognizes a manually merged, unchanged checked PR after pending 
   assert.equal(record.status, 'merged', record.summary);
   assert.match(f.service.issueTitleUpdates.at(-1), / · waiting$/);
   assert.doesNotMatch(f.service.issueTitleUpdates.at(-1), / · archiveable$/);
+  assert.equal(readQueue(f.queue.root).issues[0].accepted_result, undefined, 'merge does not accept the issue');
   assert.equal(record.work.pr, 12, 'the matching PR is recovered from the issue branch');
   assert.equal(record.work.prHead, prHead);
   assert.equal(record.work.verification.head, prHead);
