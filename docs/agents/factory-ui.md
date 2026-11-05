@@ -45,8 +45,15 @@ Unmatched assignment kinds stay visible under Other work.
 
 ## Queue sorting
 
-The queue defaults to latest progress first. The sort selector also offers lifecycle
-progress, creation time, completion time and required human input. Direction is a
+The queue defaults to the saved implementation order. Drag a row by its handle to
+change that order; it is persisted in the project-local `.issues/implementation-order.json`
+and the scheduler selects the earliest eligible issue in it, regardless of priority.
+Hidden rows retain their positions when dragging within a filtered view. New issues
+are appended after saved entries using configured priority, age and ID as the default
+order. Priority labels and other views are unchanged.
+
+The sort selector also offers latest progress first, lifecycle progress, creation time,
+completion time and required human input. Direction is a
 toggle: a downward triangle means descending and an upward triangle means ascending.
 New modes start highest/newest/required first. Missing dates stay last
 in both directions, with ascending issue ID breaking ties. Filters and sorting
@@ -58,8 +65,8 @@ includes saved stage events, worker activity and results within a stage. Polling
 creates no activity timestamp. Completion uses recorded entry into Final review,
 excluding closure without a fix. Missing historical dates remain unknown. Human
 input includes actionable requests, connected approvals and final acceptance;
-deferred requests and future prerequisites do not count. Sorting is presentation
-only and does not change readiness or grant authority.
+deferred requests and future prerequisites do not count. Alternate sorts are
+presentation only and do not change readiness or grant authority.
 
 Human-input sorting uses the shared reader's current availability and deferral
 overlays, including revision-bound readiness prerequisites. Deferred or upcoming

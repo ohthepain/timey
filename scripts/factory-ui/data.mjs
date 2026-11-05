@@ -7,6 +7,7 @@ import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { factory } from '../factory-ledger.mjs';
 import { digest, git, requireThat } from './common.mjs';
+import { readImplementationOrder } from './implementation-order.mjs';
 
 const names = {
   'ready-for-grilling': 'Clarify',
@@ -43,6 +44,22 @@ export function readQueue(project) {
   const projected = clarificationLifecycle(root, lifecycle(root));
   const stages = projected.stages,
     ids = inspection.reports.map((r) => r.metadata.id);
+  const issues = inspection.reports.map((report) => ({
+    ...report.metadata,
+    ...(projected.aliases[report.metadata.state]
+      ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
+      : {}),
+    priorityInfo: priorityView(report.metadata, priorities),
+    content: report.content,
+    links: relationships(report, ids),
+    stage:
+      stages.find((s) => s.state === (projected.aliases[report.metadata.state] || report.metadata.state))?.name ||
+      report.metadata.state,
+  }));
+  const order = readImplementationOrder(root, issues);
+  const ranks = new Map(order.map((id, index) => [id, index]));
+  for (const issue of issues) issue.implementationOrder = ranks.get(issue.id);
+  const orderBasis = digest(JSON.stringify({ issueIds: ids.slice().sort(), order }));
   return {
     root,
     head: inspection.snapshot.head,
@@ -51,18 +68,9 @@ export function readQueue(project) {
     lifecycleAliases: projected.aliases,
     priorities,
     closureReasons: closureReasons(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8')),
-    issues: inspection.reports.map((report) => ({
-      ...report.metadata,
-      ...(projected.aliases[report.metadata.state]
-        ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
-        : {}),
-      priorityInfo: priorityView(report.metadata, priorities),
-      content: report.content,
-      links: relationships(report, ids),
-      stage:
-        stages.find((s) => s.state === (projected.aliases[report.metadata.state] || report.metadata.state))?.name ||
-        report.metadata.state,
-    })),
+    implementationOrder: order,
+    implementationOrderBasis: orderBasis,
+    issues,
     actions: inspection.registry?.actions || [],
     registryPresent: inspection.registry !== null,
     sourceClean: !git(root, 'status', '--porcelain', '--untracked-files=all'),

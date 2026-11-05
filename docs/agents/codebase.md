@@ -237,8 +237,10 @@ updates launch freshness without cancelling the assignment or replanning.
 `factory-assignment-scope.mjs` binds semantic assignment fields to an actual plan
 approval, the latest answer and an unchanged supporting receipt. Source revision
 changes alone do not require a new scope decision; changed scope or altered evidence does.
-`queue-selection.mjs` selects an eligible issue in code: configured priority order,
-then oldest eligible issue, then issue ID. Running, blocked, failed, paused,
+`queue-selection.mjs` selects an eligible issue in code: saved implementation
+order first, with priority, age and issue ID as the default order for unranked issues.
+`implementation-order.mjs` reads and validates the project-local persisted order;
+`implementation-order-route.mjs` writes it through a stale-basis-guarded endpoint. Running, blocked, failed, paused,
 waiting and finished issues are excluded, including active or blocked assignments.
 Selection never calls a model. Optional queue discussion still uses the coordinator UI. Selected-issue planning and reviews
 use the issue's owning chat through `reviewIssue` and `lifecycleReview`.
@@ -393,7 +395,8 @@ protocol proof only. See [the delivery contract](issue-delivery.md) and
 
 Queue sort values are projected from saved records in `factory-ui/queue-sort.mjs`
 before transport trims run events. `queue-sort-ui.js` owns presentation ordering
-and accessible controls; neither path writes lifecycle or human-input records.
+and accessible controls. Manual implementation ordering is persisted separately;
+the other view sorts do not affect scheduling or issue records.
 
 Queue human-input sorting consumes the shared reader's availability and revision-bound
 deferral projection through `factory-ui/queue-human-input.mjs`. Saved delivery

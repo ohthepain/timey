@@ -1,6 +1,7 @@
 import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
+import { changeImplementationOrder } from './implementation-order-route.mjs';
 import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
@@ -93,6 +94,7 @@ async function mutation(service, path, value, owner) {
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
     '/api/issue-priority': () => changePriority(service, value),
+    '/api/implementation-order': () => changeImplementationOrder(service, value),
     '/api/model-settings': () => saveDefaultModelSettings(service, value),
     '/api/issue-model-settings': () => saveIssueModelSettings(service, value),
     '/api/toggle-route': () => toggleRoute(service, value),

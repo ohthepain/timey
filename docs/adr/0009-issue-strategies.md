@@ -32,8 +32,10 @@ temporary infrastructure failures allow three delayed retries. Actual permission
 denials and human decisions stop immediately. Inactive work never revives itself.
 Full Stop/Full Send boundaries, protected merging and verified Fixed closure remain.
 
-The scheduler selects by configured priority, then oldest eligible issue, then ID.
-It does not rank lifecycle stages. Optional queue discussion remains separate.
+The scheduler selects by the persisted implementation order, then configured
+priority, age and ID for issues not yet in that order. Users can reorder issues
+from the implementation queue independent of priority. It does not rank lifecycle
+stages. Optional queue discussion remains separate.
 
 Full Stop leaves an open, non-draft, merge-ready PR with green required checks,
 review findings addressed, and neither auto-merge nor merge-queue enrollment.

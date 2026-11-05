@@ -50,6 +50,17 @@ test('scheduler chooses priority, then oldest issue and stable issue ID', async 
   assert.equal((await selectNextIssue(service, {}, queue)).next_issue_id, 'a');
 });
 
+test('saved implementation order overrides priority for scheduler selection', async () => {
+  const { service, queue } = fixture();
+  queue.issues = [
+    { ...issue('showstopper', 0), implementationOrder: 1 },
+    { ...issue('minor', 3), implementationOrder: 0 },
+  ];
+  const selected = await selectNextIssue(service, {}, queue);
+  assert.equal(selected.next_issue_id, 'minor');
+  assert.match(selected.summary, /saved implementation order/);
+});
+
 test('blocked, failed, paused, waiting, completed and active issues cannot be scheduled', async () => {
   const { service, queue } = fixture();
   for (const status of [

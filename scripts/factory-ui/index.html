@@ -400,6 +400,17 @@
         min-width: 28px;
         min-height: 28px;
       }
+      .implementation-drag-handle {
+        cursor: grab;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 0 0.35rem;
+        font-size: 1.1rem;
+      }
+      .implementation-drag-handle:active {
+        cursor: grabbing;
+      }
       small,
       .muted {
         color: #657169;
@@ -1669,7 +1680,7 @@
         focusedStageRoute = location.hash;
       }
       let queueRouteMessage = '';
-      const queueFilters = { search: '', roles: new Map(), sort: 'lastProgress', direction: 'desc' };
+      const queueFilters = { search: '', roles: new Map(), sort: 'implementationOrder', direction: 'desc' };
       function closedIssueState(state) {
         return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
       }
@@ -1723,6 +1734,7 @@
           $('issues').innerHTML = rows(queueIssues());
           queueLifecycleUI.restore($('issues'));
           bindPriorities();
+          bindImplementationOrder();
           refreshRoleCounts();
         };
         const applySearch = (event) => {
@@ -1731,6 +1743,7 @@
         };
         queueSortUI.bind(queueFilters, filter);
         queueLifecycleUI.bind($('issues'));
+        bindImplementationOrder();
         $('search').oninput = filter;
         $('search').onkeydown = (event) => {
           if (event.key === 'Enter') applySearch(event);
@@ -1778,7 +1791,7 @@
         return `<h2>Current decision and next action</h2><section class="card queue-decision" data-current-evaluation="${esc(current.id)}"><span class="badge">${esc(actionLabel)}</span><p><strong>Current decision:</strong> ${esc(decision || 'No decision summary recorded.')}</p><p><strong>Next action:</strong> ${nextAction}</p></section><details class="queue-history"><summary>History and diagnostics</summary>${prior || '<p>No older evaluations.</p>'}<h3>Current evaluation diagnostics</h3>${progress(current, false)}</details>`;
       }
       function queue() {
-        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><p class="muted">Work runs by issue strategy. Scheduling uses priority, then oldest eligible issue.</p><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
+        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><p class="muted">Drag issues to set implementation order. The scheduler works from top to bottom, regardless of priority.</p><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -1810,6 +1823,42 @@
           };
         });
       }
+      function bindImplementationOrder() {
+        if (queueFilters.sort !== 'implementationOrder') return;
+        let draggedId = null;
+        document.querySelectorAll('[data-implementation-drag]').forEach((handle) => {
+          handle.ondragstart = (event) => {
+            draggedId = handle.dataset.implementationDrag;
+            event.dataTransfer?.setData('text/plain', draggedId);
+            if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+          };
+          handle.ondragend = () => {
+            draggedId = null;
+          };
+        });
+        document.querySelectorAll('#issues tr[data-issue-row]').forEach((row) => {
+          row.ondragover = (event) => event.preventDefault();
+          row.ondrop = (event) => {
+            event.preventDefault();
+            const source = event.dataTransfer?.getData('text/plain') || draggedId;
+            const destination = row.dataset.issueRow;
+            if (!source || source === destination) return;
+            const visible = queueIssues().map((issue) => issue.id);
+            const from = visible.indexOf(source),
+              to = visible.indexOf(destination);
+            if (from < 0 || to < 0) return;
+            const [moved] = visible.splice(from, 1);
+            visible.splice(visible.indexOf(destination), 0, moved);
+            const visibleSet = new Set(visible);
+            let next = 0;
+            const order = data.implementationOrder.map((id) => (visibleSet.has(id) ? visible[next++] : id));
+            void act(async () => {
+              await request('implementation-order', { order, basis: data.implementationOrderBasis });
+              await refresh();
+            });
+          };
+        });
+      }
       function bindIssueNavigation() {
         document.querySelectorAll('[data-issue-navigation]').forEach((button) => {
           button.onclick = () => {
@@ -1824,7 +1873,7 @@
         return issues
           .map(
             (i) =>
-              `<tr style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
+              `<tr data-issue-row="${esc(i.id)}" style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(i.id)}" aria-label="Drag to reorder ${esc(i.title || i.id)}" title="Drag to set implementation order">⠿</button>` : ''}${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
           )
           .join('');
       }
