@@ -382,6 +382,16 @@
       #issues tr + tr td {
         border-top: 2px solid var(--issue-priority, #eab308);
       }
+      #issues tr.is-dragged td {
+        background: #e7f2ec;
+        opacity: 0.58;
+      }
+      #issues tr.drop-before td {
+        box-shadow: inset 0 3px 0 #287a50;
+      }
+      #issues tr.drop-after td {
+        box-shadow: inset 0 -3px 0 #287a50;
+      }
       .issue-priority {
         display: inline-flex;
         align-items: center;
@@ -1851,35 +1861,79 @@
       function bindImplementationOrder() {
         if (queueFilters.sort !== 'implementationOrder') return;
         let draggedId = null;
+        const clearDragFeedback = () => {
+          draggedId = null;
+          document
+            .querySelectorAll('#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after')
+            .forEach((row) => {
+              row.classList.remove('is-dragged', 'drop-before', 'drop-after');
+            });
+        };
         document.querySelectorAll('[data-implementation-drag]').forEach((handle) => {
           handle.ondragstart = (event) => {
             draggedId = handle.dataset.implementationDrag;
             event.dataTransfer?.setData('text/plain', draggedId);
             if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+            handle.closest('tr')?.classList.add('is-dragged');
           };
-          handle.ondragend = () => {
-            draggedId = null;
-          };
+          handle.ondragend = clearDragFeedback;
         });
         document.querySelectorAll('#issues tr[data-issue-row]').forEach((row) => {
-          row.ondragover = (event) => event.preventDefault();
+          row.ondragover = (event) => {
+            event.preventDefault();
+            if (!draggedId || draggedId === row.dataset.issueRow) return;
+            const bounds = row.getBoundingClientRect();
+            const after = bounds.height > 0 && event.clientY >= bounds.top + bounds.height / 2;
+            row.classList.toggle('drop-before', !after);
+            row.classList.toggle('drop-after', after);
+          };
+          row.ondragleave = (event) => {
+            if (row.contains(event.relatedTarget)) return;
+            row.classList.remove('drop-before', 'drop-after');
+          };
           row.ondrop = (event) => {
             event.preventDefault();
             const source = event.dataTransfer?.getData('text/plain') || draggedId;
             const destination = row.dataset.issueRow;
-            if (!source || source === destination) return;
+            if (!source || source === destination) {
+              clearDragFeedback();
+              return;
+            }
             const visible = queueIssues().map((issue) => issue.id);
             const from = visible.indexOf(source),
               to = visible.indexOf(destination);
-            if (from < 0 || to < 0) return;
+            if (from < 0 || to < 0) {
+              clearDragFeedback();
+              return;
+            }
             const [moved] = visible.splice(from, 1);
-            visible.splice(visible.indexOf(destination), 0, moved);
+            const bounds = row.getBoundingClientRect();
+            const after = bounds.height > 0 && event.clientY >= bounds.top + bounds.height / 2;
+            visible.splice(visible.indexOf(destination) + (after ? 1 : 0), 0, moved);
             const visibleSet = new Set(visible);
             let next = 0;
             const order = data.implementationOrder.map((id) => (visibleSet.has(id) ? visible[next++] : id));
+            const priorOrder = data.implementationOrder;
+            const ranks = new Map(order.map((id, index) => [id, index]));
+            data.implementationOrder = order;
+            data.issues.forEach((issue) => {
+              if (ranks.has(issue.id)) issue.implementationOrder = ranks.get(issue.id);
+            });
+            clearDragFeedback();
+            $('issues').innerHTML = rows(queueIssues());
+            bindPriorities();
+            bindImplementationOrder();
             void act(async () => {
-              await request('implementation-order', { order, basis: data.implementationOrderBasis });
-              await refresh();
+              try {
+                await request('implementation-order', { order, basis: data.implementationOrderBasis });
+              } catch (error) {
+                data.implementationOrder = priorOrder;
+                const oldRanks = new Map(priorOrder.map((id, index) => [id, index]));
+                data.issues.forEach((issue) => {
+                  if (oldRanks.has(issue.id)) issue.implementationOrder = oldRanks.get(issue.id);
+                });
+                throw error;
+              }
             });
           };
         });
