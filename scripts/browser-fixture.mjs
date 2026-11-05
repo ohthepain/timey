@@ -44,6 +44,9 @@ export function browserFixture(root) {
     priorityInfo: { ...(priorities[index] || { name: 'Unknown', color: '#888888' }), index, basis: 'fixture' },
     queueLifecycle: { roles: lifecycle.map((s) => ({ ...s, label: 'Fixture stage', status: 'idle', future: false })) },
   }));
+  ['b', 'a', 'c', 'x'].forEach((id, index) => {
+    issues.find((issue) => issue.id === id).implementationOrder = index;
+  });
   const data = {
     root: '/synthetic-browser-fixture',
     head: '0'.repeat(40),
@@ -72,6 +75,8 @@ export function browserFixture(root) {
       efforts: ['low', 'medium', 'high', 'max'],
     },
     issues,
+    implementationOrder: ['b', 'a', 'c', 'x'],
+    implementationOrderBasis: 'fixture-order-basis',
     actions: [],
     runs: [],
     closureReasons: [],
@@ -103,6 +108,14 @@ export function browserFixture(root) {
               effectiveEffort: value.effort || data.modelSettings.defaults.effort,
             };
           }
+          return response.end('{}');
+        }
+        if (url.pathname === '/api/implementation-order') {
+          data.implementationOrder = value.order;
+          const ranks = new Map(value.order.map((id, index) => [id, index]));
+          issues.forEach((issue) => {
+            issue.implementationOrder = ranks.get(issue.id);
+          });
           return response.end('{}');
         }
         response.statusCode = 405;
