@@ -145,10 +145,9 @@ const issueProgressUI = (() => {
     return Number.isSafeInteger(number) ? `PR #${number}` : 'no PR number';
   }
   function pullRequest(issue) {
-    const url = issue.strategy?.prUrl || '';
-    const match = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)$/.exec(url);
-    const number = Number(match?.[1]);
-    return match && Number.isSafeInteger(issue.strategy?.pr) && issue.strategy.pr === number ? { url, number } : null;
+    const number = issue.strategy?.pr;
+    if (!Number.isSafeInteger(number)) return null;
+    return { url: `https://github.com/${issue.strategy.repository}/pull/${number}`, number };
   }
   function pullRequestCheckDetails(issue, run, reason) {
     const reported = run.result.pr;
