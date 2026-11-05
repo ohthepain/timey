@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readQueue } from './data.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
 
 const orderPath = (root) => join(root, '.issues', 'implementation-order.json');
@@ -34,12 +33,6 @@ export function implementationOrder(issues, saved = []) {
   appendSaved(ordered, seen, available, saved);
   appendDefaults(ordered, seen, defaultOrder(issues));
   return ordered;
-}
-
-export function changeImplementationOrder(service, input) {
-  service.ownServer();
-  const queue = readQueue(service.root);
-  return persistImplementationOrder(service.root, queue, input);
 }
 
 function appendSaved(ordered, seen, available, saved) {

@@ -1,7 +1,7 @@
 import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
-import { changeImplementationOrder } from './implementation-order.mjs';
+import { changeImplementationOrder } from './implementation-order-route.mjs';
 import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
