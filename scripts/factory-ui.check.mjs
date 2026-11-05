@@ -1442,7 +1442,8 @@ test('final-review buttons close with explicit acceptance and reopen without lau
   assert.equal((await reconcileNow(service)).status, 'completed');
   const before = readFileSync(join(root, '.issues/factory.json'), 'utf8');
   const snapshot = service.snapshot();
-  assert.deepEqual(service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), { state: 'closed' });
+  const closure = await service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis);
+  assert.equal(closure.state, 'closed');
   assert.throws(
     () => service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis),
     /another stage|out of date/

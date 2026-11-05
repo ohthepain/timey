@@ -535,6 +535,7 @@ export function factory(project) {
           typeof update.evidence === 'string' && update.evidence.trim(),
           'Record an evidence pointer or specific failure reason.'
         );
+        retainCancelledHistory(action, update);
         validateResultStatus(action, update, git, root);
         recordStatusSummary(action, update);
         recordOperation(
@@ -549,6 +550,17 @@ export function factory(project) {
       });
     },
   };
+}
+
+function retainCancelledHistory(action, update) {
+  if (update.status !== 'cancelled') return;
+  action.history ||= [];
+  action.history.push({
+    status: 'cancelled',
+    previousStatus: action.status,
+    evidence: action.evidence || null,
+    at: new Date().toISOString(),
+  });
 }
 
 function recordOperation(action, operation, authorization) {

@@ -427,6 +427,39 @@ test('action controls pause after the current turn, steer its exact turn, and st
   assert.deepEqual(calls.pop(), ['turn/interrupt', { threadId: run.threadId, turnId: turn.id }]);
 });
 
+test('blocked action menu renders Cancel and binds it to the exact issue action', async () => {
+  const item = {
+    id: 'run-blocked',
+    title: 'Blocked implementation',
+    kind: 'worker',
+    status: 'blocked',
+    issues: [{ id: 'issue-one', title: 'Issue one' }],
+    canCancel: true,
+    cancelReason: '',
+  };
+  const calls = [];
+  const dom = loadServerControlDom();
+  dom.window.controls.show(idleServerControl({ actions: 1 }), async (path, input) => {
+    calls.push([path, input]);
+    return path === 'server-actions' ? [item] : {};
+  });
+  dom.window.document.querySelector('[data-server-count]').click();
+  await delay(0);
+  const cancel = [...dom.window.document.querySelectorAll('#server-actions-dialog button')].find(
+    (button) => button.textContent === 'Cancel'
+  );
+  assert.ok(cancel);
+  assert.equal(cancel.disabled, false);
+  cancel.click();
+  await delay(0);
+  const request = calls.find(([path]) => path === 'server-action');
+  assert.equal(
+    JSON.stringify(request),
+    JSON.stringify(['server-action', { runId: 'run-blocked', issueId: 'issue-one', operation: 'cancel', text: '' }])
+  );
+  dom.window.close();
+});
+
 test('skip interrupts a worker, then cancels only its stopped assignment and retains its checkout', async () => {
   const run = {
     id: 'run-skip',
