@@ -4,6 +4,39 @@ const issueProgressUI = (() => {
   const stoppedStatuses = new Set(['blocked', 'failed', 'attention']);
   const completeStatuses = new Set(['completed', 'handed-off', 'merged', 'finished', 'reconciled']);
   const time = (value) => Date.parse(value || '') || 0;
+  function isIssueWorkRun(run) {
+    return run?.kind === 'issue-work';
+  }
+  function hasSupportedTiming(timing) {
+    return Boolean(timing && timing.version === 1);
+  }
+  function savedTiming(run) {
+    if (!isIssueWorkRun(run)) return null;
+    const timing = run.timing;
+    return hasSupportedTiming(timing) ? timing : null;
+  }
+  function livePhase(timing, running, now) {
+    const phaseStart = time(timing.phaseStartedAt);
+    const startedAt = running && phaseStart > 0 ? timing.phaseStartedAt : null;
+    return { elapsed: startedAt ? Math.max(0, now - phaseStart) : 0, startedAt };
+  }
+  function timer(base, phase) {
+    const elapsed = phase.startedAt ? phase.elapsed : 0;
+    return { value: base + elapsed, base, startedAt: phase.startedAt };
+  }
+  function progressTiming(run, running, now) {
+    const timing = savedTiming(run);
+    if (!timing) return null;
+    const phase = livePhase(timing, running, now);
+    return {
+      total: timer(timing.totalMs, phase),
+      operation: timer(timing.operationMs, phase),
+    };
+  }
+  function attachTiming(base, run, unavailable, now) {
+    const timing = progressTiming(run, base.running && !unavailable, now);
+    return timing ? { ...base, totalOperationTime: timing.total, operationTime: timing.operation } : base;
+  }
   function runsFor(issue, data) {
     return (data.runs || [])
       .filter(
@@ -56,6 +89,24 @@ const issueProgressUI = (() => {
   }
   function currentCommand(run) {
     return selectCommand(run?.output || [], stoppedStatuses.has(run?.status));
+  }
+  function lastKnownUpdate(issue, run) {
+    return [issueUpdated(issue), runHealthActivity(run), runLastOutput(run), ...runTimestamps(run), issue.updated]
+      .filter(Boolean)
+      .sort((a, b) => time(a) - time(b))
+      .at(-1);
+  }
+  function issueUpdated(issue) {
+    return issue.lifecycle?.updated;
+  }
+  function runHealthActivity(run) {
+    return run?.health?.lastActivityAt;
+  }
+  function runLastOutput(run) {
+    return run?.output?.at(-1)?.at;
+  }
+  function runTimestamps(run) {
+    return [run?.updated, run?.created];
   }
   function selectCommand(output, stopped) {
     const commands = output.filter((entry) => entry.kind === 'command');
@@ -256,32 +307,26 @@ Saved issue record: ${formatPR(saved)}`,
       next: 'Refresh to check the connection before continuing.',
     };
   }
-  function derive(issue, data, feedback, unavailable = false) {
+  function derive(issue, data, feedback, unavailable = false, now = Date.now()) {
     const runs = runsFor(issue, data);
     const run =
       runs.findLast((r) => r.connected && r.approvals?.length) || runs.findLast((r) => r.connected) || runs.at(-1);
     const conversation = data.conversation?.issueId === issue.id ? data.conversation : null;
-    const lastUpdate = [
-      issue.lifecycle?.updated,
-      run?.health?.lastActivityAt,
-      run?.output?.at(-1)?.at,
-      run?.updated,
-      run?.created,
-      issue.updated,
-    ]
-      .filter(Boolean)
-      .sort((a, b) => time(a) - time(b))
-      .at(-1);
-    const base = {
-      milestones: milestones(issue, runs, data),
-      lastUpdate,
-      command: currentCommand(run),
-      running:
-        runs.some((r) => r.connected) ||
-        Boolean(issue.strategy?.active) ||
-        ['running', 'answering'].includes(issue.lifecycle?.status),
-      interview: interview(conversation),
-    };
+    const base = attachTiming(
+      {
+        milestones: milestones(issue, runs, data),
+        lastUpdate: lastKnownUpdate(issue, run),
+        command: currentCommand(run),
+        running:
+          runs.some((r) => r.connected) ||
+          Boolean(issue.strategy?.active) ||
+          ['running', 'answering'].includes(issue.lifecycle?.status),
+        interview: interview(conversation),
+      },
+      run,
+      unavailable,
+      now
+    );
     if (feedback)
       return {
         ...base,
@@ -303,5 +348,13 @@ Saved issue record: ${formatPR(saved)}`,
       };
     return { ...base, ...(pendingInput(issue, run, conversation) || operationState(issue, run, conversation)) };
   }
-  return { derive, runsFor, basis, purpose: commandPurpose };
+  function formatDuration(milliseconds) {
+    const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    if (hours) return `${hours}h ${minutes % 60}m`;
+    if (minutes) return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+    return `${seconds}s`;
+  }
+  return { derive, runsFor, basis, purpose: commandPurpose, formatDuration };
 })();

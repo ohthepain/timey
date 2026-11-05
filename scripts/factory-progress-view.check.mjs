@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import vm from 'node:vm';
 import { gitFixture } from './git-fixture.mjs';
 import { outputHistory } from './factory-ui/output-history.mjs';
+import { advanceOperationTiming, startOperationTiming } from './factory-ui/operation-timing.mjs';
 
 const context = vm.createContext({});
 vm.runInContext(
@@ -215,6 +216,46 @@ test('historical milestones use human stage names and live activity supplies the
   assert.ok(result.milestones.includes('Investigation completed (earlier work)'));
   assert.ok(!result.milestones.some((entry) => entry.includes('internal-stage')));
   assert.equal(result.lastUpdate, '2026-11-01T11:00:00Z');
+});
+
+test('issue operation timing sums elapsed phases and keeps the active phase ticking through waits', () => {
+  const started = Date.parse('2026-11-05T12:00:00.000Z');
+  const timed = { ...run, status: 'preparing', timing: undefined };
+  startOperationTiming(timed, new Date(started).toISOString());
+
+  advanceOperationTiming(timed, 'running', new Date(started + 10_000).toISOString());
+  timed.status = 'running';
+  const waiting = derive(issue, { runs: [{ ...timed, connected: true }], actions: [] }, null, false, started + 30_000);
+  assert.equal(waiting.step, 'Working on the issue');
+  assert.equal(waiting.operationTime.value, 20_000);
+  assert.equal(waiting.totalOperationTime.value, 30_000);
+
+  advanceOperationTiming(timed, 'checking', new Date(started + 30_000).toISOString());
+  timed.status = 'checking';
+  const checking = derive(issue, { runs: [{ ...timed, connected: true }], actions: [] }, null, false, started + 35_000);
+  assert.equal(checking.step, 'Running verification');
+  assert.equal(checking.operationTime.value, 5_000);
+  assert.equal(checking.totalOperationTime.value, 35_000);
+
+  advanceOperationTiming(timed, 'completed', new Date(started + 40_000).toISOString());
+  timed.status = 'completed';
+  const finished = derive(
+    { ...issue, strategy: { status: 'completed' } },
+    { runs: [{ ...timed, connected: false }], actions: [] },
+    null,
+    false,
+    started + 50_000
+  );
+  assert.equal(finished.totalOperationTime.value, 40_000);
+  assert.equal(finished.totalOperationTime.startedAt, null);
+  assert.equal(finished.operationTime.value, 10_000);
+});
+
+test('progress timer formatting stays compact and old runs remain untimed', () => {
+  assert.equal(context.view.formatDuration(59_000), '59s');
+  assert.equal(context.view.formatDuration(62_000), '1m 02s');
+  assert.equal(context.view.formatDuration(3_661_000), '1h 1m');
+  assert.equal(view({}, [run]).totalOperationTime, undefined);
 });
 
 test('Continue acknowledgment retires only for its accepted run, not late output from older work', () => {
