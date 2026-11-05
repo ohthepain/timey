@@ -29,6 +29,7 @@ import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
 import { resumeDelivery } from './delivery-integration.mjs';
 import { redactValue } from './activity.mjs';
+import { issueCleanupRecord } from './issue-cleanup.mjs';
 
 import { createSiteReviews } from './site-review.mjs';
 import { createDiscussions } from './discussion.mjs';
@@ -188,6 +189,7 @@ export class FactoryUI {
       implementation: checklistView(queue, issue, runs),
       siteReview: this.siteReviews.view(queue, issue, owner),
       modelSelection: readIssueModelSettings(this.root, issue.id),
+      cleanup: issueCleanupRecord(this.root, issue.id),
     };
   }
   lifecycleStatus(queue, issue, runs) {
@@ -232,8 +234,8 @@ export class FactoryUI {
   connectWorker(id, state, basis, link) {
     return connectWorker(this, id, state, basis, link);
   }
-  decideIssue(id, state, kind, basis, reason, resolution) {
-    return decideIssue(this, id, state, kind, basis, reason, resolution);
+  decideIssue(id, state, kind, basis, reason, resolution, cleanup) {
+    return decideIssue(this, id, state, kind, basis, reason, resolution, cleanup);
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);

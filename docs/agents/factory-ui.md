@@ -549,11 +549,15 @@ it, final acceptance retains its current contents and earlier hash separately;
 unchanged source, plan, behavioral evidence and no outstanding work are still required.
 
 Accept fix and close appears after the issue reaches final review or its saved
-strategy/checklist records completed work. It records explicit acceptance and
-closes in one tap, without a confirmation dialog. The button disables during the
-request and the screen refreshes after success. Close with reason remains available
-for ending work without accepting a fix. Reopen keeps its confirmation and optional
-reason.
+strategy/checklist records completed work. Both closure paths show a confirmation
+with the exact remote/local branches, issue workspace path and estimated storage,
+and linked issue chats. Already deleted resources and failed lookups remain disabled
+and distinguishable. Unmerged work is unchecked by default; dirty, shared and active
+resources are preserved. The server rechecks each selected resource immediately
+before acting and records per-resource results outside the workspace. Issue closure
+still completes if cleanup fails; the issue then shows Cleanup incomplete and a
+bounded Retry cleanup action. Archiving a chat is not reported as disk savings.
+Reopen keeps its confirmation and optional reason.
 
 Older issues already at Final review can be accepted without backfilling stage
 history when the registry records integration and both worker and checked
@@ -1200,13 +1204,14 @@ review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
 
 Explicit issue strategies inspect the saved branch, checkout, starting commit and
-configured target before owner work and again before PR publication. A dirty
-existing checkout or commits in the starting point that are absent from the target
-stop the operation with the exact paths and commit evidence; no files or commits
-are discarded or rewritten. The instruction field can confirm intentional
-inclusion with one line per full commit SHA and a reason. Without that exact
-confirmation, the issue remains stopped so the user can preserve the checkout for
-reconciliation.
+configured target before owner work and again before PR publication. A new issue
+fetches its configured remote target before creating the dedicated branch, so
+unpublished commits and unsaved files in the coordinator checkout stay there and
+are excluded by default. The start instruction can intentionally include committed
+work with one line per full commit SHA and a reason; the server cherry-picks only
+those authorized commits and retains a source-to-branch revision record. Existing
+issue checkouts keep their saved branch and base; dirty existing checkouts stop
+with exact path evidence and are preserved.
 
 Before a Continue starts another owner turn, it searches GitHub for the unique PR
 matching the saved issue branch and target. This recovers a missing or stale saved

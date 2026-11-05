@@ -2600,8 +2600,13 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
   assert.equal(window.document.querySelector('[data-issue-decision="close"]').textContent, 'Accept fix and close');
   let release,
     posts = 0,
-    conversation = 0;
+    conversation = 0,
+    previews = 0;
   window.fetch = (url) => {
+    if (url.endsWith('/issue-cleanup-preview')) {
+      previews++;
+      return Promise.resolve({ ok: true, json: async () => ({ basis: 'cleanup-basis', resources: [] }) });
+    }
     if (url.endsWith('/issue-decision')) {
       posts++;
       return new Promise((resolve) => {
@@ -2615,13 +2620,23 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
     return Promise.resolve({ ok: true, json: async () => (url.endsWith('/runtime') ? {} : snapshot) });
   };
   const button = window.document.querySelector('[data-issue-decision="close"]');
+  window.document.getElementById('confirm').showModal = function () {
+    this.open = true;
+  };
+  window.document.getElementById('confirm').close = function () {
+    this.open = false;
+  };
   assert.equal(button.textContent, 'Accept fix and close');
   button.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(previews, 1);
+  window.document.getElementById('approve').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(window.document.querySelector('[data-issue-decision-status]').textContent, /Waiting for the server/);
-  assert.equal(window.document.querySelector('[data-issue-decision="close"]').disabled, true);
-  button.click();
+  assert.equal(window.document.getElementById('approve').disabled, true);
+  window.document.getElementById('approve').click();
   assert.equal(posts, 1);
-  release({ ok: true, json: async () => ({ state: 'closed' }) });
+  release({ ok: true, json: async () => ({ state: 'closed', cleanup: { status: 'complete', results: [] } }) });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(window.document.querySelector('[data-issue-decision-status]').textContent, 'Accepted and closed.');
   assert.equal(window.document.querySelector('[data-issue-decision="close"]'), null);
@@ -2633,25 +2648,78 @@ test('direct closure exposes the exact blocker and enables retry without a model
   const { window, snapshot } = await activityScreen(t);
   snapshot.issues[0].state = 'final';
   window.screenTest.show(snapshot);
-  window.fetch = async () => ({
-    ok: false,
-    json: async () => ({ error: 'Manual observation timing-check still needs a result.' }),
-  });
+  window.fetch = async (url) =>
+    url.endsWith('/issue-cleanup-preview')
+      ? { ok: true, json: async () => ({ basis: 'cleanup-basis', resources: [] }) }
+      : { ok: false, json: async () => ({ error: 'Manual observation timing-check still needs a result.' }) };
+  window.document.getElementById('confirm').showModal = function () {
+    this.open = true;
+  };
   window.document.querySelector('[data-issue-decision="close"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  window.document.getElementById('approve').click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(window.document.querySelector('[data-issue-decision="close"]').disabled, false);
   assert.match(
     window.document.querySelector('[data-issue-decision-status][role="alert"]').textContent,
     /timing-check still needs a result/
   );
-  window.document.getElementById('confirm').showModal = function () {
-    this.open = true;
-  };
   window.document.querySelector('[data-issue-decision="choose-close"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.ok(
     window.document.querySelector('#closure-reason option[value="fixed"]'),
     'Fixed must be available outside final review'
   );
+});
+
+test('close dialog previews exact cleanup resources and disables already-deleted branches', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].state = 'final';
+  window.screenTest.show(snapshot);
+  const resources = [
+    {
+      id: 'remote',
+      kind: 'remote-branch',
+      name: 'codex/issue-one',
+      repository: 'ohthepain/timey',
+      state: 'already-deleted',
+      eligible: false,
+    },
+    {
+      id: 'workspace',
+      kind: 'workspace',
+      name: '/repo/.issues/issue-work/one',
+      estimatedBytes: 2048,
+      state: 'present',
+      eligible: true,
+    },
+    {
+      id: 'chat',
+      kind: 'chat',
+      name: 'Execution chat: Issue',
+      threadId: 'thread-1',
+      state: 'present',
+      eligible: true,
+      defaultSelected: true,
+    },
+  ];
+  window.fetch = async (url) => ({
+    ok: true,
+    json: async () => (url.endsWith('/issue-cleanup-preview') ? { basis: 'cleanup-basis', resources } : snapshot),
+  });
+  window.document.getElementById('confirm').showModal = function () {
+    this.open = true;
+  };
+  window.document.querySelector('[data-issue-decision="close"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const dialog = window.document.getElementById('selection').textContent;
+  assert.match(dialog, /ohthepain\/timey:codex\/issue-one/);
+  assert.match(dialog, /Already deleted/);
+  assert.match(dialog, /\/repo\/\.issues\/issue-work\/one/);
+  assert.match(dialog, /2\.0 KB/);
+  assert.match(dialog, /Thread thread-1/);
+  assert.equal(window.document.querySelector('[data-cleanup-choice="remote"]').disabled, true);
+  assert.equal(window.document.querySelector('[data-cleanup-choice="chat"]').checked, true);
 });
 
 test('older final-review issue with an integrated commit can be accepted without fabricated stage history', (t) => {

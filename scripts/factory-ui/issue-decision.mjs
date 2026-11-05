@@ -8,8 +8,9 @@ import { digest, requireThat } from './common.mjs';
 
 import { strategyClosureResult } from './strategy-closure.mjs';
 import { recordClosingApproval } from './closure-approval.mjs';
+import { executeIssueCleanup, recordCleanupFailure } from './issue-cleanup.mjs';
 
-export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed') {
+export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed', cleanup = null) {
   service.ownServer();
   let queue = readQueue(service.root),
     issue = progressIssue(queue, id, state);
@@ -30,7 +31,13 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
   const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: prepared.accepted };
   applyClosure(result, choice, reason, target, dismissed);
   const evidence = [{ path: join(service.root, '.issues', id + '.md'), sha256: digest(issue.content) }];
-  return recordDecision(service, queue, issue, run, result, evidence, target, basis);
+  const decision = recordDecision(service, queue, issue, run, result, evidence, target, basis);
+  if (kind !== 'close' || cleanup === null) return decision;
+  const cleanupInput = { ...cleanup, resolution };
+  return executeIssueCleanup(service, id, cleanupInput).catch((error) => ({
+    ...decision,
+    cleanup: recordCleanupFailure(service, id, cleanupInput, error),
+  }));
 }
 function closureChoice(queue, role, kind, resolution) {
   if (kind === 'reopen') {

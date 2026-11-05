@@ -1407,6 +1407,23 @@
       .queue-role-shell:focus-within .queue-role-help {
         display: block;
       }
+      .cleanup-choice {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin: 10px 0;
+      }
+      .cleanup-choice input {
+        margin-top: 4px;
+      }
+      .cleanup-choice span,
+      .cleanup-choice small {
+        display: block;
+      }
+      .cleanup-choice small {
+        color: #59636e;
+        margin-top: 3px;
+      }
       @keyframes queue-spin {
         to {
           transform: rotate(360deg);
@@ -2630,7 +2647,7 @@
         result.scrollIntoView({ block: 'start', behavior: 'smooth' });
         result.querySelector('summary').focus();
       }
-      function selectIssueDecision(button) {
+      async function selectIssueDecision(button) {
         const issue = data.issues.find((entry) => entry.id === button.dataset.issueId);
         const chooseReason = button.dataset.issueDecision === 'choose-close';
         const kind = chooseReason ? 'close' : button.dataset.issueDecision;
@@ -2641,18 +2658,28 @@
           kind,
           basis: issue.decisionBasis || data.reviewBasis,
         };
-        if (chooseReason) {
+        if (chooseReason || kind === 'close') {
           const choices = data.closureReasons;
+          const resolution = 'fixed';
           $('selection').innerHTML =
-            `<h2>Close this issue</h2><p>Choose why you are closing it. Reasons other than Fixed leave unfinished work, including an unreviewed worker result, as they are. Fixed still requires that review.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}">${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`;
+            '<h2>Preparing cleanup options…</h2><p>Checking the exact issue branches, workspaces, and chats.</p>';
           $('approve').textContent = 'Close issue';
-          $('approve').disabled = choices.length === 0;
+          $('approve').disabled = true;
           $('confirm').showModal();
+          const preview = await request('issue-cleanup-preview', { issueId: issue.id, resolution });
+          selection.cleanupBasis = preview.basis;
+          $('selection').innerHTML =
+            `<h2>Close this issue</h2><p>Fixed still requires the existing acceptance checks. Unmerged work is preserved by default; select a branch or workspace only if you want it removed.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}" ${choice.id === resolution ? 'selected' : ''}>${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>${cleanupFieldset(preview)}`;
+          $('closure-reason').onchange = async () => {
+            const refreshed = await request('issue-cleanup-preview', {
+              issueId: issue.id,
+              resolution: $('closure-reason').value,
+            });
+            selection.cleanupBasis = refreshed.basis;
+            $('cleanup-options').outerHTML = cleanupFieldset(refreshed);
+          };
+          $('approve').disabled = choices.length === 0;
           return;
-        }
-        if (kind === 'close') {
-          if (decisionRequests.get(issue.id)?.pending) return;
-          return sendIssueDecision(selection, button).catch(() => {});
         }
         $('selection').innerHTML =
           '<h2>Reopen this issue?</h2><p>This returns the issue to investigation. The existing result, checks and commits are kept. No worker starts automatically.</p><label>What still needs work? (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>';
@@ -2664,6 +2691,40 @@
         const state = decisionRequests.get(issue.id);
         const error = decisionErrors.get(issue.id);
         return `<p data-issue-decision-status="${esc(issue.id)}" role="${error ? 'alert' : 'status'}">${esc(error || state?.message || '')}</p>`;
+      }
+      function cleanupFieldset(preview) {
+        return `<fieldset id="cleanup-options"><legend>Optional cleanup</legend><p>Selected resources are rechecked before each action. Issue closure remains saved if cleanup is incomplete.</p>${preview.resources.map(cleanupChoice).join('') || '<p>No linked resources were found.</p>'}</fieldset>`;
+      }
+      function cleanupChoice(resource) {
+        const disabled = !resource.eligible || resource.state.startsWith('already-');
+        const label =
+          resource.kind === 'workspace'
+            ? `Workspace ${resource.name} · about ${formatBytes(resource.estimatedBytes)}`
+            : resource.kind === 'remote-branch'
+              ? `GitHub branch ${resource.repository}:${resource.name}`
+              : resource.kind === 'local-branch'
+                ? `Local branch ${resource.name}`
+                : `Chat ${resource.name}`;
+        const state =
+          resource.state === 'already-deleted'
+            ? 'Already deleted'
+            : resource.state === 'already-archived'
+              ? 'Already archived'
+              : resource.state === 'unknown'
+                ? 'Status unknown; preserved'
+                : resource.reason;
+        return `<label class="cleanup-choice"><input type="checkbox" data-cleanup-choice="${esc(resource.id)}" ${resource.defaultSelected ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span><strong>${esc(label)}</strong>${state ? `<small>${esc(state)}</small>` : ''}${resource.kind === 'chat' ? `<small>Thread ${esc(resource.threadId)} · archiving does not save disk space.</small>` : ''}</span></label>`;
+      }
+      function formatBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const tier = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        return `${(bytes / 1024 ** tier).toFixed(tier ? 1 : 0)} ${units[tier]}`;
+      }
+      function cleanupPanel(issue) {
+        const cleanup = issue.cleanup;
+        if (!cleanup) return '';
+        return `<section class="card" aria-label="Issue cleanup"><h3>${cleanup.status === 'incomplete' ? 'Cleanup incomplete' : 'Cleanup results'}</h3><ul>${(cleanup.results || []).map((item) => `<li>${esc(item.name || item.id)}: ${esc(item.reason || item.status)}</li>`).join('')}</ul>${cleanup.status === 'incomplete' ? `<button data-cleanup-retry="${esc(issue.id)}">Retry cleanup</button>` : ''}</section>`;
       }
       async function sendIssueDecision(decision, button) {
         if (decisionRequests.get(decision.issueId)?.pending) return;
@@ -2679,7 +2740,17 @@
         }
         render();
         try {
-          const result = await request('issue-decision', decision);
+          const cleanup =
+            decision.kind === 'close'
+              ? {
+                  basis: selection.cleanupBasis,
+                  resolution: decision.resolution,
+                  selected: [...document.querySelectorAll('[data-cleanup-choice]:checked')].map(
+                    (input) => input.dataset.cleanupChoice
+                  ),
+                }
+              : null;
+          const result = await request('issue-decision', { ...decision, cleanup });
           const issue = data.issues.find((entry) => entry.id === id);
           issue.state = result.state;
           issue.stage = data.lifecycle.find((stage) => stage.state === result.state)?.name || result.state;
@@ -2690,6 +2761,7 @@
               label: reason?.label || 'Fixed',
               details: decision.reason || '',
             };
+            issue.cleanup = result.cleanup;
           } else {
             delete issue.closure;
           }
@@ -2699,7 +2771,7 @@
             message: accepted
               ? 'Accepted and closed.'
               : decision.kind === 'close'
-                ? 'Issue closed.'
+                ? `Issue closed${result.cleanup?.status === 'incomplete' ? '; cleanup incomplete.' : '; cleanup recorded.'}`
                 : 'Issue reopened.',
           });
           render();
@@ -3245,7 +3317,7 @@
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
-        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
           ['progress', 'Progress'],
           ['output', 'Issue output'],
           ['issue', 'Issue thread'],
@@ -3737,7 +3809,26 @@
           button.onclick = () => reviewRecordedResult(button.dataset.reviewResult);
         });
         document.querySelectorAll('[data-issue-decision]').forEach((button) => {
-          button.onclick = () => selectIssueDecision(button);
+          button.onclick = () =>
+            selectIssueDecision(button).catch((error) => {
+              decisionErrors.set(button.dataset.issueId, error.message);
+              render();
+            });
+        });
+        document.querySelectorAll('[data-cleanup-retry]').forEach((button) => {
+          button.onclick = async () => {
+            button.disabled = true;
+            const issue = data.issues.find((entry) => entry.id === button.dataset.cleanupRetry);
+            try {
+              const result = await request('issue-cleanup-retry', { issueId: issue.id });
+              issue.cleanup = result.cleanup;
+              render();
+              void refresh();
+            } catch (error) {
+              decisionErrors.set(issue.id, error.message);
+              render();
+            }
+          };
         });
         document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
           button.onclick = () => startIssueProgress(data.issues.find((i) => i.id === button.dataset.lifecycleStart));
