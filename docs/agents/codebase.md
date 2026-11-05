@@ -16,7 +16,7 @@ configuration; this map explains responsibilities and the useful starting points
 | Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                                                                       | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
 | Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                                                                          | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit                                                                                                          |
 | Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                                                                                                                                        | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
-| Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, `scripts/factory-ui/issue-progress-ui.js`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue focus/listing, ledger CLI, saved progress, the issue-page Progress explanation of stopped work and its evidence, manual decisions and guarded worker dispatch                                                 |
+| Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, `scripts/factory-ui/issue-progress-ui.js`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue focus/listing, ledger CLI, saved progress, the issue-page Progress explanation of stopped work and its evidence, operation timers, manual decisions and guarded worker dispatch                               |
 
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
 timestamp semantics. Replay uses these same services; test their interaction, not
@@ -220,9 +220,11 @@ existing chats for bounded corrections. The issue screen renders the complete
 labels. See the UI guide for consent boundaries.
 
 `factory-ui/issue-progress-ui.js` derives the default Progress tab from existing
-issue, run, input and conversation records. `index.html` renders that projection,
+issue, run, input and conversation records. `runs.mjs` persists phase timing for
+issue-work runs; the Progress view shows the current phase and accumulated run time
+without adding a separate workflow record. `index.html` renders that projection,
 reuses existing input handlers and overlays transient Continue acknowledgment until
-fresh evidence arrives. It maintains no separate workflow record.
+fresh evidence arrives.
 `factory-ui/output-history.mjs` reads earlier public JSONL events using stable byte
 cursors through the authenticated read-only output-history endpoint.
 `factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
