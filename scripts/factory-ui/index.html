@@ -2628,7 +2628,7 @@
           resource.kind === 'workspace'
             ? `Workspace ${resource.name} · about ${formatBytes(resource.estimatedBytes)}`
             : resource.kind === 'remote-branch'
-              ? `GitHub branch ${resource.repository}:${resource.name}`
+              ? `Remote branch ${resource.repository}:${resource.name}`
               : resource.kind === 'local-branch'
                 ? `Local branch ${resource.name}`
                 : `Chat ${resource.name}`;
