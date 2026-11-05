@@ -160,6 +160,10 @@ launches workers, merges code or accepts issues.
 
 `factory-ui/issue-decision.mjs` owns direct human acceptance/closure independently of lifecycle stages and
 reopening, with current report/evidence guards and preserved historical outcomes.
+`factory-ui/issue-cleanup.mjs` previews issue-owned branches, the issue worktree and
+linked chats, then rechecks each selected resource before removal/archive. It keeps
+durable per-resource outcomes outside the removable workspace and supports retry
+without reopening the issue.
 
 `factory-ui/worker-connection.mjs` restores missing task/chat connections using
 validated existing conversations and the original ledger attach operation.
@@ -326,6 +330,10 @@ synchronous helper launches starving the server's GitHub authentication requests
 description and a null PR number. Publication reconciles open PRs on retry and
 validates App authorship, the pushed candidate and approved target; saved existing
 PRs retain their identity and history.
+`factory-ui/issue-strategy.mjs` resolves the configured remote target before creating
+a new issue checkout. It records coordinator commits absent from that target and
+imports them only when each exact revision and reason is supplied in the start
+instruction; existing issue checkouts retain their saved base.
 
 `scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;
 `factory-workflow.check.mjs` owns the cross-format issue-decision compatibility
@@ -375,7 +383,8 @@ transport tests live in `factory-server-control.check.mjs`.
 `factory-ui/closure-reasons.mjs` reads project closure choices from the local
 lifecycle Markdown. `issue-decision.mjs` keeps accepted fixes separate from
 explicit user decisions to stop work; `factory-completion.mjs` preserves the
-closure record without marking unfinished stages complete.
+closure record without marking unfinished stages complete. `issue-cleanup.mjs`
+retains cleanup previews and partial results under `.issues/factory-ui/cleanup/`.
 
 `factory-ui/priorities.mjs` reads the project’s ordered priority definitions and
 projects default Major values without backfilling reports. `issue-priority.mjs`

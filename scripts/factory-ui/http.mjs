@@ -18,6 +18,7 @@ import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs'
 import { startIssueStrategy, stopIssueStrategy, verifyExternalIssueDelivery } from './issue-strategy.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
+import { previewIssueCleanup, retryIssueCleanup } from './issue-cleanup.mjs';
 async function body(request) {
   let text = '';
   for await (const chunk of request) {
@@ -87,6 +88,8 @@ async function mutation(service, path, value, owner) {
     '/api/coordinator-fresh': () => service.coordinator.fresh(),
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/issue-chat-stop': () => service.issueChats.stop(value),
+    '/api/issue-cleanup-preview': () => previewIssueCleanup(service, value.issueId, value.resolution),
+    '/api/issue-cleanup-retry': () => retryIssueCleanup(service, value.issueId),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),
@@ -107,7 +110,15 @@ async function mutation(service, path, value, owner) {
     '/api/find-worker': () => service.findConnection(value.issueId, value.state, value.basis),
     '/api/connect-worker': () => service.connectWorker(value.issueId, value.state, value.basis, value.link),
     '/api/issue-decision': () =>
-      service.decideIssue(value.issueId, value.state, value.kind, value.basis, value.reason, value.resolution),
+      service.decideIssue(
+        value.issueId,
+        value.state,
+        value.kind,
+        value.basis,
+        value.reason,
+        value.resolution,
+        value.cleanup
+      ),
     '/api/check-readiness': () => service.checkReadiness(value.issueId, value.state),
     '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),
     '/api/progress-start': () => service.progressStart(value.token, value.humanApproved),

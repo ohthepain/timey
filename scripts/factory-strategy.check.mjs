@@ -31,6 +31,10 @@ function fixture(t) {
     remote: 'origin',
     target: 'main',
   });
+  const remote = join(queue.root, '.issues/target.git');
+  queue.git('init', '--bare', '-q', remote);
+  queue.git('remote', 'add', 'origin', remote);
+  queue.git('push', 'origin', `${queue.git('rev-parse', 'HEAD')}:refs/heads/main`);
   const service = new FactoryUI(queue.root);
   t.after(() => service.close());
   service.ownServer = () => {};
@@ -1075,7 +1079,27 @@ test('start requires current scope and explicit strategy permission; selecting o
   assert.equal(f.service.store.runs.length, 0);
 });
 
-test('an unreviewed starting commit is shown and blocks before issue work while preserving the checkout', async (t) => {
+test('a new issue starts from freshly fetched target while preserving main checkout commits', async (t) => {
+  const f = fixture(t);
+  writeFileSync(join(f.queue.root, 'unpublished.js'), 'export const privateWork = true;\n');
+  git(f.queue.root, 'add', 'unpublished.js');
+  git(f.queue.root, 'commit', '-qm', 'unpublished coordinator work');
+  const coordinatorHead = git(f.queue.root, 'rev-parse', 'HEAD');
+
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+
+  const work = f.service.lifecycleRuns[f.issue.id].work;
+  const target = git(f.queue.root, 'rev-parse', 'refs/remotes/origin/main');
+  assert.equal(work.base, target);
+  assert.equal(git(work.checkout, 'merge-base', 'HEAD', target), target);
+  assert.equal(git(work.checkout, 'branch', '--show-current'), work.branch);
+  assert.equal(existsSync(join(work.checkout, 'unpublished.js')), false);
+  assert.equal(git(f.queue.root, 'rev-parse', 'HEAD'), coordinatorHead);
+  assert.equal(readFileSync(join(f.queue.root, 'unpublished.js'), 'utf8'), 'export const privateWork = true;\n');
+});
+
+test('a new issue excludes unapproved coordinator commits and preserves the main checkout', async (t) => {
   const f = fixture(t);
   const target = git(f.queue.root, 'rev-parse', 'HEAD');
   writeFileSync(join(f.queue.root, 'earlier-fix.js'), 'export const earlier = true;\n');
@@ -1086,21 +1110,20 @@ test('an unreviewed starting commit is shown and blocks before issue work while 
     work.targetRevision = target;
     return false;
   };
+  const provider = f.service.strategyProvider();
+  const ready = provider.ready;
+  provider.ready = async (...args) => ({ ...(await ready(...args)), target });
+  f.service.strategyProvider = () => provider;
 
   startIssueStrategy(f.service, f.input());
   await f.service.lifecycleTasks.get(f.issue.id);
 
   const record = f.service.lifecycleRuns[f.issue.id];
-  assert.equal(record.status, 'blocked');
-  assert.match(record.summary, new RegExp(earlier));
-  assert.match(record.summary, /Fix a separate issue/);
-  assert.match(record.summary, /earlier-fix\.js/);
-  assert.match(record.summary, /Include commit .* intentionally/);
-  assert.match(record.summary, /stop here and leave the checkout unchanged/);
-  assert.equal(f.counts().calls, 0);
-  assert.equal(f.counts().checks, 0);
-  assert.ok(existsSync(join(record.work.inclusionCheck.evidencePath)));
-  assert.equal(git(record.work.checkout, 'rev-parse', 'HEAD'), earlier);
+  assert.equal(record.status, 'handed-off', record.summary);
+  assert.ok(record.work.startingInclusion.commits.some((commit) => commit.revision === earlier));
+  assert.equal(existsSync(join(record.work.checkout, 'earlier-fix.js')), false);
+  assert.equal(f.counts().calls, 1);
+  assert.equal(git(f.queue.root, 'rev-parse', 'HEAD'), earlier);
 });
 
 test('an explicit commit-specific dependency reason permits intended earlier work', async (t) => {
@@ -1126,8 +1149,8 @@ test('an explicit commit-specific dependency reason permits intended earlier wor
 
   const record = f.service.lifecycleRuns[f.issue.id];
   assert.equal(record.status, 'handed-off', record.summary);
-  assert.equal(record.work.inclusionCheck.authorization[0].revision, dependency);
-  assert.match(record.work.inclusionCheck.authorization[0].reason, /required by the selected issue/);
+  assert.equal(record.work.startingInclusion.included[0].source, dependency);
+  assert.match(record.work.startingInclusion.included[0].reason, /required by the selected issue/);
   assert.equal(record.work.inclusionCheck.phase, 'PR publication');
   assert.equal(f.counts().calls, 1);
 });
