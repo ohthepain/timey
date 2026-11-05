@@ -645,10 +645,54 @@
       }
       .issue-sidebar h2 {
         font-size: 22px;
+        margin: 0;
+      }
+      .issue-sidebar-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .issue-sidebar-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .issue-sidebar-actions .settings-button {
+        margin-left: 0;
       }
       .issue-sidebar nav {
         display: grid;
         gap: 4px;
+      }
+      .issue-sidebar-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+        gap: 4px;
+      }
+      .issue-sidebar-item.has-drag-handle {
+        grid-template-columns: 32px minmax(0, 1fr);
+      }
+      .issue-sidebar-item .implementation-drag-handle {
+        align-self: center;
+        padding: 4px;
+      }
+      .issue-sidebar-controls {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .issue-sidebar-controls .queue-search,
+      .issue-sidebar-controls select {
+        min-width: 0;
+        width: 100%;
+      }
+      .issue-sidebar-controls .toolbar {
+        gap: 6px;
+      }
+      .issue-sidebar-controls .rail {
+        margin: 8px 0;
       }
       .issue-sidebar-link {
         display: grid;
@@ -1862,6 +1906,10 @@
       function bindQueueFilters() {
         const filter = () => {
           queueFilters.search = $('search').value;
+          if (!$('issues')) {
+            render();
+            return;
+          }
           $('issues').innerHTML = rows(queueIssues());
           queueLifecycleUI.restore($('issues'));
           bindPriorities();
@@ -1873,7 +1921,7 @@
           filter();
         };
         queueSortUI.bind(queueFilters, filter);
-        queueLifecycleUI.bind($('issues'));
+        if ($('issues')) queueLifecycleUI.bind($('issues'));
         bindImplementationOrder();
         $('search').oninput = filter;
         $('search').onkeydown = (event) => {
@@ -1930,13 +1978,13 @@
         }</fieldset></details>${queueEvaluationHistory()}`;
       }
       function issueSidebar(selectedId) {
-        const issues = queueSortUI.sort(data.issues, queueFilters);
-        return `<aside class="issue-sidebar" aria-label="Issue queue"><h2>Issues</h2>${
+        const issues = queueIssues();
+        return `<aside class="issue-sidebar" aria-label="Issue queue"><div class="issue-sidebar-heading"><h2>Issue queue</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div><div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
           issues.length
             ? `<nav aria-label="Issues">${issues
                 .map(
                   (item) =>
-                    `<a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>${esc(item.title || item.id)}</span><small>${esc(item.strategy?.status || item.stage || 'queued')}</small></a>`
+                    `<div class="issue-sidebar-item ${queueFilters.sort === 'implementationOrder' ? 'has-drag-handle' : ''}" data-issue-row="${esc(item.id)}">${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to reorder ${esc(item.title || item.id)}" title="Drag to set implementation order">⠿</button>` : ''}<a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.id)}" aria-label="${esc(item.title || item.id)}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>${esc(item.title || item.id)}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
                 )
                 .join('')}</nav>`
             : '<p class="issue-sidebar-empty">No issues yet.</p>'
@@ -1973,7 +2021,9 @@
         const clearDragFeedback = () => {
           draggedId = null;
           document
-            .querySelectorAll('#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after')
+            .querySelectorAll(
+              '#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after, .issue-sidebar-item.is-dragged, .issue-sidebar-item.drop-before, .issue-sidebar-item.drop-after'
+            )
             .forEach((row) => {
               row.classList.remove('is-dragged', 'drop-before', 'drop-after');
             });
@@ -1983,11 +2033,11 @@
             draggedId = handle.dataset.implementationDrag;
             event.dataTransfer?.setData('text/plain', draggedId);
             if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-            handle.closest('tr')?.classList.add('is-dragged');
+            handle.closest('tr, .issue-sidebar-item')?.classList.add('is-dragged');
           };
           handle.ondragend = clearDragFeedback;
         });
-        document.querySelectorAll('#issues tr[data-issue-row]').forEach((row) => {
+        document.querySelectorAll('#issues tr[data-issue-row], .issue-sidebar-item[data-issue-row]').forEach((row) => {
           row.ondragover = (event) => {
             event.preventDefault();
             if (!draggedId || draggedId === row.dataset.issueRow) return;
@@ -2029,9 +2079,11 @@
               if (ranks.has(issue.id)) issue.implementationOrder = ranks.get(issue.id);
             });
             clearDragFeedback();
-            $('issues').innerHTML = rows(queueIssues());
-            bindPriorities();
-            bindImplementationOrder();
+            if ($('issues')) {
+              $('issues').innerHTML = rows(queueIssues());
+              bindPriorities();
+              bindImplementationOrder();
+            } else render();
             void act(async () => {
               try {
                 await request('implementation-order', { order, basis: data.implementationOrderBasis });
