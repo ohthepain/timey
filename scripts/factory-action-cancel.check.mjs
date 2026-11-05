@@ -77,7 +77,7 @@ test('closing cancels stopped issue actions, preserves completed and shared acti
   };
 
   const current = f.service.snapshot().issues.find((item) => item.id === id);
-  const closed = await f.service.decideIssue(
+  const closed = f.service.decideIssue(
     id,
     current.state,
     'close',
@@ -85,18 +85,16 @@ test('closing cancels stopped issue actions, preserves completed and shared acti
     'No longer relevant.',
     'wont-do'
   );
+  const cleanup = await f.service.issueCleanupTasks.get(id);
   assert.equal(closed.state, 'closed');
-  assert.equal(closed.cancellation.find((item) => item.id === blocked.id).status, 'cancelled');
-  assert.equal(closed.cancellation.find((item) => item.id === shared.id).status, 'preserved');
-  assert.equal(closed.cancellation.find((item) => item.id === strategyActionId).status, 'cancelled');
-  assert.equal(closed.cleanup.status, 'incomplete');
+  assert.equal(f.service.store.runs.find((item) => item.actionId === blocked.id).status, 'cancelled');
+  assert.equal(f.service.store.runs.find((item) => item.actionId === shared.id).status, 'blocked');
+  assert.equal(f.service.lifecycleRuns[id].status, 'cancelled');
+  assert.equal(cleanup.status, 'incomplete');
   assert.ok(calls.some(([method]) => method === 'thread/archive'));
   assert.ok(!calls.some(([, threadId]) => threadId === 'shared-thread'));
   assert.ok(!calls.some(([method, threadId]) => method === 'thread/archive' && threadId === 'active-thread'));
-  assert.equal(
-    closed.cleanup.results.find((item) => item.kind === 'chat' && item.status === 'preserved').status,
-    'preserved'
-  );
+  assert.equal(cleanup.results.find((item) => item.kind === 'chat' && item.status === 'preserved').status, 'preserved');
   const savedWorker = f.service.store.runs.find((item) => item.actionId === blocked.id);
   assert.equal(savedWorker.status, 'cancelled');
   assert.equal(savedWorker.summary, 'Waiting to be resumed.');

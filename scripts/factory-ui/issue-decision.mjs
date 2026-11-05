@@ -38,17 +38,29 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
 }
 
 function finishIssueClosure(service, id, decision, cleanup, resolution) {
-  const cancellation = cancelIssueActionsOnClose(service, id);
-  if (!cleanup && !issueHasChats(service, id)) return { ...decision, cancellation };
-  const cleanupInput = cleanup ? { ...cleanup, resolution } : { selected: [], resolution };
+  cancelIssueActionsOnClose(service, id);
+  if (!cleanup) {
+    if (issueHasChats(service, id)) archiveChatsAfterClose(service, id, resolution);
+    return decision;
+  }
+  const cleanupInput = { ...cleanup, resolution };
   return archiveIssueChatsOnClose(service, id, resolution, cleanup)
-    .then((cleanupResult) => ({ ...decision, cancellation, cleanup: cleanupResult }))
+    .then((cleanupResult) => ({ ...decision, cleanup: cleanupResult }))
     .catch((error) => ({
       ...decision,
-      cancellation,
       cleanup: recordCleanupFailure(service, id, cleanupInput, error),
     }));
 }
+
+function archiveChatsAfterClose(service, id, resolution) {
+  const cleanupInput = { selected: [], resolution };
+  service.issueCleanupTasks ||= new Map();
+  const task = archiveIssueChatsOnClose(service, id, resolution).catch((error) =>
+    recordCleanupFailure(service, id, cleanupInput, error)
+  );
+  service.issueCleanupTasks.set(id, task);
+}
+
 function closureChoice(queue, role, kind, resolution) {
   if (kind === 'reopen') {
     requireThat(['ready-to-close', 'closed'].includes(role), 'This issue is not at final review or closed.');

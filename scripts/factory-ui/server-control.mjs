@@ -220,8 +220,10 @@ function actionCapabilities(run, action, strategy, activeIssue, connected, turn,
 }
 
 function cancellableAction(run, action, strategy, activeIssue, connected, queue) {
-  return actionCanBeCancelled(run, activeIssue, connected) &&
-    (cancelableStrategyRun(run, strategy) || cancelableLedgerAction(run, action, queue));
+  return (
+    actionCanBeCancelled(run, activeIssue, connected) &&
+    (cancelableStrategyRun(run, strategy) || cancelableLedgerAction(run, action, queue))
+  );
 }
 
 function actionCanBeCancelled(run, activeIssue, connected) {

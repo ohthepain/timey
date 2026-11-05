@@ -1030,7 +1030,7 @@ test('an earlier issue resumes with a shared fix from a later merged PR and pres
   assert.equal(upstream.git('show', 'main:feature.js'), 'export const value = 3;');
 });
 
-test('Fixed closure shows the saved strategy failure while another closure reason preserves unfinished work', async (t) => {
+test('Fixed closure shows the saved strategy failure while obsolete closure cancels and retains its work', async (t) => {
   const f = fixture(t);
   f.service.codex.turn = async () =>
     JSON.stringify({
@@ -1065,7 +1065,10 @@ test('Fixed closure shows the saved strategy failure while another closure reaso
   const result = readQueue(f.queue.root).issues[0];
   assert.equal(result.closure.reason, 'obsolete');
   assert.equal(result.accepted_result, undefined);
-  assert.equal(JSON.stringify(record), saved);
+  assert.notEqual(JSON.stringify(record), saved);
+  assert.equal(record.status, 'cancelled');
+  assert.equal(record.work.implementation.outcome, 'blocked');
+  assert.match(record.events.at(-1).message, /Stopped issue action cancelled/);
   assert.deepEqual(f.counts(), calls);
 });
 
