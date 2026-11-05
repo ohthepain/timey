@@ -4,7 +4,11 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { digest } from './factory-ui/common.mjs';
-import { implementationOrder, persistImplementationOrder, readImplementationOrder } from './factory-ui/implementation-order.mjs';
+import {
+  implementationOrder,
+  persistImplementationOrder,
+  readImplementationOrder,
+} from './factory-ui/implementation-order.mjs';
 
 test('implementation order persists, appends new issues, and rejects stale or incomplete writes', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'timey-implementation-order-'));

@@ -21,7 +21,12 @@ const queueSortUI = (() => {
   }
   function directionState(selection) {
     if (selection.sort === 'implementationOrder')
-      return { glyph: '▼', disabled: true, label: 'Implementation order direction is fixed', title: 'Implementation order is fixed' };
+      return {
+        glyph: '▼',
+        disabled: true,
+        label: 'Implementation order direction is fixed',
+        title: 'Implementation order is fixed',
+      };
     const direction = descending(selection) ? 'descending' : 'ascending';
     return {
       glyph: direction === 'descending' ? '▼' : '▲',
@@ -34,7 +39,9 @@ const queueSortUI = (() => {
     return `<option value="${key}" ${selection.sort === key ? 'selected' : ''}>${label}</option>`;
   }
   function controls(selection) {
-    const options = Object.entries(modes).map(([key, label]) => option(key, label, selection)).join('');
+    const options = Object.entries(modes)
+      .map(([key, label]) => option(key, label, selection))
+      .join('');
     const fixed = selection.sort === 'implementationOrder';
     const label = fixed ? 'Implementation order direction is fixed' : directionLabel(selection);
     const title = fixed ? 'Implementation order is fixed' : directionTitle(selection);

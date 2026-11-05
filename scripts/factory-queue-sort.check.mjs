@@ -405,7 +405,10 @@ test('issue navigation follows the visible sort order and has bounded neighbors'
 test('drag handles save visible reordering while preserving filtered issues', async (t) => {
   const { win, fixture, document } = browserFixture(t);
   assert.ok(document.querySelector('[data-implementation-drag="b"]'));
-  assert.equal(document.querySelector('[data-implementation-drag="b"]').getAttribute('aria-label'), 'Drag to reorder Beta');
+  assert.equal(
+    document.querySelector('[data-implementation-drag="b"]').getAttribute('aria-label'),
+    'Drag to reorder Beta'
+  );
   const handle = document.querySelector('[data-implementation-drag="a"]');
   handle.ondragstart({ dataTransfer: { setData() {}, effectAllowed: '' } });
   document.querySelector('[data-issue-row="b"]').ondrop({
