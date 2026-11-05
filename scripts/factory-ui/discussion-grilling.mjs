@@ -32,12 +32,25 @@ export function grillingStage(queue, issue, state = issue.state) {
 }
 export async function beginGrilling(manager, session, stage, input, owner) {
   requireThat(!session.grilling, 'This chat already has an interview. End it before choosing another step.');
+  await pauseIssueWork(manager.service, session.issueId);
   session.grilling = stage;
   session.skill = { ...manager.skill(manager.service.root), temporary: true };
   const text = `Begin a structured grilling interview for ${stage.name} only. Use the attached grilling skill, asking the whole currently answerable frontier in numbered rounds with recommendations. Target step: ${JSON.stringify(stage)}. Use supplied issue context for facts; state missing technical evidence rather than asking the person to find facts or claiming tools ran. Do not mark any stage complete or infer plan approval, test success or acceptance. The interview is temporary until the person reviews and saves selected results.`;
   const result = await manager.turn({ ...input, text }, owner, true);
   return { ...result, stage };
 }
+
+async function pauseIssueWork(service, issueId) {
+  const task = service.lifecycleTasks.get(issueId);
+  if (!task) return;
+  service.pauseLifecycle({ issueId });
+  await task;
+  requireThat(
+    !service.lifecycleTasks.has(issueId),
+    'Issue work is still pausing. Wait for it to stop before starting the grilling interview.'
+  );
+}
+
 const list = { type: 'array', items: { type: 'string' } };
 const summarySchema = {
   type: 'object',
@@ -87,7 +100,8 @@ function summaryIntent(manager, session, issue, result) {
   ].join('\n\n');
   requireThat(text.length <= 8000, 'The summary is too long to save. Ask for a shorter interview summary.');
   const token = randomUUID();
-  const canContinue = continuationAvailable(stage, issue, result);
+  const hasIssueStrategy = Boolean(manager.service.lifecycleRuns[issue.id]?.work);
+  const canContinue = !hasIssueStrategy && continuationAvailable(stage, issue, result);
   const intent = {
     kind: 'stage-record',
     text,

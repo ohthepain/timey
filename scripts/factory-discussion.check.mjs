@@ -241,6 +241,56 @@ test('grilling requires reviewed clicked intent, stays temporary and does not ad
   assert.ok(f.runtimes[0].closed);
 });
 
+test('grilling waits for active issue work to pause and leaves strategy work paused until explicit continue', async (t) => {
+  const f = fixture(t),
+    path = join(f.root, '.issues/20261025-a.md'),
+    original = readFileSync(path),
+    record = {
+      id: 'active-strategy',
+      issueId: f.input.issueId,
+      status: 'running',
+      events: [],
+      attempts: [],
+      work: { strategy: 'full-send' },
+    };
+  saveLifecycle(f.service, record);
+  let finishWork;
+  const task = new Promise((resolve) => {
+    finishWork = resolve;
+  }).finally(() => f.service.lifecycleTasks.delete(f.input.issueId));
+  f.service.lifecycleTasks.set(f.input.issueId, task);
+
+  const intent = f.discussion.prepare({ ...f.input, kind: 'grill' }, f.owner);
+  const grilling = f.discussion.commit({ ...f.input, token: intent.token, clicked: true }, f.owner);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(record.pauseRequested, true);
+  assert.equal(f.calls.length, 0, 'the interview must wait until active work stops');
+
+  saveLifecycle(f.service, record, { status: 'paused', summary: 'Paused for grilling.' });
+  finishWork();
+  await grilling;
+  assert.equal(f.service.lifecycleTasks.has(f.input.issueId), false);
+  assert.equal(f.service.lifecycleRuns[f.input.issueId].status, 'paused');
+
+  await f.discussion.turn({ ...f.input, text: 'Yes, continue only when I click Continue issue.' }, f.owner);
+  f.runtimes[0].ask = async () =>
+    JSON.stringify({
+      decisions: ['Resume only after explicit continue.'],
+      questions: [],
+      answerQuotes: ['Yes, continue only when I click Continue issue.'],
+    });
+  const draft = await f.discussion.summarize(f.input, f.owner);
+  assert.equal(draft.canContinue, false, 'strategy work uses its own Continue issue control');
+  const result = await f.discussion.commit({ ...f.input, token: draft.token, clicked: true }, f.owner);
+  assert.equal(result.recorded, true);
+  assert.equal(f.service.lifecycleRuns[f.input.issueId].status, 'paused');
+  assert.equal(f.service.lifecycleTasks.has(f.input.issueId), false);
+  assert.ok(
+    readFileSync(path, 'utf8').length > original.length,
+    'reviewed grilling is saved only on explicit confirmation'
+  );
+});
+
 test('separate page capabilities, hard expiry and source changes invalidate sessions', async (t) => {
   const f = fixture(t);
   const other = f.discussion.open({ issueId: f.input.issueId }, f.owner);

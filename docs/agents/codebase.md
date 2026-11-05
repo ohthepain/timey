@@ -285,8 +285,10 @@ Issue discussion lives in `scripts/factory-ui/discussion.mjs` (memory-only
 sessions, issue context, expiry and one-use clicked intents),
 `discussion-codex.mjs` (dedicated ephemeral model process),
 `discussion-record.mjs` (guarded selected-output append), and `discussion-ui.js`
-(temporary panel DOM, excluded from generic draft restoration). `http.mjs` exposes
-only fixed discussion operations; `service.mjs` owns shutdown. `skills.mjs` lists
+(temporary panel DOM, excluded from generic draft restoration). `discussion-grilling.mjs`
+pauses and waits for active issue work before grilling and keeps strategy resumption
+behind the explicit Continue issue control. `http.mjs` exposes only fixed discussion
+operations; `service.mjs` owns shutdown. `skills.mjs` lists
 enabled Codex skills and validates selected names before dispatch; the shared
 slash selector and removable chips live in `issue-chat-ui.js`. These modules do not use
 worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).

@@ -269,7 +269,7 @@ const discussionUI = (() => {
         results.hidden = false;
         add('Codex', result.text);
         draft.focus();
-      }, 'Starting the grilling interview…');
+      }, 'Pausing current issue work, if any, before starting the grilling interview…');
     }
     function review(kind, text) {
       run(async () => showPreview(await call('prepare', { kind, text })), 'Preparing the selected action…');
