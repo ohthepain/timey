@@ -549,11 +549,15 @@ it, final acceptance retains its current contents and earlier hash separately;
 unchanged source, plan, behavioral evidence and no outstanding work are still required.
 
 Accept fix and close appears after the issue reaches final review or its saved
-strategy/checklist records completed work. It records explicit acceptance and
-closes in one tap, without a confirmation dialog. The button disables during the
-request and the screen refreshes after success. Close with reason remains available
-for ending work without accepting a fix. Reopen keeps its confirmation and optional
-reason.
+strategy/checklist records completed work. Both closure paths show a confirmation
+with the exact remote/local branches, issue workspace path and estimated storage,
+and linked issue chats. Already deleted resources and failed lookups remain disabled
+and distinguishable. Unmerged work is unchecked by default; dirty, shared and active
+resources are preserved. The server rechecks each selected resource immediately
+before acting and records per-resource results outside the workspace. Issue closure
+still completes if cleanup fails; the issue then shows Cleanup incomplete and a
+bounded Retry cleanup action. Archiving a chat is not reported as disk savings.
+Reopen keeps its confirmation and optional reason.
 
 Older issues already at Final review can be accepted without backfilling stage
 history when the registry records integration and both worker and checked
