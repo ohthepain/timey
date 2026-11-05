@@ -44,9 +44,27 @@ function fixture(t) {
   const create = () => {
     const runtime = {
       begin: async (context) => calls.push(context),
-      ask: async (text, skills) => {
+      ask: async (text, skills, schema) => {
         calls.push(text);
         skillCalls.push(skills);
+        if (schema?.properties?.recommendations)
+          return JSON.stringify({
+            summary: 'One issue-specific improvement.',
+            recommendations: [
+              {
+                title: 'Add a regression check',
+                description: 'Cover the failing case.',
+                reason: 'Prevent recurrence.',
+                verification: 'Run the focused check.',
+              },
+              {
+                title: 'Document the trigger',
+                description: 'Record the trigger condition.',
+                reason: 'Improve diagnosis.',
+                verification: 'Confirm the steps reproduce it.',
+              },
+            ],
+          });
         return 'SYNTHETIC_REPLY';
       },
       close: () => {
@@ -182,6 +200,35 @@ test('temporary discussion lists enabled skills and invokes selected skills with
     },
   ]);
   assert.equal(f.service.store.list(new Map()).length, 0);
+});
+
+test('issue retro runs the installed skill and files only selected recommendations', async (t) => {
+  const f = fixture(t);
+  f.service.codex.ready = async () => {};
+  f.service.codex.call = async () => ({
+    data: [{ skills: [{ name: 'retro', path: f.skillPath, enabled: true, shortDescription: 'Retrospective' }] }],
+  });
+  const captured = [];
+  f.service.captures = {
+    save: async (input) => {
+      captured.push(input);
+      return { issues: [{ id: 'new-issue', title: 'Captured recommendation', state: 'backlog' }] };
+    },
+  };
+  const result = await f.discussion.retro(f.input, f.owner);
+  assert.equal(result.recommendations.length, 2);
+  assert.match(f.calls.at(-1), /Selected issue/);
+  assert.match(f.calls.at(-1), /Saved discussion/);
+  assert.equal(f.skillCalls.at(-1)[0].name, 'retro');
+  const filed = await f.discussion.fileRetro(
+    { ...f.input, selected: [1], requestIds: { 1: '59fc2dd4-5d7c-40a8-b06e-73b5d51ef2ab' } },
+    f.owner
+  );
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].requestId, '59fc2dd4-5d7c-40a8-b06e-73b5d51ef2ab');
+  assert.match(captured[0].description, /Document the trigger/);
+  assert.doesNotMatch(captured[0].description, /Add a regression check/);
+  assert.equal(filed.issues[0].id, 'new-issue');
 });
 
 test('actual guarded report append retains only chosen output and human confirmation; replays rejected', async (t) => {
@@ -427,6 +474,48 @@ test('temporary panel survives redraw without storage, rejects scripted actions 
   ui.mount('two', api);
   assert.equal(document.querySelector('textarea').value, '');
   assert.ok(!document.body.textContent.includes('UNSAVED_DRAFT'));
+  ui.end();
+});
+
+test('issue detail retro opens the temporary panel and displays unchecked recommendation choices', async (t) => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<div id="discussion-slot"></div>', {
+    url: 'http://127.0.0.1/#/issue/one',
+    runScripts: 'outside-only',
+  });
+  t.after(() => dom.window.close());
+  dom.window.eval(
+    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      '\nwindow.chatTest = discussionUI;'
+  );
+  const calls = [];
+  const api = async (path, input) => {
+    calls.push({ path, input });
+    if (path === 'discussion-open') return { session: 'retro-session' };
+    if (path === 'discussion-retro')
+      return {
+        summary: 'One improvement to consider.',
+        recommendations: [
+          {
+            title: 'Add a regression check',
+            description: 'Cover the failing path.',
+            reason: 'Catch recurrence.',
+            verification: 'Run the focused check.',
+          },
+        ],
+      };
+    return { ended: true };
+  };
+  const ui = dom.window.chatTest,
+    document = dom.window.document;
+  ui.mount('one', api, async () => {});
+  await ui.retro();
+  assert.ok(calls.some((call) => call.path === 'discussion-retro'));
+  const choices = document.querySelectorAll('.retro-recommendations input[type=checkbox]');
+  assert.equal(choices.length, 1);
+  assert.equal(choices[0].checked, false);
+  assert.match(document.querySelector('.retro-recommendations').textContent, /Add a regression check/);
   ui.end();
 });
 
