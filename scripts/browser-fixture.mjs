@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { closureReasons } from './factory-ui/closure-reasons.mjs';
 
 // Serve candidate assets with disposable data. No real issue or worker can be changed.
 export function browserFixture(root) {
@@ -79,7 +80,7 @@ export function browserFixture(root) {
     implementationOrderBasis: 'fixture-order-basis',
     actions: [],
     runs: [],
-    closureReasons: [],
+    closureReasons: closureReasons(''),
     sourceClean: true,
     registryPresent: true,
   };
