@@ -879,6 +879,15 @@ project facts come from supplied context and missing evidence remains explicit.
 The temporary runtime retains its existing no-tools/read-only policy. Grilling
 cannot launch workers or perform the technical work being discussed.
 
+The issue page's **Grill me…** action opens Discussion and starts grilling from any
+point. If work is active on that issue, the server requests a pause and waits for
+the current action to finish before starting the interview. The issue remains
+paused after the temporary interview and after saving its reviewed results. For an
+issue strategy, resume with the separate **Continue issue** control; grilling
+never resumes it implicitly. Strategy grilling does not offer lifecycle
+**Save and continue**. Ending or losing the temporary chat also leaves active work
+paused, so the person can review the issue and choose when to continue.
+
 **Review grilling results…** drafts decisions, unresolved questions and selected
 exact quotes from actual user messages. The preview names the issue and stage.
 **Save to [step]** confirms and appends only that reviewed package to the selected
