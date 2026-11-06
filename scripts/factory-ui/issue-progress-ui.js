@@ -144,6 +144,11 @@ const issueProgressUI = (() => {
   function formatPR(number) {
     return Number.isSafeInteger(number) ? `PR #${number}` : 'no PR number';
   }
+  function pullRequest(issue) {
+    const number = issue.strategy?.pr;
+    if (!Number.isSafeInteger(number)) return null;
+    return { url: `https://github.com/${issue.strategy.repository}/pull/${number}`, number };
+  }
   function pullRequestCheckDetails(issue, run, reason) {
     const reported = run.result.pr;
     const saved = issue.strategy.pr;
@@ -315,6 +320,7 @@ Saved issue record: ${formatPR(saved)}`,
     const base = attachTiming(
       {
         milestones: milestones(issue, runs, data),
+        pullRequest: pullRequest(issue),
         lastUpdate: lastKnownUpdate(issue, run),
         command: currentCommand(run),
         running:
