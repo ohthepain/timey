@@ -21,6 +21,12 @@
         color: #fff;
         font-weight: 650;
       }
+      #source-change-banner {
+        padding: 10px 24px;
+        background: #991b1b;
+        color: #fff;
+        font-weight: 650;
+      }
       h1,
       h2,
       h3,
@@ -1481,6 +1487,9 @@
     </style>
   </head>
   <body>
+    <div id="source-change-banner" role="alert" hidden>
+      Source code changed on disk since this page loaded. Reload to see the latest version.
+    </div>
     <div id="connection-banner" role="alert" hidden></div>
     <header>
       <a href="#/queue"><b>Factory</b></a
@@ -1538,6 +1547,7 @@
       let selectedChatIssue = null;
       let refreshing = false,
         refreshPending = false;
+      let sourceChangedAtPageLoad = null;
       const runDetails = new Map();
       const outputHistories = new Map();
       const grillingReplies = new Map();
@@ -1620,6 +1630,9 @@
         }
       }
       function showRuntime(runtime) {
+        const sourceChangeBanner = $('source-change-banner');
+        if (sourceChangedAtPageLoad === null) sourceChangedAtPageLoad = Boolean(runtime.sourceChanged);
+        sourceChangeBanner.hidden = !runtime.sourceChanged || sourceChangedAtPageLoad;
         let status = $('runtime');
         if (!status) {
           status = document.createElement('small');
@@ -1629,7 +1642,7 @@
         status.textContent =
           runtime.mode === 'preview'
             ? 'Preview copy — approvals belong on the real issue'
-            : `Live factory · ${/^[a-f0-9]{7,40}$/i.test(runtime.revision || '') ? '…' + runtime.revision.slice(-4) : 'version unknown'}${runtime.sourceChanged ? ' · source changed' : ''}`;
+            : `Live factory · ${/^[a-f0-9]{7,40}$/i.test(runtime.revision || '') ? '…' + runtime.revision.slice(-4) : 'version unknown'}`;
         status.title =
           'Issue queue: ' + runtime.project + '\nUI source: ' + runtime.checkout + '\nRevision: ' + runtime.revision;
         if (runtime.mode === 'preview' && runtime.authoritativeUrl) {
