@@ -30,6 +30,7 @@ import { humanGuard } from './factory-ui/guard.mjs';
 
 function fixture(t) {
   const { queue, source } = deliveryFixture(t);
+  queue.git('branch', '-M', 'main');
   writeJson(join(queue.root, '.issues/issue-delivery-config.json'), {
     provider: 'github',
     repository: 'fixture/timey',
