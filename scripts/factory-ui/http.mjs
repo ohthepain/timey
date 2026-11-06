@@ -15,7 +15,12 @@ import { randomBytes } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { uiDirectory } from './ui-source.mjs';
 import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
-import { startIssueStrategy, stopIssueStrategy, verifyExternalIssueDelivery } from './issue-strategy.mjs';
+import {
+  mergeIssueStrategyPR,
+  startIssueStrategy,
+  stopIssueStrategy,
+  verifyExternalIssueDelivery,
+} from './issue-strategy.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
 import { previewIssueCleanup, retryIssueCleanup } from './issue-cleanup.mjs';
@@ -93,6 +98,7 @@ async function mutation(service, path, value, owner) {
     },
     '/api/issue-strategy-stop': () => stopIssueStrategy(service, value),
     '/api/issue-strategy-start': () => startIssueStrategy(service, value),
+    '/api/issue-strategy-merge': () => mergeIssueStrategyPR(service, value),
     '/api/issue-strategy-external-delivery': () => verifyExternalIssueDelivery(service, value),
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),

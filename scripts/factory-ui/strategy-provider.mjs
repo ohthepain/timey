@@ -90,6 +90,24 @@ export class StrategyProvider {
   async ready(pr, branch, head) {
     return inspectReadiness(this, pr, branch, head, () => this.canBypassOwnReview(pr));
   }
+  async assertApproved(number, head) {
+    const view = JSON.parse(
+      await this.gh([
+        'pr',
+        'view',
+        String(number),
+        '--repo',
+        this.config.repository,
+        '--json',
+        'reviewDecision,headRefOid',
+      ])
+    );
+    requireThat(view.headRefOid === head, 'The PR head changed. Refresh its checks and approval before merging.');
+    requireThat(
+      view.reviewDecision === 'APPROVED',
+      'GitHub must show an approving review for the current PR head before merging.'
+    );
+  }
   async canBypassOwnReview(pr) {
     const [owner] = this.config.repository.split('/');
     if (this.credentials) {

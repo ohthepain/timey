@@ -6,7 +6,12 @@ import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { git, writeJson } from './factory-ui/common.mjs';
-import { strategyView, startIssueStrategy, verifyExternalIssueDelivery } from './factory-ui/issue-strategy.mjs';
+import {
+  mergeIssueStrategyPR,
+  strategyView,
+  startIssueStrategy,
+  verifyExternalIssueDelivery,
+} from './factory-ui/issue-strategy.mjs';
 import { GitHubAppCredentials, githubAppCredentials } from './factory-ui/github-app.mjs';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -117,6 +122,7 @@ function fixture(t) {
       url: 'https://github.com/fixture/timey/pull/12',
       target: queue.git('rev-parse', 'HEAD'),
     }),
+    assertApproved: async () => true,
     merge: () => {
       merges++;
       return { url: 'https://github.com/fixture/timey/pull/12', revision: 'merge' };
@@ -131,6 +137,16 @@ function fixture(t) {
     approved: true,
   });
   return { queue, source, service, issue, input, counts: () => ({ calls, merges, checks }) };
+}
+
+async function mergeReadyIssue(f) {
+  const work = f.service.lifecycleRuns[f.issue.id].work;
+  return mergeIssueStrategyPR(f.service, {
+    issueId: f.issue.id,
+    runId: work.runId,
+    pr: work.pr,
+    head: work.prHead,
+  });
 }
 
 test('Full Stop uses one chat/branch, checks once and hands off without merge or stage transitions', async (t) => {
@@ -532,7 +548,7 @@ test('a worker cannot introduce a personally published PR into new strategy work
   assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'blocked');
 });
 
-test('Full Send uses the protected provider after checks and keeps acceptance separate', async (t) => {
+test('Full Send offers a separate protected Merge action after checks and keeps acceptance separate', async (t) => {
   const f = fixture(t);
   const guards = [];
   f.service.guard = (...args) => {
@@ -542,6 +558,9 @@ test('Full Send uses the protected provider after checks and keeps acceptance se
   startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
   const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'ready-to-merge', record.summary);
+  assert.equal(f.counts().merges, 0, 'Finishing implementation does not merge automatically.');
+  await mergeReadyIssue(f);
   assert.equal(record.status, 'merged', record.summary);
   assert.equal(f.counts().merges, 1);
   const mergeGuard = guards.find(([, , operation]) => operation === 'merge');
@@ -557,33 +576,46 @@ test('Full Send reaches merge through the installed human-input guard', async (t
   f.service.guard = humanGuard;
   startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'ready-to-merge');
+  await mergeReadyIssue(f);
   const record = f.service.lifecycleRuns[f.issue.id];
   assert.equal(record.status, 'merged', record.summary);
   assert.equal(f.counts().merges, 1);
   assert.equal(readQueue(f.queue.root).issues[0].state, f.issue.state);
 });
 
-test('Full Send Continue checks the new run identity through the installed guard', async (t) => {
+test('Merge records GitHub success and leaves unfinished local target work untouched', async (t) => {
+  const f = fixture(t);
+  const unfinished = join(f.queue.root, 'unfinished-local-work.txt');
+  writeFileSync(unfinished, 'keep this work');
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  await mergeReadyIssue(f);
+  const view = strategyView(f.service, f.issue);
+  assert.equal(view.status, 'merged');
+  assert.equal(view.merge.revision, 'merge');
+  assert.equal(view.localDevUpdate.status, 'not-updated');
+  assert.match(view.localDevUpdate.reason, /unfinished work/);
+  assert.equal(readFileSync(unfinished, 'utf8'), 'keep this work');
+  assert.match(view.summary, /GitHub/);
+  assert.match(view.summary, /Local main update needs attention/);
+});
+
+test('Full Send Merge checks the current run identity through the installed guard', async (t) => {
   const f = fixture(t);
   const guards = [];
   f.service.guard = (...args) => {
     guards.push(args);
     return humanGuard(...args);
   };
-  const provider = f.service.strategyProvider();
-  const merge = provider.merge;
-  provider.merge = async () => {
-    throw Error('Simulated interrupted merge');
-  };
-  f.service.strategyProvider = () => provider;
   const first = startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
-  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'blocked');
-  provider.merge = merge;
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'ready-to-merge');
   const continued = startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
   assert.notEqual(continued.runId, first.runId);
   const record = f.service.lifecycleRuns[f.issue.id];
+  await mergeReadyIssue(f);
   assert.equal(record.status, 'merged', record.summary);
   assert.equal(f.counts().merges, 1);
   assert.equal(f.counts().checks, 1, 'Continue reuses the unchanged checked PR');
@@ -598,8 +630,8 @@ test('Full Send merge guard rejects an invalid strategy identity through the hum
   startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
   const record = f.service.lifecycleRuns[f.issue.id];
-  assert.equal(record.status, 'blocked');
-  assert.match(record.summary, /Exact candidate tuple required/);
+  await assert.rejects(() => mergeReadyIssue(f), /Exact candidate tuple required/);
+  assert.equal(record.status, 'ready-to-merge');
   assert.equal(f.counts().merges, 0);
 });
 
@@ -621,8 +653,8 @@ test('Full Send merge guard still blocks a required human check', async (t) => {
   startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
   const record = f.service.lifecycleRuns[f.issue.id];
-  assert.equal(record.status, 'blocked');
-  assert.match(record.summary, /Human input blocks merge/);
+  await assert.rejects(() => mergeReadyIssue(f), /Human input blocks merge/);
+  assert.equal(record.status, 'ready-to-merge');
   assert.equal(f.counts().merges, 0);
 });
 
@@ -668,7 +700,7 @@ test('verification failure returns real evidence to the same owning chat, enforc
   startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
   const record = f.service.lifecycleRuns[f.issue.id];
-  assert.equal(record.status, 'merged', record.summary);
+  assert.equal(record.status, 'ready-to-merge', record.summary);
   assert.equal(checks, 2);
   assert.notEqual(heads[0], heads[1]);
   assert.equal(prompts.length, 2);
@@ -677,7 +709,7 @@ test('verification failure returns real evidence to the same owning chat, enforc
   assert.ok(prompts[1].prompt.includes(log));
   assert.equal(record.work.repairs[0].attempts.length, 1);
   assert.equal(record.work.blockerRepair.version, 1);
-  assert.equal(f.counts().merges, 1);
+  assert.equal(f.counts().merges, 0);
 });
 
 test('readiness conflicts are repaired and old verification is never used for the changed candidate', async (t) => {
@@ -713,7 +745,7 @@ test('pending CI is observed without spending a code repair or repeating candida
   assert.equal(observations, 3);
 });
 
-test('a timed-out merge is reconciled before retrying and cannot perform a second merge', async (t) => {
+test('a timed-out Merge action reconciles GitHub before retrying and records the local update separately', async (t) => {
   const f = fixture(t);
   const provider = f.service.strategyProvider();
   const ready = provider.ready;
@@ -731,11 +763,15 @@ test('a timed-out merge is reconciled before retrying and cannot perform a secon
   f.service.strategyProvider = () => provider;
   startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'ready-to-merge');
+  await mergeReadyIssue(f);
   const record = f.service.lifecycleRuns[f.issue.id];
   assert.equal(record.status, 'merged', record.summary);
   assert.equal(record.work.merge.revision, 'merged');
   assert.equal(writes, 1);
   assert.equal(f.counts().checks, 1);
+  assert.equal(record.work.localDevUpdate.status, 'updated');
+  assert.equal(record.events.at(-1).message.includes('Local main updated'), true);
 });
 
 test('repeating an approach stops and explicit Continue retains history without waking inactive work', async (t) => {
@@ -1370,6 +1406,19 @@ test('readiness reconciles an externally merged candidate using the latest check
   checks.push({ __typename: 'CheckRun', name: 'security', status: 'COMPLETED', conclusion: 'FAILURE' });
   await assert.rejects(f.provider.ready(f.pr, 'codex/issue-one', 'head'), (error) => error.code === 'ci-failure');
 });
+test('the Merge action requires an approving GitHub review for the exact PR head', async () => {
+  const f = providerFixture();
+  let reviewDecision = 'APPROVED';
+  let headRefOid = 'head';
+  f.provider.gh = async () => JSON.stringify({ reviewDecision, headRefOid });
+  await f.provider.assertApproved(12, 'head');
+  headRefOid = 'new-head';
+  await assert.rejects(() => f.provider.assertApproved(12, 'head'), /head changed/);
+  headRefOid = 'head';
+  reviewDecision = 'REVIEW_REQUIRED';
+  await assert.rejects(() => f.provider.assertApproved(12, 'head'), /approving review/);
+});
+
 test('Full Send refuses unsafe protection and uses an exact-head merge without bypass or auto-merge', async () => {
   const f = providerFixture();
   f.change({ strict: false });
