@@ -3608,11 +3608,16 @@ test('wide issue views keep the queue in a sidebar and show an empty selection p
   const reorderedSidebar = window.document.querySelector('.issue-sidebar');
   assert.ok(reorderedSidebar.querySelector('[data-implementation-drag="20261022-one"]'));
   const selectedIssueLink = sidebar.querySelector('[aria-current="page"]');
-  assert.equal(selectedIssueLink.getAttribute('href'), '#/issue/20261022-one');
-  assert.equal(selectedIssueLink.getAttribute('aria-label'), '20261022-one');
+  assert.equal(selectedIssueLink.getAttribute('href'), '#/issue/1');
+  assert.equal(selectedIssueLink.getAttribute('aria-label'), '#1 Untitled issue');
   assert.ok(window.document.getElementById(selectedIssueLink.getAttribute('aria-describedby')));
   assert.equal(window.document.querySelector('.issue-workspace-content .issue-navigation-row a[href="#/queue"]'), null);
   assert.match(window.document.querySelector('.issue-workspace-content').textContent, /One issue/);
+
+  window.location.hash = '#/issue/1';
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelector('.issue-workspace-content h1').textContent, 'Untitled issue');
+  assert.equal(window.document.querySelector('.issue-workspace-content .issue-number').textContent, '#1');
 
   window.location.hash = '#/queue';
   window.screenTest.show(snapshot);

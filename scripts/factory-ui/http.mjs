@@ -8,6 +8,7 @@ import { toggleRoute } from './route-toggle.mjs';
 import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
+import { readQueue } from './data.mjs';
 import { readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -191,20 +192,21 @@ function page(service, request, response, token, port) {
 }
 function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
-    '/api/native-chat': () => nativeChatStatus(service.root, url.searchParams.get('issue')),
+    '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
     '/api/server-actions': () => service.serverControl.actions(),
     '/api/coordinator': () => service.coordinator.view(),
     '/api/issue-chat': () =>
-      service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
-    '/api/issue-chat-skills': () => service.issueChats.skills(url.searchParams.get('issue')),
+      service.issueChats.view(issue(url.searchParams.get('issue')), url.searchParams.get('before') || ''),
+    '/api/issue-chat-skills': () => service.issueChats.skills(issue(url.searchParams.get('issue'))),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
-    '/api/issue-report': () => service.readSavedReport(url.searchParams.get('issue')),
+    '/api/issue-report': () => service.readSavedReport(issue(url.searchParams.get('issue'))),
     '/api/check-evidence': () =>
-      service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
+      service.readChecklistEvidence(issue(url.searchParams.get('issue')), url.searchParams.get('path')),
     '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
@@ -282,5 +284,11 @@ function deploymentAction(service, path) {
 async function postedAction(service, request, token) {
   if (request.url.startsWith('/api/deployment-')) return deploymentAction(service, request.url);
   requireThat(!service.deploymentDraining, 'The factory UI is restarting. Refresh when it is ready.');
-  return mutation(service, request.url, await body(request), token);
+  const value = await body(request);
+  if (typeof value.issueId === 'string') value.issueId = resolveIssueNumber(service, value.issueId);
+  return mutation(service, request.url, value, token);
+}
+
+function resolveIssueNumber(service, value) {
+  return readQueue(service.root).issues.find((issue) => String(issue.issueNumber) === value)?.id || value;
 }

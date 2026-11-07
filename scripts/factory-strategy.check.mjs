@@ -160,7 +160,7 @@ test('Full Stop uses one chat/branch, checks once and hands off without merge or
   const record = f.service.lifecycleRuns[f.issue.id];
   assert.equal(record.status, 'handed-off', record.summary);
   assert.equal(record.workThreadId, 'owning-chat');
-  assert.equal(record.work.branch, 'codex/issue-' + f.issue.id);
+  assert.equal(record.work.branch, 'codex/issue-' + f.issue.issueNumber);
   assert.equal(readQueue(f.queue.root).issues[0].state, state);
   assert.deepEqual(f.counts(), { calls: 1, merges: 0, checks: 1 });
   assert.equal(readQueue(f.queue.root).actions.length, 0);
@@ -1026,6 +1026,7 @@ test('repair after an externally merged PR uses a linked follow-up branch withou
   await f.service.lifecycleTasks.get(f.issue.id);
   const record = f.service.lifecycleRuns[f.issue.id];
   assert.equal(record.status, 'handed-off', record.summary);
+  assert.match(record.work.branch, /^codex\/issue-1-repair-/);
   assert.match(record.work.branch, /-repair-/);
   assert.equal(record.work.pr, 13);
   assert.equal(record.work.followup.originalPr, 12);
@@ -1202,7 +1203,7 @@ test('an existing dirty issue checkout is preserved and reported before work sta
   mkdirSync(issueWork, { recursive: true });
   const checkout = join(issueWork, f.issue.id);
   const base = git(f.queue.root, 'rev-parse', 'HEAD');
-  const branch = `codex/issue-${f.issue.id}`;
+  const branch = `codex/issue-${f.issue.issueNumber}`;
   git(f.queue.root, 'worktree', 'add', '-b', branch, checkout, base);
   writeFileSync(join(checkout, 'saved-work.js'), 'export const saved = true;\n');
   f.service.lifecycleRuns[f.issue.id] = {
@@ -1241,7 +1242,7 @@ test('an existing issue checkout on a different branch stops with the expected a
   mkdirSync(issueWork, { recursive: true });
   const checkout = join(issueWork, f.issue.id);
   const base = git(f.queue.root, 'rev-parse', 'HEAD');
-  const expectedBranch = `codex/issue-${f.issue.id}`;
+  const expectedBranch = `codex/issue-${f.issue.issueNumber}`;
   const actualBranch = 'codex/fix-another-issue';
   git(f.queue.root, 'worktree', 'add', '-b', actualBranch, checkout, base);
   f.service.lifecycleRuns[f.issue.id] = {

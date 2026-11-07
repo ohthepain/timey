@@ -137,6 +137,11 @@ The relative urgency of an issue, independent of its lifecycle stage. The
 project’s ordered Issue Priorities list defines adjacent levels and colors;
 issues without a saved value use Major. A priority change does not complete work.
 
+**Issue number**:
+A stable sequential local label for a queue issue. It is stored separately from
+the report ID, never reused after deletion, and distinct from a GitHub pull request
+number.
+
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one
 pull request. The default outcome is a draft PR handoff; an explicitly selected

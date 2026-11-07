@@ -504,7 +504,7 @@ function adoptExistingCheckout(work, checkout, legacy, delivery, run) {
 
 function createIssueCheckout(service, record, run, issue, work) {
   work.checkout = join(service.root, '.issues/issue-work', issue.id);
-  work.branch = 'codex/issue-' + issue.id;
+  work.branch = `codex/issue-${issue.issueNumber ?? issue.id}`;
   work.base = run.base;
   mkdirSync(join(service.root, '.issues/issue-work'), { recursive: true });
   requireThat(!existsSync(work.checkout), 'An existing issue checkout needs manual reconciliation.');
@@ -1217,7 +1217,7 @@ async function prepareRepairBranch(service, record, run) {
   if (!pr.merged_at) return;
   requireThat(pr.head.ref === work.branch, 'The merged PR does not match the saved issue branch.');
   requireThat(pr.base.ref === work.config.target, 'The merged PR does not match the saved issue target.');
-  const branch = `codex/issue-${record.issueId}-repair-${run.id.slice(0, 8)}-${work.pr}`;
+  const branch = repairBranchName(service, record, run, work);
   retainMergedPr(work, pr);
   work.followup = { originalPr: work.pr, url: pr.html_url, branch, status: 'preparing' };
   saveLifecycle(service, record);
@@ -1225,6 +1225,11 @@ async function prepareRepairBranch(service, record, run) {
   Object.assign(work, { branch, pr: null, readiness: null, merge: null });
   work.followup.status = 'ready';
   saveLifecycle(service, record);
+}
+
+function repairBranchName(service, record, run, work) {
+  const issueNumber = readQueue(service.root).issues.find((issue) => issue.id === record.issueId)?.issueNumber;
+  return `codex/issue-${issueNumber ?? record.issueId}-repair-${run.id.slice(0, 8)}-${work.pr}`;
 }
 
 function retainMergedPr(work, pr) {

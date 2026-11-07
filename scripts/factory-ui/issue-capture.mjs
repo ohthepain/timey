@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { assessCapture, captureAssessment } from './capture-assessment.mjs';
 import { captureRoute, validateCaptureLifecycle, captureLifecycle } from './capture-routing.mjs';
 import { readQueue } from './data.mjs';
+import { ensureIssueNumbers } from './issue-numbers.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
 
 const requestSchema = z
@@ -72,7 +73,7 @@ export function createCaptures(service, options = {}) {
     const file = join(directory, input.requestId + '.json');
     const hash = captureHash(input);
     const previous = readReceipt(file, hash);
-    if (previous?.complete) return response(previous);
+    if (previous?.complete) return response(previous, service.root);
     const before = captureQueue(service.root);
     validateCaptureLifecycle(before.lifecycle);
     const basis = policyBasis(service.root);
@@ -80,7 +81,7 @@ export function createCaptures(service, options = {}) {
     guard();
     return locked(service.root, () => {
       const receipt = readReceipt(file, hash);
-      if (receipt?.complete) return response(receipt);
+      if (receipt?.complete) return response(receipt, service.root);
       requireThat(
         policyBasis(service.root) === (receipt?.basis || basis),
         'Capture policy changed. Restore it or submit a new draft after reviewing the change.'
@@ -100,7 +101,7 @@ export function createCaptures(service, options = {}) {
       }
       saved.complete = true;
       writeJson(file, saved);
-      return response(saved);
+      return response(saved, service.root);
     });
   }
   return {
@@ -212,10 +213,14 @@ function publishExclusive(path, content) {
     unlinkSync(temp);
   }
 }
-function response(receipt) {
+function response(receipt, root) {
+  const numbers = ensureIssueNumbers(
+    root,
+    receipt.reports.map((report) => report.id)
+  );
   return {
     requestId: receipt.requestId,
-    issues: receipt.reports.map(({ id, title, state }) => ({ id, title, state })),
+    issues: receipt.reports.map(({ id, title, state }) => ({ id, title, state, issueNumber: numbers[id] })),
   };
 }
 

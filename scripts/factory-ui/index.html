@@ -1560,8 +1560,10 @@
           /[&<>"']/g,
           (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
         );
-      const link = (id) =>
-        `<a href="#/issue/${encodeURIComponent(id)}">${esc(data.issues.find((i) => i.id === id)?.title || id)}</a>`;
+      const link = (id) => {
+        const issue = data.issues.find((entry) => entry.id === id);
+        return `<a href="#/issue/${encodeURIComponent(id)}">${esc(issue ? `#${issue.issueNumber} · ${issue.title || 'Untitled issue'}` : id)}</a>`;
+      };
       async function request(path, value) {
         const options =
           value === undefined
@@ -1846,8 +1848,10 @@
       let focusedRunRoute = null;
       function issueRoute() {
         const [path, query = ''] = location.hash.split('?');
+        const rawId = path.startsWith('#/issue/') ? decodeURIComponent(path.slice(8)) : null;
+        const issue = data?.issues.find((entry) => entry.id === rawId || String(entry.issueNumber) === rawId);
         return {
-          id: path.startsWith('#/issue/') ? decodeURIComponent(path.slice(8)) : null,
+          id: issue?.id || rawId,
           stage: new URLSearchParams(query).get('stage'),
           run: new URLSearchParams(query).get('run'),
         };
@@ -1997,7 +2001,7 @@
             ? `<nav aria-label="Issues">${issues
                 .map(
                   (item) =>
-                    `<div class="issue-sidebar-item ${queueFilters.sort === 'implementationOrder' ? 'has-drag-handle' : ''}" data-issue-row="${esc(item.id)}">${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to reorder ${esc(item.title || item.id)}" title="Drag to set implementation order">⠿</button>` : ''}<a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.id)}" aria-label="${esc(item.title || item.id)}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>${esc(item.title || item.id)}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
+                    `<div class="issue-sidebar-item ${queueFilters.sort === 'implementationOrder' ? 'has-drag-handle' : ''}" data-issue-row="${esc(item.id)}">${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to reorder ${esc(item.title || 'Untitled issue')}" title="Drag to set implementation order">⠿</button>` : ''}<a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.issueNumber)}" aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
                 )
                 .join('')}</nav>`
             : '<p class="issue-sidebar-empty">No issues yet.</p>'
@@ -2126,7 +2130,7 @@
         return issues
           .map(
             (i) =>
-              `<tr data-issue-row="${esc(i.id)}" style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(i.id)}" aria-label="Drag to reorder ${esc(i.title || i.id)}" title="Drag to set implementation order">⠿</button>` : ''}${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
+              `<tr data-issue-row="${esc(i.id)}" style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(i.id)}" aria-label="Drag to reorder ${esc(i.title || i.id)}" title="Drag to set implementation order">⠿</button>` : ''}${link(i.id)}<br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
           )
           .join('');
       }
@@ -3434,7 +3438,7 @@
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
-        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || 'Untitled issue')}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted issue-number">#${esc(i.issueNumber)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
           ['progress', 'Progress'],
           ['output', 'Issue output'],
           ['issue', 'Issue thread'],

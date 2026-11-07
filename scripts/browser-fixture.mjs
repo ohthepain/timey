@@ -17,6 +17,12 @@ export function browserFixture(root) {
     color: ['#ff0000', '#eab308', '#22c55e'][index],
     meaning: 'Fixture priority',
   }));
+  const issueNumbers = new Map([
+    ['b', 1],
+    ['a', 2],
+    ['c', 3],
+    ['x', 4],
+  ]);
   const issues = [
     ['b', 'Older urgent issue', 'final', 0, '2026-01-01', '2026-03-01'],
     ['a', 'Newer low issue', 'qa', 2, '2026-02-01', '2026-01-01'],
@@ -24,6 +30,7 @@ export function browserFixture(root) {
     ['x', 'Unknown metadata', 'unknown', -1, 'invalid', null],
   ].map(([id, title, state, index, created, updated]) => ({
     id,
+    issueNumber: issueNumbers.get(id),
     title,
     state,
     created,
