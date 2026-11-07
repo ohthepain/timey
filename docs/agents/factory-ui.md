@@ -568,6 +568,11 @@ still completes if cleanup fails; the issue then shows Cleanup incomplete and a
 bounded Retry cleanup action. Eligible idle chats associated with the issue are
 archived automatically when it closes; active or unknown chats are preserved.
 Archiving a chat is not reported as disk savings.
+When individual cleanup results are recorded, each failed or preserved resource
+has its own retry button; retrying one item leaves the other results intact. If
+cleanup failed before any resource result was recorded, the page explains that
+no individual resource failure was identified. The overall retry remains
+available alongside per-resource retries.
 Reopen keeps its confirmation and optional reason.
 
 Older issues already at Final review can be accepted without backfilling stage

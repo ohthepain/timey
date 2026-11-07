@@ -117,7 +117,7 @@ async function mutation(service, path, value, owner) {
     '/api/issue-cleanup-identities': () => issueCleanupIdentities(service, value.issueId, value.resolution),
     '/api/issue-cleanup-resource': () =>
       previewIssueCleanupResource(service, value.issueId, value.resourceId, value.resolution),
-    '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId),
+    '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId, value.resourceId || null),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),
