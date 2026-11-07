@@ -2602,10 +2602,10 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
   let release,
     posts = 0,
     conversation = 0,
-    previews = 0;
+    identities = 0;
   window.fetch = (url) => {
-    if (url.endsWith('/issue-cleanup-preview')) {
-      previews++;
+    if (url.endsWith('/issue-cleanup-identities')) {
+      identities++;
       return Promise.resolve({ ok: true, json: async () => ({ basis: 'cleanup-basis', resources: [] }) });
     }
     if (url.endsWith('/issue-decision')) {
@@ -2630,7 +2630,7 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
   assert.equal(button.textContent, 'Accept fix and close');
   button.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(previews, 1);
+  assert.equal(identities, 1);
   window.document.getElementById('approve').click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(window.document.querySelector('[data-issue-decision-status]').textContent, /Waiting for the server/);
@@ -2650,9 +2650,11 @@ test('direct closure exposes the exact blocker and enables retry without a model
   snapshot.issues[0].state = 'final';
   window.screenTest.show(snapshot);
   window.fetch = async (url) =>
-    url.endsWith('/issue-cleanup-preview')
+    url.endsWith('/issue-cleanup-identities')
       ? { ok: true, json: async () => ({ basis: 'cleanup-basis', resources: [] }) }
-      : { ok: false, json: async () => ({ error: 'Manual observation timing-check still needs a result.' }) };
+      : url.endsWith('/issue-decision')
+        ? { ok: false, json: async () => ({ error: 'Manual observation timing-check still needs a result.' }) }
+        : { ok: true, json: async () => snapshot };
   window.document.getElementById('confirm').showModal = function () {
     this.open = true;
   };
@@ -2704,10 +2706,15 @@ test('close dialog previews exact cleanup resources and disables already-deleted
       defaultSelected: true,
     },
   ];
-  window.fetch = async (url) => ({
-    ok: true,
-    json: async () => (url.endsWith('/issue-cleanup-preview') ? { basis: 'cleanup-basis', resources } : snapshot),
-  });
+  window.fetch = async (url, options) => {
+    if (url.endsWith('/issue-cleanup-identities'))
+      return { ok: true, json: async () => ({ basis: 'cleanup-basis', resources }) };
+    if (url.endsWith('/issue-cleanup-resource')) {
+      const { resourceId } = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ resource: resources.find((item) => item.id === resourceId) }) };
+    }
+    return { ok: true, json: async () => snapshot };
+  };
   window.document.getElementById('confirm').showModal = function () {
     this.open = true;
   };
