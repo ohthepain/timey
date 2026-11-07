@@ -1232,6 +1232,14 @@ mismatched identity or changed content stop recovery without inferring acceptanc
 replacing a PR, or weakening the required checks. A verified manual merge is
 recorded as delivered while human acceptance remains separate.
 
+Full Send leaves a separate **Merge PR** control after verification. Selecting it
+rechecks GitHub's approving review and required checks against the exact saved
+head before the server merges. Progress records the GitHub merge before attempting
+to update local `dev`; that update runs only when the project checkout is clean
+and already on `dev`, using fast-forward only. If local work exists or the update
+cannot complete, Progress retains the confirmed GitHub result and explains the
+local update outcome. Merge does not close the issue or start cleanup.
+
 ## Create an issue from the list
 
 **Create issue** accepts one required description. Save asks the configured model

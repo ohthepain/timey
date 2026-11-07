@@ -2,8 +2,28 @@
 const issueProgressUI = (() => {
   const activeStatuses = new Set(['preparing', 'running', 'checking', 'inProgress']);
   const stoppedStatuses = new Set(['blocked', 'failed', 'attention']);
-  const completeStatuses = new Set(['completed', 'handed-off', 'merged', 'finished', 'reconciled']);
+  const completeStatuses = new Set(['completed', 'handed-off', 'ready-to-merge', 'merged', 'finished', 'reconciled']);
+  const completedStrategySteps = {
+    'ready-to-merge': 'Full Send complete; PR ready to merge',
+    merged: 'Full Send complete; PR merged',
+  };
+  const completedNextActions = {
+    'ready-to-merge':
+      'Select Merge in Issue strategy. GitHub approval and required checks are rechecked before merging.',
+  };
+  const completedStatuses = { 'ready-to-merge': 'ready to merge' };
   const time = (value) => Date.parse(value || '') || 0;
+  function matchesRun(run, id) {
+    return run.id === id;
+  }
+  function matchesSavedRun(run, strategy, record) {
+    return matchesRun(run, strategy.runId) || matchesRun(run, record.work?.runId);
+  }
+  function isNewerRun(run, strategy, record) {
+    if (!run) return false;
+    if (matchesSavedRun(run, strategy, record)) return false;
+    return time(run.updated || run.created) > time(record.updated);
+  }
   function isIssueWorkRun(run) {
     return run?.kind === 'issue-work';
   }
@@ -254,10 +274,7 @@ Saved issue record: ${formatPR(saved)}`,
         next: 'Wait for the current operation to finish.',
       };
     }
-    const newerRun =
-      run?.id !== strategy.runId &&
-      run?.id !== record.work?.runId &&
-      time(run?.updated || run?.created) > time(record.updated);
+    const newerRun = isNewerRun(run, strategy, record);
     const status = newerRun
       ? run?.status
       : strategy.status === 'queued'
@@ -266,20 +283,19 @@ Saved issue record: ${formatPR(saved)}`,
     const explanation = newerRun ? run?.summary : record.summary || run?.summary;
     if (completeStatuses.has(status)) {
       const step =
-        status === 'merged'
-          ? 'Full Send complete; PR merged'
-          : status === 'handed-off' && record.work
-            ? strategy.strategy === 'full-send'
-              ? 'Review complete; PR ready for review'
-              : 'Full Stop complete; PR ready for review'
-            : record.deliveryHandoff
-              ? 'Draft PR handoff complete'
-              : 'Operation complete';
+        completedStrategySteps[status] ||
+        (status === 'handed-off' && record.work
+          ? strategy.strategy === 'full-send'
+            ? 'Review complete; PR ready for review'
+            : 'Full Stop complete; PR ready for review'
+          : record.deliveryHandoff
+            ? 'Draft PR handoff complete'
+            : 'Operation complete');
       return {
-        status: 'complete',
+        status: completedStatuses[status] || 'complete',
         step,
         explanation: explanation || 'The selected operation has finished.',
-        next: 'Review the result. Issue acceptance remains separate.',
+        next: completedNextActions[status] || 'Review the result. Issue acceptance remains separate.',
       };
     }
     if (['failed', 'attention'].includes(status) || conversation?.status === 'attention')
