@@ -27,6 +27,9 @@ import { gitFixture } from './git-fixture.mjs';
 import { validateSummary } from './factory-ui/checks.mjs';
 import { publishStrategyPR } from './factory-ui/strategy-publication.mjs';
 import { humanGuard } from './factory-ui/guard.mjs';
+import { decideIssueAndCleanup } from './factory-ui/http.mjs';
+import { DeliveryStore } from './issue-delivery-store.mjs';
+import { recoverCancelledStrategyDelivery } from './factory-ui/strategy-delivery-recovery.mjs';
 
 function fixture(t) {
   const { queue, source } = deliveryFixture(t);
@@ -413,6 +416,83 @@ test('external delivery requires a merged PR to the configured target, current t
     throw Error('unexpected call');
   };
   await assert.rejects(provider.inspectExternalDelivery(19), /no longer contains/);
+});
+
+test('Fixed acceptance recovers a merged PR after its strategy run was cancelled', async (t) => {
+  const f = fixture(t);
+  const queue = readQueue(f.queue.root);
+  const issue = queue.issues[0];
+  const run = f.service.store.add({ id: issue.id }, 'issue-work', queue.head);
+  f.service.store.update(run, { issueId: issue.id, status: 'cancelled', summary: 'Old blocker retained.' });
+  f.service.lifecycleRuns[issue.id] = {
+    id: 'cancelled-strategy',
+    issueId: issue.id,
+    status: 'cancelled',
+    events: [],
+    work: {
+      runId: run.id,
+      pr: 19,
+      branch: 'codex/issue-fixture',
+      config: { repository: 'fixture/timey', target: 'main' },
+    },
+  };
+  let inspections = 0;
+  const original = StrategyProvider.prototype.inspectExternalDelivery;
+  StrategyProvider.prototype.inspectExternalDelivery = async () => {
+    inspections++;
+    return {
+      number: 19,
+      url: 'https://github.com/fixture/timey/pull/19',
+      target: 'main',
+      targetRevision: 'target-sha',
+      branch: 'codex/issue-fixture',
+      head: 'merged-head',
+      mergedAt: '2026-11-07T11:00:00Z',
+      mergeCommit: 'merge-sha',
+      checks: [{ name: 'Verify', conclusion: 'SUCCESS' }],
+      files: ['src/feature.ts'],
+    };
+  };
+  t.after(() => (StrategyProvider.prototype.inspectExternalDelivery = original));
+
+  const recovered = await recoverCancelledStrategyDelivery(f.service, issue);
+  assert.ok(recovered, JSON.stringify(f.service.lifecycleRuns[issue.id]));
+
+  const result = await decideIssueAndCleanup(f.service, {
+    issueId: issue.id,
+    state: issue.state,
+    kind: 'close',
+    basis: decisionBasis(queue, issue),
+    resolution: 'fixed',
+  });
+
+  assert.equal(result.state, queue.lifecycle.find((stage) => stage.role === 'closed').state);
+  assert.equal(run.status, 'cancelled');
+  assert.equal(inspections, 1);
+  assert.equal(new DeliveryStore(f.queue.root, issue.id).read().state, 'verified');
+  assert.match(f.service.lifecycleRuns[issue.id].summary, /checks passed.*Ready for your acceptance/);
+});
+
+test('merged strategy recovery rejects a PR that moved to another branch', async (t) => {
+  const f = fixture(t);
+  const issue = readQueue(f.queue.root).issues[0];
+  f.service.lifecycleRuns[issue.id] = {
+    id: 'cancelled-strategy',
+    issueId: issue.id,
+    status: 'cancelled',
+    work: {
+      runId: 'old-run',
+      pr: 19,
+      branch: 'codex/expected',
+      config: { repository: 'fixture/timey', target: 'main' },
+    },
+  };
+  const original = StrategyProvider.prototype.inspectExternalDelivery;
+  StrategyProvider.prototype.inspectExternalDelivery = async () => ({ branch: 'codex/other' });
+  t.after(() => (StrategyProvider.prototype.inspectExternalDelivery = original));
+  await assert.rejects(recoverCancelledStrategyDelivery(f.service, issue), /different branch/);
+  assert.notEqual(new DeliveryStore(f.queue.root, issue.id).read().source, 'merged-strategy-recovery');
+  assert.equal(f.service.lifecycleRuns[issue.id].status, 'cancelled');
 });
 
 test('external delivery is recorded distinctly and never accepts the issue', async (t) => {

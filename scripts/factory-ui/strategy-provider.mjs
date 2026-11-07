@@ -74,6 +74,7 @@ export class StrategyProvider {
       url: pr.html_url,
       target: pr.base.ref,
       targetRevision: comparison.head_sha,
+      branch: pr.head.ref,
       head: pr.head.sha,
       mergedAt: pr.merged_at,
       mergeCommit: pr.merge_commit_sha,
