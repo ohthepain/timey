@@ -642,6 +642,110 @@
         align-items: center;
         gap: 8px;
       }
+      .issue-workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .issue-sidebar {
+        display: none;
+      }
+      .issue-sidebar h2 {
+        font-size: 22px;
+        margin: 0;
+      }
+      .issue-sidebar-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .issue-sidebar-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .issue-sidebar-actions .settings-button {
+        margin-left: 0;
+      }
+      .issue-sidebar nav {
+        display: grid;
+        gap: 4px;
+      }
+      .issue-sidebar-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+        gap: 4px;
+      }
+      .issue-sidebar-item.has-drag-handle {
+        grid-template-columns: 32px minmax(0, 1fr);
+      }
+      .issue-sidebar-item .implementation-drag-handle {
+        align-self: center;
+        padding: 4px;
+      }
+      .issue-sidebar-controls {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .issue-sidebar-controls .queue-search,
+      .issue-sidebar-controls select {
+        min-width: 0;
+        width: 100%;
+      }
+      .issue-sidebar-controls .toolbar {
+        gap: 6px;
+      }
+      .issue-sidebar-controls .rail {
+        margin: 8px 0;
+      }
+      .issue-sidebar-link {
+        display: grid;
+        gap: 2px;
+        padding: 9px 10px;
+        border-radius: 6px;
+        color: inherit;
+        text-decoration: none;
+        overflow-wrap: anywhere;
+      }
+      .issue-sidebar-link:hover,
+      .issue-sidebar-link[aria-current='page'] {
+        background: #e2ebe3;
+      }
+      .issue-sidebar-link small,
+      .issue-sidebar-empty {
+        color: #657169;
+      }
+      .issue-empty-selection {
+        margin: 24px 0;
+      }
+      @media (min-width: 1000px) {
+        main:has(.issue-workspace) {
+          max-width: 1600px;
+        }
+        .issue-workspace {
+          grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+          align-items: start;
+          gap: 24px;
+        }
+        .issue-sidebar {
+          display: block;
+          position: sticky;
+          top: 16px;
+          max-height: calc(100vh - 32px);
+          overflow-y: auto;
+          padding-right: 12px;
+          border-right: 1px solid #d3d9d3;
+        }
+        .issue-workspace-content {
+          min-width: 0;
+        }
+        header > a[href='#/queue'],
+        .issue-workspace-content .issue-navigation-row > a[href='#/queue'] {
+          display: none;
+        }
+      }
       .issue-navigation {
         min-width: 36px;
         min-height: 36px;
@@ -1815,6 +1919,10 @@
       function bindQueueFilters() {
         const filter = () => {
           queueFilters.search = $('search').value;
+          if (!$('issues')) {
+            render();
+            return;
+          }
           $('issues').innerHTML = rows(queueIssues());
           queueLifecycleUI.restore($('issues'));
           bindPriorities();
@@ -1826,7 +1934,7 @@
           filter();
         };
         queueSortUI.bind(queueFilters, filter);
-        queueLifecycleUI.bind($('issues'));
+        if ($('issues')) queueLifecycleUI.bind($('issues'));
         bindImplementationOrder();
         $('search').oninput = filter;
         $('search').onkeydown = (event) => {
@@ -1882,6 +1990,19 @@
             .join('') || '<p>No saved assignments. Choose the next issue or discuss the queue.</p>'
         }</fieldset></details>${queueEvaluationHistory()}`;
       }
+      function issueSidebar(selectedId) {
+        const issues = queueIssues();
+        return `<aside class="issue-sidebar" aria-label="Issue queue"><div class="issue-sidebar-heading"><h2>Issue queue</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div><div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
+          issues.length
+            ? `<nav aria-label="Issues">${issues
+                .map(
+                  (item) =>
+                    `<div class="issue-sidebar-item ${queueFilters.sort === 'implementationOrder' ? 'has-drag-handle' : ''}" data-issue-row="${esc(item.id)}">${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to reorder ${esc(item.title || item.id)}" title="Drag to set implementation order">⠿</button>` : ''}<a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.id)}" aria-label="${esc(item.title || item.id)}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>${esc(item.title || item.id)}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
+                )
+                .join('')}</nav>`
+            : '<p class="issue-sidebar-empty">No issues yet.</p>'
+        }</aside>`;
+      }
       const priorityPending = new Set();
       function priorityControls(issue) {
         const info = issue.priorityInfo;
@@ -1913,7 +2034,9 @@
         const clearDragFeedback = () => {
           draggedId = null;
           document
-            .querySelectorAll('#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after')
+            .querySelectorAll(
+              '#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after, .issue-sidebar-item.is-dragged, .issue-sidebar-item.drop-before, .issue-sidebar-item.drop-after'
+            )
             .forEach((row) => {
               row.classList.remove('is-dragged', 'drop-before', 'drop-after');
             });
@@ -1923,11 +2046,11 @@
             draggedId = handle.dataset.implementationDrag;
             event.dataTransfer?.setData('text/plain', draggedId);
             if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-            handle.closest('tr')?.classList.add('is-dragged');
+            handle.closest('tr, .issue-sidebar-item')?.classList.add('is-dragged');
           };
           handle.ondragend = clearDragFeedback;
         });
-        document.querySelectorAll('#issues tr[data-issue-row]').forEach((row) => {
+        document.querySelectorAll('#issues tr[data-issue-row], .issue-sidebar-item[data-issue-row]').forEach((row) => {
           row.ondragover = (event) => {
             event.preventDefault();
             if (!draggedId || draggedId === row.dataset.issueRow) return;
@@ -1969,9 +2092,11 @@
               if (ranks.has(issue.id)) issue.implementationOrder = ranks.get(issue.id);
             });
             clearDragFeedback();
-            $('issues').innerHTML = rows(queueIssues());
-            bindPriorities();
-            bindImplementationOrder();
+            if ($('issues')) {
+              $('issues').innerHTML = rows(queueIssues());
+              bindPriorities();
+              bindImplementationOrder();
+            } else render();
             void act(async () => {
               try {
                 await request('implementation-order', { order, basis: data.implementationOrderBasis });
@@ -3240,7 +3365,7 @@
             ''
           )}</select></label><p class="muted">Continuing preserves saved work and conversation and includes necessary repairs for target updates, merge conflicts, failing tests, formatting and new Fallow findings. The agent pauses for product decisions or permissions. Full Stop publishes a merge-ready PR without merging; Full Send adds an explicit protected Merge control after checks pass. Deployment and human acceptance remain separate. Required checks and real permissions still apply.</p><label>Instruction or answer (optional)<textarea id="strategy-instruction" placeholder="Clarify scope or explain what changed"></textarea></label><button data-strategy-start="${esc(issue.id)}" ${work.active ? 'disabled' : ''}>Continue issue</button>${work.checkout && !work.active && work.status !== 'merged' ? `<button data-strategy-review="${esc(issue.id)}">Run Sol Loop on saved work</button>` : ''}${work.active ? `<button data-strategy-stop="${esc(issue.id)}" data-strategy-run="${esc(work.runId)}">Stop</button>` : ''}${work.strategy === 'full-send' && work.pr && (work.status === 'ready-to-merge' || (work.status === 'merged' && work.merge && !work.localDevUpdate)) ? `<button data-strategy-merge="${esc(issue.id)}" data-strategy-run="${esc(work.runId)}" data-strategy-pr="${esc(work.pr)}" data-strategy-head="${esc(work.prHead)}">${work.status === 'ready-to-merge' ? `Merge PR #${esc(work.pr)} on GitHub` : `Record merge and update local ${esc(work.target)}`}</button>` : ''}<p id="strategy-feedback" role="status"></p>${current ? progress(current) : ''}</section>`;
       }
-      function issue(id) {
+      function issue(id, includeQueueNavigation = true) {
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
@@ -3260,7 +3385,7 @@
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
-        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Accept fix and close</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
           ['progress', 'Progress'],
           ['output', 'Issue output'],
           ['issue', 'Issue thread'],
@@ -3472,7 +3597,12 @@
           return;
         }
         coordinatorUI.update(data);
-        $('app').innerHTML = route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id) : queue();
+        const wideSidebar = window.matchMedia?.('(min-width: 1000px)').matches || false;
+        $('app').innerHTML = wideSidebar
+          ? `<div class="issue-workspace">${issueSidebar(route.id)}<section class="issue-workspace-content">${route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id, false) : '<p class="issue-empty-selection">Please select an issue.</p>'}</section></div>`
+          : route.id
+            ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id)
+            : queue();
         if (route.run && route.id) {
           const selected = data.issues.find((entry) => entry.id === route.id);
           const output = selected && focusedRunOutput(selected);
@@ -4042,6 +4172,10 @@
         if (data) render();
         void refresh();
       };
+      const issueSidebarMedia = window.matchMedia?.('(min-width: 1000px)');
+      issueSidebarMedia?.addEventListener?.('change', () => {
+        if (data) render();
+      });
       refresh();
       setInterval(refresh, 4000);
       setInterval(updateProgressTimers, 1000);
