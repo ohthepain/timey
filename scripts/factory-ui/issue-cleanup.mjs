@@ -301,14 +301,14 @@ function priorCleanupResults(previous) {
   return previous?.results || [];
 }
 
-export async function retryIssueCleanup(service, issueId, prior = null) {
+export async function retryIssueCleanup(service, issueId, prior = null, resourceIdValue = null) {
   const saved = prior || readCleanup(service, issueId);
   requireThat(saved?.status === 'incomplete', 'There is no incomplete cleanup to retry.');
-  return retrySavedCleanup(service, issueId, saved);
+  return retrySavedCleanup(service, issueId, saved, resourceIdValue);
 }
 
-async function retrySavedCleanup(service, issueId, saved) {
-  const retryIds = retryableCleanupIds(saved);
+async function retrySavedCleanup(service, issueId, saved, resourceIdValue = null) {
+  const retryIds = retryableCleanupIds(saved, resourceIdValue);
   const expectedById = new Map(
     (saved.selectedResources || saved.preview?.resources || []).map((item) => [item.id, item])
   );
@@ -361,25 +361,33 @@ function replaceCleanupResult(record, id, result) {
   record.results.push({ ...result, at: new Date().toISOString() });
 }
 
-function retryableCleanupIds(saved) {
-  return saved.results.filter((result) => ['failed', 'preserved'].includes(result.status)).map((result) => result.id);
+function retryableCleanupIds(saved, resourceIdValue = null) {
+  const retryable = saved.results.filter((result) => ['failed', 'preserved'].includes(result.status));
+  if (resourceIdValue !== null) {
+    requireThat(
+      retryable.some((result) => result.id === resourceIdValue),
+      'This cleanup resource is not available to retry.'
+    );
+    return [resourceIdValue];
+  }
+  return retryable.map((result) => result.id);
 }
 
-export function startIssueCleanupRetry(service, issueId) {
+export function startIssueCleanupRetry(service, issueId, resourceIdValue = null) {
   const saved = readCleanup(service, issueId);
   requireThat(saved?.status === 'incomplete', 'There is no incomplete cleanup to retry.');
   requireThat(!service.issueCleanupTasks?.has(issueId), 'Cleanup is already running for this issue.');
-  return launchCleanupRetry(service, issueId, saved);
+  retryableCleanupIds(saved, resourceIdValue);
+  return launchCleanupRetry(service, issueId, saved, resourceIdValue);
 }
 
-function launchCleanupRetry(service, issueId, saved) {
-  const record = beginIssueCleanup(service, issueId, retryInput(saved));
+function launchCleanupRetry(service, issueId, saved, resourceIdValue = null) {
+  const retryInput = cleanupRetryInput(saved, resourceIdValue);
+  const record = beginIssueCleanup(service, issueId, retryInput);
   record.results = saved.results || [];
   persistCleanup(service, record);
   const tasks = cleanupTaskMap(service);
-  const task = retryIssueCleanup(service, issueId, saved).catch((error) =>
-    recordCleanupFailure(service, issueId, retryInput(saved), error)
-  );
+  const task = runCleanupRetry(service, issueId, saved, resourceIdValue, retryInput);
   tasks.set(
     issueId,
     task.finally(() => tasks.delete(issueId))
@@ -387,12 +395,21 @@ function launchCleanupRetry(service, issueId, saved) {
   return { issueId, state: 'closed', cleanup: record };
 }
 
-function retryInput(saved) {
+function cleanupRetryInput(saved, resourceIdValue) {
+  const selected = resourceIdValue === null ? saved.selected : [resourceIdValue];
+  const resources = saved.selectedResources || saved.preview?.resources || [];
+  const resourcesById = new Map(resources.map((item) => [item.id, item]));
   return {
-    selected: saved.selected,
-    selectedResources: saved.selectedResources || saved.preview?.resources || [],
+    selected,
+    selectedResources: selected.map((id) => resourcesById.get(id)),
     resolution: saved.resolution,
   };
+}
+
+function runCleanupRetry(service, issueId, saved, resourceIdValue, input) {
+  return retryIssueCleanup(service, issueId, saved, resourceIdValue).catch((error) =>
+    recordCleanupFailure(service, issueId, input, error)
+  );
 }
 
 function cleanupTaskMap(service) {

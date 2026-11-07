@@ -2827,7 +2827,13 @@
       function cleanupPanel(issue) {
         const cleanup = issue.cleanup;
         if (!cleanup) return '';
-        return `<section class="card" aria-label="Issue cleanup"><h3>${cleanup.status === 'incomplete' ? 'Cleanup incomplete' : 'Cleanup results'}</h3><ul>${(cleanup.results || []).map((item) => `<li>${esc(item.name || item.id)}: ${esc(item.reason || item.status)}</li>`).join('')}</ul>${cleanup.status === 'incomplete' ? `<button data-cleanup-retry="${esc(issue.id)}">Retry cleanup</button>` : ''}</section>`;
+        const results = cleanup.results || [];
+        const list = results.length
+          ? `<ul>${results.map((item) => `<li>${esc(item.name || item.id)}: ${esc(item.reason || item.status)}${cleanup.status === 'incomplete' && ['failed', 'preserved'].includes(item.status) ? ` <button data-cleanup-retry="${esc(issue.id)}" data-cleanup-resource="${esc(item.id)}">Retry this item</button>` : ''}</li>`).join('')}</ul>`
+          : '<p>No individual resource failure was recorded.</p>';
+        const overallRetry =
+          cleanup.status === 'incomplete' ? `<button data-cleanup-retry="${esc(issue.id)}">Retry cleanup</button>` : '';
+        return `<section class="card" aria-label="Issue cleanup"><h3>${cleanup.status === 'incomplete' ? 'Cleanup incomplete' : 'Cleanup results'}</h3>${list}${overallRetry}</section>`;
       }
       async function sendIssueDecision(decision, button) {
         if (decisionRequests.get(decision.issueId)?.pending) return;
@@ -3931,7 +3937,10 @@
             button.disabled = true;
             const issue = data.issues.find((entry) => entry.id === button.dataset.cleanupRetry);
             try {
-              const result = await request('issue-cleanup-retry', { issueId: issue.id });
+              const result = await request('issue-cleanup-retry', {
+                issueId: issue.id,
+                resourceId: button.dataset.cleanupResource,
+              });
               issue.cleanup = result.cleanup;
               render();
               void refresh();
