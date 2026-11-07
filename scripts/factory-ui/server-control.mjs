@@ -37,7 +37,10 @@ export function serverControl(service, restart) {
     ].filter((name) => existsSync(join(service.root, '.issues', name)));
     return {
       actions:
-        Math.max(connected.size, nativeActions(service.codex)) + controllers.length + (service.captures?.active || 0),
+        Math.max(connected.size, nativeActions(service.codex)) +
+        controllers.length +
+        (service.captures?.active || 0) +
+        cleanupActions(service),
       chats: service.discussions.sessions.size,
       approvals: service.codex.requests.size,
       locks,
@@ -112,6 +115,10 @@ export function serverControl(service, restart) {
     allow,
     close: () => clearInterval(timer),
   };
+}
+
+function cleanupActions(service) {
+  return service.issueCleanupTasks?.size || 0;
 }
 
 function actionItems(service) {

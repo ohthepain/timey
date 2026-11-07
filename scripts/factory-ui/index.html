@@ -2711,7 +2711,7 @@
             message: accepted
               ? 'Accepted and closed.'
               : decision.kind === 'close'
-                ? `Issue closed${result.cleanup?.status === 'incomplete' ? '; cleanup incomplete.' : '; cleanup recorded.'}`
+                ? `Issue closed${result.cleanup?.status === 'running' ? '; cleanup is running in the background.' : result.cleanup?.status === 'incomplete' ? '; cleanup incomplete.' : '; cleanup recorded.'}`
                 : 'Issue reopened.',
           });
           render();

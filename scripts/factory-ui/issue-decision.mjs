@@ -44,20 +44,22 @@ function finishIssueClosure(service, id, decision, cleanup, resolution) {
     return decision;
   }
   const cleanupInput = { ...cleanup, resolution };
-  return archiveIssueChatsOnClose(service, id, resolution, cleanup)
-    .then((cleanupResult) => ({ ...decision, cleanup: cleanupResult }))
-    .catch((error) => ({
-      ...decision,
-      cleanup: recordCleanupFailure(service, id, cleanupInput, error),
-    }));
+  runCleanupInBackground(service, id, resolution, cleanupInput);
+  return { ...decision, cleanup: { status: 'running', selected: cleanupInput.selected || [] } };
 }
 
 function archiveChatsAfterClose(service, id, resolution) {
   const cleanupInput = { selected: [], resolution };
+  runCleanupInBackground(service, id, resolution, cleanupInput, true);
+}
+
+function runCleanupInBackground(service, id, resolution, cleanupInput, includeChats = false) {
   service.issueCleanupTasks ||= new Map();
-  const task = archiveIssueChatsOnClose(service, id, resolution).catch((error) =>
-    recordCleanupFailure(service, id, cleanupInput, error)
-  );
+  if (service.issueCleanupTasks.has(id)) return;
+  const task = Promise.resolve()
+    .then(() => archiveIssueChatsOnClose(service, id, resolution, includeChats ? null : cleanupInput))
+    .catch((error) => recordCleanupFailure(service, id, cleanupInput, error))
+    .finally(() => service.issueCleanupTasks.delete(id));
   service.issueCleanupTasks.set(id, task);
 }
 

@@ -46,11 +46,7 @@ async function decideIssueAndCleanup(service, value) {
     value.resolution,
     value.cleanup
   );
-  const pendingCleanup = service.issueCleanupTasks?.get(value.issueId);
-  if (!pendingCleanup || value.cleanup) return decision;
-  const cleanup = await pendingCleanup;
-  service.issueCleanupTasks.delete(value.issueId);
-  return { ...decision, cleanup };
+  return decision;
 }
 
 function authorize(request, token, port) {
