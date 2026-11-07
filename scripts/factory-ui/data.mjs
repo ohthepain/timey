@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { factory } from '../factory-ledger.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { readImplementationOrder } from './implementation-order.mjs';
+import { ensureIssueNumbers } from './issue-numbers.mjs';
 
 const names = {
   'ready-for-grilling': 'Clarify',
@@ -44,8 +45,10 @@ export function readQueue(project) {
   const projected = clarificationLifecycle(root, lifecycle(root));
   const stages = projected.stages,
     ids = inspection.reports.map((r) => r.metadata.id);
+  const issueNumbers = ensureIssueNumbers(root, ids);
   const issues = inspection.reports.map((report) => ({
     ...report.metadata,
+    issueNumber: issueNumbers[report.metadata.id],
     ...(projected.aliases[report.metadata.state]
       ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
       : {}),

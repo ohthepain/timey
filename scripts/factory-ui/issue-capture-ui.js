@@ -69,8 +69,8 @@ const issueCaptureUI = (() => {
     toast.append(message);
     for (const issue of issues) {
       const link = document.createElement('a');
-      link.href = '#/issue/' + encodeURIComponent(issue.id);
-      link.textContent = issue.title;
+      link.href = '#/issue/' + encodeURIComponent(issue.issueNumber);
+      link.textContent = '#' + issue.issueNumber + ' · ' + issue.title;
       link.style.display = 'block';
       toast.append(link);
     }

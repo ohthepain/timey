@@ -4,6 +4,8 @@ import { issueLifecycleView } from './lifecycle-view.mjs';
 import { readinessView } from './readiness.mjs';
 // Polling carries summaries and a bounded tail for the selected issue. Full history is fetched on demand.
 export function queueResponse(snapshot, issueId) {
+  issueId =
+    snapshot.issues.find((issue) => issue.id === issueId || String(issue.issueNumber) === issueId)?.id || issueId;
   const actions = new Set(snapshot.actions.filter((a) => a.issues.includes(issueId)).map((a) => a.id));
   const selected = snapshot.runs.filter((r) => r.issueId === issueId || actions.has(r.actionId)).slice(-10);
   const shown = new Set(selected.map((r) => r.id));

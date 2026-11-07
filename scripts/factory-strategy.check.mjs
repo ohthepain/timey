@@ -1026,6 +1026,7 @@ test('repair after an externally merged PR uses a linked follow-up branch withou
   await f.service.lifecycleTasks.get(f.issue.id);
   const record = f.service.lifecycleRuns[f.issue.id];
   assert.equal(record.status, 'handed-off', record.summary);
+  assert.match(record.work.branch, /^codex\/issue-1-repair-/);
   assert.match(record.work.branch, /-repair-/);
   assert.equal(record.work.pr, 13);
   assert.equal(record.work.followup.originalPr, 12);

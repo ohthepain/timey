@@ -49,7 +49,7 @@ export async function runCommand(project, argv, delivery = new IssueDelivery(pro
     ['complete', () => recordIssueWork(project, command, args[0])],
     ['record-checks', () => recordIssueWork(project, command, args[0])],
   ]);
-  return commands.has(command) ? commands.get(command)() : decisionView(api.inspect(), argv);
+  return commands.has(command) ? commands.get(command)() : decisionView(api.inspect(), argv, project);
 }
 function recordIssueWork(project, operation, path) {
   const helper = fileURLToPath(new URL('./factory-record.mjs', import.meta.url));

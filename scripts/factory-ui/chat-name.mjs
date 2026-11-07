@@ -1,4 +1,5 @@
 import { readQueue } from './data.mjs';
+import { issueNumberLabel } from './issue-numbers.mjs';
 
 // Naming is presentation metadata; a failed rename must not stop approved work.
 export async function nameIssueChat(service, run, threadId) {
@@ -10,8 +11,7 @@ export async function nameIssueChat(service, run, threadId) {
     if (action?.issues.length > 1) return threadId;
     const ids = run.issueId ? [run.issueId] : action?.issues || [];
     if (ids.length !== 1) return threadId;
-    const issueTitle = queue.issues.find((entry) => entry.id === ids[0])?.title?.trim() || ids[0];
-    title = `${roleFor(run)}: ${issueTitle} · active`;
+    title = `${roleFor(run)}: ${issueChatTitle(queue, ids[0])} · active`;
     await service.codex.call('thread/name/set', { threadId, name: title });
     service.store.update(run, { chatTitle: { status: 'named', title } });
   } catch (error) {
@@ -20,10 +20,15 @@ export async function nameIssueChat(service, run, threadId) {
   return threadId;
 }
 
+function issueChatTitle(queue, issueId) {
+  const issue = queue.issues.find((entry) => entry.id === issueId);
+  return `${issueNumberLabel(issue || { id: issueId })} ${issue?.title?.trim() || issueId}`;
+}
+
 export async function setIssueChatTitle(client, root, issueId, threadId, role, status) {
   const issue = readQueue(root).issues.find((entry) => entry.id === issueId);
   if (!issue) return null;
-  const name = `${role}: ${issue.title?.trim() || issue.id} · ${status}`;
+  const name = `${role}: ${issueNumberLabel(issue)} ${issue.title?.trim() || issue.id} · ${status}`;
   await client.call('thread/name/set', { threadId, name });
   return name;
 }
