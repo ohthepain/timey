@@ -3531,13 +3531,14 @@ test('a status read cannot end a newer turn or infer interruption from an unload
   assert.equal(ended.length, 0);
 });
 
-async function activityScreen(t) {
+async function activityScreen(t, wideSidebar = false) {
   const { JSDOM } = await import('jsdom');
   const { service } = lifecycleFixture(t);
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const dom = new JSDOM(html, { url: 'http://127.0.0.1/#/issue/20261022-one', runScripts: 'outside-only' });
   t.after(() => dom.window.close());
   dom.window.scrollTo = () => {};
+  dom.window.matchMedia = (media) => ({ matches: wideSidebar, media, addEventListener() {}, removeEventListener() {} });
   const script = html
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
@@ -3583,6 +3584,41 @@ async function activityScreen(t) {
   dom.window.screenTest.show(snapshot);
   return { window: dom.window, snapshot };
 }
+
+test('wide issue views keep the queue in a sidebar and show an empty selection prompt', async (t) => {
+  const { window, snapshot } = await activityScreen(t, true);
+  const sidebar = window.document.querySelector('.issue-sidebar');
+  assert.ok(sidebar);
+  assert.equal(sidebar.getAttribute('aria-label'), 'Issue queue');
+  assert.equal(sidebar.querySelector('#create-issue')?.getAttribute('aria-label'), 'Create issue');
+  assert.equal(
+    sidebar.querySelector('#model-settings-open')?.getAttribute('aria-label'),
+    'Open model and effort settings'
+  );
+  assert.ok(sidebar.querySelector('[data-implementation-drag="20261022-one"]'));
+  const selectedIssueLink = sidebar.querySelector('[aria-current="page"]');
+  assert.equal(selectedIssueLink.getAttribute('href'), '#/issue/20261022-one');
+  assert.equal(selectedIssueLink.getAttribute('aria-label'), '20261022-one');
+  assert.ok(window.document.getElementById(selectedIssueLink.getAttribute('aria-describedby')));
+  assert.equal(window.document.querySelector('.issue-workspace-content .issue-navigation-row a[href="#/queue"]'), null);
+  assert.match(window.document.querySelector('.issue-workspace-content').textContent, /One issue/);
+
+  window.location.hash = '#/queue';
+  window.screenTest.show(snapshot);
+  assert.match(window.document.querySelector('.issue-workspace-content').textContent, /Please select an issue\./);
+  assert.ok(window.document.querySelector('.issue-sidebar'));
+});
+
+test('narrow issue views retain the existing queue link and full queue page', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  assert.equal(window.document.querySelector('.issue-sidebar'), null);
+  assert.ok(window.document.querySelector('.issue-navigation-row a[href="#/queue"]'));
+
+  window.location.hash = '#/queue';
+  window.screenTest.show(snapshot);
+  assert.match(window.document.querySelector('#app').textContent, /Issue queue/);
+  assert.equal(window.document.querySelector('.issue-sidebar'), null);
+});
 
 test('external delivery shows its PR evidence, partial scope, target recheck and pending acceptance', async (t) => {
   const { window, snapshot } = await activityScreen(t);
