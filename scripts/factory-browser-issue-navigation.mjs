@@ -12,11 +12,11 @@ export default async function issueNavigationBrowserChecks(page) {
   await page.locator('#queue-sort').selectOption('created');
   await page.locator('#queue-direction').click();
   const ascending = await page
-    .locator('#issues tr td:first-child > a')
+    .locator('.issue-sidebar-link')
     .evaluateAll((links) => links.map((link) => decodeURIComponent(link.hash.slice(8))));
   if (JSON.stringify(ascending) !== JSON.stringify(['b', 'a', 'x']))
     throw Error(`Fixture is not ascending by creation date: ${JSON.stringify(ascending)}`);
-  await page.getByRole('link', { name: 'Older urgent issue', exact: true }).click();
+  await page.locator('.issue-sidebar-link[href="#/issue/b"]').click();
   const previous = page.locator('[data-issue-navigation="previous"]');
   const next = page.locator('[data-issue-navigation="next"]');
   await previous.waitFor();
@@ -30,9 +30,10 @@ export default async function issueNavigationBrowserChecks(page) {
   await page.getByRole('heading', { name: 'Newer low issue', exact: true }).waitFor();
   if ((await previous.getAttribute('title')) !== 'Go to: Older urgent issue')
     throw Error('Previous tooltip does not name its destination.');
-  await page.getByRole('link', { name: '← Issue queue', exact: true }).click();
+  await page.evaluate(() => (location.hash = '#/queue'));
+  await page.getByText('Please select an issue.', { exact: true }).waitFor();
   await page.locator('#queue-direction').click();
-  await page.getByRole('link', { name: 'Older urgent issue', exact: true }).click();
+  await page.locator('.issue-sidebar-link[href="#/issue/b"]').click();
   if ((await page.locator('[data-issue-navigation="previous"]').getAttribute('title')) !== 'Go to: Newer low issue')
     throw Error('Previous navigation does not follow descending order.');
   await page.locator('[data-issue-navigation="previous"]').click();

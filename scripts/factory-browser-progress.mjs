@@ -144,7 +144,7 @@ export default async function progressBrowserChecks(page) {
     await refresh();
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('.issue-chat-tabs').screenshot({ path: 'issue-progress-mobile.png' });
+  await page.screenshot({ path: 'issue-progress-mobile.png', fullPage: false });
   if (
     await page
       .locator('[data-chat-panel="progress"]')
@@ -152,7 +152,7 @@ export default async function progressBrowserChecks(page) {
   )
     throw Error('Progress panel overflows on a narrow screen.');
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.locator('.issue-chat-tabs').screenshot({ path: 'issue-progress.png' });
+  await page.screenshot({ path: 'issue-progress.png', fullPage: false });
   for (const pattern of [
     '**/api/queue?**',
     '**/api/issue-chat?**',
