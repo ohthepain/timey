@@ -29,7 +29,7 @@ import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
 import { resumeDelivery } from './delivery-integration.mjs';
 import { redactValue } from './activity.mjs';
-import { issueCleanupRecord } from './issue-cleanup.mjs';
+import { cleanupActionRecords, issueCleanupRecord } from './issue-cleanup.mjs';
 
 import { createSiteReviews } from './site-review.mjs';
 import { createDiscussions } from './discussion.mjs';
@@ -110,6 +110,8 @@ export class FactoryUI {
     this.siteReviews = createSiteReviews(this);
     this.lifecycleRuns = loadLifecycles(this.root);
     this.lifecycleTasks = new Map();
+    this.issueCleanupTasks = new Map();
+    cleanupActionRecords(this.root, true);
     this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
     this.coordinator = createCoordinator(this, options.coordinatorConnection, (id) =>
       this.continueCoordinatorIssue(id)
