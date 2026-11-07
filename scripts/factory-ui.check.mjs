@@ -3676,6 +3676,15 @@ test('Full Send shows a separate Merge control and retains partial local update 
   window.screenTest.show(snapshot);
   let card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
   assert.equal(card.querySelector('[data-strategy-merge]')?.textContent, 'Merge PR #42 on GitHub');
+  assert.equal(card.querySelector('[data-strategy-target-update]')?.textContent, 'Merge latest dev into issue branch');
+  assert.equal(card.querySelector('[data-strategy-target-update]')?.disabled, true);
+  assert.match(card.textContent, /No eligible issue branch is available yet/);
+  snapshot.issues[0].strategy.checkout = '/tmp/issue-checkout';
+  snapshot.issues[0].strategy.status = 'working';
+  window.screenTest.show(snapshot);
+  card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.equal(card.querySelector('[data-strategy-target-update]')?.disabled, false);
+  assert.match(card.textContent, /Conflicts are handled in the owning issue work/);
   assert.equal(card.querySelector('[data-issue-decision]'), null);
   assert.ok(window.document.querySelector('[data-issue-decision="choose-close"]'));
 
@@ -3690,6 +3699,7 @@ test('Full Send shows a separate Merge control and retains partial local update 
   assert.match(card.querySelector('[data-merge-outcome]').textContent, /merge-revision/);
   assert.match(card.querySelector('[data-local-dev-update]').textContent, /unfinished work; it was left untouched/);
   assert.equal(card.querySelector('[data-strategy-merge]'), null);
+  assert.equal(card.querySelector('[data-strategy-target-update]')?.disabled, true);
 });
 
 test('a handed-off draft PR shows manual ownership without merge or maintenance controls', async (t) => {
