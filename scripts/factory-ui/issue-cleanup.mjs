@@ -397,13 +397,17 @@ function launchCleanupRetry(service, issueId, saved, resourceIdValue = null) {
 
 function cleanupRetryInput(saved, resourceIdValue) {
   const selected = resourceIdValue === null ? saved.selected : [resourceIdValue];
-  const resources = saved.selectedResources || saved.preview?.resources || [];
+  const resources = cleanupResourceSnapshots(saved);
   const resourcesById = new Map(resources.map((item) => [item.id, item]));
   return {
     selected,
     selectedResources: selected.map((id) => resourcesById.get(id)),
     resolution: saved.resolution,
   };
+}
+
+function cleanupResourceSnapshots(saved) {
+  return saved.selectedResources || saved.preview?.resources || [];
 }
 
 function runCleanupRetry(service, issueId, saved, resourceIdValue, input) {
