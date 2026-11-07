@@ -9,6 +9,7 @@ import { ScoreView } from '~/components/ScoreView';
 import { useRouter } from '@tanstack/react-router';
 import { musicalNote } from '~/types/beatWrites';
 import { useNavigationStore } from '~/state/NavigationStore';
+import { SettingsModal } from '~/components/SettingsModal';
 
 interface BeatEditorProps {
   beat: Beat | null;
@@ -52,7 +53,6 @@ const BeatEditorForm = (props: BeatEditorProps) => {
   const [error, setError] = useState<string | null>(null);
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [tempName, setTempName] = useState('');
-
   const router = useRouter();
 
   const kickStr = 'k,,,,k,,,';
@@ -193,36 +193,33 @@ const BeatEditorForm = (props: BeatEditorProps) => {
       </div>
       <ScoreView beat={tempBeat} />
 
-      {/* Name Input Dialog */}
-      {showNameDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4">Enter Beat Name</h3>
-            <input
-              type="text"
-              value={tempName}
-              onChange={(e) => setTempName(e.target.value)}
-              className="w-full px-4 py-2 border rounded mb-4"
-              placeholder="Enter beat name"
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowNameDialog(false)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleNameSubmit}
-                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-              >
-                Save
-              </button>
-            </div>
-          </div>
+      <SettingsModal
+        open={showNameDialog}
+        onClose={() => setShowNameDialog(false)}
+        title="Enter Beat Name"
+        overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        panelClassName="bg-white p-6 rounded-lg shadow-xl max-w-md w-full relative"
+      >
+        <input
+          type="text"
+          value={tempName}
+          onChange={(e) => setTempName(e.target.value)}
+          className="w-full px-4 py-2 border rounded mb-4"
+          placeholder="Enter beat name"
+          autoFocus
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => setShowNameDialog(false)}
+            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+          >
+            Cancel
+          </button>
+          <button onClick={handleNameSubmit} className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+            Save
+          </button>
         </div>
-      )}
+      </SettingsModal>
     </div>
   );
 };
