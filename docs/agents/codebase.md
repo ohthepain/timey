@@ -579,8 +579,10 @@ active strategy run, the exact verified head and current PR target; the issue
 label remains display identity only.
 `github-app.mjs` owns repository-scoped installation authentication, in-memory token
 refresh and project-local credential configuration shared with worktree providers.
-The issue screen shows strategy/status and collapses legacy roles into disabled
-history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
+The issue screen shows strategy/status, keeps a configured-target merge action visible
+throughout issue work, and collapses legacy roles into disabled history. The action
+continues the saved strategy in the owning chat so target conflicts stay with that
+work. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
 failures, explicit starts and missing review capabilities.
 
 `strategy-repair.mjs` owns the active run's bounded repair ledger and infrastructure
