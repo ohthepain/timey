@@ -9,7 +9,7 @@ export function strategyClosureResult(service, issue) {
   if (!record?.work) return null;
   const work = record.work;
   const run = service.store.runs.find((entry) => entry.id === work.runId && entry.issueId === issue.id);
-  requireThat(run?.status === 'completed', 'This strategy has no completed, verified result to accept.');
+  requireThat(run?.status === 'completed', incompleteStrategyMessage(record, run));
   const checked = run.result?.checked;
   requireThat(checked?.summaries?.length, 'The strategy result is missing its saved verification summaries.');
   requireThat(
@@ -26,7 +26,7 @@ export function strategyClosureResult(service, issue) {
   for (const path of checked.summaries) {
     const summary = readJson(path);
     try {
-      validateSummary(summary, work.base, checked.tree);
+      validateSummary(summary, work.base, checked.tree, strategyAuditOptions(work));
     } catch (error) {
       const failed = (summary.checks || []).filter((check) => !check.passed).map((check) => check.name);
       throw Error(
@@ -46,4 +46,39 @@ export function strategyClosureResult(service, issue) {
     checkout: work.checkout,
     evidence: [...new Set(paths)].map((path) => ({ path, sha256: digest(readFileSync(path)) })),
   };
+}
+
+function strategyAuditOptions(work) {
+  return { auditPolicy: work.blockerRepair ? 'required' : 'legacy' };
+}
+
+function incompleteStrategyMessage(record, run) {
+  const summary = strategySummary(record, run);
+  return [
+    `Cannot accept this issue as Fixed: ${strategyRunStatus(run)}.`,
+    ...strategyDetails(summary, run),
+    'A completed, verified strategy result is required. Resolve the saved blocker before accepting the fix, or use Close with reason… to end work without accepting a fix.',
+  ].join('\n');
+}
+
+function strategySummary(record, run) {
+  return [run?.summary, run?.result?.summary, record.summary].find(Boolean);
+}
+
+function strategyDetails(summary, run) {
+  return [summary, ...(run?.result?.remaining || [])]
+    .filter(isNonEmptyStrategyDetail)
+    .filter(isAdditionalStrategyDetail(summary));
+}
+
+function isNonEmptyStrategyDetail(text) {
+  return typeof text === 'string' && Boolean(text.trim());
+}
+
+function isAdditionalStrategyDetail(summary) {
+  return (text, index) => index === 0 || !summary?.includes(text);
+}
+
+function strategyRunStatus(run) {
+  return run ? `the saved strategy is ${run.status}` : 'its saved strategy run is missing';
 }

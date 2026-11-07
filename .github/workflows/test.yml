@@ -34,6 +34,8 @@ jobs:
       - name: Verify snapshot
         env:
           AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          TIMEY_FALLOW_ENFORCE: '1'
+          TIMEY_FALLOW_WARNINGS: error
         run: |
           if [ -z "$AUDIT_BASE" ] || ! git rev-parse --verify "$AUDIT_BASE^{commit}" >/dev/null 2>&1; then
             AUDIT_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"

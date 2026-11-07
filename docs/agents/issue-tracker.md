@@ -25,15 +25,14 @@ Record durable terminology and architecture decisions using
 
 The queue remains locally excluded from Git.
 
-## Combined Clarify adapter
+## Clarification and lifecycle roles
 
-The tracked `factory.config.json` enables one factory Clarify stage for both intent
-and technical investigation. Keep the shared `.issues/triage-labels.md` identifiers
-intact: the factory maps the former investigation state to Clarify at read time,
-so existing reports, history, questions and active assignments retain their bytes
-and original meaning. Do not delete or rename the shared Investigate role to make
-the factory view match. Projects without the setting retain the legacy lifecycle.
-Custom stages and their required work remain in the projected route.
+Clarification and grilling are human input, not required lifecycle roles. A
+project may omit `ready-for-grilling` from `.issues/triage-labels.md`; capture
+then validates the remaining explicit transitions and records skips only for
+stages that are present. Existing reports and historical clarification records
+remain readable. Projects that retain the legacy role continue to see it in their
+configured lifecycle until they update their local labels.
 
 ## Factory policy overrides
 

@@ -1,5 +1,7 @@
+import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
+import { changeImplementationOrder } from './implementation-order-route.mjs';
 import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
@@ -13,6 +15,20 @@ import { randomBytes } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { uiDirectory } from './ui-source.mjs';
 import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
+import {
+  mergeIssueStrategyPR,
+  startIssueStrategy,
+  stopIssueStrategy,
+  verifyExternalIssueDelivery,
+} from './issue-strategy.mjs';
+import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
+import { controlServerAction } from './server-action.mjs';
+import {
+  issueCleanupIdentities,
+  previewIssueCleanup,
+  previewIssueCleanupResource,
+  startIssueCleanupRetry,
+} from './issue-cleanup.mjs';
 async function body(request) {
   let text = '';
   for await (const chunk of request) {
@@ -24,6 +40,20 @@ async function body(request) {
 function authenticated(request, token, port) {
   return (request.headers.cookie || '').split(';').some((value) => value.trim() === `timey_factory_${port}=${token}`);
 }
+
+async function decideIssueAndCleanup(service, value) {
+  const decision = await service.decideIssue(
+    value.issueId,
+    value.state,
+    value.kind,
+    value.basis,
+    value.reason,
+    value.resolution,
+    value.cleanup
+  );
+  return decision;
+}
+
 function authorize(request, token, port) {
   requireThat(request.headers.host === `127.0.0.1:${port}`, 'Use the local URL printed by this server.');
   requireThat(
@@ -49,6 +79,9 @@ async function mutation(service, path, value, owner) {
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
     '/api/discussion-open': () => service.discussions.open(value, owner),
     '/api/discussion-turn': () => service.discussions.turn(value, owner),
+    '/api/discussion-skills': () => service.discussions.skills(value, owner),
+    '/api/discussion-retro': () => service.discussions.retro(value, owner),
+    '/api/discussion-retro-file': () => service.discussions.fileRetro(value, owner),
     '/api/discussion-summary': () => service.discussions.summarize(value, owner),
     '/api/discussion-prepare': () => service.discussions.prepare(value, owner),
     '/api/discussion-commit': () => service.discussions.commit(value, owner),
@@ -64,8 +97,10 @@ async function mutation(service, path, value, owner) {
       service.ownServer();
       return prepareNativeChat(service.root, value);
     },
-    '/api/issue-strategy-stop': () => service.stopIssueStrategy(value),
-    '/api/issue-strategy-start': () => service.startIssueStrategy(value),
+    '/api/issue-strategy-stop': () => stopIssueStrategy(service, value),
+    '/api/issue-strategy-start': () => startIssueStrategy(service, value),
+    '/api/issue-strategy-merge': () => mergeIssueStrategyPR(service, value),
+    '/api/issue-strategy-external-delivery': () => verifyExternalIssueDelivery(service, value),
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
@@ -78,16 +113,23 @@ async function mutation(service, path, value, owner) {
     '/api/coordinator-fresh': () => service.coordinator.fresh(),
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/issue-chat-stop': () => service.issueChats.stop(value),
+    '/api/issue-cleanup-preview': () => previewIssueCleanup(service, value.issueId, value.resolution),
+    '/api/issue-cleanup-identities': () => issueCleanupIdentities(service, value.issueId, value.resolution),
+    '/api/issue-cleanup-resource': () =>
+      previewIssueCleanupResource(service, value.issueId, value.resourceId, value.resolution),
+    '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),
+    '/api/server-action': () => controlServerAction(service, value),
     '/api/lifecycle-start': () => service.startLifecycle(value),
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
     '/api/issue-priority': () => changePriority(service, value),
-    '/api/model-settings': () => service.saveModelSettings(value),
-    '/api/issue-model-settings': () => service.saveIssueModelSettings(value),
+    '/api/implementation-order': () => changeImplementationOrder(service, value),
+    '/api/model-settings': () => saveDefaultModelSettings(service, value),
+    '/api/issue-model-settings': () => saveIssueModelSettings(service, value),
     '/api/toggle-route': () => toggleRoute(service, value),
     '/api/skip-plan-checks': () => service.skipPlanChecks(value),
     '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),
@@ -95,8 +137,7 @@ async function mutation(service, path, value, owner) {
       service.decidePlanCheck(value.issueId, value.state, value.checkId, value.status, value.basis, value.result),
     '/api/find-worker': () => service.findConnection(value.issueId, value.state, value.basis),
     '/api/connect-worker': () => service.connectWorker(value.issueId, value.state, value.basis, value.link),
-    '/api/issue-decision': () =>
-      service.decideIssue(value.issueId, value.state, value.kind, value.basis, value.reason, value.resolution),
+    '/api/issue-decision': () => decideIssueAndCleanup(service, value),
     '/api/check-readiness': () => service.checkReadiness(value.issueId, value.state),
     '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),
     '/api/progress-start': () => service.progressStart(value.token, value.humanApproved),
@@ -154,15 +195,19 @@ function read(service, request, response, owner) {
     '/api/native-chat': () => nativeChatStatus(service.root, url.searchParams.get('issue')),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
+    '/api/server-actions': () => service.serverControl.actions(),
     '/api/coordinator': () => service.coordinator.view(),
     '/api/issue-chat': () =>
       service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
+    '/api/issue-chat-skills': () => service.issueChats.skills(url.searchParams.get('issue')),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
     '/api/issue-report': () => service.readSavedReport(url.searchParams.get('issue')),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
     '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),
+    '/api/output-history': () =>
+      outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
   };
   if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(routes[url.pathname]()));
@@ -190,6 +235,7 @@ function readResource(service, request, response, owner) {
     '/queue-sort-ui.js': 'queue-sort-ui.js',
     '/file-link-ui.js': 'file-link-ui.js',
     '/coordinator-ui.js': 'coordinator-ui.js',
+    '/issue-progress-ui.js': 'issue-progress-ui.js',
     '/issue-chat-ui.js': 'issue-chat-ui.js',
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',
@@ -214,6 +260,8 @@ function requireLiveMutation(service, path) {
       [
         '/api/discussion-open',
         '/api/discussion-turn',
+        '/api/discussion-skills',
+        '/api/discussion-retro',
         '/api/discussion-prepare',
         '/api/discussion-summary',
         '/api/discussion-end',

@@ -8,6 +8,24 @@ export function queueHumanInput(queue, issue) {
   const { result } = inspectHumanInput(queue.root, { issues: [issue.id] }, 'view', queue.head, {}, facts);
   return result.issues.find((entry) => entry.id === issue.id) || { requests: [], diagnostics: result.diagnostics };
 }
+
+// One reader belongs to one snapshot. Only presentation with no issue-specific
+// adapter facts shares a helper read; execution guards always read independently.
+export function queueHumanInputReader(queue) {
+  let baseline;
+  return (issue) => {
+    if (readinessFacts(queue, issue).length) return queueHumanInput(queue, issue);
+    baseline ||= inspectHumanInput(
+      queue.root,
+      { issues: queue.issues.map((entry) => entry.id) },
+      'view',
+      queue.head
+    ).result;
+    return (
+      baseline.issues.find((entry) => entry.id === issue.id) || { requests: [], diagnostics: baseline.diagnostics }
+    );
+  };
+}
 function canonical(value) {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
   if (value && typeof value === 'object')

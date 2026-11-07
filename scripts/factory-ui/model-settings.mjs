@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJson, requireThat } from './common.mjs';
 
-export const modelChoices = [
+const modelChoices = [
   {
     id: 'gpt-6-luna',
     name: 'GPT-6 Luna',
@@ -25,7 +25,7 @@ export const modelChoices = [
   },
 ];
 
-export const effortChoices = ['low', 'medium', 'high', 'max'];
+const effortChoices = ['low', 'medium', 'high', 'max'];
 const defaultValues = { model: 'gpt-6-luna', effort: 'medium' };
 const issueSettingsPath = (root) => join(root, '.issues', 'model-settings.json');
 

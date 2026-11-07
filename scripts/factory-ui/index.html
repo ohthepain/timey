@@ -15,6 +15,18 @@
         background: #f4f3ed;
         color: #203b35;
       }
+      #connection-banner {
+        padding: 10px 24px;
+        background: #991b1b;
+        color: #fff;
+        font-weight: 650;
+      }
+      #source-change-banner {
+        padding: 10px 24px;
+        background: #991b1b;
+        color: #fff;
+        font-weight: 650;
+      }
       h1,
       h2,
       h3,
@@ -88,6 +100,7 @@
       .issue-chat-tablist {
         display: flex;
         align-items: end;
+        flex-wrap: wrap;
         gap: 4px;
       }
       .issue-chat-tab {
@@ -99,14 +112,46 @@
         font-weight: 650;
         cursor: pointer;
       }
-      .issue-chat-tab[data-chat-tab='discussion'] { background: #e8f1ed; color: #24453b; }
-      .issue-chat-tab[data-chat-tab='issue'] { background: #f3e9dc; color: #62452d; }
-      .issue-chat-tab[aria-selected='true'] { padding-bottom: 11px; }
-      .issue-chat-panel { display: none; padding: 0 12px 12px; border-radius: 0 8px 8px 8px; }
-      .issue-chat-panel[data-chat-panel='discussion'] { background: #e8f1ed; }
-      .issue-chat-panel[data-chat-panel='issue'] { background: #f3e9dc; }
-      .issue-chat-panel[data-chat-active='true'] { display: block; }
-      .issue-chat-panel > .discussion { margin: 0; }
+      .issue-chat-tab[data-chat-tab='progress'],
+      .issue-chat-panel[data-chat-panel='progress'] {
+        background: #e8eef9;
+        color: #243959;
+      }
+      .issue-chat-tab[data-chat-tab='output'],
+      .issue-chat-panel[data-chat-panel='output'] {
+        background: #eef0f3;
+      }
+      [data-view-id^='issue-progress-'] code {
+        overflow-wrap: anywhere;
+      }
+      .issue-chat-tab[data-chat-tab='discussion'] {
+        background: #e8f1ed;
+        color: #24453b;
+      }
+      .issue-chat-tab[data-chat-tab='issue'] {
+        background: #f3e9dc;
+        color: #62452d;
+      }
+      .issue-chat-tab[aria-selected='true'] {
+        padding-bottom: 11px;
+      }
+      .issue-chat-panel {
+        display: none;
+        padding: 0 12px 12px;
+        border-radius: 0 8px 8px 8px;
+      }
+      .issue-chat-panel[data-chat-panel='discussion'] {
+        background: #e8f1ed;
+      }
+      .issue-chat-panel[data-chat-panel='issue'] {
+        background: #f3e9dc;
+      }
+      .issue-chat-panel[data-chat-active='true'] {
+        display: block;
+      }
+      .issue-chat-panel > .discussion {
+        margin: 0;
+      }
       .discussion .discussion-toggle {
         display: inline-flex;
         align-items: center;
@@ -144,9 +189,106 @@
         font-size: 12px;
         color: #758071;
       }
+      .retro-recommendations {
+        border: 1px solid #d7d9cd;
+        border-radius: 6px;
+        background: #fffefa;
+        padding: 12px;
+        margin: 12px 0;
+      }
+      .retro-recommendations label {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 0;
+        border-top: 1px solid #e3e4dc;
+      }
+      .retro-recommendations label > span,
+      .retro-recommendations label > span > span {
+        display: block;
+        margin-bottom: 5px;
+      }
       .discussion-compose {
         position: relative;
         margin: 0;
+      }
+      .skill-selector {
+        max-height: 260px;
+        overflow: auto;
+        border: 1px solid #d7d9cd;
+        border-radius: 8px;
+        background: #fffefa;
+        box-shadow: 0 8px 24px #203b3520;
+        margin: 0 0 8px;
+        padding: 4px;
+      }
+      .skill-option {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        width: 100%;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        padding: 8px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .skill-option[aria-selected='true'],
+      .skill-option:hover {
+        background: #e9eee5;
+      }
+      .skill-option-icon {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: #dce8dc;
+        color: #284f43;
+        font-size: 18px;
+      }
+      .skill-option-details {
+        display: grid;
+        min-width: 0;
+      }
+      .skill-option-details strong,
+      .skill-option-details > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .skill-option-details > span,
+      .skill-option small {
+        color: #758071;
+        font-size: 12px;
+      }
+      .skill-chips,
+      .message-skills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px 10px 0;
+      }
+      .skill-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #b9d2c3;
+        border-radius: 16px;
+        background: #e4f1e8;
+        color: #244d3d;
+        padding: 4px 9px;
+        font-size: 12px;
+      }
+      button.skill-chip {
+        cursor: pointer;
+      }
+      .skill-chip-remove {
+        font-size: 16px;
+        line-height: 1;
       }
       .discussion-compose textarea {
         display: block;
@@ -265,6 +407,16 @@
       #issues tr + tr td {
         border-top: 2px solid var(--issue-priority, #eab308);
       }
+      #issues tr.is-dragged td {
+        background: #e7f2ec;
+        opacity: 0.58;
+      }
+      #issues tr.drop-before td {
+        box-shadow: inset 0 3px 0 #287a50;
+      }
+      #issues tr.drop-after td {
+        box-shadow: inset 0 -3px 0 #287a50;
+      }
       .issue-priority {
         display: inline-flex;
         align-items: center;
@@ -282,6 +434,17 @@
         padding: 2px 7px;
         min-width: 28px;
         min-height: 28px;
+      }
+      .implementation-drag-handle {
+        cursor: grab;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 0 0.35rem;
+        font-size: 1.1rem;
+      }
+      .implementation-drag-handle:active {
+        cursor: grabbing;
       }
       small,
       .muted {
@@ -426,6 +589,31 @@
       h3 {
         font-size: 18px;
       }
+      .progress-heading,
+      .progress-operation {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .progress-timer {
+        color: #526b63;
+        font:
+          600 14px/1.3 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      @media (max-width: 480px) {
+        .progress-heading,
+        .progress-operation {
+          gap: 8px;
+        }
+        .progress-timer {
+          font-size: 12px;
+        }
+      }
       .actions {
         display: flex;
         gap: 10px;
@@ -453,6 +641,110 @@
         display: flex;
         align-items: center;
         gap: 8px;
+      }
+      .issue-workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .issue-sidebar {
+        display: none;
+      }
+      .issue-sidebar h2 {
+        font-size: 22px;
+        margin: 0;
+      }
+      .issue-sidebar-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .issue-sidebar-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .issue-sidebar-actions .settings-button {
+        margin-left: 0;
+      }
+      .issue-sidebar nav {
+        display: grid;
+        gap: 4px;
+      }
+      .issue-sidebar-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+        gap: 4px;
+      }
+      .issue-sidebar-item.has-drag-handle {
+        grid-template-columns: 32px minmax(0, 1fr);
+      }
+      .issue-sidebar-item .implementation-drag-handle {
+        align-self: center;
+        padding: 4px;
+      }
+      .issue-sidebar-controls {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .issue-sidebar-controls .queue-search,
+      .issue-sidebar-controls select {
+        min-width: 0;
+        width: 100%;
+      }
+      .issue-sidebar-controls .toolbar {
+        gap: 6px;
+      }
+      .issue-sidebar-controls .rail {
+        margin: 8px 0;
+      }
+      .issue-sidebar-link {
+        display: grid;
+        gap: 2px;
+        padding: 9px 10px;
+        border-radius: 6px;
+        color: inherit;
+        text-decoration: none;
+        overflow-wrap: anywhere;
+      }
+      .issue-sidebar-link:hover,
+      .issue-sidebar-link[aria-current='page'] {
+        background: #e2ebe3;
+      }
+      .issue-sidebar-link small,
+      .issue-sidebar-empty {
+        color: #657169;
+      }
+      .issue-empty-selection {
+        margin: 24px 0;
+      }
+      @media (min-width: 1000px) {
+        main:has(.issue-workspace) {
+          max-width: 1600px;
+        }
+        .issue-workspace {
+          grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+          align-items: start;
+          gap: 24px;
+        }
+        .issue-sidebar {
+          display: block;
+          position: sticky;
+          top: 16px;
+          max-height: calc(100vh - 32px);
+          overflow-y: auto;
+          padding-right: 12px;
+          border-right: 1px solid #d3d9d3;
+        }
+        .issue-workspace-content {
+          min-width: 0;
+        }
+        header > a[href='#/queue'],
+        .issue-workspace-content .issue-navigation-row > a[href='#/queue'] {
+          display: none;
+        }
       }
       .issue-navigation {
         min-width: 36px;
@@ -941,6 +1233,52 @@
         padding: 5px 8px;
         font-size: 12px;
       }
+      #server-controls [data-server-count] {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+      }
+      #server-actions-dialog {
+        width: min(760px, calc(100vw - 32px));
+        max-height: min(80vh, 760px);
+        overflow: auto;
+        border: 1px solid #bac7bd;
+        border-radius: 12px;
+        color: #203b35;
+        background: #fffefa;
+        box-shadow: 0 18px 50px #17211e40;
+        padding: 20px;
+      }
+      #server-actions-dialog::backdrop {
+        background: #17211e70;
+      }
+      .server-action-card {
+        border-top: 1px solid #d7d9cd;
+        padding: 14px 0;
+      }
+      .server-action-card h3 {
+        margin-bottom: 6px;
+      }
+      .server-action-links,
+      .server-action-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .server-action-controls textarea {
+        min-width: min(300px, 100%);
+        min-height: 42px;
+      }
+      .server-action-controls small {
+        flex-basis: 100%;
+      }
+      .server-action-controls button:disabled {
+        opacity: 0.55;
+      }
       .actions-switch {
         display: inline-flex;
         align-items: center;
@@ -1119,6 +1457,23 @@
       .queue-role-shell:focus-within .queue-role-help {
         display: block;
       }
+      .cleanup-choice {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin: 10px 0;
+      }
+      .cleanup-choice input {
+        margin-top: 4px;
+      }
+      .cleanup-choice span,
+      .cleanup-choice small {
+        display: block;
+      }
+      .cleanup-choice small {
+        color: #59636e;
+        margin-top: 3px;
+      }
       @keyframes queue-spin {
         to {
           transform: rotate(360deg);
@@ -1132,6 +1487,10 @@
     </style>
   </head>
   <body>
+    <div id="source-change-banner" role="alert" hidden>
+      Source code changed on disk since this page loaded. Reload to see the latest version.
+    </div>
+    <div id="connection-banner" role="alert" hidden></div>
     <header>
       <a href="#/queue"><b>Factory</b></a
       ><span>Issue queue</span><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
@@ -1176,6 +1535,7 @@
     <script src="/queue-sort-ui.js"></script>
     <script src="/coordinator-ui.js"></script>
     <script src="/file-link-ui.js"></script>
+    <script src="/issue-progress-ui.js"></script>
     <script src="/issue-chat-ui.js"></script>
     <script src="/discussion-ui.js"></script>
     <script src="/site-review-ui.js"></script>
@@ -1183,11 +1543,15 @@
       let data,
         busy = false,
         selection,
-        selectedChatTab = 'discussion';
+        selectedChatTab = 'progress';
       let selectedChatIssue = null;
       let refreshing = false,
         refreshPending = false;
+      let sourceChangedAtPageLoad = null;
       const runDetails = new Map();
+      const outputHistories = new Map();
+      const grillingReplies = new Map();
+      let progressUnavailable = false;
       const approvalStates = new Map();
       const progressRequests = new Map();
       const $ = (id) => document.getElementById(id);
@@ -1224,6 +1588,10 @@
             issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
           ]);
           data = { ...snapshot, conversation };
+          progressUnavailable = false;
+          $('connection-banner').hidden = true;
+          $('connection').hidden = false;
+          updateProgressView();
           coordinatorUI.update(data);
           showRuntime(runtime);
           if (runtime.server) serverControlUI.show(runtime.server, request);
@@ -1245,17 +1613,26 @@
             refreshPending = false;
           }
         } catch (e) {
+          progressUnavailable = true;
+          updateProgressView();
           if (await serverControlUI.reconnect(request)) {
+            $('connection-banner').hidden = true;
+            $('connection').hidden = false;
             $('connection').textContent = 'Reconnecting after server restart…';
             return;
           }
           $('error').textContent = e.message;
-          $('connection').textContent = 'Connection needs attention';
+          $('connection-banner').textContent = 'Connection needs attention';
+          $('connection-banner').hidden = false;
+          $('connection').hidden = true;
         } finally {
           refreshing = false;
         }
       }
       function showRuntime(runtime) {
+        const sourceChangeBanner = $('source-change-banner');
+        if (sourceChangedAtPageLoad === null) sourceChangedAtPageLoad = Boolean(runtime.sourceChanged);
+        sourceChangeBanner.hidden = !runtime.sourceChanged || sourceChangedAtPageLoad;
         let status = $('runtime');
         if (!status) {
           status = document.createElement('small');
@@ -1265,7 +1642,7 @@
         status.textContent =
           runtime.mode === 'preview'
             ? 'Preview copy — approvals belong on the real issue'
-            : `Live factory · ${/^[a-f0-9]{7,40}$/i.test(runtime.revision || '') ? '…' + runtime.revision.slice(-4) : 'version unknown'}${runtime.sourceChanged ? ' · source changed' : ''}`;
+            : `Live factory · ${/^[a-f0-9]{7,40}$/i.test(runtime.revision || '') ? '…' + runtime.revision.slice(-4) : 'version unknown'}`;
         status.title =
           'Issue queue: ' + runtime.project + '\nUI source: ' + runtime.checkout + '\nRevision: ' + runtime.revision;
         if (runtime.mode === 'preview' && runtime.authoritativeUrl) {
@@ -1463,14 +1840,16 @@
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
+        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive && !issueRoute().id ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
       let focusedStageRoute = null;
+      let focusedRunRoute = null;
       function issueRoute() {
         const [path, query = ''] = location.hash.split('?');
         return {
           id: path.startsWith('#/issue/') ? decodeURIComponent(path.slice(8)) : null,
           stage: new URLSearchParams(query).get('stage'),
+          run: new URLSearchParams(query).get('run'),
         };
       }
       function focusLinkedStage() {
@@ -1489,7 +1868,7 @@
         focusedStageRoute = location.hash;
       }
       let queueRouteMessage = '';
-      const queueFilters = { search: '', roles: new Map(), sort: 'lastProgress', direction: 'desc' };
+      const queueFilters = { search: '', roles: new Map(), sort: 'implementationOrder', direction: 'desc' };
       function closedIssueState(state) {
         return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
       }
@@ -1540,9 +1919,14 @@
       function bindQueueFilters() {
         const filter = () => {
           queueFilters.search = $('search').value;
+          if (!$('issues')) {
+            render();
+            return;
+          }
           $('issues').innerHTML = rows(queueIssues());
           queueLifecycleUI.restore($('issues'));
           bindPriorities();
+          bindImplementationOrder();
           refreshRoleCounts();
         };
         const applySearch = (event) => {
@@ -1550,7 +1934,8 @@
           filter();
         };
         queueSortUI.bind(queueFilters, filter);
-        queueLifecycleUI.bind($('issues'));
+        if ($('issues')) queueLifecycleUI.bind($('issues'));
+        bindImplementationOrder();
         $('search').oninput = filter;
         $('search').onkeydown = (event) => {
           if (event.key === 'Enter') applySearch(event);
@@ -1564,26 +1949,59 @@
       }
       function roleFilters() {
         return data.lifecycle
+          .filter(visibleLifecycleStage)
           .map((stage) => {
             const selected = roleSelected(stage);
             return `<label class="role-filter"><input type="checkbox" data-role-filter="${esc(stage.state)}" aria-label="${esc(stage.name)}" ${selected ? 'checked' : ''}>${esc(stage.name)} <b>${roleCount(stage)}</b></label>`;
           })
           .join('');
       }
+      function queueEvaluationHistory() {
+        const evaluations = data.runs.filter((run) => run.kind === 'evaluation');
+        const current = evaluations.at(-1);
+        if (!current) return '<h2>Current decision and next action</h2><p>No selections made yet.</p>';
+        const decision = current.result?.summary || current.displaySummary || current.summary;
+        const nextAction = current.result?.next_step
+          ? esc(current.result.next_step)
+          : current.result?.next_issue_id
+            ? `Continue with ${link(current.result.next_issue_id)}.`
+            : current.status === 'completed'
+              ? 'No next action was recorded.'
+              : `This selection is ${statusLabel(current.status)}.`;
+        const actionLabel =
+          {
+            work: 'Work',
+            reconcile: 'Update the issue record',
+            question: 'Answer a question',
+            blocked: 'Blocked',
+          }[current.result?.next_action] || statusLabel(current.status);
+        const prior = evaluations
+          .slice(0, -1)
+          .reverse()
+          .map((run) => progress(run, false))
+          .join('');
+        return `<h2>Current decision and next action</h2><section class="card queue-decision" data-current-evaluation="${esc(current.id)}"><span class="badge">${esc(actionLabel)}</span><p><strong>Current decision:</strong> ${esc(decision || 'No decision summary recorded.')}</p><p><strong>Next action:</strong> ${nextAction}</p></section><details class="queue-history"><summary>History and diagnostics</summary>${prior || '<p>No older evaluations.</p>'}<h3>Current evaluation diagnostics</h3>${progress(current, false)}</details>`;
+      }
       function queue() {
-        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><p class="muted">Work runs by issue strategy. Scheduling uses priority, then oldest eligible issue.</p><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
+        return `<p class="muted">${esc(data.root)}</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><p class="muted">Drag issues to set implementation order. The scheduler works from top to bottom, regardless of priority.</p><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
             .join('') || '<p>No saved assignments. Choose the next issue or discuss the queue.</p>'
-        }</fieldset></details><h2>Queue selections</h2>${
-          data.runs
-            .filter((r) => r.kind === 'evaluation')
-            .slice()
-            .reverse()
-            .map((run) => progress(run, false))
-            .join('') || '<p>No selections made yet.</p>'
-        }`;
+        }</fieldset></details>${queueEvaluationHistory()}`;
+      }
+      function issueSidebar(selectedId) {
+        const issues = queueIssues();
+        return `<aside class="issue-sidebar" aria-label="Issue queue"><div class="issue-sidebar-heading"><h2>Issue queue</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div><div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
+          issues.length
+            ? `<nav aria-label="Issues">${issues
+                .map(
+                  (item) =>
+                    `<div class="issue-sidebar-item ${queueFilters.sort === 'implementationOrder' ? 'has-drag-handle' : ''}" data-issue-row="${esc(item.id)}">${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to reorder ${esc(item.title || item.id)}" title="Drag to set implementation order">⠿</button>` : ''}<a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.id)}" aria-label="${esc(item.title || item.id)}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>${esc(item.title || item.id)}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
+                )
+                .join('')}</nav>`
+            : '<p class="issue-sidebar-empty">No issues yet.</p>'
+        }</aside>`;
       }
       const priorityPending = new Set();
       function priorityControls(issue) {
@@ -1610,6 +2028,90 @@
           };
         });
       }
+      function bindImplementationOrder() {
+        if (queueFilters.sort !== 'implementationOrder') return;
+        let draggedId = null;
+        const clearDragFeedback = () => {
+          draggedId = null;
+          document
+            .querySelectorAll(
+              '#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after, .issue-sidebar-item.is-dragged, .issue-sidebar-item.drop-before, .issue-sidebar-item.drop-after'
+            )
+            .forEach((row) => {
+              row.classList.remove('is-dragged', 'drop-before', 'drop-after');
+            });
+        };
+        document.querySelectorAll('[data-implementation-drag]').forEach((handle) => {
+          handle.ondragstart = (event) => {
+            draggedId = handle.dataset.implementationDrag;
+            event.dataTransfer?.setData('text/plain', draggedId);
+            if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+            handle.closest('tr, .issue-sidebar-item')?.classList.add('is-dragged');
+          };
+          handle.ondragend = clearDragFeedback;
+        });
+        document.querySelectorAll('#issues tr[data-issue-row], .issue-sidebar-item[data-issue-row]').forEach((row) => {
+          row.ondragover = (event) => {
+            event.preventDefault();
+            if (!draggedId || draggedId === row.dataset.issueRow) return;
+            const bounds = row.getBoundingClientRect();
+            const after = bounds.height > 0 && event.clientY >= bounds.top + bounds.height / 2;
+            row.classList.toggle('drop-before', !after);
+            row.classList.toggle('drop-after', after);
+          };
+          row.ondragleave = (event) => {
+            if (row.contains(event.relatedTarget)) return;
+            row.classList.remove('drop-before', 'drop-after');
+          };
+          row.ondrop = (event) => {
+            event.preventDefault();
+            const source = event.dataTransfer?.getData('text/plain') || draggedId;
+            const destination = row.dataset.issueRow;
+            if (!source || source === destination) {
+              clearDragFeedback();
+              return;
+            }
+            const visible = queueIssues().map((issue) => issue.id);
+            const from = visible.indexOf(source),
+              to = visible.indexOf(destination);
+            if (from < 0 || to < 0) {
+              clearDragFeedback();
+              return;
+            }
+            const [moved] = visible.splice(from, 1);
+            const bounds = row.getBoundingClientRect();
+            const after = bounds.height > 0 && event.clientY >= bounds.top + bounds.height / 2;
+            visible.splice(visible.indexOf(destination) + (after ? 1 : 0), 0, moved);
+            const visibleSet = new Set(visible);
+            let next = 0;
+            const order = data.implementationOrder.map((id) => (visibleSet.has(id) ? visible[next++] : id));
+            const priorOrder = data.implementationOrder;
+            const ranks = new Map(order.map((id, index) => [id, index]));
+            data.implementationOrder = order;
+            data.issues.forEach((issue) => {
+              if (ranks.has(issue.id)) issue.implementationOrder = ranks.get(issue.id);
+            });
+            clearDragFeedback();
+            if ($('issues')) {
+              $('issues').innerHTML = rows(queueIssues());
+              bindPriorities();
+              bindImplementationOrder();
+            } else render();
+            void act(async () => {
+              try {
+                await request('implementation-order', { order, basis: data.implementationOrderBasis });
+              } catch (error) {
+                data.implementationOrder = priorOrder;
+                const oldRanks = new Map(priorOrder.map((id, index) => [id, index]));
+                data.issues.forEach((issue) => {
+                  if (oldRanks.has(issue.id)) issue.implementationOrder = oldRanks.get(issue.id);
+                });
+                throw error;
+              }
+            });
+          };
+        });
+      }
       function bindIssueNavigation() {
         document.querySelectorAll('[data-issue-navigation]').forEach((button) => {
           button.onclick = () => {
@@ -1624,7 +2126,7 @@
         return issues
           .map(
             (i) =>
-              `<tr style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
+              `<tr data-issue-row="${esc(i.id)}" style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(i.id)}" aria-label="Drag to reorder ${esc(i.title || i.id)}" title="Drag to set implementation order">⠿</button>` : ''}${link(i.id)}<br><small>${esc(i.id)}</small><br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
           )
           .join('');
       }
@@ -1750,8 +2252,19 @@
         verify: 'ready-to-verify',
         review: 'ready-to-close',
       };
+      const removedLifecycleRoles = new Set([
+        'ready-for-grilling',
+        'ready-to-prototype',
+        'ready-to-fix',
+        'ready-to-verify',
+        'ready-for-commit',
+        'ready-to-close',
+      ]);
+      function visibleLifecycleStage(stage) {
+        return !removedLifecycleRoles.has(stage.role);
+      }
       function issueSteps(i, actions) {
-        const steps = data.lifecycle.map((stage) => ({
+        const steps = data.lifecycle.filter(visibleLifecycleStage).map((stage) => ({
           ...stage,
           description: stepDescriptions[stage.role] || 'Work recorded for this stage.',
         }));
@@ -1775,7 +2288,9 @@
             (a) => ['implement', 'integrate'].includes(a.kind) && ['completed', 'integrated'].includes(a.status)
           );
         if (step.role === 'other')
-          return actions.filter((a) => !data.lifecycle.some((stage) => stage.role === actionRoles[a.kind]));
+          return actions.filter(
+            (a) => !data.lifecycle.some((stage) => visibleLifecycleStage(stage) && stage.role === actionRoles[a.kind])
+          );
         return actions.filter((a) => actionRoles[a.kind] === step.role);
       }
       function stepWork(step, actions) {
@@ -1816,8 +2331,10 @@
       }
       function skipSourceLabel(source) {
         if (!source) return 'Source not recorded';
-        if (source.kind === 'stage')
-          return data.lifecycle.find((stage) => stage.state === source.state)?.name || source.state;
+        if (source.kind === 'stage') {
+          const stage = data.lifecycle.find((entry) => entry.state === source.state);
+          return stage && visibleLifecycleStage(stage) ? stage.name : 'Earlier saved work';
+        }
         return { 'original-report': 'Original report', user: 'User' }[source.kind] || 'Source not recorded';
       }
       function stageGrilling(issue, step) {
@@ -2195,7 +2712,7 @@
         result.scrollIntoView({ block: 'start', behavior: 'smooth' });
         result.querySelector('summary').focus();
       }
-      function selectIssueDecision(button) {
+      async function selectIssueDecision(button) {
         const issue = data.issues.find((entry) => entry.id === button.dataset.issueId);
         const chooseReason = button.dataset.issueDecision === 'choose-close';
         const kind = chooseReason ? 'close' : button.dataset.issueDecision;
@@ -2206,18 +2723,38 @@
           kind,
           basis: issue.decisionBasis || data.reviewBasis,
         };
-        if (chooseReason) {
+        if (chooseReason || kind === 'close') {
           const choices = data.closureReasons;
+          const resolution = 'fixed';
           $('selection').innerHTML =
-            `<h2>Close this issue</h2><p>Choose why you are closing it. Reasons other than Fixed leave unfinished work, including an unreviewed worker result, as they are. Fixed still requires that review.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}">${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`;
+            '<h2>Close this issue</h2><p>Cleanup checks are running in the background. You can close the issue while they finish.</p>';
           $('approve').textContent = 'Close issue';
           $('approve').disabled = choices.length === 0;
           $('confirm').showModal();
+          const identities = await request('issue-cleanup-identities', { issueId: issue.id, resolution });
+          selection.cleanupResources = identities.resources;
+          $('selection').innerHTML =
+            `<h2>Close this issue</h2><p>Fixed still requires the existing acceptance checks. Unmerged work is preserved by default; select a branch or workspace only if you want it removed. Unchecked or unknown resources are preserved.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}" ${choice.id === resolution ? 'selected' : ''}>${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>${cleanupFieldset(identities)}`;
+          checkCleanupResources(issue.id, resolution, identities.resources);
+          $('closure-reason').onchange = async () => {
+            const selected = new Set(
+              [...document.querySelectorAll('[data-cleanup-choice]:checked')].map(
+                (input) => input.dataset.cleanupChoice
+              )
+            );
+            const refreshed = await request('issue-cleanup-identities', {
+              issueId: issue.id,
+              resolution: $('closure-reason').value,
+            });
+            selection.cleanupResources = refreshed.resources.map((item) => ({
+              ...item,
+              defaultSelected: selected.has(item.id),
+            }));
+            $('cleanup-options').outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
+            checkCleanupResources(issue.id, $('closure-reason').value, selection.cleanupResources);
+          };
+          $('approve').disabled = choices.length === 0;
           return;
-        }
-        if (kind === 'close') {
-          if (decisionRequests.get(issue.id)?.pending) return;
-          return sendIssueDecision(selection, button).catch(() => {});
         }
         $('selection').innerHTML =
           '<h2>Reopen this issue?</h2><p>This returns the issue to investigation. The existing result, checks and commits are kept. No worker starts automatically.</p><label>What still needs work? (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>';
@@ -2229,6 +2766,68 @@
         const state = decisionRequests.get(issue.id);
         const error = decisionErrors.get(issue.id);
         return `<p data-issue-decision-status="${esc(issue.id)}" role="${error ? 'alert' : 'status'}">${esc(error || state?.message || '')}</p>`;
+      }
+      function cleanupFieldset(preview) {
+        return `<fieldset id="cleanup-options"><legend>Optional cleanup</legend><p>Selected resources are rechecked before each action. Issue closure remains saved if cleanup is incomplete.</p>${preview.resources.map(cleanupChoice).join('') || '<p>No linked resources were found.</p>'}</fieldset>`;
+      }
+      function checkCleanupResources(issueId, resolution, resources) {
+        for (const item of resources) {
+          void request('issue-cleanup-resource', { issueId, resourceId: item.id, resolution })
+            .then(({ resource }) => updateCleanupResource(issueId, resource))
+            .catch((error) =>
+              updateCleanupResource(issueId, {
+                ...item,
+                state: 'unknown',
+                eligible: false,
+                reason: `Status unknown; preserved. ${error.message}`,
+              })
+            );
+        }
+      }
+      function updateCleanupResource(issueId, resource) {
+        if (!$('confirm').open || selection?.issueId !== issueId) return;
+        const selected = new Set(
+          [...document.querySelectorAll('[data-cleanup-choice]:checked')].map((input) => input.dataset.cleanupChoice)
+        );
+        selection.cleanupResources = selection.cleanupResources.map((item) =>
+          item.id === resource.id ? { ...resource, defaultSelected: selected.has(item.id) } : item
+        );
+        $('cleanup-options').outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
+      }
+      function cleanupChoice(resource) {
+        const disabled = !resource.eligible || resource.state.startsWith('already-');
+        const label =
+          resource.kind === 'workspace'
+            ? `Workspace ${resource.name} · ${workspaceEstimate(resource)}`
+            : resource.kind === 'remote-branch'
+              ? `GitHub branch ${resource.repository}:${resource.name}`
+              : resource.kind === 'local-branch'
+                ? `Local branch ${resource.name}`
+                : `Chat ${resource.name}`;
+        const state =
+          resource.state === 'already-deleted'
+            ? 'Already deleted'
+            : resource.state === 'already-archived'
+              ? 'Already archived'
+              : resource.state === 'unknown'
+                ? 'Status unknown; preserved'
+                : resource.reason;
+        return `<label class="cleanup-choice"><input type="checkbox" data-cleanup-choice="${esc(resource.id)}" ${resource.defaultSelected ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span><strong>${esc(label)}</strong>${state ? `<small>${esc(state)}</small>` : ''}${resource.kind === 'chat' ? `<small>Thread ${esc(resource.threadId)} · archiving does not save disk space.</small>` : ''}</span></label>`;
+      }
+      function formatBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const tier = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        return `${(bytes / 1024 ** tier).toFixed(tier ? 1 : 0)} ${units[tier]}`;
+      }
+      function workspaceEstimate(resource) {
+        if (Number.isFinite(resource.estimatedBytes)) return `about ${formatBytes(resource.estimatedBytes)}`;
+        return resource.sizeStatus === 'pending' ? 'size estimate pending' : 'size estimate unavailable';
+      }
+      function cleanupPanel(issue) {
+        const cleanup = issue.cleanup;
+        if (!cleanup) return '';
+        return `<section class="card" aria-label="Issue cleanup"><h3>${cleanup.status === 'incomplete' ? 'Cleanup incomplete' : 'Cleanup results'}</h3><ul>${(cleanup.results || []).map((item) => `<li>${esc(item.name || item.id)}: ${esc(item.reason || item.status)}</li>`).join('')}</ul>${cleanup.status === 'incomplete' ? `<button data-cleanup-retry="${esc(issue.id)}">Retry cleanup</button>` : ''}</section>`;
       }
       async function sendIssueDecision(decision, button) {
         if (decisionRequests.get(decision.issueId)?.pending) return;
@@ -2244,7 +2843,22 @@
         }
         render();
         try {
-          const result = await request('issue-decision', decision);
+          const selectedCleanup =
+            decision.kind === 'close'
+              ? [...document.querySelectorAll('[data-cleanup-choice]:checked')].map(
+                  (input) => input.dataset.cleanupChoice
+                )
+              : [];
+          const cleanup =
+            decision.kind === 'close' && selection.cleanupResources
+              ? {
+                  basis: null,
+                  resolution: decision.resolution,
+                  selected: selectedCleanup,
+                  selectedResources: selection.cleanupResources.filter((item) => selectedCleanup.includes(item.id)),
+                }
+              : null;
+          const result = await request('issue-decision', { ...decision, cleanup });
           const issue = data.issues.find((entry) => entry.id === id);
           issue.state = result.state;
           issue.stage = data.lifecycle.find((stage) => stage.state === result.state)?.name || result.state;
@@ -2255,6 +2869,7 @@
               label: reason?.label || 'Fixed',
               details: decision.reason || '',
             };
+            issue.cleanup = result.cleanup;
           } else {
             delete issue.closure;
           }
@@ -2264,7 +2879,7 @@
             message: accepted
               ? 'Accepted and closed.'
               : decision.kind === 'close'
-                ? 'Issue closed.'
+                ? `Issue closed${result.cleanup?.status === 'running' ? '; cleanup is running in the background.' : result.cleanup?.status === 'incomplete' ? '; cleanup incomplete.' : '; cleanup recorded.'}`
                 : 'Issue reopened.',
           });
           render();
@@ -2374,7 +2989,7 @@
         const acceptanceOnly = stage?.role === 'ready-to-close' && (!record?.canResume || issue.progress?.disabled);
         const canStart =
           !input && !record?.deliveryHandoff && !record?.deliveryWaiting && !issue.assemblyRecovery && !acceptanceOnly;
-        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(currentProgressSummary(issue, record, child, summary, input))}</p>${stopped && !active ? '<p>No action is running.</p>' : ''}${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p data-progress-stop-reason>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<h4>Waiting for you</h4>' + lifecycleInput(issue, record) : ''}${active ? liveHealth(child) : ''}<div data-live-approvals>${child?.connected ? approvals(child) : ''}</div>${
+        return `<section class="card lifecycle-progress" data-view-id="lifecycle-${esc(issue.id)}"><h3>${title}</h3><p><strong>Workflow stage: ${esc(stage?.name || issue.stage || issue.state)}</strong>${active ? ' · Working…' : ''}</p><p role="status">${esc(currentProgressSummary(issue, record, child, summary, input))}</p>${stopped && !active ? '<p>No action is running.</p>' : ''}${stopped && !active && record?.resumeSummary ? `<p data-resume-summary>${esc(record.resumeSummary)}</p>` : ''}${stageNote}${integrationRecoveryPanel(issue, record)}${assemblyRecoveryPanel(issue)}${launchBlockDetails(blocker)}${blocker ? '<p><a href="#/coordinator">See what the coordinator is doing</a></p>' : ''}${record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : ''}${canStart ? `<button class="primary" data-lifecycle-start="${esc(issue.id)}" ${active || busy || blocker || record?.canResume === false ? 'disabled' : ''}>${active ? 'Working…' : stopped ? 'Continue…' : record ? 'Continue…' : 'Progress →'}</button>` : ''}${stopped && record?.canResume === false && !blocker && !issue.assemblyRecovery ? '<p data-progress-stop-reason>The last action cannot advance this issue. It will not repeat while the relevant information is unchanged.</p>' : ''}${active && record ? `<button data-lifecycle-pause="${esc(issue.id)}" ${record.pauseRequested ? 'disabled' : ''}>Pause after this action</button>` : ''}${input ? '<p>Respond to the pending request in Progress.</p>' : ''}${active ? liveHealth(child) : ''}<div data-live-approvals></div>${
           record?.events?.length
             ? `<details><summary>What happened</summary><ol>${lifecycleHistory(record)}</ol></details>`
             : ''
@@ -2387,9 +3002,10 @@
             const stage = data.lifecycle.find((candidate) => candidate.state === event.stage);
             const transitioned = stage && stage.state !== previousStage;
             if (stage) previousStage = stage.state;
-            const role = transitioned
-              ? `<strong style="color:${historyRoleColor(stage.role)}">${esc(stage.name)}: </strong>`
-              : '';
+            const role =
+              transitioned && visibleLifecycleStage(stage)
+                ? `<strong style="color:${historyRoleColor(stage.role)}">${esc(stage.name)}: </strong>`
+                : '';
             const interrupted =
               event.interrupted || event.result === 'interrupted'
                 ? ' <span class="history-interrupted">(interrupted)</span>'
@@ -2466,14 +3082,200 @@
         const runs = data.runs.filter(
           (run) =>
             run.issueId === issue.id ||
-            data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+            data.actions?.some(
+              (action) => action.id === run.actionId && Array.isArray(action.issues) && action.issues.includes(issue.id)
+            )
         );
         if (runs.some((run) => run.connected))
           return 'Work is connected. Output appears as messages and commands arrive.';
         return 'No action is running. Output below is saved history, not live activity.';
       }
       function lifecycleActivity(issue) {
-        return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${fileLinkUI.html(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p>`;
+        return `<div class="activity-toolbar"><strong>Issue output</strong><button data-follow-output>Follow latest</button><button data-copy-output>Copy output</button><button data-output-history>Load retained output history</button></div><p data-output-status role="status">${esc(outputStatus(issue))}</p><pre class="live-output" id="live-output" tabindex="0" aria-label="Live output for this issue">${fileLinkUI.html(activityText(issue) || outputStatus(issue))}</pre><p class="muted">Recent output for this issue. Scroll up to read; Follow latest returns to new output.</p><div id="output-history">${outputHistoryHtml(issue)}</div>`;
+      }
+      function progressBasis(issue) {
+        return issueProgressUI.basis(issue, issueProgressUI.runsFor(issue, data));
+      }
+      function progressFeedback(issue) {
+        const feedback = progressRequests.get(issue.id);
+        if (!feedback) return null;
+        const fresh = feedback.strategy
+          ? feedback.expectedRunId
+            ? issue.strategy?.runId === feedback.expectedRunId ||
+              data.runs.some((run) => run.id === feedback.expectedRunId)
+            : progressBasis(issue) !== feedback.previousBasis
+          : issue.lifecycle?.updated !== feedback.previousUpdated;
+        if (!feedback.pending && !feedback.error && fresh) {
+          progressRequests.delete(issue.id);
+          return null;
+        }
+        return feedback;
+      }
+      function progressSummary(issue) {
+        const view = issueProgressUI.derive(issue, data, progressFeedback(issue), progressUnavailable);
+        const command = view.command;
+        const result =
+          command?.exitCode !== undefined
+            ? `Exit ${command.exitCode}${command.exitCode === 0 ? ' · passed' : ' · failed'}`
+            : command?.status === 'inProgress'
+              ? 'running'
+              : command?.status || '';
+        const stopped = ['blocked', 'failed'].includes(view.status);
+        const commandName =
+          view.running && ['running', 'inProgress'].includes(command?.status)
+            ? 'Current command'
+            : stopped
+              ? 'Command that stopped progress'
+              : 'Last recorded command';
+        const commandDetails = command
+          ? `<p><strong>${commandName}:</strong> <code>${esc(command.command)}</code> · ${esc(result)}</p>${stopped ? `<p><strong>What it does:</strong> ${esc(issueProgressUI.purpose(command.command))}</p>` : ''}`
+          : view.commandNotice
+            ? `<p><strong>Command:</strong> ${esc(view.commandNotice)}</p>`
+            : '';
+        const diagnostics = view.diagnostics
+          ? `<details class="progress-diagnostics"><summary>Technical details (optional)</summary><pre>${esc(view.diagnostics)}</pre></details>`
+          : '';
+        const timer = (value, label) =>
+          value
+            ? `<time class="progress-timer" data-progress-timer data-base-ms="${Math.floor(value.base)}" data-started-at="${esc(value.startedAt || '')}" aria-label="${label}" title="${label}">${issueProgressUI.formatDuration(value.value)}</time>`
+            : '';
+        const pullRequest = view.pullRequest
+          ? `<p><a href="${esc(view.pullRequest.url)}" target="_blank" rel="noreferrer">Open pull request #${esc(view.pullRequest.number)}</a></p>`
+          : '';
+        return `<h2 class="progress-heading"><span>Progress</span>${timer(view.totalOperationTime, 'Total operation time')}</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p>${pullRequest}<h3 class="progress-operation"><span data-progress-step>${esc(view.step)}</span>${timer(view.operationTime, 'Current operation time')}</h3><p><strong>${stopped ? 'What stopped the work' : 'What is happening'}:</strong> ${esc(view.explanation)}</p>${commandDetails}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>${stopped ? 'Recommended next steps' : 'Next action'}:</strong> ${esc(view.next)}</p>${diagnostics}${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
+      }
+      function updateProgressTimers() {
+        document.querySelectorAll('[data-progress-timer]').forEach((timer) => {
+          const base = Number(timer.dataset.baseMs) || 0;
+          const startedAt = Date.parse(timer.dataset.startedAt || '');
+          const elapsed = base + (startedAt ? Math.max(0, Date.now() - startedAt) : 0);
+          timer.textContent = issueProgressUI.formatDuration(elapsed);
+        });
+      }
+      function progressInput(issue) {
+        if (progressFeedback(issue) || progressUnavailable) return '';
+        const record = issue.lifecycle;
+        const input =
+          record?.input && record.input.type !== 'retry'
+            ? '<h3>Waiting for you</h3>' + lifecycleInput(issue, record)
+            : '';
+        const permissions = issueProgressUI
+          .runsFor(issue, data)
+          .filter((run) => run.connected)
+          .map((run) => approvals(run))
+          .join('');
+        const round = issueProgressUI.derive(issue, data).interview;
+        const grilling =
+          !input && round
+            ? `<h3>Current grilling round</h3><pre class="prose" style="white-space:pre-wrap">${esc(round.body)}</pre><label>Your answer<textarea id="progress-grill-answer" data-draft-key="${esc(issue.id + ':' + round.id)}" rows="4"></textarea></label><button data-progress-grill="${esc(issue.id)}" data-round="${esc(round.id)}">Send grilling answer</button><p class="muted">Answers continue the interview in Issue thread. They do not start implementation.</p>`
+            : '';
+        return (
+          (record?.answerError ? `<p role="alert">${esc(record.answerError)}</p>` : '') + input + permissions + grilling
+        );
+      }
+      function updateProgressView() {
+        const issue = data?.issues.find((entry) => entry.id === issueRoute().id);
+        const summary = $('issue-progress-summary');
+        if (!issue || !summary) return;
+        summary.innerHTML = progressSummary(issue);
+        updateProgressTimers();
+        // Keep a focused answer intact. Full refresh reconciles request identity safely.
+        if (progressFeedback(issue) || progressUnavailable) {
+          const input = $('issue-progress-input');
+          if (input) input.hidden = true;
+        } else if ($('issue-progress-input')) $('issue-progress-input').hidden = false;
+      }
+      function outputHistoryHtml(issue) {
+        const history = outputHistories.get(issue.id);
+        if (!history) return '';
+        return `<p role="status">${esc(history.message || 'Retained public events, including earlier output. Private reasoning is excluded.')}</p><pre class="live-output" tabindex="0" aria-label="Retained output events">${esc(history.text || '')}</pre>${history.queue?.length ? '<button data-output-history>Load earlier retained output</button>' : ''}`;
+      }
+      function bindOutputHistory() {
+        document.querySelectorAll('[data-output-history]').forEach((button) => {
+          const selectedIssue = data.issues.find((entry) => entry.id === issueRoute().id);
+          const saved = outputHistories.get(selectedIssue?.id);
+          button.disabled =
+            !selectedIssue ||
+            !issueProgressUI.runsFor(selectedIssue, data).length ||
+            Boolean(saved && (saved.loading || !saved.queue.length));
+          button.onclick = async () => {
+            const issue = data.issues.find((entry) => entry.id === issueRoute().id);
+            const id = issue.id;
+            let history = outputHistories.get(id);
+            if (!history) {
+              history = {
+                text: '',
+                queue: issueProgressUI
+                  .runsFor(issue, data)
+                  .reverse()
+                  .map((run) => ({ id: run.id, before: '' })),
+              };
+              outputHistories.set(id, history);
+            }
+            if (history.loading || !history.queue.length) return;
+            history.loading = true;
+            button.disabled = true;
+            try {
+              const cursor = history.queue[0];
+              const page = await request(
+                'output-history?id=' + encodeURIComponent(cursor.id) + '&before=' + cursor.before
+              );
+              const text = page.events.map((event) => JSON.stringify(event)).join('\n');
+              history.text = text + (text && history.text ? '\n' : '') + history.text;
+              if (page.before > 0) cursor.before = page.before;
+              else history.queue.shift();
+              history.message = history.queue.length
+                ? 'Retained public events. Load earlier output for more history.'
+                : 'All available retained public events loaded. Older runs may have no retained log.';
+            } catch (error) {
+              history.message = error.message;
+            } finally {
+              history.loading = false;
+              button.disabled = false;
+              if (issueRoute().id === id && $('output-history')) {
+                $('output-history').innerHTML = outputHistoryHtml(issue);
+                bindOutputHistory();
+              }
+            }
+          };
+        });
+      }
+      function focusedRunOutput(issue) {
+        const runId = issueRoute().run;
+        if (!runId) return '';
+        const run = data.runs.find((item) => item.id === runId);
+        if (
+          !run ||
+          (run.issueId !== issue.id &&
+            !data.actions.some((item) => item.id === run.actionId && item.issues.includes(issue.id)))
+        )
+          return '';
+        const output = (run.output || [])
+          .map(
+            (entry) =>
+              `${entry.command ? '$ ' + entry.command + '\n' : ''}${entry.text || ''}${entry.exitCode === undefined ? '' : `\nExit ${entry.exitCode}`}`
+          )
+          .filter(Boolean)
+          .join('\n\n');
+        return `<section class="card" id="focused-action-output"><h2>Action output · ${esc(run.kind)}</h2><p>${esc(run.summary || 'Current action output')}</p><pre class="live-output" tabindex="0" aria-label="Action output">${esc(output || 'No output has arrived yet.')}</pre><p><a href="#/issue/${encodeURIComponent(issue.id)}">Back to issue</a></p></section>`;
+      }
+      function evidencePanel(issue) {
+        const runs = data.runs.filter(
+          (run) =>
+            run.issueId === issue.id ||
+            data.actions?.some((action) => action.id === run.actionId && action.issues.includes(issue.id))
+        );
+        const links = runs
+          .flatMap((run) => {
+            const files = run.result?.evidence || run.evidence || [];
+            return files.map((file) => ({ run, path: typeof file === 'string' ? file : file.path }));
+          })
+          .filter((entry) => entry.path);
+        if (!links.length) return '<p class="muted">No saved evidence is recorded yet.</p>';
+        return `<ul>${links
+          .slice(-20)
+          .map((entry) => `<li><strong>${esc(entry.run.kind || 'run')}</strong> · ${fileLinkUI.html(entry.path)}</li>`)
+          .join('')}</ul>`;
       }
       function lifecycleInput(issue, record) {
         const input = record.input;
@@ -2589,7 +3391,11 @@
         const work = issue.strategy;
         if (!work || closedIssueState(issue.state)) return '';
         const current = data.runs.find((run) => run.id === work.runId);
-        return `<section class="card" data-view-id="strategy-${esc(issue.id)}"><h2>Issue strategy</h2><p><b>${esc(work.status)}</b> ${fileLinkUI.html(work.summary || 'Choose a finish line and start this issue.')}</p>${/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(work.prUrl || '') ? `<p><a href="${esc(work.prUrl)}" target="_blank" rel="noreferrer">Open pull request #${esc(work.pr)}</a></p>` : ''}<label>Strategy<select id="issue-strategy" aria-label="Strategy" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}><option value="full-stop" ${work.strategy === 'full-stop' ? 'selected' : ''}>Full Stop — merge-ready PR</option><option value="full-send" ${work.strategy === 'full-send' ? 'selected' : ''}>Full Send — merge after required checks</option></select></label><label>Optional Sol Loop<select id="strategy-sol" aria-label="Optional Sol Loop" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}>${[
+        const external = work.externalDelivery;
+        const externalView = external
+          ? `<section class="card" aria-label="Delivery through another PR"><h3>Delivery through another PR</h3><p><b>${esc(external.status)}</b> · <a href="${esc(external.url)}" target="_blank" rel="noreferrer">PR #${esc(external.number)}</a></p><p>Merged into ${esc(external.target)} at ${esc(external.mergeCommit)}; checked against ${esc(external.targetRevision)}.</p>${external.targetChangedSincePreviousCheck ? `<p>Target changed since the previous verification (${esc(external.previousTargetRevision)}); review whether the delivered behavior remains present.</p>` : ''}<p>${esc(external.behaviorEvidence)}</p>${external.remainingCriteria ? `<p>Still outstanding: ${esc(external.remainingCriteria)}</p>` : ''}<p>Checks: ${esc(external.checks.map((check) => check.name ?? check.context ?? check.workflowName).join(', '))}</p><p>Issue acceptance remains pending.</p></section>`
+          : '';
+        return `<section class="card" data-view-id="strategy-${esc(issue.id)}"><h2>Issue strategy</h2><p><b>${esc(work.status)}</b> ${fileLinkUI.html(work.summary || 'Choose a finish line and start this issue.')}</p>${/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(work.prUrl || '') ? `<p><a href="${esc(work.prUrl)}" target="_blank" rel="noreferrer">Open pull request #${esc(work.pr)}</a></p>` : ''}${work.merge ? `<p data-merge-outcome><b>GitHub merged the PR</b> at <code>${esc(work.merge.revision)}</code>.</p>${work.localDevUpdate ? `<p data-local-dev-update>${work.localDevUpdate.status === 'updated' ? `Local ${esc(work.target)} updated to <code>${esc(work.localDevUpdate.revision)}</code>.` : `Local ${esc(work.target)} was left untouched: ${esc(work.localDevUpdate.reason)}`}</p>` : ''}` : ''}${externalView}<details><summary>Already delivered through another PR?</summary><p class="muted">The factory checks that the PR merged into the configured target, that the current target still contains its merge, and that its checks passed. Describe the behavior it covers, cite at least one changed file, and list any requirements still outstanding. A later recheck compares against the current target. This records delivery only; it does not accept or close the issue.</p><label>Other PR number<input type="number" min="1" step="1" data-external-pr-number="${esc(issue.id)}" value="${esc(external?.number || '')}"></label><label>Behavior evidence and changed file path<textarea data-external-pr-evidence="${esc(issue.id)}" placeholder="Explain what the PR implements and cite a changed path, such as src/example.ts.">${esc(external?.behaviorEvidence || '')}</textarea></label><label>Requirements still outstanding<textarea data-external-pr-remaining="${esc(issue.id)}" placeholder="Leave blank only if the PR covers the full issue scope.">${esc(external?.remainingCriteria || '')}</textarea></label><button data-external-delivery="${esc(issue.id)}">Verify and record other PR</button></details><label>Strategy<select id="issue-strategy" aria-label="Strategy" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}><option value="full-stop" ${work.strategy === 'full-stop' ? 'selected' : ''}>Full Stop — merge-ready PR</option><option value="full-send" ${work.strategy === 'full-send' ? 'selected' : ''}>Full Send — protected Merge after required checks</option></select></label><label>Optional Sol Loop<select id="strategy-sol" aria-label="Optional Sol Loop" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}>${[
           [0, 'Off'],
           [1, 'One review round'],
           [3, 'Up to three review rounds'],
@@ -2600,14 +3406,58 @@
           )
           .join(
             ''
-          )}</select></label><p class="muted">Continuing starts the issue’s system prompt immediately and preserves saved work and conversation. The prompt determines what happens next. Full Stop publishes a merge-ready PR without merging; Full Send also authorizes a protected merge. Deployment and human acceptance remain separate. Required checks and real permissions still apply.</p><label>Instruction or answer (optional)<textarea id="strategy-instruction" placeholder="Clarify scope or explain what changed"></textarea></label><button data-strategy-start="${esc(issue.id)}" ${work.active ? 'disabled' : ''}>Continue issue</button>${work.checkout && !work.active && work.status !== 'merged' ? `<button data-strategy-review="${esc(issue.id)}">Run Sol Loop on saved work</button>` : ''}${work.active ? `<button data-strategy-stop="${esc(issue.id)}" data-strategy-run="${esc(work.runId)}">Stop</button>` : ''}<p id="strategy-feedback" role="status"></p>${current ? progress(current) : ''}</section>`;
+          )}</select></label><p class="muted">Continuing preserves saved work and conversation and includes necessary repairs for target updates, merge conflicts, failing tests, formatting and new Fallow findings. The agent pauses for product decisions or permissions. Full Stop publishes a merge-ready PR without merging; Full Send adds an explicit protected Merge control after checks pass. Deployment and human acceptance remain separate. Required checks and real permissions still apply.</p><label>Instruction or answer (optional)<textarea id="strategy-instruction" placeholder="Clarify scope or explain what changed"></textarea></label><button data-strategy-start="${esc(issue.id)}" ${work.active ? 'disabled' : ''}>Continue issue</button>${work.checkout && !work.active && work.status !== 'merged' ? `<button data-strategy-review="${esc(issue.id)}">Run Sol Loop on saved work</button>` : ''}${work.active ? `<button data-strategy-stop="${esc(issue.id)}" data-strategy-run="${esc(work.runId)}">Stop</button>` : ''}${work.strategy === 'full-send' && work.pr && (work.status === 'ready-to-merge' || (work.status === 'merged' && work.merge && !work.localDevUpdate)) ? `<button data-strategy-merge="${esc(issue.id)}" data-strategy-run="${esc(work.runId)}" data-strategy-pr="${esc(work.pr)}" data-strategy-head="${esc(work.prHead)}">${work.status === 'ready-to-merge' ? `Merge PR #${esc(work.pr)} on GitHub` : `Record merge and update local ${esc(work.target)}`}</button>` : ''}<p id="strategy-feedback" role="status"></p>${current ? progress(current) : ''}</section>`;
       }
-      function issue(id) {
+      function issue(id, includeQueueNavigation = true) {
         const i = data.issues.find((x) => x.id === id);
         if (!i) return '<h1>Issue not found</h1><a href="#/queue">Back to queue</a>';
         const actions = data.actions.filter((a) => a.issues.includes(id));
-        const discussionSelected = selectedChatTab === 'discussion';
-        return `<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a>${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(closedIssueState(i.state) ? i.stage : i.strategy?.status || i.stage)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${esc(i.closure.details)}` : ''}</p>` : '') : `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button><button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue chats"><div class="issue-chat-tablist" role="tablist"><button class="issue-chat-tab" role="tab" aria-selected="${discussionSelected}" data-chat-tab="discussion">Discussion</button><button class="issue-chat-tab" role="tab" aria-selected="${!discussionSelected}" data-chat-tab="issue">${esc(i.title || i.id)}</button></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="discussion" data-chat-active="${discussionSelected}"><div id="discussion-slot"></div></div><div class="issue-chat-panel" role="tabpanel" data-chat-panel="issue" data-chat-active="${!discussionSelected}"><div id="issue-chat-slot"></div></div></div><div class="layout"><div>${strategyPanel(i)}<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${i.strategy?.runId ? '' : lifecyclePanel(i)}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;      }
+
+        const stage = data.lifecycle.find((entry) => entry.state === i.state);
+        const completedChecklist =
+          i.implementation?.fresh &&
+          i.implementation.record?.steps?.length > 0 &&
+          i.implementation.record?.steps?.every((step) =>
+            step.criteria.every((criterion) => ['passed', 'skipped'].includes(criterion.status))
+          );
+        const canAcceptFix =
+          stage?.role === 'ready-to-close' ||
+          ['completed', 'merged'].includes(i.strategy?.status) ||
+          completedChecklist;
+        const issueStatus = closedIssueState(i.state)
+          ? i.stage
+          : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
+        const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
+        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || i.id)}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted">${esc(i.id)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+          ['progress', 'Progress'],
+          ['output', 'Issue output'],
+          ['issue', 'Issue thread'],
+          ['discussion', 'Discussion'],
+        ]
+          .map(
+            ([key, title]) =>
+              `<button id="issue-tab-${key}" class="issue-chat-tab" role="tab" aria-controls="issue-panel-${key}" aria-selected="${selectedChatTab === key}" data-chat-tab="${key}">${title}</button>`
+          )
+          .join('')}</div>${[
+          [
+            'progress',
+            `<section class="card" data-view-id="issue-progress-${esc(i.id)}"><div id="issue-progress-summary">${progressSummary(i)}</div><div id="issue-progress-input">${progressInput(i)}</div></section>`,
+          ],
+          [
+            'output',
+            `<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section>`,
+          ],
+          ['issue', '<div id="issue-chat-slot"></div>'],
+          ['discussion', '<div id="discussion-slot"></div>'],
+        ]
+          .map(
+            ([key, html]) =>
+              `<div id="issue-panel-${key}" class="issue-chat-panel" role="tabpanel" aria-labelledby="issue-tab-${key}" data-chat-panel="${key}" data-chat-active="${selectedChatTab === key}">${html}</div>`
+          )
+          .join(
+            ''
+          )}</div><div class="layout"><div>${strategyPanel(i)}<section class="card"><h2>Evidence</h2>${evidencePanel(i)}</section><details><summary>Earlier lifecycle history and saved work</summary><fieldset${i.strategy?.runId ? ' disabled' : ''}>${showLifecycleProgress ? lifecyclePanel(i) : ''}<div class="lifecycle-heading"><h2>Issue lifecycle</h2><p class="muted">Open any step to see its assignments, results and checks. The current step comes from the issue report. Colour shows its recorded state.</p><p class="stage-legend"><span class="legend-completed">Completed</span><span class="legend-skipped">Skipped / planned skip</span><span class="legend-ready">Ready / working</span><span class="legend-blocked">Blocked</span><span>Future / not checked</span></p></div><div class="issue-steps">${issueSteps(i, actions)}</div></fieldset></details>${issueNotes(i)}</div><aside>${issueModelSettings(i)}<section class="card"><h2>Your input</h2><p>${inputStatus(i)}</p>${humanChecks(i)}${i.human_input ? `<details><summary>Recorded requests and answers</summary><pre>${esc(JSON.stringify(i.human_input, null, 2))}</pre></details>` : ''}<p class="muted">Use the issue instruction box for answers or changed requirements. Required permissions and human acceptance remain separate.</p></section><section class="card"><h2>Linked issues</h2>${relations(i)}</section></aside></div>`;
+      }
       const viewMemory = {
         route: null,
         expanded: loadExpanded(),
@@ -2743,6 +3593,7 @@
           output.scrollTop = output.scrollHeight;
           viewMemory.logs.set(location.hash, { top: output.scrollTop, follow: true });
         };
+        bindOutputHistory();
         document.querySelector('[data-copy-output]').onclick = async (event) => {
           try {
             await navigator.clipboard.writeText(output.textContent);
@@ -2782,36 +3633,36 @@
         const route = issueRoute();
         if (route.id !== selectedChatIssue) {
           selectedChatIssue = route.id;
-          selectedChatTab = 'discussion';
+          selectedChatTab = 'progress';
         }
         if (coordinatorUI.mount(data, request, refresh)) {
           issueChatUI.mount(null, data, request, refresh);
           return;
         }
         coordinatorUI.update(data);
-        $('app').innerHTML = route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id) : queue();
-        const currentIssue = data.issues.find((entry) => entry.id === route.id);
-        const record = currentIssue?.lifecycle;
-        const pending =
-          record?.input && record.input.type !== 'retry'
-            ? '<h3>Waiting for you · ' + esc(currentIssue.stage) + '</h3>' + lifecycleInput(currentIssue, record, true)
-            : '';
-        const permissions = data.runs
-          .filter(
-            (run) =>
-              run.connected &&
-              (run.issueId === route.id ||
-                data.actions.some((action) => action.id === run.actionId && action.issues.includes(route.id)))
-          )
-          .map((run) => approvals(run))
-          .join('');
-        issueChatUI.mount(route.id, data, request, refresh, data.conversation ? pending + permissions : '');
+        const wideSidebar = window.matchMedia?.('(min-width: 1000px)').matches || false;
+        $('app').innerHTML = wideSidebar
+          ? `<div class="issue-workspace">${issueSidebar(route.id)}<section class="issue-workspace-content">${route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id, false) : '<p class="issue-empty-selection">Please select an issue.</p>'}</section></div>`
+          : route.id
+            ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id)
+            : queue();
+        if (route.run && route.id) {
+          const selected = data.issues.find((entry) => entry.id === route.id);
+          const output = selected && focusedRunOutput(selected);
+          const column = document.querySelector('#app .layout > div');
+          if (output && column) column.insertAdjacentHTML('afterbegin', output);
+        }
+        issueChatUI.mount(route.id, data, request, refresh);
         document.querySelectorAll('[data-chat-tab]').forEach((tab) => {
           tab.onclick = () => {
             const selected = tab.dataset.chatTab;
             selectedChatTab = selected;
-            document.querySelectorAll('[data-chat-tab]').forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
-            document.querySelectorAll('[data-chat-panel]').forEach((panel) => panel.setAttribute('data-chat-active', String(panel.dataset.chatPanel === selected)));
+            document
+              .querySelectorAll('[data-chat-tab]')
+              .forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+            document
+              .querySelectorAll('[data-chat-panel]')
+              .forEach((panel) => panel.setAttribute('data-chat-active', String(panel.dataset.chatPanel === selected)));
           };
         });
         bind();
@@ -2821,12 +3672,31 @@
         applyProgressFeedback();
         siteReviewUI.mount(data, request, refresh);
         restoreView();
-        discussionUI.mount(route.id, request);
+        if (route.run && focusedRunRoute !== location.hash) {
+          document.getElementById('focused-action-output')?.scrollIntoView({ block: 'start' });
+          focusedRunRoute = location.hash;
+        }
+        discussionUI.mount(route.id, request, refresh);
         document.querySelectorAll('[data-grill-stage]').forEach((button) => {
           button.onclick = () => {
             const stage = data.lifecycle.find((stage) => stage.state === button.dataset.grillStage);
             const extra = { '@integration': 'Integrate', '@other': 'Other work' };
             discussionUI.grill(stage || { state: button.dataset.grillStage, name: extra[button.dataset.grillStage] });
+          };
+        });
+        document.querySelectorAll('[data-issue-grill]').forEach((button) => {
+          button.onclick = () => {
+            const issue = data.issues.find((entry) => entry.id === button.dataset.issueGrill);
+            if (!issue) return;
+            document.querySelector('[data-chat-tab="discussion"]')?.click();
+            const stage = data.lifecycle.find((entry) => entry.state === issue.state);
+            discussionUI.grill({ state: issue.state, name: stage?.name || issue.stage || 'Issue' });
+          };
+        });
+        document.querySelectorAll('[data-issue-retro]').forEach((button) => {
+          button.onclick = () => {
+            document.querySelector('[data-chat-tab="discussion"]')?.click();
+            discussionUI.retro();
           };
         });
         focusLinkedStage();
@@ -2880,6 +3750,7 @@
         });
       }
       function applyProgressFeedback() {
+        updateProgressView();
         document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
           const state = progressRequests.get(button.dataset.lifecycleStart);
           if (!state) return;
@@ -2920,6 +3791,28 @@
         });
       }
       function bind() {
+        document.querySelectorAll('[data-progress-grill]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              const text = $('progress-grill-answer').value.trim();
+              if (!text) throw Error('Enter your grilling answer.');
+              const key = button.dataset.progressGrill + ':' + button.dataset.round;
+              let reply = grillingReplies.get(key);
+              if (!reply || reply.text !== text) {
+                reply = { id: crypto.randomUUID(), text };
+                grillingReplies.set(key, reply);
+              }
+              await request('issue-chat-send', {
+                issueId: button.dataset.progressGrill,
+                id: reply.id,
+                text,
+                mode: 'comment',
+                skills: [],
+              });
+              viewMemory.fields.delete(location.hash + '|' + $('progress-grill-answer').dataset.draftKey);
+              $('progress-grill-answer').value = '';
+            });
+        });
         issueCaptureUI.bind(request, refresh);
         const settingsButton = $('model-settings-open');
         if (settingsButton)
@@ -3027,7 +3920,26 @@
           button.onclick = () => reviewRecordedResult(button.dataset.reviewResult);
         });
         document.querySelectorAll('[data-issue-decision]').forEach((button) => {
-          button.onclick = () => selectIssueDecision(button);
+          button.onclick = () =>
+            selectIssueDecision(button).catch((error) => {
+              decisionErrors.set(button.dataset.issueId, error.message);
+              render();
+            });
+        });
+        document.querySelectorAll('[data-cleanup-retry]').forEach((button) => {
+          button.onclick = async () => {
+            button.disabled = true;
+            const issue = data.issues.find((entry) => entry.id === button.dataset.cleanupRetry);
+            try {
+              const result = await request('issue-cleanup-retry', { issueId: issue.id });
+              issue.cleanup = result.cleanup;
+              render();
+              void refresh();
+            } catch (error) {
+              decisionErrors.set(issue.id, error.message);
+              render();
+            }
+          };
         });
         document.querySelectorAll('[data-lifecycle-start]').forEach((button) => {
           button.onclick = () => startIssueProgress(data.issues.find((i) => i.id === button.dataset.lifecycleStart));
@@ -3109,18 +4021,70 @@
               const review = Boolean(button.dataset.strategyReview);
               const rounds = Number($('strategy-sol').value);
               if (review && !rounds) throw Error('Choose one or three Sol review rounds first.');
-              button.disabled = true;
-              $('strategy-feedback').textContent = 'Sending request…';
-              await request('issue-strategy-start', {
-                issueId: id,
-                basis: issue.strategy.basis,
-                strategy: $('issue-strategy').value,
-                solRounds: rounds,
-                approved: true,
-                operation: review ? 'review' : 'work',
-                instruction: $('strategy-instruction').value,
+              if (progressRequests.get(id)?.pending) return;
+              progressRequests.set(id, {
+                pending: true,
+                strategy: true,
+                previousBasis: progressBasis(issue),
+                message: 'Request sent; waiting for updated progress.',
               });
-              $('strategy-feedback').textContent = 'Accepted. The issue is working in its owning chat.';
+              updateProgressView();
+              button.disabled = true;
+              $('strategy-feedback').textContent = 'Starting… Previous status is cleared until fresh evidence arrives.';
+              const strategyCard = button.closest('[data-view-id^="strategy-"]');
+              const summary = strategyCard?.querySelector('p b');
+              const details = strategyCard?.querySelector('p:nth-of-type(1)');
+              if (summary) summary.textContent = 'working';
+              if (details) details.textContent = 'Waiting for fresh worker output…';
+              try {
+                const accepted = await request('issue-strategy-start', {
+                  issueId: id,
+                  basis: issue.strategy.basis,
+                  strategy: $('issue-strategy').value,
+                  solRounds: rounds,
+                  approved: true,
+                  operation: review ? 'review' : 'work',
+                  instruction: $('strategy-instruction').value,
+                });
+                progressRequests.set(id, {
+                  ...progressRequests.get(id),
+                  pending: false,
+                  expectedRunId: accepted.runId,
+                });
+                $('strategy-feedback').textContent = 'Request sent; waiting for updated progress.';
+              } catch (error) {
+                progressRequests.set(id, {
+                  ...progressRequests.get(id),
+                  pending: false,
+                  error: true,
+                  message: 'Continue could not be confirmed: ' + error.message,
+                });
+                throw error;
+              } finally {
+                updateProgressView();
+              }
+            });
+        });
+        document.querySelectorAll('[data-strategy-merge]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              const issueId = button.dataset.strategyMerge;
+              const pr = Number(button.dataset.strategyPr);
+              const syncOnly = button.textContent.startsWith('Record merge');
+              const question = syncOnly
+                ? `GitHub already recorded PR #${pr} as merged. Update local dev if it is safe?`
+                : `Merge PR #${pr} on GitHub now? Approval and required checks will be rechecked.`;
+              if (!window.confirm(question)) return;
+              button.disabled = true;
+              button.textContent = syncOnly
+                ? 'Recording merge and updating local dev…'
+                : 'Rechecking approval and checks…';
+              await request('issue-strategy-merge', {
+                issueId,
+                pr,
+                runId: button.dataset.strategyRun,
+                head: button.dataset.strategyHead,
+              });
             });
         });
         document.querySelectorAll('[data-strategy-stop]').forEach((button) => {
@@ -3131,6 +4095,20 @@
                 runId: button.dataset.strategyRun,
               })
             );
+        });
+        document.querySelectorAll('[data-external-delivery]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              button.disabled = true;
+              button.textContent = 'Checking merged PR and checks…';
+              const id = button.dataset.externalDelivery;
+              await request('issue-strategy-external-delivery', {
+                issueId: id,
+                number: Number(document.querySelector(`[data-external-pr-number="${CSS.escape(id)}"]`).value),
+                behaviorEvidence: document.querySelector(`[data-external-pr-evidence="${CSS.escape(id)}"]`).value,
+                remainingCriteria: document.querySelector(`[data-external-pr-remaining="${CSS.escape(id)}"]`).value,
+              });
+            });
         });
         if ($('review'))
           $('review').onclick = () =>
@@ -3237,8 +4215,13 @@
         if (data) render();
         void refresh();
       };
+      const issueSidebarMedia = window.matchMedia?.('(min-width: 1000px)');
+      issueSidebarMedia?.addEventListener?.('change', () => {
+        if (data) render();
+      });
       refresh();
       setInterval(refresh, 4000);
+      setInterval(updateProgressTimers, 1000);
     </script>
   </body>
 </html>

@@ -8,8 +8,10 @@ import { digest, requireThat } from './common.mjs';
 
 import { strategyClosureResult } from './strategy-closure.mjs';
 import { recordClosingApproval } from './closure-approval.mjs';
+import { archiveIssueChatsOnClose, beginIssueCleanup, issueHasChats, recordCleanupFailure } from './issue-cleanup.mjs';
+import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
 
-export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed') {
+export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed', cleanup = null) {
   service.ownServer();
   let queue = readQueue(service.root),
     issue = progressIssue(queue, id, state);
@@ -30,8 +32,38 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
   const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: prepared.accepted };
   applyClosure(result, choice, reason, target, dismissed);
   const evidence = [{ path: join(service.root, '.issues', id + '.md'), sha256: digest(issue.content) }];
-  return recordDecision(service, queue, issue, run, result, evidence, target, basis);
+  const decision = recordDecision(service, queue, issue, run, result, evidence, target, basis);
+  if (kind !== 'close') return decision;
+  return finishIssueClosure(service, id, decision, cleanup, resolution);
 }
+
+function finishIssueClosure(service, id, decision, cleanup, resolution) {
+  cancelIssueActionsOnClose(service, id);
+  if (!cleanup) {
+    if (issueHasChats(service, id)) archiveChatsAfterClose(service, id, resolution);
+    return decision;
+  }
+  const cleanupInput = { ...cleanup, resolution };
+  runCleanupInBackground(service, id, resolution, cleanupInput);
+  return { ...decision, cleanup: { status: 'running', selected: cleanupInput.selected || [] } };
+}
+
+function archiveChatsAfterClose(service, id, resolution) {
+  const cleanupInput = { selected: [], resolution };
+  runCleanupInBackground(service, id, resolution, cleanupInput, true);
+}
+
+function runCleanupInBackground(service, id, resolution, cleanupInput, includeChats = false) {
+  service.issueCleanupTasks ||= new Map();
+  if (service.issueCleanupTasks.has(id)) return;
+  beginIssueCleanup(service, id, cleanupInput);
+  const task = Promise.resolve()
+    .then(() => archiveIssueChatsOnClose(service, id, resolution, includeChats ? null : cleanupInput))
+    .catch((error) => recordCleanupFailure(service, id, cleanupInput, error))
+    .finally(() => service.issueCleanupTasks.delete(id));
+  service.issueCleanupTasks.set(id, task);
+}
+
 function closureChoice(queue, role, kind, resolution) {
   if (kind === 'reopen') {
     requireThat(['ready-to-close', 'closed'].includes(role), 'This issue is not at final review or closed.');

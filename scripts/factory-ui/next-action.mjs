@@ -10,22 +10,8 @@ import { describeLaunch } from './data.mjs';
 import { chatConnectionProblem } from './worker-history.mjs';
 import { reviewFollowup, reviewInput } from './review-followup.mjs';
 import { digest, requireThat, git } from './common.mjs';
-
-export const progressBasis = (queue, id = null) =>
-  id
-    ? reviewInput(queue, progressIssue(queue, id, queue.issues.find((i) => i.id === id)?.state))
-    : digest(JSON.stringify(queue));
-export function progressIssue(queue, id, state) {
-  requireThat(typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id), 'Use the full saved issue ID.');
-  const issue = queue.issues.find((i) => i.id === id);
-  requireThat(issue, 'This issue no longer exists. Refresh the queue.');
-  requireThat(issue.state === state, 'The issue moved to another stage. Refresh before continuing.');
-  requireThat(
-    queue.lifecycle.filter((s) => s.state === state).length === 1,
-    'This stage is missing or ambiguous in the lifecycle.'
-  );
-  return issue;
-}
+export { progressBasis, progressIssue } from '../progress-basis.mjs';
+import { progressBasis, progressIssue } from '../progress-basis.mjs';
 export function resolveNextAction(queue, issue, runs) {
   const choice = nextProgress(queue, issue, runs);
   return { choice, structuralBlocker: choice.disabled ? choice.summary : null };

@@ -8,7 +8,7 @@ function refreshFixture(t) {
   const start = html.indexOf('      async function refresh()');
   const end = html.indexOf('      function showRuntime(', start);
   const dom = new JSDOM(
-    '<div id="coordinator-strip" hidden></div><input id="draft"><dialog id="confirm"></dialog><dialog id="model-settings"></dialog><dialog id="plan"></dialog><div id="connection"></div><div id="error"></div><main id="app"></main>',
+    '<div id="coordinator-strip" hidden></div><div id="connection-banner" hidden></div><input id="draft"><dialog id="confirm"></dialog><dialog id="model-settings"></dialog><dialog id="plan"></dialog><div id="connection"></div><div id="error"></div><main id="app"></main>',
     { url: 'http://127.0.0.1/#/issue/one', runScripts: 'outside-only' }
   );
   t.after(() => dom.window.close());
@@ -17,6 +17,7 @@ function refreshFixture(t) {
       '\nwindow.coordinatorUI = coordinatorUI;\n' +
       readFileSync('scripts/factory-ui/server-control-ui.js', 'utf8') +
       '\nwindow.serverControlUI = serverControlUI;\n' +
+      readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') +
       readFileSync('scripts/factory-ui/discussion-ui.js', 'utf8') +
       '\nwindow.chatTest = discussionUI;'
   );
@@ -38,7 +39,7 @@ function refreshFixture(t) {
     'serverControlUI',
     'issueRoute',
     'coordinatorUI',
-    'let data,refreshing=false,refreshPending=false;\n' +
+    'let data,refreshing=false,refreshPending=false,progressUnavailable=false; function updateProgressView() {}\n' +
       html.slice(start, end).replace('!busy', '!isBusy()') +
       ';return refresh;'
   )(

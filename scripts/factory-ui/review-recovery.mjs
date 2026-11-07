@@ -1,6 +1,6 @@
 import { startChat } from './chat-start.mjs';
 import { readFileSync } from 'node:fs';
-import { progressBasis } from './next-action.mjs';
+import { progressBasis } from '../progress-basis.mjs';
 import { digest } from './common.mjs';
 import { validateInstructions } from './review-instructions.mjs';
 

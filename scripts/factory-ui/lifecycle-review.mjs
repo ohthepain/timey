@@ -1,13 +1,9 @@
-import { hasAssignmentScope, retainAssignmentScope } from '../factory-assignment-scope.mjs';
 import { issueWorkChat } from './issue-work-chat.mjs';
 import { resumeReviewThread, readOnlyReviewTurn } from './review-recovery.mjs';
-import { readFileSync } from 'node:fs';
-import { scopeInput, reusedScope, retainScope } from './scope-coverage.mjs';
 import { conversationPrompt } from './conversation-context.mjs';
-import { stopLifecycle } from './lifecycle-stop.mjs';
 import { readQueue } from './data.mjs';
 import { join } from 'node:path';
-import { writeJson, requireThat, digest } from './common.mjs';
+import { writeJson } from './common.mjs';
 import { captureInstructions } from './review-instructions.mjs';
 import { lifecycleEvent, saveLifecycle } from './lifecycle-store.mjs';
 
@@ -70,50 +66,4 @@ export async function lifecycleReview(service, record, message, schema, options 
   } finally {
     service.store.connected.delete(run.id);
   }
-}
-const coverageSchema = {
-  type: 'object',
-  properties: {
-    within_plan: { type: 'boolean' },
-    summary: { type: 'string' },
-    question: { type: 'string' },
-  },
-  required: ['within_plan', 'summary', 'question'],
-  additionalProperties: false,
-};
-export async function checkLifecycleScope(service, record, action) {
-  requireThat(
-    action.issues.every((id) => id === record.issueId),
-    'This assignment includes another issue. It needs a separate decision.'
-  );
-  if (hasAssignmentScope(service, record, action)) return true;
-  const input = scopeInput(service, record, action, digest(readFileSync(new URL(import.meta.url))));
-  if (reusedScope(record, input)) {
-    lifecycleEvent(service, record, 'The saved scope check still applies. Continuing.');
-    return true;
-  }
-  lifecycleEvent(service, record, 'Checking that the next assignment follows your approved plan.');
-  const review = await lifecycleReview(
-    service,
-    record,
-    `Does this exact saved assignment fit entirely inside the approved plan, including scope, checks, dependencies and integration policy? Do not treat approval of a plan as permission to expand it, skip a human check, deploy or push. Read the saved issue and plan. Publication, pushes, PR merge and acceptance are separately guarded later. Missing permission for those later operations does not block implementation already covered by the plan. Automatic contribution integration is not permission to publish or merge a PR. If implementation scope itself is not covered, ask one specific question. Assignment: ${JSON.stringify(action)}.`,
-    coverageSchema
-  );
-  const { result } = review;
-  if (result.within_plan && !result.question.trim()) {
-    retainScope(service, record, input, review);
-    retainAssignmentScope(service, record, action, review.receipt);
-    saveLifecycle(service, record);
-    return true;
-  }
-  if (!result.question.trim().endsWith('?')) {
-    stopLifecycle(service, record, result.summary);
-    return false;
-  }
-  saveLifecycle(service, record, {
-    status: 'waiting',
-    summary: result.summary,
-    input: { type: 'scope', question: result.question || result.summary },
-  });
-  return false;
 }

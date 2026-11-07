@@ -8,6 +8,7 @@ const discussionUI = (() => {
     idleTimer = null,
     focused = null,
     sendRequest = null,
+    refreshPage = null,
     pending = false;
   let removeSelection = () => {};
   const button = (label, action) => {
@@ -34,9 +35,10 @@ const discussionUI = (() => {
     panel = null;
     session = null;
     issueId = null;
+    refreshPage = null;
     pending = false;
   }
-  function mount(id, request) {
+  function mount(id, request, refresh) {
     const target = document.getElementById('discussion-slot');
     if (id !== issueId) end();
     if (!target) {
@@ -44,6 +46,7 @@ const discussionUI = (() => {
       return;
     }
     sendRequest = request;
+    refreshPage = refresh;
     issueId = id;
     if (!panel) panel = build();
     target.replaceWith(panel);
@@ -108,10 +111,12 @@ const discussionUI = (() => {
     const submit = () =>
       run(async () => {
         const text = draft.value.trim();
-        if (!text) return;
+        if (!skillComposer.canSubmit(text)) return;
+        const skills = skillComposer.skills();
         draft.value = '';
-        add('You', text);
-        const result = await call('turn', { text });
+        add('You', text, skills);
+        const result = await call('turn', { text, skills });
+        skillComposer.reset();
         add('Codex', result.text);
         draft.focus();
       });
@@ -126,6 +131,7 @@ const discussionUI = (() => {
       }
     });
     form.append(draft, send);
+    const skillComposer = createSkillComposer(form, draft, () => call('skills', {}));
     const status = document.createElement('p');
     status.className = 'discussion-status';
     status.setAttribute('role', 'status');
@@ -149,18 +155,119 @@ const discussionUI = (() => {
     summary.textContent = 'Temporary chat · Enter to send, Shift+Enter for a new line';
     const notice = document.createElement('p');
     notice.textContent =
-      'This factory does not save or restore the conversation. Select conversation text to record agreed output with a separate confirmation. Messages go to your configured model provider under your account’s data policies. Chat ends on navigation, reload, 15 minutes of inactivity or after one hour. Typed instructions never authorize workflow changes.';
+      'This panel chat and its grilling transcript are temporary. Run retro uses the saved issue conversation, which retains its request and result. Select panel text to record agreed output with a separate confirmation. Messages go to your configured model provider under your account’s data policies. Panel chat ends on navigation, reload, 15 minutes of inactivity or after one hour. Typed instructions never authorize workflow changes.';
     const idForMount = issueId,
-      requestForMount = sendRequest;
+      requestForMount = sendRequest,
+      refreshForMount = refreshPage;
     const reset = button('End chat and clear text', () => {
       end();
-      mount(idForMount, requestForMount);
+      mount(idForMount, requestForMount, refreshForMount);
     });
     const grill = button('Start grilling…', () => startGrill(null));
     const results = button('Review grilling results…', () =>
       run(async () => showPreview(await call('summary', {})), 'Preparing the interview summary…')
     );
     results.hidden = true;
+    const retroPanel = document.createElement('section');
+    retroPanel.className = 'retro-recommendations';
+    retroPanel.hidden = true;
+    let retroResult = null;
+    const requestIds = new Map();
+    async function startRetro() {
+      if (saved) throw Error('End this chat before starting another retro.');
+      const result = await call('retro', {});
+      retroResult = result;
+      retroPanel.replaceChildren();
+      const heading = document.createElement('h3');
+      heading.textContent = 'Recommendations';
+      const summaryText = document.createElement('p');
+      summaryText.textContent = result.summary;
+      retroPanel.append(heading, summaryText);
+      result.recommendations.forEach((item, index) => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = String(index);
+        const content = document.createElement('span');
+        const title = document.createElement('strong');
+        title.textContent = item.title;
+        const description = document.createElement('span');
+        description.textContent = item.description;
+        const reason = document.createElement('span');
+        reason.textContent = 'Why: ' + item.reason;
+        const verification = document.createElement('span');
+        verification.textContent = 'Verify by: ' + item.verification;
+        content.append(title, description, reason, verification);
+        label.append(checkbox, content);
+        retroPanel.append(label);
+      });
+      if (!result.recommendations.length) {
+        const empty = document.createElement('p');
+        empty.textContent = 'No issue-specific recommendations were found.';
+        retroPanel.append(empty);
+        retroPanel.hidden = false;
+        return;
+      }
+      const file = button('File checked recommendations as issues', () =>
+        run(fileSelectedRetro, 'Filing only the checked recommendations…')
+      );
+      retroPanel.append(file);
+      retroPanel.hidden = false;
+      retroPanel.scrollIntoView?.({ block: 'nearest' });
+    }
+    async function fileSelectedRetro() {
+      const selected = selectedRetroIndices(retroPanel);
+      const ids = retroRequestIdentities(selected, requestIds);
+      const filed = await call('retro-file', { selected, requestIds: ids });
+      showFiledRetro(filed);
+      try {
+        await refreshPage?.();
+      } catch (error) {
+        const warning = document.createElement('p');
+        warning.setAttribute('role', 'alert');
+        warning.textContent = `Issues were filed, but the queue could not refresh: ${error.message}`;
+        retroPanel.append(warning);
+      }
+    }
+    function selectedRetroIndices(panel) {
+      const selected = [...panel.querySelectorAll('input[type=checkbox]:checked')].map((item) => Number(item.value));
+      if (!selected.length) throw Error('Check at least one recommendation.');
+      return selected;
+    }
+    function retroRequestIdentities(selected, cache) {
+      const ids = {};
+      for (const index of selected) {
+        if (!cache.has(index)) cache.set(index, crypto.randomUUID());
+        ids[index] = cache.get(index);
+      }
+      return ids;
+    }
+    function showFiledRetro(filed) {
+      const notice = document.createElement('p');
+      notice.setAttribute('role', filed.errors.length ? 'alert' : 'status');
+      notice.textContent = filed.issues.length
+        ? `Filed ${filed.issues.length} issue${filed.issues.length === 1 ? '' : 's'}.`
+        : 'No issues were filed.';
+      retroPanel.append(notice);
+      filed.issues.forEach((issue) => {
+        const link = document.createElement('a');
+        link.href = '#/issue/' + encodeURIComponent(issue.id);
+        link.textContent = issue.title;
+        link.style.display = 'block';
+        retroPanel.append(link);
+      });
+      filed.errors.forEach((failure) => {
+        const error = document.createElement('p');
+        error.setAttribute('role', 'alert');
+        error.textContent = `Could not file “${retroResult.recommendations[failure.index].title}”: ${failure.message}`;
+        retroPanel.append(error);
+      });
+    }
+    node.startRetro = () => {
+      toggle.setAttribute('aria-expanded', 'true');
+      body.hidden = false;
+      return run(startRetro, 'Running the retro skill for this issue…');
+    };
     node.startGrill = (stage) => {
       const error = stageError(stage);
       if (error) {
@@ -182,12 +289,20 @@ const discussionUI = (() => {
       return '';
     }
     details.append(summary, notice, grill, reset);
-    function add(who, text) {
+    function add(who, text, skills = []) {
       empty.remove();
       const entry = document.createElement('p');
       const speaker = document.createElement('strong');
       speaker.textContent = who;
       entry.append(speaker, document.createTextNode(text));
+      if (skills.length) {
+        for (const name of skills) {
+          const token = document.createElement('span');
+          token.className = 'skill-chip';
+          token.textContent = '✦ ' + name;
+          entry.append(document.createTextNode(' '), token);
+        }
+      }
       log.append(entry);
       log.scrollTop = log.scrollHeight;
     }
@@ -230,10 +345,10 @@ const discussionUI = (() => {
       try {
         await work();
         updateStatus(current, '');
-      } catch {
+      } catch (error) {
         updateStatus(
           current,
-          'Chat could not complete. If you were saving, check the issue before retrying. End this temporary chat to start again.'
+          `Chat could not complete: ${error.message} Check the saved issue conversation before retrying.`
         );
       } finally {
         settle(current);
@@ -258,7 +373,7 @@ const discussionUI = (() => {
         results.hidden = false;
         add('Codex', result.text);
         draft.focus();
-      }, 'Starting the grilling interview…');
+      }, 'Pausing current issue work, if any, before starting the grilling interview…');
     }
     function review(kind, text) {
       run(async () => showPreview(await call('prepare', { kind, text })), 'Preparing the selected action…');
@@ -301,7 +416,7 @@ const discussionUI = (() => {
       );
       return confirm;
     }
-    body.append(stageLabel, log, form, status, record, results, preview, details);
+    body.append(stageLabel, log, form, status, record, results, preview, retroPanel, details);
     node.append(toggle, body);
     return node;
   }
@@ -311,6 +426,7 @@ const discussionUI = (() => {
   return {
     mount,
     end,
+    retro: () => panel?.startRetro?.(),
     grill: (stage) => {
       if (stage) panel?.startGrill(stage);
     },

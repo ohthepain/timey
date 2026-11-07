@@ -6,27 +6,24 @@ import { join } from 'node:path';
 import { readRuntime } from './factory-ui/runtime.mjs';
 import { cleanEnvironment, requireThat } from './factory-ui/common.mjs';
 
-export async function deploymentSession(address) {
-  const runtime = await readRuntime(address),
-    origin = runtime.url;
-  const page = await fetch(origin + '/', { redirect: 'error' });
-  const cookie = page.headers
-    .getSetCookie()
-    .map((value) => value.split(';')[0])
-    .join('; ');
+export async function deploymentSession(address, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 10000;
+  const runtime = await readRuntime(address, () => {}, false, { timeoutMs });
+  const origin = runtime.url;
+  const cookie = runtime.sessionCookie;
   async function request(path) {
     const response = await fetch(origin + path, {
       method: 'POST',
       headers: { cookie, origin, 'content-type': 'application/json', 'x-factory-action': 'manual' },
       body: '{}',
       redirect: 'error',
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const value = await response.json();
     requireThat(response.ok, value.error || 'Deployment request failed.');
     return value;
   }
-  return { runtime, request, action: (name) => request('/api/deployment-' + name) };
+  return { runtime, request, action: (name) => request('/api/deployment-' + name), cookie };
 }
 export function startFactory(checkout, project, port, log) {
   const fd = openSync(log, 'a', 0o600);

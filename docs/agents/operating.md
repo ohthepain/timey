@@ -195,3 +195,17 @@ and publication, plus merge only for Full Send. This supersedes the draft-only
 finish line and separate lifecycle planning requirements for this path. Checks,
 real permission boundaries, deployment, human acceptance and closure retain their
 meaning. Legacy records are retained without automatic migration or replay.
+
+For an explicitly active strategy, the approved
+[blocker-repair policy](../plans/autonomous-blocker-repair.md) supersedes the
+manual-failure-stop rule above. Merge the fetched target into the issue branch,
+resolve conflicts and repair necessary inherited tests/formatting and new Fallow
+findings including warnings. Keep the original base and all failed evidence.
+The server returns verification/readiness failures to the owning agent, not a new
+coordinator or worker. Make at most three materially different approaches per
+blocker in each explicit run; retain earlier runs' attempts. Retry temporary
+infrastructure failures at most three times with delays. A repeated approach,
+unchanged candidate, permission denial or genuine human decision stops safely.
+Keep repair commits on the issue PR, or a linked follow-up if it already merged.
+New starts and explicit Continue receive this policy; inactive work never restarts
+because conditions changed. Never weaken checks, merge protections or acceptance.

@@ -10,6 +10,7 @@ import { factory } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { createDiscussions } from './factory-ui/discussion.mjs';
 import { humanGuard } from './factory-ui/guard.mjs';
+import { digest } from './factory-ui/common.mjs';
 
 function fixture(t) {
   const { root, git } = gitFixture(t, 'discussion-check-');
@@ -35,12 +36,35 @@ function fixture(t) {
   service.discussions.close();
   let time = 1000;
   const calls = [],
+    skillCalls = [],
     runtimes = [];
+  const skillPath = join(root, '.agents/skills/sample/SKILL.md');
+  mkdirSync(join(root, '.agents/skills/sample'), { recursive: true });
+  writeFileSync(skillPath, 'A sample skill.\n');
   const create = () => {
     const runtime = {
       begin: async (context) => calls.push(context),
-      ask: async (text) => {
+      ask: async (text, skills, schema) => {
         calls.push(text);
+        skillCalls.push(skills);
+        if (schema?.properties?.recommendations)
+          return JSON.stringify({
+            summary: 'One issue-specific improvement.',
+            recommendations: [
+              {
+                title: 'Add a regression check',
+                description: 'Cover the failing case.',
+                reason: 'Prevent recurrence.',
+                verification: 'Run the focused check.',
+              },
+              {
+                title: 'Document the trigger',
+                description: 'Record the trigger condition.',
+                reason: 'Improve diagnosis.',
+                verification: 'Confirm the steps reproduce it.',
+              },
+            ],
+          });
         return 'SYNTHETIC_REPLY';
       },
       close: () => {
@@ -68,12 +92,65 @@ function fixture(t) {
     owner,
     input: { issueId, session },
     calls,
+    skillCalls,
+    skillPath,
     runtimes,
     tick: (ms) => {
       time += ms;
     },
   };
 }
+
+function installFailingHumanInputHelper(root, { signal = null, diagnostic }) {
+  const scripts = join(root, '.agents/skills/issues/scripts');
+  const helper = join(scripts, 'human-input.mjs');
+  const source = `
+if (process.argv[2] === 'capabilities') {
+  console.log(JSON.stringify({ capabilities: ['read', 'guards'] }));
+} else {
+  process.stdout.write(${JSON.stringify(JSON.stringify({ diagnostics: [diagnostic] }))});
+  process.stderr.write('PRIVATE_STDERR_CANARY');
+  ${signal ? `process.kill(process.pid, ${JSON.stringify(signal)});` : 'process.exit(4);'}
+}
+`;
+  writeFileSync(helper, source);
+  const manifestPath = join(scripts, 'human-input-version.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  writeFileSync(manifestPath, JSON.stringify({ ...manifest, bundle_sha256: `sha256:${digest(source)}` }));
+}
+
+test('human-input helper failures retain safe status and structured diagnostics without bypassing the guard', (t) => {
+  const f = fixture(t);
+  installFailingHumanInputHelper(f.root, {
+    diagnostic: { code: 'REPORT_INVALID', message: 'Cannot read report at /Users/private/report.md' },
+  });
+  assert.throws(
+    () => humanGuard(f.root, { issues: ['20261025-a'] }, 'implement', 'candidate-head'),
+    (error) => {
+      assert.match(error.message, /exit status 4/);
+      assert.match(error.message, /REPORT_INVALID: Cannot read report at \[path\]/);
+      assert.doesNotMatch(error.message, /PRIVATE_STDERR_CANARY|private\/report/);
+      return true;
+    }
+  );
+});
+
+test('human-input helper signal failures identify the signal and retain structured context', (t) => {
+  const f = fixture(t);
+  installFailingHumanInputHelper(f.root, {
+    signal: 'SIGTERM',
+    diagnostic: { code: 'IO_FAILURE', message: 'Unable to process input' },
+  });
+  assert.throws(
+    () => humanGuard(f.root, { issues: ['20261025-a'] }, 'implement', 'candidate-head'),
+    (error) => {
+      assert.match(error.message, /signal SIGTERM/);
+      assert.match(error.message, /IO_FAILURE: Unable to process input/);
+      assert.doesNotMatch(error.message, /PRIVATE_STDERR_CANARY/);
+      return true;
+    }
+  );
+});
 
 test('ordinary turns isolate context and never write history; reset and expiry destroy runtimes', async (t) => {
   const f = fixture(t),
@@ -92,6 +169,86 @@ test('ordinary turns isolate context and never write history; reset and expiry d
   f.discussion.sweep();
   assert.equal(f.discussion.sessions.size, 0);
   assert.ok(f.runtimes[1].closed);
+});
+
+test('temporary discussion lists enabled skills and invokes selected skills without persisting the transcript', async (t) => {
+  const f = fixture(t);
+  f.service.codex.ready = async () => {};
+  f.service.codex.call = async (method) => {
+    assert.equal(method, 'skills/list');
+    return {
+      data: [
+        {
+          skills: [
+            { name: 'sample', path: f.skillPath, enabled: true, shortDescription: 'Sample skill', source: 'Personal' },
+          ],
+        },
+      ],
+    };
+  };
+  assert.deepEqual(await f.discussion.skills(f.input, f.owner), [
+    { name: 'sample', description: 'Sample skill', source: 'Personal', icon: '✦' },
+  ]);
+  await f.discussion.turn({ ...f.input, text: '', skills: ['sample'] }, f.owner);
+  assert.deepEqual(f.skillCalls[0], [
+    {
+      name: 'sample',
+      path: f.skillPath,
+      description: 'Sample skill',
+      source: 'Personal',
+      sha256: (await import('./factory-ui/common.mjs')).digest(readFileSync(f.skillPath)),
+    },
+  ]);
+  assert.equal(f.service.store.list(new Map()).length, 0);
+});
+
+test('issue retro runs the installed skill and files only selected recommendations', async (t) => {
+  const f = fixture(t);
+  let retroIssue;
+  f.service.issueChats = {
+    connections: new Map(),
+    close() {},
+    retro: async (issueId) => {
+      retroIssue = issueId;
+      return {
+        summary: 'One issue-specific improvement.',
+        recommendations: [
+          {
+            title: 'Add a regression check',
+            description: 'Cover the failing case.',
+            reason: 'Prevent recurrence.',
+            verification: 'Run the focused check.',
+          },
+          {
+            title: 'Document the trigger',
+            description: 'Record the trigger condition.',
+            reason: 'Improve diagnosis.',
+            verification: 'Confirm the steps reproduce it.',
+          },
+        ],
+      };
+    },
+  };
+  const captured = [];
+  f.service.captures = {
+    save: async (input) => {
+      captured.push(input);
+      return { issues: [{ id: 'new-issue', title: 'Captured recommendation', state: 'backlog' }] };
+    },
+  };
+  const result = await f.discussion.retro(f.input, f.owner);
+  assert.equal(result.recommendations.length, 2);
+  assert.equal(retroIssue, f.input.issueId);
+  assert.equal(f.runtimes.length, 0, 'retro does not create a temporary chat');
+  const filed = await f.discussion.fileRetro(
+    { ...f.input, selected: [1], requestIds: { 1: '59fc2dd4-5d7c-40a8-b06e-73b5d51ef2ab' } },
+    f.owner
+  );
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].requestId, '59fc2dd4-5d7c-40a8-b06e-73b5d51ef2ab');
+  assert.match(captured[0].description, /Document the trigger/);
+  assert.doesNotMatch(captured[0].description, /Add a regression check/);
+  assert.equal(filed.issues[0].id, 'new-issue');
 });
 
 test('actual guarded report append retains only chosen output and human confirmation; replays rejected', async (t) => {
@@ -149,6 +306,56 @@ test('grilling requires reviewed clicked intent, stays temporary and does not ad
   await assert.rejects(f.discussion.commit({ ...f.input, token: intent.token, clicked: true }, f.owner));
   f.discussion.close();
   assert.ok(f.runtimes[0].closed);
+});
+
+test('grilling waits for active issue work to pause and leaves strategy work paused until explicit continue', async (t) => {
+  const f = fixture(t),
+    path = join(f.root, '.issues/20261025-a.md'),
+    original = readFileSync(path),
+    record = {
+      id: 'active-strategy',
+      issueId: f.input.issueId,
+      status: 'running',
+      events: [],
+      attempts: [],
+      work: { strategy: 'full-send' },
+    };
+  saveLifecycle(f.service, record);
+  let finishWork;
+  const task = new Promise((resolve) => {
+    finishWork = resolve;
+  }).finally(() => f.service.lifecycleTasks.delete(f.input.issueId));
+  f.service.lifecycleTasks.set(f.input.issueId, task);
+
+  const intent = f.discussion.prepare({ ...f.input, kind: 'grill' }, f.owner);
+  const grilling = f.discussion.commit({ ...f.input, token: intent.token, clicked: true }, f.owner);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(record.pauseRequested, true);
+  assert.equal(f.calls.length, 0, 'the interview must wait until active work stops');
+
+  saveLifecycle(f.service, record, { status: 'paused', summary: 'Paused for grilling.' });
+  finishWork();
+  await grilling;
+  assert.equal(f.service.lifecycleTasks.has(f.input.issueId), false);
+  assert.equal(f.service.lifecycleRuns[f.input.issueId].status, 'paused');
+
+  await f.discussion.turn({ ...f.input, text: 'Yes, continue only when I click Continue issue.' }, f.owner);
+  f.runtimes[0].ask = async () =>
+    JSON.stringify({
+      decisions: ['Resume only after explicit continue.'],
+      questions: [],
+      answerQuotes: ['Yes, continue only when I click Continue issue.'],
+    });
+  const draft = await f.discussion.summarize(f.input, f.owner);
+  assert.equal(draft.canContinue, false, 'strategy work uses its own Continue issue control');
+  const result = await f.discussion.commit({ ...f.input, token: draft.token, clicked: true }, f.owner);
+  assert.equal(result.recorded, true);
+  assert.equal(f.service.lifecycleRuns[f.input.issueId].status, 'paused');
+  assert.equal(f.service.lifecycleTasks.has(f.input.issueId), false);
+  assert.ok(
+    readFileSync(path, 'utf8').length > original.length,
+    'reviewed grilling is saved only on explicit confirmation'
+  );
 });
 
 test('separate page capabilities, hard expiry and source changes invalidate sessions', async (t) => {
@@ -251,7 +458,9 @@ test('temporary panel survives redraw without storage, rejects scripted actions 
   t.after(() => dom.window.close());
   const calls = [];
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') + '\nwindow.chatTest = discussionUI;'
+    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      '\nwindow.chatTest = discussionUI;'
   );
   const api = async (...args) => {
     calls.push(args);
@@ -285,6 +494,48 @@ test('temporary panel survives redraw without storage, rejects scripted actions 
   ui.mount('two', api);
   assert.equal(document.querySelector('textarea').value, '');
   assert.ok(!document.body.textContent.includes('UNSAVED_DRAFT'));
+  ui.end();
+});
+
+test('issue detail retro opens the temporary panel and displays unchecked recommendation choices', async (t) => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<div id="discussion-slot"></div>', {
+    url: 'http://127.0.0.1/#/issue/one',
+    runScripts: 'outside-only',
+  });
+  t.after(() => dom.window.close());
+  dom.window.eval(
+    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      '\nwindow.chatTest = discussionUI;'
+  );
+  const calls = [];
+  const api = async (path, input) => {
+    calls.push({ path, input });
+    if (path === 'discussion-open') return { session: 'retro-session' };
+    if (path === 'discussion-retro')
+      return {
+        summary: 'One improvement to consider.',
+        recommendations: [
+          {
+            title: 'Add a regression check',
+            description: 'Cover the failing path.',
+            reason: 'Catch recurrence.',
+            verification: 'Run the focused check.',
+          },
+        ],
+      };
+    return { ended: true };
+  };
+  const ui = dom.window.chatTest,
+    document = dom.window.document;
+  ui.mount('one', api, async () => {});
+  await ui.retro();
+  assert.ok(calls.some((call) => call.path === 'discussion-retro'));
+  const choices = document.querySelectorAll('.retro-recommendations input[type=checkbox]');
+  assert.equal(choices.length, 1);
+  assert.equal(choices[0].checked, false);
+  assert.match(document.querySelector('.retro-recommendations').textContent, /Add a regression check/);
   ui.end();
 });
 
@@ -640,7 +891,9 @@ test('stage button opens the temporary chat with a bound stage and preserves it 
   });
   t.after(() => dom.window.close());
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') + '\nwindow.chatTest = discussionUI;'
+    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
+      '\nwindow.chatTest = discussionUI;'
   );
   const calls = [],
     stage = { name: 'Clarify', state: 'backlog' };

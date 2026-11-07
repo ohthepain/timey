@@ -1,10 +1,10 @@
-import { startIssueStrategy, stopIssueStrategy, strategyView } from './issue-strategy.mjs';
+import { strategyView } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
 import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
 import { createCoordinator } from './coordinator.mjs';
 import { progressBasis } from './next-action.mjs';
-import { queueHumanInput } from './queue-human-input.mjs';
+import { queueHumanInput, queueHumanInputReader } from './queue-human-input.mjs';
 import { deliveryMode, draftHandoff, draftAssembly } from './delivery-mode.mjs';
 import { checkHandoff } from './handoff-checks.mjs';
 import { createCaptures } from './issue-capture.mjs';
@@ -28,6 +28,8 @@ import { startChat } from './chat-start.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
 import { resumeDelivery } from './delivery-integration.mjs';
+import { redactValue } from './activity.mjs';
+import { cleanupActionRecords, issueCleanupRecord } from './issue-cleanup.mjs';
 
 import { createSiteReviews } from './site-review.mjs';
 import { createDiscussions } from './discussion.mjs';
@@ -72,13 +74,7 @@ import { checkImplementation } from './plan-review.mjs';
 import { decidePlanCheck } from './plan-approval.mjs';
 import { skipPlanChecks } from './plan-skips.mjs';
 import { approveReviewFile } from './review-file-access.mjs';
-import {
-  readIssueModelSettings,
-  readModelSettings,
-  saveDefaultModelSettings,
-  saveIssueModelSettings,
-  newChatModelSettings,
-} from './model-settings.mjs';
+import { readIssueModelSettings, readModelSettings, newChatModelSettings } from './model-settings.mjs';
 
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
@@ -89,6 +85,11 @@ const operation = (action) =>
       : action.kind === 'verify'
         ? 'verify'
         : 'investigate';
+
+async function recoverWorkerTurn(service, run, error) {
+  if (run.skipRequested) throw error;
+  return recoverWorkerText(service, run, error);
+}
 
 export class FactoryUI {
   constructor(project, options = {}) {
@@ -109,6 +110,8 @@ export class FactoryUI {
     this.siteReviews = createSiteReviews(this);
     this.lifecycleRuns = loadLifecycles(this.root);
     this.lifecycleTasks = new Map();
+    this.issueCleanupTasks = new Map();
+    cleanupActionRecords(this.root, true);
     this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
     this.coordinator = createCoordinator(this, options.coordinatorConnection, (id) =>
       this.continueCoordinatorIssue(id)
@@ -142,13 +145,18 @@ export class FactoryUI {
     if (!this.serverLock) this.store.reload();
     const queue = readQueue(this.root);
     const runs = this.store.list(this.codex.requests);
+    const humanInputs = queueHumanInputReader(queue);
     return {
       ...queue,
       modelSettings: readModelSettings(this.root),
       coordinator: this.coordinator.view(),
       reviewBasis: digest(JSON.stringify(queue)),
-      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner)),
-      runs: runs.map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
+      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner, humanInputs)),
+      runs: runs.map((run) => ({
+        ...run,
+        output: redactValue(run.output || []),
+        displaySummary: redactValue(explainBlock(run.summary)),
+      })),
       actions: queue.actions.map((a) => ({
         ...a,
         launchBlocked: describeLaunch(queue, a),
@@ -158,13 +166,13 @@ export class FactoryUI {
       })),
     };
   }
-  issueView(queue, issue, runs, owner) {
+  issueView(queue, issue, runs, owner, humanInputs = (entry) => queueHumanInput(queue, entry)) {
     const readiness = readinessView(queue, issue, runs);
     const { choice: progress } = resolveNextAction(queue, issue, runs);
     const lifecycle = visibleLifecycle(this.lifecycleStatus(queue, issue, runs), progress);
     const { stageStates, queueLifecycle } = issueLifecycleView(queue, { ...issue, lifecycle }, runs, readiness);
     const issueDelivery = this.deliveries.inspect(issue.id);
-    const humanInputView = queueHumanInput(queue, { ...issue, issueDelivery });
+    const humanInputView = humanInputs({ ...issue, issueDelivery });
     return {
       ...issue,
       strategy: strategyView(this, issue),
@@ -183,13 +191,8 @@ export class FactoryUI {
       implementation: checklistView(queue, issue, runs),
       siteReview: this.siteReviews.view(queue, issue, owner),
       modelSelection: readIssueModelSettings(this.root, issue.id),
+      cleanup: issueCleanupRecord(this.root, issue.id),
     };
-  }
-  saveModelSettings(input) {
-    return saveDefaultModelSettings(this, input);
-  }
-  saveIssueModelSettings(input) {
-    return saveIssueModelSettings(this, input);
   }
   lifecycleStatus(queue, issue, runs) {
     const record = lifecycleView(this, issue);
@@ -233,8 +236,8 @@ export class FactoryUI {
   connectWorker(id, state, basis, link) {
     return connectWorker(this, id, state, basis, link);
   }
-  decideIssue(id, state, kind, basis, reason, resolution) {
-    return decideIssue(this, id, state, kind, basis, reason, resolution);
+  decideIssue(id, state, kind, basis, reason, resolution, cleanup) {
+    return decideIssue(this, id, state, kind, basis, reason, resolution, cleanup);
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);
@@ -247,12 +250,6 @@ export class FactoryUI {
       issue = queue.issues.find((i) => i.id === issueId);
     requireThat(issue, 'The saved issue no longer exists.');
     return this.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
-  }
-  stopIssueStrategy(input) {
-    return stopIssueStrategy(this, input);
-  }
-  startIssueStrategy(input) {
-    return startIssueStrategy(this, input);
   }
   startLifecycle(input) {
     return startLifecycle(this, input);
@@ -448,7 +445,7 @@ export class FactoryUI {
         run.issueId ? newChatModelSettings(this.root, run.issueId) : null
       );
     } catch (error) {
-      recovered = await recoverWorkerText(this, run, error);
+      recovered = await recoverWorkerTurn(this, run, error);
       text = recovered.text;
     }
     let result;

@@ -9,21 +9,40 @@ import { createIssueChats } from './factory-ui/issue-chat.mjs';
 import { conversationMessages, conversationState, appendMessage } from './factory-ui/conversation-store.mjs';
 import { conversationPrompt } from './factory-ui/conversation-context.mjs';
 import { createIssueChatConnection } from './factory-ui/issue-chat-runtime.mjs';
+import { nameIssueChat } from './factory-ui/chat-name.mjs';
 
 function fixture(t) {
   const f = deliveryFixture(t),
     service = new FactoryUI(f.queue.root),
     calls = [];
   t.after(() => service.close());
+  const skillPath = join(f.queue.root, 'sample-skill.md');
+  writeFileSync(skillPath, 'A sample Codex skill.\n');
   const connection = {
     close() {},
+    async ready() {},
+    async call(method, args) {
+      if (method === 'thread/name/set') {
+        calls.push({ name: args.name });
+        return {};
+      }
+      assert.equal(method, 'skills/list');
+      return {
+        data: [
+          { skills: [{ name: 'sample-skill', path: skillPath, enabled: true, shortDescription: 'A sample skill' }] },
+          { skills: [{ name: 'retro', path: skillPath, enabled: true, shortDescription: 'Retrospective' }] },
+        ],
+      };
+    },
     async attach(_root, state, retain) {
       calls.push({ attach: state.threadId || 'new', sandbox: 'read-only' });
       retain({ threadId: state.threadId || 'persistent-issue-chat' });
       return 'persistent-issue-chat';
     },
-    async turn(id, root, prompt) {
-      calls.push({ id, root, prompt });
+    async turn(id, root, prompt, schema, skills) {
+      calls.push({ id, root, prompt, schema, skills });
+      if (schema?.properties?.recommendations)
+        return JSON.stringify({ summary: 'No follow-up needed.', recommendations: [] });
       return 'I can see the saved lifecycle questions and your message.';
     },
   };
@@ -49,6 +68,11 @@ test('one issue conversation persists messages, role contributions and native ch
   await f.finish();
   assert.equal(conversationState(f.queue.root, f.input.issueId).threadId, 'persistent-issue-chat');
   assert.match(f.calls.find((call) => call.prompt).prompt, /Implementation result with actual proof/);
+  assert.match(f.calls.find((call) => call.prompt).prompt, /For this discussion turn only/);
+  assert.match(
+    f.calls.find((call) => call.prompt).prompt,
+    /this discussion restriction does not apply to that later assignment/
+  );
   f.service.issueChats.close();
   f.service.issueChats = createIssueChats(f.service, () => f.connection);
   await f.send('Continue our discussion.', 'second-message');
@@ -58,6 +82,37 @@ test('one issue conversation persists messages, role contributions and native ch
   assert.ok(page.messages.some((message) => message.role === 'Verify'));
   assert.equal(f.calls.filter((call) => call.attach === 'new').length, 1);
   assert.equal(f.calls.filter((call) => call.attach === 'persistent-issue-chat').length, 1);
+  assert.match(f.calls.findLast((call) => call.name)?.name, /^Issue: .* · waiting$/);
+});
+
+test('retro runs and retains its request and result in the saved issue conversation', async (t) => {
+  const f = fixture(t);
+  f.service.codex.ready = async () => {};
+  f.service.codex.call = async () => ({
+    data: [{ skills: [{ name: 'retro', path: join(f.queue.root, 'sample-skill.md'), enabled: true }] }],
+  });
+  const result = await f.service.issueChats.retro(f.input.issueId);
+  assert.deepEqual(result, { summary: 'No follow-up needed.', recommendations: [] });
+  const messages = conversationMessages(f.queue.root, f.input.issueId);
+  assert.ok(messages.some((message) => message.kind === 'retro-request'));
+  assert.ok(
+    messages.some((message) => message.kind === 'retro-result' && message.body.includes('No follow-up needed.'))
+  );
+  assert.match(f.calls.findLast((call) => call.name)?.name, /^Retro: .* · waiting$/);
+  assert.equal(f.calls.filter((call) => call.attach === 'new').length, 1);
+  assert.equal(conversationState(f.queue.root, f.input.issueId).threadId, 'persistent-issue-chat');
+});
+
+test('execution names the saved issue thread with the role first', async (t) => {
+  const f = fixture(t);
+  f.service.codex.call = async (_method, args) => {
+    f.calls.push({ name: args.name });
+    return {};
+  };
+  const run = f.service.store.add({ id: 'issue-work' }, 'issue-work', f.queue.head);
+  f.service.store.update(run, { issueId: f.input.issueId });
+  await nameIssueChat(f.service, run, 'persistent-issue-chat');
+  assert.match(f.calls.findLast((call) => call.name)?.name, /^Execute: .* · active$/);
 });
 test('comments are accepted during implementation, serialized for replies and cannot dispatch work', async (t) => {
   const f = fixture(t),
@@ -117,6 +172,51 @@ test('message IDs are idempotent and failed provider replies leave comments avai
   assert.equal(history.filter((m) => m.actor === 'human').length, 1);
   assert.ok(history.some((m) => m.kind === 'response-error'));
   assert.equal(f.service.issueChats.view(f.input.issueId).status, 'attention');
+});
+test('selected skills invoke through the issue thread and token-only messages are accepted', async (t) => {
+  const f = fixture(t);
+  await f.send('', 'skill-only', 'comment', { skills: ['sample-skill'] });
+  await f.finish();
+  const userMessage = conversationMessages(f.queue.root, f.input.issueId).find(
+    (message) => message.id === 'skill-only'
+  );
+  assert.deepEqual(userMessage.skills, ['sample-skill']);
+  assert.deepEqual(f.calls.find((call) => call.prompt).skills, [
+    { type: 'skill', name: 'sample-skill', path: join(f.queue.root, 'sample-skill.md') },
+  ]);
+  assert.equal((await f.send('', 'skill-only', 'comment', { skills: ['sample-skill'] })).repeated, true);
+  await assert.rejects(
+    f.send('yes', 'answer-with-skill', 'answer', { skills: ['sample-skill'] }),
+    /does not accept skill/
+  );
+  await f.send('', 'unknown-skill', 'comment', { skills: ['unknown'] });
+  await f.finish();
+  assert.ok(conversationMessages(f.queue.root, f.input.issueId).some((message) => message.kind === 'response-error'));
+});
+test('slash skill selector filters metadata and inserts a removable read-only composer token', async () => {
+  const dom = new JSDOM('<form><textarea></textarea><button type="submit">Send</button></form>', {
+    runScripts: 'outside-only',
+  });
+  dom.window.eval(readFileSync(join(process.cwd(), 'scripts/factory-ui/issue-chat-ui.js'), 'utf8'));
+  const form = dom.window.document.querySelector('form'),
+    draft = form.querySelector('textarea'),
+    skill = { name: 'practice', description: 'Practice timing', source: 'Personal', icon: '✦' },
+    composer = dom.window.createSkillComposer(form, draft, async () => ({ skills: [skill] }));
+  draft.value = '/practice';
+  draft.setSelectionRange(draft.value.length, draft.value.length);
+  draft.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const option = form.querySelector('[role="option"]');
+  assert.match(option.textContent, /practice.*Practice timing.*Personal/);
+  draft.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.deepEqual(Array.from(composer.skills()), ['practice']);
+  assert.equal(draft.value, '');
+  assert.equal(form.querySelector('.skill-chip').textContent, '✦practice×');
+  assert.equal(composer.canSubmit(''), true);
+  draft.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+  assert.deepEqual(Array.from(composer.skills()), []);
+  assert.equal(form.querySelector('.skill-chips').hidden, true);
+  dom.window.close();
 });
 test('selected issues keep separate conversations; bounded pages retain full role context for retro', async (t) => {
   const f = fixture(t),

@@ -13,7 +13,7 @@ import { progressBasis, nextProgress } from './next-action.mjs';
 import { readPlan } from './plan-document.mjs';
 import { checklistView } from './plan-checks.mjs';
 import { assessLifecycle } from './lifecycle-assessment.mjs';
-import { checkLifecycleScope } from './lifecycle-review.mjs';
+import { checkLifecycleScope } from './lifecycle-scope.mjs';
 import { lifecycleEvent, saveLifecycle } from './lifecycle-store.mjs';
 import { pauseForHuman } from './lifecycle-human.mjs';
 import { waitLifecycleWork, handleLifecycleFailure, waitForChild } from './lifecycle-work.mjs';

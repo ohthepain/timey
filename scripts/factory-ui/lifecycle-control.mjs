@@ -1,4 +1,5 @@
-import { canResumeLifecycle, isRetriableLifecycleFailure, stopLifecycle } from './lifecycle-stop.mjs';
+import { isRetriableLifecycleFailure, stopLifecycle } from './lifecycle-stop.mjs';
+import { canResumeLifecycle } from './lifecycle-stop.mjs';
 import { randomUUID } from 'node:crypto';
 import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
