@@ -45,7 +45,7 @@ test('one primary issue chat is reused across checkouts while active or uncertai
   const second = f.service.store.add({ id: 'second' }, 'worker', f.base);
   assert.equal(await issueWorkChat(f.service, second, f.issueId, '/new-checkout'), 'primary');
   assert.equal(starts, 1);
-  assert.deepEqual(names, ['Execute: Sort the queue · active', 'Execute: Updated issue title · active']);
+  assert.deepEqual(names, ['Execute: #1 Sort the queue · active', 'Execute: #1 Updated issue title · active']);
   assert.equal(resumes[0][1], '/new-checkout');
   const third = f.service.store.add({ id: 'third' }, 'worker', f.base);
   await assert.rejects(issueWorkChat(f.service, third, f.issueId, f.root), /still working/);

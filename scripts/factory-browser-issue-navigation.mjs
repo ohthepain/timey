@@ -13,10 +13,10 @@ export default async function issueNavigationBrowserChecks(page) {
   await page.locator('#queue-direction').click();
   const ascending = await page
     .locator('.issue-sidebar-link')
-    .evaluateAll((links) => links.map((link) => decodeURIComponent(link.hash.slice(8))));
+    .evaluateAll((links) => links.map((link) => link.parentElement.dataset.issueRow));
   if (JSON.stringify(ascending) !== JSON.stringify(['b', 'a', 'x']))
     throw Error(`Fixture is not ascending by creation date: ${JSON.stringify(ascending)}`);
-  await page.locator('.issue-sidebar-link[href="#/issue/b"]').click();
+  await page.locator('[data-issue-row="b"] .issue-sidebar-link').click();
   const previous = page.locator('[data-issue-navigation="previous"]');
   const next = page.locator('[data-issue-navigation="next"]');
   await previous.waitFor();
@@ -33,7 +33,7 @@ export default async function issueNavigationBrowserChecks(page) {
   await page.evaluate(() => (location.hash = '#/queue'));
   await page.getByText('Please select an issue.', { exact: true }).waitFor();
   await page.locator('#queue-direction').click();
-  await page.locator('.issue-sidebar-link[href="#/issue/b"]').click();
+  await page.locator('[data-issue-row="b"] .issue-sidebar-link').click();
   if ((await page.locator('[data-issue-navigation="previous"]').getAttribute('title')) !== 'Go to: Newer low issue')
     throw Error('Previous navigation does not follow descending order.');
   await page.locator('[data-issue-navigation="previous"]').click();

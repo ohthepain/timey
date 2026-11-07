@@ -3612,7 +3612,8 @@ test('wide issue views keep the queue in a sidebar and show an empty selection p
 
   window.location.hash = '#/issue/1';
   window.screenTest.show(snapshot);
-  assert.match(window.document.querySelector('.issue-workspace-content h1').textContent, /^#1 · Untitled issue$/);
+  assert.equal(window.document.querySelector('.issue-workspace-content h1').textContent, 'Untitled issue');
+  assert.equal(window.document.querySelector('.issue-workspace-content .issue-number').textContent, '#1');
 
   window.location.hash = '#/queue';
   window.screenTest.show(snapshot);
