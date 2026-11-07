@@ -5,6 +5,7 @@ import { requireThat, writeJson } from './common.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import { readQueue } from './data.mjs';
 import { openSiblingIssueIds } from './linked-issues.mjs';
+import { cleanupActionRecords } from './issue-cleanup.mjs';
 
 const finishing = new Set([
   '/api/server-cancel-restart',
@@ -118,17 +119,41 @@ export function serverControl(service, restart) {
 }
 
 function cleanupActions(service) {
-  return service.issueCleanupTasks?.size || 0;
+  return cleanupActionRecords(service.root).filter((item) => ['preparing', 'running'].includes(item.status)).length;
 }
 
 function actionItems(service) {
   const queue = readQueue(service.root);
-  return service.store.runs
+  const runs = service.store.runs
     .filter((run) => listableAction(run, service))
     .sort((left, right) => Date.parse(right.updated || right.created) - Date.parse(left.updated || left.created))
     .slice(0, 40)
     .map((run) => actionEntry(run, service, queue))
     .filter((item) => item.currentStrategy);
+  const cleanup = cleanupActionRecords(service.root).map((record) => ({
+    id: `cleanup:${record.issueId}`,
+    title: `Cleanup: ${record.title || record.issueId}`,
+    kind: 'cleanup',
+    status: record.status,
+    summary: cleanupSummary(record),
+    details: (record.selected || []).join(', '),
+    issues: [issueLink(queue, record.issueId)],
+    currentStrategy: true,
+    canStop: false,
+    canRestart: false,
+    canSkip: false,
+    canCancel: false,
+    canPause: false,
+    canSteer: false,
+  }));
+  return [...cleanup, ...runs].slice(0, 40);
+}
+
+function cleanupSummary(record) {
+  if (record.status === 'preparing') return 'Preparing selected resources for cleanup.';
+  const complete = (record.results || []).filter((item) => item.status === 'complete').length;
+  const pending = (record.selected || []).length - complete;
+  return `${complete} cleanup items complete; ${Math.max(0, pending)} pending or needing attention.`;
 }
 
 function listableAction(run, service) {

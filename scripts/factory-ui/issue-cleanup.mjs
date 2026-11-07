@@ -1,4 +1,5 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { lstat as lstatAsync, readdir as readdirAsync } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { digest, git, readJson, requireThat, writeJson } from './common.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
@@ -16,6 +17,56 @@ export async function previewIssueCleanup(service, issueId, resolution = null) {
   applyCleanupDefaults(resources, issue.closure?.reason || resolution, isDelivered(service, issueId, work));
   const basis = digest(JSON.stringify({ issue: issueId, resources }));
   return { issueId, basis, resources };
+}
+
+export function issueCleanupIdentities(service, issueId, resolution = null) {
+  const issue = cleanupIssue(service, issueId);
+  const work = service.lifecycleRuns[issueId]?.work;
+  const resources = [
+    ...identityBranchResources(issueId, work),
+    ...identityWorkspaceResources(issueId, work),
+    ...identityChatResources(service, issueId, issue),
+  ];
+  applyCleanupDefaults(resources, issue.closure?.reason || resolution, isDelivered(service, issueId, work));
+  resources.forEach(markIdentityChecking);
+  return { issueId, basis: null, resources, checking: true };
+}
+
+function identityBranchResources(issueId, work) {
+  if (!hasBranchConfig(work)) return [];
+  return [
+    identityResource('remote-branch', issueId, work.branch, { repository: work.config.repository }),
+    identityResource('local-branch', issueId, work.branch),
+  ];
+}
+
+function identityWorkspaceResources(issueId, work) {
+  if (!work?.checkout) return [];
+  return [
+    { ...identityResource('workspace', issueId, resolve(work.checkout)), estimatedBytes: null, sizeStatus: 'pending' },
+  ];
+}
+
+function identityChatResources(service, issueId, issue) {
+  return issueChatRuns(service, issueId).map((run) =>
+    identityResource('chat', issueId, run.threadId, {
+      name: run.chatTitle?.title || `${chatPurpose(run)}: ${issue.title || issueId}`,
+      threadId: run.threadId,
+    })
+  );
+}
+
+function markIdentityChecking(resource) {
+  Object.assign(resource, {
+    state: 'checking',
+    eligible: false,
+    reason: 'Checking resource…',
+    defaultSelected: false,
+  });
+}
+
+function identityResource(kind, issueId, identity, details = {}) {
+  return { id: resourceId(kind, identity), kind, issueId, name: identity, ...details };
 }
 
 export async function archiveIssueChatsOnClose(service, issueId, resolution, requestedCleanup = null) {
@@ -42,7 +93,7 @@ export function issueHasChats(service, issueId) {
 }
 
 async function cleanupResources(service, issueId, work) {
-  const workspace = work?.checkout ? workspaceResource(service, issueId, work) : null;
+  const workspace = work?.checkout ? await workspaceResource(service, issueId, work) : null;
   const branches = await availableBranchResources(service, issueId, work, workspace);
   return [...branches, ...(workspace ? [workspace] : []), ...(await chatResources(service, issueId))];
 }
@@ -112,17 +163,40 @@ function priorCleanupResults(previous) {
   return previous?.results || [];
 }
 
-export async function retryIssueCleanup(service, issueId) {
-  const saved = readCleanup(service, issueId);
+export async function retryIssueCleanup(service, issueId, prior = null) {
+  const saved = prior || readCleanup(service, issueId);
   requireThat(saved?.status === 'incomplete', 'There is no incomplete cleanup to retry.');
+  return retrySavedCleanup(service, issueId, saved);
+}
+
+async function retrySavedCleanup(service, issueId, saved) {
   const current = await previewIssueCleanup(service, issueId, saved.resolution || saved.closure?.reason);
-  const retryIds = saved.results
-    .filter((result) => ['failed', 'preserved'].includes(result.status))
-    .map((result) => result.id);
+  const retryIds = retryableCleanupIds(saved);
   const previewById = new Map(current.resources.map((item) => [item.id, item]));
   const selected = retryIds.filter((id) => previewById.has(id));
   const input = { basis: current.basis, selected, resolution: saved.resolution };
   return executeIssueCleanup(service, issueId, input, saved);
+}
+
+function retryableCleanupIds(saved) {
+  return saved.results.filter((result) => ['failed', 'preserved'].includes(result.status)).map((result) => result.id);
+}
+
+export function startIssueCleanupRetry(service, issueId) {
+  const saved = readCleanup(service, issueId);
+  requireThat(saved?.status === 'incomplete', 'There is no incomplete cleanup to retry.');
+  requireThat(!service.issueCleanupTasks?.has(issueId), 'Cleanup is already running for this issue.');
+  const record = beginIssueCleanup(service, issueId, { selected: saved.selected, resolution: saved.resolution });
+  record.results = saved.results || [];
+  persistCleanup(service, record);
+  service.issueCleanupTasks ||= new Map();
+  const task = retryIssueCleanup(service, issueId, saved)
+    .catch((error) =>
+      recordCleanupFailure(service, issueId, { selected: saved.selected, resolution: saved.resolution }, error)
+    )
+    .finally(() => service.issueCleanupTasks.delete(issueId));
+  service.issueCleanupTasks.set(issueId, task);
+  return { issueId, state: 'closed', cleanup: record };
 }
 
 export function recordCleanupFailure(service, issueId, input, error) {
@@ -156,6 +230,71 @@ function failedCleanupResults(selected, error) {
 
 export function issueCleanupRecord(root, issueId) {
   return readCleanup({ root }, issueId);
+}
+
+export function beginIssueCleanup(service, issueId, input = {}) {
+  const previous = readCleanup(service, issueId);
+  const record = initialCleanupRecord(service, issueId, input, previous);
+  persistCleanup(service, record);
+  return record;
+}
+
+function initialCleanupRecord(service, issueId, input, previous) {
+  const now = new Date().toISOString();
+  const inherited = inheritedCleanupValues(previous, now);
+  return {
+    version: 1,
+    issueId,
+    title: cleanupIssue(service, issueId).title,
+    selected: selectedCleanupIds(input),
+    resolution: input.resolution ?? null,
+    status: 'preparing',
+    created: inherited.created,
+    updated: now,
+    results: inherited.results,
+  };
+}
+
+function inheritedCleanupValues(previous, now) {
+  if (!previous) return { created: now, results: [] };
+  return { created: previous.created || now, results: previous.results || [] };
+}
+
+export function cleanupActionRecords(root, recover = false) {
+  const directory = join(root, '.issues/factory-ui/cleanup');
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter((name) => /^[a-zA-Z0-9_-]{1,100}\.json$/.test(name))
+    .map((name) => {
+      const record = readJson(join(directory, name));
+      if (recover && ['preparing', 'running'].includes(record.status)) {
+        record.status = 'incomplete';
+        record.recoveredAfterCrash = true;
+        record.updated = new Date().toISOString();
+        const completed = (record.results || []).filter((item) => item.status === 'complete');
+        const uncertain = uncertainCleanupResults(record, completed, record.updated);
+        record.results = [...completed, ...uncertain];
+        persistCleanup({ root }, record);
+      }
+      return record;
+    });
+}
+
+function uncertainCleanupResults(record, completed, at) {
+  const completedIds = new Set(completed.map((item) => item.id));
+  return (record.selected || [])
+    .filter((id) => !completedIds.has(id))
+    .map((id) => ({
+      id,
+      kind: cleanupKindFromId(id),
+      status: 'preserved',
+      reason: 'Interrupted by server shutdown; resource identity must be rechecked before retry.',
+      at,
+    }));
+}
+
+function cleanupKindFromId(id) {
+  return ['remote-branch', 'local-branch', 'workspace', 'chat'].find((kind) => id.startsWith(`${kind}-`)) || 'resource';
 }
 
 function cleanupIssue(service, issueId) {
@@ -305,7 +444,7 @@ function branchReason(shared, remote) {
   return null;
 }
 
-function workspaceResource(service, issueId, work) {
+async function workspaceResource(service, issueId, work) {
   const facts = workspaceFacts(service, issueId, work);
   return {
     id: resourceId('workspace', facts.path),
@@ -315,7 +454,7 @@ function workspaceResource(service, issueId, work) {
     canonicalPath: facts.canonical,
     branch: facts.branch,
     revision: facts.head,
-    estimatedBytes: facts.exists ? directoryBytes(facts.path) : 0,
+    estimatedBytes: facts.exists ? await directoryBytes(facts.path) : 0,
     state: workspaceState(facts.exists, facts.eligible),
     eligible: facts.eligible,
     defaultSelected: false,
@@ -584,19 +723,21 @@ function parseWorktree(group) {
   };
 }
 
-function directoryBytes(path) {
-  return readdirSync(path, { withFileTypes: true }).reduce((total, entry) => total + entryBytes(path, entry), 0);
+async function directoryBytes(path) {
+  const entries = await readdirAsync(path, { withFileTypes: true });
+  const sizes = await Promise.all(entries.map((entry) => entryBytes(path, entry)));
+  return sizes.reduce((total, size) => total + size, 0);
 }
 
-function entryBytes(path, entry) {
-  if (entry.isSymbolicLink() || entry.name === '.git') return 0;
+async function entryBytes(path, entry) {
+  if (ignoredSizeEntry(entry)) return 0;
   const child = join(path, entry.name);
   if (entry.isDirectory()) return directoryBytes(child);
-  return fileBytes(child, entry);
+  return entry.isFile() ? (await lstatAsync(child)).size : 0;
 }
 
-function fileBytes(path, entry) {
-  return entry.isFile() ? lstatSync(path).size : 0;
+function ignoredSizeEntry(entry) {
+  return entry.isSymbolicLink() || entry.name === '.git';
 }
 
 function resourceId(kind, value) {

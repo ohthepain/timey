@@ -4,9 +4,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
-import { executeIssueCleanup, previewIssueCleanup, retryIssueCleanup } from './factory-ui/issue-cleanup.mjs';
+import {
+  beginIssueCleanup,
+  cleanupActionRecords,
+  executeIssueCleanup,
+  issueCleanupIdentities,
+  previewIssueCleanup,
+  retryIssueCleanup,
+} from './factory-ui/issue-cleanup.mjs';
 import { git } from './factory-ui/common.mjs';
 import { readQueue } from './factory-ui/data.mjs';
+import { serverControl } from './factory-ui/server-control.mjs';
 
 function fixture(t) {
   const { queue } = deliveryFixture(t);
@@ -56,6 +64,63 @@ test('preview identifies dirty workspaces and does not infer remote deletion fro
   assert.equal(remote.eligible, false);
   assert.match(remote.reason, /temporary lookup failure/);
   assert.equal(local.eligible, false);
+});
+
+test('cleanup dialog identities return without provider inspection or workspace size scanning', (t) => {
+  const f = fixture(t);
+  const id = f.issue.id;
+  f.service.lifecycleRuns[id] = {
+    issueId: id,
+    work: {
+      checkout: join(f.queue.root, '.issues/issue-work', id),
+      branch: `codex/issue-${id}`,
+      config: { repository: 'fixture/timey' },
+    },
+  };
+  f.service.cleanupProvider = () => {
+    throw Error('identity lookup must not call the provider');
+  };
+  const result = issueCleanupIdentities(f.service, id, 'wont-do');
+  assert.equal(result.checking, true);
+  assert.ok(result.resources.some((item) => item.kind === 'remote-branch' && item.state === 'checking'));
+  assert.ok(result.resources.some((item) => item.kind === 'workspace' && item.estimatedBytes === null));
+});
+
+test('cleanup action is durable, visible in Actions, and recovered without repeating deletion', async (t) => {
+  const f = fixture(t);
+  const id = f.issue.id;
+  const record = beginIssueCleanup(f.service, id, { selected: ['workspace-test-resource'], resolution: 'wont-do' });
+  assert.equal(record.status, 'preparing');
+  const control = serverControl(f.service, null);
+  t.after(() => control.close());
+  assert.equal(control.actions().find((item) => item.kind === 'cleanup')?.status, 'preparing');
+  const recovered = cleanupActionRecords(f.queue.root, true).find((item) => item.issueId === id);
+  assert.equal(recovered.status, 'incomplete');
+  assert.equal(recovered.recoveredAfterCrash, true);
+  assert.equal(recovered.results[0].status, 'preserved');
+  assert.match(recovered.results[0].reason, /identity must be rechecked/);
+});
+
+test('guarded restart waits for a persisted cleanup action to finish', async (t) => {
+  const f = fixture(t);
+  const id = f.issue.id;
+  const record = beginIssueCleanup(f.service, id, { selected: ['chat-test-resource'], resolution: 'wont-do' });
+  let restarted = false;
+  const control = serverControl(f.service, async () => {
+    restarted = true;
+  });
+  t.after(() => control.close());
+  f.service.ownServer = () => {};
+  control.request();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(restarted, false);
+  assert.equal(control.status().phase, 'draining');
+  writeFileSync(
+    join(f.queue.root, '.issues/factory-ui/cleanup', `${id}.json`),
+    JSON.stringify({ ...record, status: 'complete' })
+  );
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(restarted, true);
 });
 
 test('cleanup failure does not undo closure and Retry cleanup retains results', async (t) => {

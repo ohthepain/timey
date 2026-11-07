@@ -162,8 +162,10 @@ launches workers, merges code or accepts issues.
 
 `factory-ui/issue-decision.mjs` owns direct human acceptance/closure independently of lifecycle stages and
 reopening, with current report/evidence guards and preserved historical outcomes.
-`factory-ui/issue-cleanup.mjs` previews issue-owned branches, the issue worktree and
-linked chats, then rechecks each selected resource before removal/archive. Issue
+`factory-ui/issue-cleanup.mjs` returns saved resource identities immediately for
+the close dialog, persists cleanup as an Action, and rechecks each selected resource
+before removal/archive. Interrupted actions are retained for identity reconciliation
+before retry. Issue
 closure also archives eligible idle issue chats while preserving active or unknown
 threads. It keeps
 durable per-resource outcomes outside the removable workspace and supports retry
@@ -378,7 +380,7 @@ by the unchanged candidate/recovery polling flow. Disposable deployment fixtures
 cover HTTP/transport/decode failures, identity mismatches, successful readiness,
 bounded retention and failed-recovery lock preservation.
 
-`factory-ui/server-control.mjs` counts live actions and temporary chats, blocks new
+`factory-ui/server-control.mjs` counts live and cleanup actions and temporary chats, blocks new
 UI work while paused or draining and requests coordinator pauses. `restart-process.mjs`
 hands the installed listener to a replacement process and resumes saved paused
 controllers through normal guards. `server-control-ui.js` owns the header controls

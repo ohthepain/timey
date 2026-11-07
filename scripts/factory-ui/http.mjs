@@ -23,7 +23,7 @@ import {
 } from './issue-strategy.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
-import { previewIssueCleanup, retryIssueCleanup } from './issue-cleanup.mjs';
+import { issueCleanupIdentities, previewIssueCleanup, startIssueCleanupRetry } from './issue-cleanup.mjs';
 async function body(request) {
   let text = '';
   for await (const chunk of request) {
@@ -109,7 +109,8 @@ async function mutation(service, path, value, owner) {
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/issue-chat-stop': () => service.issueChats.stop(value),
     '/api/issue-cleanup-preview': () => previewIssueCleanup(service, value.issueId, value.resolution),
-    '/api/issue-cleanup-retry': () => retryIssueCleanup(service, value.issueId),
+    '/api/issue-cleanup-identities': () => issueCleanupIdentities(service, value.issueId, value.resolution),
+    '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),

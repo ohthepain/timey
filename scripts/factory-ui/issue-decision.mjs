@@ -8,7 +8,7 @@ import { digest, requireThat } from './common.mjs';
 
 import { strategyClosureResult } from './strategy-closure.mjs';
 import { recordClosingApproval } from './closure-approval.mjs';
-import { archiveIssueChatsOnClose, issueHasChats, recordCleanupFailure } from './issue-cleanup.mjs';
+import { archiveIssueChatsOnClose, beginIssueCleanup, issueHasChats, recordCleanupFailure } from './issue-cleanup.mjs';
 import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
 
 export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed', cleanup = null) {
@@ -56,6 +56,7 @@ function archiveChatsAfterClose(service, id, resolution) {
 function runCleanupInBackground(service, id, resolution, cleanupInput, includeChats = false) {
   service.issueCleanupTasks ||= new Map();
   if (service.issueCleanupTasks.has(id)) return;
+  beginIssueCleanup(service, id, cleanupInput);
   const task = Promise.resolve()
     .then(() => archiveIssueChatsOnClose(service, id, resolution, includeChats ? null : cleanupInput))
     .catch((error) => recordCleanupFailure(service, id, cleanupInput, error))
