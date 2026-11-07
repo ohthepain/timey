@@ -32,6 +32,55 @@ export function issueCleanupIdentities(service, issueId, resolution = null) {
   return { issueId, basis: null, resources, checking: true };
 }
 
+export async function previewIssueCleanupResource(service, issueId, resourceIdValue, resolution = null) {
+  const identity = issueCleanupIdentities(service, issueId, resolution).resources.find(
+    (item) => item.id === resourceIdValue
+  );
+  requireThat(identity, 'Refresh the cleanup resource list before checking it.');
+  const issue = cleanupIssue(service, issueId);
+  const work = service.lifecycleRuns[issueId]?.work;
+  const resource = await previewResourceByIdentity(service, issueId, work, identity);
+  applyCleanupDefaults([resource], issue.closure?.reason || resolution, isDelivered(service, issueId, work));
+  return { issueId, resource };
+}
+
+function previewResourceByIdentity(service, issueId, work, identity) {
+  const previewers = {
+    workspace: () => workspaceResource(service, issueId, work),
+    'remote-branch': () => previewRemoteBranch(service, issueId, work),
+    'local-branch': () => previewLocalBranch(service, issueId, work),
+    chat: () => previewChat(service, issueId, identity.threadId),
+  };
+  return previewers[identity.kind]();
+}
+
+async function previewRemoteBranch(service, issueId, work) {
+  const remote = await inspectRemoteBranch(cleanupProvider(service, work.config), work.config.repository, work.branch);
+  const shared = sharedBranch(service, issueId, work.branch);
+  return remoteBranchResource(issueId, work, remote, {
+    shared,
+    remoteEligible: remoteBranchEligible(work.branch === `codex/issue-${issueId}`, remote.revision, shared),
+  });
+}
+
+function previewLocalBranch(service, issueId, work) {
+  const revision = branchRevision(service.root, work.branch);
+  const attachedPath = branchWorktreePath(service.root, work.branch);
+  const workspace = work.checkout ? workspaceFacts(service, issueId, work) : null;
+  const workspaceResourceForBranch = workspace
+    ? { canonicalPath: workspace.canonical, eligible: workspace.eligible }
+    : null;
+  const facts = branchFacts(service, issueId, work.branch, workspaceResourceForBranch, { revision: null }, revision);
+  return localBranchResource(issueId, work.branch, revision, { ...facts, attachedPath });
+}
+
+async function previewChat(service, issueId, threadId) {
+  const run = issueChatRuns(service, issueId).find((item) => item.threadId === threadId);
+  requireThat(run, 'Refresh the cleanup resource list before checking it.');
+  const title = findIssueTitle(service, issueId);
+  return inspectChat(service, run, title, issueChatActive(service, issueId));
+}
+
 function identityBranchResources(issueId, work) {
   if (!hasBranchConfig(work)) return [];
   return [
@@ -73,15 +122,25 @@ export async function archiveIssueChatsOnClose(service, issueId, resolution, req
   const preview = await previewIssueCleanup(service, issueId, resolution);
   const chats = preview.resources.filter((resource) => resource.kind === 'chat');
   const selected = closeChatSelections(chats, requestedCleanup);
-  if (!selected.length)
+  if (!selected.length) {
+    completeEmptyCleanup(service, issueId);
     return { status: 'complete', results: [], retainedChats: chats.filter((item) => !item.eligible) };
+  }
   const input = closeCleanupInput(preview, requestedCleanup, resolution, selected);
   const result = await executeIssueCleanup(service, issueId, input);
   return { ...result.cleanup, retainedChats: chats.filter((item) => !item.eligible) };
 }
 
 function closeChatSelections(chats, requestedCleanup) {
-  return [...new Set([...(requestedCleanup?.selected || []), ...chats.map((item) => item.id)])];
+  return requestedCleanup ? [...new Set(requestedCleanup.selected || [])] : chats.map((item) => item.id);
+}
+
+function completeEmptyCleanup(service, issueId) {
+  const record = readCleanup(service, issueId);
+  if (!record || !['preparing', 'running'].includes(record.status)) return;
+  record.status = 'complete';
+  record.updated = new Date().toISOString();
+  persistCleanup(service, record);
 }
 
 function closeCleanupInput(preview, requestedCleanup, resolution, selected) {
@@ -125,15 +184,52 @@ export async function executeIssueCleanup(service, issueId, input, previous = nu
 async function validateCleanupSelection(service, issueId, input, issue) {
   requireThat(validCleanupInput(input), 'Refresh the cleanup preview before continuing.');
   const preview = await previewIssueCleanup(service, issueId, input.resolution || issue.closure?.reason);
-  requireThat(preview.basis === input.basis, 'Cleanup resources changed. Review the refreshed list before continuing.');
+  if (input.basis) validatePreviewBasis(input.basis, preview.basis);
+  return { preview, selected: validateSelectedCleanup(input, preview.resources) };
+}
+
+function validateSelectedCleanup(input, resources) {
   const selected = new Set(input.selected);
   requireThat(selected.size === input.selected.length, 'A cleanup resource was selected more than once.');
-  requireThat(selectedResourcesExist(selected, preview.resources), 'Unknown cleanup resource.');
-  return { preview, selected: [...selected] };
+  requireThat(selectedResourcesExist(selected, resources), 'Unknown cleanup resource.');
+  if (!input.basis) validateSelectedSnapshots(input.selectedResources || [], selected, resources);
+  return [...selected];
+}
+
+function validatePreviewBasis(expected, actual) {
+  requireThat(actual === expected, 'Cleanup resources changed. Review the refreshed list before continuing.');
+}
+
+function validateSelectedSnapshots(snapshots, selected, resources) {
+  const saved = new Map(snapshots.map((item) => [item.id, item]));
+  requireThat(saved.size === selected.size, 'Refresh selected cleanup checks before continuing.');
+  for (const id of selected) {
+    const current = resources.find((item) => item.id === id);
+    requireThat(
+      sameCleanupIdentity(saved.get(id), current),
+      'A selected resource changed after its check; refresh before continuing.'
+    );
+  }
+}
+
+function sameCleanupIdentity(saved, current) {
+  if (!saved || !current) return false;
+  return [
+    'id',
+    'kind',
+    'name',
+    'repository',
+    'branch',
+    'revision',
+    'canonicalPath',
+    'threadId',
+    'state',
+    'eligible',
+  ].every((key) => saved[key] === current[key]);
 }
 
 function validCleanupInput(input) {
-  return Boolean(input?.basis) && Array.isArray(input.selected);
+  return Array.isArray(input?.selected) && (Boolean(input.basis) || Array.isArray(input.selectedResources));
 }
 
 function selectedResourcesExist(selected, resources) {

@@ -163,9 +163,9 @@ launches workers, merges code or accepts issues.
 `factory-ui/issue-decision.mjs` owns direct human acceptance/closure independently of lifecycle stages and
 reopening, with current report/evidence guards and preserved historical outcomes.
 `factory-ui/issue-cleanup.mjs` returns saved resource identities immediately for
-the close dialog, persists cleanup as an Action, and rechecks each selected resource
-before removal/archive. Interrupted actions are retained for identity reconciliation
-before retry. Issue
+the close dialog, checks resources independently, persists cleanup as an Action,
+and rechecks each selected resource before removal/archive. Interrupted actions are
+retained for identity reconciliation before retry. Issue
 closure also archives eligible idle issue chats while preserving active or unknown
 threads. It keeps
 durable per-resource outcomes outside the removable workspace and supports retry

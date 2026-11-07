@@ -10,6 +10,7 @@ import {
   executeIssueCleanup,
   issueCleanupIdentities,
   previewIssueCleanup,
+  previewIssueCleanupResource,
   retryIssueCleanup,
 } from './factory-ui/issue-cleanup.mjs';
 import { git } from './factory-ui/common.mjs';
@@ -84,6 +85,52 @@ test('cleanup dialog identities return without provider inspection or workspace 
   assert.equal(result.checking, true);
   assert.ok(result.resources.some((item) => item.kind === 'remote-branch' && item.state === 'checking'));
   assert.ok(result.resources.some((item) => item.kind === 'workspace' && item.estimatedBytes === null));
+});
+
+test('a slow branch check does not hold up an independent chat status', async (t) => {
+  const f = fixture(t);
+  const id = f.issue.id;
+  const branch = `codex/issue-${id}`;
+  f.service.lifecycleRuns[id] = {
+    issueId: id,
+    work: { branch, config: { repository: 'fixture/timey' } },
+  };
+  f.service.store.runs.push({ issueId: id, threadId: 'independent-chat', kind: 'issue-work', status: 'completed' });
+  let releaseRemote;
+  f.service.cleanupProvider = () => ({
+    gh: () =>
+      new Promise((resolve) => {
+        releaseRemote = resolve;
+      }),
+  });
+  f.service.codex.call = async () => ({ thread: { status: { type: 'idle' } } });
+  const identities = issueCleanupIdentities(f.service, id, 'wont-do').resources;
+  const remote = identities.find((item) => item.kind === 'remote-branch');
+  const chat = identities.find((item) => item.kind === 'chat');
+  const remoteResult = previewIssueCleanupResource(f.service, id, remote.id, 'wont-do');
+  const chatResult = await previewIssueCleanupResource(f.service, id, chat.id, 'wont-do');
+  assert.equal(chatResult.resource.state, 'present');
+  releaseRemote('{"object":{"sha":"remote-revision"}}');
+  assert.equal((await remoteResult).resource.revision, 'remote-revision');
+});
+
+test('selected per-resource snapshots are revalidated before cleanup', async (t) => {
+  const f = fixture(t);
+  const id = f.issue.id;
+  markClosed(f.queue.root, id);
+  f.service.store.runs.push({ issueId: id, threadId: 'snapshot-chat', kind: 'issue-work', status: 'completed' });
+  f.service.codex.call = async () => ({ thread: { status: { type: 'idle' } } });
+  const identity = issueCleanupIdentities(f.service, id, 'wont-do').resources.find((item) => item.kind === 'chat');
+  const checked = (await previewIssueCleanupResource(f.service, id, identity.id, 'wont-do')).resource;
+  await assert.rejects(
+    executeIssueCleanup(f.service, id, {
+      basis: null,
+      resolution: 'wont-do',
+      selected: [checked.id],
+      selectedResources: [{ ...checked, state: 'unknown' }],
+    }),
+    /selected resource changed after its check/
+  );
 });
 
 test('cleanup action is durable, visible in Actions, and recovered without repeating deletion', async (t) => {
