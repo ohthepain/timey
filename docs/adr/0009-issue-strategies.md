@@ -39,11 +39,17 @@ stages. Optional queue discussion remains separate.
 
 Full Stop leaves an open, non-draft, merge-ready PR with green required checks,
 review findings addressed, and neither auto-merge nor merge-queue enrollment.
-Full Send adds a server-owned merge. Its adapter uses an exact-head merge and
-binds the human-input merge check to the current strategy run UUID, verified
-candidate and target revision. The issue label used to link stored actions is
-not a candidate approval identity. Explicit Continue uses its newly authorized
-run identity; it never carries candidate-bound approval from another run.
+Full Send adds an explicit Merge control after the PR is ready. The server
+rechecks GitHub's approving review and required checks for the current head when
+the person selects it, then performs the protected exact-head merge and records
+the result before updating local `dev`. Local updates proceed only on a clean
+`dev` checkout and use fast-forward only; otherwise the merge remains recorded
+and the local update is reported as needing attention. The Merge control is
+separate from issue closure and cleanup. Its human-input merge check binds to
+the current strategy run UUID, verified candidate and target revision. The issue
+label used to link stored actions is not a candidate approval identity. Explicit
+Continue uses its newly authorized run identity; it never carries candidate-bound
+approval from another run.
 The adapter requires an active GitHub ruleset with strict required status checks. GitHub must
 enforce current-target freshness; local reads and locks cannot replace that rule.
 The merging credential must not bypass any applicable CI ruleset. Review rulesets

@@ -67,7 +67,26 @@ test('finish lines distinguish publication, merge and issue acceptance', () => {
   );
   assert.equal(view({ strategy: { status: 'merged' } }).step, 'Full Send complete; PR merged');
   assert.match(view({ strategy: { status: 'merged' } }).next, /acceptance remains separate/);
+  const mergeReady = view({ strategy: { status: 'ready-to-merge', summary: 'Waiting for the Merge button.' } });
+  assert.equal(mergeReady.status, 'ready to merge');
+  assert.equal(mergeReady.step, 'Full Send complete; PR ready to merge');
+  assert.match(mergeReady.next, /GitHub approval and required checks are rechecked/);
   assert.equal(view({ lifecycle: { status: 'finished', deliveryHandoff: true } }).step, 'Draft PR handoff complete');
+});
+test('Progress retains a valid PR link after closure and omits it when no matching PR exists', () => {
+  const savedPR = {
+    pr: 42,
+    repository: 'ohthepain/timey',
+    status: 'merged',
+  };
+  const merged = view({ strategy: savedPR }).pullRequest;
+  assert.equal(merged.url, 'https://github.com/ohthepain/timey/pull/42');
+  assert.equal(merged.number, 42);
+  const failed = view({ strategy: { ...savedPR, status: 'failed' } }).pullRequest;
+  assert.equal(failed.url, 'https://github.com/ohthepain/timey/pull/42');
+  assert.equal(failed.number, 42);
+  assert.equal(view({ strategy: { status: 'running', pr: null, repository: savedPR.repository } }).pullRequest, null);
+  assert.equal(view({ strategy: { ...savedPR, pr: null } }).pullRequest, null);
 });
 test('retries mark earlier validated checks as superseded', () => {
   const prior = { ...run, id: 'prior', created: '2026-10-30', connected: false, result: { checked: { head: 'old' } } };

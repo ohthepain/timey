@@ -3650,6 +3650,37 @@ test('external delivery shows its PR evidence, partial scope, target recheck and
   assert.equal(card.querySelector('[data-external-delivery]')?.textContent, 'Verify and record other PR');
 });
 
+test('Full Send shows a separate Merge control and retains partial local update results in Progress', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].strategy = {
+    status: 'ready-to-merge',
+    summary: 'The PR is ready for the Merge action.',
+    strategy: 'full-send',
+    runId: 'run-current',
+    pr: 42,
+    prHead: 'head-current',
+    prUrl: 'https://github.com/fixture/timey/pull/42',
+    target: 'dev',
+  };
+  window.screenTest.show(snapshot);
+  let card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.equal(card.querySelector('[data-strategy-merge]')?.textContent, 'Merge PR #42 on GitHub');
+  assert.equal(card.querySelector('[data-issue-decision]'), null);
+  assert.ok(window.document.querySelector('[data-issue-decision="choose-close"]'));
+
+  snapshot.issues[0].strategy = {
+    ...snapshot.issues[0].strategy,
+    status: 'merged',
+    merge: { url: 'https://github.com/fixture/timey/pull/42', revision: 'merge-revision' },
+    localDevUpdate: { status: 'not-updated', reason: 'Local dev has unfinished work; it was left untouched.' },
+  };
+  window.screenTest.show(snapshot);
+  card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.match(card.querySelector('[data-merge-outcome]').textContent, /merge-revision/);
+  assert.match(card.querySelector('[data-local-dev-update]').textContent, /unfinished work; it was left untouched/);
+  assert.equal(card.querySelector('[data-strategy-merge]'), null);
+});
+
 test('a handed-off draft PR shows manual ownership without merge or maintenance controls', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   const issue = snapshot.issues[0];

@@ -232,11 +232,12 @@ existing chats for bounded corrections. The issue screen renders the complete
 labels. See the UI guide for consent boundaries.
 
 `factory-ui/issue-progress-ui.js` derives the default Progress tab from existing
-issue, run, input and conversation records. `runs.mjs` persists phase timing for
-issue-work runs; the Progress view shows the current phase and accumulated run time
-without adding a separate workflow record. `index.html` renders that projection,
-reuses existing input handlers and overlays transient Continue acknowledgment until
-fresh evidence arrives.
+issue, run, input and conversation records, including a saved PR link independent
+of the PR's current status. `runs.mjs` persists phase timing for issue-work runs;
+the Progress view shows the current phase and accumulated run time without adding a
+separate workflow record. `index.html` renders that projection, reuses existing
+input handlers and overlays transient Continue acknowledgment until fresh evidence
+arrives.
 `factory-ui/output-history.mjs` reads earlier public JSONL events using stable byte
 cursors through the authenticated read-only output-history endpoint.
 `factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
