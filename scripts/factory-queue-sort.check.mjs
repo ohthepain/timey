@@ -402,8 +402,32 @@ test('issue navigation follows the visible sort order and has bounded neighbors'
   assert.ok(document.querySelector('#issues'));
 });
 
+test('default status order groups merged, running, and queued issues before other statuses', (t) => {
+  const { win, fixture, document } = browserFixture(t);
+  assert.equal(document.getElementById('queue-sort').value, 'statusOrder');
+  assert.equal(document.getElementById('queue-direction').disabled, true);
+  const issues = [
+    { id: 'queued-first', implementationOrder: 0, strategy: { status: 'queued' } },
+    { id: 'paused', implementationOrder: 1, strategy: { status: 'paused' } },
+    { id: 'running', implementationOrder: 2, strategy: { status: 'running' } },
+    { id: 'merged', implementationOrder: 3, strategy: { status: 'merged' } },
+    { id: 'queued-second', implementationOrder: 4, strategy: { status: 'queued' } },
+  ];
+  assert.deepEqual(
+    Array.from(win.queueSortUI.sort(issues, { sort: 'statusOrder', direction: 'desc' }), (entry) => entry.id),
+    ['merged', 'running', 'queued-first', 'queued-second', 'paused']
+  );
+  assert.deepEqual(
+    Array.from(fixture.issues, (entry) => entry.id),
+    ['b', 'a', 'z']
+  );
+});
+
 test('drag handles save visible reordering while preserving filtered issues', async (t) => {
   const { win, fixture, document } = browserFixture(t);
+  const sort = document.getElementById('queue-sort');
+  sort.value = 'implementationOrder';
+  sort.dispatchEvent(new win.Event('change'));
   assert.ok(document.querySelector('[data-implementation-drag="b"]'));
   assert.equal(
     document.querySelector('[data-implementation-drag="b"]').getAttribute('aria-label'),

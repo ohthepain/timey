@@ -417,8 +417,9 @@ protocol proof only. See [the delivery contract](issue-delivery.md) and
 
 Queue sort values are projected from saved records in `factory-ui/queue-sort.mjs`
 before transport trims run events. `queue-sort-ui.js` owns presentation ordering
-and accessible controls. Manual implementation ordering is persisted separately;
-the other view sorts do not affect scheduling or issue records.
+and accessible controls, including the default merged/running/queued status order.
+Manual implementation ordering is persisted separately; the other view sorts do not
+affect scheduling or issue records.
 
 Queue human-input sorting consumes the shared reader's availability and revision-bound
 deferral projection through `factory-ui/queue-human-input.mjs`. Saved delivery
