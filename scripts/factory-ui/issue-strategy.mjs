@@ -79,7 +79,10 @@ function strategyWorkFields(work) {
     solRounds: work.solRounds || 0,
     runId: work.runId,
     pr: work.pr,
+    prHead: work.prHead,
     prUrl: work.readiness?.url || null,
+    merge: work.merge,
+    localDevUpdate: work.localDevUpdate,
     checkout: work.checkout,
     externalDelivery: work.externalDelivery,
   };
@@ -712,35 +715,150 @@ async function publishVerifiedCandidate(service, record, run, head) {
   saveLifecycle(service, record);
 }
 
-async function maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness) {
-  if (readiness.merged) {
-    work.merge = readiness.merge;
-    return;
-  }
-  if (!automaticMergeSelected(work, input)) return;
-  service.guard(service.root, { id: run.id, issues: [issue.id], worker_revision: head }, 'merge', readiness.target);
-  // Recheck the live PR immediately before the provider-enforced merge.
-  const latest = await provider.ready(await provider.inspect(work.pr), work.branch, head);
-  if (latest.merged) {
-    work.merge = latest.merge;
-    return;
-  }
-  assertStrategyActive(record, 'Stopped before merging. The PR remains open.');
-  work.merge = await provider.merge(work.pr, head);
-}
-
-function automaticMergeSelected(work, input) {
-  return work.strategy === 'full-send' && input.operation !== 'review';
-}
-
 function strategyOutcome(work, readiness) {
   const discrepancy = prDiscrepancyNote(work);
   if (work.merge)
     return { status: 'merged', summary: `Merged ${work.merge.url}. Human acceptance remains separate.${discrepancy}` };
+  if (work.strategy === 'full-send')
+    return {
+      status: 'ready-to-merge',
+      summary: `PR ${readiness.url} is ready for your Merge action. GitHub approval and required checks will be rechecked before merging.${discrepancy}`,
+    };
   return {
     status: 'handed-off',
     summary: `Ready for you to merge: ${readiness.url}. The PR is open and unmerged.${discrepancy}`,
   };
+}
+
+export async function mergeIssueStrategyPR(service, input) {
+  const context = mergeContext(service, input);
+  const { issue, record, work, mergeNeedsLocalSync } = context;
+  const provider = strategyProvider(service, work.config, work.checkout);
+  const readiness = await inspectMergeReadiness(provider, work);
+  if (readiness.merged) return recordMergedStrategyPR(service, record, issue, readiness.merge);
+  requireThat(
+    !mergeNeedsLocalSync,
+    'GitHub no longer confirms the saved merge. Reconcile the PR before updating local dev.'
+  );
+  const merged = await mergeReadyCandidate(service, context, provider, readiness);
+  return recordMergedStrategyPR(service, record, issue, merged);
+}
+
+function mergeContext(service, input) {
+  const issue = mergeIssue(service, input.issueId);
+  const record = service.lifecycleRuns[issue.id];
+  const work = mergeWork(record);
+  const mergeNeedsLocalSync = mergeRequiresLocalSync(record, work);
+  validateMergeState(record, work, mergeNeedsLocalSync);
+  validateMergeIdentity(work, input);
+  return { issue, record, work, mergeNeedsLocalSync };
+}
+
+function mergeIssue(service, issueId) {
+  const issue = readQueue(service.root).issues.find((entry) => entry.id === issueId);
+  requireThat(issue, 'Select an existing issue before merging its pull request.');
+  requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for active issue work to finish before merging.');
+  return issue;
+}
+
+function mergeWork(record) {
+  const work = record?.work;
+  requireThat(work?.strategy === 'full-send', 'Only a Full Send issue can use the protected Merge action.');
+  return work;
+}
+
+function mergeRequiresLocalSync(record, work) {
+  return record.status === 'merged' && Boolean(work.merge) && !work.localDevUpdate;
+}
+
+function validateMergeState(record, work, mergeNeedsLocalSync) {
+  const ready = record.status === 'ready-to-merge' && !work.merge;
+  requireThat(ready || mergeNeedsLocalSync, 'This issue does not have a PR ready for the Merge action.');
+}
+
+function validateMergeIdentity(work, input) {
+  requireThat(
+    Number(input.pr) === work.pr && input.runId === work.runId && input.head === work.prHead,
+    'The saved PR or candidate changed. Refresh Progress before merging.'
+  );
+}
+
+async function inspectMergeReadiness(provider, work) {
+  return provider.ready(await provider.inspect(work.pr), work.branch, work.prHead);
+}
+
+async function mergeReadyCandidate(service, context, provider, readiness) {
+  const { issue, work } = context;
+  service.guard(
+    service.root,
+    { id: work.runId, issues: [issue.id], worker_revision: work.prHead },
+    'merge',
+    readiness.target
+  );
+  const latest = await inspectMergeReadiness(provider, work);
+  if (latest.merged) return latest.merge;
+  await provider.assertApproved(work.pr, work.prHead);
+  return mergeOrReconcile(provider, work);
+}
+
+async function mergeOrReconcile(provider, work) {
+  try {
+    return await provider.merge(work.pr, work.prHead);
+  } catch (error) {
+    const reconciled = await inspectMergeReadiness(provider, work);
+    if (!reconciled.merged) throw error;
+    return reconciled.merge;
+  }
+}
+
+async function recordMergedStrategyPR(service, record, issue, merge) {
+  const work = record.work;
+  work.merge = merge;
+  work.mergedAt = new Date().toISOString();
+  record.events.push({ at: work.mergedAt, message: `Merged ${work.merge.url} on GitHub at ${work.merge.revision}.` });
+  saveLifecycle(service, record, {
+    status: 'merged',
+    summary: `Merged ${work.merge.url} on GitHub. Updating local ${work.config.target}.`,
+  });
+
+  work.localDevUpdate = await updateLocalTarget(service, work.config, record);
+  const updateAt = new Date().toISOString();
+  const updateSummary = localTargetSummary(work.config.target, work.localDevUpdate);
+  record.events.push({ at: updateAt, message: updateSummary });
+  saveLifecycle(service, record, {
+    status: 'merged',
+    summary: `Merged ${work.merge.url} on GitHub. ${updateSummary} Issue closure and cleanup remain separate.`,
+  });
+  return { issueId: issue.id, merge: work.merge, localDevUpdate: work.localDevUpdate };
+}
+
+async function updateLocalTarget(service, config, record) {
+  const root = service.root;
+  try {
+    const blocker = localTargetBlocker(root, config.target);
+    if (blocker) return { status: 'not-updated', reason: blocker };
+    return await retryInfrastructure(service, record, () => {
+      git(root, 'fetch', '--no-tags', config.remote, config.target);
+      git(root, 'merge', '--ff-only', 'FETCH_HEAD');
+      return { status: 'updated', revision: git(root, 'rev-parse', 'HEAD') };
+    });
+  } catch (error) {
+    return { status: 'not-updated', reason: `Local ${config.target} was left untouched: ${error.message}` };
+  }
+}
+
+function localTargetBlocker(root, target) {
+  const branch = git(root, 'branch', '--show-current');
+  if (branch !== target) return `Project checkout is on ${branch || 'detached HEAD'}, not ${target}.`;
+  if (git(root, 'status', '--porcelain=v1', '--untracked-files=all'))
+    return `Local ${target} has unfinished work; it was left untouched.`;
+  return null;
+}
+
+function localTargetSummary(target, update) {
+  return update.status === 'updated'
+    ? `Local ${target} updated to ${update.revision}.`
+    : `Local ${target} update needs attention: ${update.reason}`;
 }
 
 function prDiscrepancyNote(work) {
@@ -859,18 +977,13 @@ async function finishStrategyCycle(service, record, run, issue, input, work) {
   assertStrategyActive(record, 'Stopped by you. No PR was published.');
   checkPriorIssueInclusion(service, record, run, input, work, 'PR publication');
   await publishVerifiedCandidate(service, record, run, head);
-  const { provider, readiness } = await waitStrategyReadiness(service, record, () =>
+  const { readiness } = await waitStrategyReadiness(service, record, () =>
     retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
   );
   assertCurrentTarget(work, readiness);
   writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
   work.readiness = readiness;
   saveLifecycle(service, record);
-  await waitStrategyReadiness(service, record, () =>
-    retryInfrastructure(service, record, () =>
-      maybeAutoMerge(service, record, run, issue, input, work, head, provider, readiness)
-    )
-  );
   await recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
 }
 
@@ -895,12 +1008,12 @@ async function reconcileSavedDelivery(service, record, run, issue, input, work) 
 }
 
 async function reconcileCheckedDelivery(service, record, run, issue, input, work, checked, knownProvider, knownPR) {
-  const { provider, pr, readiness } = await inspectReconciledPR(service, record, work, knownProvider, knownPR);
+  const { pr, readiness } = await inspectReconciledPR(service, record, work, knownProvider, knownPR);
   if (!usableSavedPR(pr, readiness, checked, work.checkout)) return false;
 
   retainSavedPRVerification(service, run, work, readiness, checked);
   assertCurrentTarget(work, readiness);
-  await mergeReconciledPR(service, record, run, issue, input, work, provider, readiness);
+  if (readiness.merged) work.merge = readiness.merge;
   await recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
   return true;
 }
@@ -913,11 +1026,6 @@ async function inspectReconciledPR(service, record, work, knownProvider, knownPR
     return { provider: knownProvider, pr: knownPR, readiness };
   }
   return inspectSavedPR(service, record, work);
-}
-
-async function mergeReconciledPR(service, record, run, issue, input, work, provider, readiness) {
-  if (readiness.merged || !automaticMergeSelected(work, input)) return;
-  await maybeAutoMerge(service, record, run, issue, input, work, work.prHead, provider, readiness);
 }
 
 function retainDiscoveredPR(work, pr) {

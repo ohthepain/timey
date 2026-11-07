@@ -67,6 +67,10 @@ test('finish lines distinguish publication, merge and issue acceptance', () => {
   );
   assert.equal(view({ strategy: { status: 'merged' } }).step, 'Full Send complete; PR merged');
   assert.match(view({ strategy: { status: 'merged' } }).next, /acceptance remains separate/);
+  const mergeReady = view({ strategy: { status: 'ready-to-merge', summary: 'Waiting for the Merge button.' } });
+  assert.equal(mergeReady.status, 'ready to merge');
+  assert.equal(mergeReady.step, 'Full Send complete; PR ready to merge');
+  assert.match(mergeReady.next, /GitHub approval and required checks are rechecked/);
   assert.equal(view({ lifecycle: { status: 'finished', deliveryHandoff: true } }).step, 'Draft PR handoff complete');
 });
 test('Progress retains a valid PR link after closure and omits it when no matching PR exists', () => {
