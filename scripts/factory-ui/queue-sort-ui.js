@@ -1,6 +1,7 @@
 // Presentation-only ordering; never mutates queue records or the input array.
 const queueSortUI = (() => {
   const modes = {
+    statusOrder: 'Merged, running, queued',
     implementationOrder: 'Implementation order',
     lastProgress: 'Last progress',
     progress: 'Progress',
@@ -8,8 +9,15 @@ const queueSortUI = (() => {
     completed: 'Completion time',
     humanInput: 'Human input required',
   };
+  const fixedDirections = {
+    implementationOrder: { label: 'Implementation order direction is fixed', title: 'Implementation order is fixed' },
+    statusOrder: { label: 'Queue status order is fixed', title: 'Queue status order is fixed' },
+  };
   function descending(selection) {
     return selection.direction !== 'asc';
+  }
+  function fixed(selection) {
+    return selection.sort === 'implementationOrder' || selection.sort === 'statusOrder';
   }
   function paintDirection(selection) {
     const button = document.getElementById('queue-direction');
@@ -20,13 +28,8 @@ const queueSortUI = (() => {
     button.title = state.title;
   }
   function directionState(selection) {
-    if (selection.sort === 'implementationOrder')
-      return {
-        glyph: '▼',
-        disabled: true,
-        label: 'Implementation order direction is fixed',
-        title: 'Implementation order is fixed',
-      };
+    const fixedState = fixedDirections[selection.sort];
+    if (fixedState) return { glyph: '▼', disabled: true, ...fixedState };
     const direction = descending(selection) ? 'descending' : 'ascending';
     return {
       glyph: direction === 'descending' ? '▼' : '▲',
@@ -42,10 +45,10 @@ const queueSortUI = (() => {
     const options = Object.entries(modes)
       .map(([key, label]) => option(key, label, selection))
       .join('');
-    const fixed = selection.sort === 'implementationOrder';
-    const label = fixed ? 'Implementation order direction is fixed' : directionLabel(selection);
-    const title = fixed ? 'Implementation order is fixed' : directionTitle(selection);
-    return `<select id="queue-sort" aria-label="Sort issues">${options}</select><button type="button" id="queue-direction" class="direction-toggle" aria-label="${label}" title="${title}" ${fixed ? 'disabled' : ''}>${directionGlyph(selection)}</button>`;
+    const isFixed = fixed(selection);
+    const label = isFixed ? directionState(selection).label : directionLabel(selection);
+    const title = isFixed ? directionState(selection).title : directionTitle(selection);
+    return `<select id="queue-sort" aria-label="Sort issues">${options}</select><button type="button" id="queue-direction" class="direction-toggle" aria-label="${label}" title="${title}" ${isFixed ? 'disabled' : ''}>${directionGlyph(selection)}</button>`;
   }
   function directionLabel(selection) {
     return descending(selection) ? 'Direction, descending' : 'Direction, ascending';
@@ -57,8 +60,21 @@ const queueSortUI = (() => {
     return descending(selection) ? '▼' : '▲';
   }
   function compareOrder(left, right) {
-    return left.implementationOrder - right.implementationOrder;
+    return (
+      (left.implementationOrder ?? Number.MAX_SAFE_INTEGER) - (right.implementationOrder ?? Number.MAX_SAFE_INTEGER) ||
+      left.id.localeCompare(right.id)
+    );
   }
+  function statusRank(issue) {
+    return { merged: 0, running: 1, queued: 2 }[issue.strategy?.status] ?? 3;
+  }
+  function compareStatusOrder(left, right) {
+    return statusRank(left) - statusRank(right) || compareOrder(left, right);
+  }
+  const fixedComparators = {
+    implementationOrder: compareOrder,
+    statusOrder: compareStatusOrder,
+  };
   function compareMissing(aMissing, bMissing) {
     if (aMissing === bMissing) return 0;
     return aMissing ? 1 : -1;
@@ -85,7 +101,8 @@ const queueSortUI = (() => {
     return compareAvailable(left, right, selection, a, b);
   }
   function compare(left, right, selection) {
-    if (selection.sort === 'implementationOrder') return compareOrder(left, right);
+    const fixedComparator = fixedComparators[selection.sort];
+    if (fixedComparator) return fixedComparator(left, right);
     const a = left.queueSort?.[selection.sort],
       b = right.queueSort?.[selection.sort];
     return compareValues(left, right, selection, a, b);
@@ -105,7 +122,7 @@ const queueSortUI = (() => {
       changed();
     };
     document.getElementById('queue-direction').onclick = () => {
-      if (selection.sort === 'implementationOrder') return;
+      if (fixed(selection)) return;
       selection.direction = descending(selection) ? 'asc' : 'desc';
       paintDirection(selection);
       changed();

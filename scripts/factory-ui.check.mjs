@@ -3602,7 +3602,11 @@ test('wide issue views keep the queue in a sidebar and show an empty selection p
     sidebar.querySelector('#model-settings-open')?.getAttribute('aria-label'),
     'Open model and effort settings'
   );
-  assert.ok(sidebar.querySelector('[data-implementation-drag="20261022-one"]'));
+  const sort = sidebar.querySelector('#queue-sort');
+  sort.value = 'implementationOrder';
+  sort.dispatchEvent(new window.Event('change'));
+  const reorderedSidebar = window.document.querySelector('.issue-sidebar');
+  assert.ok(reorderedSidebar.querySelector('[data-implementation-drag="20261022-one"]'));
   const selectedIssueLink = sidebar.querySelector('[aria-current="page"]');
   assert.equal(selectedIssueLink.getAttribute('href'), '#/issue/20261022-one');
   assert.equal(selectedIssueLink.getAttribute('aria-label'), '20261022-one');

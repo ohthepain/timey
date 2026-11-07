@@ -45,17 +45,20 @@ Unmatched assignment kinds stay visible under Other work.
 
 ## Queue sorting
 
-The queue defaults to the saved implementation order. Drag a row by its handle to
-change that order; it is persisted in the project-local `.issues/implementation-order.json`
-and the scheduler selects the earliest eligible issue in it, regardless of priority.
-Hidden rows retain their positions when dragging within a filtered view. New issues
-are appended after saved entries using configured priority, age and ID as the default
-order. Priority labels and other views are unchanged.
+The queue defaults to merged issues, then running issues, then queued issues. Other
+statuses follow in saved implementation order; ties within each named group also
+use that order. Select Implementation order to drag rows and change the persisted
+order in `.issues/implementation-order.json`; the scheduler selects the earliest
+eligible issue in that saved order, regardless of priority. Hidden rows retain their
+positions when dragging within a filtered view. New issues are appended after saved
+entries using configured priority, age and ID as the default order. Priority labels
+and other views are unchanged.
 
-The sort selector also offers latest progress first, lifecycle progress, creation time,
-completion time and required human input. Direction is a
+The sort selector also offers implementation order, latest progress first, lifecycle
+progress, creation time, completion time and required human input. Direction is a
 toggle: a downward triangle means descending and an upward triangle means ascending.
-New modes start highest/newest/required first. Missing dates stay last
+The status and implementation orders have fixed directions. Other modes start
+highest/newest/required first. Missing dates stay last
 in both directions, with ascending issue ID breaking ties. Filters and sorting
 remain selected during live refreshes.
 
