@@ -2727,21 +2727,31 @@
           const choices = data.closureReasons;
           const resolution = 'fixed';
           $('selection').innerHTML =
-            '<h2>Preparing cleanup options…</h2><p>Checking the exact issue branches, workspaces, and chats.</p>';
+            '<h2>Close this issue</h2><p>Cleanup checks are running in the background. You can close the issue while they finish.</p>';
           $('approve').textContent = 'Close issue';
-          $('approve').disabled = true;
+          $('approve').disabled = choices.length === 0;
           $('confirm').showModal();
-          const preview = await request('issue-cleanup-preview', { issueId: issue.id, resolution });
-          selection.cleanupBasis = preview.basis;
+          const identities = await request('issue-cleanup-identities', { issueId: issue.id, resolution });
+          selection.cleanupResources = identities.resources;
           $('selection').innerHTML =
-            `<h2>Close this issue</h2><p>Fixed still requires the existing acceptance checks. Unmerged work is preserved by default; select a branch or workspace only if you want it removed.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}" ${choice.id === resolution ? 'selected' : ''}>${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>${cleanupFieldset(preview)}`;
+            `<h2>Close this issue</h2><p>Fixed still requires the existing acceptance checks. Unmerged work is preserved by default; select a branch or workspace only if you want it removed. Unchecked or unknown resources are preserved.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}" ${choice.id === resolution ? 'selected' : ''}>${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>${cleanupFieldset(identities)}`;
+          checkCleanupResources(issue.id, resolution, identities.resources);
           $('closure-reason').onchange = async () => {
-            const refreshed = await request('issue-cleanup-preview', {
+            const selected = new Set(
+              [...document.querySelectorAll('[data-cleanup-choice]:checked')].map(
+                (input) => input.dataset.cleanupChoice
+              )
+            );
+            const refreshed = await request('issue-cleanup-identities', {
               issueId: issue.id,
               resolution: $('closure-reason').value,
             });
-            selection.cleanupBasis = refreshed.basis;
-            $('cleanup-options').outerHTML = cleanupFieldset(refreshed);
+            selection.cleanupResources = refreshed.resources.map((item) => ({
+              ...item,
+              defaultSelected: selected.has(item.id),
+            }));
+            $('cleanup-options').outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
+            checkCleanupResources(issue.id, $('closure-reason').value, selection.cleanupResources);
           };
           $('approve').disabled = choices.length === 0;
           return;
@@ -2760,11 +2770,35 @@
       function cleanupFieldset(preview) {
         return `<fieldset id="cleanup-options"><legend>Optional cleanup</legend><p>Selected resources are rechecked before each action. Issue closure remains saved if cleanup is incomplete.</p>${preview.resources.map(cleanupChoice).join('') || '<p>No linked resources were found.</p>'}</fieldset>`;
       }
+      function checkCleanupResources(issueId, resolution, resources) {
+        for (const item of resources) {
+          void request('issue-cleanup-resource', { issueId, resourceId: item.id, resolution })
+            .then(({ resource }) => updateCleanupResource(issueId, resource))
+            .catch((error) =>
+              updateCleanupResource(issueId, {
+                ...item,
+                state: 'unknown',
+                eligible: false,
+                reason: `Status unknown; preserved. ${error.message}`,
+              })
+            );
+        }
+      }
+      function updateCleanupResource(issueId, resource) {
+        if (!$('confirm').open || selection?.issueId !== issueId) return;
+        const selected = new Set(
+          [...document.querySelectorAll('[data-cleanup-choice]:checked')].map((input) => input.dataset.cleanupChoice)
+        );
+        selection.cleanupResources = selection.cleanupResources.map((item) =>
+          item.id === resource.id ? { ...resource, defaultSelected: selected.has(item.id) } : item
+        );
+        $('cleanup-options').outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
+      }
       function cleanupChoice(resource) {
         const disabled = !resource.eligible || resource.state.startsWith('already-');
         const label =
           resource.kind === 'workspace'
-            ? `Workspace ${resource.name} · about ${formatBytes(resource.estimatedBytes)}`
+            ? `Workspace ${resource.name} · ${workspaceEstimate(resource)}`
             : resource.kind === 'remote-branch'
               ? `GitHub branch ${resource.repository}:${resource.name}`
               : resource.kind === 'local-branch'
@@ -2786,6 +2820,10 @@
         const tier = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
         return `${(bytes / 1024 ** tier).toFixed(tier ? 1 : 0)} ${units[tier]}`;
       }
+      function workspaceEstimate(resource) {
+        if (Number.isFinite(resource.estimatedBytes)) return `about ${formatBytes(resource.estimatedBytes)}`;
+        return resource.sizeStatus === 'pending' ? 'size estimate pending' : 'size estimate unavailable';
+      }
       function cleanupPanel(issue) {
         const cleanup = issue.cleanup;
         if (!cleanup) return '';
@@ -2805,14 +2843,19 @@
         }
         render();
         try {
-          const cleanup =
+          const selectedCleanup =
             decision.kind === 'close'
+              ? [...document.querySelectorAll('[data-cleanup-choice]:checked')].map(
+                  (input) => input.dataset.cleanupChoice
+                )
+              : [];
+          const cleanup =
+            decision.kind === 'close' && selection.cleanupResources
               ? {
-                  basis: selection.cleanupBasis,
+                  basis: null,
                   resolution: decision.resolution,
-                  selected: [...document.querySelectorAll('[data-cleanup-choice]:checked')].map(
-                    (input) => input.dataset.cleanupChoice
-                  ),
+                  selected: selectedCleanup,
+                  selectedResources: selection.cleanupResources.filter((item) => selectedCleanup.includes(item.id)),
                 }
               : null;
           const result = await request('issue-decision', { ...decision, cleanup });
@@ -2836,7 +2879,7 @@
             message: accepted
               ? 'Accepted and closed.'
               : decision.kind === 'close'
-                ? `Issue closed${result.cleanup?.status === 'incomplete' ? '; cleanup incomplete.' : '; cleanup recorded.'}`
+                ? `Issue closed${result.cleanup?.status === 'running' ? '; cleanup is running in the background.' : result.cleanup?.status === 'incomplete' ? '; cleanup incomplete.' : '; cleanup recorded.'}`
                 : 'Issue reopened.',
           });
           render();

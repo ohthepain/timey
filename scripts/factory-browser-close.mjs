@@ -13,7 +13,8 @@ export default async function closeBrowserChecks(page) {
   }
   function cleanupPreview() {
     return {
-      basis: 'cleanup-preview-b',
+      basis: null,
+      checking: true,
       resources: [
         {
           id: 'remote-branch',
@@ -43,8 +44,19 @@ export default async function closeBrowserChecks(page) {
     if (body.kind !== 'close' || body.issueId !== 'b') throw Error('Wrong issue decision submitted.');
   }
   function assertCleanupSelection(cleanup) {
-    if (cleanup?.basis !== 'cleanup-preview-b' || !cleanup.selected.includes('issue-chat'))
-      throw Error('The confirmed cleanup preview was not included in the closure request.');
+    if (!confirmedCleanupSelection(cleanup))
+      throw Error('The confirmed resource selection was not included in the closure request.');
+    if (!hasConfirmedChatSnapshot(cleanup))
+      throw Error('The confirmed chat identity was not attached to cleanup intent.');
+  }
+  function confirmedCleanupSelection(cleanup) {
+    return cleanup?.basis === null && cleanup.selected.includes('issue-chat');
+  }
+  function hasConfirmedChatSnapshot(cleanup) {
+    return cleanup.selectedResources.some(isConfirmedChatSnapshot);
+  }
+  function isConfirmedChatSnapshot(item) {
+    return item.id === 'issue-chat' && item.threadId === 'thread-b';
   }
   async function routeDecision(page, state) {
     await page.route('**/api/issue-decision', async (route) => {
@@ -69,6 +81,10 @@ export default async function closeBrowserChecks(page) {
   }
   async function submitFirstClose(page) {
     await page.getByRole('button', { name: 'Accept fix and close', exact: true }).click();
+    if (!(await page.locator('#confirm').evaluate((dialog) => dialog.open)))
+      throw Error('Close dialog waited for saved resource identities before opening.');
+    if (await page.locator('#approve').isDisabled()) throw Error('Closure waited for background resource checks.');
+    identitiesReady.release();
     await assertPreview(page);
     await page.getByRole('button', { name: 'Close issue', exact: true }).click();
     await page.locator('[data-issue-decision-status]').filter({ hasText: 'Waiting for the server' }).waitFor();
@@ -85,8 +101,17 @@ export default async function closeBrowserChecks(page) {
   }
 
   const state = { attempts: 0, closed: false, sent: deferred() };
+  const identitiesReady = deferred();
   await routeQueueIssue(page, 'b', (_snapshot, issue) => setIssueState(issue, state.closed));
-  await page.route('**/api/issue-cleanup-preview', (route) => route.fulfill({ json: cleanupPreview() }));
+  await page.route('**/api/issue-cleanup-identities', async (route) => {
+    await identitiesReady.promise;
+    return route.fulfill({ json: cleanupPreview() });
+  });
+  await page.route('**/api/issue-cleanup-resource', async (route) => {
+    const { resourceId } = route.request().postDataJSON();
+    const resource = cleanupPreview().resources.find((item) => item.id === resourceId);
+    return route.fulfill({ json: { resource } });
+  });
   await routeDecision(page, state);
   await page.goto(new URL('/#/issue/b', page.url()).href);
   await submitFirstClose(page);
