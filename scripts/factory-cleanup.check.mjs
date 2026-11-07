@@ -12,6 +12,7 @@ import {
   previewIssueCleanup,
   previewIssueCleanupResource,
   retryIssueCleanup,
+  startIssueCleanupRetry,
 } from './factory-ui/issue-cleanup.mjs';
 import { git } from './factory-ui/common.mjs';
 import { readQueue } from './factory-ui/data.mjs';
@@ -241,6 +242,43 @@ test('cleanup failure does not undo closure and Retry cleanup retains results', 
   assert.equal(retried.cleanup.status, 'complete');
   assert.equal(retried.cleanup.results[0].status, 'complete');
   assert.ok(calls.some(([method]) => method === 'thread/archive'));
+});
+
+test('incomplete cleanup can retry one failed resource without retrying other failures', async (t) => {
+  const f = fixture(t);
+  const id = f.issue.id;
+  markClosed(f.queue.root, id);
+  f.service.store.runs.push(
+    { issueId: id, threadId: 'first-chat', kind: 'issue-work', status: 'completed' },
+    { issueId: id, threadId: 'second-chat', kind: 'issue-work', status: 'completed' }
+  );
+  const fail = new Set(['first-chat', 'second-chat']);
+  const archived = [];
+  f.service.codex.call = async (method, params) => {
+    if (method === 'thread/read') return { thread: { status: { type: 'idle' } } };
+    if (method === 'thread/archive') {
+      if (fail.has(params.threadId)) throw Error('temporary archive failure');
+      archived.push(params.threadId);
+    }
+    return {};
+  };
+  const preview = await previewIssueCleanup(f.service, id, 'wont-do');
+  const chats = preview.resources.filter((item) => item.kind === 'chat');
+  const first = await executeIssueCleanup(f.service, id, {
+    basis: preview.basis,
+    resolution: 'wont-do',
+    selected: chats.map((item) => item.id),
+  });
+  assert.equal(first.cleanup.results.filter((item) => item.status === 'failed').length, 2);
+
+  fail.delete('first-chat');
+  const started = startIssueCleanupRetry(f.service, id, chats[0].id);
+  assert.equal(started.cleanup.status, 'preparing');
+  const retried = await f.service.issueCleanupTasks.get(id);
+  assert.equal(retried.cleanup.status, 'incomplete');
+  assert.equal(retried.cleanup.results.find((item) => item.id === chats[0].id).status, 'complete');
+  assert.equal(retried.cleanup.results.find((item) => item.id === chats[1].id).status, 'failed');
+  assert.deepEqual(archived, ['first-chat']);
 });
 
 test('delivered issue cleanup rechecks and removes only the selected branch, workspace, and chat', async (t) => {

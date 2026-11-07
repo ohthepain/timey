@@ -420,8 +420,9 @@ protocol proof only. See [the delivery contract](issue-delivery.md) and
 
 Queue sort values are projected from saved records in `factory-ui/queue-sort.mjs`
 before transport trims run events. `queue-sort-ui.js` owns presentation ordering
-and accessible controls. Manual implementation ordering is persisted separately;
-the other view sorts do not affect scheduling or issue records.
+and accessible controls, including the default merged/running/queued status order.
+Manual implementation ordering is persisted separately; the other view sorts do not
+affect scheduling or issue records.
 
 Queue human-input sorting consumes the shared reader's availability and revision-bound
 deferral projection through `factory-ui/queue-human-input.mjs`. Saved delivery
@@ -581,8 +582,10 @@ active strategy run, the exact verified head and current PR target; the issue
 label remains display identity only.
 `github-app.mjs` owns repository-scoped installation authentication, in-memory token
 refresh and project-local credential configuration shared with worktree providers.
-The issue screen shows strategy/status and collapses legacy roles into disabled
-history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
+The issue screen shows strategy/status, keeps a configured-target merge action visible
+throughout issue work, and collapses legacy roles into disabled history. The action
+continues the saved strategy in the owning chat so target conflicts stay with that
+work. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
 failures, explicit starts and missing review capabilities.
 
 `strategy-repair.mjs` owns the active run's bounded repair ledger and infrastructure

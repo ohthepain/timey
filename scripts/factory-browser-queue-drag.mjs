@@ -1,5 +1,6 @@
 export default async function queueDragBrowserChecks(page) {
   await page.getByRole('heading', { name: 'Issue queue', exact: true }).waitFor();
+  await page.getByLabel('Sort issues', { exact: true }).selectOption('implementationOrder');
   await page.evaluate(`(() => {
     const source = document.querySelector('[data-implementation-drag="a"]');
     const target = document.querySelector('.issue-sidebar-item[data-issue-row="b"]');
