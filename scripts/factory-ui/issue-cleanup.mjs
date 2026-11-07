@@ -119,6 +119,7 @@ function identityResource(kind, issueId, identity, details = {}) {
 }
 
 export async function archiveIssueChatsOnClose(service, issueId, resolution, requestedCleanup = null) {
+  if (requestedCleanup) return executeConfirmedCleanup(service, issueId, resolution, requestedCleanup);
   const preview = await previewIssueCleanup(service, issueId, resolution);
   const chats = preview.resources.filter((resource) => resource.kind === 'chat');
   const selected = closeChatSelections(chats, requestedCleanup);
@@ -129,6 +130,15 @@ export async function archiveIssueChatsOnClose(service, issueId, resolution, req
   const input = closeCleanupInput(preview, requestedCleanup, resolution, selected);
   const result = await executeIssueCleanup(service, issueId, input);
   return { ...result.cleanup, retainedChats: chats.filter((item) => !item.eligible) };
+}
+
+async function executeConfirmedCleanup(service, issueId, resolution, input) {
+  if (!(input.selected || []).length) {
+    completeEmptyCleanup(service, issueId);
+    return { status: 'complete', results: [], retainedChats: [] };
+  }
+  const result = await executeIssueCleanup(service, issueId, { ...input, resolution });
+  return { ...result.cleanup, retainedChats: [] };
 }
 
 function closeChatSelections(chats, requestedCleanup) {
@@ -183,9 +193,26 @@ export async function executeIssueCleanup(service, issueId, input, previous = nu
 
 async function validateCleanupSelection(service, issueId, input, issue) {
   requireThat(validCleanupInput(input), 'Refresh the cleanup preview before continuing.');
-  const preview = await previewIssueCleanup(service, issueId, input.resolution || issue.closure?.reason);
-  if (input.basis) validatePreviewBasis(input.basis, preview.basis);
-  return { preview, selected: validateSelectedCleanup(input, preview.resources) };
+  if (input.basis) {
+    const preview = await previewIssueCleanup(service, issueId, input.resolution || issue.closure?.reason);
+    validatePreviewBasis(input.basis, preview.basis);
+    return { preview, selected: validateSelectedCleanup(input, preview.resources) };
+  }
+  return validateCleanupResourceSnapshots(issueId, input);
+}
+
+function validateCleanupResourceSnapshots(issueId, input) {
+  const selected = new Set(input.selected);
+  requireThat(selected.size === input.selected.length, 'A cleanup resource was selected more than once.');
+  const snapshots = new Map((input.selectedResources || []).map((item) => [item.id, item]));
+  requireThat(snapshots.size === selected.size, 'Refresh selected cleanup checks before continuing.');
+  requireThat(
+    [...selected].every(
+      (id) => snapshots.has(id) && snapshots.get(id).eligible && snapshots.get(id).state === 'present'
+    ),
+    'Select only resources whose checks completed and confirmed they are available.'
+  );
+  return { preview: { issueId, resources: [...selected].map((id) => snapshots.get(id)) }, selected: [...selected] };
 }
 
 function validateSelectedCleanup(input, resources) {
@@ -243,12 +270,27 @@ function makeCleanupRecord(issueId, issue, input, previous, preview, selected) {
     closure: issue.closure || null,
     resolution: cleanupResolution(input, issue),
     selected,
+    selectedResources: input.selectedResources || preview.resources.filter((item) => selected.includes(item.id)),
     preview,
     status: 'running',
     created: new Date().toISOString(),
     updated: new Date().toISOString(),
-    results: priorCleanupResults(previous),
+    results: initialCleanupResults(previous, selected, preview.resources),
   };
+}
+
+function initialCleanupResults(previous, selected, resources) {
+  const retained = priorCleanupResults(previous).filter((item) => !selected.includes(item.id));
+  const pending = resources
+    .filter((item) => selected.includes(item.id))
+    .map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      name: item.name,
+      status: 'checking',
+      reason: 'Rechecking before cleanup.',
+    }));
+  return [...retained, ...pending];
 }
 
 function cleanupResolution(input, issue) {
@@ -266,12 +308,57 @@ export async function retryIssueCleanup(service, issueId, prior = null) {
 }
 
 async function retrySavedCleanup(service, issueId, saved) {
-  const current = await previewIssueCleanup(service, issueId, saved.resolution || saved.closure?.reason);
   const retryIds = retryableCleanupIds(saved);
-  const previewById = new Map(current.resources.map((item) => [item.id, item]));
-  const selected = retryIds.filter((id) => previewById.has(id));
-  const input = { basis: current.basis, selected, resolution: saved.resolution };
+  const expectedById = new Map(
+    (saved.selectedResources || saved.preview?.resources || []).map((item) => [item.id, item])
+  );
+  const checked = await Promise.all(
+    retryIds.map((id) => checkRetryResource(service, issueId, id, saved, expectedById))
+  );
+  checked.filter((item) => item.result).forEach((item) => replaceCleanupResult(saved, item.id, item.result));
+  const selectedResources = checked.map((item) => item.current).filter(Boolean);
+  const selected = selectedResources.map((item) => item.id);
+  const input = { basis: null, selected, selectedResources, resolution: saved.resolution };
   return executeIssueCleanup(service, issueId, input, saved);
+}
+
+async function checkRetryResource(service, issueId, id, saved, expectedById) {
+  try {
+    const current = (await previewIssueCleanupResource(service, issueId, id, saved.resolution)).resource;
+    return classifyRetryResource(id, current, expectedById.get(id));
+  } catch {
+    return { id, current: null, result: retryPreservedResult(id) };
+  }
+}
+
+function classifyRetryResource(id, current, expected) {
+  if (!expected) return { id, current: null, result: retryPreservedResult(id) };
+  if (alreadyCleanedResource(current)) return { id, current: null, result: completedRetryResult(id, current) };
+  if (!sameCleanupIdentity(expected, current)) return { id, current: null, result: retryPreservedResult(id) };
+  return { id, current, result: null };
+}
+
+function completedRetryResult(id, current) {
+  return {
+    id,
+    kind: current.kind,
+    name: current.name,
+    status: 'complete',
+    reason: current.reason || 'Already cleaned up.',
+  };
+}
+
+function retryPreservedResult(id) {
+  return {
+    id,
+    status: 'preserved',
+    reason: 'Resource identity could not be matched to the saved cleanup selection; no action was taken.',
+  };
+}
+
+function replaceCleanupResult(record, id, result) {
+  record.results = record.results.filter((item) => item.id !== id);
+  record.results.push({ ...result, at: new Date().toISOString() });
 }
 
 function retryableCleanupIds(saved) {
@@ -282,33 +369,57 @@ export function startIssueCleanupRetry(service, issueId) {
   const saved = readCleanup(service, issueId);
   requireThat(saved?.status === 'incomplete', 'There is no incomplete cleanup to retry.');
   requireThat(!service.issueCleanupTasks?.has(issueId), 'Cleanup is already running for this issue.');
-  const record = beginIssueCleanup(service, issueId, { selected: saved.selected, resolution: saved.resolution });
+  return launchCleanupRetry(service, issueId, saved);
+}
+
+function launchCleanupRetry(service, issueId, saved) {
+  const record = beginIssueCleanup(service, issueId, retryInput(saved));
   record.results = saved.results || [];
   persistCleanup(service, record);
-  service.issueCleanupTasks ||= new Map();
-  const task = retryIssueCleanup(service, issueId, saved)
-    .catch((error) =>
-      recordCleanupFailure(service, issueId, { selected: saved.selected, resolution: saved.resolution }, error)
-    )
-    .finally(() => service.issueCleanupTasks.delete(issueId));
-  service.issueCleanupTasks.set(issueId, task);
+  const tasks = cleanupTaskMap(service);
+  const task = retryIssueCleanup(service, issueId, saved).catch((error) =>
+    recordCleanupFailure(service, issueId, retryInput(saved), error)
+  );
+  tasks.set(
+    issueId,
+    task.finally(() => tasks.delete(issueId))
+  );
   return { issueId, state: 'closed', cleanup: record };
+}
+
+function retryInput(saved) {
+  return {
+    selected: saved.selected,
+    selectedResources: saved.selectedResources || saved.preview?.resources || [],
+    resolution: saved.resolution,
+  };
+}
+
+function cleanupTaskMap(service) {
+  if (!service.issueCleanupTasks) service.issueCleanupTasks = new Map();
+  return service.issueCleanupTasks;
 }
 
 export function recordCleanupFailure(service, issueId, input, error) {
   const selected = selectedCleanupIds(input);
-  const record = {
+  const record = cleanupFailureRecord(issueId, selected, input || {}, error);
+  persistCleanup(service, record);
+  return record;
+}
+
+function cleanupFailureRecord(issueId, selected, { selectedResources = [], resolution = null }, error) {
+  const now = new Date().toISOString();
+  return {
     version: 1,
     issueId,
     selected,
-    resolution: input?.resolution || null,
+    selectedResources,
+    resolution,
     status: 'incomplete',
-    created: new Date().toISOString(),
-    updated: new Date().toISOString(),
+    created: now,
+    updated: now,
     results: failedCleanupResults(selected, error),
   };
-  persistCleanup(service, record);
-  return record;
 }
 
 function selectedCleanupIds(input) {
@@ -343,6 +454,7 @@ function initialCleanupRecord(service, issueId, input, previous) {
     issueId,
     title: cleanupIssue(service, issueId).title,
     selected: selectedCleanupIds(input),
+    selectedResources: input.selectedResources || [],
     resolution: input.resolution ?? null,
     status: 'preparing',
     created: inherited.created,
@@ -603,9 +715,20 @@ function workspaceState(exists, eligible) {
 }
 
 async function processCleanupSelection(service, issueId, record, resources) {
-  for (const item of ordered(resources.filter((resource) => record.selected.includes(resource.id)))) {
-    await recordCleanupResult(service, issueId, record, item);
+  const selected = ordered(resources.filter((resource) => record.selected.includes(resource.id)));
+  const localBranches = selected.filter((item) => item.kind === 'local-branch');
+  const independent = selected.filter((item) => item.kind !== 'local-branch');
+  const workspaceTask = independent.find((item) => item.kind === 'workspace');
+  const tasks = independent.map((item) => recordCleanupResult(service, issueId, record, item));
+  if (localBranches.length) {
+    const dependency = workspaceTask ? tasks[independent.indexOf(workspaceTask)] : Promise.resolve();
+    tasks.push(
+      dependency.then(() =>
+        Promise.all(localBranches.map((item) => recordCleanupResult(service, issueId, record, item)))
+      )
+    );
   }
+  await Promise.all(tasks);
 }
 
 async function recordCleanupResult(service, issueId, record, item) {
@@ -847,8 +970,9 @@ function ordered(resources) {
 
 async function cleanupOne(service, issueId, item) {
   try {
-    const fresh = await previewIssueCleanup(service, issueId);
-    const current = fresh.resources.find((resource) => resource.id === item.id);
+    const { resource: current } = await previewIssueCleanupResource(service, issueId, item.id);
+    if (!sameCleanupIdentity(current, item))
+      return { status: 'preserved', reason: 'Resource identity changed after confirmation; no action was taken.' };
     const rejection = cleanupRejection(current, item);
     return rejection || (await performCleanup(service, item));
   } catch (error) {

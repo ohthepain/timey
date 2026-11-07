@@ -122,15 +122,53 @@ test('selected per-resource snapshots are revalidated before cleanup', async (t)
   f.service.codex.call = async () => ({ thread: { status: { type: 'idle' } } });
   const identity = issueCleanupIdentities(f.service, id, 'wont-do').resources.find((item) => item.kind === 'chat');
   const checked = (await previewIssueCleanupResource(f.service, id, identity.id, 'wont-do')).resource;
-  await assert.rejects(
-    executeIssueCleanup(f.service, id, {
-      basis: null,
-      resolution: 'wont-do',
-      selected: [checked.id],
-      selectedResources: [{ ...checked, state: 'unknown' }],
-    }),
-    /selected resource changed after its check/
+  const result = await executeIssueCleanup(f.service, id, {
+    basis: null,
+    resolution: 'wont-do',
+    selected: [checked.id],
+    selectedResources: [{ ...checked, name: 'replacement chat' }],
+  });
+  assert.equal(result.cleanup.status, 'incomplete');
+  assert.equal(result.cleanup.results[0].status, 'preserved');
+  assert.match(result.cleanup.results[0].reason, /identity changed after confirmation/);
+});
+
+test('a slow selected cleanup does not delay another item result', async (t) => {
+  const f = fixture(t);
+  const id = f.issue.id;
+  markClosed(f.queue.root, id);
+  f.service.store.runs.push(
+    { issueId: id, threadId: 'slow-cleanup-chat', kind: 'issue-work', status: 'completed' },
+    { issueId: id, threadId: 'fast-cleanup-chat', kind: 'issue-work', status: 'completed' }
   );
+  f.service.codex.call = async (_method, params) => ({ thread: { status: { type: 'idle' } } });
+  const identities = issueCleanupIdentities(f.service, id, 'wont-do').resources;
+  const fastId = identities.find((item) => item.threadId === 'fast-cleanup-chat').id;
+  const slowId = identities.find((item) => item.threadId === 'slow-cleanup-chat').id;
+  const selectedResources = await Promise.all(
+    identities.map(async (item) => (await previewIssueCleanupResource(f.service, id, item.id, 'wont-do')).resource)
+  );
+  let releaseSlow;
+  let slowReads = 0;
+  f.service.codex.call = async (method, params) => {
+    if (params.threadId === 'slow-cleanup-chat' && method === 'thread/read' && slowReads++ === 0)
+      return new Promise((resolve) => {
+        releaseSlow = resolve;
+      });
+    return { thread: { status: { type: 'idle' } } };
+  };
+  const pending = executeIssueCleanup(f.service, id, {
+    basis: null,
+    resolution: 'wont-do',
+    selected: selectedResources.map((item) => item.id),
+    selectedResources,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const record = JSON.parse(readFileSync(join(f.queue.root, '.issues/factory-ui/cleanup', `${id}.json`), 'utf8'));
+  assert.equal(record.results.find((item) => item.id === fastId)?.status, 'complete');
+  assert.equal(record.results.find((item) => item.id === slowId)?.status, 'checking');
+  releaseSlow({ thread: { status: { type: 'idle' } } });
+  await pending;
 });
 
 test('cleanup action is durable, visible in Actions, and recovered without repeating deletion', async (t) => {
@@ -257,7 +295,7 @@ test('delivered issue cleanup rechecks and removes only the selected branch, wor
   assert.equal(git(f.queue.root, 'for-each-ref', '--format=%(refname)', `refs/heads/${branch}`), '');
   assert.deepEqual(remoteCalls, ['delete']);
   assert.deepEqual(
-    result.cleanup.results.map((item) => item.kind),
-    ['remote-branch', 'workspace', 'local-branch', 'chat']
+    result.cleanup.results.map((item) => item.kind).sort(),
+    ['remote-branch', 'workspace', 'local-branch', 'chat'].sort()
   );
 });
