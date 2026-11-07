@@ -2798,7 +2798,7 @@
         const disabled = !resource.eligible || resource.state.startsWith('already-');
         const label =
           resource.kind === 'workspace'
-            ? `Workspace ${resource.name} · about ${formatBytes(resource.estimatedBytes)}`
+            ? `Workspace ${resource.name} · ${workspaceEstimate(resource)}`
             : resource.kind === 'remote-branch'
               ? `GitHub branch ${resource.repository}:${resource.name}`
               : resource.kind === 'local-branch'
@@ -2819,6 +2819,10 @@
         const units = ['B', 'KB', 'MB', 'GB'];
         const tier = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
         return `${(bytes / 1024 ** tier).toFixed(tier ? 1 : 0)} ${units[tier]}`;
+      }
+      function workspaceEstimate(resource) {
+        if (Number.isFinite(resource.estimatedBytes)) return `about ${formatBytes(resource.estimatedBytes)}`;
+        return resource.sizeStatus === 'pending' ? 'size estimate pending' : 'size estimate unavailable';
       }
       function cleanupPanel(issue) {
         const cleanup = issue.cleanup;
