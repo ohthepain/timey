@@ -4244,7 +4244,7 @@
             await request('progress-start', {
               token: selection.token,
               humanApproved: $('human-approval')?.checked === true,
-            });
+               });
           else if (selection.review) await request('evaluate', { basis: selection.basis });
           else await request('start', { token: selection.token, humanApproved: $('human-approval')?.checked === true });
           $('confirm').close();
