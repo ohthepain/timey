@@ -85,6 +85,12 @@ stores a durable delivery receipt and evidence outside the disposable checkout.
 The cancelled execution remains cancelled; recovery starts no worker, verification
 run, replacement PR or merge, and never accepts or closes the issue by itself.
 Pending, failed or mismatched PR evidence continues to block Fixed acceptance.
+For an open issue with a saved PR and checkout, the issue page may explicitly rerun
+required verification for the exact current commit. This operation bypasses cached
+check results, retains the new command evidence on the existing strategy run, and
+rechecks the linked PR's current head, checks and target. It starts no worker and
+does not modify code, publish, merge, accept or close the issue. Failed or mismatched
+results continue to block Fixed acceptance.
 The legacy draft-handoff adapter retains its existing publication policy.
 Worktree providers
 use the owning project's credentials, not a worktree-local configuration. Failed

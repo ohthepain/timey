@@ -91,13 +91,133 @@ function strategyWorkFields(work) {
 export function strategyView(service, issue) {
   const record = service.lifecycleRuns[issue.id];
   const work = record?.work;
+  const run =
+    work?.runId && service.store.runs.find((entry) => entry.id === work.runId && entry.issueId === issue.id);
+  let candidateHead = null;
+  try {
+    if (work?.checkout && existsSync(work.checkout)) candidateHead = git(work.checkout, 'rev-parse', 'HEAD');
+  } catch {
+    // An unavailable saved checkout should not prevent the rest of the issue page from rendering.
+  }
   return {
     ...strategyConfigFields(work, readIssueDeliveryConfig(service.root)),
     ...strategyWorkFields(work),
     ...strategyDisplay(service, record, issue),
     basis: strategyBasis(service, issue),
     active: service.lifecycleTasks.has(issue.id),
+    verifyAgain:
+      work?.pr && work?.checkout && run && candidateHead && record?.status !== 'cancelled' && run.status !== 'cancelled'
+      ? {
+          runId: run.id,
+          head: candidateHead,
+          basis: digest(JSON.stringify([issue.content, run.id, work.pr, work.checkout, work.base, candidateHead])),
+          busy: service.lifecycleTasks.has(issue.id),
+        }
+      : null,
   };
+}
+
+export function verifyIssueStrategyAgain(service, input) {
+  service.ownServer();
+  const queue = readQueue(service.root);
+  const issue = queue.issues.find((entry) => entry.id === input.issueId);
+  requireThat(issue, 'This issue no longer exists.');
+  requireThat(
+    queue.lifecycle.find((stage) => stage.state === issue.state)?.role !== 'closed',
+    'Reopen this issue before verifying its commit.'
+  );
+  const record = service.lifecycleRuns[issue.id];
+  const work = record?.work;
+  const run = work?.runId && service.store.runs.find((entry) => entry.id === work.runId && entry.issueId === issue.id);
+  const view = strategyView(service, issue).verifyAgain;
+  requireThat(
+    view && input.runId === view.runId && input.basis === view.basis,
+    'The saved commit changed. Refresh before verifying it.'
+  );
+  requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for the current issue action to finish before verifying.');
+  requireThat(!service.issueChats.tasks.has(issue.id), 'Wait for the issue chat to finish before verifying.');
+  requireThat(
+    !service.store.runs.some(
+      (entry) => entry.id !== run?.id && entry.issueId === issue.id && service.store.connected.has(entry.id)
+    ),
+    'Another issue operation is still connected. Wait for it to finish before verifying.'
+  );
+  requireThat(run && work.pr && existsSync(work.checkout), 'The saved issue commit or pull request is unavailable.');
+  requireThat(run.kind === 'issue-work', 'The saved strategy run cannot be used for verification.');
+  requireThat(
+    realpathSync(work.checkout) !== realpathSync(service.root),
+    'The saved issue commit must be checked in its isolated checkout.'
+  );
+  requireThat(
+    realpathSync(git(work.checkout, 'rev-parse', '--path-format=absolute', '--git-common-dir')) ===
+      realpathSync(git(service.root, 'rev-parse', '--path-format=absolute', '--git-common-dir')),
+    'The saved checkout belongs to another repository.'
+  );
+  requireThat(git(work.checkout, 'branch', '--show-current') === work.branch, 'The saved issue branch changed.');
+  requireThat(
+    !git(work.checkout, 'status', '--porcelain', '--untracked-files=all'),
+    'Commit or preserve checkout changes before verifying.'
+  );
+  const head = git(work.checkout, 'rev-parse', 'HEAD');
+  requireThat(head === view.head && head === input.head, 'The saved commit changed. Refresh before verifying it.');
+
+  const task = Promise.resolve()
+    .then(() => rerunSavedStrategyChecks(service, record, run, work, head))
+    .catch((error) => {
+      const summary = `Checks could not be confirmed for commit ${head.slice(0, 7)}: ${error.message}`;
+      service.store.update(run, { status: 'blocked', summary });
+      lifecycleEvent(service, record, summary);
+      saveLifecycle(service, record, { status: 'blocked', summary });
+    })
+    .finally(() => {
+      service.store.connected.delete(run.id);
+      if (service.lifecycleTasks.get(issue.id) === task) service.lifecycleTasks.delete(issue.id);
+    });
+  service.lifecycleTasks.set(issue.id, task);
+  service.store.connected.add(run.id);
+  service.store.update(run, {
+    status: 'checking',
+    summary: `Running checks again for commit ${head.slice(0, 7)}. No code will be changed.`,
+  });
+  saveLifecycle(service, record, {
+    status: 'checking',
+    summary: `Running checks again for commit ${head.slice(0, 7)}. No code will be changed.`,
+  });
+  return { runId: run.id, head };
+}
+
+async function rerunSavedStrategyChecks(service, record, run, work, head) {
+  let checked = null;
+  try {
+    checked = await service.check(work.checkout, work.base, join(service.store.directory, run.id), {
+      auditPolicy: 'required',
+      force: true,
+    });
+    requireThat(
+      checked.head === head && git(work.checkout, 'rev-parse', 'HEAD') === head,
+      'The commit changed while checks were running.'
+    );
+    service.store.update(run, { result: { ...run.result, checked } });
+    const { readiness } = await waitStrategyReadiness(service, record, () =>
+      retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
+    );
+    assertCurrentTarget(work, readiness);
+    writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
+    work.verification = { head, checked, at: new Date().toISOString(), forced: true };
+    work.readiness = readiness;
+    work.prHead = readiness.head;
+    if (readiness.merged) work.merge = readiness.merge;
+    const summary = `Checks passed for commit ${head.slice(0, 7)}. The linked PR checks and target were also confirmed.`;
+    service.store.update(run, { status: 'completed', result: { ...run.result, checked }, summary });
+    lifecycleEvent(service, record, summary);
+    saveLifecycle(service, record, { status: 'completed', summary });
+  } catch (error) {
+    if (checked) service.store.update(run, { result: { ...run.result, checked } });
+    const summary = `Checks could not be confirmed for commit ${head.slice(0, 7)}: ${error.message}`;
+    service.store.update(run, { status: 'blocked', summary });
+    lifecycleEvent(service, record, summary);
+    saveLifecycle(service, record, { status: 'blocked', summary });
+  }
 }
 
 export async function verifyExternalIssueDelivery(service, input) {

@@ -1198,6 +1198,13 @@ Changed reports or reason lists invalidate an open decision; duplicate submissio
 cannot close twice. This explicit user disposition is separate from automatic
 Progress, which still cannot close issues.
 
+When an open issue has a saved strategy PR and checkout, **Verify this commit again**
+appears beside **Close with reason…**. It reruns the required local checks against
+the exact displayed commit, even if that unchanged commit was checked before, then
+confirms the linked PR's current head, checks and target. It changes no code, does
+not restart the worker, and never merges or closes the issue. A failed or mismatched
+check remains visible and continues to block Fixed acceptance.
+
 ## Issue priorities
 
 The queue and issue page show the saved priority and up/down buttons. Each click
@@ -1239,6 +1246,12 @@ existing candidate; unchanged saved checks are reused. Multiple matches,
 mismatched identity or changed content stop recovery without inferring acceptance,
 replacing a PR, or weakening the required checks. A verified manual merge is
 recorded as delivered while human acceptance remains separate.
+
+If saved verification is stale or incomplete, the issue screen's **Verify this
+commit again** action explicitly reruns local checks for the current saved PR
+commit, bypassing cached pass or failure evidence. It then rechecks GitHub readiness
+and stores fresh evidence on the existing strategy run. This path starts no worker
+and makes no branch or PR changes; it does not bypass any check or human acceptance.
 
 Full Send leaves a separate **Merge PR** control after verification. Selecting it
 rechecks GitHub's approving review and required checks against the exact saved

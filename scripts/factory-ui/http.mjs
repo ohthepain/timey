@@ -113,6 +113,7 @@ async function mutation(service, path, value, owner) {
     },
     '/api/issue-strategy-stop': () => stopIssueStrategy(service, value),
     '/api/issue-strategy-start': () => startIssueStrategy(service, value),
+    '/api/issue-strategy-verify-again': () => service.verifyIssueStrategyAgain(value),
     '/api/issue-strategy-merge': () => mergeIssueStrategyPR(service, value),
     '/api/issue-strategy-external-delivery': () => verifyExternalIssueDelivery(service, value),
     '/api/assembly-retry': () => service.retryAssembly(value),

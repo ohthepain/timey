@@ -2707,6 +2707,7 @@
       }
       const decisionErrors = new Map();
       const decisionRequests = new Map();
+      const verificationRequests = new Map();
       let reviewOpenFor = null;
       function reviewRecordedResult(id) {
         reviewOpenFor = id;
@@ -3438,7 +3439,9 @@
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
-        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || 'Untitled issue')}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted issue-number">#${esc(i.issueNumber)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+        const verifyAgain = i.strategy?.verifyAgain;
+        const verificationRequest = verificationRequests.get(i.id);
+        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><h1>${esc(i.title || 'Untitled issue')}</h1><span class="badge">${esc(issueStatus)}</span></div><p class="muted issue-number">#${esc(i.issueNumber)}</p>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>${verifyAgain ? `<button data-strategy-verify-again="${esc(i.id)}" data-verify-run="${esc(verifyAgain.runId)}" data-verify-head="${esc(verifyAgain.head)}" data-verify-basis="${esc(verifyAgain.basis)}" ${verifyAgain.busy ? 'disabled' : ''}>${verifyAgain.busy ? 'Running checks…' : `Verify this commit again (${esc(verifyAgain.head.slice(0, 7))})`}</button>${verificationRequest ? `<p role="${verificationRequest.error ? 'alert' : 'status'}">${esc(verificationRequest.message)}</p>` : ''}` : ''}` }<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
           ['progress', 'Progress'],
           ['output', 'Issue output'],
           ['issue', 'Issue thread'],
@@ -3935,6 +3938,28 @@
               decisionErrors.set(button.dataset.issueId, error.message);
               render();
             });
+        });
+        document.querySelectorAll('[data-strategy-verify-again]').forEach((button) => {
+          button.onclick = async () => {
+            const id = button.dataset.strategyVerifyAgain;
+            verificationRequests.set(id, {
+              message: `Starting checks again for commit ${button.dataset.verifyHead.slice(0, 7)}. No code will be changed.`,
+            });
+            button.disabled = true;
+            render();
+            try {
+              await request('issue-strategy-verify-again', {
+                issueId: id,
+                runId: button.dataset.verifyRun,
+                head: button.dataset.verifyHead,
+                basis: button.dataset.verifyBasis,
+              });
+              void refresh();
+            } catch (error) {
+              verificationRequests.set(id, { error: true, message: error.message });
+              render();
+            }
+          };
         });
         document.querySelectorAll('[data-cleanup-retry]').forEach((button) => {
           button.onclick = async () => {

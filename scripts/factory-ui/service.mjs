@@ -1,4 +1,4 @@
-import { strategyView } from './issue-strategy.mjs';
+import { strategyView, verifyIssueStrategyAgain } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
 import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
@@ -481,6 +481,9 @@ export class FactoryUI {
   }
   retryVerification(input) {
     return retryVerification(this, input, (id) => continueLifecycleAfter(this, id));
+  }
+  verifyIssueStrategyAgain(input) {
+    return verifyIssueStrategyAgain(this, input);
   }
   async finishWorker(run, action, result, checkOptions = {}) {
     const update = { status: 'completed', evidence: JSON.stringify(result), authorization: run.authorization };

@@ -52,19 +52,23 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
     resolvedBase = git(root, 'rev-parse', base);
   const runner = digest(readFileSync(fileURLToPath(import.meta.url))) + ':' + (options.auditPolicy || 'legacy');
   const input = candidateInput(root, resolvedBase, runner);
-  const retained = retainedCandidate(root, input, (value) => validateSummary(value, resolvedBase, treeBefore, options));
+  const retained = options.force
+    ? null
+    : retainedCandidate(root, input, (value) => validateSummary(value, resolvedBase, treeBefore, options));
   mkdirSync(folder, { recursive: true });
   writeJson(join(folder, 'candidate-cache.json'), {
     key: input,
     reused: Boolean(retained),
     reason: retained
       ? 'Exact independent proof and retained file hashes match.'
-      : input
-        ? 'No valid retained proof for these exact inputs.'
-        : 'Dependencies or clean source did not provide a cache key.',
+      : options.force
+        ? 'Explicit retry requested; run checks again for this candidate.'
+        : input
+          ? 'No valid retained proof for these exact inputs.'
+          : 'Dependencies or clean source did not provide a cache key.',
   });
   if (retained) return retained;
-  const failed = !options.retryFailed && retainedFailure(root, input);
+  const failed = !options.force && !options.retryFailed && retainedFailure(root, input);
   assertNoRetainedFailure(failed);
   const attempt = join(folder, 'attempt-' + randomUUID());
   mkdirSync(attempt);
