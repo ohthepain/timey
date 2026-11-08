@@ -600,7 +600,10 @@ The policy is recorded in each explicit start receipt and never wakes inactive w
 
 `factory-ui/strategy-closure.mjs` validates saved strategy verification and step
 summaries against their recorded candidate and retains their evidence for explicit
-acceptance. It does not run checks or contact the provider during closure.
+acceptance. `strategy-delivery-recovery.mjs` can recover a cancelled strategy's
+published PR at Fixed acceptance by checking its saved branch, live merge, current
+target ancestry and passing checks with GitHub, then retaining a durable receipt.
+Recovery never restarts the worker or performs merge or acceptance.
 
 `factory-restart.mjs` is the external `pnpm factory:restart` launcher. It restarts
 the current checkout as-is, including WIP, and carries that source-changed state

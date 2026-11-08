@@ -77,6 +77,14 @@ Every retry discovers matching PRs first to reconcile uncertain creation; a clos
 or merged match stops rather than creating a replacement.
 Existing saved PRs retain their authorship and history; workers cannot adopt a new
 personally authored PR, replace a PR or reopen a closed PR to change its author.
+If a saved strategy run was cancelled after its PR was published, Fixed acceptance
+reconciles that same PR directly with GitHub before applying the normal acceptance
+gates. Recovery requires the configured repository and target, the saved issue
+branch, a merge still contained in the current target, and passing PR checks. It
+stores a durable delivery receipt and evidence outside the disposable checkout.
+The cancelled execution remains cancelled; recovery starts no worker, verification
+run, replacement PR or merge, and never accepts or closes the issue by itself.
+Pending, failed or mismatched PR evidence continues to block Fixed acceptance.
 The legacy draft-handoff adapter retains its existing publication policy.
 Worktree providers
 use the owning project's credentials, not a worktree-local configuration. Failed

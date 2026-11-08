@@ -22,6 +22,8 @@ import {
   stopIssueStrategy,
   verifyExternalIssueDelivery,
 } from './issue-strategy.mjs';
+import { recoverCancelledStrategyDelivery } from './strategy-delivery-recovery.mjs';
+import { readQueue } from './data.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
@@ -42,7 +44,8 @@ function authenticated(request, token, port) {
   return (request.headers.cookie || '').split(';').some((value) => value.trim() === `timey_factory_${port}=${token}`);
 }
 
-async function decideIssueAndCleanup(service, value) {
+export async function decideIssueAndCleanup(service, value) {
+  await recoverBeforeFixedAcceptance(service, value);
   const decision = await service.decideIssue(
     value.issueId,
     value.state,
@@ -53,6 +56,16 @@ async function decideIssueAndCleanup(service, value) {
     value.cleanup
   );
   return decision;
+}
+
+async function recoverBeforeFixedAcceptance(service, value) {
+  if (!isFixedAcceptance(value)) return;
+  const issue = readQueue(service.root).issues.find((entry) => entry.id === value.issueId);
+  if (issue) await recoverCancelledStrategyDelivery(service, issue);
+}
+
+function isFixedAcceptance(value) {
+  return value.kind === 'close' && (!value.resolution || value.resolution === 'fixed');
 }
 
 function authorize(request, token, port) {
