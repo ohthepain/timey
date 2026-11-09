@@ -23,8 +23,14 @@ export default async function queueBrowserChecks(page) {
       throw Error('Issue working branch or short hash is missing');
     if ((await identity.locator('code').last().getAttribute('title')) !== '12345678' + 'a'.repeat(32))
       throw Error('Full commit hash is missing');
-    if (!(await identity.evaluate((p) => p.previousElementSibling.textContent === '#1')))
-      throw Error('Working branch must appear immediately under the issue number');
+    if (
+      !(await identity.evaluate(
+        (p) =>
+          p.previousElementSibling.classList.contains('issue-title') &&
+          p.previousElementSibling.querySelector('.issue-number')?.textContent === '#1'
+      ))
+    )
+      throw Error('Working branch must appear below the issue identity header');
     await page.screenshot({ path: 'issue-git.png', fullPage: false });
   }
 
