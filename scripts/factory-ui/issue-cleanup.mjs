@@ -24,8 +24,7 @@ export function issueCleanupIdentities(service, issueId, resolution = null) {
   const work = service.lifecycleRuns[issueId]?.work;
   const resources = [
     ...identityBranchResources(issueId, work),
-    ...identityWorkspaceResources(issueId, work),
-    ...identityChatResources(service, issueId, issue),
+    ...identityWorkspaceResources(service, issueId, work),
   ];
   applyCleanupDefaults(resources, issue.closure?.reason || resolution, isDelivered(service, issueId, work));
   resources.forEach(markIdentityChecking);
@@ -67,7 +66,6 @@ function previewResourceByIdentity(service, issueId, work, identity) {
     workspace: () => workspaceResource(service, issueId, work),
     'remote-branch': () => previewRemoteBranch(service, issueId, work),
     'local-branch': () => previewLocalBranch(service, issueId, work),
-    chat: () => previewChat(service, issueId, identity.threadId),
   };
   return previewers[identity.kind]();
 }
@@ -92,13 +90,6 @@ function previewLocalBranch(service, issueId, work) {
   return localBranchResource(issueId, work.branch, revision, { ...facts, attachedPath });
 }
 
-async function previewChat(service, issueId, threadId) {
-  const run = issueChatRuns(service, issueId).find((item) => item.threadId === threadId);
-  requireThat(run, 'Refresh the cleanup resource list before checking it.');
-  const title = findIssueTitle(service, issueId);
-  return inspectChat(service, run, title, issueChatActive(service, issueId));
-}
-
 function identityBranchResources(issueId, work) {
   if (!hasBranchConfig(work)) return [];
   return [
@@ -107,20 +98,16 @@ function identityBranchResources(issueId, work) {
   ];
 }
 
-function identityWorkspaceResources(issueId, work) {
+function identityWorkspaceResources(service, issueId, work) {
   if (!work?.checkout) return [];
   return [
-    { ...identityResource('workspace', issueId, resolve(work.checkout)), estimatedBytes: null, sizeStatus: 'pending' },
+    {
+      ...identityResource('workspace', issueId, resolve(work.checkout)),
+      chatThreadIds: issueChatRuns(service, issueId).map((run) => run.threadId),
+      estimatedBytes: null,
+      sizeStatus: 'pending',
+    },
   ];
-}
-
-function identityChatResources(service, issueId, issue) {
-  return issueChatRuns(service, issueId).map((run) =>
-    identityResource('chat', issueId, run.threadId, {
-      name: run.chatTitle?.title || `${chatPurpose(run)}: ${issue.title || issueId}`,
-      threadId: run.threadId,
-    })
-  );
 }
 
 function markIdentityChecking(resource) {
@@ -137,17 +124,15 @@ function identityResource(kind, issueId, identity, details = {}) {
 }
 
 export async function archiveIssueChatsOnClose(service, issueId, resolution, requestedCleanup = null) {
-  if (requestedCleanup) return executeConfirmedCleanup(service, issueId, resolution, requestedCleanup);
-  const preview = await previewIssueCleanup(service, issueId, resolution);
-  const chats = preview.resources.filter((resource) => resource.kind === 'chat');
-  const selected = closeChatSelections(chats, requestedCleanup);
-  if (!selected.length) {
-    completeEmptyCleanup(service, issueId);
-    return { status: 'complete', results: [], retainedChats: chats.filter((item) => !item.eligible) };
+  if (requestedCleanup) {
+    const result = await executeConfirmedCleanup(service, issueId, resolution, requestedCleanup);
+    const workspace = service.lifecycleRuns[issueId]?.work?.checkout;
+    if (!workspace || !existsSync(workspace)) await archiveChatsForIssue(service, issueId);
+    return result;
   }
-  const input = closeCleanupInput(preview, requestedCleanup, resolution, selected);
-  const result = await executeIssueCleanup(service, issueId, input);
-  return { ...result.cleanup, retainedChats: chats.filter((item) => !item.eligible) };
+  const results = await archiveChatsForIssue(service, issueId);
+  completeEmptyCleanup(service, issueId);
+  return { status: 'complete', results, retainedChats: [] };
 }
 
 async function executeConfirmedCleanup(service, issueId, resolution, input) {
@@ -159,8 +144,11 @@ async function executeConfirmedCleanup(service, issueId, resolution, input) {
   return { ...result.cleanup, retainedChats: [] };
 }
 
-function closeChatSelections(chats, requestedCleanup) {
-  return requestedCleanup ? [...new Set(requestedCleanup.selected || [])] : chats.map((item) => item.id);
+async function archiveChatsForIssue(service, issueId) {
+  const chats = await chatResources(service, issueId);
+  const results = [];
+  for (const chat of chats) results.push({ ...chat, ...(await archiveChat(service, chat)) });
+  return results;
 }
 
 function completeEmptyCleanup(service, issueId) {
@@ -182,7 +170,7 @@ export function issueHasChats(service, issueId) {
 async function cleanupResources(service, issueId, work) {
   const workspace = work?.checkout ? await workspaceResource(service, issueId, work) : null;
   const branches = await availableBranchResources(service, issueId, work, workspace);
-  return [...branches, ...(workspace ? [workspace] : []), ...(await chatResources(service, issueId))];
+  return [...branches, ...(workspace ? [workspace] : [])];
 }
 
 async function availableBranchResources(service, issueId, work, workspace) {
@@ -270,7 +258,9 @@ function sameCleanupIdentity(saved, current) {
     'threadId',
     'state',
     'eligible',
-  ].every((key) => saved[key] === current[key]);
+  ].every((key) => saved[key] === current[key]) &&
+    JSON.stringify(saved.chatThreadIds || []) === JSON.stringify(current.chatThreadIds || []) &&
+    JSON.stringify(saved.chats || []) === JSON.stringify(current.chats || []);
 }
 
 function validCleanupInput(input) {
@@ -693,6 +683,9 @@ function branchReason(shared, remote) {
 
 async function workspaceResource(service, issueId, work) {
   const facts = workspaceFacts(service, issueId, work);
+  const chats = await chatResources(service, issueId);
+  const unavailableChat = chats.find((chat) => !chat.eligible && chat.state !== 'already-archived');
+  const eligible = facts.eligible && !unavailableChat;
   return {
     id: resourceId('workspace', facts.path),
     kind: 'workspace',
@@ -701,12 +694,16 @@ async function workspaceResource(service, issueId, work) {
     canonicalPath: facts.canonical,
     branch: facts.branch,
     revision: facts.head,
+    chatThreadIds: chats.map((chat) => chat.threadId),
+    chats: chats.map(({ threadId, name, state }) => ({ threadId, name, state })),
     estimatedBytes: facts.exists ? null : 0,
     sizeStatus: facts.exists ? 'pending' : 'complete',
-    state: workspaceState(facts.exists, facts.eligible),
-    eligible: facts.eligible,
+    state: workspaceState(facts.exists, eligible),
+    eligible,
     defaultSelected: false,
-    reason: workspaceReason(facts),
+    reason:
+      workspaceReason(facts) ||
+      (unavailableChat ? 'An issue chat is active or could not be checked; preserve the workspace.' : null),
   };
 }
 
@@ -1086,12 +1083,13 @@ function removeLocalBranch(service, item) {
   return { status: 'complete', reason: 'Local branch deleted and absence confirmed.' };
 }
 
-function removeWorkspace(service, item) {
+async function removeWorkspace(service, item) {
   const path = resolve(item.name);
   requireThat(existsSync(path) && realpathSync(path) === item.canonicalPath, 'Workspace path changed or is missing.');
   requireThat(git(path, 'branch', '--show-current') === item.branch, 'Workspace branch changed.');
   requireThat(git(path, 'rev-parse', 'HEAD') === item.revision, 'Workspace revision changed.');
   requireThat(!git(path, 'status', '--porcelain', '--untracked-files=all'), 'Workspace has unsaved changes.');
+  for (const chat of item.chats || []) await archiveChat(service, chat);
   retainIssueHistory(service, item.issueId, path);
   git(service.root, 'worktree', 'remove', path);
   requireThat(!existsSync(path), 'Workspace removal was not confirmed.');

@@ -84,7 +84,9 @@ issue branch, a merge still contained in the current target, and passing PR chec
 It stores a durable delivery receipt and evidence outside the disposable checkout.
 The blocked or cancelled execution remains as history; recovery starts no worker,
 verification run, replacement PR or merge, and never accepts or closes the issue by
-itself. Pending, failed or mismatched PR evidence continues to block Fixed acceptance.
+itself. If a saved recovery receipt references a missing observation file, the factory
+rechecks the same PR and rebuilds the evidence before applying the existing acceptance
+gates. Pending, failed or mismatched PR evidence continues to block Fixed acceptance.
 For an open issue with a saved PR and checkout, the issue page may explicitly rerun
 required verification for the exact current commit. This operation bypasses cached
 check results, retains the new command evidence on the existing strategy run, and
