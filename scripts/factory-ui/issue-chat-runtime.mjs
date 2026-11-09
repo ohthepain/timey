@@ -42,12 +42,12 @@ class IssueChatConnection extends CodexConnection {
       },
     });
   }
-  async attach(root, state, retain) {
+  async attach(cwd, state, retain) {
     this.readOnlyThreads ||= new Set();
     if (state.threadId) {
-      if (!this.readOnlyThreads.has(state.threadId)) await resumeSavedThread(this, state.threadId, root);
+      if (!this.readOnlyThreads.has(state.threadId)) await resumeSavedThread(this, state.threadId, cwd);
       const { thread } = await this.call('thread/read', { threadId: state.threadId, includeTurns: false });
-      requireIdle(thread, root);
+      requireIdle(thread, cwd);
       this.readOnlyThreads.add(state.threadId);
       return state.threadId;
     }
@@ -55,19 +55,21 @@ class IssueChatConnection extends CodexConnection {
       !state.startup || state.startup.status === 'ready',
       'Chat startup is uncertain. Reconcile its original connection; no replacement was created.'
     );
-    const threadId = await this.start(root, 'read-only', (startup) => retain({ startup, threadId: startup.threadId }));
+    const threadId = await this.start(cwd, 'read-only', (startup) =>
+      retain({ startup, threadId: startup.threadId })
+    );
     this.readOnlyThreads.add(threadId);
     return threadId;
   }
 }
 
-async function resumeSavedThread(connection, threadId, root) {
+async function resumeSavedThread(connection, threadId, cwd) {
   try {
-    await connection.resume(threadId, root, 'read-only');
+    await connection.resume(threadId, cwd, 'read-only');
   } catch (error) {
     if (!error.message.includes(threadId) || !/\bis archived\b/.test(error.message)) throw error;
     await connection.unarchive(threadId);
-    await connection.resume(threadId, root, 'read-only');
+    await connection.resume(threadId, cwd, 'read-only');
   }
 }
 

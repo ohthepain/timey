@@ -22,13 +22,14 @@ import {
   stopIssueStrategy,
   verifyExternalIssueDelivery,
 } from './issue-strategy.mjs';
-import { recoverCancelledStrategyDelivery } from './strategy-delivery-recovery.mjs';
+import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   issueCleanupIdentities,
   previewIssueCleanup,
   previewIssueCleanupResource,
+  previewIssueCleanupWorkspaceSize,
   startIssueCleanupRetry,
 } from './issue-cleanup.mjs';
 async function body(request) {
@@ -60,7 +61,7 @@ export async function decideIssueAndCleanup(service, value) {
 async function recoverBeforeFixedAcceptance(service, value) {
   if (!isFixedAcceptance(value)) return;
   const issue = readQueue(service.root).issues.find((entry) => entry.id === value.issueId);
-  if (issue) await recoverCancelledStrategyDelivery(service, issue);
+  if (issue) await recoverMergedStrategyDelivery(service, issue);
 }
 
 function isFixedAcceptance(value) {
@@ -131,6 +132,8 @@ async function mutation(service, path, value, owner) {
     '/api/issue-cleanup-identities': () => issueCleanupIdentities(service, value.issueId, value.resolution),
     '/api/issue-cleanup-resource': () =>
       previewIssueCleanupResource(service, value.issueId, value.resourceId, value.resolution),
+    '/api/issue-cleanup-workspace-size': () =>
+      previewIssueCleanupWorkspaceSize(service, value.issueId, value.resourceId),
     '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId, value.resourceId || null),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),

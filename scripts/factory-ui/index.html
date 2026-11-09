@@ -2783,7 +2783,20 @@
       function checkCleanupResources(issueId, resolution, resources) {
         for (const item of resources) {
           void request('issue-cleanup-resource', { issueId, resourceId: item.id, resolution })
-            .then(({ resource }) => updateCleanupResource(issueId, resource))
+            .then(({ resource }) => {
+              updateCleanupResource(issueId, resource);
+              if (resource.kind === 'workspace' && resource.sizeStatus === 'pending') {
+                void request('issue-cleanup-workspace-size', { issueId, resourceId: item.id })
+                  .then(({ resource: size }) => updateCleanupWorkspaceSize(issueId, size))
+                  .catch(() =>
+                    updateCleanupWorkspaceSize(issueId, {
+                      id: item.id,
+                      estimatedBytes: null,
+                      sizeStatus: 'unavailable',
+                    })
+                  );
+              }
+            })
             .catch((error) =>
               updateCleanupResource(issueId, {
                 ...item,
@@ -2804,16 +2817,25 @@
         );
         $('cleanup-options').outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
       }
+      function updateCleanupWorkspaceSize(issueId, size) {
+        if (!$("confirm").open || selection?.issueId !== issueId) return;
+        selection.cleanupResources = selection.cleanupResources.map((item) =>
+          item.id === size.id ? { ...item, estimatedBytes: size.estimatedBytes, sizeStatus: size.sizeStatus } : item,
+        );
+        $("cleanup-options").outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
+      }
       function cleanupChoice(resource) {
         const disabled = !resource.eligible || resource.state.startsWith('already-');
+        const chatSummary =
+          resource.kind === 'workspace' && resource.chats?.length
+            ? `<small>Also archives ${resource.chats.length} linked issue chat${resource.chats.length === 1 ? '' : 's'}.</small>`
+            : '';
         const label =
           resource.kind === 'workspace'
             ? `Workspace ${resource.name} · ${workspaceEstimate(resource)}`
             : resource.kind === 'remote-branch'
               ? `Remote branch ${resource.repository}:${resource.name}`
-              : resource.kind === 'local-branch'
-                ? `Local branch ${resource.name}`
-                : `Chat ${resource.name}`;
+              : `Local branch ${resource.name}`;
         const state =
           resource.state === 'already-deleted'
             ? 'Already deleted'
@@ -2822,7 +2844,7 @@
               : resource.state === 'unknown'
                 ? 'Status unknown; preserved'
                 : resource.reason;
-        return `<label class="cleanup-choice"><input type="checkbox" data-cleanup-choice="${esc(resource.id)}" ${resource.defaultSelected ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span><strong>${esc(label)}</strong>${state ? `<small>${esc(state)}</small>` : ''}${resource.kind === 'chat' ? `<small>Thread ${esc(resource.threadId)} · archiving does not save disk space.</small>` : ''}</span></label>`;
+        return `<label class="cleanup-choice"><input type="checkbox" data-cleanup-choice="${esc(resource.id)}" ${resource.defaultSelected ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span><strong>${esc(label)}</strong>${state ? `<small>${esc(state)}</small>` : ''}${chatSummary}</span></label>`;
       }
       function formatBytes(bytes) {
         if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -3436,10 +3458,15 @@
           i.implementation.record?.steps?.every((step) =>
             step.criteria.every((criterion) => ['passed', 'skipped'].includes(criterion.status))
           );
+        const canRecoverMergedPR =
+          !i.strategy?.active &&
+          Number.isSafeInteger(i.strategy?.pr) &&
+          ["blocked", "cancelled"].includes(i.strategy?.status);
         const canAcceptFix =
           stage?.role === 'ready-to-close' ||
           ['completed', 'merged'].includes(i.strategy?.status) ||
-          completedChecklist;
+          completedChecklist ||
+          canRecoverMergedPR;
         const issueStatus = closedIssueState(i.state)
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? 'queued' : i.stage);

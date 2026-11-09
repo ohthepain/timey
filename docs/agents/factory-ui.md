@@ -558,16 +558,31 @@ another linked issue is open. Repeated cancellation is safe, and stale or runnin
 actions cannot be cancelled through this control.
 
 Accept fix and close appears after the issue reaches final review or its saved
-strategy/checklist records completed work. Both closure paths show a confirmation
+strategy/checklist records completed work. It also appears for an inactive blocked
+or cancelled strategy with a saved PR, so the server can reconcile a merged PR before
+acceptance. Both closure paths show a confirmation
 with the exact remote/local branches, issue workspace path and estimated storage,
 and linked issue chats. Already deleted resources and failed lookups remain disabled
 and distinguishable. Unmerged work is unchecked by default; dirty, shared and active
-resources are preserved. The server rechecks each selected resource immediately
-before acting and records per-resource results outside the workspace. Issue closure
+resources are preserved. Workspace safety appears as soon as its identity is checked;
+the size estimate runs separately and never delays selection or cleanup. The server
+rechecks each selected resource immediately before acting and records per-resource
+results outside the workspace. Issue closure
 still completes if cleanup fails; the issue then shows Cleanup incomplete and a
 bounded Retry cleanup action. Eligible idle chats associated with the issue are
-archived automatically when it closes; active or unknown chats are preserved.
-Archiving a chat is not reported as disk savings.
+archived when the issue workspace is removed; the workspace row states how many
+linked chats it will archive. There is no separate chat cleanup choice. Active or
+unknown chats prevent workspace removal, and local conversation transcripts are
+stored inside the issue workspace so they are removed with it. Native Codex chats
+remain app-managed and archiving them is not reported as disk savings.
+
+Before Fixed acceptance, a blocked or cancelled strategy with a saved PR is reconciled
+against GitHub. The factory requires that the saved branch's PR is merged into the
+configured target, that the target still contains the merge, and that PR checks pass.
+It retains a durable receipt without restarting the worker; ordinary Fixed acceptance
+still requires the user's explicit action. If a saved recovery receipt points to a
+missing observation file, the factory checks the same PR again and rebuilds that file
+before applying the existing acceptance checks.
 When individual cleanup results are recorded, each failed or preserved resource
 has its own retry button; retrying one item leaves the other results intact. If
 cleanup failed before any resource result was recorded, the page explains that
@@ -820,7 +835,8 @@ Thread titles begin with the current role (`Issue:`, `Grill:`, `Execute:` or
 handoff. A merged strategy result remains `waiting` while explicit issue
 acceptance is outstanding; merge alone does not make the conversation archiveable.
 
-Human messages are retained under `.issues/conversations/ISSUE_ID/messages.jsonl`;
+Human messages are retained under the issue workspace at
+`.issues/conversations/ISSUE_ID/messages.jsonl`;
 `chat.json` keeps the conversational model's identity and response status. The
 conversation also projects actual role results, stage outcomes and original human
 answer receipts from their existing owners. It preserves source IDs and labels

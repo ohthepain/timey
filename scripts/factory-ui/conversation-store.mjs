@@ -1,10 +1,18 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+} from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
 import { requireThat, writeJson } from './common.mjs';
+import { readProgress } from '../factory-progress.mjs';
 
 export function conversationFiles(root, issueId) {
   requireThat(typeof issueId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(issueId), 'Select a valid issue.');
-  const directory = join(root, '.issues/conversations', issueId);
+  const directory = issueConversationDirectory(root, issueId);
   return {
     directory,
     log: join(directory, 'messages.jsonl'),
@@ -12,6 +20,33 @@ export function conversationFiles(root, issueId) {
     context: join(directory, 'context.json'),
   };
 }
+
+function issueConversationDirectory(root, issueId) {
+  const legacy = join(root, '.issues/conversations', issueId);
+  const checkout = readProgress(root)[issueId]?.work?.checkout;
+  const managedRoot = join(root, '.issues');
+  if (typeof checkout !== 'string' || !existsSync(checkout) || !existsSync(managedRoot)) return legacy;
+  const canonicalManagedRoot = realpathSync(managedRoot);
+  const canonicalCheckout = realpathSync(checkout);
+  const checkoutRelative = relative(canonicalManagedRoot, canonicalCheckout);
+  if (
+    !checkoutRelative ||
+    checkoutRelative === '..' ||
+    checkoutRelative.startsWith(`..${sep}`)
+  )
+    return legacy;
+  const directory = join(canonicalCheckout, '.issues', 'conversations', issueId);
+  if (existsSync(legacy) && resolve(legacy) !== resolve(directory)) {
+    mkdirSync(join(directory, '..'), { recursive: true });
+    requireThat(
+      !existsSync(directory),
+      'Issue conversation data exists in both the project and issue folders; reconcile it before continuing.'
+    );
+    renameSync(legacy, directory);
+  }
+  return directory;
+}
+
 export function conversationMessages(root, issueId) {
   const { log } = conversationFiles(root, issueId);
   if (!existsSync(log)) return [];

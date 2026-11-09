@@ -1,12 +1,13 @@
+import { existsSync } from 'node:fs';
 import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { digest, requireThat } from './common.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 
-// Recover delivery bookkeeping from GitHub without reopening a cancelled worker.
-export async function recoverCancelledStrategyDelivery(service, issue) {
+// Recover merged delivery from GitHub without reopening blocked or cancelled work.
+export async function recoverMergedStrategyDelivery(service, issue) {
   const record = service.lifecycleRuns[issue.id];
-  if (!hasCancelledPR(record)) return null;
+  if (!hasRecoverablePR(record)) return null;
   requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for the current issue action to finish.');
   const tasks = recoveryTasks(service);
   const active = tasks.get(issue.id);
@@ -16,8 +17,10 @@ export async function recoverCancelledStrategyDelivery(service, issue) {
   return task;
 }
 
-function hasCancelledPR(record) {
-  return Boolean(record?.status === 'cancelled' && record.work?.pr);
+export const recoverCancelledStrategyDelivery = recoverMergedStrategyDelivery;
+
+function hasRecoverablePR(record) {
+  return Boolean(['blocked', 'cancelled'].includes(record?.status) && record.work?.pr);
 }
 
 function recoveryTasks(service) {
@@ -42,7 +45,9 @@ async function verifySavedPR(service, issue, record) {
 }
 
 function matchingRecovery(receipt, work) {
-  return receipt?.recovery?.runId === work.runId ? receipt : null;
+  if (receipt?.recovery?.runId !== work.runId) return null;
+  const evidence = receipt.artifact?.evidence?.[0];
+  return evidence?.path && existsSync(evidence.path) ? receipt : null;
 }
 
 function preservePriorReceipt(delivery, receipt) {

@@ -41,3 +41,10 @@ factory runtime has not been cut over.
 Existing runtime documentation describes the current adapter
 until it is changed. This decision does not establish the cause of reported factory
 unresponsiveness.
+
+When an issue has a saved work checkout, its local conversation transcript lives
+inside that checkout under `.issues/conversations/ISSUE_ID`. Existing project-level
+transcripts are moved there when the conversation is next read. Removing the issue
+workspace therefore removes its local transcript too. The native Codex chat remains
+app-managed; workspace cleanup archives it as part of removing the workspace, so
+the close dialog does not offer a separate chat cleanup choice.
