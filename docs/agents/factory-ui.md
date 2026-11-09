@@ -568,6 +568,12 @@ still completes if cleanup fails; the issue then shows Cleanup incomplete and a
 bounded Retry cleanup action. Eligible idle chats associated with the issue are
 archived automatically when it closes; active or unknown chats are preserved.
 Archiving a chat is not reported as disk savings.
+
+Before Fixed acceptance, a blocked or cancelled strategy with a saved PR is reconciled
+against GitHub. The factory requires that the saved branch's PR is merged into the
+configured target, that the target still contains the merge, and that PR checks pass.
+It retains a durable receipt without restarting the worker; ordinary Fixed acceptance
+still requires the user's explicit action.
 When individual cleanup results are recorded, each failed or preserved resource
 has its own retry button; retrying one item leaves the other results intact. If
 cleanup failed before any resource result was recorded, the page explains that

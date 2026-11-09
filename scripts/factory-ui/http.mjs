@@ -22,7 +22,7 @@ import {
   stopIssueStrategy,
   verifyExternalIssueDelivery,
 } from './issue-strategy.mjs';
-import { recoverCancelledStrategyDelivery } from './strategy-delivery-recovery.mjs';
+import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
@@ -60,7 +60,7 @@ export async function decideIssueAndCleanup(service, value) {
 async function recoverBeforeFixedAcceptance(service, value) {
   if (!isFixedAcceptance(value)) return;
   const issue = readQueue(service.root).issues.find((entry) => entry.id === value.issueId);
-  if (issue) await recoverCancelledStrategyDelivery(service, issue);
+  if (issue) await recoverMergedStrategyDelivery(service, issue);
 }
 
 function isFixedAcceptance(value) {
