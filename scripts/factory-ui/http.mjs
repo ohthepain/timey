@@ -29,6 +29,7 @@ import {
   issueCleanupIdentities,
   previewIssueCleanup,
   previewIssueCleanupResource,
+  previewIssueCleanupWorkspaceSize,
   startIssueCleanupRetry,
 } from './issue-cleanup.mjs';
 async function body(request) {
@@ -131,6 +132,8 @@ async function mutation(service, path, value, owner) {
     '/api/issue-cleanup-identities': () => issueCleanupIdentities(service, value.issueId, value.resolution),
     '/api/issue-cleanup-resource': () =>
       previewIssueCleanupResource(service, value.issueId, value.resourceId, value.resolution),
+    '/api/issue-cleanup-workspace-size': () =>
+      previewIssueCleanupWorkspaceSize(service, value.issueId, value.resourceId),
     '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId, value.resourceId || null),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),

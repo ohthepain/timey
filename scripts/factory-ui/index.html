@@ -2778,7 +2778,18 @@
       function checkCleanupResources(issueId, resolution, resources) {
         for (const item of resources) {
           void request("issue-cleanup-resource", { issueId, resourceId: item.id, resolution })
-            .then(({ resource }) => updateCleanupResource(issueId, resource))
+            .then(({ resource }) => {
+              updateCleanupResource(issueId, resource);
+              if (resource.kind === "workspace" && resource.sizeStatus === "pending") {
+                void request("issue-cleanup-workspace-size", { issueId, resourceId: item.id })
+                  .then(({ resource: size }) => updateCleanupWorkspaceSize(issueId, size))
+                  .catch(() => updateCleanupWorkspaceSize(issueId, {
+                    id: item.id,
+                    estimatedBytes: null,
+                    sizeStatus: "unavailable",
+                  }));
+              }
+            })
             .catch((error) =>
               updateCleanupResource(issueId, {
                 ...item,
@@ -2796,6 +2807,13 @@
         );
         selection.cleanupResources = selection.cleanupResources.map((item) =>
           item.id === resource.id ? { ...resource, defaultSelected: selected.has(item.id) } : item,
+        );
+        $("cleanup-options").outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
+      }
+      function updateCleanupWorkspaceSize(issueId, size) {
+        if (!$("confirm").open || selection?.issueId !== issueId) return;
+        selection.cleanupResources = selection.cleanupResources.map((item) =>
+          item.id === size.id ? { ...item, estimatedBytes: size.estimatedBytes, sizeStatus: size.sizeStatus } : item,
         );
         $("cleanup-options").outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
       }
@@ -3432,10 +3450,15 @@
           i.implementation.record?.steps?.every((step) =>
             step.criteria.every((criterion) => ["passed", "skipped"].includes(criterion.status)),
           );
+        const canRecoverMergedPR =
+          !i.strategy?.active &&
+          Number.isSafeInteger(i.strategy?.pr) &&
+          ["blocked", "cancelled"].includes(i.strategy?.status);
         const canAcceptFix =
           stage?.role === "ready-to-close" ||
           ["completed", "merged"].includes(i.strategy?.status) ||
-          completedChecklist;
+          completedChecklist ||
+          canRecoverMergedPR;
         const issueStatus = closedIssueState(i.state)
           ? i.stage
           : i.strategy?.status || (stage && !visibleLifecycleStage(stage) ? "queued" : i.stage);

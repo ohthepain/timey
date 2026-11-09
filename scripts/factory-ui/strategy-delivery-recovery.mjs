@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { digest, requireThat } from './common.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
@@ -44,7 +45,9 @@ async function verifySavedPR(service, issue, record) {
 }
 
 function matchingRecovery(receipt, work) {
-  return receipt?.recovery?.runId === work.runId ? receipt : null;
+  if (receipt?.recovery?.runId !== work.runId) return null;
+  const evidence = receipt.artifact?.evidence?.[0];
+  return evidence?.path && existsSync(evidence.path) ? receipt : null;
 }
 
 function preservePriorReceipt(delivery, receipt) {

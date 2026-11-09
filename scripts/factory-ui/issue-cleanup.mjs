@@ -44,6 +44,24 @@ export async function previewIssueCleanupResource(service, issueId, resourceIdVa
   return { issueId, resource };
 }
 
+export async function previewIssueCleanupWorkspaceSize(service, issueId, resourceIdValue) {
+  const identity = issueCleanupIdentities(service, issueId).resources.find(
+    (item) => item.id === resourceIdValue && item.kind === 'workspace'
+  );
+  requireThat(identity, 'Refresh the cleanup resource list before checking workspace size.');
+  const work = service.lifecycleRuns[issueId]?.work;
+  const path = resolve(work.checkout);
+  const estimatedBytes = existsSync(path) ? await directoryBytes(path) : 0;
+  return {
+    issueId,
+    resource: {
+      id: identity.id,
+      estimatedBytes,
+      sizeStatus: 'complete',
+    },
+  };
+}
+
 function previewResourceByIdentity(service, issueId, work, identity) {
   const previewers = {
     workspace: () => workspaceResource(service, issueId, work),
@@ -683,7 +701,8 @@ async function workspaceResource(service, issueId, work) {
     canonicalPath: facts.canonical,
     branch: facts.branch,
     revision: facts.head,
-    estimatedBytes: facts.exists ? await directoryBytes(facts.path) : 0,
+    estimatedBytes: facts.exists ? null : 0,
+    sizeStatus: facts.exists ? 'pending' : 'complete',
     state: workspaceState(facts.exists, facts.eligible),
     eligible: facts.eligible,
     defaultSelected: false,
