@@ -42,6 +42,57 @@ Existing runtime documentation describes the current adapter
 until it is changed. This decision does not establish the cause of reported factory
 unresponsiveness.
 
+## Issue thread as the user's workspace
+
+The **Issue thread** panel is the user's place to read and participate in the
+issue conversation. The same conversation supports issue work, direct user
+interaction, retrospectives, and questions such as what work was done. Its
+history covers creation, grilling, implementation, verification, merge, and
+later lifecycle events.
+
+Create the chat on the first discussion or work request. Bring the original
+request and capture decisions into its history. Grilling and agent work use
+that conversation. Independent reviewers can work in their own context and
+return findings to it. Factory adds confirmed verification and merge outcomes
+with links to their evidence.
+
+Put **Pause** and **Stop** beside **Send**. Pause lets the current prompt finish.
+Stop interrupts the current prompt. Send queues a prompt when another is running.
+Show the queue above the composer, and support skill expansion in the composer.
+**Steer** can send a selected queued prompt to the current turn. Remove the
+prompt from the queue when Codex confirms receipt. If the turn ends before it
+accepts the prompt, leave the prompt queued.
+
+Pause holds queued prompts and automatic Factory work after the current
+prompt finishes. **Resume** releases the queue. Stop interrupts only the
+current prompt, retains its partial output and any edits it made, and holds
+later prompts until Resume.
+
+During a server operation, show the operation in progress and let the user
+queue prompts. Offer Stop when the operation supports cancellation. During
+merge, offer **Pause after this operation**. Factory reconciles the GitHub
+result if the merge request has already been sent.
+
+Prompts sent from the panel can edit code and run commands in the issue's
+checkout under the normal Codex permission controls. Factory's explicit merge
+and acceptance approvals use their existing controls.
+
+Keep queued prompts and their selected skills across browser reloads and
+Factory restarts. If the result of a Send or Steer request is uncertain, show
+that uncertainty and reconcile against the issue conversation before retrying.
+
+On Resume, run the user's queued prompts oldest first. Factory can advance
+after the queue drains and its approvals are satisfied. Each waiting prompt
+offers **Edit**, **Remove**, and **Steer**. Editing keeps its position.
+
+If a turn starts in Codex, show it in Issue thread and queue new prompts behind
+it. Hold dispatch when Factory cannot confirm the active turn. Discussion
+and history queries can start before an issue has a checkout. When the user
+first requests code work, use the existing issue checkout setup and permission
+rules.
+
+See the [Issue thread implementation plan](../plans/issue-thread-workspace.md).
+
 When an issue has a saved work checkout, its local conversation transcript lives
 inside that checkout under `.issues/conversations/ISSUE_ID`. Existing project-level
 transcripts are moved there when the conversation is next read. Removing the issue

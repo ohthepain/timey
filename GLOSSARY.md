@@ -124,8 +124,9 @@ are distinct from chat history and the current issue records, and do not grant
 execution authority or replace approvals.
 
 **Issue conversation**:
-The single continuing conversation that is an issue's home for human messages,
-all lifecycle role contributions, questions, decisions, outcomes, and retrospectives.
+The single continuing conversation that holds the issue's history from creation
+through closure, including human messages, lifecycle contributions, decisions,
+outcomes, and retrospectives.
 _Avoid_: Temporary chat, worker chat
 
 **Revision request**:
