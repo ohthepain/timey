@@ -3617,7 +3617,7 @@ test('wide issue views keep the queue in a sidebar and show an empty selection p
   const { window, snapshot } = await activityScreen(t, true);
   const sidebar = window.document.querySelector('.issue-sidebar');
   assert.ok(sidebar);
-  assert.equal(sidebar.getAttribute('aria-label'), 'Issue queue');
+  assert.equal(sidebar.getAttribute('aria-label'), 'Issues');
   assert.equal(sidebar.querySelector('#create-issue')?.getAttribute('aria-label'), 'Create issue');
   assert.equal(
     sidebar.querySelector('#model-settings-open')?.getAttribute('aria-label'),
@@ -3637,13 +3637,14 @@ test('wide issue views keep the queue in a sidebar and show an empty selection p
 
   window.location.hash = '#/issue/1';
   window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelector('.issue-sidebar').getAttribute('aria-label'), 'Issues');
   assert.equal(window.document.querySelector('.issue-workspace-content h1').textContent, 'Untitled issue');
   assert.equal(window.document.querySelector('.issue-workspace-content .issue-number').textContent, '#1');
 
   window.location.hash = '#/queue';
   window.screenTest.show(snapshot);
   assert.match(window.document.querySelector('.issue-workspace-content').textContent, /Please select an issue\./);
-  assert.ok(window.document.querySelector('.issue-sidebar'));
+  assert.equal(window.document.querySelector('.issue-sidebar').getAttribute('aria-label'), 'Issue queue');
 });
 
 test('the coordinator page links back to the issue queue', async (t) => {
