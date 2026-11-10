@@ -293,7 +293,6 @@ const issueCaptureUI = (() => {
     state,
     reading: { x: 0, y: 0 },
   };
-  let request, refresh;
   const draft = readCaptureDraft();
   field.value = captureDraftText(draft.description);
   grilling.checked = draft.grill === true;
@@ -324,15 +323,13 @@ const issueCaptureUI = (() => {
       error,
       status,
       toast,
-      request: (...args) => request(...args),
-      refresh: (...args) => refresh(...args),
-      clearDraft,
+      request: context.request,
+      refresh: context.refresh,
+      clearDraft: () => clearCaptureDraft(context),
       restoreReading,
       updateChoices,
     });
   context.updateChoices = updateChoices;
-  context.request = (...args) => request(...args);
-  context.refresh = (...args) => refresh(...args);
   context.restoreReading = restoreReading;
   context.clearDraft = () => clearCaptureDraft(context);
   bindCaptureDismiss(context);
