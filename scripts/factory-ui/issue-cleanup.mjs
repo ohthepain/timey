@@ -25,6 +25,7 @@ export function issueCleanupIdentities(service, issueId, resolution = null) {
   const resources = [
     ...identityBranchResources(issueId, work),
     ...identityWorkspaceResources(service, issueId, work),
+    ...identityChatResources(service, issueId),
   ];
   applyCleanupDefaults(resources, issue.closure?.reason || resolution, isDelivered(service, issueId, work));
   resources.forEach(markIdentityChecking);
@@ -66,6 +67,7 @@ function previewResourceByIdentity(service, issueId, work, identity) {
     workspace: () => workspaceResource(service, issueId, work),
     'remote-branch': () => previewRemoteBranch(service, issueId, work),
     'local-branch': () => previewLocalBranch(service, issueId, work),
+    chat: () => previewChat(service, issueId, identity),
   };
   return previewers[identity.kind]();
 }
@@ -170,7 +172,21 @@ export function issueHasChats(service, issueId) {
 async function cleanupResources(service, issueId, work) {
   const workspace = work?.checkout ? await workspaceResource(service, issueId, work) : null;
   const branches = await availableBranchResources(service, issueId, work, workspace);
-  return [...branches, ...(workspace ? [workspace] : [])];
+  return [...branches, ...(workspace ? [workspace] : []), ...(await chatResources(service, issueId))];
+}
+
+function identityChatResources(service, issueId) {
+  return issueChatRuns(service, issueId).map((run) => {
+    const resource = chatEntry(run, findIssueTitle(service, issueId));
+    markIdentityChecking(resource);
+    return resource;
+  });
+}
+
+function previewChat(service, issueId, identity) {
+  const run = issueChatRuns(service, issueId).find((entry) => entry.threadId === identity.threadId);
+  requireThat(run, 'Refresh the cleanup resource list before checking it.');
+  return inspectChat(service, run, findIssueTitle(service, issueId), issueChatActive(service, issueId));
 }
 
 async function availableBranchResources(service, issueId, work, workspace) {
