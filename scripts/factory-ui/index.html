@@ -1992,7 +1992,7 @@
         return `<h2>Current decision and next action</h2><section class="card queue-decision" data-current-evaluation="${esc(current.id)}"><span class="badge">${esc(actionLabel)}</span><p><strong>Current decision:</strong> ${esc(decision || 'No decision summary recorded.')}</p><p><strong>Next action:</strong> ${nextAction}</p></section><details class="queue-history"><summary>History and diagnostics</summary>${prior || '<p>No older evaluations.</p>'}<h3>Current evaluation diagnostics</h3>${progress(current, false)}</details>`;
       }
       function queue() {
-        return `<p class="muted">Merged issues appear first, followed by running and queued issues. Other statuses follow in saved implementation order. Select Implementation order to drag and persist scheduler order.</p><div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
+        return `<div class="queue-heading"><h1>Issue queue</h1><a href="#/coordinator">Discuss queue</a><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -2810,7 +2810,7 @@
         }
       }
       function updateCleanupResource(issueId, resource) {
-        if (!$('confirm').open || selection?.issueId !== issueId) return;
+        if (!$("confirm").open || selection?.issueId !== issueId) return;
         const selected = new Set(
           [...document.querySelectorAll('[data-cleanup-choice]:checked')].map((input) => input.dataset.cleanupChoice)
         );
@@ -2820,7 +2820,7 @@
         $('cleanup-options').outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
       }
       function updateCleanupWorkspaceSize(issueId, size) {
-        if (!$("confirm").open || selection?.issueId !== issueId) return;
+        if (!$('confirm').open || selection?.issueId !== issueId) return;
         selection.cleanupResources = selection.cleanupResources.map((item) =>
           item.id === size.id ? { ...item, estimatedBytes: size.estimatedBytes, sizeStatus: size.sizeStatus } : item,
         );
