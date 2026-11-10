@@ -263,20 +263,13 @@ function validateSelectedSnapshots(snapshots, selected, resources) {
 
 function sameCleanupIdentity(saved, current) {
   if (!saved || !current) return false;
-  return [
-    'id',
-    'kind',
-    'name',
-    'repository',
-    'branch',
-    'revision',
-    'canonicalPath',
-    'threadId',
-    'state',
-    'eligible',
-  ].every((key) => saved[key] === current[key]) &&
+  return (
+    ['id', 'kind', 'name', 'repository', 'branch', 'revision', 'canonicalPath', 'threadId', 'state', 'eligible'].every(
+      (key) => saved[key] === current[key]
+    ) &&
     JSON.stringify(saved.chatThreadIds || []) === JSON.stringify(current.chatThreadIds || []) &&
-    JSON.stringify(saved.chats || []) === JSON.stringify(current.chats || []);
+    JSON.stringify(saved.chats || []) === JSON.stringify(current.chats || [])
+  );
 }
 
 function validCleanupInput(input) {
