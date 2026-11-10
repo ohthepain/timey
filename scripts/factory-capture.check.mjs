@@ -366,3 +366,15 @@ test('custom entry stages remain first and unknown disconnected lifecycle rows a
   writeFileSync(path, original + '\n| unknown-role | unknown-state | closed | Invalid |');
   await assert.rejects(service.captures.save(input()), /Unknown lifecycle role/);
 });
+
+test('capture persists the chosen work model, rejects unknown models and binds retries to that choice', async (t) => {
+  const { service, root } = captureFixture(t);
+  const { readIssueModelSettings } = await import('./factory-ui/model-settings.mjs');
+  service.captures = createCaptures(service, { assess: async (text) => ({ issues: [proposal(text)] }) });
+  const submission = { ...input(), model: 'gpt-6-astra' };
+  const saved = await service.captures.save(submission);
+  assert.equal(readIssueModelSettings(root, saved.issues[0].id).effectiveModel, 'gpt-6-astra');
+  assert.deepEqual(await service.captures.save(submission), saved);
+  await assert.rejects(service.captures.save({ ...submission, model: 'gpt-6-luna' }), /another description/);
+  await assert.rejects(service.captures.save({ ...input(), model: 'unknown' }), /listed models/);
+});

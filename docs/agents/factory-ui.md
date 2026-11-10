@@ -1648,3 +1648,12 @@ Grant PR-only bypass of review rules, and no bypass of the separate strict CI
 ruleset requiring the existing GitHub Actions `test` check. Owner bypass can remain
 for personal direct pushes. Reload through `pnpm factory:restart` after changing
 credentials; restarting never retries an issue automatically.
+
+## New-issue dialog
+
+The [visual direction](design.md) begins with issue capture. Users can choose a
+model for new issue work, Save for later, or Go to capture and immediately start
+each resulting issue. Merge off chooses Full Stop; Merge on chooses Full Send
+with existing protected merge checks. Grilling disables Go and remains available
+through Save. Failed starts retain saved issues and direct users to their status
+and Continue control rather than repeating capture.

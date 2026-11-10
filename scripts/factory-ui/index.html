@@ -559,6 +559,222 @@
         border-radius: 12px;
         padding: 26px;
       }
+      #create-issue-dialog {
+        --capture-ink: #25243c;
+        --capture-accent: #514bf1;
+        max-width: 680px;
+        width: calc(100% - 32px);
+        max-height: calc(100dvh - 32px);
+        overflow: auto;
+        padding: 0;
+        border: 1px solid #ffffff;
+        border-radius: 24px;
+        background: #f4f3fa;
+        color: var(--capture-ink);
+        box-shadow: 0 28px 100px #28234a40;
+      }
+      #create-issue-dialog::backdrop {
+        background: #22213e80;
+        backdrop-filter: blur(6px);
+      }
+      #capture-form {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100dvh - 34px);
+      }
+      .capture-header {
+        display: block;
+        flex-shrink: 0;
+        padding: 30px 32px 24px;
+        background: linear-gradient(120deg, #efedff, #fff0ed);
+      }
+      .capture-eyebrow {
+        color: #63539c;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .capture-header h2 {
+        font-size: clamp(27px, 5vw, 36px);
+        letter-spacing: -0.04em;
+        line-height: 1.15;
+        margin: 12px 0;
+      }
+      .capture-header h2 span {
+        color: #e76979;
+      }
+      .capture-header p {
+        margin: 0;
+        color: #615d78;
+      }
+      .capture-body {
+        overflow-y: auto;
+        min-height: 0;
+        padding: 24px 32px 16px;
+      }
+      .capture-body > label,
+      .capture-model-card > label {
+        display: block;
+        margin-bottom: 10px;
+        font-weight: 700;
+        font-size: 13px;
+      }
+      #capture-description,
+      #capture-model {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #d6d3e7;
+        border-radius: 12px;
+        background: white;
+        color: var(--capture-ink);
+        padding: 14px;
+        font: inherit;
+      }
+      #capture-description {
+        min-height: 130px;
+        resize: vertical;
+        line-height: 1.6;
+      }
+      #capture-description::placeholder {
+        color: #767187;
+      }
+      #create-issue-dialog :is(button, textarea, select, input):focus-visible {
+        outline: 3px solid #827bf6;
+        outline-offset: 3px;
+      }
+      .capture-model-card {
+        margin: 18px 0;
+        padding: 16px;
+        border: 1px solid #e5e1f3;
+        border-radius: 16px;
+        background: #fff;
+      }
+      #capture-model-hint {
+        font-size: 12px;
+        color: #68627d;
+        margin: 10px 0 0;
+      }
+      .capture-options {
+        display: grid;
+        gap: 10px;
+      }
+      .capture-option {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 16px;
+        background: #fff;
+        border: 1px solid #e5e1f3;
+        border-radius: 14px;
+        cursor: pointer;
+      }
+      .capture-option:has(input:checked) {
+        background: #eeecff;
+        border-color: #aaa3f5;
+      }
+      .capture-option input {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 20px;
+        accent-color: var(--capture-accent);
+      }
+      .capture-option strong,
+      .capture-option small {
+        display: block;
+      }
+      .capture-option strong {
+        font-size: 14px;
+      }
+      .capture-option small {
+        color: #68627d;
+        font-size: 12px;
+        line-height: 1.5;
+        margin-top: 4px;
+      }
+      .capture-note {
+        color: #68627d;
+        font-size: 12px;
+        line-height: 1.5;
+        margin: 14px 0 0;
+      }
+      #capture-error {
+        color: #a12d42;
+        font-size: 13px;
+      }
+      #capture-status {
+        color: #5145ad;
+        font-size: 13px;
+      }
+      #capture-error:empty,
+      #capture-status:empty {
+        display: none;
+      }
+      .capture-footer {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 32px;
+        border-top: 1px solid #e5e1f3;
+        background: #fff;
+      }
+      .capture-footer .actions {
+        display: flex;
+        gap: 10px;
+        margin: 0;
+      }
+      .capture-footer button {
+        padding: 11px 20px;
+        border: 1px solid #ddd9eb;
+        border-radius: 12px;
+        background: white;
+        color: #514869;
+        font-weight: 600;
+        min-height: 44px;
+      }
+      .capture-footer #capture-cancel {
+        border-color: transparent;
+      }
+      .capture-footer .capture-primary {
+        background: var(--capture-accent);
+        border-color: var(--capture-accent);
+        color: white;
+        min-width: 100px;
+        box-shadow: 0 4px 12px #514bf130;
+      }
+      .capture-footer .capture-primary:hover:not(:disabled) {
+        background: #4039d4;
+      }
+      #create-issue-dialog button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      @media (max-width: 520px) {
+        #capture-form {
+          display: flex;
+          flex-direction: column;
+          max-height: calc(100dvh - 34px);
+        }
+        .capture-header {
+          display: block;
+          flex-shrink: 0;
+          padding: 24px 20px;
+        }
+        .capture-body {
+          overflow-y: auto;
+          min-height: 0;
+          padding: 20px;
+        }
+        .capture-footer {
+          flex-shrink: 0;
+          padding: 16px;
+        }
+        .capture-footer button {
+          padding: 10px 14px;
+        }
+      }
       dialog::backdrop {
         background: #142a2266;
       }
@@ -2820,11 +3036,11 @@
         $('cleanup-options').outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
       }
       function updateCleanupWorkspaceSize(issueId, size) {
-        if (!$("confirm").open || selection?.issueId !== issueId) return;
+        if (!$('confirm').open || selection?.issueId !== issueId) return;
         selection.cleanupResources = selection.cleanupResources.map((item) =>
-          item.id === size.id ? { ...item, estimatedBytes: size.estimatedBytes, sizeStatus: size.sizeStatus } : item,
+          item.id === size.id ? { ...item, estimatedBytes: size.estimatedBytes, sizeStatus: size.sizeStatus } : item
         );
-        $("cleanup-options").outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
+        $('cleanup-options').outerHTML = cleanupFieldset({ resources: selection.cleanupResources });
       }
       function cleanupChoice(resource) {
         const disabled = !resource.eligible || resource.state.startsWith('already-');
@@ -3463,7 +3679,7 @@
         const canRecoverMergedPR =
           !i.strategy?.active &&
           Number.isSafeInteger(i.strategy?.pr) &&
-          ["blocked", "cancelled"].includes(i.strategy?.status);
+          ['blocked', 'cancelled'].includes(i.strategy?.status);
         const canAcceptFix =
           stage?.role === 'ready-to-close' ||
           ['completed', 'merged'].includes(i.strategy?.status) ||
@@ -3860,7 +4076,7 @@
               $('progress-grill-answer').value = '';
             });
         });
-        issueCaptureUI.bind(request, refresh);
+        issueCaptureUI.bind(request, refresh, data.modelSettings);
         const settingsButton = $('model-settings-open');
         if (settingsButton)
           settingsButton.onclick = () => {

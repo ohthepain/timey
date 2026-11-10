@@ -1,3 +1,4 @@
+import { readModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { clarificationLifecycle } from './clarify-policy.mjs';
 import { startCaptureGrilling } from './capture-grilling.mjs';
 import { randomBytes } from 'node:crypto';
@@ -12,7 +13,12 @@ import { ensureIssueNumbers } from './issue-numbers.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
 
 const requestSchema = z
-  .object({ requestId: z.uuid(), description: z.string().min(1).max(24000), grill: z.boolean().default(false) })
+  .object({
+    requestId: z.uuid(),
+    description: z.string().min(1).max(24000),
+    grill: z.boolean().default(false),
+    model: z.string().optional(),
+  })
   .strict();
 const receiptSchema = z
   .object({
@@ -54,18 +60,25 @@ export function createCaptures(service, options = {}) {
     const input = requestSchema.parse(value);
     requireThat(input.description.trim(), 'Description is required.');
     guard();
+    validateModel(service.root, input.model);
     const pending = tasks.get(input.requestId);
     if (pending) {
       requireThat(
-        pending.description === input.description && pending.grill === input.grill,
+        pending.description === input.description && pending.grill === input.grill && pending.model === input.model,
         'This submission identity belongs to another description.'
       );
       return pending.promise;
     }
     const promise = perform(input)
+      .then((result) => {
+        if (input.model)
+          for (const issue of result.issues)
+            saveIssueModelSettings(service, { issueId: issue.id, model: input.model, effort: '' });
+        return result;
+      })
       .then((result) => (input.grill ? startCaptureGrilling(service, input, result) : result))
       .finally(() => tasks.delete(input.requestId));
-    tasks.set(input.requestId, { description: input.description, grill: input.grill, promise });
+    tasks.set(input.requestId, { description: input.description, grill: input.grill, model: input.model, promise });
     return promise;
   }
   async function perform(input) {
@@ -231,5 +244,13 @@ function captureQueue(root) {
 }
 
 function captureHash(input) {
+  if (input.model) return digest(JSON.stringify([input.description, input.grill, input.model]));
   return digest(input.grill ? JSON.stringify([input.description, true]) : input.description);
+}
+
+function validateModel(root, model) {
+  requireThat(
+    !model || readModelSettings(root).models.some((item) => item.id === model),
+    'Choose one of the listed models.'
+  );
 }
