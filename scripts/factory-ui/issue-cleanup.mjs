@@ -25,6 +25,7 @@ export function issueCleanupIdentities(service, issueId, resolution = null) {
   const resources = [
     ...identityBranchResources(issueId, work),
     ...identityWorkspaceResources(service, issueId, work),
+    ...identityChatResources(service, issueId),
   ];
   applyCleanupDefaults(resources, issue.closure?.reason || resolution, isDelivered(service, issueId, work));
   resources.forEach(markIdentityChecking);
@@ -66,6 +67,7 @@ function previewResourceByIdentity(service, issueId, work, identity) {
     workspace: () => workspaceResource(service, issueId, work),
     'remote-branch': () => previewRemoteBranch(service, issueId, work),
     'local-branch': () => previewLocalBranch(service, issueId, work),
+    chat: () => previewChat(service, issueId, identity),
   };
   return previewers[identity.kind]();
 }
@@ -124,15 +126,28 @@ function identityResource(kind, issueId, identity, details = {}) {
 }
 
 export async function archiveIssueChatsOnClose(service, issueId, resolution, requestedCleanup = null) {
-  if (requestedCleanup) {
-    const result = await executeConfirmedCleanup(service, issueId, resolution, requestedCleanup);
-    const workspace = service.lifecycleRuns[issueId]?.work?.checkout;
-    if (!workspace || !existsSync(workspace)) await archiveChatsForIssue(service, issueId);
-    return result;
-  }
+  if (requestedCleanup) return archiveRequestedCleanup(service, issueId, resolution, requestedCleanup);
+  return archiveUnselectedChats(service, issueId);
+}
+
+async function archiveRequestedCleanup(service, issueId, resolution, requestedCleanup) {
+  const result = await executeConfirmedCleanup(service, issueId, resolution, requestedCleanup);
+  const workspace = service.lifecycleRuns[issueId]?.work?.checkout;
+  if (!workspace || !existsSync(workspace)) await archiveChatsForIssue(service, issueId);
+  return result;
+}
+
+async function archiveUnselectedChats(service, issueId) {
   const results = await archiveChatsForIssue(service, issueId);
-  completeEmptyCleanup(service, issueId);
-  return { status: 'complete', results, retainedChats: [] };
+  const status = results.every((item) => item.status === 'complete') ? 'complete' : 'incomplete';
+  const record = readCleanup(service, issueId);
+  if (record) {
+    record.status = status;
+    record.results = results;
+    record.updated = new Date().toISOString();
+    persistCleanup(service, record);
+  }
+  return { status, results, retainedChats: results.filter((item) => item.status !== 'complete') };
 }
 
 async function executeConfirmedCleanup(service, issueId, resolution, input) {
@@ -147,7 +162,13 @@ async function executeConfirmedCleanup(service, issueId, resolution, input) {
 async function archiveChatsForIssue(service, issueId) {
   const chats = await chatResources(service, issueId);
   const results = [];
-  for (const chat of chats) results.push({ ...chat, ...(await archiveChat(service, chat)) });
+  for (const chat of chats) {
+    const result =
+      chat.state === 'active'
+        ? { status: 'preserved', reason: 'Chat is active; it was preserved.' }
+        : await archiveChat(service, chat);
+    results.push({ ...chat, ...result });
+  }
   return results;
 }
 
@@ -170,7 +191,21 @@ export function issueHasChats(service, issueId) {
 async function cleanupResources(service, issueId, work) {
   const workspace = work?.checkout ? await workspaceResource(service, issueId, work) : null;
   const branches = await availableBranchResources(service, issueId, work, workspace);
-  return [...branches, ...(workspace ? [workspace] : [])];
+  return [...branches, ...(workspace ? [workspace] : []), ...(await chatResources(service, issueId))];
+}
+
+function identityChatResources(service, issueId) {
+  return issueChatRuns(service, issueId).map((run) => {
+    const resource = chatEntry(run, findIssueTitle(service, issueId));
+    markIdentityChecking(resource);
+    return resource;
+  });
+}
+
+function previewChat(service, issueId, identity) {
+  const run = issueChatRuns(service, issueId).find((entry) => entry.threadId === identity.threadId);
+  requireThat(run, 'Refresh the cleanup resource list before checking it.');
+  return inspectChat(service, run, findIssueTitle(service, issueId), issueChatActive(service, issueId));
 }
 
 async function availableBranchResources(service, issueId, work, workspace) {
@@ -247,20 +282,13 @@ function validateSelectedSnapshots(snapshots, selected, resources) {
 
 function sameCleanupIdentity(saved, current) {
   if (!saved || !current) return false;
-  return [
-    'id',
-    'kind',
-    'name',
-    'repository',
-    'branch',
-    'revision',
-    'canonicalPath',
-    'threadId',
-    'state',
-    'eligible',
-  ].every((key) => saved[key] === current[key]) &&
+  return (
+    ['id', 'kind', 'name', 'repository', 'branch', 'revision', 'canonicalPath', 'threadId', 'state', 'eligible'].every(
+      (key) => saved[key] === current[key]
+    ) &&
     JSON.stringify(saved.chatThreadIds || []) === JSON.stringify(current.chatThreadIds || []) &&
-    JSON.stringify(saved.chats || []) === JSON.stringify(current.chats || []);
+    JSON.stringify(saved.chats || []) === JSON.stringify(current.chats || [])
+  );
 }
 
 function validCleanupInput(input) {
