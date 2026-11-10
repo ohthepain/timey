@@ -561,7 +561,7 @@
       }
       #create-issue-dialog {
         --capture-ink: #25243c;
-        --capture-accent: #514bf1;
+        --capture-accent: #4039d4;
         max-width: 680px;
         width: calc(100% - 32px);
         max-height: calc(100dvh - 32px);
@@ -569,7 +569,7 @@
         padding: 0;
         border: 1px solid #ffffff;
         border-radius: 24px;
-        background: #f4f3fa;
+        background: #fffaf1;
         color: var(--capture-ink);
         box-shadow: 0 28px 100px #28234a40;
       }
@@ -586,10 +586,10 @@
         display: block;
         flex-shrink: 0;
         padding: 30px 32px 24px;
-        background: linear-gradient(120deg, #efedff, #fff0ed);
+        background: linear-gradient(120deg, #fff0d9 0%, #f0f8e8 52%, #f2edff 100%);
       }
       .capture-eyebrow {
-        color: #63539c;
+        color: #87513b;
         font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.08em;
@@ -606,7 +606,7 @@
       }
       .capture-header p {
         margin: 0;
-        color: #615d78;
+        color: #655b50;
       }
       .capture-body {
         overflow-y: auto;
@@ -657,27 +657,65 @@
       }
       .capture-options {
         display: grid;
-        gap: 10px;
+        gap: 12px;
       }
       .capture-option {
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 64px 22px;
         align-items: center;
-        gap: 14px;
-        padding: 16px;
-        background: #fff;
-        border: 1px solid #e5e1f3;
-        border-radius: 14px;
+        gap: 12px;
+        min-height: 78px;
+        padding: 12px 16px;
+        background: var(--capture-card);
+        border: 1.5px solid var(--capture-border);
+        border-radius: 18px;
         cursor: pointer;
+        transition:
+          transform 150ms ease,
+          box-shadow 150ms ease,
+          background 150ms ease;
       }
       .capture-option:has(input:checked) {
-        background: #eeecff;
-        border-color: #aaa3f5;
+        background: var(--capture-selected);
+        box-shadow: 0 5px 14px color-mix(in srgb, var(--capture-accent) 16%, transparent);
+        transform: translateY(-1px);
+      }
+      .capture-option--grill {
+        --capture-accent: #d75b2c;
+        --capture-card: #fff4e8;
+        --capture-border: #f2c18d;
+        --capture-selected: #ffe7ca;
+      }
+      .capture-option--go {
+        --capture-accent: #23864c;
+        --capture-card: #effaf1;
+        --capture-border: #a8d8b0;
+        --capture-selected: #d9f3de;
+      }
+      .capture-option--merge {
+        --capture-accent: #3e64b7;
+        --capture-card: #f0f4ff;
+        --capture-border: #b9c9ee;
+        --capture-selected: #dfe8ff;
+      }
+      .capture-option-copy {
+        min-width: 0;
+      }
+      .capture-illustration {
+        display: block;
+        width: 64px;
+        height: 50px;
       }
       .capture-option input {
-        width: 20px;
-        height: 20px;
-        flex: 0 0 20px;
+        margin: 0;
+        width: 22px;
+        height: 22px;
         accent-color: var(--capture-accent);
+        cursor: pointer;
+      }
+      .capture-option:focus-within {
+        outline: 3px solid color-mix(in srgb, var(--capture-accent) 35%, white);
+        outline-offset: 2px;
       }
       .capture-option strong,
       .capture-option small {
@@ -720,11 +758,6 @@
         border-top: 1px solid #e5e1f3;
         background: #fff;
       }
-      .capture-footer .actions {
-        display: flex;
-        gap: 10px;
-        margin: 0;
-      }
       .capture-footer button {
         padding: 11px 20px;
         border: 1px solid #ddd9eb;
@@ -745,7 +778,7 @@
         box-shadow: 0 4px 12px #514bf130;
       }
       .capture-footer .capture-primary:hover:not(:disabled) {
-        background: #4039d4;
+        filter: brightness(0.92);
       }
       #create-issue-dialog button:disabled {
         opacity: 0.5;
@@ -3649,13 +3682,18 @@
       }
       function strategyPanel(issue) {
         const work = issue.strategy || { status: 'not-started' };
+        const captureIntent = issue.capture_intent;
+        const intendedStrategy = ['full-stop', 'full-send'].includes(captureIntent?.strategy)
+          ? captureIntent.strategy
+          : 'full-stop';
+        const displayStrategy = work.runId ? work.strategy : intendedStrategy;
         if (!work || closedIssueState(issue.state)) return '';
         const current = data.runs.find((run) => run.id === work.runId);
         const external = work.externalDelivery;
         const externalView = external
           ? `<section class="card" aria-label="Delivery through another PR"><h3>Delivery through another PR</h3><p><b>${esc(external.status)}</b> · <a href="${esc(external.url)}" target="_blank" rel="noreferrer">PR #${esc(external.number)}</a></p><p>Merged into ${esc(external.target)} at ${esc(external.mergeCommit)}; checked against ${esc(external.targetRevision)}.</p>${external.targetChangedSincePreviousCheck ? `<p>Target changed since the previous verification (${esc(external.previousTargetRevision)}); review whether the delivered behavior remains present.</p>` : ''}<p>${esc(external.behaviorEvidence)}</p>${external.remainingCriteria ? `<p>Still outstanding: ${esc(external.remainingCriteria)}</p>` : ''}<p>Checks: ${esc(external.checks.map((check) => check.name ?? check.context ?? check.workflowName).join(', '))}</p><p>Issue acceptance remains pending.</p></section>`
           : '';
-        return `<section class="card" data-view-id="strategy-${esc(issue.id)}"><h2>Issue strategy</h2><p><b>${esc(work.status)}</b> ${fileLinkUI.html(work.summary || 'Choose a finish line and start this issue.')}</p>${/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(work.prUrl || '') ? `<p><a href="${esc(work.prUrl)}" target="_blank" rel="noreferrer">Open pull request #${esc(work.pr)}</a></p>` : ''}${work.merge ? `<p data-merge-outcome><b>GitHub merged the PR</b> at <code>${esc(work.merge.revision)}</code>.</p>${work.localDevUpdate ? `<p data-local-dev-update>${work.localDevUpdate.status === 'updated' ? `Local ${esc(work.target)} updated to <code>${esc(work.localDevUpdate.revision)}</code>.` : `Local ${esc(work.target)} was left untouched: ${esc(work.localDevUpdate.reason)}`}</p>` : ''}` : ''}${externalView}<button data-strategy-target-update="${esc(issue.id)}" ${!work.checkout || work.active || work.status === 'merged' ? 'disabled' : ''} title="${!work.checkout ? 'No eligible issue branch is available yet.' : work.active ? 'An issue operation is already running.' : work.status === 'merged' ? 'The issue branch has already been merged.' : ''}">Merge latest ${esc(work.target || 'target')} into issue branch</button><p class="muted">${!work.checkout ? 'No eligible issue branch is available yet.' : work.active ? 'An issue operation is already running.' : 'Fetches the configured target and merges it into this issue branch. Conflicts are handled in the owning issue work.'}</p><details><summary>Already delivered through another PR?</summary><p class="muted">The factory checks that the PR merged into the configured target, that the current target still contains its merge, and that its checks passed. Describe the behavior it covers, cite at least one changed file, and list any requirements still outstanding. A later recheck compares against the current target. This records delivery only; it does not accept or close the issue.</p><label>Other PR number<input type="number" min="1" step="1" data-external-pr-number="${esc(issue.id)}" value="${esc(external?.number || '')}"></label><label>Behavior evidence and changed file path<textarea data-external-pr-evidence="${esc(issue.id)}" placeholder="Explain what the PR implements and cite a changed path, such as src/example.ts.">${esc(external?.behaviorEvidence || '')}</textarea></label><label>Requirements still outstanding<textarea data-external-pr-remaining="${esc(issue.id)}" placeholder="Leave blank only if the PR covers the full issue scope.">${esc(external?.remainingCriteria || '')}</textarea></label><button data-external-delivery="${esc(issue.id)}">Verify and record other PR</button></details><label>Strategy<select id="issue-strategy" aria-label="Strategy" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}><option value="full-stop" ${work.strategy === 'full-stop' ? 'selected' : ''}>Full Stop — merge-ready PR</option><option value="full-send" ${work.strategy === 'full-send' ? 'selected' : ''}>Full Send — protected Merge after required checks</option></select></label><label>Optional Sol Loop<select id="strategy-sol" aria-label="Optional Sol Loop" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}>${[
+        return `<section class="card" data-view-id="strategy-${esc(issue.id)}"><h2>Issue strategy</h2><p><b>${esc(work.status)}</b> ${fileLinkUI.html(work.summary || 'Choose a finish line and start this issue.')}</p>${captureIntent?.grill && captureIntent?.go && !work.runId ? `<p class="muted">Grilling comes first. After you answer and approve a plan, Continue starts the selected ${intendedStrategy === 'full-send' ? 'Full Send' : 'Full Stop'} strategy.</p>` : ''}${/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(work.prUrl || '') ? `<p><a href="${esc(work.prUrl)}" target="_blank" rel="noreferrer">Open pull request #${esc(work.pr)}</a></p>` : ''}${work.merge ? `<p data-merge-outcome><b>GitHub merged the PR</b> at <code>${esc(work.merge.revision)}</code>.</p>${work.localDevUpdate ? `<p data-local-dev-update>${work.localDevUpdate.status === 'updated' ? `Local ${esc(work.target)} updated to <code>${esc(work.localDevUpdate.revision)}</code>.` : `Local ${esc(work.target)} was left untouched: ${esc(work.localDevUpdate.reason)}`}</p>` : ''}` : ''}${externalView}<button data-strategy-target-update="${esc(issue.id)}" ${!work.checkout || work.active || work.status === 'merged' ? 'disabled' : ''} title="${!work.checkout ? 'No eligible issue branch is available yet.' : work.active ? 'An issue operation is already running.' : work.status === 'merged' ? 'The issue branch has already been merged.' : ''}">Merge latest ${esc(work.target || 'target')} into issue branch</button><p class="muted">${!work.checkout ? 'No eligible issue branch is available yet.' : work.active ? 'An issue operation is already running.' : 'Fetches the configured target and merges it into this issue branch. Conflicts are handled in the owning issue work.'}</p><details><summary>Already delivered through another PR?</summary><p class="muted">The factory checks that the PR merged into the configured target, that the current target still contains its merge, and that its checks passed. Describe the behavior it covers, cite at least one changed file, and list any requirements still outstanding. A later recheck compares against the current target. This records delivery only; it does not accept or close the issue.</p><label>Other PR number<input type="number" min="1" step="1" data-external-pr-number="${esc(issue.id)}" value="${esc(external?.number || '')}"></label><label>Behavior evidence and changed file path<textarea data-external-pr-evidence="${esc(issue.id)}" placeholder="Explain what the PR implements and cite a changed path, such as src/example.ts.">${esc(external?.behaviorEvidence || '')}</textarea></label><label>Requirements still outstanding<textarea data-external-pr-remaining="${esc(issue.id)}" placeholder="Leave blank only if the PR covers the full issue scope.">${esc(external?.remainingCriteria || '')}</textarea></label><button data-external-delivery="${esc(issue.id)}">Verify and record other PR</button></details><label>Strategy<select id="issue-strategy" aria-label="Strategy" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}><option value="full-stop" ${displayStrategy === 'full-stop' ? 'selected' : ''}>Full Stop — merge-ready PR</option><option value="full-send" ${displayStrategy === 'full-send' ? 'selected' : ''}>Full Send — protected Merge after required checks</option></select></label><label>Optional Sol Loop<select id="strategy-sol" aria-label="Optional Sol Loop" data-preserve-draft ${work.active || work.runId ? 'disabled' : ''}>${[
           [0, 'Off'],
           [1, 'One review round'],
           [3, 'Up to three review rounds'],
