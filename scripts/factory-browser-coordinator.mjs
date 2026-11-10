@@ -11,7 +11,7 @@ export default async function coordinatorBrowserChecks(page) {
   await page.route('**/api/queue?**', async (route) => {
     const response = await route.fetch();
     const data = await response.json();
-    data.coordinator = {
+    const coordinator = {
       active,
       paused,
       reason: paused ? 'Stopped. Workers are still running.' : '',
@@ -20,6 +20,9 @@ export default async function coordinatorBrowserChecks(page) {
       waiting: active ? [{ issueId: 'a', reason: 'The coordinator is reviewing Older urgent issue.' }] : [],
       pending: 0,
     };
+    data.coordinator = new URL(route.request().url()).searchParams.get('issue')
+      ? { active, waiting: coordinator.waiting }
+      : coordinator;
     await route.fulfill({ json: data });
   });
   await page.route('**/api/coordinator-*', async (route) => {
@@ -37,7 +40,7 @@ export default async function coordinatorBrowserChecks(page) {
   await page.locator('#coordinator-strip').filter({ hasText: 'Older urgent issue' }).waitFor();
   await page.goto(new URL('/#/issue/a', page.url()).href);
   await page.waitForFunction(() => document.getElementById('coordinator-strip').hidden);
-  await page.getByRole('link', { name: 'Discuss queue', exact: true }).click();
+  await page.getByRole('link', { name: 'Coordinator', exact: true }).click();
   await page.getByRole('heading', { name: 'Coordinator', exact: true }).waitFor();
   await page.getByLabel('Coordinator live output').filter({ hasText: 'Reading saved work' }).waitFor();
   if (await page.locator('#coordinator-output script').count()) throw Error('Output was interpreted as HTML.');

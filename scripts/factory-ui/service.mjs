@@ -141,7 +141,7 @@ export class FactoryUI {
     this.guard = humanGuard;
     installWorkerHealth(this);
   }
-  snapshot(owner = null) {
+  snapshot(owner = null, { includeCoordinatorDiscussion = true } = {}) {
     if (!this.serverLock) this.store.reload();
     const queue = readQueue(this.root);
     const runs = this.store.list(this.codex.requests);
@@ -149,7 +149,9 @@ export class FactoryUI {
     return {
       ...queue,
       modelSettings: readModelSettings(this.root),
-      coordinator: this.coordinator.view(),
+      coordinator: includeCoordinatorDiscussion
+        ? this.coordinator.view()
+        : redactValue(this.coordinator.reviewActivity()),
       reviewBasis: digest(JSON.stringify(queue)),
       issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner, humanInputs)),
       runs: runs.map((run) => ({

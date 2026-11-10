@@ -457,6 +457,10 @@ test('Fixed acceptance recovers a merged PR after its strategy run was cancelled
 
   const recovered = await recoverCancelledStrategyDelivery(f.service, issue);
   assert.ok(recovered, JSON.stringify(f.service.lifecycleRuns[issue.id]));
+  assert.deepEqual(await recoverCancelledStrategyDelivery(f.service, issue), recovered);
+
+  const delivery = new DeliveryStore(f.queue.root, issue.id);
+  rmSync(delivery.directory, { recursive: true });
 
   const result = await decideIssueAndCleanup(f.service, {
     issueId: issue.id,
@@ -468,8 +472,9 @@ test('Fixed acceptance recovers a merged PR after its strategy run was cancelled
 
   assert.equal(result.state, queue.lifecycle.find((stage) => stage.role === 'closed').state);
   assert.equal(run.status, 'cancelled');
-  assert.equal(inspections, 1);
-  assert.equal(new DeliveryStore(f.queue.root, issue.id).read().state, 'verified');
+  assert.equal(inspections, 2);
+  assert.equal(delivery.read().state, 'verified');
+  assert.ok(existsSync(delivery.read().artifact.evidence[0].path));
   assert.match(f.service.lifecycleRuns[issue.id].summary, /checks passed.*Ready for your acceptance/);
 });
 
@@ -1380,7 +1385,9 @@ function providerFixture() {
     reviewDecision = null,
     bypass = 'always',
     classicReviews = false,
+    checkStatus = 'COMPLETED',
     conclusion = 'SUCCESS',
+    allowMergeCommit = true,
     reviewRules = [
       { type: 'required_status_checks', ruleset_id: 42 },
       { type: 'pull_request', ruleset_id: 43 },
@@ -1395,7 +1402,7 @@ function providerFixture() {
       return JSON.stringify({
         reviewDecision,
         mergeStateStatus: clean ? 'CLEAN' : 'BLOCKED',
-        statusCheckRollup: [{ status: 'COMPLETED', conclusion }],
+        statusCheckRollup: [{ name: 'verify', status: checkStatus, conclusion }],
       });
     if (args[1] === 'user') return JSON.stringify({ login: 'fixture' });
     if (args[1]?.includes('/rules/branches/')) return JSON.stringify([reviewRules]);
@@ -1422,7 +1429,12 @@ function providerFixture() {
         rules: [],
       });
     if (args[1]?.endsWith('/merge')) return JSON.stringify({ merged: true, sha: 'merged' });
-    if (args[1] === 'repos/fixture/timey') return JSON.stringify({ allow_squash_merge: true });
+    if (args[1] === 'repos/fixture/timey')
+      return JSON.stringify({
+        allow_merge_commit: allowMergeCommit,
+        allow_squash_merge: true,
+        allow_rebase_merge: true,
+      });
     if (args[1]?.endsWith('/protection'))
       return JSON.stringify({ required_pull_request_reviews: classicReviews ? {} : null });
     return '{}';
@@ -1439,7 +1451,9 @@ function providerFixture() {
       if ('reviewDecision' in options) reviewDecision = options.reviewDecision;
       if ('bypass' in options) bypass = options.bypass;
       if ('classicReviews' in options) classicReviews = options.classicReviews;
+      if ('checkStatus' in options) checkStatus = options.checkStatus;
       if ('conclusion' in options) conclusion = options.conclusion;
+      if ('allowMergeCommit' in options) allowMergeCommit = options.allowMergeCommit;
       if ('reviewRules' in options) reviewRules = options.reviewRules;
     },
   };
@@ -1455,7 +1469,9 @@ test('live readiness rejects draft, changed head, queue enrollment, failing chec
   );
   f.change({ queued: true });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /merge queue/);
-  f.change({ queued: false, clean: false });
+  f.change({ queued: false, checkStatus: 'IN_PROGRESS' });
+  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /pending: verify/);
+  f.change({ checkStatus: 'COMPLETED', clean: false });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /unfinished checks/);
 });
 
@@ -1512,10 +1528,18 @@ test('Full Send refuses unsafe protection and uses an exact-head merge without b
   assert.equal((await f.provider.merge(12, 'head')).revision, 'merged');
   const args = f.commands.find((command) => command[1]?.endsWith('/merge'));
   assert.ok(args.includes('sha=head'));
-  assert.ok(args.includes('merge_method=squash'));
+  assert.ok(args.includes('merge_method=merge'));
   assert.ok(args.includes('PUT'));
   assert.ok(!args.includes('--admin'));
   assert.ok(!args.includes('--auto'));
+});
+
+test('Full Send stops before merging when the repository disallows merge commits', async () => {
+  const f = providerFixture();
+  f.change({ allowMergeCommit: false });
+  f.provider.inspect = () => ({ ...f.pr, merged_at: 'now', merge_commit_sha: 'merged' });
+  await assert.rejects(() => f.provider.merge(12, 'head'), /enable merge commits/i);
+  assert.ok(!f.commands.some((args) => args[1]?.endsWith('/merge')));
 });
 test('owner-authored PR respects its verified ruleset review bypass without bypassing CI', async () => {
   const f = providerFixture();

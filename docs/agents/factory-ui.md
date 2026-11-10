@@ -1271,8 +1271,12 @@ and makes no branch or PR changes; it does not bypass any check or human accepta
 
 Full Send leaves a separate **Merge PR** control after verification. Selecting it
 rechecks GitHub's approving review and required checks against the exact saved
-head before the server merges. Progress records the GitHub merge before attempting
-to update local `dev`; that update runs only when the project checkout is clean
+head. If a check is pending or failing, Factory shows the check name. If approval
+is missing, Factory asks for an approving review on the current head. Once the
+gates pass, the server creates a merge commit so Git recognizes the issue branch
+as merged. If the repository disables merge commits, the action stops. Progress
+records the GitHub merge before attempting to update local `dev`. That update runs
+only when the project checkout is clean
 and already on `dev`, using fast-forward only. If local work exists or the update
 cannot complete, Progress retains the confirmed GitHub result and explains the
 local update outcome. Merge does not close the issue or start cleanup.
@@ -1516,12 +1520,14 @@ controls remain available for explicitly selected routes.
 
 ## Coordinator view
 
-Open **Coordinator** from the header, queue, issue page or a waiting explanation.
+Open **Coordinator** from the shared header or **Discuss queue** from the queue page.
+**Issue queue** on that page returns to the queue.
 The dedicated page shows the shared queue conversation, sanitized live output,
 active issue and operation, waiting work and workers still running. The compact
 full-width strip beneath the header shows only the issue and basic operation; on
 an issue page it appears only during coordination for that issue and disappears
-automatically. Page reads and refreshes start no work.
+automatically. Issue refreshes include review activity without loading the
+coordinator conversation or its output. Page reads and refreshes start no work.
 
 The server manages one read-only coordinator conversation that selects the next
 eligible issue from compact queue facts. Its result contains only an issue ID and

@@ -1498,7 +1498,7 @@
     <div id="connection-banner" role="alert" hidden></div>
     <header>
       <a href="#/queue"><b>Factory</b></a
-      ><span>Issue queue</span><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
+      ><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
     </header>
     <div
       id="coordinator-strip"
@@ -2358,6 +2358,8 @@
       function issueDeliveryCard(issue) {
         const d = issue.issueDelivery;
         if (!d) return '';
+        if (d.source === 'merged-strategy-recovery')
+          return `<section class="card" aria-label="Issue pull request"><h3>Issue pull request</h3><p role="status">Merged into ${esc(d.target)}. PR checks passed.</p><p><a href="${esc(d.url)}" target="_blank" rel="noopener">Open pull request #${esc(d.pr)}</a></p></section>`;
         const active = ['running', 'answering'].includes(issue.lifecycle?.status);
         const handoff = d.mode === 'draft-handoff';
         const operations =
@@ -3687,9 +3689,9 @@
         coordinatorUI.update(data);
         const wideSidebar = window.matchMedia?.('(min-width: 1000px)').matches || false;
         $('app').innerHTML = wideSidebar
-          ? `<div class="issue-workspace">${issueSidebar(route.id)}<section class="issue-workspace-content">${route.id ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id, false) : '<p class="issue-empty-selection">Please select an issue.</p>'}</section></div>`
+          ? `<div class="issue-workspace">${issueSidebar(route.id)}<section class="issue-workspace-content">${route.id ? issue(route.id, false) : '<p class="issue-empty-selection">Please select an issue.</p>'}</section></div>`
           : route.id
-            ? '<p><a href="#/coordinator">Discuss queue</a></p>' + issue(route.id)
+            ? issue(route.id)
             : queue();
         if (route.run && route.id) {
           const selected = data.issues.find((entry) => entry.id === route.id);

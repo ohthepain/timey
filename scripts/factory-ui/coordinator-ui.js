@@ -20,12 +20,19 @@ const coordinatorUI = (() => {
     request = api;
     refresh = reload;
     if (!onPage()) return false;
-    if (document.getElementById('coordinator-output')) {
-      update(data);
-      return true;
+    mountDiscussion(data.coordinator ?? {});
+    update(data);
+    return true;
+  }
+  function mountDiscussion(state) {
+    if (!state.threads) {
+      document.getElementById('app').innerHTML =
+        '<div class="issue-navigation-row"><a href="#/queue">← Issue queue</a></div><p role="status">Loading coordinator…</p>';
+      return;
     }
+    if (document.getElementById('coordinator-output')) return;
     document.getElementById('app').innerHTML =
-      `<section data-view-id="coordinator"><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label><input type="checkbox" id="coordinator-show-history"> Show archived conversations</label><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
+      `<section data-view-id="coordinator"><div class="issue-navigation-row"><a href="#/queue">← Issue queue</a></div><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label><input type="checkbox" id="coordinator-show-history"> Show archived conversations</label><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
     const input = document.getElementById('coordinator-message');
     input.value = draft;
     input.oninput = () => {
@@ -41,8 +48,6 @@ const coordinatorUI = (() => {
     };
     for (const action of ['stop', 'continue', 'fresh', 'send', 'steer'])
       document.getElementById('coordinator-' + action).onclick = () => submit(action);
-    update(data);
-    return true;
   }
   async function submit(action) {
     const feedback = document.getElementById('coordinator-feedback');
@@ -69,7 +74,7 @@ const coordinatorUI = (() => {
   }
   function update(data) {
     currentData = data;
-    const state = data.coordinator || { threads: [], workers: [], waiting: [] };
+    const state = { threads: [], workers: [], waiting: [], ...data.coordinator };
     updateStrip(data, state);
     if (!onPage() || !document.getElementById('coordinator-status')) return;
     updateControls(data, state);

@@ -201,6 +201,27 @@ test('a claimed successful integration cannot bypass independent verification', 
   );
 });
 
+test('issue polling preserves review status without loading coordinator discussion', async (t) => {
+  const { service } = fixture(t);
+  const { url, cookie } = await startFactoryHttp(t, service);
+  const headers = { cookie };
+  const coordinator = service.coordinator;
+  const active = { issueId: '20261022-one', operation: 'Reviewing' };
+  coordinator.state.active = active;
+  coordinator.state.threads[0].messages.push({ role: 'Coordinator', text: 'Retained queue discussion' });
+  delete coordinator.state.pending;
+
+  const issue = await fetch(url + '/api/queue?issue=20261022-one', { headers });
+  const snapshot = await issue.json();
+  assert.equal(issue.status, 200, snapshot.error);
+  assert.deepEqual(snapshot.coordinator, { active, waiting: [] });
+
+  coordinator.state.pending = [];
+  const queue = await fetch(url + '/api/queue?issue=', { headers });
+  assert.equal(queue.status, 200);
+  assert.equal((await queue.json()).coordinator.threads[0].messages[0].text, 'Retained queue discussion');
+});
+
 test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => {
   const { root, service } = fixture(t);
   const { url, page } = await startFactoryHttp(t, service);
@@ -3623,6 +3644,20 @@ test('wide issue views keep the queue in a sidebar and show an empty selection p
   window.screenTest.show(snapshot);
   assert.match(window.document.querySelector('.issue-workspace-content').textContent, /Please select an issue\./);
   assert.ok(window.document.querySelector('.issue-sidebar'));
+});
+
+test('the coordinator page links back to the issue queue', async (t) => {
+  const { window, snapshot } = await activityScreen(t, true);
+  window.location.hash = '#/coordinator';
+  snapshot.coordinator = {
+    threads: [{ id: 'coordinator-thread', title: 'Coordinator', messages: [], output: [] }],
+    workers: [],
+    waiting: [],
+    paused: false,
+  };
+  window.screenTest.show(snapshot);
+  const link = window.document.querySelector('[data-view-id="coordinator"] a[href="#/queue"]');
+  assert.equal(link?.textContent, '← Issue queue');
 });
 
 test('narrow issue views retain the existing queue link and full queue page', async (t) => {

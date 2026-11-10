@@ -192,14 +192,10 @@ export class StrategyProvider {
   async merge(number, head) {
     await this.assertMergeProtection();
     const repository = JSON.parse(await this.gh(['api', 'repos/' + this.config.repository]));
-    const method = repository.allow_squash_merge
-      ? '--squash'
-      : repository.allow_merge_commit
-        ? '--merge'
-        : repository.allow_rebase_merge
-          ? '--rebase'
-          : null;
-    requireThat(method, 'No supported merge method is enabled. No merge was attempted.');
+    requireThat(
+      repository.allow_merge_commit === true,
+      'Enable merge commits in the GitHub repository settings before using Full Send.'
+    );
     // REST merges refuse a required merge queue instead of silently enrolling it.
     // The expected SHA is enforced remotely; strict protection enforces the base.
     const merged = JSON.parse(
@@ -211,7 +207,7 @@ export class StrategyProvider {
         '-f',
         'sha=' + head,
         '-f',
-        'merge_method=' + method.slice(2),
+        'merge_method=merge',
       ])
     );
     requireThat(merged.merged === true, 'The merge was not confirmed. Inspect the existing PR before retrying.');

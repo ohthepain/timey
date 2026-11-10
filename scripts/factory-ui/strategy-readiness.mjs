@@ -116,7 +116,14 @@ export function assertChecks(checks) {
       'ci-failure',
       'PR checks are pending or failed. Failed checks: ' + failed.map(describeCheck).join(', ')
     );
-  if (checks.some(pendingCheck)) throw Object.assign(Error('PR checks are pending.'), { code: 'STRATEGY_PENDING' });
+  const pending = checks.filter(pendingCheck);
+  if (pending.length)
+    throw Object.assign(
+      Error('PR checks are pending: ' + pending.map((check) => check.name ?? check.context).join(', ')),
+      {
+        code: 'STRATEGY_PENDING',
+      }
+    );
 }
 
 function assertMergeState(pr, view, reviewBypass) {

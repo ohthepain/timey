@@ -208,6 +208,7 @@ function page(service, request, response, token, port) {
 }
 function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
     '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
@@ -223,7 +224,8 @@ function read(service, request, response, owner) {
     '/api/issue-report': () => service.readSavedReport(issue(url.searchParams.get('issue'))),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(issue(url.searchParams.get('issue')), url.searchParams.get('path')),
-    '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),
+    '/api/queue': () =>
+      queueResponse(service.snapshot(owner, { includeCoordinatorDiscussion: !selectedIssue }), selectedIssue),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),

@@ -56,8 +56,11 @@ The merging credential must not bypass any applicable CI ruleset. Review ruleset
 are evaluated separately: for owner-authored or factory-app-authored PRs, the
 factory may use its verified PR-only review bypass. Requested changes still block.
 No classic protection is required; if one exists, its review requirement still
-applies. Merges use the ordinary exact-head REST endpoint without an admin flag,
-default-branch push, auto-merge or queue enrollment.
+applies. The REST merge request includes the verified head SHA and requires a
+merge commit so the issue branch is part of the target's Git history. Full Send
+stops if the repository disables merge commits. The request uses the ordinary
+REST endpoint without an admin flag, default-branch push, auto-merge or queue
+enrollment.
 
 The factory can authenticate its server-owned GitHub operations as an installed
 GitHub App. The project-local `.issues/github-app.json` stores public app ID,
