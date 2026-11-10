@@ -94,6 +94,7 @@ function transport(t, service) {
     if(m.method==='initialize')send({id:m.id,result:{userAgent:'fixture'}});
     if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'fixture-thread'}}});
     if(m.method==='thread/resume')send({id:m.id,result:{thread:{id:m.params.threadId}}});
+    if(m.method==='thread/read')send({id:m.id,result:{thread:{id:m.params.threadId,status:{type:'idle'},turns:[]}}});
     if(m.method==='thread/name/set')send({id:m.id,result:{}});
     if(m.method==='turn/start'){send({id:m.id,result:{turn:{id:'turn'}}});
       send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(m.params.outputSchema.properties.recommendations?{summary:'One suggestion',recommendations:[{kind:'investigate',title:'Read source',scope:'One file',reason:'Find answer',verification:'Read source',worker_prompt:'Read source.js only',merge:'none',dependencies:[],issues:['20261022-one']}]}:{outcome:'completed',implementation_complete:false,summary:'Read the file.',evidence:'source.js contains 42',remaining:[],artifacts:[]})}}});
@@ -277,7 +278,10 @@ test('issue planning, saving and dispatch survive unrelated queue edits without 
   changeOther('Another change after saving');
   const action = api.inspect().registry.actions[0];
   const worker = service.start(service.preflight(action.id, 'launch').token);
-  assert.equal((await settle(service, worker.runId)).status, 'completed');
+  const completedWorker = await settle(service, worker.runId);
+  assert.equal(completedWorker.status, 'completed');
+  assert.equal(completedWorker.threadId, review.threadId);
+  assert.equal(completedWorker.reusedIssueChat, true);
   assert.equal(review.status, 'completed');
   assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 1);
 });

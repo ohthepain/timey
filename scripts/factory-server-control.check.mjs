@@ -522,3 +522,55 @@ test('restart readiness ignores an HTTP error rather than mistaking a missing PI
   assert.equal(ready.pid, 2);
   assert.equal(reads, 2);
 });
+
+test('restart waits for durable unconfirmed operations while allowing queue controls', async (t) => {
+  const service = new FactoryUI(project(t));
+  let restarts = 0;
+  let operations = 1;
+  let uncertain = 0;
+  service.issueChats.activity = () => ({ operations, uncertain });
+  const control = serverControl(service, () => {
+    restarts++;
+  });
+  try {
+    control.request();
+    control.allow('/api/issue-chat-send');
+    control.allow('/api/issue-chat-control');
+    await delay(350);
+    assert.equal(restarts, 0);
+    operations = 0;
+    uncertain = 1;
+    await delay(350);
+    assert.equal(restarts, 0);
+    uncertain = 0;
+    await delay(350);
+    assert.equal(restarts, 1);
+  } finally {
+    control.close();
+    service.close();
+  }
+});
+
+test('editable conversation permission answers reach their owning connection', async (t) => {
+  const service = new FactoryUI(project(t));
+  const run = { id: 'chat-permission', threadId: 'chat-thread' };
+  const calls = [];
+  const connection = {
+    requests: new Map([['42', { id: '42', params: { threadId: run.threadId } }]]),
+    answer: (...args) => calls.push(args),
+    close() {},
+  };
+  service.store.runs.push(run);
+  service.store.connected.add(run.id);
+  service.issueChats.connections.set('issue', connection);
+  try {
+    assert.equal(service.permissionRequests().size, 1);
+    service.answer(run.id, '42', { decision: 'accept' });
+    assert.deepEqual(calls, [['42', 'chat-thread', { decision: 'accept' }]]);
+    assert.throws(() => service.answer(run.id, '99', {}), /no longer pending/);
+  } finally {
+    service.store.connected.clear();
+    service.issueChats.connections.clear();
+    service.close();
+  }
+});

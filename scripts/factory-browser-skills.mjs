@@ -19,17 +19,17 @@ export default async function skillsBrowserChecks(page) {
   await page.getByRole('heading', { name: 'Older urgent issue', exact: true }).waitFor();
 
   await page.locator('[data-chat-tab="issue"]').click();
-  let composer = page.locator('[data-chat-panel="issue"] textarea[aria-label="Chat input"]');
+  let composer = page.locator('.issue-conversation textarea[aria-label="Chat input"]');
   await composer.fill('/practice');
   let option = page.getByRole('option').filter({ hasText: 'practice' });
   await option.waitFor();
   for (const text of ['Practice timing patterns', 'Personal'])
     if (!(await option.innerText()).includes(text)) throw Error(`Skill option is missing ${text}.`);
   await option.click();
-  if (!(await page.locator('[data-chat-panel="issue"] .skill-chip').isVisible()))
+  if (!(await page.locator('.issue-conversation .skill-chip').isVisible()))
     throw Error('The selected issue-chat skill is not visible as a colored token.');
   await composer.fill('Use this for my question.');
-  await page.getByRole('button', { name: 'Send message' }).last().click();
+  await page.locator('.issue-conversation').getByRole('button', { name: 'Send message' }).click();
   await page.waitForFunction(() => document.querySelector('[data-chat-panel="issue"] textarea')?.value === '');
   if (
     issueTurns.length !== 1 ||
@@ -38,20 +38,17 @@ export default async function skillsBrowserChecks(page) {
   )
     throw Error('The issue chat did not submit its selected skill with the message.');
 
-  await page.getByRole('tab', { name: 'Discussion', exact: true }).click();
-  await page.locator('[data-chat-panel="discussion"] .discussion-toggle').click();
-  composer = page.locator('[data-chat-panel="discussion"] textarea[aria-label="Chat input"]');
+  await page.getByRole('button', { name: 'Review decisions', exact: true }).click();
+  composer = page.locator('#discussion-body textarea[aria-label="Chat input"]');
   await composer.fill('/practice');
   option = page.getByRole('option').filter({ hasText: 'practice' });
   await option.waitFor();
   await option.click();
-  if (!(await page.locator('[data-chat-panel="discussion"] .skill-chip').isVisible()))
+  if (!(await page.locator('#discussion-body .skill-chip').isVisible()))
     throw Error('The selected discussion skill is not visible as a colored token.');
   await page.getByRole('button', { name: 'Send message' }).last().click();
   await page.waitForFunction(() =>
-    document
-      .querySelector('[data-chat-panel="discussion"] .discussion-output')
-      ?.textContent.includes('Skill turn received.')
+    document.querySelector('#discussion-body .discussion-output')?.textContent.includes('Skill turn received.')
   );
   if (discussionTurns.length !== 1 || discussionTurns[0].text !== '' || discussionTurns[0].skills?.[0] !== 'practice')
     throw Error('The discussion did not send a selected skill without accompanying text.');

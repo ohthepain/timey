@@ -314,14 +314,27 @@ for an issue-local decision.
 
 ## Persistent issue chat checks
 
-Run `pnpm run test:chat` for the shared issue conversation: disk persistence and
-native identity reuse, issue separation, bounded history and full retrospective
-context, comments during active work, idempotent transport retries, response
-failures, current-question routing, revision checkpoints and DOM draft/focus safety.
-The aggregate factory suite includes these checks. Use real browser/provider
-smoke evidence separately from protocol fixtures; a mocked response proves no
-provider availability. Existing lifecycle and integration tests still own worker
-checkout isolation, review independence and actual approval/acceptance guards.
+Run `pnpm run test:chat` for shared issue history, stable event identities,
+source attribution, native identity reuse, FIFO queue persistence, selected skills,
+edit/remove races, exact-turn steering, lost acknowledgements and interrupted
+output recovery. These disposable fixtures distinguish confirmed verification,
+GitHub merge, local target update and closure from conversation claims.
+
+Run the discussion and Clarify checks for durable stage interviews, reopened
+review, main-composer human answers and generated-instruction quote rejection.
+Strategy and server-control checks cover queue boundaries, saved verification,
+noncancellable merge reconciliation, checkout creation and permission routing.
+`test:browser` includes queue editing with skills, reload, removal, resume and
+queueing during merge against actual candidate assets with disposable responses.
+The aggregate factory suite includes the protocol checks.
+
+Use a real provider smoke separately to verify the installed skill catalog and a
+retro plus an ordinary history query in the same thread. If `what-did-you-do` is
+not installed, the ordinary query is the coverage check. Fixture merge records
+are synthetic and establish no actual GitHub merge. Foreign native writers that
+the installed transport cannot observe must hold the queue with an explicit
+capability limitation. Existing lifecycle and integration tests still own reviewer
+independence, actual permission, merge approval and acceptance guards.
 
 ## Deployment readiness diagnostics
 

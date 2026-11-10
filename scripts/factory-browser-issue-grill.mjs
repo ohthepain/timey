@@ -48,15 +48,15 @@ export default async function issueGrillBrowserChecks(page) {
   }
 
   async function assertDiscussionSelected() {
-    if ((await page.getByRole('tab', { name: 'Discussion', exact: true }).getAttribute('aria-selected')) !== 'true')
-      throw Error('The Grill me control did not open the Discussion tab.');
+    if ((await page.getByRole('tab', { name: 'Issue thread', exact: true }).getAttribute('aria-selected')) !== 'true')
+      throw Error('The Grill me control did not open the Issue thread tab.');
   }
 
   await routeActiveIssue(page);
   await routeDiscussion();
   await page.goto(new URL('/#/issue/b', page.url()).href);
   await page.getByRole('button', { name: 'Grill me…', exact: true }).click();
-  await page.getByRole('tab', { name: 'Discussion', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Issue thread', exact: true }).waitFor();
   await page.getByText(/Q1: Should work pause during clarification\? Recommended: yes\./).waitFor();
   assertCurrentIssueWasGrilled();
   await assertDiscussionSelected();

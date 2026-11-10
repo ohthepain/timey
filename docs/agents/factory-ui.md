@@ -122,7 +122,7 @@ checks connected work for this issue, including grouped assignments, before reta
 any answer or approval. Work on other issues does not block saving the response.
 Background updates deferred during form editing or an open dialog remain pending
 and render once that interaction ends, even if later polls return unchanged data.
-Temporary chat keeps its existing DOM and draft while lifecycle questions update.
+Issue chat keeps its existing DOM and draft while lifecycle questions update.
 Read-only Clarify questions are bound to the selected report, lifecycle and linked
 plan contents. An unrelated source commit does not discard those questions. Results
 that advance a stage or reuse implementation approval retain their source guards.
@@ -821,149 +821,88 @@ recovery changes neither integration approval nor acceptance policy.
 
 ## Persistent issue conversation
 
-The issue's **Chat** is its persistent interactive conversation. Joined output and
-full-width input retain the inset up-arrow; Enter sends and Shift+Enter adds a line.
-Opening or refreshing reads history without starting a model turn. Reloads,
-navigation and server restarts preserve sent messages. Each issue has its own
-conversation and native conversational thread. Earlier expired temporary chats
-cannot be imported; their surviving explicitly recorded outputs remain in reports.
-Legacy temporary endpoints remain available only for older clients.
-Thread titles begin with the current role (`Issue:`, `Grill:`, `Execute:` or
-`Retro:`), include the issue title and end with `active`, `waiting` or
-`archiveable`. The issue conversation is reused as work moves between roles;
-`archiveable` is shown only after the current work has no pending question or
-handoff. A merged strategy result remains `waiting` while explicit issue
-acceptance is outstanding; merge alone does not make the conversation archiveable.
+**Issue thread** retains the conversation from capture through closure. Capture
+grilling, **Grill me**, **Discuss this step**, implementation, retrospective and
+ordinary history questions use the same native Codex thread. Opening or refreshing
+reads history without starting a turn. Earlier expired temporary chats cannot be
+recovered; their explicitly recorded outputs remain in reports.
 
-Human messages are retained under the issue workspace at
-`.issues/conversations/ISSUE_ID/messages.jsonl`;
-`chat.json` keeps the conversational model's identity and response status. The
-conversation also projects actual role results, stage outcomes and original human
-answer receipts from their existing owners. It preserves source IDs and labels
-worker results as claims rather than verification. Pagination bounds polling;
-old history remains available through Earlier messages. Model turns receive a
-bounded recent context and `context.json` with the complete selected-issue timeline
-and current report, available to later roles and retrospective review. Comments
-and provider responses are persistent local records and go to the configured model
-provider under the account's policies. This is a deliberate retention change from
-the former temporary chat; sent messages no longer expire or disappear on reload.
+The timeline includes the original request, reviewed decisions, work reports,
+confirmed verification, GitHub merge, local target update and closure. Factory
+events link to their evidence and preserve stable identities across reloads.
+Conversation text and worker claims do not establish verification or approval.
+GitHub merge and local target update are separate events. Independent reviewers
+keep their own context and return sourced findings.
 
-Typing `/` in either composer opens the current enabled-skill list, filtered by
-skill name and description. Options show an icon, name, short description and
-source. Selecting an option adds a read-only removable chip; selected skills are
-validated again on the server and attached to that turn. Token-only messages are
-allowed. Reply and continue remains a lifecycle answer and does not dispatch skills.
+`messages.jsonl`, `chat.json` and `queue.json` live under the issue conversation
+directory. Before a checkout exists this is `.issues/conversations/ISSUE_ID` in
+the project; normal checkout setup moves it into the managed issue workspace.
+`context.json` supplies the same complete timeline to skill-driven work and history
+queries. A bounded recent context accompanies each turn, with the full history
+linked for older details. Sent prompts and responses survive navigation and restart.
 
-The composer distinguishes **Comment**, **Request revision**, and **Reply and
-continue**. Comments save during implementation and become available on subsequent
-role turns; they do not interrupt an already executing instruction. A revision
-request marks the plan for reconsideration, revokes approval reuse and asks active
-Progress to pause at its next checkpoint. Progress then reviews the saved feedback;
-implementation approval must be supplied for the resulting plan. It does not erase
-existing questions or invent new implementation authority.
+The composer offers discussion/history, work in the issue checkout, revision
+feedback and the existing reply-and-continue action. Discussion works before a
+checkout exists. The first editable request prepares the normal issue checkout;
+editable turns use normal Codex permission requests. Typed requests never replace
+explicit Factory plan, merge or acceptance controls. Revision feedback retains its
+existing plan-reconsideration rules.
 
-Pending questions and exact plan/candidate controls appear within the same chat.
-Reply and continue uses the current question identity and original answer handler.
-Stale replies remain unsent; comments never masquerade as answers. Plan and
-integration approvals retain their exact candidate/plan checks, and closure remains
-an explicit final decision. Implementation stays in isolated worker checkouts;
-independent review stays in separate read-only chats and checks raw proof. Those
-roles receive the selected issue conversation as context, never expanded permission.
+Typing `/` opens enabled skills. Selected skills remain attached to a prompt while
+queued, edited, dispatched or steered. **Send** starts a turn when the issue is
+available; otherwise it saves the prompt above the composer. Waiting prompts offer
+**Edit**, **Remove** and **Steer**. Editing preserves position. Resume drains user
+prompts in FIFO order before automatic Factory work continues through its existing
+guards. Controls bind to the selected issue and prompt revision so competing tabs
+cannot edit or dispatch a claimed entry twice.
 
-**Stop** cancels only the issue assistant's current response for the selected issue.
-It preserves saved messages, earlier output and received partial text, and leaves
-queued comments available for their normal responses. It never stops lifecycle
-Progress or workers, answers questions or grants approval. A stale Stop cannot
-cancel a newer response; a response that finishes first is retained normally.
-Connection or cancellation failures remain visible so you can refresh and retry.
+**Pause** lets the current turn or operation finish and holds subsequent prompts
+and Factory work. **Stop** interrupts a confirmed cancellable turn or operation,
+retains partial output and checkout edits, and holds later work until **Resume**.
+During merge the control reads **Pause after this operation**; an already sent
+GitHub request must be reconciled. The active server operation remains visible and
+Send remains available while it runs. After restart, an operation owned by the
+previous server is shown as uncertain with Stop disabled. It remains held for
+its owner to reconcile; Resume never replays an unconfirmed operation.
 
-Message IDs make transport retries idempotent. Responses are serialized per issue,
-while comments can continue arriving. A failed response retains the user message
-and displays an error; an uncertain native startup is not silently replaced. A
-known chat reconnects only after checking that its native state is idle. The chat
-assistant has read-only context access and cannot grant permissions or dispatch
-workflow actions. Execution details remain expandable under lifecycle progress.
+Queue state distinguishes waiting, preparing, dispatching, accepted and uncertain
+outcomes. Stable native client message IDs identify receipts after reconnect;
+a lost response is reconciled before another attempt. Steer targets only the
+confirmed active turn and removes the waiting prompt only after acknowledgement.
+If the turn finishes first, the prompt stays queued. The installed Codex transport
+cannot reliably observe or steer an active writer owned by another native
+connection: Factory holds that queue and displays the ownership limitation. It
+does not treat a stale terminal snapshot as proof that the foreign writer finished.
 
-## Temporary issue discussion
+Thread titles retain their role and active, waiting or archiveable status. Merge
+alone never makes a thread archiveable while acceptance remains outstanding.
 
-Each issue has a collapsed **Chat** toggle above its lifecycle. The borderless
-toggle opens joined conversation output and full-width input; an inset circular
-up-arrow sends. Enter sends; Shift+Enter adds a line. Opening starts no model turn.
-The slash selector uses the same skill metadata and removable chips as the persistent
-issue chat. Selected skill instructions are copied into the temporary runtime and
-removed when it ends; discussion history and selected skill names remain unsaved.
-Sending starts a dedicated ephemeral process in an empty workspace, separate from
-coordinator/worker recovery and RunStore. Its context contains the selected report
-and lifecycle policy, not other reports or saved chats. Proposed skips remain
-revisable plans, never historical outcomes or permission.
+## Reviewing issue discussion
 
-Discussion stays in page/server memory. It is excluded from generic draft storage
-and saved factory activity. Navigation, reload, End chat, 15-minute inactivity,
-the one-hour lifetime and shutdown clear it and stop its process. Server expiry
-bounds cleanup if a page-close request is lost. **Temporary chat** discloses these
-limits and contains End chat and the optional grilling control. Messages still go
-to the configured model provider under the account's policies; local ephemeral
-handling does not establish zero provider retention. The dedicated runtime uses
-the configured default OpenAI model/login. Custom providers/profiles fail closed.
+**Review decisions** opens the review panel within Issue thread. Its model turns
+use the saved conversation and ordinary skill mechanism. **Discuss this step**
+and **Grill me** retain the selected stage without advancing it. They queue behind
+active work. Closing the panel does not delete the conversation.
 
-Select conversation text to reveal **Record selected text…**. Review the exact
-text, selected issue and stated effect, then click **Record this text on the issue**.
-A short-lived one-use token binds that selection to its session and current
-issue/policy/source. Recording rechecks ownership and human-input guards and uses
-the existing locked report append. It labels output human-approved and possibly
-model-written, never human testimony, completed grilling, workflow approval or
-acceptance. No transcript, context bundle or session identity is saved. Work on
-another issue does not block conversation or recording; an active operation on
-the selected issue blocks recording only. Integration also blocks recording.
-After recording changes context, start a new chat for further questions.
+**Review grilling results** drafts decisions, unresolved questions and exact quotes
+from actual saved human answers. Reopening restores the interview's stage and
+supports answers sent through the main composer. Generated interview instructions
+and model output are not human testimony. Review the issue, selected stage and
+quoted answers before **Save to [step]**. The existing guarded action records only
+that reviewed package; it does not approve implementation, pass tests or accept
+an issue. Select output in the panel to use **Record selected text** for a general
+reviewed note. Review tokens remain short-lived and bound to current inputs.
 
-Every configured lifecycle stage offers **Discuss this step**. It opens the temporary
-chat and starts the installed `grilling` skill through a native skill input. An exact hash-checked copy is registered in
-the isolated runtime’s temporary skill directory and verified through `skills/list`;
-it is removed with that runtime. Only selected skill instructions are loaded; tools
-remain disabled. The
-chat names the selected stage, including earlier or future stages, without moving
-the issue. The skill asks numbered rounds of currently answerable design questions;
-project facts come from supplied context and missing evidence remains explicit.
-The temporary runtime retains its existing no-tools/read-only policy. Grilling
-cannot launch workers or perform the technical work being discussed.
+**Save and continue** is available only for the current unfinished lifecycle stage
+with no open questions and no issue strategy. It saves first, then invokes the
+normal controller with fresh guards. A failed continuation leaves saved results
+intact. Changed inputs invalidate pending confirmations.
 
-The issue page's **Grill me…** action opens Discussion and starts grilling from any
-point. If work is active on that issue, the server requests a pause and waits for
-the current action to finish before starting the interview. The issue remains
-paused after the temporary interview and after saving its reviewed results. For an
-issue strategy, resume with the separate **Continue issue** control; grilling
-never resumes it implicitly. Strategy grilling does not offer lifecycle
-**Save and continue**. Ending or losing the temporary chat also leaves active work
-paused, so the person can review the issue and choose when to continue.
-
-**Review grilling results…** drafts decisions, unresolved questions and selected
-exact quotes from actual user messages. The preview names the issue and stage.
-**Save to [step]** confirms and appends only that reviewed package to the selected
-stage and report. The transcript, runtime identity and unselected user text are
-not saved. Saved interviews appear under their selected stage, without inventing
-missing stage history. Confirmation of discussion results is separate from
-implementation-plan approval, test evidence and final acceptance.
-
-The issue detail's **Run retro…** action invokes the installed `retro` skill in
-the selected issue's saved conversation. The request and structured result remain
-in that conversation, and the thread is named `Retro: <issue title>` with an
-active, waiting or archiveable marker. Recommendations are returned as unchecked
-choices in the panel. Only checked choices are sent through the normal
-issue-capture path; each has a stable submission identity so a partial failure
-can be retried without duplicating completed captures. Unchecked choices are
-never submitted. The temporary grilling panel remains separate from the saved
-issue conversation.
-
-**Save and continue** is offered only for the current unfinished stage when the
-summary has no open questions. It saves first, then invokes the usual lifecycle
-controller with fresh inputs. Clarify answers are reassessed against their actual
-exit condition; no stage advances merely because an interview ran. Existing human
-requests, exact-plan and integration approvals remain required. If continuation
-fails, the saved results remain and the UI reports that continuation stopped.
-Saving ends the temporary interview; start a new one to use the updated context.
-Stage/issue/source changes, additional answers, expiry and duplicate confirmations
-invalidate pending summary actions. Typed chat instructions never mutate work.
+**Run retro** invokes the installed `retro` skill with the same lifecycle history.
+Its request and result remain in Issue thread. Recommendations begin unchecked;
+only selected choices enter the normal capture flow with stable submission IDs.
+An ordinary question such as “What did you do?” uses the same history when no
+named history-query skill is installed.
 
 ## Open a site for Verify
 
@@ -1462,13 +1401,11 @@ problem. This option starts discussion, not lifecycle execution or implementatio
 
 ### Progress tab and issue output
 
-The issue opens on **Progress**, beside **Issue output**, **Issue thread** and
-**Discussion**. Tab selection remains stable while viewing the issue. Progress
+The issue opens on **Progress**, beside **Issue output** and **Issue thread**. Tab selection remains stable while viewing the issue. Progress
 shows the current operation, what is happening, confirmed milestones, next action
 and status. It derives these from existing operation, question, approval and
 conversation records plus public output events; it saves no independent workflow
-record. Issue thread remains the work conversation; Discussion remains conversation
-about the work.
+record. Issue thread holds both work and discussion, with a separate decision-review panel.
 
 Blocking questions and permissions take precedence, with concurrent work still
 visible. Progress reuses the existing answer controls, freshness checks and drafts.

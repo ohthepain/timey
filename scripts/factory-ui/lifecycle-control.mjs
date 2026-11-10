@@ -55,7 +55,10 @@ function launchLifecycle(service, record) {
   const task = Promise.resolve()
     .then(() => runLifecycle(service, record))
     .catch((error) => stopLifecycleError(service, record, error))
-    .finally(() => service.lifecycleTasks.delete(record.issueId));
+    .finally(() => {
+      service.lifecycleTasks.delete(record.issueId);
+      service.issueChats?.resumePending(record.issueId);
+    });
   service.lifecycleTasks.set(record.issueId, task);
 }
 export async function answerLifecycle(service, input) {

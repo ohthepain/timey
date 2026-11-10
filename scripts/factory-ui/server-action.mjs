@@ -145,6 +145,7 @@ function cancelStoppedWorker(service, run) {
 }
 
 function pauseIssue(service, issueId) {
+  if (service.issueChats?.control) return service.issueChats.control({ issueId, operation: 'pause' });
   requireThat(issueId && service.lifecycleTasks.has(issueId), 'This action has no future issue work to pause.');
   return service.pauseLifecycle({ issueId });
 }

@@ -126,6 +126,7 @@ async function mutation(service, path, value, owner) {
     '/api/coordinator-stop': () => service.coordinator.stop(),
     '/api/coordinator-continue': () => service.coordinator.continue(),
     '/api/coordinator-fresh': () => service.coordinator.fresh(),
+    '/api/issue-chat-control': () => service.issueChats.control(value),
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/issue-chat-stop': () => service.issueChats.stop(value),
     '/api/issue-cleanup-preview': () => previewIssueCleanup(service, value.issueId, value.resolution),
@@ -269,7 +270,7 @@ function readResource(service, request, response, owner) {
 }
 
 function savedRun(service, id) {
-  const run = service.store.list(service.codex.requests).find((item) => item.id === id);
+  const run = service.store.list(service.permissionRequests()).find((item) => item.id === id);
   requireThat(run, 'This saved run no longer exists.');
   return run;
 }
@@ -277,15 +278,7 @@ function savedRun(service, id) {
 function requireLiveMutation(service, path) {
   if (service.reviewMode === 'preview')
     requireThat(
-      [
-        '/api/discussion-open',
-        '/api/discussion-turn',
-        '/api/discussion-skills',
-        '/api/discussion-retro',
-        '/api/discussion-prepare',
-        '/api/discussion-summary',
-        '/api/discussion-end',
-      ].includes(path),
+      ['/api/discussion-skills', '/api/discussion-end'].includes(path),
       'This is a preview copy. Make changes and record approvals on the real issue.'
     );
 }

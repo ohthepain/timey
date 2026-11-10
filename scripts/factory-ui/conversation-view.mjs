@@ -1,3 +1,4 @@
+import { issueHistoryEvents } from './conversation-events.mjs';
 import { activityForRun, redactValue } from './activity.mjs';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -50,16 +51,7 @@ function runMessage(queue, run) {
 export function conversationTimeline(service, queue, issue) {
   const stored = conversationMessages(service.root, issue.id);
   const runs = service.store.runs.filter((run) => selectedRun(queue, issue, run)).map((run) => runMessage(queue, run));
-  const stages = (issue.lifecycle_history || []).map((entry, index) => ({
-    id: 'stage:' + index + ':' + entry.at,
-    actor: entry.actor === 'human' ? 'human' : 'factory',
-    role: queue.lifecycle.find((stage) => stage.state === entry.state)?.name || entry.state,
-    kind: 'stage-outcome',
-    at: entry.at,
-    body: entry.outcome + ': ' + entry.reason,
-    source: { revision: entry.revision },
-  }));
-  return [...stored, ...runs, ...stages, ...retainedAnswers(service, issue)].sort(
+  return [...stored, ...runs, ...issueHistoryEvents(service, queue, issue), ...retainedAnswers(service, issue)].sort(
     (a, b) => String(a.at).localeCompare(String(b.at)) || a.id.localeCompare(b.id)
   );
 }

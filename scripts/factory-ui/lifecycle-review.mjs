@@ -1,3 +1,4 @@
+import { factoryOperation } from './issue-operation.mjs';
 import { issueWorkChat } from './issue-work-chat.mjs';
 import { resumeReviewThread, readOnlyReviewTurn } from './review-recovery.mjs';
 import { conversationPrompt } from './conversation-context.mjs';
@@ -16,23 +17,18 @@ export async function lifecycleReview(service, record, message, schema, options 
     checkout: service.root,
   });
   saveLifecycle(service, record, { childRunId: run.id });
+  return factoryOperation(
+    service,
+    record.issueId,
+    { kind: 'review', id: 'review:' + run.id, runId: run.id, cancellable: true },
+    () => performLifecycleReview(service, record, run, message, schema, options)
+  );
+}
+
+async function performLifecycleReview(service, record, run, message, schema, options) {
   try {
     const instructions = captureInstructions(service.root, join(service.store.directory, run.id));
-    const threadId = options.independent
-      ? await resumeReviewThread(
-          service,
-          run,
-          record.completionThreadId ? { threadId: record.completionThreadId } : null
-        )
-      : await issueWorkChat(service, run, record.issueId, service.root, 'read-only');
-    if (threadId) {
-      saveLifecycle(
-        service,
-        record,
-        options.independent ? { completionThreadId: threadId } : { assessmentThreadId: threadId }
-      );
-      service.store.update(run, { threadId, status: 'running', instructions });
-    }
+    const threadId = await attachLifecycleReview(service, record, run, instructions, options);
     const permissions = options.diagnostics
       ? 'This is pre-implementation Clarify work. Inspect code and run focused diagnostic or reproduction commands to establish available facts before asking the person. Use temporary locations for generated data and request actual permissions when needed. Keep project source unchanged: do not implement fixes, commit, launch workers, merge, publish or accept. Use judgment about when there is enough context to start useful implementation; it can resolve remaining technical uncertainty. Ask only for intent, preferences, unavailable observations or real permissions. Ordinary commits do not erase earlier understanding. '
       : 'Do not modify files, start work, run tests, merge, commit, approve human decisions or close anything. Only the server executes guarded actions. ';
@@ -66,4 +62,22 @@ export async function lifecycleReview(service, record, message, schema, options 
   } finally {
     service.store.connected.delete(run.id);
   }
+}
+
+async function attachLifecycleReview(service, record, run, instructions, options) {
+  const threadId = options.independent
+    ? await resumeReviewThread(service, run, savedCompletionThread(record))
+    : await issueWorkChat(service, run, record.issueId, service.root, 'read-only');
+  if (threadId) {
+    saveLifecycle(
+      service,
+      record,
+      options.independent ? { completionThreadId: threadId } : { assessmentThreadId: threadId }
+    );
+    service.store.update(run, { threadId, status: 'running', instructions });
+  }
+  return threadId;
+}
+function savedCompletionThread(record) {
+  return record.completionThreadId ? { threadId: record.completionThreadId } : null;
 }

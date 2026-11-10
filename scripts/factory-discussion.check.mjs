@@ -1,3 +1,5 @@
+import { addPrompt, changePromptQueue } from './factory-ui/issue-prompt-queue.mjs';
+import { appendMessage, conversationMessages } from './factory-ui/conversation-store.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
 import { readQueue } from './factory-ui/data.mjs';
@@ -44,7 +46,14 @@ function fixture(t) {
   const create = () => {
     const runtime = {
       begin: async (context) => calls.push(context),
-      ask: async (text, skills, schema) => {
+      ask: async (text, skills, schema, { generated = false } = {}) => {
+        appendMessage(root, '20261025-a', {
+          id: 'fixture-turn-' + calls.length,
+          kind: 'message',
+          actor: generated ? 'factory' : 'human',
+          generated,
+          body: text,
+        });
         calls.push(text);
         skillCalls.push(skills);
         if (schema?.properties?.recommendations)
@@ -308,54 +317,33 @@ test('grilling requires reviewed clicked intent, stays temporary and does not ad
   assert.ok(f.runtimes[0].closed);
 });
 
-test('grilling waits for active issue work to pause and leaves strategy work paused until explicit continue', async (t) => {
-  const f = fixture(t),
-    path = join(f.root, '.issues/20261025-a.md'),
-    original = readFileSync(path),
-    record = {
-      id: 'active-strategy',
-      issueId: f.input.issueId,
-      status: 'running',
-      events: [],
-      attempts: [],
-      work: { strategy: 'full-send' },
-    };
-  saveLifecycle(f.service, record);
-  let finishWork;
-  const task = new Promise((resolve) => {
-    finishWork = resolve;
-  }).finally(() => f.service.lifecycleTasks.delete(f.input.issueId));
-  f.service.lifecycleTasks.set(f.input.issueId, task);
-
-  const intent = f.discussion.prepare({ ...f.input, kind: 'grill' }, f.owner);
-  const grilling = f.discussion.commit({ ...f.input, token: intent.token, clicked: true }, f.owner);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(record.pauseRequested, true);
-  assert.equal(f.calls.length, 0, 'the interview must wait until active work stops');
-
-  saveLifecycle(f.service, record, { status: 'paused', summary: 'Paused for grilling.' });
-  finishWork();
-  await grilling;
-  assert.equal(f.service.lifecycleTasks.has(f.input.issueId), false);
-  assert.equal(f.service.lifecycleRuns[f.input.issueId].status, 'paused');
-
-  await f.discussion.turn({ ...f.input, text: 'Yes, continue only when I click Continue issue.' }, f.owner);
-  f.runtimes[0].ask = async () =>
-    JSON.stringify({
-      decisions: ['Resume only after explicit continue.'],
-      questions: [],
-      answerQuotes: ['Yes, continue only when I click Continue issue.'],
+test('grilling uses the durable issue queue with its stage and skill while Factory work remains active', async (t) => {
+  const f = fixture(t);
+  const original = readFileSync(join(f.root, '.issues/20261025-a.md'));
+  const requests = [];
+  let finish;
+  f.service.issueChats.request = (input) => {
+    requests.push(input);
+    return new Promise((resolve) => {
+      finish = resolve;
     });
-  const draft = await f.discussion.summarize(f.input, f.owner);
-  assert.equal(draft.canContinue, false, 'strategy work uses its own Continue issue control');
-  const result = await f.discussion.commit({ ...f.input, token: draft.token, clicked: true }, f.owner);
-  assert.equal(result.recorded, true);
-  assert.equal(f.service.lifecycleRuns[f.input.issueId].status, 'paused');
-  assert.equal(f.service.lifecycleTasks.has(f.input.issueId), false);
-  assert.ok(
-    readFileSync(path, 'utf8').length > original.length,
-    'reviewed grilling is saved only on explicit confirmation'
-  );
+  };
+  const manager = createDiscussions(f.service, null, Date.now, () => ({ name: 'grilling' }));
+  t.after(() => manager.close());
+  const input = { issueId: f.input.issueId, session: manager.open({ issueId: f.input.issueId }, f.owner).session };
+  f.service.lifecycleTasks.set(input.issueId, Promise.resolve());
+  const intent = manager.prepare({ ...input, kind: 'grill' }, f.owner);
+  const pending = manager.commit({ ...input, token: intent.token, clicked: true }, f.owner);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].skills, ['grilling']);
+  assert.equal(requests[0].stageContext.state, 'investigate');
+  assert.equal(requests[0].issueId, input.issueId);
+  assert.ok(f.service.lifecycleTasks.has(input.issueId));
+  assert.deepEqual(readFileSync(join(f.root, '.issues/20261025-a.md')), original);
+  finish('A question from the same issue conversation.');
+  assert.equal((await pending).text, 'A question from the same issue conversation.');
+  f.service.lifecycleTasks.delete(input.issueId);
 });
 
 test('separate page capabilities, hard expiry and source changes invalidate sessions', async (t) => {
@@ -916,7 +904,8 @@ test('stage button opens the temporary chat with a bound stage and preserves it 
   assert.equal(dom.window.document.querySelector('[data-temporary]'), panel);
   assert.equal(dom.window.localStorage.length, 0);
   ui.grill({ state: 'in-review', name: 'Verify' });
-  assert.match(panel.textContent, /End this interview before choosing/);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.filter((call) => call.path === 'discussion-prepare').at(-1).input.stageState, 'in-review');
   assert.equal(calls.filter((call) => call.path === 'discussion-open').length, 1);
 });
 
@@ -1008,4 +997,117 @@ test('isolated grilling runtime registers only a hash-checked copy of the instal
   assert.equal(selected.path, realpathSync(join(home, 'skills/grilling/SKILL.md')));
   assert.equal(readFileSync(selected.path, 'utf8'), content);
   assert.throws(() => temporaryGrillingSkill(home, { name: 'grilling', path, sha256: 'stale' }), /changed/);
+});
+
+test('reopened grilling restores its stage and skill and reviews main composer answers', async (t) => {
+  const f = fixture(t);
+  const intent = f.discussion.prepare({ ...f.input, kind: 'grill', stageState: 'investigate' }, f.owner);
+  await f.discussion.commit({ ...f.input, token: intent.token, clicked: true }, f.owner);
+  f.discussion.end(f.input, f.owner);
+  appendMessage(f.root, f.input.issueId, {
+    id: 'main-composer-answer',
+    kind: 'message',
+    actor: 'human',
+    body: 'Keep the original scope.',
+  });
+  const previous = f.discussion;
+  previous.close();
+  f.discussion = createDiscussions(f.service, previous.create, previous.now, previous.skill);
+  f.service.discussions = f.discussion;
+  const opened = f.discussion.open({ issueId: f.input.issueId }, f.owner);
+  assert.equal(opened.stage.state, 'investigate');
+  f.input.session = opened.session;
+  const { session, context } = f.discussion.get(f.input, f.owner);
+  assert.equal(session.skill.sha256, 'fixture-skill');
+  await f.discussion.ensureRuntime(session, context);
+  f.runtimes.at(-1).ask = async () =>
+    JSON.stringify({
+      decisions: ['Keep the scope.'],
+      questions: [],
+      answerQuotes: ['Keep the original scope.'],
+    });
+  const draft = await f.discussion.summarize(f.input, f.owner);
+  assert.match(draft.text, /Keep the original scope/);
+  await f.discussion.commit({ ...f.input, token: draft.token, clicked: true }, f.owner);
+  assert.equal(f.discussion.open({ issueId: f.input.issueId }, f.owner).stage, null);
+  assert.deepEqual(f.service.snapshot().issues[0].stage_grilling[0].answerQuotes, ['Keep the original scope.']);
+});
+
+test('generated interview instructions cannot become quoted human answers', async (t) => {
+  const f = await interviewFixture(t);
+  f.runtimes[0].ask = async () =>
+    JSON.stringify({
+      decisions: [],
+      questions: [],
+      answerQuotes: ['Begin a structured grilling interview'],
+    });
+  await assert.rejects(f.discussion.summarize(f.input, f.owner), /not supplied by you/);
+  assert.equal(f.service.snapshot().issues[0].stage_grilling, undefined);
+});
+
+test('main composer answers invalidate a pending grilling review', async (t) => {
+  const f = await interviewFixture(t);
+  const draft = await f.discussion.summarize(f.input, f.owner);
+  appendMessage(f.root, f.input.issueId, {
+    id: 'changed-main-answer',
+    kind: 'message',
+    actor: 'human',
+    body: 'Change the scope instead.',
+  });
+  await assert.rejects(
+    f.discussion.commit({ ...f.input, token: draft.token, clicked: true }, f.owner),
+    /interview changed/
+  );
+  assert.equal(f.service.snapshot().issues[0].stage_grilling, undefined);
+});
+
+test('an explicit interview for another stage supersedes the restored interview without losing its transcript', async (t) => {
+  const f = await interviewFixture(t);
+  f.discussion.end(f.input, f.owner);
+  const reopened = f.discussion.open({ issueId: f.input.issueId }, f.owner);
+  assert.equal(reopened.stage.state, 'investigate');
+  f.input.session = reopened.session;
+  const intent = f.discussion.prepare({ ...f.input, kind: 'grill', stageState: '@integration' }, f.owner);
+  const started = await f.discussion.commit({ ...f.input, token: intent.token, clicked: true }, f.owner);
+  assert.equal(started.stage.state, '@integration');
+  await assert.rejects(f.discussion.summarize(f.input, f.owner), /Answer the interview/);
+  f.discussion.end(f.input, f.owner);
+  assert.equal(f.discussion.open({ issueId: f.input.issueId }, f.owner).stage.state, '@integration');
+  const messages = conversationMessages(f.root, f.input.issueId);
+  assert.equal(messages.filter((message) => message.kind === 'grilling-start').length, 2);
+  assert.ok(messages.some((message) => message.body.includes('PRIVATE_UNSELECTED_DETAIL')));
+});
+
+test('edited and removed queued answers cannot be quoted or saved from a stale grilling review', async (t) => {
+  const f = await interviewFixture(t);
+  const input = {
+    issueId: f.input.issueId,
+    id: 'queued-answer',
+    mode: 'comment',
+    text: 'Use the red layout.',
+    skills: [],
+  };
+  addPrompt(f.root, input);
+  changePromptQueue(f.root, input.issueId, (queue) => {
+    queue.paused = true;
+  });
+  appendMessage(f.root, input.issueId, { id: input.id, kind: 'comment', actor: 'human', body: input.text });
+  const summary = (quote) => async () => JSON.stringify({ decisions: [], questions: [], answerQuotes: [quote] });
+  f.runtimes[0].ask = summary(input.text);
+  const original = await f.discussion.summarize(f.input, f.owner);
+  f.service.issueChats.scheduler.edit({ ...input, revision: 1, text: 'Use the blue layout.' });
+  await assert.rejects(
+    f.discussion.commit({ ...f.input, token: original.token, clicked: true }, f.owner),
+    /interview changed/
+  );
+  await assert.rejects(f.discussion.summarize(f.input, f.owner), /not supplied by you/);
+  f.runtimes[0].ask = summary('Use the blue layout.');
+  const edited = await f.discussion.summarize(f.input, f.owner);
+  f.service.issueChats.scheduler.remove({ issueId: input.issueId, id: input.id, revision: 2 });
+  await assert.rejects(
+    f.discussion.commit({ ...f.input, token: edited.token, clicked: true }, f.owner),
+    /interview changed/
+  );
+  await assert.rejects(f.discussion.summarize(f.input, f.owner), /not supplied by you/);
+  assert.equal(f.service.snapshot().issues[0].stage_grilling, undefined);
 });

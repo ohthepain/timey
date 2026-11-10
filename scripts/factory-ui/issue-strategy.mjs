@@ -1,3 +1,5 @@
+import { factoryBoundary, factoryOperation } from './issue-operation.mjs';
+import { conversationContext } from './conversation-context.mjs';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -83,6 +85,7 @@ function strategyWorkFields(work) {
     prUrl: work.readiness?.url || null,
     merge: work.merge,
     localDevUpdate: work.localDevUpdate,
+    localDevUpdatedAt: work.localDevUpdatedAt,
     checkout: work.checkout,
     externalDelivery: work.externalDelivery,
   };
@@ -91,8 +94,7 @@ function strategyWorkFields(work) {
 export function strategyView(service, issue) {
   const record = service.lifecycleRuns[issue.id];
   const work = record?.work;
-  const run =
-    work?.runId && service.store.runs.find((entry) => entry.id === work.runId && entry.issueId === issue.id);
+  const run = work?.runId && service.store.runs.find((entry) => entry.id === work.runId && entry.issueId === issue.id);
   let candidateHead = null;
   try {
     if (work?.checkout && existsSync(work.checkout)) candidateHead = git(work.checkout, 'rev-parse', 'HEAD');
@@ -107,13 +109,13 @@ export function strategyView(service, issue) {
     active: service.lifecycleTasks.has(issue.id),
     verifyAgain:
       work?.pr && work?.checkout && run && candidateHead && record?.status !== 'cancelled' && run.status !== 'cancelled'
-      ? {
-          runId: run.id,
-          head: candidateHead,
-          basis: digest(JSON.stringify([issue.content, run.id, work.pr, work.checkout, work.base, candidateHead])),
-          busy: service.lifecycleTasks.has(issue.id),
-        }
-      : null,
+        ? {
+            runId: run.id,
+            head: candidateHead,
+            basis: digest(JSON.stringify([issue.content, run.id, work.pr, work.checkout, work.base, candidateHead])),
+            busy: service.lifecycleTasks.has(issue.id),
+          }
+        : null,
   };
 }
 
@@ -169,10 +171,7 @@ export function verifyIssueStrategyAgain(service, input) {
       lifecycleEvent(service, record, summary);
       saveLifecycle(service, record, { status: 'blocked', summary });
     })
-    .finally(() => {
-      service.store.connected.delete(run.id);
-      if (service.lifecycleTasks.get(issue.id) === task) service.lifecycleTasks.delete(issue.id);
-    });
+    .finally(() => releaseStrategyTask(service, issue.id, run.id, task));
   service.lifecycleTasks.set(issue.id, task);
   service.store.connected.add(run.id);
   service.store.update(run, {
@@ -189,20 +188,24 @@ export function verifyIssueStrategyAgain(service, input) {
 async function rerunSavedStrategyChecks(service, record, run, work, head) {
   let checked = null;
   try {
-    checked = await service.check(work.checkout, work.base, join(service.store.directory, run.id), {
-      auditPolicy: 'required',
-      force: true,
-    });
+    const verified = await factoryOperation(
+      service,
+      record.issueId,
+      {
+        kind: 'verification',
+        id: 'verification:' + run.id,
+        runId: run.id,
+        cancellable: false,
+      },
+      () => checkStrategyCandidate(service, record, run, work, true)
+    );
+    checked = verified.checked;
     requireThat(
       checked.head === head && git(work.checkout, 'rev-parse', 'HEAD') === head,
       'The commit changed while checks were running.'
     );
     service.store.update(run, { result: { ...run.result, checked } });
-    const { readiness } = await waitStrategyReadiness(service, record, () =>
-      retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
-    );
-    assertCurrentTarget(work, readiness);
-    writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
+    const readiness = await recordCandidateReadiness(service, record, run, work, { head, checked });
     work.verification = { head, checked, at: new Date().toISOString(), forced: true };
     work.readiness = readiness;
     work.prHead = readiness.head;
@@ -393,10 +396,7 @@ function strategyRecord(service, issue) {
 
 function validatedDeliveryConfig(service, old) {
   const config = old?.config || readIssueDeliveryConfig(service.root);
-  requireThat(
-    config.provider === 'github' && /^[\w.-]+\/[\w.-]+$/.test(config.repository) && config.remote && config.target,
-    'Configure the issue repository, remote and target before starting.'
-  );
+  requireThat(configuredDeliveryTarget(config), 'Configure the issue repository, remote and target before starting.');
   return config;
 }
 
@@ -528,14 +528,7 @@ function scheduleStrategyTask(service, record, run, issue, input) {
         body: error.message,
       });
     })
-    .finally(() => {
-      service.store.connected.delete(run.id);
-      if (service.lifecycleTasks.get(issue.id) === task) service.lifecycleTasks.delete(issue.id);
-      // Comments sent while the owning worker was busy are queued against the
-      // same issue chat. Let them become real Codex turns after that writer
-      // releases the thread instead of leaving them stranded as saved text.
-      service.issueChats?.resumePending(issue.id);
-    });
+    .finally(() => releaseStrategyTask(service, issue.id, run.id, task));
   service.lifecycleTasks.set(issue.id, task);
 }
 function nameFailedExecution(service, record, run) {
@@ -574,7 +567,7 @@ export function startIssueStrategy(service, input) {
   service.ownServer();
   const { queue, issue } = selected(service, input);
   const record = strategyRecord(service, issue);
-  const old = record.work;
+  const old = record.work || record.chatCheckout;
   assertStrategyStartInput(input, old, record);
   const config = validatedDeliveryConfig(service, old);
   const base = issueStartingRevision(service, queue, old, config);
@@ -605,6 +598,26 @@ export function startIssueStrategy(service, input) {
   scheduleStrategyTask(service, record, run, issue, input);
   return { runId: run.id, issueId: issue.id, accepted: true };
 }
+export async function prepareIssueChatCheckout(service, issueId) {
+  service.ownServer();
+  const queue = readQueue(service.root);
+  const issue = queue.issues.find((entry) => entry.id === issueId);
+  requireThat(issue, 'Select an existing issue.');
+  requireThat(
+    queue.lifecycle.find((stage) => stage.state === issue.state)?.role !== 'closed',
+    'Reopen this issue before editing code.'
+  );
+  const record = strategyRecord(service, issue);
+  const work = chatCheckoutPlan(service, record, queue);
+  if (!record.work) record.chatCheckout = work;
+  const run = { id: 'chat-checkout-' + issue.id, base: work.base };
+  ensureIssueCheckout(service, record, run, issue, work);
+  assertCheckoutRepository(service, work);
+  assertCheckoutBranch(work);
+  saveLifecycle(service, record);
+  return work.checkout;
+}
+
 function legacyIssueCheckout(service, run, issue) {
   return service.store.runs.findLast(
     (item) =>
@@ -737,11 +750,12 @@ async function runOwnerTurn(service, record, run, issue, work, instruction) {
     status: 'running',
     summary: 'Working toward a merge-ready PR in the issue chat.',
   });
+  assertStrategyActive(record, 'Stopped before the next turn. Saved work is retained.');
   return JSON.parse(
     await service.codex.turn(
       threadId,
       work.checkout,
-      strategyPrompt(service.root, issue, work, instruction),
+      strategyPrompt(service.root, issue, work, instruction, conversationContext(service, issue.id)),
       strategyResultSchema,
       [],
       work.modelSettings
@@ -779,7 +793,12 @@ function assertOwnerBlocker(result) {
 async function ownerTurn(service, record, run, issue, instruction = '') {
   assertStrategyActive(record, 'Paused by you. Saved work is retained.');
   const work = record.work;
-  const result = await runOwnerTurn(service, record, run, issue, work, instruction);
+  const result = await factoryOperation(
+    service,
+    issue.id,
+    { kind: 'work', id: 'work:' + run.id, runId: run.id, cancellable: true },
+    () => runOwnerTurn(service, record, run, issue, work, instruction)
+  );
   const revision = git(work.checkout, 'rev-parse', 'HEAD');
   service.store.update(run, {
     result: { ...run.result, ...result },
@@ -801,19 +820,36 @@ async function runStrategyWork(service, record, run, issue, input, work) {
 
 async function verifyStrategyCandidate(service, record, run, work) {
   assertStrategyActive(record, 'Stopped by you. Saved work is retained.');
+  const result = await factoryOperation(
+    service,
+    record.issueId,
+    {
+      kind: 'verification',
+      id: 'verification:' + run.id,
+      runId: run.id,
+      cancellable: false,
+    },
+    () => checkStrategyCandidate(service, record, run, work)
+  );
+  await factoryBoundary(service, record.issueId);
+  assertStrategyActive(record, 'Stopped by you. Checks and saved work are retained.');
+  return result;
+}
+
+async function checkStrategyCandidate(service, record, run, work, force = false) {
   const head = git(work.checkout, 'rev-parse', 'HEAD');
   lifecycleEvent(service, record, 'Checking the final committed candidate.');
   service.store.update(run, { status: 'checking' });
   const checked = await service.check(work.checkout, work.base, join(service.store.directory, run.id), {
     auditPolicy: 'required',
+    ...(force ? { force: true } : {}),
   });
   requireThat(
     checked.head === head && git(work.checkout, 'rev-parse', 'HEAD') === head,
     'The candidate changed during checks.'
   );
-  assertStrategyActive(record, 'Stopped by you. Checks and saved work are retained.');
   service.store.update(run, { result: { ...run.result, checked } });
-  work.verification = { head, checked, at: new Date().toISOString() };
+  work.verification = { head, checked, at: new Date().toISOString(), ...(force ? { forced: true } : {}) };
   saveLifecycle(service, record);
   return { head, checked };
 }
@@ -851,15 +887,23 @@ function strategyOutcome(work, readiness) {
 }
 
 export async function mergeIssueStrategyPR(service, input) {
+  service.ownServer();
+  mergeContext(service, input);
+  return factoryOperation(
+    service,
+    input.issueId,
+    { kind: 'merge', id: 'merge:' + input.runId + ':' + input.head, runId: input.runId, cancellable: false },
+    () => performStrategyMerge(service, input)
+  );
+}
+
+async function performStrategyMerge(service, input) {
   const context = mergeContext(service, input);
-  const { issue, record, work, mergeNeedsLocalSync } = context;
+  const { issue, record, work } = context;
   const provider = strategyProvider(service, work.config, work.checkout);
   const readiness = await inspectMergeReadiness(provider, work);
   if (readiness.merged) return recordMergedStrategyPR(service, record, issue, readiness.merge);
-  requireThat(
-    !mergeNeedsLocalSync,
-    'GitHub no longer confirms the saved merge. Reconcile the PR before updating local dev.'
-  );
+  requireThat(!work.merge, 'GitHub no longer confirms the saved merge. Reconcile the PR before updating local dev.');
   const merged = await mergeReadyCandidate(service, context, provider, readiness);
   return recordMergedStrategyPR(service, record, issue, merged);
 }
@@ -869,7 +913,9 @@ function mergeContext(service, input) {
   const record = service.lifecycleRuns[issue.id];
   const work = mergeWork(record);
   const mergeNeedsLocalSync = mergeRequiresLocalSync(record, work);
-  validateMergeState(record, work, mergeNeedsLocalSync);
+  const operation = service.issueChats?.view?.(issue.id)?.queue?.operation;
+  const reconciling = operation?.kind === 'merge' && operation.id === 'merge:' + input.runId + ':' + input.head;
+  validateMergeState(record, work, mergeNeedsLocalSync, reconciling);
   validateMergeIdentity(work, input);
   return { issue, record, work, mergeNeedsLocalSync };
 }
@@ -891,9 +937,10 @@ function mergeRequiresLocalSync(record, work) {
   return record.status === 'merged' && Boolean(work.merge) && !work.localDevUpdate;
 }
 
-function validateMergeState(record, work, mergeNeedsLocalSync) {
+function validateMergeState(record, work, mergeNeedsLocalSync, reconciling) {
   const ready = record.status === 'ready-to-merge' && !work.merge;
-  requireThat(ready || mergeNeedsLocalSync, 'This issue does not have a PR ready for the Merge action.');
+  const recorded = confirmedMergeReplay(record, work, reconciling);
+  requireThat(ready || mergeNeedsLocalSync || recorded, 'This issue does not have a PR ready for the Merge action.');
 }
 
 function validateMergeIdentity(work, input) {
@@ -933,6 +980,8 @@ async function mergeOrReconcile(provider, work) {
 
 async function recordMergedStrategyPR(service, record, issue, merge) {
   const work = record.work;
+  if (work.merge?.revision === merge.revision && work.localDevUpdate)
+    return { issueId: issue.id, merge: work.merge, localDevUpdate: work.localDevUpdate };
   work.merge = merge;
   work.mergedAt = new Date().toISOString();
   record.events.push({ at: work.mergedAt, message: `Merged ${work.merge.url} on GitHub at ${work.merge.revision}.` });
@@ -942,6 +991,7 @@ async function recordMergedStrategyPR(service, record, issue, merge) {
   });
 
   work.localDevUpdate = await updateLocalTarget(service, work.config, record);
+  work.localDevUpdatedAt = new Date().toISOString();
   const updateAt = new Date().toISOString();
   const updateSummary = localTargetSummary(work.config.target, work.localDevUpdate);
   record.events.push({ at: updateAt, message: updateSummary });
@@ -1005,6 +1055,7 @@ async function recordStrategyOutcome(service, record, run, issue, work, readines
 }
 
 async function executeStrategy(service, record, run, issue, input) {
+  await factoryBoundary(service, issue.id);
   const preflightProvider = strategyProvider(service, record.work.config, service.root);
   if (record.work.strategy === 'full-send' && input.operation !== 'review')
     await retryInfrastructure(service, record, () => preflightProvider.assertMergeProtection());
@@ -1096,12 +1147,19 @@ async function finishStrategyCycle(service, record, run, issue, input, work) {
   const { head, checked } = await verifiedRepairCandidate(service, record, run, work);
   assertStrategyActive(record, 'Stopped by you. No PR was published.');
   checkPriorIssueInclusion(service, record, run, input, work, 'PR publication');
-  await publishVerifiedCandidate(service, record, run, head);
-  const { readiness } = await waitStrategyReadiness(service, record, () =>
-    retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
+  await factoryOperation(
+    service,
+    issue.id,
+    { kind: 'publication', id: 'publication:' + run.id, runId: run.id, cancellable: false },
+    async () => {
+      requireThat(
+        git(work.checkout, 'rev-parse', 'HEAD') === head,
+        'The candidate changed after verification. Run checks for the new commit before publication.'
+      );
+      await publishVerifiedCandidate(service, record, run, head);
+    }
   );
-  assertCurrentTarget(work, readiness);
-  writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
+  const readiness = await recordCandidateReadiness(service, record, run, work, { head, checked });
   work.readiness = readiness;
   saveLifecycle(service, record);
   await recordStrategyOutcome(service, record, run, issue, work, readiness, checked, strategyOutcome(work, readiness));
@@ -1140,7 +1198,7 @@ async function reconcileCheckedDelivery(service, record, run, issue, input, work
 
 async function inspectReconciledPR(service, record, work, knownProvider, knownPR) {
   if (knownPR) {
-    const readiness = await waitStrategyReadiness(service, record, () =>
+    const readiness = await coordinatedReadiness(service, record, () =>
       retryInfrastructure(service, record, () => knownProvider.ready(knownPR, work.branch, work.prHead))
     );
     return { provider: knownProvider, pr: knownPR, readiness };
@@ -1198,7 +1256,7 @@ async function inspectSavedPR(service, record, work) {
   const provider = strategyProvider(service, work.config, work.checkout);
   const pr = await retryInfrastructure(service, record, () => provider.inspect(work.pr));
   if (!pr) return { provider, pr, readiness: null };
-  const readiness = await waitStrategyReadiness(service, record, () =>
+  const readiness = await coordinatedReadiness(service, record, () =>
     retryInfrastructure(service, record, () => provider.ready(pr, work.branch, work.prHead))
   );
   return { provider, pr, readiness };
@@ -1370,12 +1428,61 @@ export async function stopIssueStrategy(service, input) {
     record?.work?.runId === input.runId && service.lifecycleTasks.has(input.issueId),
     'This issue operation is no longer active.'
   );
-  saveLifecycle(service, record, { stopRequested: true, summary: 'Stopping. Saved work will be kept.' });
   const run = service.store.runs.find((entry) => entry.id === input.runId);
   const turn = service.codex.turns.get(run.threadId);
-  if (turn) {
-    const started = await turn.started;
-    await service.codex.call('turn/interrupt', { threadId: run.threadId, turnId: started.turn.id });
-  }
+  requireThat(
+    turn || run.status !== 'checking',
+    'This check cannot be interrupted. Pause after this operation instead.'
+  );
+  saveLifecycle(service, record, { stopRequested: true, summary: 'Stopping. Saved work will be kept.' });
+  return interruptStrategyTurn(service.codex, run.threadId, turn);
+}
+
+async function coordinatedReadiness(service, record, observe) {
+  return factoryOperation(
+    service,
+    record.issueId,
+    { kind: 'readiness', id: 'readiness:' + record.work.runId, runId: record.work.runId, cancellable: false },
+    () => waitStrategyReadiness(service, record, observe)
+  );
+}
+
+function releaseStrategyTask(service, issueId, runId, task) {
+  service.store.connected.delete(runId);
+  if (service.lifecycleTasks.get(issueId) === task) service.lifecycleTasks.delete(issueId);
+  service.issueChats?.resumePending(issueId);
+}
+
+async function recordCandidateReadiness(service, record, run, work, { head, checked }) {
+  const { readiness } = await coordinatedReadiness(service, record, () =>
+    retryInfrastructure(service, record, () => inspectStrategyReadiness(service, work, head))
+  );
+  assertCurrentTarget(work, readiness);
+  writeJson(join(service.store.directory, run.id, 'readiness.json'), { ...readiness, checked });
+  return readiness;
+}
+
+function confirmedMergeReplay(record, work, reconciling) {
+  return reconciling && record.status === 'merged' && work.merge;
+}
+
+function chatCheckoutPlan(service, record, queue) {
+  const saved = record.work || record.chatCheckout;
+  const config = validatedDeliveryConfig(service, saved);
+  return saved || { config, base: issueStartingRevision(service, queue, null, config) };
+}
+
+async function interruptStrategyTurn(codex, threadId, turn) {
+  if (!turn) return { stopping: true };
+  const started = await turn.started;
+  if (codex.turns.get(threadId) !== turn) return { stopping: false };
+  await codex.call('turn/interrupt', { threadId, turnId: started.turn.id });
   return { stopping: true };
+}
+
+function configuredDeliveryTarget(config) {
+  return config?.provider === 'github' && deliveryCoordinates(config);
+}
+function deliveryCoordinates(config) {
+  return /^[\w.-]+\/[\w.-]+$/.test(config.repository) && config.remote && config.target;
 }

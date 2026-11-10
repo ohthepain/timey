@@ -320,6 +320,60 @@
         color: white;
         line-height: 1;
       }
+      .issue-composer-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 10px 0;
+        flex-wrap: wrap;
+      }
+      .issue-conversation .discussion-send {
+        position: static;
+        width: auto;
+        min-width: 44px;
+        height: 40px;
+        padding: 8px 14px;
+        border-radius: 8px;
+      }
+      .issue-conversation .discussion-compose textarea {
+        padding-right: 18px;
+      }
+      .issue-prompt-queue {
+        display: grid;
+        gap: 8px;
+        margin: 12px 0;
+      }
+      .issue-prompt-queue[hidden] {
+        display: none;
+      }
+      .issue-prompt-queue article {
+        border: 1px solid #d7d3e8;
+        border-radius: 12px;
+        padding: 12px;
+        background: #f6f4ff;
+      }
+      .issue-prompt-queue article p {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 8px 0;
+      }
+      .issue-prompt-queue article small {
+        display: block;
+        margin-bottom: 8px;
+      }
+      .issue-prompt-queue button {
+        margin-right: 6px;
+      }
+      .conversation-evidence {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .conversation-evidence button {
+        font-size: 12px;
+      }
       .discussion-send svg {
         display: block;
         width: 19px;
@@ -3699,7 +3753,6 @@
           ['progress', 'Progress'],
           ['output', 'Issue output'],
           ['issue', 'Issue thread'],
-          ['discussion', 'Discussion'],
         ]
           .map(
             ([key, title]) =>
@@ -3714,8 +3767,7 @@
             'output',
             `<section class="card" data-view-id="issue-output-${esc(i.id)}">${lifecycleActivity(i)}</section>`,
           ],
-          ['issue', '<div id="issue-chat-slot"></div>'],
-          ['discussion', '<div id="discussion-slot"></div>'],
+          ['issue', '<div id="issue-chat-slot"></div><div id="discussion-slot"></div>'],
         ]
           .map(
             ([key, html]) =>
@@ -3919,7 +3971,7 @@
           const column = document.querySelector('#app .layout > div');
           if (output && column) column.insertAdjacentHTML('afterbegin', output);
         }
-        issueChatUI.mount(route.id, data, request, refresh);
+        issueChatUI.mount(route.id, data, request, refresh, '', openShownFile);
         document.querySelectorAll('[data-chat-tab]').forEach((tab) => {
           tab.onclick = () => {
             const selected = tab.dataset.chatTab;
@@ -3946,6 +3998,7 @@
         discussionUI.mount(route.id, request, refresh);
         document.querySelectorAll('[data-grill-stage]').forEach((button) => {
           button.onclick = () => {
+            document.querySelector('[data-chat-tab="issue"]')?.click();
             const stage = data.lifecycle.find((stage) => stage.state === button.dataset.grillStage);
             const extra = { '@integration': 'Integrate', '@other': 'Other work' };
             discussionUI.grill(stage || { state: button.dataset.grillStage, name: extra[button.dataset.grillStage] });
@@ -3955,14 +4008,14 @@
           button.onclick = () => {
             const issue = data.issues.find((entry) => entry.id === button.dataset.issueGrill);
             if (!issue) return;
-            document.querySelector('[data-chat-tab="discussion"]')?.click();
+            document.querySelector('[data-chat-tab="issue"]')?.click();
             const stage = data.lifecycle.find((entry) => entry.state === issue.state);
             discussionUI.grill({ state: issue.state, name: stage?.name || issue.stage || 'Issue' });
           };
         });
         document.querySelectorAll('[data-issue-retro]').forEach((button) => {
           button.onclick = () => {
-            document.querySelector('[data-chat-tab="discussion"]')?.click();
+            document.querySelector('[data-chat-tab="issue"]')?.click();
             discussionUI.retro();
           };
         });

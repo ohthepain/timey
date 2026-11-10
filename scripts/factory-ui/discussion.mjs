@@ -1,21 +1,24 @@
-import { installedGrilling, grillingStage, beginGrilling, previewGrilling } from './discussion-grilling.mjs';
+import {
+  installedGrilling,
+  grillingStage,
+  beginGrilling,
+  previewGrilling,
+  restoreGrilling,
+  grillingAnswerBasis,
+  finishGrilling,
+} from './discussion-grilling.mjs';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { digest, requireThat } from './common.mjs';
-import { createDiscussionRuntime } from './discussion-codex.mjs';
+import { createIssueDiscussion } from './issue-discussion.mjs';
 import { recordDiscussion } from './discussion-record.mjs';
 import { listAvailableSkills, publicSkills, selectedSkills } from './skills.mjs';
 
 const idle = 15 * 60 * 1000,
   lifetime = 60 * 60 * 1000;
-export function createDiscussions(
-  service,
-  create = createDiscussionRuntime,
-  now = Date.now,
-  skill = installedGrilling
-) {
+export function createDiscussions(service, create = null, now = Date.now, skill = installedGrilling) {
   const manager = {
     service,
     skill,
@@ -37,10 +40,10 @@ export function createDiscussions(
         busy: false,
         intents: new Map(),
         turns: 0,
-        answers: [],
       };
+      restoreGrilling(this.service.root, session);
       this.sessions.set(session.id, session);
-      return { session: session.id };
+      return { session: session.id, stage: session.grilling || null };
     },
     context(id) {
       const queue = readQueue(this.service.root);
@@ -71,7 +74,7 @@ export function createDiscussions(
       const context = this.context(input.issueId);
       if (session.basis !== context.basis) {
         this.drop(session);
-        throw Error('Issue or policy changed. Start a fresh temporary discussion.');
+        throw Error('Issue or policy changed. Reopen the decision review for the current issue.');
       }
       session.touched = this.now();
       return { session, ...context };
@@ -108,22 +111,25 @@ export function createDiscussions(
       session.turns++;
       try {
         await this.ensureRuntime(session, context);
-        const text = await session.runtime.ask(input.text, internal ? [session.skill] : selected);
+        const text = await session.runtime.ask(input.text, internal ? [session.skill] : selected, undefined, {
+          generated: internal,
+        });
         this.get(input, owner);
         requireThat(typeof text === 'string' && text.length <= 32000, 'Discussion response exceeded its limit.');
-        retainActualAnswer(session, input.text, internal);
         session.intents.clear();
         return { text };
       } catch {
         this.drop(session);
-        throw Error('Discussion ended or could not complete. Start a fresh temporary discussion.');
+        throw Error('Discussion ended or could not complete. Reopen the decision review for the current issue.');
       } finally {
         session.busy = false;
       }
     },
     async ensureRuntime(session, context) {
       if (session.runtime) return;
-      session.runtime = this.create(() => this.drop(session));
+      session.runtime = this.create
+        ? this.create(() => this.drop(session))
+        : createIssueDiscussion(this.service, session);
       await session.runtime.begin(context);
     },
     prepare(input, owner) {
@@ -145,7 +151,7 @@ export function createDiscussions(
         effect:
           input.kind === 'record'
             ? 'Append only this selected text as human-approved discussion output. No stage change, approval or completed grilling.'
-            : 'Start a temporary structured interview here. No transcript or grilling outcome is saved.',
+            : 'Start grilling in the saved issue conversation. Review and save decisions separately.',
       };
     },
     async commit(input, owner) {
@@ -261,13 +267,15 @@ function validateSelection(kind, text) {
   if (kind === 'record') requireThat(text.trim(), 'Select output to record.');
 }
 
-function retainActualAnswer(session, text, internal) {
-  if (!internal) session.answers.push(text);
-}
 function saveStageInterview(manager, session, queue, issue, intent, input) {
   requireThat(!session.busy, 'Wait for this response to finish.');
   requireThat(!input.continue || intent.canContinue, 'Continue only from the current unfinished step.');
+  requireThat(
+    intent.interviewBasis === grillingAnswerBasis(manager.service.root, session),
+    'The interview changed. Review its results again.'
+  );
   const saved = recordDiscussion(manager.service, queue, issue, intent, input.continue === true);
+  finishGrilling(manager.service.root, session);
   manager.drop(session);
   return saved;
 }

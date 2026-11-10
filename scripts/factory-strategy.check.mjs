@@ -1713,13 +1713,24 @@ test('No new actions pauses a Full Send before merge even if readiness just beca
 test('comments during strategy work save feedback without starting another writer or chat', async (t) => {
   const f = fixture(t);
   startIssueStrategy(f.service, f.input());
+  await f.service.issueChats.control({ issueId: f.issue.id, operation: 'pause' });
   const response = await f.service.issueChats.send({
     issueId: f.issue.id,
     id: 'during-work',
     mode: 'comment',
     text: 'Keep the existing behavior.',
   });
-  assert.match(response.disposition, /No competing response/);
+  assert.match(response.disposition, /queue/);
+  const entry = f.service.issueChats.view(f.issue.id).queue.entries.find((entry) => entry.id === 'during-work');
+  assert.equal(entry.status, 'waiting');
+  assert.equal(f.counts().calls, 0);
+  await f.service.issueChats.control({
+    issueId: f.issue.id,
+    operation: 'remove',
+    id: entry.id,
+    revision: entry.revision,
+  });
+  await f.service.issueChats.control({ issueId: f.issue.id, operation: 'resume' });
   await f.service.lifecycleTasks.get(f.issue.id);
   assert.equal(f.counts().calls, 1);
   assert.equal(f.service.issueChats.connections.size, 0);
@@ -1869,4 +1880,74 @@ test('factory app honors review bypass without user identity endpoint or CI bypa
   assert.ok(!f.commands.some((args) => args[1] === 'user'));
   f.change({ admin: false });
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /prevent this credential/);
+});
+
+test('editable chat prepares the normal issue checkout without starting a delivery strategy', async (t) => {
+  const f = fixture(t);
+  const cwd = await f.service.prepareIssueChatCheckout(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.work, undefined);
+  assert.equal(record.chatCheckout.checkout, cwd);
+  assert.equal(git(cwd, 'branch', '--show-current'), 'codex/issue-' + f.issue.issueNumber);
+  assert.deepEqual(f.counts(), { calls: 0, merges: 0, checks: 0 });
+  assert.equal(await f.service.prepareIssueChatCheckout(f.issue.id), cwd);
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].work.checkout, cwd);
+  assert.equal(f.service.lifecycleRuns[f.issue.id].status, 'handed-off');
+});
+
+test('pausing after verification retains confirmed proof before stopping later operations', async (t) => {
+  const f = fixture(t);
+  const check = f.service.check;
+  f.service.check = async (...args) => {
+    const checked = await check(...args);
+    f.service.lifecycleRuns[f.issue.id].pauseRequested = true;
+    return checked;
+  };
+  startIssueStrategy(f.service, f.input());
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const record = f.service.lifecycleRuns[f.issue.id];
+  assert.equal(record.status, 'paused');
+  assert.equal(record.work.verification.checked.passed, true);
+  assert.equal(record.work.verification.head, git(record.work.checkout, 'rev-parse', 'HEAD'));
+  assert.equal(record.work.pr, null);
+});
+
+test('protected merge holds a non-cancellable issue operation and records local update separately', async (t) => {
+  const f = fixture(t);
+  startIssueStrategy(f.service, f.input('full-send'));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  let operation;
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  f.service.issueChats.reconcileFactoryOperation = async (issueId, input, perform) => {
+    assert.equal(issueId, f.issue.id);
+    operation = input;
+    await held;
+    return perform();
+  };
+  const merging = mergeReadyIssue(f);
+  assert.equal(operation.kind, 'merge');
+  assert.equal(operation.cancellable, false);
+  assert.equal(f.counts().merges, 0);
+  release();
+  await merging;
+  const work = f.service.lifecycleRuns[f.issue.id].work;
+  assert.equal(f.counts().merges, 1);
+  assert.ok(work.merge);
+  assert.ok(work.localDevUpdate);
+  assert.ok(work.localDevUpdatedAt);
+  const recordedAt = work.mergedAt;
+  const updatedAt = work.localDevUpdatedAt;
+  f.service.issueChats.view = () => ({ queue: { operation } });
+  const provider = f.service.strategyProvider();
+  provider.ready = async () => ({ merged: true, merge: work.merge });
+  f.service.strategyProvider = () => provider;
+  await mergeReadyIssue(f);
+  assert.equal(f.counts().merges, 1, 'a lost completion acknowledgement reconciles the existing merge');
+  assert.equal(work.mergedAt, recordedAt);
+  assert.equal(work.localDevUpdatedAt, updatedAt);
 });

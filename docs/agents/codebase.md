@@ -304,17 +304,13 @@ covered by `factory-model-settings.check.mjs` and
 ledger reservations. It follows report/action dependencies and linked plans while
 excluding unrelated queue entries; full-queue grouping keeps its original guard.
 
-Issue discussion lives in `scripts/factory-ui/discussion.mjs` (memory-only
-sessions, issue context, expiry and one-use clicked intents),
-`discussion-codex.mjs` (dedicated ephemeral model process),
-`discussion-record.mjs` (guarded selected-output append), and `discussion-ui.js`
-(temporary panel DOM, excluded from generic draft restoration). `discussion-grilling.mjs`
-pauses and waits for active issue work before grilling and keeps strategy resumption
-behind the explicit Continue issue control. `http.mjs` exposes only fixed discussion
-operations; `service.mjs` owns shutdown. `skills.mjs` lists
-enabled Codex skills and validates selected names before dispatch; the shared
-slash selector and removable chips live in `issue-chat-ui.js`. These modules do not use
-worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).
+Issue decision review lives in `scripts/factory-ui/discussion.mjs` (bounded
+sessions and clicked intents), `issue-discussion.mjs` (saved issue queue adapter),
+`discussion-grilling.mjs` (stage interviews and exact human-quote validation),
+`discussion-record.mjs` (guarded reviewed-output append), and `discussion-ui.js`
+(review panel within Issue thread). The native issue conversation retains their
+turns. `skills.mjs` validates enabled skills; the shared slash selector and chips
+live in `issue-chat-ui.js`. See [reviewing issue discussion](factory-ui.md#reviewing-issue-discussion).
 
 `factory-ui/site-review.mjs` owns Verify review targets, available browser choices,
 open receipts and guarded human results. `site-review-ui.js` renders Open site,
@@ -358,16 +354,18 @@ matrix. `CODING_STANDARDS.md` guides semantic review of workflow gates.
 including deferred form/dialog updates and questions arriving while chat has focus.
 
 Persistent issue chat is owned by `factory-ui/issue-chat.mjs`; `conversation-store.mjs`
-retains user messages and native thread identity. `conversation-view.mjs` combines
-that history with role results and actual answer receipts without rewriting those
-owners. `conversation-context.mjs` supplies selected-issue context and full timeline
-snapshots to execution/review turns. `issue-chat-runtime.mjs` keeps the conversational
-model read-only and separate from worker/review connections; `issue-chat-ui.js`
-preserves the composer while polling role updates and dispatches validated selected
-skills. Stop uses the current message ID
-and the dedicated connection’s exact native turn; lifecycle and worker connections
-are outside its cancellation path. `scripts/factory-chat.check.mjs`
-checks persistence, provenance, routing, isolation, pagination and UI drafts.
+retains messages and native identity. `conversation-events.mjs` projects sourced
+Factory outcomes; `conversation-view.mjs` combines these with actual conversation
+records. `conversation-context.mjs` supplies the same full timeline to model and
+skill turns. `issue-chat-runtime.mjs` resumes the owning thread, using read-only
+access for discussion and the issue checkout for editable requests.
+`issue-prompt-queue.mjs` owns durable prompt identities, revisions and attempt
+receipts. `issue-prompt-scheduler.mjs` coordinates FIFO dispatch, pause, stop,
+steer, uncertain receipt recovery and operation leases. `issue-operation.mjs`
+places boundaries around existing Factory owners; verification and GitHub remain
+with those owners. `issue-chat-ui.js` preserves drafts, selected skills and queued
+entry controls while polling. Chat, native-chat, history and browser checks cover
+persistence, provenance, cancellation, recovery and issue isolation.
 
 Queue lifecycle squares read the strip from `issueLifecycleView` on each issue snapshot.
 `queue-lifecycle-ui.js` renders

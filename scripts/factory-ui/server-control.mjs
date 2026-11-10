@@ -9,6 +9,9 @@ import { cleanupActionRecords } from './issue-cleanup.mjs';
 
 const finishing = new Set([
   '/api/server-cancel-restart',
+  '/api/issue-chat-send',
+  '/api/issue-chat-control',
+  '/api/issue-chat-stop',
   '/api/answer',
   '/api/lifecycle-pause',
   '/api/issue-strategy-stop',
@@ -27,6 +30,7 @@ export function serverControl(service, restart) {
   timer.unref();
   function activity() {
     const connected = service.store.connected;
+    const conversation = conversationActivity(service);
     const controllers = [...service.lifecycleTasks.keys()].filter(
       (id) => !connected.has(service.lifecycleRuns[id]?.childRunId)
     );
@@ -42,8 +46,10 @@ export function serverControl(service, restart) {
         controllers.length +
         (service.captures?.active || 0) +
         cleanupActions(service),
+      operations: conversation.operations,
+      uncertain: conversation.uncertain,
       chats: service.discussions.sessions.size,
-      approvals: service.codex.requests.size,
+      approvals: pendingPermissions(service),
       locks,
     };
   }
@@ -338,9 +344,17 @@ function restoreProgress(service, issueId) {
 }
 
 function ready(current) {
+  if (current.operations || current.uncertain) return false;
   return [current.actions, current.chats, current.approvals, current.locks.length].every((count) => count === 0);
 }
 
 function nativeActions(codex) {
   return Math.max(codex.turns?.size || 0, Number(Boolean(codex.pending?.size)));
+}
+
+function conversationActivity(service) {
+  return service.issueChats?.activity?.() || { operations: 0, uncertain: 0 };
+}
+function pendingPermissions(service) {
+  return service.permissionRequests?.().size ?? service.codex.requests.size;
 }

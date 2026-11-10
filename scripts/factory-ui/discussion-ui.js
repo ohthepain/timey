@@ -1,4 +1,3 @@
-/* Temporary DOM only; never browser storage or the factory's saved activity. */
 const discussionUI = (() => {
   let panel = null,
     issueId = null,
@@ -69,13 +68,14 @@ const discussionUI = (() => {
     node.addEventListener('focusin', (event) => {
       focused = event.target;
     });
-    const toggle = button('Chat', () => {
+    const toggle = button('Review decisions', () => {
       const open = toggle.getAttribute('aria-expanded') !== 'true';
       toggle.setAttribute('aria-expanded', String(open));
       body.hidden = !open;
       if (open) draft.focus();
     });
     toggle.className = 'discussion-toggle';
+    toggle.setAttribute('aria-label', 'Review decisions');
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', 'discussion-body');
     const body = document.createElement('div');
@@ -152,14 +152,14 @@ const discussionUI = (() => {
     const details = document.createElement('details');
     details.className = 'discussion-info';
     const summary = document.createElement('summary');
-    summary.textContent = 'Temporary chat · Enter to send, Shift+Enter for a new line';
+    summary.textContent = 'Saved issue conversation · Review decisions separately';
     const notice = document.createElement('p');
     notice.textContent =
-      'This panel chat and its grilling transcript are temporary. Run retro uses the saved issue conversation, which retains its request and result. Select panel text to record agreed output with a separate confirmation. Messages go to your configured model provider under your account’s data policies. Panel chat ends on navigation, reload, 15 minutes of inactivity or after one hour. Typed instructions never authorize workflow changes.';
+      'Grilling, discussion and retro use the same saved Issue thread. Select text here to review and record decisions. Closing this review leaves the conversation intact. Messages go to your configured model provider. Recording decisions, merge approval and acceptance remain separate actions.';
     const idForMount = issueId,
       requestForMount = sendRequest,
       refreshForMount = refreshPage;
-    const reset = button('End chat and clear text', () => {
+    const reset = button('Close decision review', () => {
       end();
       mount(idForMount, requestForMount, refreshForMount);
     });
@@ -167,7 +167,7 @@ const discussionUI = (() => {
     const results = button('Review grilling results…', () =>
       run(async () => showPreview(await call('summary', {})), 'Preparing the interview summary…')
     );
-    results.hidden = true;
+    results.hidden = false;
     const retroPanel = document.createElement('section');
     retroPanel.className = 'retro-recommendations';
     retroPanel.hidden = true;
@@ -269,7 +269,7 @@ const discussionUI = (() => {
       return run(startRetro, 'Running the retro skill for this issue…');
     };
     node.startGrill = (stage) => {
-      const error = stageError(stage);
+      const error = stageError();
       if (error) {
         status.textContent = error;
         return;
@@ -277,15 +277,13 @@ const discussionUI = (() => {
       toggle.setAttribute('aria-expanded', 'true');
       body.hidden = false;
       draft.focus();
-      if (stageState) return;
       stageState = stage.state;
       stageLabel.textContent = 'Grilling · ' + stage.name;
       stageLabel.hidden = false;
       startGrill(stage);
     };
-    function stageError(stage) {
+    function stageError() {
       if (saved) return 'End this chat before starting another interview.';
-      if (stageState && stageState !== stage.state) return 'End this interview before choosing another step.';
       return '';
     }
     details.append(summary, notice, grill, reset);
@@ -305,6 +303,15 @@ const discussionUI = (() => {
       }
       log.append(entry);
       log.scrollTop = log.scrollHeight;
+      Promise.resolve(refreshPage?.()).catch((error) => {
+        status.textContent = `Conversation refresh failed: ${error.message}`;
+      });
+    }
+    function restoreStage(stage) {
+      if (!stage) return;
+      stageState = stage.state;
+      stageLabel.textContent = 'Grilling · ' + stage.name;
+      stageLabel.hidden = false;
     }
     async function call(operation, input) {
       const current = generation,
@@ -316,6 +323,7 @@ const discussionUI = (() => {
           throw Error('Chat ended.');
         }
         session = opened.session;
+        restoreStage(opened.stage);
         expiry = setTimeout(
           () => {
             end();
@@ -373,7 +381,7 @@ const discussionUI = (() => {
         results.hidden = false;
         add('Codex', result.text);
         draft.focus();
-      }, 'Pausing current issue work, if any, before starting the grilling interview…');
+      }, 'Queueing grilling in the issue conversation…');
     }
     function review(kind, text) {
       run(async () => showPreview(await call('prepare', { kind, text })), 'Preparing the selected action…');
@@ -410,7 +418,7 @@ const discussionUI = (() => {
             'Factory',
             outcome +
               (result.continueError ? ' Could not continue: ' + result.continueError : '') +
-              ' End this temporary chat to start another.'
+              ' Close this review to start another.'
           );
         }, 'Saving the reviewed results…')
       );

@@ -136,16 +136,28 @@ export class CodexConnection {
   }
   turnEvent(message, turn) {
     const params = message.params;
-    if (message.method === 'item/completed') this.captureMessage(params.item, turn);
+    this.captureTurnProgress(message, turn);
     if (message.method !== 'turn/completed') return;
     this.phase('finished', 'turn/completed', params.threadId);
     this.turns.delete(params.threadId);
     this.clearRequests(params.threadId);
     if (params.turn.status === 'completed') turn.resolve(turn.text);
-    else turn.reject(Error(redactValue(turnFailure(params.turn))));
+    else turn.reject(terminalTurnError(params.turn, turn));
   }
+  captureTurnProgress(message, turn) {
+    const params = message.params;
+    if (message.method === 'item/agentMessage/delta') {
+      captureDelta(turn, params);
+    }
+    if (message.method === 'item/completed') this.captureMessage(params.item, turn);
+  }
+
   captureMessage(item, turn) {
-    if (item?.type === 'agentMessage') turn.text = item.text;
+    if (item?.type === 'agentMessage') {
+      turn.text = item.text;
+      turn.fragments ||= new Map();
+      turn.fragments.set(item.id, item.text);
+    }
   }
   clearRequests(threadId) {
     for (const [id, request] of this.requests) if (request.params.threadId === threadId) this.requests.delete(id);
@@ -193,7 +205,7 @@ export class CodexConnection {
     await this.ready();
     await this.call('thread/unarchive', { threadId });
   }
-  async turn(threadId, cwd, prompt, outputSchema, extraInput = [], settings = null) {
+  async turn(threadId, cwd, prompt, outputSchema, extraInput = [], settings = null, receipt = null) {
     requireThat(!this.turns.has(threadId), 'This conversation already has running work.');
     let resolve, reject;
     const completion = new Promise((yes, no) => {
@@ -209,6 +221,7 @@ export class CodexConnection {
         this.call('turn/start', {
           threadId,
           cwd,
+          ...(receipt ? { clientUserMessageId: receipt.clientId } : {}),
           approvalsReviewer: this.approvalReviewers.get(threadId),
           input: [{ type: 'text', text: prompt }, ...extraInput],
           outputSchema,
@@ -226,6 +239,7 @@ export class CodexConnection {
         }
       }
       if (this.turns.get(threadId) === turn) turn.id = started.turn.id;
+      receipt?.accepted({ threadId, turnId: started.turn.id });
     } catch (error) {
       this.turns.delete(threadId);
       reject(error);
@@ -261,4 +275,29 @@ function approvalResult(request, response) {
 
 function permissionToolConfig(sandbox) {
   return sandbox === 'workspace-write' ? { config: { 'features.request_permissions_tool': true } } : {};
+}
+
+function terminalTurnError(result, turn) {
+  return Object.assign(Error(redactValue(turnFailure(result))), {
+    terminalStatus: result.status,
+    partialText: redactValue(partialTurnText(turn).slice(0, 32000)),
+  });
+}
+function partialTurnText(turn) {
+  if (turn.fragments) return [...turn.fragments.values()].join('\n\n');
+  return turn.text || '';
+}
+
+function captureDelta(turn, params) {
+  turn.fragments ||= new Map();
+  turn.fragments.set(params.itemId, (turn.fragments.get(params.itemId) || '') + params.delta);
+}
+
+export async function interruptCodexTurn(connection, threadId) {
+  const turn = connection.turns.get(threadId);
+  if (!turn) return { interrupted: false };
+  const started = await turn.started;
+  if (connection.turns.get(threadId) !== turn) return { interrupted: false };
+  await connection.call('turn/interrupt', { threadId, turnId: started.turn.id });
+  return { interrupted: true };
 }
