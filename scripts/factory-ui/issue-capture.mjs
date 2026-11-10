@@ -17,6 +17,8 @@ const requestSchema = z
     requestId: z.uuid(),
     description: z.string().min(1).max(24000),
     grill: z.boolean().default(false),
+    go: z.boolean().default(false),
+    strategy: z.enum(['full-stop', 'full-send']).default('full-stop'),
     model: z.string().optional(),
   })
   .strict();
@@ -64,7 +66,7 @@ export function createCaptures(service, options = {}) {
     const pending = tasks.get(input.requestId);
     if (pending) {
       requireThat(
-        pending.description === input.description && pending.grill === input.grill && pending.model === input.model,
+        pending.identity === captureIdentity(input),
         'This submission identity belongs to another description.'
       );
       return pending.promise;
@@ -78,7 +80,7 @@ export function createCaptures(service, options = {}) {
       })
       .then((result) => (input.grill ? startCaptureGrilling(service, input, result) : result))
       .finally(() => tasks.delete(input.requestId));
-    tasks.set(input.requestId, { description: input.description, grill: input.grill, model: input.model, promise });
+    tasks.set(input.requestId, { identity: captureIdentity(input), promise });
     return promise;
   }
   async function perform(input) {
@@ -179,6 +181,7 @@ function allocate(queue, input, assessment, basis, random) {
       grill_later: false,
       autonomy: 'ask',
       category: proposal.category,
+      capture_intent: { grill: input.grill, go: input.go, strategy: input.strategy },
       lifecycle_history: route.skipped.map((s) => ({
         ...s,
         outcome: 'skipped',
@@ -199,7 +202,7 @@ function allocate(queue, input, assessment, basis, random) {
       proposal.reason +
       '\n\nReproduction: ' +
       proposal.reproduction +
-      '. Saving captures only; no work was started.\n\n## Verification intent\n\n' +
+      '. Capturing saves issues before starting any selected follow-up action.\n\n## Verification intent\n\n' +
       proposal.verification +
       '\n';
     return { id, title: proposal.title, state: route.state, content };
@@ -244,6 +247,15 @@ function captureQueue(root) {
 }
 
 function captureHash(input) {
+  if (input.go || input.strategy === 'full-send') return digest(captureIdentity(input));
+  return legacyCaptureHash(input);
+}
+
+function captureIdentity(input) {
+  return JSON.stringify([input.description, input.grill, input.go, input.strategy, input.model || null]);
+}
+
+function legacyCaptureHash(input) {
   if (input.model) return digest(JSON.stringify([input.description, input.grill, input.model]));
   return digest(input.grill ? JSON.stringify([input.description, true]) : input.description);
 }

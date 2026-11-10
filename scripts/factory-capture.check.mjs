@@ -69,6 +69,28 @@ test('capture preserves exact original text, existing reports, metadata, distinc
   assert.equal(existsSync(join(root, '.issues/factory-ui/lifecycle.json')), false);
 });
 
+test('capture saves independent Grill, Go and Merge intent before grilling without starting work', async (t) => {
+  const { root, service } = captureFixture(t);
+  forbidWork(service);
+  service.issueChats = { send: async () => ({ repeated: false }), close() {} };
+  service.captures = createCaptures(service, { assess: async (text) => ({ issues: [proposal(text)] }) });
+  const created = await service.captures.save({
+    ...input('Make the capture dialog playful.'),
+    grill: true,
+    go: true,
+    strategy: 'full-send',
+  });
+  const saved = report(root, created.issues[0].id);
+  assert.deepEqual(saved.meta.capture_intent, { grill: true, go: true, strategy: 'full-send' });
+  assert.equal(created.grilling[0].started, true);
+  assert.equal(service.store.runs.length, 0);
+  assert.equal(service.api.inspect().registry.actions.length, 0);
+  assert.equal(
+    readQueue(root).issues.find((issue) => issue.id === created.issues[0].id).capture_intent.strategy,
+    'full-send'
+  );
+});
+
 test('semantic grouping and bug/clarification/prototype routing preserve the assessor decisions', async (t) => {
   const { root, service } = captureFixture(t);
   for (const [description, role, state] of [
