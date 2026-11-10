@@ -126,15 +126,28 @@ function identityResource(kind, issueId, identity, details = {}) {
 }
 
 export async function archiveIssueChatsOnClose(service, issueId, resolution, requestedCleanup = null) {
-  if (requestedCleanup) {
-    const result = await executeConfirmedCleanup(service, issueId, resolution, requestedCleanup);
-    const workspace = service.lifecycleRuns[issueId]?.work?.checkout;
-    if (!workspace || !existsSync(workspace)) await archiveChatsForIssue(service, issueId);
-    return result;
-  }
+  if (requestedCleanup) return archiveRequestedCleanup(service, issueId, resolution, requestedCleanup);
+  return archiveUnselectedChats(service, issueId);
+}
+
+async function archiveRequestedCleanup(service, issueId, resolution, requestedCleanup) {
+  const result = await executeConfirmedCleanup(service, issueId, resolution, requestedCleanup);
+  const workspace = service.lifecycleRuns[issueId]?.work?.checkout;
+  if (!workspace || !existsSync(workspace)) await archiveChatsForIssue(service, issueId);
+  return result;
+}
+
+async function archiveUnselectedChats(service, issueId) {
   const results = await archiveChatsForIssue(service, issueId);
-  completeEmptyCleanup(service, issueId);
-  return { status: 'complete', results, retainedChats: [] };
+  const status = results.every((item) => item.status === 'complete') ? 'complete' : 'incomplete';
+  const record = readCleanup(service, issueId);
+  if (record) {
+    record.status = status;
+    record.results = results;
+    record.updated = new Date().toISOString();
+    persistCleanup(service, record);
+  }
+  return { status, results, retainedChats: results.filter((item) => item.status !== 'complete') };
 }
 
 async function executeConfirmedCleanup(service, issueId, resolution, input) {
@@ -149,7 +162,13 @@ async function executeConfirmedCleanup(service, issueId, resolution, input) {
 async function archiveChatsForIssue(service, issueId) {
   const chats = await chatResources(service, issueId);
   const results = [];
-  for (const chat of chats) results.push({ ...chat, ...(await archiveChat(service, chat)) });
+  for (const chat of chats) {
+    const result =
+      chat.state === 'active'
+        ? { status: 'preserved', reason: 'Chat is active; it was preserved.' }
+        : await archiveChat(service, chat);
+    results.push({ ...chat, ...result });
+  }
   return results;
 }
 

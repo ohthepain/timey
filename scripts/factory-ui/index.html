@@ -2837,7 +2837,9 @@
             ? `Workspace ${resource.name} · ${workspaceEstimate(resource)}`
             : resource.kind === 'remote-branch'
               ? `Remote branch ${resource.repository}:${resource.name}`
-              : `Local branch ${resource.name}`;
+              : resource.kind === 'chat'
+                ? `Thread ${resource.threadId}`
+                : `Local branch ${resource.name}`;
         const state =
           resource.state === 'already-deleted'
             ? 'Already deleted'
