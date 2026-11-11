@@ -1800,7 +1800,9 @@
         selectedChatTab = 'progress';
       let selectedChatIssue = null;
       let refreshing = false,
-        refreshPending = false;
+        refreshPending = false,
+        refreshAgain = false,
+        manualRefreshPending = false;
       let sourceChangedAtPageLoad = null;
       const runDetails = new Map();
       const outputHistories = new Map();
@@ -1883,7 +1885,29 @@
           $('connection').hidden = true;
         } finally {
           refreshing = false;
+          if (refreshAgain) {
+            refreshAgain = false;
+            void refresh();
+            return;
+          }
+          manualRefreshPending = false;
+          setProgressRefreshButtons(false);
         }
+      }
+      function setProgressRefreshButtons(refreshing) {
+        document.querySelectorAll('[data-refresh-progress]').forEach((button) => {
+          button.disabled = refreshing;
+          button.textContent = refreshing ? 'Refreshing…' : 'Refresh progress';
+        });
+      }
+      function refreshProgress() {
+        manualRefreshPending = true;
+        setProgressRefreshButtons(true);
+        if (refreshing) {
+          refreshAgain = true;
+          return;
+        }
+        void refresh();
       }
       function showRuntime(runtime) {
         const sourceChangeBanner = $('source-change-banner');
@@ -3435,7 +3459,7 @@
         const pullRequest = view.pullRequest
           ? `<p><a href="${esc(view.pullRequest.url)}" target="_blank" rel="noreferrer">Open pull request #${esc(view.pullRequest.number)}</a></p>`
           : '';
-        return `<h2 class="progress-heading"><span>Progress</span>${timer(view.totalOperationTime, 'Total operation time')}</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p>${pullRequest}<h3 class="progress-operation"><span data-progress-step>${esc(view.step)}</span>${timer(view.operationTime, 'Current operation time')}</h3><p><strong>${stopped ? 'What stopped the work' : 'What is happening'}:</strong> ${esc(view.explanation)}</p>${commandDetails}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>${stopped ? 'Recommended next steps' : 'Next action'}:</strong> ${esc(view.next)}</p>${diagnostics}${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
+        return `<h2 class="progress-heading"><span>Progress</span><button type="button" data-refresh-progress>Refresh progress</button>${timer(view.totalOperationTime, 'Total operation time')}</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p>${pullRequest}<h3 class="progress-operation"><span data-progress-step>${esc(view.step)}</span>${timer(view.operationTime, 'Current operation time')}</h3><p><strong>${stopped ? 'What stopped the work' : 'What is happening'}:</strong> ${esc(view.explanation)}</p>${commandDetails}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>${stopped ? 'Recommended next steps' : 'Next action'}:</strong> ${esc(view.next)}</p>${diagnostics}${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
       }
       function updateProgressTimers() {
         document.querySelectorAll('[data-progress-timer]').forEach((timer) => {
@@ -4096,6 +4120,11 @@
         });
       }
       function bind() {
+        document.querySelectorAll('[data-refresh-progress]').forEach((button) => {
+          button.onclick = refreshProgress;
+          button.disabled = manualRefreshPending;
+          button.textContent = manualRefreshPending ? 'Refreshing…' : 'Refresh progress';
+        });
         document.querySelectorAll('[data-progress-grill]').forEach((button) => {
           button.onclick = () =>
             act(async () => {
