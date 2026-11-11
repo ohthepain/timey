@@ -24,6 +24,7 @@ import {
 } from './issue-strategy.mjs';
 import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
+import { openIssueWorkFolder } from './open-issue-work-folder.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   issueCleanupIdentities,
@@ -116,6 +117,7 @@ async function mutation(service, path, value, owner) {
     '/api/issue-strategy-verify-again': () => service.verifyIssueStrategyAgain(value),
     '/api/issue-strategy-merge': () => mergeIssueStrategyPR(service, value),
     '/api/issue-strategy-external-delivery': () => verifyExternalIssueDelivery(service, value),
+    '/api/issue-work-folder-open': () => openIssueWorkFolder(service, value.issueId),
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),

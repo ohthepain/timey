@@ -13,6 +13,7 @@ export function issueGit(snapshot, issue) {
   if (!checkout) return null;
   try {
     return {
+      checkout,
       branch: git(checkout, 'branch', '--show-current') || null,
       revision: git(checkout, 'rev-parse', 'HEAD'),
     };
