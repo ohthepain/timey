@@ -3563,7 +3563,7 @@ test('a status read cannot end a newer turn or infer interruption from an unload
   assert.equal(ended.length, 0);
 });
 
-async function activityScreen(t, wideSidebar = false) {
+async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}) {
   const { JSDOM } = await import('jsdom');
   const { service } = lifecycleFixture(t);
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
@@ -3599,6 +3599,7 @@ async function activityScreen(t, wideSidebar = false) {
       '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'
   );
   const snapshot = service.snapshot();
+  prepareSnapshot(snapshot);
   // Exercise the legacy lifecycle view at a visible stage. Clarify remains saved
   // in the fixture's history but is intentionally absent from the issue list.
   snapshot.issues[0].state = 'investigate';
@@ -3704,6 +3705,17 @@ test('external delivery shows its PR evidence, partial scope, target recheck and
   assert.match(card.textContent, /second requested behavior remains unimplemented/);
   assert.match(card.textContent, /acceptance remains pending/);
   assert.equal(card.querySelector('[data-external-delivery]')?.textContent, 'Verify and record other PR');
+});
+
+test('captured Grill plus Go retains the selected strategy for Continue after human input', async (t) => {
+  const { window } = await activityScreen(t, false, (snapshot) => {
+    snapshot.issues[0].capture_intent = { grill: true, go: true, strategy: 'full-send' };
+    snapshot.issues[0].strategy = { status: 'not-started', strategy: 'full-stop', runId: null, solRounds: 0 };
+  });
+  const card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.equal(card.querySelector('#issue-strategy').value, 'full-send');
+  assert.match(card.textContent, /Grilling comes first/);
+  assert.match(card.textContent, /answer and approve a plan/);
 });
 
 test('Full Send shows a separate Merge control and retains partial local update results in Progress', async (t) => {

@@ -532,6 +532,10 @@ projects to omit the optional `ready-for-grilling` role; old reports and custom
 stages retain their saved states. `capture-grilling.mjs` starts opt-in
 post-capture conversations through the existing persistent chat owner after durable
 creation; capture identities deduplicate retries. See [ADR 0001](../adr/0001-human-input-separate-from-lifecycle.md).
+The create dialog's Grill, Go and Merge choices are independent and initially off.
+`issue-capture.mjs` stores the selected intent on each report before the browser
+starts Go or grilling; when both are selected, the issue page retains the chosen
+strategy for an explicit Continue after grilling answers and plan approval.
 
 `factory-ui/turn-failure.mjs` formats structured provider failures for both
 `codex.mjs` errors and retained `activity.mjs` output. Issue output shows explicit

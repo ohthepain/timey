@@ -1391,13 +1391,19 @@ focused checks before plan approval, with source kept read-only. Approval still
 belongs to the user and covers intended outcome and scope. Ordinary commits do
 not restart the interview; technical plan changes can stay within that approval.
 
-Create issue offers **Grill me after creation**, off by default. With it selected,
-the server first saves all reports, then sends an explicit grilling request to
-each saved issue conversation. A single saved issue opens automatically; when
-capture separates multiple issues, the first opens and the toast links to all of
-them. Stable conversation message IDs prevent duplicate grilling on capture retry
+Create issue presents three independently selectable, initially unchecked actions
+in this order: orange **Grill me**, green **Go**, and blue **Merge**. Small inline
+illustrations identify the grill, green traffic light and merge path. One **Create
+issues** button submits the selection; without an action selected it only captures.
+Go starts the selected strategy after durable creation. Grill saves first and then
+sends an explicit grilling request to each issue conversation. When Grill and Go
+are both selected, it starts grilling and records the requested strategy on each
+report; the issue page keeps that strategy selected for Continue after the user
+answers and approves a plan. Work does not start during capture in this case.
+Merge remains selectable with Grill and chooses Full Send; otherwise Go uses Full
+Stop. Stable conversation message IDs prevent duplicate grilling on capture retry
 or server restart. Conversation failures leave the issue saved and report the
-problem. This option starts discussion, not lifecycle execution or implementation.
+problem. Grilling starts discussion, not lifecycle execution or implementation.
 
 ### Progress tab and issue output
 
