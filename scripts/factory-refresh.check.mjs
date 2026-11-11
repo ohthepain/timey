@@ -39,7 +39,7 @@ function refreshFixture(t) {
     'serverControlUI',
     'issueRoute',
     'coordinatorUI',
-    'let data,refreshing=false,refreshPending=false,progressUnavailable=false; function updateProgressView() {}\n' +
+    'let data,refreshing=false,refreshPending=false,refreshAgain=false,manualRefreshPending=false,progressUnavailable=false; function updateProgressView() {} function setProgressRefreshButtons(refreshing) { document.querySelectorAll("[data-refresh-progress]").forEach(button => { button.disabled=refreshing; button.textContent=refreshing ? "Refreshing…" : "Refresh progress"; }); }\n' +
       html.slice(start, end).replace('!busy', '!isBusy()') +
       ';return refresh;'
   )(
