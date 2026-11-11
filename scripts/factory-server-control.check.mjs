@@ -393,6 +393,24 @@ test('running-action status opens linked issue details and exposes guarded contr
   }
 });
 
+test('an open Action list drops cleanup when the running count falls', async () => {
+  const dom = loadServerControlDom();
+  const { document, controls } = dom.window;
+  const active = { ...idleServerControl(), actions: 1 };
+  controls.show(active, async () => [
+    { id: 'cleanup:one', title: 'Cleanup: Example', kind: 'cleanup', status: 'running' },
+  ]);
+  document.querySelector('[data-server-count]').click();
+  await delay(0);
+  const dialog = document.querySelector('#server-actions-dialog');
+  assert.match(dialog.textContent, /Cleanup: Example/);
+  controls.show({ ...active, actions: 0 }, async () => []);
+  await delay(0);
+  assert.match(dialog.textContent, /No issue-linked actions are running/);
+  assert.doesNotMatch(dialog.textContent, /Cleanup: Example/);
+  dom.window.close();
+});
+
 test('action controls pause after the current turn, steer its exact turn, and stop it safely', async () => {
   const calls = [];
   const issueId = '20261101T000000000-0123456789abcdef';

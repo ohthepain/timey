@@ -576,6 +576,12 @@ unknown chats prevent workspace removal, and local conversation transcripts are
 stored inside the issue workspace so they are removed with it. Native Codex chats
 remain app-managed and archiving them is not reported as disk savings.
 
+**Delete worktree** is beside the working branch on the issue page. Confirming
+removes the issue's managed work folder and local branch. The server preserves
+dirty or shared worktrees and blocks removal while issue work or chat is active.
+The action is available independently of closure and leaves the remote branch
+and issue report in place.
+
 Before Fixed acceptance, a blocked or cancelled strategy with a saved PR is reconciled
 against GitHub. The factory requires that the saved branch's PR is merged into the
 configured target, that the target still contains the merge, and that PR checks pass.
@@ -1106,8 +1112,10 @@ normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
 
-The running-action count opens a list of connected actions and recent stopped
-work that can be resumed or skipped. Each entry shows its saved issue and current
+The running-action count opens a list of connected actions, active cleanup, and
+recent stopped work that can be resumed or skipped. Completed and incomplete
+cleanup results are available on the issue page. The open list refreshes when
+the running count changes. Each entry shows its saved issue and current
 details, links to the issue and that run's output, and
 Stop, Restart, Skip, Pause issue and Steer controls. Stop interrupts an
 interruptible current response while retaining its saved work. Pause asks the

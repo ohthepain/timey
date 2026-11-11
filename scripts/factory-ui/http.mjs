@@ -26,6 +26,7 @@ import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs'
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
+  deleteIssueWorktree,
   issueCleanupIdentities,
   previewIssueCleanup,
   previewIssueCleanupResource,
@@ -136,6 +137,7 @@ async function mutation(service, path, value, owner) {
     '/api/issue-cleanup-workspace-size': () =>
       previewIssueCleanupWorkspaceSize(service, value.issueId, value.resourceId),
     '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId, value.resourceId || null),
+    '/api/issue-worktree-delete': () => deleteIssueWorktree(service, value),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),

@@ -933,6 +933,16 @@
         padding: 0 24px;
         color: #657169;
       }
+      .issue-worktree-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .issue-worktree-row button {
+        margin-left: auto;
+      }
       .issue-title {
         display: flex;
         align-items: center;
@@ -3699,8 +3709,14 @@
       function issueGitLabel(issue) {
         const work = issue.workingGit;
         if (!work) return '<p class="muted">Working branch: no checkout recorded</p>';
-        if (work.unavailable) return '<p class="muted">Working branch: checkout unavailable</p>';
-        return `<p class="muted">Working branch: <code>${esc(work.branch || 'Detached HEAD')}</code> · <code title="${esc(work.revision)}">${esc(work.revision.slice(0, 8))}</code></p>`;
+        const label = work.unavailable
+          ? '<p class="muted">Working branch: checkout unavailable</p>'
+          : `<p class="muted">Working branch: <code>${esc(work.branch || 'Detached HEAD')}</code> · <code title="${esc(work.revision)}">${esc(work.revision.slice(0, 8))}</code></p>`;
+        const button =
+          issue.strategy?.checkout && work.branch
+            ? `<button type="button" data-delete-worktree="${esc(issue.id)}" ${issue.strategy.active ? 'disabled title="Issue work is still active."' : ''}>Delete worktree</button>`
+            : '';
+        return `<div class="issue-worktree-row">${label}${button}</div>`;
       }
       function modelLabel(model) {
         return data.modelSettings.models.find((choice) => choice.id === model)?.name || model;
@@ -4305,6 +4321,21 @@
               render();
             }
           };
+        });
+        document.querySelectorAll('[data-delete-worktree]').forEach((button) => {
+          button.onclick = () =>
+            act(async () => {
+              button.disabled = true;
+              const issueId = button.dataset.deleteWorktree;
+              const expected = await request('issue-worktree-delete', { issueId });
+              if (
+                !window.confirm(
+                  `Delete this work folder and local branch, including any unmerged commits?\n\n${expected.path}\n${expected.branch} · ${expected.revision.slice(0, 8)}`
+                )
+              )
+                return;
+              await request('issue-worktree-delete', { issueId, expected });
+            });
         });
         document.querySelectorAll('[data-cleanup-retry]').forEach((button) => {
           button.onclick = async () => {

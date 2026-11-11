@@ -7,6 +7,7 @@ import { FactoryUI } from './factory-ui/service.mjs';
 import {
   beginIssueCleanup,
   cleanupActionRecords,
+  deleteIssueWorktree,
   executeIssueCleanup,
   issueCleanupIdentities,
   previewIssueCleanup,
@@ -31,6 +32,28 @@ function markClosed(root, issueId) {
   const content = readFileSync(report, 'utf8').replace('state: verify', 'state: closed');
   writeFileSync(report, content);
 }
+
+test('Delete worktree removes the issue checkout and local branch while the issue is open', async (t) => {
+  const { queue, service, issue } = fixture(t);
+  const checkout = join(queue.root, '.issues/issue-work', issue.id);
+  const branch = `codex/issue-${issue.issueNumber}`;
+  git(queue.root, 'worktree', 'add', '-b', branch, checkout, 'HEAD');
+  service.lifecycleRuns[issue.id] = { issueId: issue.id, work: { branch, checkout } };
+  const input = { issueId: issue.id };
+  const expected = deleteIssueWorktree(service, input);
+  assert.equal(existsSync(checkout), true);
+  const dirty = join(checkout, 'unsaved.txt');
+  writeFileSync(dirty, 'retain this work');
+  await assert.rejects(deleteIssueWorktree(service, { ...input, expected }), /Unsaved/);
+  assert.equal(existsSync(dirty), true);
+  git(checkout, 'add', 'unsaved.txt');
+  git(checkout, 'commit', '-m', 'New local work');
+  assert.throws(() => deleteIssueWorktree(service, { ...input, expected }), /Worktree changed/);
+  await deleteIssueWorktree(service, { ...input, expected: deleteIssueWorktree(service, input) });
+  assert.equal(existsSync(checkout), false);
+  assert.equal(git(queue.root, 'branch', '--list', branch), '');
+  assert.equal(readQueue(queue.root).issues.find((item) => item.id === issue.id).state, issue.state);
+});
 
 test('preview identifies dirty workspaces and does not infer remote deletion from a lookup failure', async (t) => {
   const f = fixture(t);
@@ -185,6 +208,10 @@ test('cleanup action is durable, visible in Actions, and recovered without repea
   assert.equal(recovered.recoveredAfterCrash, true);
   assert.equal(recovered.results[0].status, 'preserved');
   assert.match(recovered.results[0].reason, /identity must be rechecked/);
+  assert.equal(
+    control.actions().some((item) => item.kind === 'cleanup'),
+    false
+  );
 });
 
 test('guarded restart waits for a persisted cleanup action to finish', async (t) => {
@@ -241,6 +268,12 @@ test('cleanup failure does not undo closure and Retry cleanup retains results', 
   const retried = await retryIssueCleanup(f.service, id);
   assert.equal(retried.cleanup.status, 'complete');
   assert.equal(retried.cleanup.results[0].status, 'complete');
+  const control = serverControl(f.service, null);
+  t.after(() => control.close());
+  assert.equal(
+    control.actions().some((item) => item.kind === 'cleanup'),
+    false
+  );
   assert.ok(calls.some(([method]) => method === 'thread/archive'));
 });
 

@@ -10,6 +10,91 @@ import { openSiblingIssueIds } from './linked-issues.mjs';
 
 const activeRunStates = new Set(['preparing', 'running', 'checking']);
 
+export function deleteIssueWorktree(service, { issueId, expected }) {
+  service.ownServer();
+  const issue = cleanupIssue(service, issueId);
+  const worktree = localWorktreeIdentity(service, issue);
+  if (!expected) return worktree;
+  requireThat(
+    digest(JSON.stringify(expected)) === digest(JSON.stringify(worktree)),
+    'Worktree changed. Confirm it again.'
+  );
+  const tasks = cleanupTaskMap(service);
+  requireThat(!tasks.has(issueId), 'Cleanup is already running for this issue.');
+  const task = Promise.resolve()
+    .then(() => deleteLocalWorktree(service, issue, worktree))
+    .finally(() => tasks.delete(issueId));
+  tasks.set(issueId, task);
+  return task;
+}
+
+function localWorktreeIdentity(service, issue) {
+  const work = service.lifecycleRuns[issue.id]?.work;
+  requireThat(work?.checkout && ownsIssueBranch(issue, work.branch), 'This issue has no managed worktree and branch.');
+  const path = canonicalSavedCheckout(service.root, resolve(work.checkout));
+  requireThat(
+    ownedWorkspacePath(service.root, issue.id, path),
+    'The worktree path is outside this issue’s work folder.'
+  );
+  const revision = branchRevision(service.root, work.branch);
+  requireThat(revision, 'The local issue branch is already gone.');
+  return { path, branch: work.branch, revision };
+}
+
+function canonicalSavedCheckout(root, path) {
+  return existsSync(path) ? realpathSync(path) : resolve(realpathSync(root), relative(root, path));
+}
+
+function ownsIssueBranch(issue, branch) {
+  return [issue.id, issue.issueNumber].some((key) => {
+    const base = `codex/issue-${key}`;
+    return branch === base || new RegExp(`^${base}-repair-[a-f0-9]{8}-[0-9]+$`).test(branch);
+  });
+}
+
+async function deleteLocalWorktree(service, issue, expected) {
+  const { id } = issue;
+  const check = () => assertWorktreeDeletion(service, issue, expected);
+  check();
+  if (existsSync(expected.path)) {
+    const work = service.lifecycleRuns[id].work;
+    const workspace = await workspaceResource(service, id, work);
+    requireThat(workspace.eligible, workspace.reason || 'This worktree cannot be removed.');
+    requireThat(workspace.revision === expected.revision, 'The worktree revision changed. Confirm it again.');
+    await removeWorkspace(service, workspace, check);
+  } else if (branchInWorktree(service.root, expected.branch)) {
+    git(service.root, 'worktree', 'remove', expected.path);
+  }
+  check();
+  removeLocalBranch(service, { name: expected.branch, revision: expected.revision });
+  return { issueId: id, deleted: true };
+}
+
+function assertWorktreeDeletion(service, issue, expected) {
+  const { id } = issue;
+  assertWorktreeIdle(service, id);
+  requireThat(!sharedBranch(service, id, expected.branch), 'Another issue uses this branch.');
+  requireThat(!sharedWorkspace(service, id, expected.path), 'Another issue uses this workspace.');
+  const attached = branchWorktreePath(service.root, expected.branch);
+  requireThat(!attached || attached === expected.path, 'The issue branch is checked out in another worktree.');
+  requireThat(
+    branchRevision(service.root, expected.branch) === expected.revision,
+    'The local branch changed. Confirm it again.'
+  );
+}
+
+function assertWorktreeIdle(service, issueId) {
+  requireThat(!activeWorkspace(service, issueId), 'Issue work or chat is still active.');
+  const scheduler = service.issueChats?.scheduler;
+  if (!scheduler) return;
+  const queue = scheduler.view(issueId);
+  requireThat(!queue.activeTurn, 'The issue chat is still active.');
+  requireThat(
+    !queue.operation && !queue.entries.length,
+    'Finish the issue’s current operation and queued prompts first.'
+  );
+}
+
 export async function previewIssueCleanup(service, issueId, resolution = null) {
   const issue = cleanupIssue(service, issueId);
   const work = service.lifecycleRuns[issueId]?.work;
@@ -1111,13 +1196,14 @@ function removeLocalBranch(service, item) {
   return { status: 'complete', reason: 'Local branch deleted and absence confirmed.' };
 }
 
-async function removeWorkspace(service, item) {
+async function removeWorkspace(service, item, beforeRemove = () => {}) {
   const path = resolve(item.name);
   requireThat(existsSync(path) && realpathSync(path) === item.canonicalPath, 'Workspace path changed or is missing.');
   requireThat(git(path, 'branch', '--show-current') === item.branch, 'Workspace branch changed.');
   requireThat(git(path, 'rev-parse', 'HEAD') === item.revision, 'Workspace revision changed.');
   requireThat(!git(path, 'status', '--porcelain', '--untracked-files=all'), 'Workspace has unsaved changes.');
   for (const chat of item.chats || []) await archiveChat(service, chat);
+  beforeRemove();
   retainIssueHistory(service, item.issueId, path);
   git(service.root, 'worktree', 'remove', path);
   requireThat(!existsSync(path), 'Workspace removal was not confirmed.');

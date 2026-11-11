@@ -1,5 +1,6 @@
 const serverControlUI = (() => {
   let reconnectingSince = 0;
+  let actionRequest = 0;
   let state = null,
     expecting = false,
     previousPid = null,
@@ -39,8 +40,9 @@ const serverControlUI = (() => {
     return dialog;
   }
   function show(value, request) {
-    state = value;
     const element = panel();
+    refreshOpenActions(value, request);
+    state = value;
     if (['draining', 'restarting'].includes(state.phase)) {
       expecting = true;
       previousPid = state.pid;
@@ -54,12 +56,7 @@ const serverControlUI = (() => {
         else dialog.setAttribute('open', '');
       }
       count.setAttribute('aria-expanded', 'true');
-      dialog.querySelector('[data-actions-empty]').textContent = 'Loading current actions…';
-      void request('server-actions')
-        .then((items) => renderActions(Array.isArray(items) ? items : [], request))
-        .catch((error) => {
-          dialog.querySelector('[data-actions-empty]').textContent = error.message;
-        });
+      loadActions(dialog, request);
     };
     const toggle = element.querySelector('[data-server-toggle]');
     toggle.checked = requestedPause ?? state.phase !== 'idle';
@@ -73,6 +70,21 @@ const serverControlUI = (() => {
     restart.hidden = !state.supported;
     restart.disabled = restartUnavailable();
     restart.onclick = () => void change('server-restart', request);
+  }
+  function refreshOpenActions(value, request) {
+    const dialog = actionsDialog();
+    if (dialog.open && state?.actions !== value.actions) loadActions(dialog, request);
+  }
+  function loadActions(dialog, request) {
+    const current = ++actionRequest;
+    dialog.querySelector('[data-actions-empty]').textContent = 'Loading current actions…';
+    void request('server-actions')
+      .then((items) => {
+        if (current === actionRequest) renderActions(Array.isArray(items) ? items : [], request);
+      })
+      .catch((error) => {
+        if (current === actionRequest) dialog.querySelector('[data-actions-empty]').textContent = error.message;
+      });
   }
   function renderActions(items, request) {
     const dialog = actionsDialog();

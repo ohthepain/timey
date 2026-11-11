@@ -17,6 +17,16 @@ export function issueGit(snapshot, issue) {
       revision: git(checkout, 'rev-parse', 'HEAD'),
     };
   } catch {
+    return missingStrategyCheckout(snapshot.root, issue.strategy);
+  }
+}
+
+function missingStrategyCheckout(root, strategy) {
+  const branch = strategy?.branch;
+  if (!branch) return { unavailable: true };
+  try {
+    return { unavailable: true, branch, revision: git(root, 'rev-parse', '--verify', `refs/heads/${branch}`) };
+  } catch {
     return { unavailable: true };
   }
 }

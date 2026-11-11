@@ -125,7 +125,11 @@ export function serverControl(service, restart) {
 }
 
 function cleanupActions(service) {
-  return cleanupActionRecords(service.root).filter((item) => ['preparing', 'running'].includes(item.status)).length;
+  return activeCleanups(service).length;
+}
+
+function activeCleanups(service) {
+  return cleanupActionRecords(service.root).filter((item) => ['preparing', 'running'].includes(item.status));
 }
 
 function actionItems(service) {
@@ -136,7 +140,7 @@ function actionItems(service) {
     .slice(0, 40)
     .map((run) => actionEntry(run, service, queue))
     .filter((item) => item.currentStrategy);
-  const cleanup = cleanupActionRecords(service.root).map((record) => ({
+  const cleanup = activeCleanups(service).map((record) => ({
     id: `cleanup:${record.issueId}`,
     title: `Cleanup: ${record.title || record.issueId}`,
     kind: 'cleanup',

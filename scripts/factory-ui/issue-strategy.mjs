@@ -87,6 +87,7 @@ function strategyWorkFields(work) {
     localDevUpdate: work.localDevUpdate,
     localDevUpdatedAt: work.localDevUpdatedAt,
     checkout: work.checkout,
+    branch: work.branch,
     externalDelivery: work.externalDelivery,
   };
 }
