@@ -427,6 +427,7 @@ test('Fixed acceptance recovers a merged PR after its strategy run was cancelled
   const issue = queue.issues[0];
   const run = f.service.store.add({ id: issue.id }, 'issue-work', queue.head);
   f.service.store.update(run, { issueId: issue.id, status: 'cancelled', summary: 'Old blocker retained.' });
+  f.service.store.connected.delete(run.id);
   f.service.lifecycleRuns[issue.id] = {
     id: 'cancelled-strategy',
     issueId: issue.id,

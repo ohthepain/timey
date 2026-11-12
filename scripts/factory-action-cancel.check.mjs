@@ -55,8 +55,10 @@ test('closing cancels stopped issue actions, preserves completed and shared acti
   f.service.store.update(worker, { checkout: '/preserved/checkout' });
   const sharedChat = f.service.store.add({ id: shared.id }, 'worker', 'base');
   f.service.store.update(sharedChat, { issueId: id, threadId: 'shared-thread', status: 'blocked' });
+  f.service.store.connected.delete(sharedChat.id);
   const chat = f.service.store.add({ id: 'closed-issue-chat' }, 'issue-work', 'base');
   f.service.store.update(chat, { issueId: id, threadId: 'issue-thread', status: 'completed' });
+  f.service.store.connected.delete(chat.id);
   const strategyActionId = `issue-${id}`;
   const earlierStrategy = f.service.store.add({ id: strategyActionId }, 'issue-work', 'base');
   f.service.store.update(earlierStrategy, { issueId: id, status: 'blocked', summary: 'Earlier blocked attempt.' });
