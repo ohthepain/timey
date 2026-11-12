@@ -20,6 +20,10 @@ stage, worker completion and code integration. Links use the report's Parent,
 Blocked by and Related sections; reverse links are computed from those explicit
 references. Reports are displayed as escaped text, never executable HTML.
 
+The queue toolbar has an icon-only **Refresh queue** button beside the settings
+and create controls. It requests the current queue data and redraws the view in
+place, without reloading the browser page.
+
 Below the issue table, the queue shows the latest saved evaluation's decision and
 next action. Earlier evaluations and the full diagnostics for the latest one are
 inside the collapsed **History and diagnostics** disclosure.

@@ -51,6 +51,7 @@ export default async function queueBrowserChecks(page) {
   await page.locator('.issue-sidebar .issue-sidebar-link').first().waitFor();
   await page.getByText('Please select an issue.', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Create issue', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Refresh queue', exact: true }).waitFor();
 
   await verifyNarrowQueue();
   await verifyIssueIdentity();
