@@ -44,8 +44,9 @@ test('closing and reopening keep one report, its number, and its history', (t) =
     ownServer() {},
     guard: humanGuard,
     lifecycleTasks: new Map(),
+    lifecycleRuns: { [id]: { work: { runId: 'current' } } },
     store: {
-      runs: [],
+      runs: [{ id: 'old', issueId: id, kind: 'issue-work', status: 'preparing' }],
       connected: new Set(),
       add: () => ({ id: 'fixture' }),
       update() {},
@@ -53,6 +54,13 @@ test('closing and reopening keep one report, its number, and its history', (t) =
   };
   const queue = readQueue(root);
   const issue = queue.issues[0];
+  service.store.connected.add('old');
+  assert.throws(
+    () => decideIssue(service, id, issue.state, 'close', decisionBasis(queue, issue), 'No longer needed.', 'wont-do'),
+    /Wait for the current issue action to finish/
+  );
+  service.store.connected.delete('old');
+
   assert.deepEqual(
     decideIssue(service, id, issue.state, 'close', decisionBasis(queue, issue), 'No longer needed.', 'wont-do'),
     { state: 'finished' }

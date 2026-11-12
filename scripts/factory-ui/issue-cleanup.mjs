@@ -85,7 +85,7 @@ function assertWorktreeDeletion(service, issue, expected) {
 }
 
 function assertWorktreeIdle(service, issueId) {
-  requireThat(!activeWorkspace(service, issueId), 'Issue work or chat is still active.');
+  requireThat(!issueHasActiveWork(service, issueId), 'Issue work or chat is still active.');
   const scheduler = service.issueChats?.scheduler;
   if (!scheduler) return;
   const queue = scheduler.view(issueId);
@@ -833,7 +833,7 @@ function workspaceFacts(service, issueId, work) {
   const identity = workspaceIdentity(service.root, issueId, work.branch, path, canonical, exists);
   const dirty = exists && Boolean(git(path, 'status', '--porcelain', '--untracked-files=all'));
   const shared = sharedWorkspace(service, issueId, path);
-  const active = activeWorkspace(service, issueId);
+  const active = issueHasActiveWork(service, issueId);
   const eligible = workspaceEligible({ validIdentity: identity.valid, dirty, shared, active });
   return {
     path,
@@ -913,11 +913,15 @@ function sharedWorkspace(service, issueId, path) {
   return active || saved;
 }
 
-function activeWorkspace(service, issueId) {
+export function issueHasActiveWork(service, issueId) {
   if (service.lifecycleTasks.has(issueId) || service.issueChats?.tasks?.has(issueId)) return true;
-  return service.store.runs.some(
-    (run) => run.issueId === issueId && (activeRunStates.has(run.status) || service.store.connected.has(run.id))
-  );
+  const currentRunId = service.lifecycleRuns?.[issueId]?.work?.runId;
+  return service.store.runs.some((run) => {
+    if (run.issueId !== issueId) return false;
+    if (service.store.connected.has(run.id)) return true;
+    if (currentRunId && run.kind === 'issue-work' && run.id !== currentRunId) return false;
+    return activeRunStates.has(run.status);
+  });
 }
 
 function workspaceEligible({ validIdentity, dirty, shared, active }) {

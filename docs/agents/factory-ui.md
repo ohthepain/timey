@@ -580,7 +580,7 @@ remain app-managed and archiving them is not reported as disk savings.
 removes the issue's managed work folder and local branch. The server preserves
 dirty or shared worktrees and blocks removal while issue work or chat is active.
 The action is available independently of closure and leaves the remote branch
-and issue report in place.
+and issue report in place. An older disconnected strategy attempt does not block cleanup after a newer attempt supersedes it.
 
 Before Fixed acceptance, a blocked or cancelled strategy with a saved PR is reconciled
 against GitHub. The factory requires that the saved branch's PR is merged into the

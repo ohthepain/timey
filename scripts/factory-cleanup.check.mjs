@@ -1,7 +1,7 @@
 import { moveStoredIssue } from './factory-ui/issue-report-storage.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
@@ -55,6 +55,24 @@ test('Delete worktree removes the issue checkout and local branch while the issu
   assert.equal(existsSync(checkout), false);
   assert.equal(git(queue.root, 'branch', '--list', branch), '');
   assert.equal(readQueue(queue.root).issues.find((item) => item.id === issue.id).state, issue.state);
+});
+
+test('Delete worktree can clear a missing checkout after an old disconnected strategy attempt', async (t) => {
+  const { queue, service, issue } = fixture(t);
+  const checkout = join(realpathSync(queue.root), '.issues/issue-work', issue.id);
+  const branch = `codex/issue-${issue.issueNumber}`;
+  git(queue.root, 'worktree', 'add', '-b', branch, checkout, 'HEAD');
+  service.lifecycleRuns[issue.id] = { issueId: issue.id, work: { branch, checkout, runId: 'current' } };
+  service.store.runs.push({ id: 'old', issueId: issue.id, kind: 'issue-work', status: 'preparing' });
+  rmSync(checkout, { recursive: true });
+  const input = { issueId: issue.id };
+  const expected = deleteIssueWorktree(service, input);
+  service.store.connected.add('old');
+  await assert.rejects(deleteIssueWorktree(service, { ...input, expected }), /Issue work or chat is still active/);
+  service.store.connected.delete('old');
+  await deleteIssueWorktree(service, { ...input, expected });
+  assert.doesNotMatch(git(queue.root, 'worktree', 'list', '--porcelain'), new RegExp(branch));
+  assert.equal(git(queue.root, 'branch', '--list', branch), '');
 });
 
 test('preview identifies dirty workspaces and does not infer remote deletion from a lookup failure', async (t) => {
