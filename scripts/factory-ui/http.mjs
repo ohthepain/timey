@@ -1,4 +1,6 @@
-import { migrateClosedIssues } from './issue-report-storage.mjs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { issueStorageDirectory, migrateClosedIssues } from './issue-report-storage.mjs';
 import { listIssueStorage, moveIssueStorage, readIssueStorageReport, storedIssueId } from './issue-storage-actions.mjs';
 import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
@@ -11,7 +13,7 @@ import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
 import { readQueue } from './data.mjs';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -153,6 +155,19 @@ async function mutation(service, path, value, owner) {
       return { moved: migrateClosedIssues(service.root).length };
     },
     '/api/issue-storage-move': () => moveIssueStorage(service, value),
+    '/api/issue-storage-open-folder': async () => {
+      requireThat(process.platform === 'darwin', 'Finder is available on macOS.');
+      const folder = issueStorageDirectory(service.root, value.location);
+      mkdirSync(folder, { recursive: true });
+      await promisify(execFile)(
+        '/usr/bin/open',
+        ['-a', 'Finder', issueStorageDirectory(service.root, value.location)],
+        {
+          timeout: 5000,
+        }
+      );
+      return { opened: true };
+    },
     '/api/issue-capture': () => service.captures.save(value),
     '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
     '/api/verification-retry': () => service.retryVerification(value),

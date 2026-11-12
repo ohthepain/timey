@@ -15,7 +15,7 @@ function stat(path) {
   }
 }
 
-function storageDirectory(root, location) {
+export function issueStorageDirectory(root, location) {
   requireThat(Object.hasOwn(directories, location), 'Choose a valid issue location.');
   const queue = join(root, directories.open);
   const path = join(root, directories[location]);
@@ -28,11 +28,11 @@ function storageDirectory(root, location) {
 
 export function storedIssuePath(root, id, location = 'open') {
   requireThat(typeof id === 'string' && /^[\w-]+$/.test(id), 'Choose a valid saved issue ID.');
-  return join(storageDirectory(root, location), id + '.md');
+  return join(issueStorageDirectory(root, location), id + '.md');
 }
 
 export function listStoredIssues(root, location = 'open') {
-  const path = storageDirectory(root, location);
+  const path = issueStorageDirectory(root, location);
   if (!stat(path)) return [];
   return readdirSync(path, { withFileTypes: true })
     .filter((entry) => /^\d[\w-]*\.md$/.test(entry.name) && entry.isFile())

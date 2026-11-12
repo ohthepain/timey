@@ -14,7 +14,7 @@ Closure keeps its existing acceptance and dismissal rules. Move the report to th
 
 ## Queue cost
 
-Routine queue reads, scheduling, and model prompts use the open queue. Load closed report bodies on demand when a person opens a report or work explicitly needs a specific closed issue as evidence. A dedicated Closed issues view shows all closed, unarchived reports. A list can read the metadata it needs without sending the reports to a model.
+Routine queue reads, scheduling, and model prompts use the open queue. Load closed report bodies on demand when a person opens a report or work explicitly needs a specific closed issue as evidence. A dedicated Closed issues view shows all closed, unarchived reports. Open, Closed, and Archive links sit beside the heading. On macOS, the Finder shortcut opens the current folder. A list can read the metadata it needs without sending the reports to a model.
 
 At the time of design, the local checkout held 105 closed reports totaling about 2.4 MB and 14 open reports totaling about 32 KB. These are file sizes. Actual model savings depend on which queue reads feed a prompt.
 

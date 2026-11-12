@@ -35,6 +35,7 @@ function storageFixture(t) {
       requests.push({ path, value });
       if (path.startsWith('issue-storage?location=')) return { issues: (path.endsWith('closed') ? closed : archive).slice() };
       if (path.startsWith('issue-storage-report?')) return { path: '.issues/archive/alpha.md', content: '<b>Report text</b>' };
+      if (path === 'issue-storage-open-folder') return { opened: true };
       if (path === 'issue-storage-move') {
         const archiving = value.action === 'archive';
         const [from, to] = archiving ? [closed, archive] : [archive, closed];
@@ -74,6 +75,16 @@ test('Closed issues batches visible selections, skips pending rows, and can rest
   await fixture.open('closed');
   const $ = (selector) => document.querySelector(selector);
   assert.equal($('h1').textContent, 'Closed issues');
+  const folders = $('h1 + nav[aria-label="Issue folders"]');
+  assert.deepEqual(
+    Array.from(folders.querySelectorAll('a'), (link) => link.getAttribute('href')),
+    ['#/queue', '#/closed', '#/archive']
+  );
+  assert.equal(folders.querySelector('[aria-current="page"]').textContent, 'Closed');
+  assert.equal(document.querySelectorAll('[data-finder-folder]').length, 1);
+  $('[data-finder-folder="closed"]').click();
+  await setImmediate();
+  assert.equal(fixture.requests.find((entry) => entry.path === 'issue-storage-open-folder').value.location, 'closed');
   assert.equal($('a[href="#/issue/alpha"]').textContent, '#1 · Alpha');
   assert.equal($('a[href="https://github.com/example/timey/pull/17"]').textContent, 'Review report PR');
   assert.equal($('[data-storage-select="pending"]').disabled, true);
@@ -97,6 +108,14 @@ test('Closed issues batches visible selections, skips pending rows, and can rest
   );
 
   await fixture.open('archive');
+  assert.equal(document.querySelectorAll('[data-finder-folder]').length, 1);
+  $('[data-finder-folder="archive"]').click();
+  await setImmediate();
+  assert.equal(
+    fixture.requests.filter((entry) => entry.path === 'issue-storage-open-folder').at(-1).value.location,
+    'archive'
+  );
+
   $('[data-storage-report="alpha"]').click();
   await setImmediate();
   assert.equal($('#plan').open, true);

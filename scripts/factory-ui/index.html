@@ -534,6 +534,27 @@
       .queue-heading h1 {
         margin: 0;
       }
+      .issue-folder-heading,
+      .issue-folder-shortcuts {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+      .issue-folder-shortcuts a[aria-current='page'] {
+        font-weight: 700;
+        text-decoration: none;
+      }
+      button.finder-shortcut {
+        background: transparent;
+        border: 0;
+        padding: 2px 0;
+        color: inherit;
+        font: inherit;
+        font-size: 0.875rem;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
       .create-issue {
         min-width: 42px;
         min-height: 42px;
@@ -1812,8 +1833,7 @@
     <div id="connection-banner" role="alert" hidden></div>
     <header>
       <a href="#/queue"><b>Factory</b></a
-      ><a href="#/closed">Closed issues</a><a href="#/archive">Archive</a><a href="#/coordinator">Coordinator</a
-      ><small id="connection">Connecting…</small>
+      ><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
     </header>
     <div
       id="coordinator-strip"
@@ -2015,10 +2035,39 @@
         return `<tr><td><input type="checkbox" data-storage-select="${id}" aria-label="Select ${title}" ${view.selected.has(entry.id) ? 'checked' : ''} ${disabled ? 'disabled' : ''}></td><td>${heading}${storedIssueStatus(entry)}</td><td>${entry.updated ? esc(recordedDate(entry.updated)) : '—'}</td><td>${open} <button type="button" data-storage-move="${id}" aria-label="${action} ${title}" ${disabled ? 'disabled' : ''}>${action}</button></td></tr>`;
       }
 
+      function issueFolderHeading(title, current) {
+        const folders = [
+          ['queue', 'Open'],
+          ['closed', 'Closed'],
+          ['archive', 'Archive'],
+        ];
+        const links = folders
+          .map(
+            ([folder, label]) => `<a href="#/${folder}"${folder === current ? ' aria-current="page"' : ''}>${label}</a>`
+          )
+          .join('');
+        const shortcut = issueStorageReadOnly
+          ? ''
+          : `<button type="button" class="finder-shortcut" data-finder-folder="${current === 'queue' ? 'open' : current}" aria-label="Open ${title.toLowerCase()} folder in Finder">Open in Finder <span aria-hidden="true">↗</span></button>`;
+        return `<div class="issue-folder-heading"><h1>${title}</h1><nav class="issue-folder-shortcuts" aria-label="Issue folders">${links}</nav>${shortcut}</div>`;
+      }
+
+      function bindIssueFolders() {
+        document.querySelectorAll('[data-finder-folder]').forEach((button) => {
+          button.onclick = async () => {
+            try {
+              await request('issue-storage-open-folder', { location: button.dataset.finderFolder });
+            } catch (error) {
+              $('error').textContent = error.message;
+            }
+          };
+        });
+      }
+
       function storedIssuesPage(storage) {
         const view = issueStorage[storage];
         const title = storage === 'archive' ? 'Archive' : 'Closed issues';
-        return `<h1>${title}</h1><div class="toolbar"><input id="stored-issue-search" type="search" aria-label="Search ${title.toLowerCase()}" placeholder="Search by title or issue number" value="${esc(view.query)}"><button type="button" id="stored-issue-move" disabled></button><small id="stored-issue-count" class="muted"></small></div><p role="status">${esc(view.feedback || '')}</p><p role="alert">${esc(view.error || '')}</p><div class="tablewrap"><table><thead><tr><th><input type="checkbox" id="stored-issue-select-all" aria-label="Select all visible issues" disabled></th><th scope="col">Issue</th><th scope="col">Updated</th><th scope="col">Actions</th></tr></thead><tbody id="stored-issue-rows"></tbody></table></div>`;
+        return `<div class="queue-heading">${issueFolderHeading(title, storage)}</div><div class="toolbar"><input id="stored-issue-search" type="search" aria-label="Search ${title.toLowerCase()}" placeholder="Search by title or issue number" value="${esc(view.query)}"><button type="button" id="stored-issue-move" disabled></button><small id="stored-issue-count" class="muted"></small></div><p role="status">${esc(view.feedback || '')}</p><p role="alert">${esc(view.error || '')}</p><div class="tablewrap"><table><thead><tr><th><input type="checkbox" id="stored-issue-select-all" aria-label="Select all visible issues" disabled></th><th scope="col">Issue</th><th scope="col">Updated</th><th scope="col">Actions</th></tr></thead><tbody id="stored-issue-rows"></tbody></table></div>`;
       }
 
       function updateStoredIssueSelection(storage, visible) {
@@ -2114,6 +2163,7 @@
       }
 
       function bindStoredIssues(storage) {
+        bindIssueFolders();
         renderStoredIssueRows(storage);
         const view = issueStorage[storage];
         $('stored-issue-search').oninput = (event) => {
@@ -2479,7 +2529,7 @@
         return `<h2>Current decision and next action</h2><section class="card queue-decision" data-current-evaluation="${esc(current.id)}"><span class="badge">${esc(actionLabel)}</span><p><strong>Current decision:</strong> ${esc(decision || 'No decision summary recorded.')}</p><p><strong>Next action:</strong> ${nextAction}</p></section><details class="queue-history"><summary>History and diagnostics</summary>${prior || '<p>No older evaluations.</p>'}<h3>Current evaluation diagnostics</h3>${progress(current, false)}</details>`;
       }
       function queue() {
-        return `<div class="queue-heading"><h1>Issue queue</h1><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button>${data.sharedQueueEnabled ? '<button data-shared-queue-refresh>Refresh shared queue</button>' : ''}</div>${data.sharedQueueWarning ? `<p role="status">${esc(data.sharedQueueWarning)}</p>` : ''}<div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
+        return `<div class="queue-heading">${issueFolderHeading('Issue queue', 'queue')}<button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button>${data.sharedQueueEnabled ? '<button data-shared-queue-refresh>Refresh shared queue</button>' : ''}</div>${data.sharedQueueWarning ? `<p role="status">${esc(data.sharedQueueWarning)}</p>` : ''}<div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -4387,6 +4437,7 @@
         });
       }
       function bind() {
+        bindIssueFolders();
         document.querySelectorAll('[data-progress-grill]').forEach((button) => {
           button.onclick = () =>
             act(async () => {
