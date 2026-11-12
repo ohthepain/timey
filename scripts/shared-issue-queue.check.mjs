@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -11,7 +11,7 @@ const unpublishedId = '20261111T165431736-ca3555165563420b';
 const reportPath = `.issues/${issueId}.md`;
 const original = '---\nstate: in-progress\n---\n\n# Shared report\n';
 
-function fixture(t) {
+function fixture(t, closed = false) {
   const base = mkdtempSync(join(tmpdir(), 'shared-issue-queue-'));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const remote = join(base, 'origin.git');
@@ -20,10 +20,16 @@ function fixture(t) {
   git(base, 'init', '-q', '--bare', '-b', 'dev', remote);
   git(base, 'clone', '-q', remote, first);
   mkdirSync(join(first, '.issues'));
-  writeFileSync(join(first, reportPath), original);
+  const relative = closed ? `.issues/closed/${issueId}.md` : reportPath;
+  const contents = closed ? `---\nid: ${issueId}\nstate: closed\n---\n\n# Shared report\n` : original;
+  if (closed) mkdirSync(join(first, '.issues/closed'));
+  writeFileSync(join(first, relative), contents);
+  const registry = '.issues/issue-numbers.json';
+  if (closed)
+    writeFileSync(join(first, registry), JSON.stringify({ version: 1, next: 2, issues: { [issueId]: 1 } }) + '\n');
   writeFileSync(join(first, 'factory.config.json'), '{"sharedIssueQueue":true}\n');
   writeFileSync(join(first, '.gitignore'), readFileSync(new URL('../.gitignore', import.meta.url)));
-  git(first, 'add', reportPath, 'factory.config.json', '.gitignore');
+  git(first, 'add', relative, 'factory.config.json', '.gitignore', ...(closed ? [registry] : []));
   git(first, '-c', 'user.name=Tester', '-c', 'user.email=tester@example.com', 'commit', '-qm', 'Seed queue');
   git(first, 'push', '-q', 'origin', 'dev');
   git(base, 'clone', '-q', remote, second);
@@ -34,7 +40,7 @@ function fixture(t) {
     git(root, 'config', 'user.email', 'runner@example.test');
     writeFileSync(join(root, '.issues/issue-delivery-config.json'), JSON.stringify(config));
   }
-  return { remote, first, second };
+  return { remote, first, second, relative, contents };
 }
 
 function queue(root, openPullRequest) {
@@ -106,4 +112,51 @@ test('a stopped runner holds its claim until a human publishes the report', (t) 
   assert.match(published, /Run `run-1` ended with status \*\*completed\*\*/);
   assert.equal(readFileSync(join(first, reportPath), 'utf8'), published);
   assert.equal(git(remote, 'ls-tree', 'dev', '.issues/issue-work/'), '');
+});
+
+test('shared archive and restore keep a local copy through failed publication and review', (t) => {
+  const { remote, first, second, relative: closedPath, contents } = fixture(t, true);
+  const archivePath = `.issues/archive/${issueId}.md`;
+  const reviews = [];
+  const { queue: owner } = queue(first, (record) => {
+    reviews.push(record);
+    if (reviews.length === 1) throw Error('Could not create archive PR.');
+    return { number: reviews.length, url: `https://example.test/queue/${reviews.length}` };
+  });
+  const { queue: observer } = queue(second, () => assert.fail('Observer did not publish a report.'));
+  assert.equal(owner.refresh(true), null);
+  assert.equal(observer.refresh(true), null);
+
+  assert.equal(owner.moveStorage(issueId, 'archive', contents).status, 'failed');
+  assert.equal(readFileSync(join(first, archivePath), 'utf8'), contents);
+  assert.equal(readFileSync(join(first, closedPath), 'utf8'), contents);
+  assert.equal(git(first, 'check-ignore', archivePath), archivePath);
+  assert.equal(owner.storageStatus(issueId).status, 'failed');
+  assert.equal(owner.moveStorage(issueId, 'archive', contents).status, 'review');
+  assert.equal(reviews[0].commit, reviews[1].commit);
+  assert.equal(observer.refresh(true), null);
+  assert.equal(readFileSync(join(second, closedPath), 'utf8'), contents);
+  assert.equal(existsSync(join(second, archivePath)), false);
+
+  git(remote, 'update-ref', 'refs/heads/dev', reviews[1].commit);
+  assert.equal(owner.refresh(true), null);
+  assert.equal(observer.refresh(true), null);
+  assert.equal(owner.storageStatus(issueId).status, 'published');
+  assert.equal(owner.view(issueId).claimed, false);
+  assert.equal(existsSync(join(first, closedPath)), false);
+  assert.equal(existsSync(join(second, closedPath)), false);
+  assert.equal(readFileSync(join(first, archivePath), 'utf8'), contents);
+  assert.equal(git(remote, 'ls-tree', 'dev', '.issues/archive/'), '');
+
+  assert.equal(owner.moveStorage(issueId, 'restore', contents).status, 'review');
+  assert.equal(readFileSync(join(first, archivePath), 'utf8'), contents);
+  assert.equal(existsSync(join(first, closedPath)), false);
+  git(remote, 'update-ref', 'refs/heads/dev', reviews[2].commit);
+  assert.equal(owner.refresh(true), null);
+  assert.equal(observer.refresh(true), null);
+  assert.equal(owner.storageStatus(issueId).status, 'published');
+  assert.equal(existsSync(join(first, archivePath)), false);
+  assert.equal(readFileSync(join(first, closedPath), 'utf8'), contents);
+  assert.equal(readFileSync(join(second, closedPath), 'utf8'), contents);
+  assert.equal(JSON.parse(git(remote, 'show', 'dev:.issues/issue-numbers.json')).issues[issueId], 1);
 });

@@ -1,3 +1,4 @@
+import { listStoredIssues, storedIssuePath } from './factory-ui/issue-report-storage.mjs';
 import { sharedIssueQueueEnabled } from './factory-ui/shared-issue-config.mjs';
 import { hasAssignmentScope } from './factory-assignment-scope.mjs';
 import { verificationStart } from './issue-verification-start.mjs';
@@ -19,7 +20,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { parse } from 'yaml';
 
 const active = new Set(['reserved', 'setup', 'running', 'blocked', 'completed']);
@@ -237,19 +238,21 @@ export function factory(project) {
     assert(data.version === 1 && Array.isArray(data.actions), 'Unsupported or damaged registry.');
     return data;
   };
-  const reports = () =>
-    readdirSync(queue)
-      .filter((name) => /^\d.*\.md$/.test(name))
-      .sort()
-      .map((name) => {
-        const content = readFileSync(join(queue, name), 'utf8');
-        return {
-          path: join(queue, name),
-          metadata: validateReport(content, name),
-          content,
-          report_sha256: digest(content),
-        };
-      });
+  const reports = (location = 'open', issueId) => {
+    const paths = issueId
+      ? [storedIssuePath(root, issueId, location)].filter(existsSync)
+      : listStoredIssues(root, location);
+    return paths.map((path) => {
+      assert(lstatSync(path).isFile(), 'Issue report must be a regular file.');
+      const content = readFileSync(path, 'utf8');
+      return {
+        path,
+        metadata: validateReport(content, basename(path)),
+        content,
+        report_sha256: digest(content),
+      };
+    });
+  };
   const recommendationFresh = (action, data) =>
     action.scope_basis
       ? action.scope_basis === scopeBasis(action, data)
@@ -346,11 +349,11 @@ export function factory(project) {
         instruction: 'Known claims restored; no chats were launched.',
       };
     },
-    inspect() {
+    inspect({ location = 'open', issueId } = {}) {
       const inspection = {
         project: root,
         snapshot: snapshot(),
-        reports: reports(),
+        reports: reports(location, issueId),
         progress: readProgress(root),
         registry: existsSync(ledger) ? readLedger() : null,
       };

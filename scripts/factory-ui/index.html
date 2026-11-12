@@ -413,7 +413,8 @@
         padding: 18px 28px;
         border-bottom: 1px solid #ddd;
         display: flex;
-        gap: 24px;
+        gap: 12px 24px;
+        flex-wrap: wrap;
         align-items: center;
       }
       a {
@@ -1811,7 +1812,8 @@
     <div id="connection-banner" role="alert" hidden></div>
     <header>
       <a href="#/queue"><b>Factory</b></a
-      ><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
+      ><a href="#/closed">Closed issues</a><a href="#/archive">Archive</a><a href="#/coordinator">Coordinator</a
+      ><small id="connection">Connecting…</small>
     </header>
     <div
       id="coordinator-strip"
@@ -1902,10 +1904,12 @@
         try {
           const previous = JSON.stringify(data);
           const issueId = issueRoute().id || '';
-          const [snapshot, runtime, conversation] = await Promise.all([
+          const storage = issueStorageLocation();
+          const [snapshot, runtime, conversation, stored] = await Promise.all([
             request('queue?issue=' + encodeURIComponent(issueId)),
             request('runtime'),
             issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
+            storage ? loadStoredIssues(storage) : null,
           ]);
           data = { ...snapshot, conversation };
           progressUnavailable = false;
@@ -1917,7 +1921,8 @@
           if (runtime.server) serverControlUI.show(runtime.server, request);
           $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
           updateLiveOutput();
-          refreshPending ||= previous !== JSON.stringify(data);
+          issueStorageReadOnly = runtime.mode === 'preview';
+          refreshPending ||= previous !== JSON.stringify(data) || stored;
           if (
             refreshPending &&
             !busy &&
@@ -1949,6 +1954,175 @@
           refreshing = false;
         }
       }
+      const issueStorage = {
+        closed: { selected: new Set(), query: '' },
+        archive: { selected: new Set(), query: '' },
+      };
+      let issueStorageReadOnly = false;
+
+      function issueStorageLocation() {
+        const path = location.hash.split('?')[0];
+        return path === '#/closed' ? 'closed' : path === '#/archive' ? 'archive' : null;
+      }
+
+      async function loadStoredIssues(storage) {
+        const view = issueStorage[storage];
+        const previous = JSON.stringify([view.issues, view.error]);
+        const load = (view.load = Symbol());
+        try {
+          const result = await request('issue-storage?location=' + storage);
+          if (view.load !== load) return false;
+          view.issues = result.issues;
+          view.error = '';
+          const available = new Set(view.issues.filter(canMoveStoredIssue).map((entry) => entry.id));
+          for (const id of view.selected) if (!available.has(id)) view.selected.delete(id);
+        } catch (error) {
+          if (view.load !== load) return false;
+          view.error = error.message;
+        }
+        return previous !== JSON.stringify([view.issues, view.error]);
+      }
+
+      function canMoveStoredIssue(entry) {
+        return !entry.pending || Boolean(entry.error);
+      }
+
+      function storedIssueLabel(entry) {
+        const number = entry.issueNumber == null ? '' : `#${entry.issueNumber} · `;
+        return number + (entry.title || 'Untitled issue');
+      }
+
+      function matchingStoredIssues(view) {
+        const query = view.query.trim().toLowerCase();
+        return (view.issues || []).filter((entry) =>
+          [storedIssueLabel(entry), entry.id].some((value) => value.toLowerCase().includes(query))
+        );
+      }
+
+      function storedIssueStatus(entry) {
+        if (!entry.pending && !entry.error) return '';
+        const url = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(entry.prUrl || '') ? entry.prUrl : '';
+        return `<p class="muted">${entry.error ? esc(entry.error) : 'Awaiting human review.'}${url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Review report PR</a>` : ''}</p>`;
+      }
+
+      function storedIssueRow(storage, view, entry) {
+        const id = esc(entry.id);
+        const title = esc(storedIssueLabel(entry));
+        const disabled = issueStorageReadOnly || view.saving || !canMoveStoredIssue(entry);
+        const open = `<button type="button" data-storage-report="${id}" aria-label="Open saved report for ${title}">Open saved report</button>`;
+        const action = storage === 'closed' ? 'Archive' : 'Restore to closed';
+        const heading = storage === 'closed' ? `<a href="#/issue/${encodeURIComponent(entry.id)}">${title}</a>` : title;
+        return `<tr><td><input type="checkbox" data-storage-select="${id}" aria-label="Select ${title}" ${view.selected.has(entry.id) ? 'checked' : ''} ${disabled ? 'disabled' : ''}></td><td>${heading}${storedIssueStatus(entry)}</td><td>${entry.updated ? esc(recordedDate(entry.updated)) : '—'}</td><td>${open} <button type="button" data-storage-move="${id}" aria-label="${action} ${title}" ${disabled ? 'disabled' : ''}>${action}</button></td></tr>`;
+      }
+
+      function storedIssuesPage(storage) {
+        const view = issueStorage[storage];
+        const title = storage === 'archive' ? 'Archive' : 'Closed issues';
+        return `<h1>${title}</h1><div class="toolbar"><input id="stored-issue-search" type="search" aria-label="Search ${title.toLowerCase()}" placeholder="Search by title or issue number" value="${esc(view.query)}"><button type="button" id="stored-issue-move" disabled></button><small id="stored-issue-count" class="muted"></small></div><p role="status">${esc(view.feedback || '')}</p><p role="alert">${esc(view.error || '')}</p><div class="tablewrap"><table><thead><tr><th><input type="checkbox" id="stored-issue-select-all" aria-label="Select all visible issues" disabled></th><th scope="col">Issue</th><th scope="col">Updated</th><th scope="col">Actions</th></tr></thead><tbody id="stored-issue-rows"></tbody></table></div>`;
+      }
+
+      function updateStoredIssueSelection(storage, visible) {
+        const view = issueStorage[storage];
+        const eligible = visible.filter(canMoveStoredIssue);
+        const checked = eligible.filter((entry) => view.selected.has(entry.id)).length;
+        const selectAll = $('stored-issue-select-all');
+        selectAll.checked = checked > 0 && checked === eligible.length;
+        selectAll.indeterminate = checked > 0 && checked < eligible.length;
+        selectAll.disabled = issueStorageReadOnly || view.saving || !eligible.length;
+        const move = $('stored-issue-move');
+        const action = storage === 'closed' ? 'Archive selected' : 'Restore selected to closed';
+        move.textContent = view.saving ? 'Saving…' : view.selected.size ? `${action} (${view.selected.size})` : action;
+        move.disabled = issueStorageReadOnly || view.saving || !view.selected.size;
+      }
+
+      function renderStoredIssueRows(storage) {
+        const view = issueStorage[storage];
+        const visible = matchingStoredIssues(view);
+        const total = view.issues?.length;
+        $('stored-issue-count').textContent =
+          total === undefined
+            ? ''
+            : visible.length === total
+              ? `${total} issues`
+              : `${visible.length} of ${total} issues`;
+        $('stored-issue-rows').innerHTML = visible.length
+          ? visible.map((entry) => storedIssueRow(storage, view, entry)).join('')
+          : `<tr><td colspan="4">${view.issues ? 'No matching issues.' : view.error ? 'Could not load issues.' : 'Loading issues…'}</td></tr>`;
+        updateStoredIssueSelection(storage, visible);
+        $('stored-issue-select-all').onchange = (event) => {
+          for (const entry of visible.filter(canMoveStoredIssue)) {
+            if (event.target.checked) view.selected.add(entry.id);
+            else view.selected.delete(entry.id);
+          }
+          renderStoredIssueRows(storage);
+        };
+        for (const field of document.querySelectorAll('[data-storage-select]')) {
+          field.onchange = () => {
+            if (field.checked) view.selected.add(field.dataset.storageSelect);
+            else view.selected.delete(field.dataset.storageSelect);
+            updateStoredIssueSelection(storage, visible);
+          };
+        }
+        for (const button of document.querySelectorAll('[data-storage-report]')) {
+          button.onclick = () =>
+            openSavedReport(button.dataset.storageReport, storage).catch(
+              (error) => ($('error').textContent = error.message)
+            );
+        }
+        for (const button of document.querySelectorAll('[data-storage-move]')) {
+          button.onclick = () => moveStoredIssues(storage, [button.dataset.storageMove]);
+        }
+      }
+
+      function storageFeedback(storage, results) {
+        const moved = results.filter((result) => ['archived', 'restored'].includes(result.status)).length;
+        const pending = results.filter((result) => result.status === 'review').length;
+        const action = storage === 'closed' ? 'Archived' : 'Restored';
+        const failures = results
+          .filter((result) => result.error)
+          .map((result) => {
+            const entry = issueStorage[storage].issues?.find((item) => item.id === result.id);
+            return `${entry ? storedIssueLabel(entry) : result.id} — ${result.error}`;
+          });
+        return [
+          moved ? `${action} ${moved} ${moved === 1 ? 'issue' : 'issues'}.` : '',
+          pending ? `${pending} awaiting review.` : '',
+          ...failures,
+        ]
+          .filter(Boolean)
+          .join(' ');
+      }
+
+      async function moveStoredIssues(storage, issueIds) {
+        const view = issueStorage[storage];
+        if (issueStorageReadOnly || view.saving || !issueIds.length) return;
+        view.saving = true;
+        renderStoredIssueRows(storage);
+        await act(async () => {
+          try {
+            const result = await request('issue-storage-move', {
+              action: storage === 'closed' ? 'archive' : 'restore',
+              issueIds,
+            });
+            view.feedback = storageFeedback(storage, result.results);
+            for (const item of result.results) if (!item.error) view.selected.delete(item.id);
+            await loadStoredIssues(storage);
+          } finally {
+            view.saving = false;
+          }
+        });
+      }
+
+      function bindStoredIssues(storage) {
+        renderStoredIssueRows(storage);
+        const view = issueStorage[storage];
+        $('stored-issue-search').oninput = (event) => {
+          view.query = event.target.value;
+          renderStoredIssueRows(storage);
+        };
+        $('stored-issue-move').onclick = () => moveStoredIssues(storage, [...view.selected]);
+      }
+
       function showRuntime(runtime) {
         const sourceChangeBanner = $('source-change-banner');
         if (sourceChangedAtPageLoad === null) sourceChangedAtPageLoad = Boolean(runtime.sourceChanged);
@@ -2919,9 +3093,11 @@
           .join(' ');
         return `${links ? `<div class="toolbar">${links}</div>` : ''}<details><summary>Task details and earlier reviews</summary><p class="muted">These are saved records. Earlier instructions may describe work that has since finished.</p>${content}</details>`;
       }
-      async function openSavedReport(id) {
+      async function openSavedReport(id, storage) {
         $('error').textContent = '';
-        const report = await request('issue-report?issue=' + encodeURIComponent(id));
+        const path = storage ? 'issue-storage-report' : 'issue-report';
+        const location = storage ? '&location=' + storage : '';
+        const report = await request(path + '?issue=' + encodeURIComponent(id) + location);
         $('plan-title').textContent = 'Saved issue report';
         $('plan-path').textContent = report.path;
         $('plan-content').textContent = report.content;
@@ -3842,7 +4018,7 @@
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
         const verifyAgain = i.strategy?.verifyAgain;
         const verificationRequest = verificationRequests.get(i.id);
-        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title">${i.issueNumber == null ? '' : `<span class="muted issue-number">#${esc(i.issueNumber)}</span>`}<h1>${esc(i.title || 'Untitled issue')}</h1><span class="badge">${esc(issueStatus)}</span></div>${issueGitLabel(i)}${sharedQueueStatus(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>${verifyAgain ? `<button data-strategy-verify-again="${esc(i.id)}" data-verify-run="${esc(verifyAgain.runId)}" data-verify-head="${esc(verifyAgain.head)}" data-verify-basis="${esc(verifyAgain.basis)}" ${verifyAgain.busy ? 'disabled' : ''}>${verifyAgain.busy ? 'Running checks…' : `Verify this commit again (${esc(verifyAgain.head.slice(0, 7))})`}</button>${verificationRequest ? `<p role="${verificationRequest.error ? 'alert' : 'status'}">${esc(verificationRequest.message)}</p>` : ''}` : ''}`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title">${i.issueNumber == null ? '' : `<span class="muted issue-number">#${esc(i.issueNumber)}</span>`}<h1>${esc(i.title || 'Untitled issue')}</h1><span class="badge">${esc(issueStatus)}</span></div>${issueGitLabel(i)}${sharedQueueStatus(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + `<div class="toolbar"><a href="#/closed">Closed issues</a><button data-issue-decision="reopen" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}">Reopen issue</button></div>` + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>${verifyAgain ? `<button data-strategy-verify-again="${esc(i.id)}" data-verify-run="${esc(verifyAgain.runId)}" data-verify-head="${esc(verifyAgain.head)}" data-verify-basis="${esc(verifyAgain.basis)}" ${verifyAgain.busy ? 'disabled' : ''}>${verifyAgain.busy ? 'Running checks…' : `Verify this commit again (${esc(verifyAgain.head.slice(0, 7))})`}</button>${verificationRequest ? `<p role="${verificationRequest.error ? 'alert' : 'status'}">${esc(verificationRequest.message)}</p>` : ''}` : ''}`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
           ['progress', 'Progress'],
           ['output', 'Issue output'],
           ['issue', 'Issue thread'],
@@ -4052,6 +4228,13 @@
           return;
         }
         coordinatorUI.update(data);
+        const storage = issueStorageLocation();
+        if (storage) {
+          issueChatUI.mount(null, data, request, refresh);
+          $('app').innerHTML = storedIssuesPage(storage);
+          bindStoredIssues(storage);
+          return;
+        }
         const wideSidebar = window.matchMedia?.('(min-width: 1000px)').matches || false;
         $('app').innerHTML = wideSidebar
           ? `<div class="issue-workspace">${issueSidebar(route.id)}<section class="issue-workspace-content">${route.id ? issue(route.id, false) : '<p class="issue-empty-selection">Please select an issue.</p>'}</section></div>`

@@ -144,7 +144,7 @@ export class FactoryUI {
     this.sharedIssues = createSharedIssueQueue(this, options.sharedIssues);
     installWorkerHealth(this);
   }
-  snapshot(owner = null, { includeCoordinatorDiscussion = true } = {}) {
+  snapshot(owner = null, { includeCoordinatorDiscussion = true, selectedIssue = null } = {}) {
     if (!this.serverLock) this.store.reload();
     let sharedQueueWarning;
     if (this.sharedIssues) {
@@ -156,6 +156,10 @@ export class FactoryUI {
       }
     }
     const queue = readQueue(this.root);
+    if (selectedIssue && /^[\w-]+$/.test(selectedIssue) && !queue.issues.some((issue) => issue.id === selectedIssue)) {
+      const closed = readQueue(this.root, { location: 'closed', issueId: selectedIssue });
+      queue.issues.push(...closed.issues);
+    }
     const runs = this.store.list(this.permissionRequests());
     const humanInputs = queueHumanInputReader(queue);
     return {

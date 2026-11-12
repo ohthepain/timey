@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createSharedIssuePublication } from './factory-ui/shared-issue-publication.mjs';
+import { syncSharedIssueFiles } from './factory-ui/shared-issue-sync.mjs';
 
 const issueId = '20261111T165430736-ca3555165563420b';
 const reportPath = `.issues/${issueId}.md`;
@@ -182,4 +183,122 @@ test('an amended checkpoint requires human approval of the merged revision', (t)
   details.files.pop();
   assert.equal(publication.confirmMerged(issueId).status, 'landed');
   assert.equal(publication.inspect(issueId).mergeCommit, amended);
+});
+
+test('reviewed moves and archive removals preserve the canonical report and reserved number', (t) => {
+  const { root, remote } = fixture(t);
+  const closedPath = `.issues/closed/${issueId}.md`;
+  let details;
+  const publication = createSharedIssuePublication({
+    root,
+    ...config,
+    openPullRequest: () => ({ number: 1, url: 'https://example.test/queue/1' }),
+    inspectPullRequest: () => details,
+  });
+  const report = '# Report\n';
+  const create = publication.publish({ issueId, base: null, report, reason: 'created' });
+  git(remote, 'update-ref', 'refs/heads/dev', create.commit);
+  const open = publication.readTarget(issueId);
+  assert.equal(open.location, 'open');
+  assert.throws(
+    () => publication.publish({ issueId, base: open, report: null, location: null, reason: 'archive' }),
+    /Only a shared closed report/
+  );
+
+  const close = publication.publish({ issueId, base: open, report, location: 'closed', reason: 'closed' });
+  assert.deepEqual(git(root, 'diff', '--no-renames', '--name-only', create.commit, close.commit).split('\n'), [
+    reportPath,
+    closedPath,
+  ]);
+  assert.equal(publication.inspect(issueId).status, 'pending');
+  git(remote, 'update-ref', 'refs/heads/dev', close.commit);
+  assert.equal(publication.readTarget(issueId).location, 'closed');
+
+  const repo = { full_name: config.repository };
+  const approvals = (record, files) => ({
+    pr: {
+      number: record.number,
+      merged: true,
+      merge_commit_sha: record.commit,
+      head: { sha: record.commit, ref: record.branch, repo },
+      base: { ref: config.target, repo },
+    },
+    files,
+    reviews: [{ user: { id: 3, type: 'User' }, state: 'APPROVED', commit_id: record.commit }],
+  });
+  details = approvals(close, [{ filename: closedPath, previous_filename: reportPath, status: 'renamed' }]);
+  assert.equal(publication.confirmMerged(issueId).status, 'landed');
+
+  const base = publication.readTarget(issueId);
+  const archive = publication.publish({ issueId, base, report: null, location: null, reason: 'archive' });
+  assert.equal(git(root, 'diff', '--name-only', close.commit, archive.commit), closedPath);
+  assert.equal(publication.readTarget(issueId).report, report);
+  assert.equal(publication.inspect(issueId).status, 'pending');
+  git(remote, 'update-ref', 'refs/heads/dev', archive.commit);
+  details = approvals(archive, [{ filename: closedPath, status: 'removed' }]);
+  assert.equal(publication.confirmMerged(issueId).status, 'landed');
+  const absent = publication.readTarget(issueId);
+  assert.equal(absent.location, null);
+  assert.equal(absent.numbers, base.numbers);
+
+  const restore = publication.publish({ issueId, base: absent, report, location: 'closed', reason: 'restored' });
+  assert.equal(restore.issueNumber, create.issueNumber);
+  assert.equal(git(root, 'diff', '--name-only', archive.commit, restore.commit), closedPath);
+});
+
+test('sync mirrors a reviewed move only when both local paths are safe', (t) => {
+  const { root, remote } = fixture(t);
+  const publication = createSharedIssuePublication({ root, ...config, openPullRequest: () => ({ number: 1 }) });
+  const report = '# Report\n';
+  const closedPath = `.issues/closed/${issueId}.md`;
+  const archiveDir = join(root, '.issues/archive');
+  mkdirSync(archiveDir, { recursive: true });
+  const archiveCopy = join(archiveDir, issueId + '.md');
+  writeFileSync(archiveCopy, '# Local archive\n');
+  const state = join(root, '.issues', 'sync.json');
+  const create = publication.publish({ issueId, base: null, report, reason: 'created' });
+  git(remote, 'update-ref', 'refs/heads/dev', create.commit);
+  assert.deepEqual(
+    syncSharedIssueFiles(root, config, state, () => false),
+    []
+  );
+  const close = publication.publish({
+    issueId,
+    base: publication.readTarget(issueId),
+    report,
+    location: 'closed',
+    reason: 'closed',
+  });
+  git(remote, 'update-ref', 'refs/heads/dev', close.commit);
+  writeFileSync(join(root, reportPath), '# Local edit\n');
+  assert.equal(syncSharedIssueFiles(root, config, state, () => false).length, 1);
+  assert.equal(existsSync(join(root, closedPath)), false);
+  assert.equal(readFileSync(join(root, reportPath), 'utf8'), '# Local edit\n');
+  writeFileSync(join(root, reportPath), report);
+  assert.deepEqual(
+    syncSharedIssueFiles(root, config, state, (id) => id === issueId),
+    []
+  );
+  assert.equal(existsSync(join(root, closedPath)), false);
+  assert.deepEqual(
+    syncSharedIssueFiles(root, config, state, () => false),
+    []
+  );
+  assert.equal(existsSync(join(root, reportPath)), false);
+  assert.equal(readFileSync(join(root, closedPath), 'utf8'), report);
+
+  const archive = publication.publish({
+    issueId,
+    base: publication.readTarget(issueId),
+    report: null,
+    location: null,
+    reason: 'archive',
+  });
+  git(remote, 'update-ref', 'refs/heads/dev', archive.commit);
+  assert.deepEqual(
+    syncSharedIssueFiles(root, config, state, () => false),
+    []
+  );
+  assert.equal(existsSync(join(root, closedPath)), false);
+  assert.equal(readFileSync(archiveCopy, 'utf8'), '# Local archive\n');
 });

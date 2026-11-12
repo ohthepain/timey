@@ -1,3 +1,4 @@
+import { moveStoredIssue } from './factory-ui/issue-report-storage.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -31,6 +32,7 @@ function markClosed(root, issueId) {
   const report = join(root, '.issues', `${issueId}.md`);
   const content = readFileSync(report, 'utf8').replace('state: verify', 'state: closed');
   writeFileSync(report, content);
+  moveStoredIssue(root, issueId, 'open', 'closed');
 }
 
 test('Delete worktree removes the issue checkout and local branch while the issue is open', async (t) => {

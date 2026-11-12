@@ -1,3 +1,4 @@
+import { storedIssuePath } from './issue-report-storage.mjs';
 import { readModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { clarificationLifecycle } from './clarify-policy.mjs';
 import { startCaptureGrilling } from './capture-grilling.mjs';
@@ -219,7 +220,11 @@ function allocateId(root, at, ids, random) {
     const suffix = random();
     requireThat(/^[a-f0-9]{16}$/.test(suffix), 'Invalid capture identifier source.');
     const id = at.replace(/[-:.Z]/g, '') + '-' + suffix;
-    if (ids.has(id) || existsSync(join(root, '.issues', id + '.md'))) continue;
+    if (
+      ids.has(id) ||
+      ['open', 'closed', 'archive'].some((location) => existsSync(storedIssuePath(root, id, location)))
+    )
+      continue;
     ids.add(id);
     return id;
   }

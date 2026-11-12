@@ -77,8 +77,9 @@ for (const format of ['delivery', 'stage-history', 'legacy-prose']) {
       mutate(f);
       assert.equal(f.issue().state, 'final', 'mutation itself never accepts');
       f.service.decideIssue(f.input.issueId, 'final', 'close', basis);
-      const accepted = f.issue().accepted_result;
-      assert.equal(f.issue().state, 'closed');
+      const closed = readQueue(f.queue.root, { location: 'closed', issueId: f.input.issueId }).issues[0];
+      const accepted = closed.accepted_result;
+      assert.equal(closed.state, 'closed');
       assert.equal(accepted.revision, f.input.revision);
       assert.equal(accepted.verification_rerun, false);
       assert.equal(accepted.observed_project_revision, f.queue.git('rev-parse', 'HEAD'));

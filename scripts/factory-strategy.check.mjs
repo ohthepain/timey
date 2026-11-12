@@ -263,7 +263,10 @@ test('Continue recognizes a manually merged, unchanged checked PR after pending 
   const queue = readQueue(f.queue.root);
   const closed = f.service.decideIssue(f.issue.id, f.issue.state, 'close', decisionBasis(queue, queue.issues[0]));
   assert.equal(closed.state, 'closed');
-  assert.equal(readQueue(f.queue.root).issues[0].accepted_result.revision, prHead);
+  assert.equal(
+    readQueue(f.queue.root, { location: 'closed', issueId: f.issue.id }).issues[0].accepted_result.revision,
+    prHead
+  );
   assert.deepEqual(
     f.counts(),
     { calls: 1, merges: 0, checks: 1 },
@@ -1186,7 +1189,7 @@ test('Fixed closure shows the saved strategy failure while obsolete closure canc
   assert.deepEqual(f.counts(), calls, 'Closure must not run checks, AI work or merges.');
   const closed = f.service.decideIssue(issue.id, issue.state, 'close', basis, 'Superseded by other work.', 'obsolete');
   assert.equal(closed.state, 'closed');
-  const result = readQueue(f.queue.root).issues[0];
+  const result = readQueue(f.queue.root, { location: 'closed', issueId: issue.id }).issues[0];
   assert.equal(result.closure.reason, 'obsolete');
   assert.equal(result.accepted_result, undefined);
   assert.notEqual(JSON.stringify(record), saved);

@@ -10,9 +10,57 @@ const numbersPath = '.issues/issue-numbers.json';
 const issueIdPattern = /^\d{8}T\d{6}(?:\d{3})?Z?-[a-f0-9]{4,32}$/;
 const objectIdPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
-function issuePath(issueId) {
+function issuePath(issueId, location = 'open') {
   requireThat(typeof issueId === 'string' && issueIdPattern.test(issueId), 'Use a full issue ID for publication.');
-  return `.issues/${issueId}.md`;
+  return `.issues/${location === 'closed' ? 'closed/' : ''}${issueId}.md`;
+}
+
+function sameReport(left, right) {
+  return left.location === right.location && left.report === right.report;
+}
+
+function numberFor(numbers, issueId) {
+  return numbers && JSON.parse(numbers).issues?.[issueId];
+}
+
+function requestedReport(report, location, role = 'checkpoint') {
+  const present = ['open', 'closed'].includes(location) && typeof report === 'string' && report.length > 0;
+  requireThat(
+    present || (report === null && location === null),
+    `A queue ${role} needs a report at a valid location or an explicit archive removal.`
+  );
+  return { report, location };
+}
+
+function checkpointPaths(issueId, from, to) {
+  return [
+    ...[from, to].filter(Boolean).map((location) => issuePath(issueId, location)),
+    ...(to === null ? [] : [numbersPath]),
+  ];
+}
+
+function verifyReviewedFiles(record, location, files) {
+  const from = record.baseLocation === undefined ? 'open' : record.baseLocation;
+  const allowed = checkpointPaths(record.issueId, from, location);
+  const destination = issuePath(record.issueId, location || from);
+  const changedReport = files.some(
+    (file) => file.filename === destination && (location !== null || file.status === 'removed')
+  );
+  requireThat(
+    changedReport && files.every((file) => reviewedPath(file, allowed, destination)),
+    'The merged queue update PR includes unexpected files.'
+  );
+}
+
+function reviewedPath(file, allowed, destination) {
+  if (!allowed.includes(file.filename)) return false;
+  if (!file.previous_filename) return true;
+  return (
+    file.filename === destination &&
+    file.previous_filename !== file.filename &&
+    file.previous_filename !== numbersPath &&
+    allowed.includes(file.previous_filename)
+  );
 }
 
 export function createSharedIssuePublication({
@@ -91,42 +139,63 @@ export function createSharedIssuePublication({
     return command('git', ['show', `${head}:${path}`]);
   }
 
+  function readReport(head, issueId) {
+    const open = readPath(head, issuePath(issueId));
+    const closed = readPath(head, issuePath(issueId, 'closed'));
+    requireThat(open === null || closed === null, 'The target contains both open and closed copies of this report.');
+    if (open !== null) return { report: open, location: 'open' };
+    if (closed !== null) return { report: closed, location: 'closed' };
+    return { report: null, location: null };
+  }
+
   function readTarget(issueId) {
-    const reportPath = issuePath(issueId);
+    issuePath(issueId);
     assertRemote();
     const head = remoteHead(targetRef);
     requireThat(head, 'The shared issue target branch could not be found.');
     git('fetch', '--no-tags', '--no-write-fetch-head', remote, head);
-    return { head, report: readPath(head, reportPath), numbers: readPath(head, numbersPath) };
+    return { head, ...readReport(head, issueId), numbers: readPath(head, numbersPath) };
   }
 
-  function prepare(issueId, report, live) {
+  function prepare(issueId, candidate, live) {
     const temporary = mkdtempSync(join(tmpdir(), 'timey-queue-'));
     try {
       mkdirSync(join(temporary, '.issues'));
       if (live.numbers !== null) writeFileSync(join(temporary, numbersPath), live.numbers);
-      const issueNumber = ensureIssueNumbers(temporary, [issueId])[issueId];
-      const numbers = readFileSync(join(temporary, numbersPath), 'utf8');
+      const issueNumber =
+        candidate.location === null
+          ? numberFor(live.numbers, issueId)
+          : ensureIssueNumbers(temporary, [issueId])[issueId];
+      requireThat(Number.isSafeInteger(issueNumber), 'The archived report needs an existing display number.');
       const index = { GIT_INDEX_FILE: join(temporary, 'index') };
       const indexGit = (...args) => command('git', args, { env: index }).trim();
       indexGit('read-tree', live.head);
-      for (const [path, content] of [
-        [issuePath(issueId), report],
-        [numbersPath, numbers],
-      ]) {
-        const blob = command('git', ['hash-object', '-w', '--stdin'], { input: content }).trim();
-        indexGit('update-index', '--add', '--cacheinfo', `100644,${blob},${path}`);
-      }
+      updateIndex(indexGit, issueId, candidate, live, temporary);
       const tree = indexGit('write-tree');
-      const changed = git('diff-tree', '--no-commit-id', '--name-only', '-r', live.head, tree).split('\n');
+      const changed = git('diff-tree', '--no-renames', '--no-commit-id', '--name-only', '-r', live.head, tree).split(
+        '\n'
+      );
       requireThat(
-        changed.every((path) => path === issuePath(issueId) || path === numbersPath),
+        changed.every((path) => checkpointPaths(issueId, live.location, candidate.location).includes(path)),
         'Queue checkpoint includes unexpected files.'
       );
       const commit = git('commit-tree', tree, '-p', live.head, '-m', `Update issue report ${issueId}`);
-      return { commit, issueNumber };
+      return { commit, issueNumber, location: candidate.location, baseLocation: live.location };
     } finally {
       rmSync(temporary, { recursive: true, force: true });
+    }
+  }
+
+  function updateIndex(indexGit, issueId, candidate, live, temporary) {
+    if (live.location && live.location !== candidate.location)
+      indexGit('update-index', '--force-remove', '--', issuePath(issueId, live.location));
+    if (candidate.location === null) return;
+    for (const [path, content] of [
+      [issuePath(issueId, candidate.location), candidate.report],
+      [numbersPath, readFileSync(join(temporary, numbersPath), 'utf8')],
+    ]) {
+      const blob = command('git', ['hash-object', '-w', '--stdin'], { input: content }).trim();
+      indexGit('update-index', '--add', '--cacheinfo', `100644,${blob},${path}`);
     }
   }
 
@@ -219,14 +288,17 @@ export function createSharedIssuePublication({
 
   function inspect(issueId) {
     const record = readPending(issueId);
-    if (!record) return null;
-    const live = readTarget(issueId);
+    return record ? inspectTarget(record, readTarget(issueId)) : null;
+  }
+
+  function inspectTarget(record, live) {
     if (record.mergeCommit) {
       git('merge-base', '--is-ancestor', record.mergeCommit, live.head);
       return { ...record, status: 'landed' };
     }
-    const issueNumber = live.numbers && JSON.parse(live.numbers).issues?.[issueId];
-    const landed = issueNumber === record.issueNumber && live.report === readPath(record.commit, issuePath(issueId));
+    const landed =
+      numberFor(live.numbers, record.issueId) === record.issueNumber &&
+      sameReport(live, readReport(record.commit, record.issueId));
     return { ...record, status: landed ? 'landed' : 'pending' };
   }
 
@@ -267,17 +339,14 @@ export function createSharedIssuePublication({
         [...latestReviews.values()].some((review) => review.state === 'APPROVED' && review.commit_id === pr.head.sha),
         'The final queue update PR revision has no human approval.'
       );
-      const allowedPaths = [issuePath(issueId), numbersPath];
-      requireThat(
-        files.some((file) => file.filename === issuePath(issueId)) &&
-          files.every((file) => allowedPaths.includes(file.filename) && !file.previous_filename),
-        'The merged queue update PR includes unexpected files.'
-      );
+      const proposed = readReport(record.commit, issueId);
+      verifyReviewedFiles(record, proposed.location, files);
       git('merge-base', '--is-ancestor', pr.merge_commit_sha, live.head);
-      const issueNumber = live.numbers && JSON.parse(live.numbers).issues?.[issueId];
+      const merged = readReport(pr.merge_commit_sha, issueId);
+      const issueNumber = numberFor(live.numbers, issueId);
       requireThat(
-        live.report !== null && Number.isSafeInteger(issueNumber),
-        'The merged report is absent from the target.'
+        proposed.location === merged.location && Number.isSafeInteger(issueNumber),
+        'The merged report location or display number differs from the approved queue operation.'
       );
       const confirmed = { ...record, status: 'landed', issueNumber, mergeCommit: pr.merge_commit_sha };
       writeJson(recordPath, confirmed);
@@ -285,44 +354,18 @@ export function createSharedIssuePublication({
     });
   }
 
-  function publish({ issueId, base, report, reason }, refresh = false) {
-    requireThat(typeof report === 'string' && report.length > 0, 'A queue checkpoint needs an issue report.');
-    const expectedReport = typeof base === 'object' && base !== null ? base.report : base;
-    requireThat(
-      expectedReport === null || typeof expectedReport === 'string',
-      'A queue checkpoint needs the expected target report.'
-    );
+  function publish({ issueId, base, report, reason, location = 'open' }, refresh = false) {
+    const candidate = requestedReport(report, location);
+    const expected =
+      typeof base === 'object' && base !== null
+        ? { report: base.report, location: base.location ?? (base.report === null ? null : 'open') }
+        : { report: base, location: base === null ? null : 'open' };
+    requestedReport(expected.report, expected.location, 'base');
     return withPublicationLock(issueId, (path) => {
-      let record = inspect(issueId);
-      if (record?.status === 'landed' && readPath(record.mergeCommit || record.commit, issuePath(issueId)) === report) {
-        return record;
-      }
-      if (!record || record.status === 'landed') {
-        const live = readTarget(issueId);
-        requireThat(live.report === expectedReport, 'The shared report changed. Reconcile it before publishing.');
-        if (
-          live.report === report &&
-          live.numbers &&
-          Number.isSafeInteger(JSON.parse(live.numbers).issues?.[issueId])
-        ) {
-          return { issueId, status: 'landed', issueNumber: JSON.parse(live.numbers).issues[issueId] };
-        }
-        record = {
-          ...prepare(issueId, report, live),
-          issueId,
-          reason,
-          remote,
-          target,
-          repository,
-          branch: `queue-updates/${issueId}-${randomUUID()}`,
-        };
-        writeJson(path, record);
-      }
-      requireThat(
-        readPath(record.commit, issuePath(issueId)) === report,
-        'A different report checkpoint is already pending.'
-      );
-      record = pushCheckpoint(record, expectedReport, path, refresh);
+      const live = readTarget(issueId);
+      let record = publicationRecord(issueId, candidate, expected, reason, live, path);
+      if (record.status === 'landed') return record;
+      record = pushCheckpoint(record, expected, path, refresh);
       const result = { ...record, ...ensurePullRequest(record), status: 'pending' };
       delete result.previousCommit;
       writeJson(path, result);
@@ -330,7 +373,45 @@ export function createSharedIssuePublication({
     });
   }
 
-  function pushCheckpoint(record, expectedReport, path, refresh) {
+  function publicationRecord(issueId, candidate, expected, reason, live, path) {
+    const previous = readPending(issueId);
+    const status = previous && inspectTarget(previous, live);
+    if (status?.status === 'pending') {
+      requireThat(
+        sameReport(readReport(previous.commit, issueId), candidate) &&
+          sameReport(readReport(git('rev-parse', `${previous.commit}^`), issueId), expected),
+        'A different report checkpoint is already pending.'
+      );
+      return previous;
+    }
+    if (
+      status &&
+      sameReport(live, candidate) &&
+      sameReport(readReport(status.mergeCommit || status.commit, issueId), candidate)
+    )
+      return status;
+    requireThat(sameReport(live, expected), 'The shared report changed. Reconcile it before publishing.');
+    const number = numberFor(live.numbers, issueId);
+    if (sameReport(live, candidate) && Number.isSafeInteger(number))
+      return { issueId, status: 'landed', issueNumber: number };
+    requireThat(
+      candidate.location !== null || live.location === 'closed',
+      'Only a shared closed report can be removed for archive.'
+    );
+    const record = {
+      ...prepare(issueId, candidate, live),
+      issueId,
+      reason,
+      remote,
+      target,
+      repository,
+      branch: `queue-updates/${issueId}-${randomUUID()}`,
+    };
+    writeJson(path, record);
+    return record;
+  }
+
+  function pushCheckpoint(record, expected, path, refresh) {
     const ref = `refs/heads/${record.branch}`;
     assertRemote();
     const existing = remoteHead(ref);
@@ -343,14 +424,14 @@ export function createSharedIssuePublication({
       const live = readTarget(record.issueId);
       const priorBase = git('rev-parse', `${record.commit}^`);
       requireThat(
-        live.report === expectedReport && live.report === readPath(priorBase, issuePath(record.issueId)),
+        sameReport(live, expected) && sameReport(live, readReport(priorBase, record.issueId)),
         'The shared report changed. Reconcile the report contents before refreshing its checkpoint.'
       );
       if (live.head !== priorBase) {
         expectedCommit = existing;
         record = {
           ...record,
-          ...prepare(record.issueId, readPath(record.commit, issuePath(record.issueId)), live),
+          ...prepare(record.issueId, readReport(record.commit, record.issueId), live),
           previousCommit: expectedCommit,
         };
         writeJson(path, record);

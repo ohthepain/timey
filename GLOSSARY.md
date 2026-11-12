@@ -192,3 +192,7 @@ intent. Publication, merge, successful checks and strategy completion do not imp
 **Issue closure**:
 The recorded decision to end work on an issue, either with an accepted fix or a
 stated reason for closing without a fix. It is independent of historical lifecycle stages.
+
+**Issue archive**:
+A locally retained collection of closed issue reports. Archiving removes an issue
+from the Closed issues view and preserves its identity and closure.

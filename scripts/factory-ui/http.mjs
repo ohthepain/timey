@@ -1,3 +1,5 @@
+import { migrateClosedIssues } from './issue-report-storage.mjs';
+import { listIssueStorage, moveIssueStorage, readIssueStorageReport, storedIssueId } from './issue-storage-actions.mjs';
 import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
@@ -146,6 +148,11 @@ async function mutation(service, path, value, owner) {
       requireThat(value.confirmedStopped === true, 'Confirm the previous runner has stopped.');
       return service.sharedIssues?.recover(value.issueId);
     },
+    '/api/issue-storage-migrate': () => {
+      service.ownServer();
+      return { moved: migrateClosedIssues(service.root).length };
+    },
+    '/api/issue-storage-move': () => moveIssueStorage(service, value),
     '/api/issue-capture': () => service.captures.save(value),
     '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
     '/api/verification-retry': () => service.retryVerification(value),
@@ -250,11 +257,17 @@ function read(service, request, response, owner) {
     '/api/issue-chat-skills': () => service.issueChats.skills(issue(url.searchParams.get('issue'))),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
+    '/api/issue-storage': () => listIssueStorage(service, url.searchParams.get('location')),
+    '/api/issue-storage-report': () =>
+      readIssueStorageReport(service.root, issue(url.searchParams.get('issue')), url.searchParams.get('location')),
     '/api/issue-report': () => service.readSavedReport(issue(url.searchParams.get('issue'))),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(issue(url.searchParams.get('issue')), url.searchParams.get('path')),
     '/api/queue': () =>
-      queueResponse(service.snapshot(owner, { includeCoordinatorDiscussion: !selectedIssue }), selectedIssue),
+      queueResponse(
+        service.snapshot(owner, { includeCoordinatorDiscussion: !selectedIssue, selectedIssue: issue(selectedIssue) }),
+        selectedIssue
+      ),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
@@ -329,5 +342,5 @@ async function postedAction(service, request, token) {
 }
 
 function resolveIssueNumber(service, value) {
-  return readQueue(service.root).issues.find((issue) => String(issue.issueNumber) === value)?.id || value;
+  return storedIssueId(service.root, value);
 }

@@ -4,9 +4,9 @@ Draft for discussion. [ADR 0011](../adr/0011-share-issue-reports-on-the-target-b
 
 ## What Git tracks
 
-The issue list is built from the Markdown reports in `.issues/<full-issue-id>.md`. Version-control those reports on the configured target branch, normally `dev`. Track the display-number registry (`.issues/issue-numbers.json`) alongside them so every runner sees the same issue numbers. Explicitly allowlist shared files and review existing reports before importing them into Git history. Allocate new display numbers through the shared write path so concurrent creates cannot reuse a number.
+The active issue list is built from Markdown reports in `.issues/<full-issue-id>.md`. The separate Closed issues view uses `.issues/closed/<full-issue-id>.md`. See the [archive design](archive-closed-issues.md). Version-control open and unarchived closed reports on the configured target branch, normally `dev`. Track the display-number registry (`.issues/issue-numbers.json`) alongside them so every runner sees the same issue numbers. Explicitly allowlist shared files and review existing reports before importing them into Git history. Allocate new display numbers through the shared write path so concurrent creates cannot reuse a number.
 
-Keep `.issues/issue-work/` and its entire contents ignored by Git on every clone. Workspaces, logs, transcripts, credentials, and runtime state stay on the machine that produced them. Replace the current blanket exclusion of `.issues/` with repository ignore rules that expose only the approved shared files. A fresh clone of the target branch gets the issue list and its history without downloading another runner's workspace.
+Keep `.issues/issue-work/` and `.issues/archive/` ignored by Git on every clone. Workspaces, logs, transcripts, credentials, and runtime state stay on the machine that produced them. Replace the current blanket exclusion of `.issues/` with repository ignore rules that expose only the approved shared files. A fresh clone of the target branch gets the issue list and its history without downloading another runner's workspace.
 
 ## Checkouts
 

@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readSavedReport } from './report-document.mjs';
 import { cleanEnvironment, digest, requireThat } from './common.mjs';
 
 // Project policy, never supplied or weakened by the browser.
@@ -41,10 +42,11 @@ export function inspectHumanInput(root, action, operation, head, transition = {}
       capabilities.capabilities.includes('read') && capabilities.capabilities.includes('guards'),
       'Human-input guards are unavailable.'
     );
+    const { reportLocation, ...contextTransition } = transition;
     const context = {
       protocol: manifest.protocol,
       operation,
-      ...transition,
+      ...contextTransition,
       issue_ids: action.issues,
       scope_ids: ['*'],
       policy,
@@ -60,11 +62,28 @@ export function inspectHumanInput(root, action, operation, head, transition = {}
       };
     const path = join(temp, 'context.json');
     writeFileSync(path, JSON.stringify(context));
-    const output = readHumanInput(helper, root, path, operation);
+    const project = reportLocation === 'closed' ? projectClosedReport(root, temp, action, operation) : root;
+    const output = readHumanInput(helper, project, path, operation);
     return { helper, context, result: JSON.parse(output) };
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
+}
+
+// The pinned helper's read command accepts only a flat queue. The exact
+// selected report and policy are projected privately for closed-issue reads.
+function projectClosedReport(root, temp, action, operation) {
+  requireThat(['advance', 'view'].includes(operation) && action.issues.length === 1, 'Select one closed issue.');
+  const id = action.issues[0];
+  const report = readSavedReport(root, id, 'closed');
+  const queue = join(temp, '.issues');
+  mkdirSync(queue, { mode: 0o700 });
+  for (const name of ['triage-labels.md', 'preferences.json']) {
+    const source = join(root, '.issues', name);
+    if (existsSync(source)) writeFileSync(join(queue, name), readFileSync(source), { mode: 0o600 });
+  }
+  writeFileSync(join(queue, id + '.md'), report.content, { mode: 0o600 });
+  return temp;
 }
 
 function readHumanInput(helper, root, path, operation) {
