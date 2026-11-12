@@ -1903,8 +1903,11 @@
         selectedChatTab = 'progress';
       let selectedChatIssue = null;
       let refreshing = false,
-        refreshPending = false;
+        refreshPending = false,
+        refreshAgain = false,
+        manualRefreshPending = false;
       let sourceChangedAtPageLoad = null;
+      let refreshError = null;
       const runDetails = new Map();
       const outputHistories = new Map();
       const grillingReplies = new Map();
@@ -1976,6 +1979,8 @@
             render();
             refreshPending = false;
           }
+          if ($('error').textContent === refreshError) $('error').textContent = '';
+          refreshError = null;
         } catch (e) {
           if (location.hash !== requestedRoute) return;
           progressUnavailable = true;
@@ -1986,13 +1991,20 @@
             $('connection').textContent = 'Reconnecting after server restart…';
             return;
           }
-          $('error').textContent = e.message;
+          refreshError = e.message;
+          $('error').textContent = refreshError;
           $('connection-banner').textContent = 'Connection needs attention';
           $('connection-banner').hidden = false;
           $('connection').hidden = true;
         } finally {
           refreshing = false;
-          if (location.hash !== requestedRoute) void refresh();
+          if (location.hash !== requestedRoute || refreshAgain) {
+            refreshAgain = false;
+            void refresh();
+            return;
+          }
+          manualRefreshPending = false;
+          setProgressRefreshButtons(false);
         }
       }
       const issueStorage = {
@@ -2194,6 +2206,22 @@
         $('stored-issue-move').onclick = () => moveStoredIssues(storage, [...view.selected]);
       }
 
+      function setProgressRefreshButtons(refreshing) {
+        document.querySelectorAll('[data-refresh-progress]').forEach((button) => {
+          button.onclick = refreshProgress;
+          button.disabled = refreshing;
+          button.textContent = refreshing ? 'Refreshing…' : 'Refresh progress';
+        });
+      }
+      function refreshProgress() {
+        manualRefreshPending = true;
+        setProgressRefreshButtons(true);
+        if (refreshing) {
+          refreshAgain = true;
+          return;
+        }
+        void refresh();
+      }
       function showRuntime(runtime) {
         const sourceChangeBanner = $('source-change-banner');
         if (sourceChangedAtPageLoad === null) sourceChangedAtPageLoad = Boolean(runtime.sourceChanged);
@@ -2224,6 +2252,7 @@
         busy = true;
         $('confirmation-error').textContent = '';
         if ($('confirm').open) $('approve').disabled = true;
+        refreshError = null;
         $('error').textContent = '';
         try {
           await task();
@@ -3760,7 +3789,7 @@
         const pullRequest = view.pullRequest
           ? `<p><a href="${esc(view.pullRequest.url)}" target="_blank" rel="noreferrer">Open pull request #${esc(view.pullRequest.number)}</a></p>`
           : '';
-        return `<h2 class="progress-heading"><span>Progress</span>${timer(view.totalOperationTime, 'Total operation time')}</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p>${pullRequest}<h3 class="progress-operation"><span data-progress-step>${esc(view.step)}</span>${timer(view.operationTime, 'Current operation time')}</h3><p><strong>${stopped ? 'What stopped the work' : 'What is happening'}:</strong> ${esc(view.explanation)}</p>${commandDetails}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>${stopped ? 'Recommended next steps' : 'Next action'}:</strong> ${esc(view.next)}</p>${diagnostics}${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
+        return `<h2 class="progress-heading"><span>Progress</span><button type="button" data-refresh-progress>Refresh progress</button>${timer(view.totalOperationTime, 'Total operation time')}</h2><p data-progress-status role="status"><strong>${esc(view.status)}</strong>${view.running && view.status === 'waiting for you' ? ' · A worker is also active.' : ''}</p>${pullRequest}<h3 class="progress-operation"><span data-progress-step>${esc(view.step)}</span>${timer(view.operationTime, 'Current operation time')}</h3><p><strong>${stopped ? 'What stopped the work' : 'What is happening'}:</strong> ${esc(view.explanation)}</p>${commandDetails}<h4>Completed steps</h4>${view.milestones.length ? `<ul>${view.milestones.map((entry) => `<li>${esc(entry)}</li>`).join('')}</ul>` : '<p>No confirmed milestones available.</p>'}<p><strong>${stopped ? 'Recommended next steps' : 'Next action'}:</strong> ${esc(view.next)}</p>${diagnostics}${view.lastUpdate ? `<p class="muted">Last known update: ${esc(recordedDate(view.lastUpdate))}</p>` : ''}`;
       }
       function updateProgressTimers() {
         document.querySelectorAll('[data-progress-timer]').forEach((timer) => {
@@ -3796,6 +3825,7 @@
         const summary = $('issue-progress-summary');
         if (!issue || !summary) return;
         summary.innerHTML = progressSummary(issue);
+        setProgressRefreshButtons(manualRefreshPending);
         updateProgressTimers();
         // Keep a focused answer intact. Full refresh reconciles request identity safely.
         if (progressFeedback(issue) || progressUnavailable) {
@@ -4480,6 +4510,7 @@
       }
       function bind() {
         bindIssueFolders();
+        setProgressRefreshButtons(manualRefreshPending);
         document.querySelectorAll('[data-queue-refresh]').forEach((button) => {
           button.onclick = () => void refresh();
         });

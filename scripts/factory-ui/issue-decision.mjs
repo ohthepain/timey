@@ -9,7 +9,13 @@ import { digest, requireThat } from './common.mjs';
 
 import { strategyClosureResult } from './strategy-closure.mjs';
 import { recordClosingApproval } from './closure-approval.mjs';
-import { archiveIssueChatsOnClose, beginIssueCleanup, issueHasChats, recordCleanupFailure } from './issue-cleanup.mjs';
+import {
+  archiveIssueChatsOnClose,
+  beginIssueCleanup,
+  issueHasActiveWork,
+  issueHasChats,
+  recordCleanupFailure,
+} from './issue-cleanup.mjs';
 import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
 
 export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed', cleanup = null) {
@@ -180,10 +186,7 @@ function checkIdle(service, queue, issue, decision) {
       `Finish reviewing the outstanding worker result${finished?.title ? ` “${finished.title}”` : ''} before accepting this issue as fixed.`
     );
   }
-  requireThat(
-    !service.store.runs.some((r) => r.issueId === issue.id && ['preparing', 'running', 'checking'].includes(r.status)),
-    'Wait for the current issue action to finish.'
-  );
+  requireThat(!issueHasActiveWork(service, issue.id), 'Wait for the current issue action to finish.');
 }
 function decisionTarget(queue, role, kind, dismissed) {
   requireThat(!(kind === 'close' && role === 'closed'), 'This issue is already closed.');

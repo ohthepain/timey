@@ -77,8 +77,8 @@ function grillingEvents(issue, source) {
     );
 }
 
-function evidencePaths(values = []) {
-  return values
+function evidencePaths(values) {
+  return (Array.isArray(values) ? values : [values])
     .map((value) => (typeof value === 'string' ? { path: value, label: 'Evidence' } : value))
     .filter((value) => typeof value?.path === 'string');
 }
