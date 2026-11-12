@@ -161,7 +161,8 @@ export class FactoryUI {
       queue.issues.push(...closed.issues);
     }
     const runs = this.store.list(this.permissionRequests());
-    const humanInputs = queueHumanInputReader(queue);
+    const issues = selectedIssue ? queue.issues.filter((issue) => issue.id === selectedIssue) : queue.issues;
+    const humanInputs = queueHumanInputReader({ ...queue, issues });
     return {
       ...queue,
       sharedQueueEnabled: Boolean(this.sharedIssues),
@@ -171,7 +172,7 @@ export class FactoryUI {
         ? this.coordinator.view()
         : redactValue(this.coordinator.reviewActivity()),
       reviewBasis: digest(JSON.stringify(queue)),
-      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner, humanInputs)),
+      issues: issues.map((issue) => this.issueView(queue, issue, runs, owner, humanInputs)),
       runs: runs.map((run) => ({
         ...run,
         output: redactValue(run.output || []),

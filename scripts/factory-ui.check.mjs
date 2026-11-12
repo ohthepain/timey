@@ -205,8 +205,12 @@ test('a claimed successful integration cannot bypass independent verification', 
   );
 });
 
-test('issue polling preserves review status without loading coordinator discussion', async (t) => {
-  const { service } = fixture(t);
+test('issue polling returns only the selected report and its review status', async (t) => {
+  const { root, service } = fixture(t);
+  writeFileSync(
+    join(root, '.issues/20261022-two.md'),
+    '---\nid: 20261022-two\nstate: investigate\n---\n# Other issue\n'
+  );
   const { url, cookie } = await startFactoryHttp(t, service);
   const headers = { cookie };
   const coordinator = service.coordinator;
@@ -215,15 +219,23 @@ test('issue polling preserves review status without loading coordinator discussi
   coordinator.state.threads[0].messages.push({ role: 'Coordinator', text: 'Retained queue discussion' });
   delete coordinator.state.pending;
 
-  const issue = await fetch(url + '/api/queue?issue=20261022-one', { headers });
+  const issue = await fetch(url + '/api/issue?issue=20261022-one', { headers });
   const snapshot = await issue.json();
   assert.equal(issue.status, 200, snapshot.error);
   assert.deepEqual(snapshot.coordinator, { active, waiting: [] });
+  assert.equal(snapshot.issueScoped, true);
+  assert.deepEqual(
+    snapshot.issues.map((entry) => entry.id),
+    ['20261022-one']
+  );
+  assert.doesNotMatch(JSON.stringify(snapshot), /Other issue/);
 
   coordinator.state.pending = [];
   const queue = await fetch(url + '/api/queue?issue=', { headers });
   assert.equal(queue.status, 200);
-  assert.equal((await queue.json()).coordinator.threads[0].messages[0].text, 'Retained queue discussion');
+  const full = await queue.json();
+  assert.equal(full.coordinator.threads[0].messages[0].text, 'Retained queue discussion');
+  assert.equal(full.issues.length, 2);
 });
 
 test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => {

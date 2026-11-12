@@ -278,11 +278,9 @@ function read(service, request, response, owner) {
     '/api/issue-report': () => service.readSavedReport(issue(url.searchParams.get('issue'))),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(issue(url.searchParams.get('issue')), url.searchParams.get('path')),
+    '/api/issue': () => issueResponse(service, owner, issue(selectedIssue)),
     '/api/queue': () =>
-      queueResponse(
-        service.snapshot(owner, { includeCoordinatorDiscussion: !selectedIssue, selectedIssue: issue(selectedIssue) }),
-        selectedIssue
-      ),
+      selectedIssue ? issueResponse(service, owner, issue(selectedIssue)) : queueResponse(service.snapshot(owner)),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
@@ -290,6 +288,11 @@ function read(service, request, response, owner) {
   if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(routes[url.pathname]()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));
+}
+
+function issueResponse(service, owner, id) {
+  requireThat(typeof id === 'string' && /^[\w-]+$/.test(id), 'Choose a valid saved issue ID.');
+  return queueResponse(service.snapshot(owner, { includeCoordinatorDiscussion: false, selectedIssue: id }), id);
 }
 
 function isPage(request) {

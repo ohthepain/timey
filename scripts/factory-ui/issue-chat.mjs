@@ -64,7 +64,10 @@ class IssueChats {
     return { queue, issue };
   }
   view(issueId, before) {
-    const { queue, issue } = this.selected(issueId);
+    const open = readQueue(this.service.root, { issueId });
+    const queue = open.issues.length ? open : readQueue(this.service.root, { location: 'closed', issueId });
+    const issue = queue.issues[0];
+    requireThat(issue, 'Select an existing issue.');
     return { ...conversationPage(this.service, queue, issue, before), queue: this.scheduler.view(issueId) };
   }
   async skills(issueId) {

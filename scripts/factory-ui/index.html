@@ -1921,16 +1921,18 @@
       async function refresh() {
         if (refreshing) return;
         refreshing = true;
+        const requestedRoute = location.hash;
         try {
           const previous = JSON.stringify(data);
           const issueId = issueRoute().id || '';
           const storage = issueStorageLocation();
           const [snapshot, runtime, conversation, stored] = await Promise.all([
-            request('queue?issue=' + encodeURIComponent(issueId)),
+            request(issueId ? 'issue?issue=' + encodeURIComponent(issueId) : 'queue'),
             request('runtime'),
             issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
             storage ? loadStoredIssues(storage) : null,
           ]);
+          if (location.hash !== requestedRoute) return;
           data = { ...snapshot, conversation };
           progressUnavailable = false;
           $('connection-banner').hidden = true;
@@ -1958,6 +1960,7 @@
             refreshPending = false;
           }
         } catch (e) {
+          if (location.hash !== requestedRoute) return;
           progressUnavailable = true;
           updateProgressView();
           if (await serverControlUI.reconnect(request)) {
@@ -1972,6 +1975,7 @@
           $('connection').hidden = true;
         } finally {
           refreshing = false;
+          if (location.hash !== requestedRoute) void refresh();
         }
       }
       const issueStorage = {
@@ -2447,6 +2451,7 @@
         };
       }
       function issueNavigation(issue) {
+        if (data.issueScoped) return '';
         return Object.entries(issueNeighbors(issue))
           .map(([direction, destination]) => {
             const label = destination?.title || 'Untitled issue';
@@ -4285,7 +4290,7 @@
           bindStoredIssues(storage);
           return;
         }
-        const wideSidebar = window.matchMedia?.('(min-width: 1000px)').matches || false;
+        const wideSidebar = !data.issueScoped && window.matchMedia?.('(min-width: 1000px)').matches;
         $('app').innerHTML = wideSidebar
           ? `<div class="issue-workspace">${issueSidebar(route.id)}<section class="issue-workspace-content">${route.id ? issue(route.id, false) : '<p class="issue-empty-selection">Please select an issue.</p>'}</section></div>`
           : route.id
@@ -4955,7 +4960,7 @@
       );
       window.onhashchange = () => {
         focusedStageRoute = null;
-        if (data) render();
+        refreshPending = true;
         void refresh();
       };
       const issueSidebarMedia = window.matchMedia?.('(min-width: 1000px)');

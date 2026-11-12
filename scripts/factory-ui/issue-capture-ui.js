@@ -36,7 +36,7 @@ function captureDraftMerge(draft) {
 async function startCaptureWork(issues, strategy, request, toast) {
   for (const issue of issues) {
     try {
-      const snapshot = await request('queue?issue=' + encodeURIComponent(issue.id));
+      const snapshot = await request('issue?issue=' + encodeURIComponent(issue.id));
       const saved = snapshot.issues.find((item) => item.id === issue.id);
       await request('issue-strategy-start', {
         issueId: issue.id,

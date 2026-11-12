@@ -12,7 +12,7 @@ source; the external restart command below can install an already verified check
 Use `--port NUMBER` only when a fixed local port is needed.
 
 The queue and issue screens read actual reports and the dispatch ledger through
-the existing factory helper. Each queue refresh projects saved run history once
+the existing factory helper. The issue page polls an issue endpoint that returns only the selected report, its assignments, and its runs. The queue page fetches the queue separately. Each queue refresh projects saved run history once
 and reuses that projection for lifecycle availability; dispatch still reads current
 history and applies its guards. No history projection is cached across requests. Refreshing and filtering are read-only. Lifecycle
 stages come from the configured role mapping. Human input remains separate from
