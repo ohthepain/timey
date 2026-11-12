@@ -143,6 +143,10 @@ A stable sequential local label for a queue issue. It is stored separately from
 the report ID, never reused after deletion, and distinct from a GitHub pull request
 number.
 
+**Issue claim**:
+Exclusive permission for one factory run to start or continue work on an issue.
+A claim can remain held while the run's outcome is being published.
+
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one
 pull request. The default outcome is a draft PR handoff; an explicitly selected
