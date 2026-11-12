@@ -916,12 +916,17 @@ function sharedWorkspace(service, issueId, path) {
 export function issueHasActiveWork(service, issueId) {
   if (service.lifecycleTasks.has(issueId) || service.issueChats?.tasks?.has(issueId)) return true;
   const currentRunId = service.lifecycleRuns?.[issueId]?.work?.runId;
-  return service.store.runs.some((run) => {
-    if (run.issueId !== issueId) return false;
-    if (service.store.connected.has(run.id)) return true;
-    if (currentRunId && run.kind === 'issue-work' && run.id !== currentRunId) return false;
-    return activeRunStates.has(run.status);
-  });
+  return service.store.runs.some((run) => activeIssueRun(service, issueId, currentRunId, run));
+}
+
+function activeIssueRun(service, issueId, currentRunId, run) {
+  if (run.issueId !== issueId) return false;
+  if (service.store.connected.has(run.id)) return true;
+  return activeRunStates.has(run.status) && !isSupersededIssueRun(run, currentRunId);
+}
+
+function isSupersededIssueRun(run, currentRunId) {
+  return Boolean(currentRunId && run.kind === 'issue-work' && run.id !== currentRunId);
 }
 
 function workspaceEligible({ validIdentity, dirty, shared, active }) {
