@@ -1,3 +1,4 @@
+import { storedIssuePath } from './issue-report-storage.mjs';
 import { readModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { clarificationLifecycle } from './clarify-policy.mjs';
 import { startCaptureGrilling } from './capture-grilling.mjs';
@@ -9,7 +10,7 @@ import { z } from 'zod';
 import { assessCapture, captureAssessment } from './capture-assessment.mjs';
 import { captureRoute, validateCaptureLifecycle, captureLifecycle } from './capture-routing.mjs';
 import { readQueue } from './data.mjs';
-import { ensureIssueNumbers } from './issue-numbers.mjs';
+import { queueIssueNumbers } from './issue-numbers.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
 
 const requestSchema = z
@@ -73,6 +74,11 @@ export function createCaptures(service, options = {}) {
     }
     const promise = perform(input)
       .then((result) => {
+        if (service.sharedIssues)
+          for (const issue of result.issues) {
+            const saved = service.sharedIssues.checkpoint(issue.id, 'Issue created');
+            issue.publication = { status: saved.status, url: saved.url, error: saved.error };
+          }
         if (input.model)
           for (const issue of result.issues)
             saveIssueModelSettings(service, { issueId: issue.id, model: input.model, effort: '' });
@@ -214,7 +220,11 @@ function allocateId(root, at, ids, random) {
     const suffix = random();
     requireThat(/^[a-f0-9]{16}$/.test(suffix), 'Invalid capture identifier source.');
     const id = at.replace(/[-:.Z]/g, '') + '-' + suffix;
-    if (ids.has(id) || existsSync(join(root, '.issues', id + '.md'))) continue;
+    if (
+      ids.has(id) ||
+      ['open', 'closed', 'archive'].some((location) => existsSync(storedIssuePath(root, id, location)))
+    )
+      continue;
     ids.add(id);
     return id;
   }
@@ -230,7 +240,7 @@ function publishExclusive(path, content) {
   }
 }
 function response(receipt, root) {
-  const numbers = ensureIssueNumbers(
+  const numbers = queueIssueNumbers(
     root,
     receipt.reports.map((report) => report.id)
   );

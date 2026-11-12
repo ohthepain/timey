@@ -66,8 +66,14 @@ function renderCaptureFeedback(issues, toast) {
   toast.append(message);
   for (const issue of issues) {
     const link = document.createElement('a');
-    link.href = '#/issue/' + encodeURIComponent(issue.issueNumber);
-    link.textContent = '#' + issue.issueNumber + ' · ' + issue.title;
+    link.href = '#/issue/' + encodeURIComponent(issue.issueNumber ?? issue.id);
+    link.textContent = (issue.issueNumber == null ? '' : '#' + issue.issueNumber + ' · ') + issue.title;
+    if (issue.publication && issue.publication.status !== 'published') {
+      const status = document.createElement('small');
+      status.textContent =
+        issue.publication.status === 'review' ? ' Awaiting report review.' : ' Report publication needs attention.';
+      link.append(status);
+    }
     link.style.display = 'block';
     toast.append(link);
   }

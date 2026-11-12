@@ -4,6 +4,7 @@ import { join, relative, resolve } from 'node:path';
 import { digest, git, readJson, requireThat, writeJson } from './common.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { conversationState } from './conversation-store.mjs';
+import { storedIssuePath } from './issue-report-storage.mjs';
 import { readQueue as queueReader } from './data.mjs';
 import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { openSiblingIssueIds } from './linked-issues.mjs';
@@ -649,13 +650,18 @@ function cleanupKindFromId(id) {
 
 function cleanupIssue(service, issueId) {
   requireThat(typeof issueId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(issueId), 'Select a valid issue.');
-  const found = queueReader(service.root).issues.find((entry) => entry.id === issueId);
+  const found = selectedCleanupQueue(service.root, issueId).issues[0];
   requireThat(found, 'Select an existing issue.');
   return found;
 }
 
+function selectedCleanupQueue(root, issueId) {
+  const location = ['open', 'closed', 'archive'].find((entry) => existsSync(storedIssuePath(root, issueId, entry)));
+  return queueReader(root, { location, issueId });
+}
+
 function closed(service, issueId) {
-  const queue = queueReader(service.root);
+  const queue = selectedCleanupQueue(service.root, issueId);
   const issue = queue.issues.find((entry) => entry.id === issueId);
   return queue.lifecycle.some((stage) => stage.role === 'closed' && stage.state === issue?.state);
 }
@@ -948,7 +954,7 @@ async function chatResources(service, issueId) {
 }
 
 function findIssueTitle(service, issueId) {
-  return queueReader(service.root).issues.find((entry) => entry.id === issueId)?.title || issueId;
+  return selectedCleanupQueue(service.root, issueId).issues[0]?.title || issueId;
 }
 
 function issueChatRuns(service, issueId) {
@@ -1211,9 +1217,9 @@ async function removeWorkspace(service, item, beforeRemove = () => {}) {
 }
 
 function retainIssueHistory(service, issueId, workspace) {
-  const queue = queueReader(service.root);
-  const issue = queue.issues.find((entry) => entry.id === issueId);
-  const reportPath = join(service.root, '.issues', `${issueId}.md`);
+  const queue = selectedCleanupQueue(service.root, issueId);
+  const issue = queue.issues[0];
+  const reportPath = storedIssuePath(service.root, issueId, issue?.reportLocation);
   requireThat(issue && existsSync(reportPath), 'Issue history is unavailable; workspace was preserved.');
   const lifecycle = service.lifecycleRuns[issueId] || null;
   const delivery = new DeliveryStore(service.root, issueId).read();

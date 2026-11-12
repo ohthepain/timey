@@ -19,22 +19,30 @@ function comparePriorityAndAge(a, b) {
 
 export function compactQueue(service, queue) {
   const major = queue.priorities?.findIndex((priority) => priority.id === 'major') ?? 2;
-  return queue.issues.map((issue) => {
-    const progress = service.lifecycleRuns[issue.id];
-    return {
-      id: issue.id,
-      title: issue.title?.slice(0, 160),
-      state: issue.state,
-      priority: issue.priorityInfo?.index >= 0 ? issue.priorityInfo.index : Math.max(major, 0),
-      implementationOrder: implementationRank(issue),
-      stage: queue.lifecycle.findIndex((stage) => stage.state === issue.state),
-      created: Date.parse(issue.created) || 0,
-      running: service.lifecycleTasks.has(issue.id),
-      needsInput: Boolean(progress?.input),
-      status: progress?.status || 'not-started',
-      summary: progress?.summary?.slice(0, 240),
-    };
-  });
+  const closed = queue.lifecycle.find((stage) => stage.role === 'closed')?.state;
+  return queue.issues
+    .filter((issue) => issue.state !== closed)
+    .map((issue) => {
+      const progress = service.lifecycleRuns[issue.id];
+      const shared = service.sharedIssues?.view(issue.id);
+      return {
+        id: issue.id,
+        title: issue.title?.slice(0, 160),
+        state: issue.state,
+        priority: issue.priorityInfo?.index >= 0 ? issue.priorityInfo.index : Math.max(major, 0),
+        implementationOrder: implementationRank(issue),
+        stage: queue.lifecycle.findIndex((stage) => stage.state === issue.state),
+        created: Date.parse(issue.created) || 0,
+        running: service.lifecycleTasks.has(issue.id) || Boolean(shared?.claimed),
+        pendingReport: Boolean(
+          shared &&
+          (!shared.published || !issue.issueNumber || (shared.checkpoint && shared.checkpoint.status !== 'published'))
+        ),
+        needsInput: Boolean(progress?.input),
+        status: progress?.status || (shared ? issue.shared_progress : null) || 'not-started',
+        summary: progress?.summary?.slice(0, 240),
+      };
+    });
 }
 
 export async function selectNextIssue(service, run, queue) {
@@ -44,6 +52,7 @@ export async function selectNextIssue(service, run, queue) {
     return (
       item.stage >= 0 &&
       !item.running &&
+      !item.pendingReport &&
       !item.needsInput &&
       ![
         'running',
@@ -57,6 +66,7 @@ export async function selectNextIssue(service, run, queue) {
         'completed',
         'finished',
         'handed-off',
+        'ready-to-merge',
         'merged',
       ].includes(item.status) &&
       !['ready-to-close', 'closed'].includes(role) &&

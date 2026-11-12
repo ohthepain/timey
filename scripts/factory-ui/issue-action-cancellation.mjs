@@ -7,7 +7,9 @@ const cancellable = new Set(['blocked', 'failed', 'recommended']);
 
 export function cancelIssueActionsOnClose(service, issueId) {
   const queue = readQueue(service.root);
-  const issue = queue.issues.find((entry) => entry.id === issueId);
+  const issue =
+    queue.issues.find((entry) => entry.id === issueId) ||
+    readQueue(service.root, { location: 'closed', issueId }).issues[0];
   requireThat(issue, 'The closed issue no longer exists.');
   const actions = queue.actions
     .filter((entry) => entry.issues.includes(issueId) && cancellable.has(entry.status))

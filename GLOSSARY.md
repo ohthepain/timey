@@ -143,6 +143,10 @@ A stable sequential local label for a queue issue. It is stored separately from
 the report ID, never reused after deletion, and distinct from a GitHub pull request
 number.
 
+**Issue claim**:
+Exclusive permission for one factory run to start or continue work on an issue.
+A claim can remain held while the run's outcome is being published.
+
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one
 pull request. The default outcome is a draft PR handoff; an explicitly selected
@@ -188,3 +192,7 @@ intent. Publication, merge, successful checks and strategy completion do not imp
 **Issue closure**:
 The recorded decision to end work on an issue, either with an accepted fix or a
 stated reason for closing without a fix. It is independent of historical lifecycle stages.
+
+**Issue archive**:
+A locally retained collection of closed issue reports. Archiving removes an issue
+from the Closed issues view and preserves its identity and closure.

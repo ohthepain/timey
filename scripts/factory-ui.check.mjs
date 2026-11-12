@@ -55,6 +55,9 @@ function fixture(t, options = {}) {
   t.after(() => service.close());
   return { root, git, api, proposal, service };
 }
+function selectedIssueView(service, id = '20261022-one') {
+  return service.snapshot(null, { selectedIssue: id }).issues.find((issue) => issue.id === id);
+}
 function verifiedRoute(service) {
   service.store.runs.push({
     id: 'explicit-verified-route',
@@ -1473,11 +1476,12 @@ test('final-review buttons close with explicit acceptance and reopen without lau
     () => service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis),
     /another stage|out of date/
   );
-  const closed = service.snapshot();
-  assert.match(closed.issues[0].content, /user selected Close issue/);
-  assert.equal(closed.issues[0].state, 'closed');
+  assert.equal(service.snapshot().issues.length, 0, 'Closed issues are absent from the open queue.');
+  const closed = selectedIssueView(service);
+  assert.match(closed.content, /user selected Close issue/);
+  assert.equal(closed.state, 'closed');
   assert.deepEqual(
-    service.decideIssue('20261022-one', 'closed', 'reopen', closed.reviewBasis, 'Still fails for my file.'),
+    service.decideIssue('20261022-one', 'closed', 'reopen', closed.decisionBasis, 'Still fails for my file.'),
     { state: 'investigate' }
   );
   const reopened = service.snapshot().issues[0];
@@ -2509,7 +2513,7 @@ test('Accept and close records the final checklist judgment and closes after boo
   const snapshot = service.snapshot();
   assert.equal(snapshot.issues[0].implementation.fresh, false);
   assert.deepEqual(service.decideIssue('20261022-one', 'review', 'close', snapshot.reviewBasis), { state: 'closed' });
-  const issue = service.snapshot().issues[0];
+  const issue = selectedIssueView(service);
   assert.equal(issue.state, 'closed');
   assert.equal(issue.human_checks[0].status, 'passed');
   assert.equal(issue.human_checks[0].revision, snapshot.head);
@@ -2532,7 +2536,7 @@ test('Accept and close requires actual observations and accepts the recorded sou
     changed.service.decideIssue('20261022-one', 'review', 'close', changed.service.snapshot().reviewBasis),
     { state: 'closed' }
   );
-  assert.equal(changed.service.snapshot().issues[0].accepted_result.verification_rerun, false);
+  assert.equal(selectedIssueView(changed.service).accepted_result.verification_rerun, false);
 });
 test('confirmation failure is visible inside the dialog and successful actions refresh the screen', async () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
@@ -2611,7 +2615,7 @@ test('closing retains a changed administrative task log without changing test ou
   assert.deepEqual(f.service.decideIssue('20261022-one', 'review', 'close', f.service.snapshot().reviewBasis), {
     state: 'closed',
   });
-  const closed = f.service.snapshot().issues[0];
+  const closed = selectedIssueView(f.service);
   const receipt = closed.plan_verification.evidence.find((e) => e.path.endsWith('-task-record.json'));
   assert.ok(receipt);
   assert.ok(JSON.parse(readFileSync(receipt.path, 'utf8')).earlier_sha256);
@@ -2782,7 +2786,7 @@ test('older final-review issue with an integrated commit can be accepted without
   const snapshot = service.snapshot();
   assert.equal(snapshot.issues[0].lifecycle_history, undefined);
   assert.deepEqual(service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), { state: 'closed' });
-  const closed = service.snapshot().issues[0];
+  const closed = selectedIssueView(service);
   assert.equal(closed.state, 'closed');
   assert.equal(closed.lifecycle_history.length, 1);
   assert.equal(closed.lifecycle_history[0].actor, 'human');
@@ -4881,7 +4885,7 @@ test('recorded acceptance survives unrelated commits, branch switches and dirty 
     service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis || snapshot.reviewBasis),
     { state: 'closed' }
   );
-  const closed = service.snapshot().issues[0];
+  const closed = selectedIssueView(service);
   assert.equal(closed.accepted_result.revision, reviewed);
   assert.notEqual(closed.accepted_result.revision, git('rev-parse', 'HEAD'));
   assert.equal(closed.accepted_result.verification_rerun, false);
@@ -4901,7 +4905,7 @@ test('legacy final-review prose can be accepted without an integrated factory ac
   );
   const snapshot = service.snapshot();
   service.decideIssue('20261022-one', 'final', 'close', snapshot.issues[0].decisionBasis);
-  assert.equal(service.snapshot().issues[0].accepted_result.revision, revision);
+  assert.equal(selectedIssueView(service).accepted_result.revision, revision);
 });
 test('another issue changing cannot invalidate a selected issue acceptance button', async (t) => {
   const { service, root } = await finalChecklist(t),
@@ -4911,7 +4915,7 @@ test('another issue changing cannot invalidate a selected issue acceptance butto
     '---\nid: 20261022-other\nstate: verify\n---\nAnother issue changed\n'
   );
   service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis);
-  assert.equal(service.snapshot().issues.find((issue) => issue.id === '20261022-one').state, 'closed');
+  assert.equal(selectedIssueView(service).state, 'closed');
 });
 
 const clarificationMutations = {
@@ -5434,7 +5438,7 @@ test('accepting a retained fix closes directly from implementation without fabri
       };
   const closed = service.decideIssue(before.id, before.state, 'close', before.decisionBasis);
   assert.equal(closed.state, 'closed');
-  const issue = service.snapshot().issues[0];
+  const issue = selectedIssueView(service);
   assert.equal(issue.accepted_result.verification_rerun, false);
   assert.equal(issue.closure.reason, 'fixed');
   assert.equal(issue.lifecycle_history.length, before.lifecycle_history.length + 1);
@@ -5470,7 +5474,7 @@ test('strategy acceptance reuses exact saved checks without a legacy final-revie
   summary.checks.find((check) => check.name === 'tests').passed = true;
   writeFileSync(result.verification_summary, JSON.stringify(summary));
   assert.equal(service.decideIssue(issue.id, issue.state, 'close', issue.decisionBasis).state, 'closed');
-  const accepted = service.snapshot().issues[0].accepted_result;
+  const accepted = selectedIssueView(service, issue.id).accepted_result;
   assert.equal(accepted.revision, checked.head);
   assert.ok(accepted.evidence.some((entry) => entry.source === result.verification_summary));
 });

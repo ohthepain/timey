@@ -512,7 +512,7 @@ function legacyPr(service, old) {
   return old?.pr || result.pr || null;
 }
 
-function scheduleStrategyTask(service, record, run, issue, input) {
+function scheduleStrategyTask(service, record, run, issue, input, shared) {
   let task;
   task = Promise.resolve()
     .then(() => executeStrategy(service, record, run, issue, input))
@@ -529,7 +529,15 @@ function scheduleStrategyTask(service, record, run, issue, input) {
         body: error.message,
       });
     })
-    .finally(() => releaseStrategyTask(service, issue.id, run.id, task));
+    .finally(() => {
+      try {
+        if (shared) service.sharedIssues.finish(issue.id, shared, run, record);
+      } catch (error) {
+        lifecycleEvent(service, record, 'Shared issue checkpoint needs recovery. ' + error.message);
+      } finally {
+        releaseStrategyTask(service, issue.id, run.id, task);
+      }
+    });
   service.lifecycleTasks.set(issue.id, task);
 }
 function nameFailedExecution(service, record, run) {
@@ -572,6 +580,7 @@ export function startIssueStrategy(service, input) {
   assertStrategyStartInput(input, old, record);
   const config = validatedDeliveryConfig(service, old);
   const base = issueStartingRevision(service, queue, old, config);
+  const shared = service.sharedIssues?.acquire(issue);
   const run = service.store.add({ id: 'issue-' + issue.id }, 'issue-work', base);
   service.store.update(run, {
     issueId: issue.id,
@@ -596,7 +605,7 @@ export function startIssueStrategy(service, input) {
     kind: 'strategy-start',
     body: strategyStartMessage(input, receipt, input.instruction),
   });
-  scheduleStrategyTask(service, record, run, issue, input);
+  scheduleStrategyTask(service, record, run, issue, input, shared);
   return { runId: run.id, issueId: issue.id, accepted: true };
 }
 export async function prepareIssueChatCheckout(service, issueId) {
@@ -609,6 +618,10 @@ export async function prepareIssueChatCheckout(service, issueId) {
     'Reopen this issue before editing code.'
   );
   const record = strategyRecord(service, issue);
+  requireThat(
+    !service.sharedIssues || (service.lifecycleTasks.has(issueId) && service.sharedIssues.view(issueId).local),
+    'Start a claimed issue strategy before making changes in its checkout.'
+  );
   const work = chatCheckoutPlan(service, record, queue);
   if (!record.work) record.chatCheckout = work;
   const run = { id: 'chat-checkout-' + issue.id, base: work.base };
@@ -965,8 +978,17 @@ async function mergeReadyCandidate(service, context, provider, readiness) {
   );
   const latest = await inspectMergeReadiness(provider, work);
   if (latest.merged) return latest.merge;
+  assertSharedReportsOutsideCodePR(service, work, latest.target, work.prHead);
   await provider.assertApproved(work.pr, work.prHead);
   return mergeOrReconcile(provider, work);
+}
+
+function assertSharedReportsOutsideCodePR(service, work, target, head) {
+  if (!service.sharedIssues) return;
+  requireThat(
+    !git(work.checkout, 'diff', '--name-only', target, head, '--', '.issues/'),
+    'Shared issue report changes require a human-reviewed queue PR.'
+  );
 }
 
 async function mergeOrReconcile(provider, work) {
@@ -1147,6 +1169,7 @@ async function finishStrategyCycle(service, record, run, issue, input, work) {
   if (work.solRounds) await runSolLoop(service, record, run, issue, ownerTurn);
   const { head, checked } = await verifiedRepairCandidate(service, record, run, work);
   assertStrategyActive(record, 'Stopped by you. No PR was published.');
+  assertSharedReportsOutsideCodePR(service, work, work.targetRevision, head);
   checkPriorIssueInclusion(service, record, run, input, work, 'PR publication');
   await factoryOperation(
     service,

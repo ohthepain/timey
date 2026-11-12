@@ -4,9 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { parseDocument } from 'yaml';
 import { recordStage } from './factory-ui/lifecycle.mjs';
 import { requireThat } from './factory-ui/common.mjs';
+import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
 import { describeAuthorization } from './factory-authorization.mjs';
 export function appendCompletion(root, issue, result, run, evidence, target) {
-  const path = join(root, '.issues', issue.id + '.md'),
+  const path = storedIssuePath(root, issue.id, issue.reportLocation),
     lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
   try {

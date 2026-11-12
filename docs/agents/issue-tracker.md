@@ -23,7 +23,7 @@ Keep specs and working plans under `docs/plans/`; link them from reports.
 Record durable terminology and architecture decisions using
 `docs/agents/domain.md`.
 
-The queue remains locally excluded from Git.
+The queue is local by default. In [shared queue mode](../plans/shared-issue-queue.md), reports and display numbers are tracked on the target through human-reviewed PRs. Workspaces and runtime files stay local. The [Closed issues and Archive design](../plans/archive-closed-issues.md) describes the separate views and local migration.
 
 ## Clarification and lifecycle roles
 

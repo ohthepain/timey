@@ -1,3 +1,7 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { issueStorageDirectory, migrateClosedIssues } from './issue-report-storage.mjs';
+import { listIssueStorage, moveIssueStorage, readIssueStorageReport, storedIssueId } from './issue-storage-actions.mjs';
 import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
@@ -9,7 +13,7 @@ import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
 import { readQueue } from './data.mjs';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -21,6 +25,7 @@ import {
   startIssueStrategy,
   stopIssueStrategy,
   verifyExternalIssueDelivery,
+  verifyIssueStrategyAgain,
 } from './issue-strategy.mjs';
 import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
@@ -114,12 +119,55 @@ async function mutation(service, path, value, owner) {
     },
     '/api/issue-strategy-stop': () => stopIssueStrategy(service, value),
     '/api/issue-strategy-start': () => startIssueStrategy(service, value),
-    '/api/issue-strategy-verify-again': () => service.verifyIssueStrategyAgain(value),
+    '/api/issue-strategy-verify-again': () => verifyIssueStrategyAgain(service, value),
     '/api/issue-strategy-merge': () => mergeIssueStrategyPR(service, value),
     '/api/issue-strategy-external-delivery': () => verifyExternalIssueDelivery(service, value),
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
+    '/api/shared-queue-refresh': () => {
+      service.ownServer();
+      return { warning: service.sharedIssues?.refresh(true) };
+    },
+    '/api/shared-queue-retry': () => {
+      service.ownServer();
+      return service.sharedIssues?.retry(value.issueId);
+    },
+    '/api/shared-queue-confirm': () => {
+      service.ownServer();
+      return service.sharedIssues?.confirm(value.issueId);
+    },
+    '/api/shared-queue-publish-draft': () => {
+      service.ownServer();
+      return service.sharedIssues?.publishDraft(value.issueId);
+    },
+    '/api/shared-queue-handoff': () => {
+      service.ownServer();
+      return service.sharedIssues?.handoff(value.issueId);
+    },
+    '/api/shared-queue-recover': () => {
+      service.ownServer();
+      requireThat(value.confirmedStopped === true, 'Confirm the previous runner has stopped.');
+      return service.sharedIssues?.recover(value.issueId);
+    },
+    '/api/issue-storage-migrate': () => {
+      service.ownServer();
+      return { moved: migrateClosedIssues(service.root).length };
+    },
+    '/api/issue-storage-move': () => moveIssueStorage(service, value),
+    '/api/issue-storage-open-folder': async () => {
+      requireThat(process.platform === 'darwin', 'Finder is available on macOS.');
+      const folder = issueStorageDirectory(service.root, value.location);
+      mkdirSync(folder, { recursive: true });
+      await promisify(execFile)(
+        '/usr/bin/open',
+        ['-a', 'Finder', issueStorageDirectory(service.root, value.location)],
+        {
+          timeout: 5000,
+        }
+      );
+      return { opened: true };
+    },
     '/api/issue-capture': () => service.captures.save(value),
     '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
     '/api/verification-retry': () => service.retryVerification(value),
@@ -224,11 +272,17 @@ function read(service, request, response, owner) {
     '/api/issue-chat-skills': () => service.issueChats.skills(issue(url.searchParams.get('issue'))),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
+    '/api/issue-storage': () => listIssueStorage(service, url.searchParams.get('location')),
+    '/api/issue-storage-report': () =>
+      readIssueStorageReport(service.root, issue(url.searchParams.get('issue')), url.searchParams.get('location')),
     '/api/issue-report': () => service.readSavedReport(issue(url.searchParams.get('issue'))),
     '/api/check-evidence': () =>
       service.readChecklistEvidence(issue(url.searchParams.get('issue')), url.searchParams.get('path')),
     '/api/queue': () =>
-      queueResponse(service.snapshot(owner, { includeCoordinatorDiscussion: !selectedIssue }), selectedIssue),
+      queueResponse(
+        service.snapshot(owner, { includeCoordinatorDiscussion: !selectedIssue, selectedIssue: issue(selectedIssue) }),
+        selectedIssue
+      ),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
@@ -303,5 +357,5 @@ async function postedAction(service, request, token) {
 }
 
 function resolveIssueNumber(service, value) {
-  return readQueue(service.root).issues.find((issue) => String(issue.issueNumber) === value)?.id || value;
+  return storedIssueId(service.root, value);
 }

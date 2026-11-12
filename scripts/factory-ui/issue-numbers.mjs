@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { sharedIssueQueueEnabled } from './shared-issue-config.mjs';
 
 const filename = 'issue-numbers.json';
 const registrySchema = z
@@ -28,6 +29,11 @@ export function ensureIssueNumbers(root, ids) {
   } finally {
     rmSync(lock, { recursive: true, force: true });
   }
+}
+
+export function queueIssueNumbers(root, ids) {
+  if (!sharedIssueQueueEnabled(root)) return ensureIssueNumbers(root, ids);
+  return mapNumbers(readRegistry(join(root, '.issues', filename)), ids);
 }
 
 function acquireNumberLock(lock, file, ids) {

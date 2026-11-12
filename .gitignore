@@ -33,3 +33,11 @@ coverage/
 /blob-report/
 /playwright/.cache/
 .vitest/
+
+# Shared issue reports and their display numbers are reviewed on the target.
+/.issues/*
+!/.issues/[0-9]*.md
+!/.issues/issue-numbers.json
+!/.issues/closed/
+/.issues/closed/*
+!/.issues/closed/[0-9]*.md

@@ -1608,3 +1608,7 @@ each resulting issue. Merge off chooses Full Stop; Merge on chooses Full Send
 with existing protected merge checks. Grilling disables Go and remains available
 through Save. Failed starts retain saved issues and direct users to their status
 and Continue control rather than repeating capture.
+
+## Shared issue queue
+
+In [shared queue mode](../plans/shared-issue-queue.md), the issue strategy claims an issue on the remote before starting and keeps the claim until its human-reviewed report PR lands. Use the issue page to open the report PR, retry publication, or reconcile an interrupted claim. Legacy assignment launches are unavailable in this mode.
