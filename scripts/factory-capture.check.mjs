@@ -71,6 +71,8 @@ test('capture preserves exact original text, existing reports, metadata, distinc
 
 test('capture saves independent Grill, Go and Merge intent before grilling without starting work', async (t) => {
   const { root, service } = captureFixture(t);
+  mkdirSync(join(root, '.agents/skills/grilling'), { recursive: true });
+  writeFileSync(join(root, '.agents/skills/grilling/SKILL.md'), 'Ask useful questions.\n');
   forbidWork(service);
   service.issueChats = { send: async () => ({ repeated: false }), close() {} };
   service.captures = createCaptures(service, { assess: async (text) => ({ issues: [proposal(text)] }) });
