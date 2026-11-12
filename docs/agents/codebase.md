@@ -241,7 +241,9 @@ labels. See the UI guide for consent boundaries.
 issue, run, input and conversation records, including a saved PR link independent
 of the PR's current status. `runs.mjs` persists phase timing for issue-work runs;
 the Progress view shows the current phase and accumulated run time without adding a
-separate workflow record. `index.html` renders that projection, reuses existing
+separate workflow record. Its manual Refresh progress control requests the current
+queue snapshot and issue conversation through the shared refresh path, without a
+page reload or a new workflow operation. `index.html` renders that projection, reuses existing
 input handlers and overlays transient Continue acknowledgment until fresh evidence
 arrives.
 `factory-ui/output-history.mjs` reads earlier public JSONL events using stable byte
