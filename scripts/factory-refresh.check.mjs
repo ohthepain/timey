@@ -22,6 +22,7 @@ function refreshFixture(t) {
       '\nwindow.chatTest = discussionUI;'
   );
   let snapshot = { issues: [{ id: 'one', lifecycle: { status: 'running', input: null } }] };
+  let requestError;
   let renders = 0,
     busy = false;
   const document = dom.window.document;
@@ -39,14 +40,18 @@ function refreshFixture(t) {
     'serverControlUI',
     'issueRoute',
     'coordinatorUI',
-    'let data,refreshing=false,refreshPending=false,refreshAgain=false,manualRefreshPending=false,progressUnavailable=false; function updateProgressView() {} function setProgressRefreshButtons(refreshing) { document.querySelectorAll("[data-refresh-progress]").forEach(button => { button.disabled=refreshing; button.textContent=refreshing ? "Refreshing…" : "Refresh progress"; }); }\n' +
+    'let data,refreshing=false,refreshPending=false,refreshAgain=false,manualRefreshPending=false,progressUnavailable=false,refreshError=null; function updateProgressView() {} function setProgressRefreshButtons(refreshing) { document.querySelectorAll("[data-refresh-progress]").forEach(button => { button.disabled=refreshing; button.textContent=refreshing ? "Refreshing…" : "Refresh progress"; }); }\n' +
       html.slice(start, end).replace('!busy', '!isBusy()') +
       ';return refresh;'
   )(
     document,
     dom.window.location,
     (id) => document.getElementById(id),
-    async (path) => (path === 'runtime' ? {} : structuredClone(snapshot)),
+    async (path) => {
+      if (path === 'runtime') return {};
+      if (requestError) throw Error(requestError);
+      return structuredClone(snapshot);
+    },
     () => {},
     () => {},
     () => {
@@ -72,6 +77,9 @@ function refreshFixture(t) {
         status: 'waiting',
         input: { type: 'questions', questions: [{ question: 'Which scope?' }] },
       };
+    },
+    failWith(message) {
+      requestError = message;
     },
     busy(value) {
       busy = value;
@@ -140,4 +148,18 @@ test('saved questions appear while temporary chat has focus without replacing it
   assert.equal(f.document.querySelector('[data-temporary] textarea'), draft);
   assert.equal(f.document.activeElement, draft);
   assert.equal(draft.value, 'Keep typing');
+});
+
+test('a successful refresh clears its earlier error text without clearing an action error', async (t) => {
+  const f = refreshFixture(t);
+  const error = f.document.getElementById('error');
+  f.failWith('values.map is not a function');
+  await f.refresh();
+  assert.equal(error.textContent, 'values.map is not a function');
+  f.failWith(null);
+  await f.refresh();
+  assert.equal(error.textContent, '');
+  error.textContent = 'Action failed';
+  await f.refresh();
+  assert.equal(error.textContent, 'Action failed');
 });

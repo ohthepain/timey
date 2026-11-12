@@ -1890,6 +1890,7 @@
         refreshAgain = false,
         manualRefreshPending = false;
       let sourceChangedAtPageLoad = null;
+      let refreshError = null;
       const runDetails = new Map();
       const outputHistories = new Map();
       const grillingReplies = new Map();
@@ -1961,6 +1962,8 @@
             render();
             refreshPending = false;
           }
+          if ($('error').textContent === refreshError) $('error').textContent = '';
+          refreshError = null;
         } catch (e) {
           if (location.hash !== requestedRoute) return;
           progressUnavailable = true;
@@ -1971,7 +1974,8 @@
             $('connection').textContent = 'Reconnecting after server restart…';
             return;
           }
-          $('error').textContent = e.message;
+          refreshError = e.message;
+          $('error').textContent = refreshError;
           $('connection-banner').textContent = 'Connection needs attention';
           $('connection-banner').hidden = false;
           $('connection').hidden = true;
@@ -2231,6 +2235,7 @@
         busy = true;
         $('confirmation-error').textContent = '';
         if ($('confirm').open) $('approve').disabled = true;
+        refreshError = null;
         $('error').textContent = '';
         try {
           await task();
