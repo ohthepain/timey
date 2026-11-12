@@ -5143,7 +5143,11 @@ test('issue Git identity follows unfinished work, assembly and live HEAD without
       { kind: 'worker', actionId: 'other', checkout: '/not-this-issue' },
     ],
   };
-  assert.deepEqual(issueGit(snapshot, issue), { branch: 'codex/issue-work', revision: git('rev-parse', 'HEAD') });
+  assert.deepEqual(issueGit(snapshot, issue), {
+    checkout: root,
+    branch: 'codex/issue-work',
+    revision: git('rev-parse', 'HEAD'),
+  });
   git('commit', '--allow-empty', '-qm', 'advance');
   assert.equal(issueGit(snapshot, issue).revision, git('rev-parse', 'HEAD'));
   snapshot.actions[0].status = 'assembled';
