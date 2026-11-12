@@ -3978,15 +3978,17 @@
       }
       function issueGitLabel(issue) {
         const work = issue.workingGit;
-        if (!work) return '<p class="muted">Working branch: no checkout recorded</p>';
-        const label = work.unavailable
-          ? '<p class="muted">Working branch: checkout unavailable</p>'
-          : `<p class="muted">Working branch: <code>${esc(work.branch || 'Detached HEAD')}</code> · <code title="${esc(work.revision)}">${esc(work.revision.slice(0, 8))}</code></p>`;
-        const button =
-          issue.strategy?.checkout && work.branch
+        const label = !work
+          ? 'Working branch: no checkout recorded'
+          : work.unavailable
+            ? 'Working branch: checkout unavailable'
+            : `Working branch: <code>${esc(work.branch || 'Detached HEAD')}</code> · <code title="${esc(work.revision)}">${esc(work.revision.slice(0, 8))}</code>`;
+        const deleteButton =
+          issue.strategy?.checkout && work?.branch
             ? `<button type="button" data-delete-worktree="${esc(issue.id)}" ${issue.strategy.active ? 'disabled title="Issue work is still active."' : ''}>Delete worktree</button>`
             : '';
-        return `<div class="issue-worktree-row">${label}${button}</div>`;
+        const openDisabled = work && !work.unavailable && work.checkout ? '' : 'disabled';
+        return `<div class="issue-worktree-row"><p class="muted">${label}</p>${deleteButton}<button type="button" data-open-work-folder="${esc(issue.id)}" ${openDisabled}>Open work folder</button></div><p class="muted" role="status" data-open-work-folder-status="${esc(issue.id)}"></p>`;
       }
       function modelLabel(model) {
         return data.modelSettings.models.find((choice) => choice.id === model)?.name || model;
@@ -4342,6 +4344,21 @@
             document.querySelector('[data-chat-tab="issue"]')?.click();
             const stage = data.lifecycle.find((entry) => entry.state === issue.state);
             discussionUI.grill({ state: issue.state, name: stage?.name || issue.stage || 'Issue' });
+          };
+        });
+        document.querySelectorAll('[data-open-work-folder]').forEach((button) => {
+          button.onclick = async () => {
+            const status = document.querySelector(
+              `[data-open-work-folder-status="${CSS.escape(button.dataset.openWorkFolder)}"]`
+            );
+            button.disabled = true;
+            try {
+              await request('issue-work-folder-open', { issueId: button.dataset.openWorkFolder });
+              if (status) status.textContent = 'Opened the issue work folder.';
+            } catch (error) {
+              if (status) status.textContent = error.message;
+              button.disabled = false;
+            }
           };
         });
         document.querySelectorAll('[data-issue-retro]').forEach((button) => {

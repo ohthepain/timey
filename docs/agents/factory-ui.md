@@ -576,7 +576,7 @@ unknown chats prevent workspace removal, and local conversation transcripts are
 stored inside the issue workspace so they are removed with it. Native Codex chats
 remain app-managed and archiving them is not reported as disk savings.
 
-**Delete worktree** is beside the working branch on the issue page. Confirming
+**Delete worktree** is beside the working branch on the issue page, next to **Open work folder**. Open work folder opens the issue checkout when one is available and stays disabled otherwise. Confirming Delete worktree
 removes the issue's managed work folder and local branch. The server preserves
 dirty or shared worktrees and blocks removal while issue work or chat is active.
 The action is available independently of closure and leaves the remote branch
