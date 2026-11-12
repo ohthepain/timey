@@ -21,6 +21,7 @@ import {
   startIssueStrategy,
   stopIssueStrategy,
   verifyExternalIssueDelivery,
+  verifyIssueStrategyAgain,
 } from './issue-strategy.mjs';
 import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
@@ -114,12 +115,37 @@ async function mutation(service, path, value, owner) {
     },
     '/api/issue-strategy-stop': () => stopIssueStrategy(service, value),
     '/api/issue-strategy-start': () => startIssueStrategy(service, value),
-    '/api/issue-strategy-verify-again': () => service.verifyIssueStrategyAgain(value),
+    '/api/issue-strategy-verify-again': () => verifyIssueStrategyAgain(service, value),
     '/api/issue-strategy-merge': () => mergeIssueStrategyPR(service, value),
     '/api/issue-strategy-external-delivery': () => verifyExternalIssueDelivery(service, value),
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
+    '/api/shared-queue-refresh': () => {
+      service.ownServer();
+      return { warning: service.sharedIssues?.refresh(true) };
+    },
+    '/api/shared-queue-retry': () => {
+      service.ownServer();
+      return service.sharedIssues?.retry(value.issueId);
+    },
+    '/api/shared-queue-confirm': () => {
+      service.ownServer();
+      return service.sharedIssues?.confirm(value.issueId);
+    },
+    '/api/shared-queue-publish-draft': () => {
+      service.ownServer();
+      return service.sharedIssues?.publishDraft(value.issueId);
+    },
+    '/api/shared-queue-handoff': () => {
+      service.ownServer();
+      return service.sharedIssues?.handoff(value.issueId);
+    },
+    '/api/shared-queue-recover': () => {
+      service.ownServer();
+      requireThat(value.confirmedStopped === true, 'Confirm the previous runner has stopped.');
+      return service.sharedIssues?.recover(value.issueId);
+    },
     '/api/issue-capture': () => service.captures.save(value),
     '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
     '/api/verification-retry': () => service.retryVerification(value),

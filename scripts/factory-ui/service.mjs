@@ -1,5 +1,5 @@
 import { factoryOperation } from './issue-operation.mjs';
-import { strategyView, verifyIssueStrategyAgain, prepareIssueChatCheckout } from './issue-strategy.mjs';
+import { strategyView, prepareIssueChatCheckout } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
 import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
@@ -8,6 +8,7 @@ import { progressBasis } from './next-action.mjs';
 import { queueHumanInput, queueHumanInputReader } from './queue-human-input.mjs';
 import { deliveryMode, draftHandoff, draftAssembly } from './delivery-mode.mjs';
 import { checkHandoff } from './handoff-checks.mjs';
+import { createSharedIssueQueue } from './shared-issue-queue.mjs';
 import { createCaptures } from './issue-capture.mjs';
 import { stageWorkerArtifacts } from './evidence-staging.mjs';
 import { pinWorkerTurn } from './worker-turn.mjs';
@@ -140,15 +141,27 @@ export class FactoryUI {
       );
     };
     this.guard = humanGuard;
+    this.sharedIssues = createSharedIssueQueue(this, options.sharedIssues);
     installWorkerHealth(this);
   }
   snapshot(owner = null, { includeCoordinatorDiscussion = true } = {}) {
     if (!this.serverLock) this.store.reload();
+    let sharedQueueWarning;
+    if (this.sharedIssues) {
+      try {
+        this.ownServer();
+        sharedQueueWarning = this.sharedIssues.refresh();
+      } catch (error) {
+        sharedQueueWarning = error.message;
+      }
+    }
     const queue = readQueue(this.root);
     const runs = this.store.list(this.permissionRequests());
     const humanInputs = queueHumanInputReader(queue);
     return {
       ...queue,
+      sharedQueueEnabled: Boolean(this.sharedIssues),
+      sharedQueueWarning,
       modelSettings: readModelSettings(this.root),
       coordinator: includeCoordinatorDiscussion
         ? this.coordinator.view()
@@ -179,6 +192,7 @@ export class FactoryUI {
     return {
       ...issue,
       strategy: strategyView(this, issue),
+      sharedQueue: this.sharedIssues?.view(issue.id),
       humanInputView,
       readiness,
       verificationRecovery: verificationView(this, queue, issue),
@@ -511,9 +525,6 @@ export class FactoryUI {
   }
   retryVerification(input) {
     return retryVerification(this, input, (id) => continueLifecycleAfter(this, id));
-  }
-  verifyIssueStrategyAgain(input) {
-    return verifyIssueStrategyAgain(this, input);
   }
   async finishWorker(run, action, result, checkOptions = {}) {
     const update = { status: 'completed', evidence: JSON.stringify(result), authorization: run.authorization };

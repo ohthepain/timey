@@ -1,3 +1,4 @@
+import { sharedIssueQueueEnabled } from './factory-ui/shared-issue-config.mjs';
 import { hasAssignmentScope } from './factory-assignment-scope.mjs';
 import { verificationStart } from './issue-verification-start.mjs';
 import { historicalIntegration } from './factory-legacy-integration.mjs';
@@ -438,6 +439,7 @@ export function factory(project) {
       });
     },
     reserve(id, authorization = { kind: 'coordinator', operation: 'launch' }) {
+      assert(!sharedIssueQueueEnabled(root), 'Use the issue strategy controls to claim and run a shared issue.');
       return mutate((data) => {
         const action = find(data, id);
         assert(action.status === 'recommended', `Action is already ${action.status}; never dispatch it twice.`);

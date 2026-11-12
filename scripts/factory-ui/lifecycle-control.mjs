@@ -44,6 +44,7 @@ export function startLifecycle(service, input) {
   return { issueId: input.issueId };
 }
 function launchLifecycle(service, record) {
+  requireThat(!service.sharedIssues, 'Use the issue strategy controls to claim and run a shared issue.');
   requireThat(!service.lifecycleTasks.has(record.issueId), 'Progress is already running for this issue.');
   saveLifecycle(service, record, {
     status: 'running',

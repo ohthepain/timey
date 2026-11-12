@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { factory } from '../factory-ledger.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { readImplementationOrder } from './implementation-order.mjs';
-import { ensureIssueNumbers } from './issue-numbers.mjs';
+import { sharedIssueQueueEnabled } from './shared-issue-config.mjs';
+import { queueIssueNumbers } from './issue-numbers.mjs';
 
 const names = {
   'ready-for-grilling': 'Clarify',
@@ -45,7 +46,7 @@ export function readQueue(project) {
   const projected = clarificationLifecycle(root, lifecycle(root));
   const stages = projected.stages,
     ids = inspection.reports.map((r) => r.metadata.id);
-  const issueNumbers = ensureIssueNumbers(root, ids);
+  const issueNumbers = queueIssueNumbers(root, ids);
   const issues = inspection.reports.map((report) => ({
     ...report.metadata,
     issueNumber: issueNumbers[report.metadata.id],
@@ -76,7 +77,13 @@ export function readQueue(project) {
     issues,
     actions: inspection.registry?.actions || [],
     registryPresent: inspection.registry !== null,
-    sourceClean: !git(root, 'status', '--porcelain', '--untracked-files=all'),
+    sourceClean: !git(
+      root,
+      'status',
+      '--porcelain',
+      '--untracked-files=all',
+      ...(sharedIssueQueueEnabled(root) ? ['--', '.', ':(exclude).issues/**'] : [])
+    ),
   };
 }
 export function currentAction(project, id) {

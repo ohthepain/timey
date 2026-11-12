@@ -23,6 +23,7 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
   checkIdle(service, queue, issue, { kind, dismissed });
   const target = decisionTarget(queue, role, kind, dismissed);
   const action = { issues: [id] };
+  const shared = service.sharedIssues?.acquire(issue, true);
   const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target });
   queue = prepared.queue;
   issue = prepared.issue;
@@ -33,6 +34,14 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
   applyClosure(result, choice, reason, target, dismissed);
   const evidence = [{ path: join(service.root, '.issues', id + '.md'), sha256: digest(issue.content) }];
   const decision = recordDecision(service, queue, issue, run, result, evidence, target, basis);
+  if (shared) {
+    const publication = service.sharedIssues.checkpoint(
+      id,
+      kind === 'close' ? 'Issue closed' : 'Issue reopened',
+      shared
+    );
+    return { ...decision, publication: { status: publication.status, url: publication.url, error: publication.error } };
+  }
   if (kind !== 'close') return decision;
   return finishIssueClosure(service, id, decision, cleanup, resolution);
 }

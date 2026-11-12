@@ -28,7 +28,7 @@ For a normal release, stop the old runner and confirm that the required report c
 
 ## Human review
 
-Every shared report update goes through a human-reviewed PR. The factory can prepare a queue-only PR, or include the update in a code PR when the report can wait for that merge. Keep direct target pushes unavailable to runners and require human review on either path, including when a code PR carries a report update under a strategy that would otherwise allow review bypass.
+Every shared report update goes through a human-reviewed queue-only PR. Keep direct target pushes unavailable to runners. The factory also blocks changes under `.issues/` in its code PRs, including Full Send.
 
 A remote claim takes effect immediately and tells other runners who owns the run. The shared report changes only when the reviewed PR lands. A runner that has stopped while its report awaits review still holds its claim.
 
@@ -36,4 +36,14 @@ A remote claim takes effect immediately and tells other runners who owns the run
 
 Use two independent clones against one test remote. Race them for one issue and verify that only the confirmed owner starts. Cover an interrupted claim response, a stale report, a failed checkpoint, an interrupted release, and a delayed release after a new claim. Verify that a fresh clone of the target contains published reports and display numbers, that files created under `.issues/issue-work/` remain ignored and never appear in the target tree, that concurrent report edits are preserved or surfaced for resolution, and that published changes contain only the permitted queue files. Exercise normal issue delivery and closure with the configured branch rules.
 
-Verify that queue-only PRs and code PRs carrying report updates cannot publish without human review, including through Full Send. Verify that pending review keeps the claim held and that the claim is visible before any report PR lands.
+Verify that queue-only PRs require human review and that Full Send cannot publish report changes through a code PR. Verify that pending review keeps the claim held and that the claim is visible before any report PR lands.
+
+## Rollout and operation
+
+Before enabling shared mode, stop and reconcile existing runs on all participating runners. Review which existing reports can be shared, then import those exact reports and their current `.issues/issue-numbers.json` in a human-reviewed PR to the target. Enable shared mode with `"sharedIssueQueue": true` in the same target's `factory.config.json`. The factory does not bulk import local reports. For an existing checkout that has `/.issues/` in Git's local exclude file, remove that blanket entry when preparing the import. The repository ignore rules still exclude runtime files. Stage individual reviewed reports and the registry.
+
+Each runner uses the target checkout for the factory and needs the same lifecycle configuration in its local `.issues/triage-labels.md` and the existing GitHub issue delivery configuration pointing to the protected target on `origin`. Set GitHub to require human approval and use a queue PR author who does not bypass review. The reviewer must be a different identity from the PR author. For one human reviewer, give the factory server a separate non-bypass bot credential as `TIMEY_QUEUE_GITHUB_TOKEN`. Otherwise the queue publisher uses the saved GitHub CLI login. Git transport uses the configured ordinary remote credentials.
+
+The queue periodically reads the target and remote claims. **Refresh shared queue** checks immediately without changing the checked-out branch or advancing its code. Use **Publish report update** to share a deliberate local report edit. Local edits that conflict with newer reports are preserved and reported. If two new reports propose the same display number, merge one PR, then use **Refresh report PR against target** on the other to allocate from the updated registry and request review of the revised PR.
+
+If publication fails, use the issue's retry control after reviewing the failure. If a reviewer manually amended the pending PR to resolve a conflict, use **Confirm reviewed report merge** after it lands. Timey verifies the actual human-approved merge on the target before releasing the claim. For an interrupted runner without a checkpoint, verify that its previous process and Git operation have stopped before using **Reconcile interrupted claim** on the owning checkout. A dead process can leave a per-issue lock in `.issues/shared-issue-claims/` or `.issues/shared-publication/`. Inspect its saved operation and remove only the confirmed dead lock before retrying. Review and merge the recovery report before releasing an active claim. Local workspaces are preserved when proposing closure and can be cleaned up separately after review.

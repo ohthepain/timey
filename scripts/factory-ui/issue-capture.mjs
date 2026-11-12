@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { assessCapture, captureAssessment } from './capture-assessment.mjs';
 import { captureRoute, validateCaptureLifecycle, captureLifecycle } from './capture-routing.mjs';
 import { readQueue } from './data.mjs';
-import { ensureIssueNumbers } from './issue-numbers.mjs';
+import { queueIssueNumbers } from './issue-numbers.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
 
 const requestSchema = z
@@ -73,6 +73,11 @@ export function createCaptures(service, options = {}) {
     }
     const promise = perform(input)
       .then((result) => {
+        if (service.sharedIssues)
+          for (const issue of result.issues) {
+            const saved = service.sharedIssues.checkpoint(issue.id, 'Issue created');
+            issue.publication = { status: saved.status, url: saved.url, error: saved.error };
+          }
         if (input.model)
           for (const issue of result.issues)
             saveIssueModelSettings(service, { issueId: issue.id, model: input.model, effort: '' });
@@ -230,7 +235,7 @@ function publishExclusive(path, content) {
   }
 }
 function response(receipt, root) {
-  const numbers = ensureIssueNumbers(
+  const numbers = queueIssueNumbers(
     root,
     receipt.reports.map((report) => report.id)
   );

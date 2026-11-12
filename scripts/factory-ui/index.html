@@ -1880,7 +1880,7 @@
         );
       const link = (id) => {
         const issue = data.issues.find((entry) => entry.id === id);
-        return `<a href="#/issue/${encodeURIComponent(id)}">${esc(issue ? `#${issue.issueNumber} · ${issue.title || 'Untitled issue'}` : id)}</a>`;
+        return `<a href="#/issue/${encodeURIComponent(id)}">${esc(issue ? `${issue.issueNumber == null ? '' : '#' + issue.issueNumber + ' · '}${issue.title || 'Untitled issue'}` : id)}</a>`;
       };
       async function request(path, value) {
         const options =
@@ -2305,7 +2305,7 @@
         return `<h2>Current decision and next action</h2><section class="card queue-decision" data-current-evaluation="${esc(current.id)}"><span class="badge">${esc(actionLabel)}</span><p><strong>Current decision:</strong> ${esc(decision || 'No decision summary recorded.')}</p><p><strong>Next action:</strong> ${nextAction}</p></section><details class="queue-history"><summary>History and diagnostics</summary>${prior || '<p>No older evaluations.</p>'}<h3>Current evaluation diagnostics</h3>${progress(current, false)}</details>`;
       }
       function queue() {
-        return `<div class="queue-heading"><h1>Issue queue</h1><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button></div><div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
+        return `<div class="queue-heading"><h1>Issue queue</h1><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button>${data.sharedQueueEnabled ? '<button data-shared-queue-refresh>Refresh shared queue</button>' : ''}</div>${data.sharedQueueWarning ? `<p role="status">${esc(data.sharedQueueWarning)}</p>` : ''}<div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
@@ -2449,7 +2449,7 @@
         return issues
           .map(
             (i) =>
-              `<tr data-issue-row="${esc(i.id)}" style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(i.id)}" aria-label="Drag to reorder ${esc(i.title || i.id)}" title="Drag to set implementation order">⠿</button>` : ''}${link(i.id)}<br>${priorityControls(i)}</td><td>${esc(i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small></td></tr>`
+              `<tr data-issue-row="${esc(i.id)}" style="--issue-priority:${esc(i.priorityInfo?.color || '#eab308')}"><td>${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(i.id)}" aria-label="Drag to reorder ${esc(i.title || i.id)}" title="Drag to set implementation order">⠿</button>` : ''}${link(i.id)}<br>${priorityControls(i)}</td><td>${esc(i.strategy?.status === 'queued' ? i.shared_progress || 'queued' : i.strategy?.status || 'queued')}<br><small>${esc(i.strategy?.strategy === 'full-send' ? 'Full Send' : 'Full Stop')}</small>${i.sharedQueue?.claimed ? '<br><small>Remote claim held</small>' : ''}</td></tr>`
           )
           .join('');
       }
@@ -3058,6 +3058,11 @@
           $('approve').textContent = 'Close issue';
           $('approve').disabled = choices.length === 0;
           $('confirm').showModal();
+          if (issue.sharedQueue) {
+            $('selection').innerHTML =
+              `<h2>Close this issue</h2><p>The factory prepares a report PR for human review. Local work is preserved.</p><label>Reason<select id="closure-reason">${choices.map((choice) => `<option value="${esc(choice.id)}">${esc(choice.label)} — ${esc(choice.description)}</option>`).join('')}</select></label><label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`;
+            return;
+          }
           const identities = await request('issue-cleanup-identities', { issueId: issue.id, resolution });
           selection.cleanupResources = identities.resources;
           $('selection').innerHTML =
@@ -3233,11 +3238,16 @@
           const accepted = decision.kind === 'close' && (!decision.resolution || decision.resolution === 'fixed');
           decisionRequests.set(id, {
             pending: false,
-            message: accepted
-              ? 'Accepted and closed.'
-              : decision.kind === 'close'
-                ? `Issue closed${result.cleanup?.status === 'running' ? '; cleanup is running in the background.' : result.cleanup?.status === 'incomplete' ? '; cleanup incomplete.' : '; cleanup recorded.'}`
-                : 'Issue reopened.',
+            message:
+              result.publication?.status === 'review'
+                ? 'Saved locally. The shared report is awaiting human review.'
+                : result.publication?.status === 'failed'
+                  ? 'Saved locally. Shared report publication needs attention.'
+                  : accepted
+                    ? 'Accepted and closed.'
+                    : decision.kind === 'close'
+                      ? `Issue closed${result.cleanup?.status === 'running' ? '; cleanup is running in the background.' : result.cleanup?.status === 'incomplete' ? '; cleanup incomplete.' : '; cleanup recorded.'}`
+                      : 'Issue reopened.',
           });
           render();
           // The saved decision is visible immediately, even if conversation polling is slow.
@@ -3706,6 +3716,35 @@
           sections.findLastIndex((s) => /^## (Evidence and progress|Result|Verification)/.test(s))
         );
       }
+      function sharedQueueStatus(issue) {
+        const shared = issue.sharedQueue;
+        if (!shared) return '';
+        const checkpoint = shared.checkpoint;
+        const url = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(checkpoint?.url || '')
+          ? checkpoint.url
+          : null;
+        const link = url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Review report PR</a>` : '';
+        const status =
+          checkpoint?.status === 'review'
+            ? `<p>Report update awaiting human review.${link}</p><button data-shared-queue-retry="${esc(issue.id)}">Refresh report PR against target</button>`
+            : ['failed', 'preparing'].includes(checkpoint?.status)
+              ? `<p role="alert">${esc(checkpoint.error || 'Report publication was interrupted.')}${link}</p><button data-shared-queue-retry="${esc(issue.id)}">Retry report publication</button>`
+              : '';
+        const recovery =
+          shared.local && !shared.active && (!checkpoint || ['published', 'claimed'].includes(checkpoint.status))
+            ? `<button data-shared-queue-recover="${esc(issue.id)}">Reconcile interrupted claim</button>`
+            : '';
+        const confirm = ['review', 'failed', 'preparing'].includes(checkpoint?.status)
+          ? `<button data-shared-queue-confirm="${esc(issue.id)}">Confirm reviewed report merge</button>`
+          : '';
+        const draft = shared.canPublishDraft
+          ? `<button data-shared-queue-publish-draft="${esc(issue.id)}">Publish report update</button>`
+          : '';
+        const handoff = shared.canHandoff
+          ? `<button data-shared-queue-handoff="${esc(issue.id)}">Publish handoff</button>`
+          : '';
+        return `<div>${data.sharedQueueWarning ? `<p role="status">${esc(data.sharedQueueWarning)}</p>` : ''}${shared.claimed ? `<p>Remote claim held by ${shared.local ? 'this runner' : 'another runner'}.</p>` : ''}${status}${recovery}${handoff}${confirm}${draft}<button data-shared-queue-refresh>Refresh shared queue</button></div>`;
+      }
       function issueGitLabel(issue) {
         const work = issue.workingGit;
         if (!work) return '<p class="muted">Working branch: no checkout recorded</p>';
@@ -3803,7 +3842,7 @@
         const showLifecycleProgress = !i.strategy?.runId && (!stage || visibleLifecycleStage(stage));
         const verifyAgain = i.strategy?.verifyAgain;
         const verificationRequest = verificationRequests.get(i.id);
-        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title"><span class="muted issue-number">#${esc(i.issueNumber)}</span><h1>${esc(i.title || 'Untitled issue')}</h1><span class="badge">${esc(issueStatus)}</span></div>${issueGitLabel(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>${verifyAgain ? `<button data-strategy-verify-again="${esc(i.id)}" data-verify-run="${esc(verifyAgain.runId)}" data-verify-head="${esc(verifyAgain.head)}" data-verify-basis="${esc(verifyAgain.basis)}" ${verifyAgain.busy ? 'disabled' : ''}>${verifyAgain.busy ? 'Running checks…' : `Verify this commit again (${esc(verifyAgain.head.slice(0, 7))})`}</button>${verificationRequest ? `<p role="${verificationRequest.error ? 'alert' : 'status'}">${esc(verificationRequest.message)}</p>` : ''}` : ''}`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
+        return `<div class="issue-navigation-row">${includeQueueNavigation ? '<a href="#/queue">← Issue queue</a>' : ''}${issueNavigation(i)}</div><div class="issue-title">${i.issueNumber == null ? '' : `<span class="muted issue-number">#${esc(i.issueNumber)}</span>`}<h1>${esc(i.title || 'Untitled issue')}</h1><span class="badge">${esc(issueStatus)}</span></div>${issueGitLabel(i)}${sharedQueueStatus(i)}<button data-issue-grill="${esc(i.id)}">Grill me…</button><button data-issue-retro="${esc(i.id)}">Run retro…</button><button data-open-report="${esc(i.id)}">Open saved report</button>${priorityControls(i)}${decisionStatus(i)}${closedIssueState(i.state) ? (i.closure ? `<p><b>Closed: ${esc(i.closure.label)}</b>${i.closure.details ? ` — ${i.closure.details}` : ''}</p>` : '') + cleanupPanel(i) : `${canAcceptFix ? `<button class="primary" data-issue-decision="close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>${decisionRequests.get(i.id)?.pending ? 'Closing…' : 'Accept fix and close'}</button>` : ''}<button data-issue-decision="choose-close" data-issue-id="${esc(i.id)}" data-issue-state="${esc(i.state)}" ${decisionRequests.get(i.id)?.pending ? 'disabled' : ''}>Close with reason…</button>${verifyAgain ? `<button data-strategy-verify-again="${esc(i.id)}" data-verify-run="${esc(verifyAgain.runId)}" data-verify-head="${esc(verifyAgain.head)}" data-verify-basis="${esc(verifyAgain.basis)}" ${verifyAgain.busy ? 'disabled' : ''}>${verifyAgain.busy ? 'Running checks…' : `Verify this commit again (${esc(verifyAgain.head.slice(0, 7))})`}</button>${verificationRequest ? `<p role="${verificationRequest.error ? 'alert' : 'status'}">${esc(verificationRequest.message)}</p>` : ''}` : ''}`}<div class="issue-chat-tabs" role="region" aria-label="Issue activity"><div class="issue-chat-tablist" role="tablist">${[
           ['progress', 'Progress'],
           ['output', 'Issue output'],
           ['issue', 'Issue thread'],
@@ -4292,6 +4331,35 @@
         });
         document.querySelectorAll('[data-review-result]').forEach((button) => {
           button.onclick = () => reviewRecordedResult(button.dataset.reviewResult);
+        });
+        document.querySelectorAll('[data-shared-queue-refresh]').forEach((button) => {
+          button.onclick = () => act(() => request('shared-queue-refresh', {}));
+        });
+        document.querySelectorAll('[data-shared-queue-retry]').forEach((button) => {
+          button.onclick = () => act(() => request('shared-queue-retry', { issueId: button.dataset.sharedQueueRetry }));
+        });
+        document.querySelectorAll('[data-shared-queue-confirm]').forEach((button) => {
+          button.onclick = () =>
+            act(() => request('shared-queue-confirm', { issueId: button.dataset.sharedQueueConfirm }));
+        });
+        document.querySelectorAll('[data-shared-queue-publish-draft]').forEach((button) => {
+          button.onclick = () =>
+            act(() => request('shared-queue-publish-draft', { issueId: button.dataset.sharedQueuePublishDraft }));
+        });
+        document.querySelectorAll('[data-shared-queue-handoff]').forEach((button) => {
+          button.onclick = () =>
+            act(() => request('shared-queue-handoff', { issueId: button.dataset.sharedQueueHandoff }));
+        });
+        document.querySelectorAll('[data-shared-queue-recover]').forEach((button) => {
+          button.onclick = () => {
+            if (!window.confirm('Have you confirmed that the previous runner has stopped?')) return;
+            return act(() =>
+              request('shared-queue-recover', {
+                issueId: button.dataset.sharedQueueRecover,
+                confirmedStopped: true,
+              })
+            );
+          };
         });
         document.querySelectorAll('[data-issue-decision]').forEach((button) => {
           button.onclick = () =>

@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ensureIssueNumbers } from './factory-ui/issue-numbers.mjs';
+import { queueIssueNumbers } from './factory-ui/issue-numbers.mjs';
 
 // Selection narrows the assignment; retain the whole inspection for dependencies and existing work.
 export function decisionView(inspection, selectors, project) {
-  const issueNumbers = ensureIssueNumbers(
+  const issueNumbers = queueIssueNumbers(
     project,
     inspection.reports.map((report) => report.metadata.id)
   );
