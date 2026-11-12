@@ -1,9 +1,12 @@
 export function routeQueueIssue(page, issueId, updateIssue) {
-  return page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch({ maxRetries: 1 });
+  return page.route(`**/api/issue?issue=${encodeURIComponent(issueId)}`, async (route) => {
+    const queueUrl = new URL('/api/queue', route.request().url()).href;
+    const response = await route.fetch({ url: queueUrl, maxRetries: 1 });
     const snapshot = await response.json();
     const issue = snapshot.issues.find((entry) => entry.id === issueId);
     await updateIssue(snapshot, issue);
+    snapshot.issues = [issue];
+    snapshot.issueScoped = true;
     await route.fulfill({ json: snapshot });
   });
 }

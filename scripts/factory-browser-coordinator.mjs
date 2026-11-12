@@ -8,23 +8,9 @@ export default async function coordinatorBrowserChecks(page) {
     { id: 'old', messages: [{ role: 'Coordinator', text: 'Earlier retained conversation' }], output: [] },
     { id: 'current', messages: [], output: [{ text: 'Reading saved work <script>danger</script>' }] },
   ];
-  await page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch();
-    const data = await response.json();
-    const coordinator = {
-      active,
-      paused,
-      reason: paused ? 'Stopped. Workers are still running.' : '',
-      threads,
-      workers: [{ id: 'worker', issueId: 'b', summary: 'Worker still running' }],
-      waiting: active ? [{ issueId: 'a', reason: 'The coordinator is reviewing Older urgent issue.' }] : [],
-      pending: 0,
-    };
-    data.coordinator = new URL(route.request().url()).searchParams.get('issue')
-      ? { active, waiting: coordinator.waiting }
-      : coordinator;
-    await route.fulfill({ json: data });
-  });
+  const state = () => ({ active, paused, threads });
+  await page.route('**/api/queue', (route) => coordinatorQueueRoute(route, state()));
+  await page.route('**/api/issue?issue=*', (route) => coordinatorIssueRoute(route, state()));
   await page.route('**/api/coordinator-*', async (route) => {
     const action = route.request().url().split('/api/coordinator-')[1];
     requests.push({ action, body: route.request().postDataJSON() });

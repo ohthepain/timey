@@ -154,7 +154,7 @@ export default async function progressBrowserChecks(page) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.screenshot({ path: 'issue-progress.png', fullPage: false });
   for (const pattern of [
-    '**/api/queue?**',
+    '**/api/issue?issue=b',
     '**/api/issue-chat?**',
     '**/api/lifecycle-answer',
     '**/api/issue-strategy-start',

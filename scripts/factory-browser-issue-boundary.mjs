@@ -1,7 +1,8 @@
 export default async function issueBoundaryBrowserChecks(page) {
   const pr = 'https://github.com/fixture/timey/pull/19';
-  await page.route('**/api/queue?issue=a', async (route) => {
-    const response = await route.fetch();
+  await page.route('**/api/issue?issue=a', async (route) => {
+    const queueUrl = new URL('/api/queue', route.request().url()).href;
+    const response = await route.fetch({ url: queueUrl });
     const data = await response.json();
     data.coordinator = { active: null, waiting: [] };
     data.issues.find((issue) => issue.id === 'a').issueDelivery = {
@@ -12,6 +13,8 @@ export default async function issueBoundaryBrowserChecks(page) {
       target: 'main',
       checks: [{ name: 'verify', conclusion: 'SUCCESS' }],
     };
+    data.issues = [data.issues.find((issue) => issue.id === 'a')];
+    data.issueScoped = true;
     await route.fulfill({ json: data });
   });
   const viewport = page.viewportSize();

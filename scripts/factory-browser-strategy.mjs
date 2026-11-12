@@ -150,7 +150,7 @@ export default async function strategyBrowserChecks(page) {
   if (errors.length) throw Error(errors.join('; '));
   await page.screenshot({ path: 'issue-strategy.png', fullPage: false });
   await page.unroute('**/api/issue-strategy-start');
-  await page.unroute('**/api/queue?**');
+  await page.unroute('**/api/issue?issue=b');
   return {
     passed: true,
     assertions: [

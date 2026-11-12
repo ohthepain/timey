@@ -130,6 +130,12 @@ export function browserFixture(root) {
         return response.end('{"error":"Fixture cannot launch work or save issues"}');
       }
       if (url.pathname === '/api/queue') return response.end(JSON.stringify(data));
+      if (url.pathname === '/api/issue') {
+        const issueId = url.searchParams.get('issue');
+        return response.end(
+          JSON.stringify({ ...data, issueScoped: true, issues: issues.filter((issue) => issue.id === issueId) })
+        );
+      }
       if (url.pathname === '/api/runtime')
         return response.end(
           JSON.stringify({ mode: 'preview', project: data.root, checkout: root, revision: data.head })

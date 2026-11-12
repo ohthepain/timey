@@ -60,7 +60,7 @@ export default async function issueGrillBrowserChecks(page) {
   await page.getByText(/Q1: Should work pause during clarification\? Recommended: yes\./).waitFor();
   assertCurrentIssueWasGrilled();
   await assertDiscussionSelected();
-  await page.unroute('**/api/queue?**');
+  await page.unroute('**/api/issue?issue=b');
   await page.unroute('**/api/discussion-*');
   return {
     passed: true,
