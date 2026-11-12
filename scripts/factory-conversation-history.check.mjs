@@ -28,7 +28,7 @@ function fixture(t) {
         reason: 'Required checks completed.',
         at: '2026-11-01T12:00:00Z',
         revision: f.input.revision,
-        evidence: [{ path: f.input.verification[0] }],
+        evidence: f.input.verification[0],
       },
     ],
     stage_grilling: [
