@@ -82,7 +82,7 @@ test('finalized separate-source delivery closes only on an explicit decision', (
   let snapshot = readQueue(queue.root);
   assert.equal(snapshot.issues[0].state, 'final');
   service.decideIssue(input.issueId, 'final', 'close', progressBasis(snapshot));
-  snapshot = readQueue(queue.root);
+  snapshot = readQueue(queue.root, { location: 'closed', issueId: input.issueId });
   assert.equal(snapshot.issues[0].state, 'closed');
   assert.equal(snapshot.issues[0].accepted_result.revision, input.revision);
   assert.equal(snapshot.issues[0].accepted_result.verification_rerun, false);

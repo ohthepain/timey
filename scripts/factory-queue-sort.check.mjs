@@ -298,7 +298,7 @@ function browserFixture(t) {
       },
     ],
   };
-  win.eval(`const $ = id => document.getElementById(id); const esc = value => String(value ?? ''); const link = id => '<a>'+id+'</a>'; const requests = []; const request = async (path,value) => { requests.push({path,value}); return {}; }; const refresh = async () => {}; const act = task => { void task().catch(() => {}); }; function visibleLifecycleStage(stage) { return !['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(stage.role); } let data = ${JSON.stringify(queue)}; const actionCard = () => ''; const progress = () => ''; ${code}
+  win.eval(`const $ = id => document.getElementById(id); const esc = value => String(value ?? ''); const link = id => '<a>'+id+'</a>'; const requests = []; const request = async (path,value) => { requests.push({path,value}); return {}; }; const refresh = async () => {}; const act = task => { void task().catch(() => {}); }; function visibleLifecycleStage(stage) { return !['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(stage.role); } let data = ${JSON.stringify(queue)}; const actionCard = () => ''; const progress = () => ''; const issueFolderHeading = (title) => '<h1>' + esc(title) + '</h1>'; ${code}
 window.queueTest = { render() { $('app').innerHTML = queue(); bindQueueFilters(); }, replace(issues) { data.issues = issues; this.render(); }, issues: data.issues, requests };`);
   const fixture = win.queueTest;
   fixture.render();
