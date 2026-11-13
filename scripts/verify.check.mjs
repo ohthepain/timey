@@ -61,6 +61,7 @@ function auditFixture(t, extraFiles = {}) {
   writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/*.mjs"]}\n');
   mkdirSync(join(root, 'scripts'));
   for (const name of [
+    'format-staged.mjs',
     'verify.mjs',
     'verify-scope.mjs',
     'verify-process.mjs',

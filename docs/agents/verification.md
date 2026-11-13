@@ -100,8 +100,9 @@ retain strict validation and cannot infer empty scope from a saved tool report.
 
 ### Commit and step-completion checkpoints
 
-Before a commit, the pre-commit hook runs `pnpm run audit:staged`, which exports
-the staged snapshot for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
+Before a commit, the pre-commit hook checks formatting on the exact staged file
+contents, then runs `pnpm run audit:staged`, which exports the staged snapshot
+for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
 Strategy candidate checks and CI enforce Fallow with
 `TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Their new findings, including
 warnings, must be repaired. Skipped or warning-bearing evidence cannot satisfy
