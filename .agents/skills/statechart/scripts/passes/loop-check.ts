@@ -10,13 +10,13 @@ import {
   tupleKey,
   unkey,
   type Walk,
-} from "../ir.ts";
+} from '../ir.ts';
 
 export function loopCheck(
   { regions, loops }: Chart,
   { names, keys, drawnLabels, sorted }: Labels,
   { index, from, to }: Walk,
-  found: Bug[],
+  found: Bug[]
 ) {
   const R = names.length;
   const combo = (i: number) => {
@@ -59,7 +59,7 @@ export function loopCheck(
           for (let o = 0; o < R; o++) next.push(o === r ? a.to : keys[o][i]);
           if (!inLoop.has(tupleKey(next)) && !takes(a))
             throw new Error(
-              `The chart draws the step ${a.label} out of ${name ? `${name} ` : ""}${unkey(a.from).join(" / ")}, but the ${b.rule.name} loop cannot take it there. Show in a label what stops it.`,
+              `The chart draws the step ${a.label} out of ${name ? `${name} ` : ''}${unkey(a.from).join(' / ')}, but the ${b.rule.name} loop cannot take it there. Show in a label what stops it.`
             );
         }
       }

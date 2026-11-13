@@ -1,18 +1,18 @@
-import { type Graph, type State, type Step, type Value, type Vars } from "../ir.ts";
-import { parseValue } from "./value.ts";
+import { type Graph, type State, type Step, type Value, type Vars } from '../ir.ts';
+import { parseValue } from './value.ts';
 
 const unescapeDot = (s: string) => {
-  let i = s.indexOf("\\");
+  let i = s.indexOf('\\');
   if (i === -1) return s;
-  let out = "";
+  let out = '';
   let from = 0;
-  for (; i !== -1 && i + 1 < s.length; i = s.indexOf("\\", i)) {
+  for (; i !== -1 && i + 1 < s.length; i = s.indexOf('\\', i)) {
     const c = s[i + 1];
-    if (c === "\n" || c === "\r" || c === "\u2028" || c === "\u2029") {
+    if (c === '\n' || c === '\r' || c === '\u2028' || c === '\u2029') {
       i++;
       continue;
     }
-    out += s.slice(from, i) + (c === "n" ? "\n" : c);
+    out += s.slice(from, i) + (c === 'n' ? '\n' : c);
     i += 2;
     from = i;
   }
@@ -21,7 +21,7 @@ const unescapeDot = (s: string) => {
 
 export const parseState = (label: string, parsed = new Map<string, [string, Value]>()): Vars => {
   const pairs: [string, Value][] = [];
-  for (const part of (label.startsWith("/\\ ") ? label.slice(3) : label).split("\n/\\ ")) {
+  for (const part of (label.startsWith('/\\ ') ? label.slice(3) : label).split('\n/\\ ')) {
     let pair = parsed.get(part);
     if (!pair) {
       const [, name, value] = /^(\w+)\s*=\s*([\s\S]*)$/.exec(part) ?? [];
@@ -35,7 +35,7 @@ export const parseState = (label: string, parsed = new Map<string, [string, Valu
 
 export type Lines = string | Iterable<string>;
 
-export const linesOf = (input: Lines) => (typeof input === "string" ? input.split("\n") : input);
+export const linesOf = (input: Lines) => (typeof input === 'string' ? input.split('\n') : input);
 
 export function parseDot(input: Lines): Graph {
   const states = new Map<string, State>();
@@ -50,7 +50,7 @@ export function parseDot(input: Lines): Graph {
   for (const line of linesOf(input)) {
     const edge = /^(-?\d+) -> (-?\d+) \[label="([^"]*)"/.exec(line);
     if (edge) {
-      steps.set(edge.slice(1).join(" "), {
+      steps.set(edge.slice(1).join(' '), {
         from: own(edge[1]),
         to: own(edge[2]),
         action: own(edge[3]),
@@ -67,8 +67,6 @@ export function parseDot(input: Lines): Graph {
   }
   for (const loose of steps.values())
     if (!states.has(loose.from) || !states.has(loose.to))
-      throw new Error(
-        `The TLC graph dump has a step ${loose.action} to or from a state that it does not list.`,
-      );
+      throw new Error(`The TLC graph dump has a step ${loose.action} to or from a state that it does not list.`);
   return { states, steps: [...steps.values()] };
 }

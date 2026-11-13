@@ -1,9 +1,9 @@
-import { inspect } from "node:util";
-import { mermaid as chartText } from "../backends/mermaid.ts";
-import { checkView } from "../frontends/view.ts";
-import type { Chart, ChartState, State, Step, View } from "../ir.ts";
-import { walk } from "../passes/reach.ts";
-import { project } from "../pipeline.ts";
+import { inspect } from 'node:util';
+import { mermaid as chartText } from '../backends/mermaid.ts';
+import { checkView } from '../frontends/view.ts';
+import type { Chart, ChartState, State, Step, View } from '../ir.ts';
+import { walk } from '../passes/reach.ts';
+import { project } from '../pipeline.ts';
 
 export type Render = (text: string) => { svg: string };
 
@@ -35,161 +35,161 @@ export type Html = (markup: string) => string;
 
 type Tools = { render: Render; mermaid: Mermaid; html: Html };
 
-const THEME = ["blue", "orange", "purple", "yellow", "teal", "tan", "pink"];
-const WORDS = ["Idle", "Run", "a", "b", "x1", "ok", "Done", "waiting", "on", "off", "p q"];
+const THEME = ['blue', 'orange', 'purple', 'yellow', 'teal', 'tan', 'pink'];
+const WORDS = ['Idle', 'Run', 'a', 'b', 'x1', 'ok', 'Done', 'waiting', 'on', 'off', 'p q'];
 const SYNTAX = [
-  "-->",
-  "[*]",
-  "{",
-  "}",
-  "[",
-  "]",
-  "(",
-  ")",
-  ":",
-  ";",
-  "#",
-  "%%",
+  '-->',
+  '[*]',
+  '{',
+  '}',
+  '[',
+  ']',
+  '(',
+  ')',
+  ':',
+  ';',
+  '#',
+  '%%',
   '"',
   "'",
-  "`",
-  "|",
-  "\\",
-  ":::",
-  "::: x",
-  "--",
-  "---",
-  "<<fork>>",
-  "<<join>>",
-  "<<choice>>",
-  "[[fork]]",
-  "[[join]]",
-  "[[choice]]",
-  "<br>",
-  "<b>x</b>",
-  "<a",
-  "<a=",
-  "=",
-  "&amp;",
-  "&lt;",
-  "&#59;",
-  "&quot;",
-  "#quot;",
-  "#59;",
-  "#35;",
-  "**",
-  "__",
-  "*",
-  "_",
-  "~~",
-  "$$",
-  "${x}",
-  "state",
-  "as",
-  "note",
-  "end",
-  "class",
-  "classDef",
-  "style",
-  "click",
-  "direction LR",
-  "direction TB",
-  "Direction rl",
-  "direction\tBT",
-  "direction  LR",
-  "accTitle: x",
-  "accDescr: y",
-  "title: t",
-  "%%{",
-  "}%%",
-  "%%{init: {}}%%",
-  "C4Context",
-  "C4Container",
-  "C4Component",
-  "C4Dynamic",
-  "C4Deployment",
-  "&nbsp;",
-  "\\n",
-  "---\n",
-  "`**b**`",
-  "ﬂ°°65¶ß",
-  "ﬂ°lt¶ß",
+  '`',
+  '|',
+  '\\',
+  ':::',
+  '::: x',
+  '--',
+  '---',
+  '<<fork>>',
+  '<<join>>',
+  '<<choice>>',
+  '[[fork]]',
+  '[[join]]',
+  '[[choice]]',
+  '<br>',
+  '<b>x</b>',
+  '<a',
+  '<a=',
+  '=',
+  '&amp;',
+  '&lt;',
+  '&#59;',
+  '&quot;',
+  '#quot;',
+  '#59;',
+  '#35;',
+  '**',
+  '__',
+  '*',
+  '_',
+  '~~',
+  '$$',
+  '${x}',
+  'state',
+  'as',
+  'note',
+  'end',
+  'class',
+  'classDef',
+  'style',
+  'click',
+  'direction LR',
+  'direction TB',
+  'Direction rl',
+  'direction\tBT',
+  'direction  LR',
+  'accTitle: x',
+  'accDescr: y',
+  'title: t',
+  '%%{',
+  '}%%',
+  '%%{init: {}}%%',
+  'C4Context',
+  'C4Container',
+  'C4Component',
+  'C4Dynamic',
+  'C4Deployment',
+  '&nbsp;',
+  '\\n',
+  '---\n',
+  '`**b**`',
+  'ﬂ°°65¶ß',
+  'ﬂ°lt¶ß',
   'marker-end="url(a#',
-  "<<",
-  ">>",
-  "<<a>>",
-  "|->",
-  ":>",
-  "@@",
-  "/\\",
-  "\\/",
-  "..",
+  '<<',
+  '>>',
+  '<<a>>',
+  '|->',
+  ':>',
+  '@@',
+  '/\\',
+  '\\/',
+  '..',
   '"A"',
   'x="a"',
-  "[a |-> 1]",
-  "{1, 2}",
+  '[a |-> 1]',
+  '{1, 2}',
   '"\\n"',
-  "&",
-  "<",
-  ">",
-  "@",
-  "~",
-  "^",
-  "$",
-  "%",
+  '&',
+  '<',
+  '>',
+  '@',
+  '~',
+  '^',
+  '$',
+  '%',
 ];
 const SPACE = [
-  " ",
-  "  ",
-  "\t",
-  "\n",
-  "\r",
-  "\r\n",
-  "\v",
-  "\f",
-  "\u00a0",
-  "\u2028",
-  "\u2029",
-  "\u0085",
-  "\u200b",
-  "\ufeff",
-  "\u3000",
+  ' ',
+  '  ',
+  '\t',
+  '\n',
+  '\r',
+  '\r\n',
+  '\v',
+  '\f',
+  '\u00a0',
+  '\u2028',
+  '\u2029',
+  '\u0085',
+  '\u200b',
+  '\ufeff',
+  '\u3000',
 ];
 const OTHER = [
-  "é",
-  "ü",
-  "中文",
-  "😀",
-  "👩‍💻",
-  "e\u0301",
-  "\u202e",
-  "\u200f",
-  "ß",
-  "Ω",
-  "\ud800",
-  "\x7f",
-  "\x80",
-  "\x9f",
-  "\x1b",
-  "\x00",
+  'é',
+  'ü',
+  '中文',
+  '😀',
+  '👩‍💻',
+  'e\u0301',
+  '\u202e',
+  '\u200f',
+  'ß',
+  'Ω',
+  '\ud800',
+  '\x7f',
+  '\x80',
+  '\x9f',
+  '\x1b',
+  '\x00',
 ];
 const BAD_COLORS: unknown[] = [
-  "pink\n  s99: Ghost state",
-  "blue\r\nclassDef x fill:#f00",
-  "teal\r",
-  " pink",
-  "Pink",
-  "red",
-  "#00f",
-  "breaks",
-  "mayBreak",
-  "bugPath",
-  "repeats",
-  "toString",
-  "",
+  'pink\n  s99: Ghost state',
+  'blue\r\nclassDef x fill:#f00',
+  'teal\r',
+  ' pink',
+  'Pink',
+  'red',
+  '#00f',
+  'breaks',
+  'mayBreak',
+  'bugPath',
+  'repeats',
+  'toString',
+  '',
   null,
   7,
-  ["blue"],
+  ['blue'],
 ];
 
 const random = (seed: number) => {
@@ -213,7 +213,7 @@ const random = (seed: number) => {
 type Random = ReturnType<typeof random>;
 
 const label = (r: Random) => {
-  let s = "";
+  let s = '';
   for (let n = r.range(1, 4); n > 0; n--) {
     const k = r.int(13);
     if (k < 4) s += r.pick(WORDS);
@@ -240,25 +240,24 @@ const several = <T>(n: number, make: () => T) => {
 };
 
 type Shape =
-  | { mode: "flat"; leaf: number[] }
-  | { mode: "parents"; leaf: number[]; parents: number[]; parentOf: number[] }
-  | { mode: "regions"; regions: number[]; pools: number[][]; values: number[][] };
+  | { mode: 'flat'; leaf: number[] }
+  | { mode: 'parents'; leaf: number[]; parents: number[]; parentOf: number[] }
+  | { mode: 'regions'; regions: number[]; pools: number[][]; values: number[][] };
 
 type Groups =
   | { groups?: undefined; colors?: undefined; groupOf?: undefined }
   | { groups: number[]; colors: unknown[]; groupOf: number[] };
 
-type Case = Shape &
-  Groups & { n: number; labels: string[]; actions: number[]; steps: number[][]; title?: number };
+type Case = Shape & Groups & { n: number; labels: string[]; actions: number[]; steps: number[][]; title?: number };
 
 function generate(r: Random): Case {
   const labels: string[] = [];
   const slot = () => labels.push(label(r)) - 1;
   const k = r.int(10);
-  const mode = k < 4 ? "flat" : k < 7 ? "parents" : "regions";
+  const mode = k < 4 ? 'flat' : k < 7 ? 'parents' : 'regions';
   const n = r.range(2, 4);
   let shape: Shape;
-  if (mode === "regions") {
+  if (mode === 'regions') {
     shape = {
       mode,
       regions: [slot(), slot()],
@@ -270,7 +269,7 @@ function generate(r: Random): Case {
     };
   } else {
     const leaf = several(n, slot);
-    if (mode === "parents") {
+    if (mode === 'parents') {
       const parents = r.chance(0.5) ? [slot(), slot()] : [slot()];
       const parentOf = several(n, () => (r.chance(0.75) ? r.int(parents.length) : -1));
       shape = { mode, leaf, parents, parentOf };
@@ -299,23 +298,19 @@ type RawView = {
 
 function build(c: Case, labels: string[]) {
   const states = new Map<string, State>();
-  for (let i = 0; i < c.n; i++)
-    states.set(String(i), { vars: { k: i }, start: i === 0, breaks: [] });
+  for (let i = 0; i < c.n; i++) states.set(String(i), { vars: { k: i }, start: i === 0, breaks: [] });
   const steps: Step[] = [];
-  for (const [from, to, a] of c.steps)
-    steps.push({ from: String(from), to: String(to), action: `A${a}` });
+  for (const [from, to, a] of c.steps) steps.push({ from: String(from), to: String(to), action: `A${a}` });
   const view: RawView = {
     state: ({ k }) => {
-      if (c.mode === "regions") {
+      if (c.mode === 'regions') {
         const shape: [string, string][] = [];
         for (let j = 0; j < c.regions.length; j++)
           shape.push([labels[c.regions[j]], labels[c.pools[j][c.values[k][j]]]]);
         return Object.fromEntries(shape);
       }
       const leaf = labels[c.leaf[k]];
-      return c.mode === "parents" && c.parentOf[k] >= 0
-        ? [labels[c.parents[c.parentOf[k]]], leaf]
-        : leaf;
+      return c.mode === 'parents' && c.parentOf[k] >= 0 ? [labels[c.parents[c.parentOf[k]]], leaf] : leaf;
     },
     step: (action) => labels[c.actions[Number(action.slice(1))]],
   };
@@ -332,45 +327,42 @@ function build(c: Case, labels: string[]) {
 const visible = (s: string) =>
   s
     .toWellFormed()
-    .replace(/(?![\t-\r\x85])[\p{Cc}\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/gu, "")
-    .replace(/\p{White_Space}+/gu, " ")
+    .replace(/(?![\t-\r\x85])[\p{Cc}\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/gu, '')
+    .replace(/\p{White_Space}+/gu, ' ')
     .trim();
-const wrapped = (s: string) => visible(s).replaceAll(" ", "");
-const titled = (want: Want) => /[^\0\x80-\x84\x86-\x9f]/.test(want.title ?? "");
+const wrapped = (s: string) => visible(s).replaceAll(' ', '');
+const titled = (want: Want) => /[^\0\x80-\x84\x86-\x9f]/.test(want.title ?? '');
 const NAMED: { [name: string]: string } = {
   quot: '"',
-  lt: "<",
-  gt: ">",
-  amp: "&",
+  lt: '<',
+  gt: '>',
+  amp: '&',
   apos: "'",
-  nbsp: "\u00a0",
+  nbsp: '\u00a0',
 };
-const WINDOWS_1252 = "€\x81‚ƒ„…†‡ˆ‰Š‹Œ\x8dŽ\x8f\x90‘’“”•–—˜™š›œ\x9džŸ";
+const WINDOWS_1252 = '€\x81‚ƒ„…†‡ˆ‰Š‹Œ\x8dŽ\x8f\x90‘’“”•–—˜™š›œ\x9džŸ';
 const fromRef = (n: number) => {
-  if (n === 0 || n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)) return "\ufffd";
+  if (n === 0 || n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)) return '\ufffd';
   if (n >= 0x80 && n <= 0x9f) return WINDOWS_1252[n - 0x80];
   return String.fromCodePoint(n);
 };
 const fromMermaid = (s: string) =>
-  s.replace(/ﬂ°°(\d+)¶ß|ﬂ°(\w+)¶ß/g, (_, d, n) =>
-    d ? fromRef(Number(d)) : (NAMED[n] ?? `&${n};`),
-  );
+  s.replace(/ﬂ°°(\d+)¶ß|ﬂ°(\w+)¶ß/g, (_, d, n) => (d ? fromRef(Number(d)) : (NAMED[n] ?? `&${n};`)));
 const decoded = (s: string) =>
   s
-    .replace(/ﬂ°°/g, "&#")
-    .replace(/ﬂ°/g, "&")
-    .replace(/¶ß/g, ";");
+    .replace(/ﬂ°°/g, '&#')
+    .replace(/ﬂ°/g, '&')
+    .replace(/¶ß/g, ';');
 const MARKER_END = /marker-end="url\([\d+./:=?A-Za-z-]*?#/g;
-const rewritten = (s: string) =>
-  /ﬂ°|¶ß/.test(s) || s.replace(MARKER_END, 'marker-end="url(#') !== s;
+const rewritten = (s: string) => /ﬂ°|¶ß/.test(s) || s.replace(MARKER_END, 'marker-end="url(#') !== s;
 const fromSvg = (s: string) =>
   s
-    .replace(/<\/tspan>\s*<tspan[^>]*>/g, " ")
-    .replace(/<[^>]*>/g, "")
+    .replace(/<\/tspan>\s*<tspan[^>]*>/g, ' ')
+    .replace(/<[^>]*>/g, '')
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => fromRef(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => fromRef(Number(d)))
     .replace(/&(quot|lt|gt|apos|nbsp);/g, (_, n) => NAMED[n])
-    .replace(/&amp;/g, "&");
+    .replace(/&amp;/g, '&');
 
 type Node = { text: string; parent: string | null; group: boolean };
 
@@ -393,11 +385,11 @@ function expected(chart: Chart): Want {
   };
   const multi = chart.regions.length > 1;
   const used = new Set<string>();
-  if (multi) nodes.set("all", { text: "At the same time", parent: null, group: true });
+  if (multi) nodes.set('all', { text: 'At the same time', parent: null, group: true });
   for (let i = 0; i < chart.regions.length; i++) {
     const region = chart.regions[i];
     const wrap = multi ? `r${i}` : null;
-    if (wrap) nodes.set(wrap, { text: region.name, parent: "all", group: true });
+    if (wrap) nodes.set(wrap, { text: region.name, parent: 'all', group: true });
     const tree = (prefix: string[], parent: string | null, below: ChartState[]) => {
       const heads = new Map<string, ChartState[]>();
       for (const s of below) {
@@ -418,27 +410,21 @@ function expected(chart: Chart): Want {
       }
     };
     tree([], wrap, region.states);
-    for (const s of region.states)
-      if (s.start) edges.push([`${wrap ?? "root"}_start`, id(region.name, s.path), ""]);
+    for (const s of region.states) if (s.start) edges.push([`${wrap ?? 'root'}_start`, id(region.name, s.path), '']);
     for (const s of region.steps)
-      edges.push([
-        id(region.name, s.from),
-        id(region.name, s.to),
-        s.label + (s.when ? ` [${s.when}]` : ""),
-      ]);
+      edges.push([id(region.name, s.from), id(region.name, s.to), s.label + (s.when ? ` [${s.when}]` : '')]);
   }
   let legend = 0;
   for (const [text, cls] of Object.entries(chart.colors))
-    if (used.has(cls)) nodes.set(`lg${legend++}`, { text, parent: "legend", group: false });
-  if (legend) nodes.set("legend", { text: "Legend", parent: null, group: true });
-  return { nodes, edges, direction: multi ? "LR" : "TB", title: chart.title };
+    if (used.has(cls)) nodes.set(`lg${legend++}`, { text, parent: 'legend', group: false });
+  if (legend) nodes.set('legend', { text: 'Legend', parent: null, group: true });
+  return { nodes, edges, direction: multi ? 'LR' : 'TB', title: chart.title };
 }
 
 const edgeKeys = (edges: string[][], withLabels: boolean) => {
   const keys: string[] = [];
-  for (const [from, to, text] of edges)
-    keys.push(withLabels ? `${from} ${to} ${visible(text)}` : `${from} ${to}`);
-  return keys.sort().join("\n");
+  for (const [from, to, text] of edges) keys.push(withLabels ? `${from} ${to} ${visible(text)}` : `${from} ${to}`);
+  return keys.sort().join('\n');
 };
 
 async function readMermaid(text: string, want: Want, { mermaid, html }: Tools, problems: string[]) {
@@ -447,65 +433,56 @@ async function readMermaid(text: string, want: Want, { mermaid, html }: Tools, p
     data = (await mermaid.mermaidAPI.getDiagramFromText(text)).db.getData();
   } catch (e) {
     if (!(e instanceof Error)) throw e;
-    problems.push(`mermaid-refuses: ${e.message.split("\n")[0]}`);
+    problems.push(`mermaid-refuses: ${e.message.split('\n')[0]}`);
     return;
   }
   const byId = new Map<string | undefined, MermaidNode>();
   for (const n of data.nodes) byId.set(n.id, n);
   let count = 0;
   for (const n of data.nodes) {
-    if (n.shape === "divider" || n.shape === "stateStart" || n.shape === "stateEnd") continue;
+    if (n.shape === 'divider' || n.shape === 'stateStart' || n.shape === 'stateEnd') continue;
     count++;
     let parent = byId.get(n.parentId);
-    while (parent?.shape === "divider") parent = byId.get(parent.parentId);
+    while (parent?.shape === 'divider') parent = byId.get(parent.parentId);
     const w = want.nodes.get(n.id);
-    const shown = fromMermaid(n.label ?? "");
+    const shown = fromMermaid(n.label ?? '');
     if (!w || (parent?.id ?? null) !== w.parent || Boolean(n.isGroup) !== w.group)
       problems.push(`mermaid-nodes: Mermaid draws ${n.id} where the chart has no such node`);
     else if (rewritten(shown))
+      problems.push(`mermaid-text: Mermaid's SVG cleanup rewrites ${n.id}'s ${JSON.stringify(shown)}`);
+    else if (visible(html(decoded(n.label ?? ''))) !== visible(w.text))
       problems.push(
-        `mermaid-text: Mermaid's SVG cleanup rewrites ${n.id}'s ${JSON.stringify(shown)}`,
+        `mermaid-text: ${n.id} shows ${JSON.stringify(html(decoded(n.label ?? '')))} for ${JSON.stringify(w.text)}`
       );
-    else if (visible(html(decoded(n.label ?? ""))) !== visible(w.text))
-      problems.push(
-        `mermaid-text: ${n.id} shows ${JSON.stringify(html(decoded(n.label ?? "")))} for ${JSON.stringify(w.text)}`,
-      );
-    if (n.isGroup && n.dir && n.dir !== "TB")
-      problems.push(`mermaid-direction: ${n.id} runs ${n.dir}`);
+    if (n.isGroup && n.dir && n.dir !== 'TB') problems.push(`mermaid-direction: ${n.id} runs ${n.dir}`);
   }
-  if (count !== want.nodes.size)
-    problems.push(`mermaid-nodes: ${count} nodes for ${want.nodes.size}`);
-  if ((data.direction ?? "TB") !== want.direction)
-    problems.push(`mermaid-direction: the chart runs ${data.direction}`);
+  if (count !== want.nodes.size) problems.push(`mermaid-nodes: ${count} nodes for ${want.nodes.size}`);
+  if ((data.direction ?? 'TB') !== want.direction) problems.push(`mermaid-direction: the chart runs ${data.direction}`);
   const head = text.match(/^---\ntitle: (.*)\n---\n/);
   const raw = head ? String(JSON.parse(head[1])) : undefined;
   const title = raw === undefined ? undefined : fromMermaid(raw);
   if ((title !== undefined) !== titled(want))
     problems.push(`mermaid-title: Mermaid draws a title for ${JSON.stringify(want.title)}`);
-  else if (raw?.includes("<"))
-    problems.push(
-      `mermaid-title: Mermaid's sanitizer reads the < in ${JSON.stringify(raw)} as a tag`,
-    );
-  else if (title?.includes("\0"))
+  else if (raw?.includes('<'))
+    problems.push(`mermaid-title: Mermaid's sanitizer reads the < in ${JSON.stringify(raw)} as a tag`);
+  else if (title?.includes('\0'))
     problems.push(`mermaid-title: a browser draws the NUL in ${JSON.stringify(title)} as U+FFFD`);
-  else if (title !== undefined && visible(title) !== visible(want.title ?? ""))
-    problems.push(
-      `mermaid-text: the title shows ${JSON.stringify(title)} for ${JSON.stringify(want.title)}`,
-    );
+  else if (title !== undefined && visible(title) !== visible(want.title ?? ''))
+    problems.push(`mermaid-text: the title shows ${JSON.stringify(title)} for ${JSON.stringify(want.title)}`);
   const got: string[][] = [];
   const shown: string[][] = [];
   for (const e of data.edges) {
-    got.push([e.start, e.end, fromMermaid(e.label ?? "")]);
-    shown.push([e.start, e.end, html(decoded(e.label ?? ""))]);
+    got.push([e.start, e.end, fromMermaid(e.label ?? '')]);
+    shown.push([e.start, e.end, html(decoded(e.label ?? ''))]);
   }
   if (edgeKeys(got, false) !== edgeKeys(want.edges, false))
-    problems.push("mermaid-edges: the arrows join other states");
+    problems.push('mermaid-edges: the arrows join other states');
   else if (edgeKeys(shown, true) !== edgeKeys(want.edges, true))
-    problems.push("mermaid-text: an arrow shows other text");
+    problems.push('mermaid-text: an arrow shows other text');
   for (const [from, to, text] of got)
     if (rewritten(text))
       problems.push(
-        `mermaid-text: Mermaid's SVG cleanup rewrites the arrow from ${from} to ${to}'s ${JSON.stringify(text)}`,
+        `mermaid-text: Mermaid's SVG cleanup rewrites the arrow from ${from} to ${to}'s ${JSON.stringify(text)}`
       );
 }
 
@@ -515,48 +492,38 @@ function readPele(text: string, want: Want, render: Render, problems: string[]) 
     ({ svg } = render(text));
   } catch (e) {
     if (!(e instanceof Error)) throw e;
-    problems.push(`pele-refuses: ${e.message.split("\n")[0]}`);
+    problems.push(`pele-refuses: ${e.message.split('\n')[0]}`);
     return;
   }
   const drawn = new Map<string, string>();
-  for (const m of svg.matchAll(
-    /<g class="pele-(?:node|cluster) ([^"]*)" data-id="([^"]*)"[^>]*>([\s\S]*?)<\/g>/g,
-  )) {
+  for (const m of svg.matchAll(/<g class="pele-(?:node|cluster) ([^"]*)" data-id="([^"]*)"[^>]*>([\s\S]*?)<\/g>/g)) {
     if (/state-(start|end)/.test(m[1])) continue;
     const t = m[3].match(/<text[^>]*>([\s\S]*?)<\/text>/);
-    drawn.set(m[2], t ? fromSvg(t[1]) : "");
+    drawn.set(m[2], t ? fromSvg(t[1]) : '');
   }
-  if (drawn.size !== want.nodes.size)
-    problems.push(`pele-nodes: ${drawn.size} nodes for ${want.nodes.size}`);
+  if (drawn.size !== want.nodes.size) problems.push(`pele-nodes: ${drawn.size} nodes for ${want.nodes.size}`);
   for (const [node, w] of want.nodes) {
     const shown = drawn.get(node);
     if (shown === undefined) problems.push(`pele-nodes: Pele draws no ${node}`);
     else if (wrapped(shown) !== wrapped(w.text))
-      problems.push(
-        `pele-text: ${node} shows ${JSON.stringify(shown)} for ${JSON.stringify(w.text)}`,
-      );
+      problems.push(`pele-text: ${node} shows ${JSON.stringify(shown)} for ${JSON.stringify(w.text)}`);
   }
   let arrows = 0;
   for (const _ of svg.matchAll(/<g class="pele-edge pele-transition"/g)) arrows++;
-  if (arrows !== want.edges.length)
-    problems.push(`pele-edges: ${arrows} arrows for ${want.edges.length}`);
+  if (arrows !== want.edges.length) problems.push(`pele-edges: ${arrows} arrows for ${want.edges.length}`);
   for (const m of svg.matchAll(
-    /<g class="pele-edge-label" data-id="edge(\d+)"[^>]*>[\s\S]*?<text[^>]*>([\s\S]*?)<\/text>/g,
+    /<g class="pele-edge-label" data-id="edge(\d+)"[^>]*>[\s\S]*?<text[^>]*>([\s\S]*?)<\/text>/g
   )) {
     const w = want.edges[Number(m[1])];
     if (!w) problems.push(`pele-edges: Pele labels edge${m[1]}, which the chart does not have`);
     else if (wrapped(fromSvg(m[2])) !== wrapped(w[2]))
-      problems.push(
-        `pele-text: edge${m[1]} shows ${JSON.stringify(fromSvg(m[2]))} for ${JSON.stringify(w[2])}`,
-      );
+      problems.push(`pele-text: edge${m[1]} shows ${JSON.stringify(fromSvg(m[2]))} for ${JSON.stringify(w[2])}`);
   }
   const title = svg.match(/<text class="pele-title"[^>]*>([\s\S]*?)<\/text>/);
   if (Boolean(title) !== titled(want))
     problems.push(`pele-title: Pele draws a title for ${JSON.stringify(want.title)}`);
-  else if (title && wrapped(fromSvg(title[1])) !== wrapped(want.title ?? ""))
-    problems.push(
-      `pele-text: the title shows ${JSON.stringify(fromSvg(title[1]))} for ${JSON.stringify(want.title)}`,
-    );
+  else if (title && wrapped(fromSvg(title[1])) !== wrapped(want.title ?? ''))
+    problems.push(`pele-text: the title shows ${JSON.stringify(fromSvg(title[1]))} for ${JSON.stringify(want.title)}`);
 }
 
 type Checked = { refused?: true; text?: string; problems: string[] };
@@ -565,17 +532,16 @@ async function check(c: Case, labels: string[], tools: Tools): Promise<Checked> 
   const { graph, view } = build(c, labels);
   let refuse = false;
   for (const [, value] of Object.entries(view.colors ?? {}))
-    if (typeof value !== "string" || !THEME.includes(value)) refuse = true;
+    if (typeof value !== 'string' || !THEME.includes(value)) refuse = true;
   let checked: View;
   try {
     checked = checkView(view, inspect);
   } catch (e) {
     if (!(e instanceof Error)) throw e;
-    if (refuse && /^The view's colors give /.test(e.message))
-      return { refused: true, problems: [] };
+    if (refuse && /^The view's colors give /.test(e.message)) return { refused: true, problems: [] };
     return { problems: [`skill-throws: ${e.message}`] };
   }
-  if (refuse) return { problems: ["colors: checkView accepts a color that is not in the theme"] };
+  if (refuse) return { problems: ['colors: checkView accepts a color that is not in the theme'] };
   let chart: Chart;
   let text: string;
   try {
@@ -583,8 +549,7 @@ async function check(c: Case, labels: string[], tools: Tools): Promise<Checked> 
     text = chartText(chart);
   } catch (e) {
     if (!(e instanceof Error)) throw e;
-    if (/^The view's (state|step)\(\) returned /.test(e.message))
-      return { refused: true, problems: [] };
+    if (/^The view's (state|step)\(\) returned /.test(e.message)) return { refused: true, problems: [] };
     return { problems: [`skill-throws: ${e.constructor.name}: ${e.message}`] };
   }
   const want = expected(chart);
@@ -594,18 +559,14 @@ async function check(c: Case, labels: string[], tools: Tools): Promise<Checked> 
   return { text, problems };
 }
 
-const kind = (problem: string) => problem.slice(0, problem.indexOf(":"));
+const kind = (problem: string) => problem.slice(0, problem.indexOf(':'));
 
-export async function fuzz({
-  seed,
-  charts,
-  ...tools
-}: { seed: number; charts: number } & Tools): Promise<{
+export async function fuzz({ seed, charts, ...tools }: { seed: number; charts: number } & Tools): Promise<{
   drawn: number;
   refused: number;
   failure?: string;
 }> {
-  await tools.mermaid.parse("stateDiagram-v2\n  s0: a");
+  await tools.mermaid.parse('stateDiagram-v2\n  s0: a');
   const r = random(seed);
   let drawn = 0;
   let refused = 0;
@@ -627,16 +588,16 @@ export async function fuzz({
     const kept = [];
     for (let j = 0; j < labels.length; j++) if (labels[j] !== `n${j}`) kept.push(labels[j]);
     const last = await check(c, labels, tools);
-    const colors = c.colors ? ` and the colors ${JSON.stringify(c.colors)}` : "";
+    const colors = c.colors ? ` and the colors ${JSON.stringify(c.colors)}` : '';
     return {
       drawn,
       refused,
       failure: [
         `Chart ${i} of seed ${seed} goes wrong with the labels ${JSON.stringify(kept)}${colors}:`,
         ...last.problems,
-        "",
-        last.text ?? "",
-      ].join("\n"),
+        '',
+        last.text ?? '',
+      ].join('\n'),
     };
   }
   return { drawn, refused };

@@ -20,13 +20,27 @@ These colors are suggestions. They are the colors of the old skill. Put them in 
   --pele-surface-alt: #f1f1f1;
   --pele-border: #c9c9c9;
 }
-.pele .blue rect { fill: #c3e0ff; }
-.pele .orange rect { fill: #f0d3bf; }
-.pele .purple rect { fill: #e3d5ff; }
-.pele .yellow rect { fill: #f0dcbf; }
-.pele .teal rect { fill: #bfe3df; }
-.pele .tan rect { fill: #e5d9ce; }
-.pele .pink rect { fill: #ffcbe6; }
+.pele .blue rect {
+  fill: #c3e0ff;
+}
+.pele .orange rect {
+  fill: #f0d3bf;
+}
+.pele .purple rect {
+  fill: #e3d5ff;
+}
+.pele .yellow rect {
+  fill: #f0dcbf;
+}
+.pele .teal rect {
+  fill: #bfe3df;
+}
+.pele .tan rect {
+  fill: #e5d9ce;
+}
+.pele .pink rect {
+  fill: #ffcbe6;
+}
 .pele .breaks rect {
   fill: #ffecee !important;
   stroke: #e72e3b !important;
@@ -62,13 +76,27 @@ These colors are suggestions. They are the colors of the old skill. Put them in 
     --pele-surface-alt: #2c2c2c;
     --pele-border: #4e4e4e;
   }
-  .pele .blue rect { fill: #1b3857; }
-  .pele .orange rect { fill: #573117; }
-  .pele .purple rect { fill: #3c2e57; }
-  .pele .yellow rect { fill: #573d17; }
-  .pele .teal rect { fill: #174641; }
-  .pele .tan rect { fill: #3d3127; }
-  .pele .pink rect { fill: #57233e; }
+  .pele .blue rect {
+    fill: #1b3857;
+  }
+  .pele .orange rect {
+    fill: #573117;
+  }
+  .pele .purple rect {
+    fill: #3c2e57;
+  }
+  .pele .yellow rect {
+    fill: #573d17;
+  }
+  .pele .teal rect {
+    fill: #174641;
+  }
+  .pele .tan rect {
+    fill: #3d3127;
+  }
+  .pele .pink rect {
+    fill: #57233e;
+  }
   .pele .breaks rect {
     fill: #2e2021 !important;
     stroke: #cf2b35 !important;

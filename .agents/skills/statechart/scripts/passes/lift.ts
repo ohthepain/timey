@@ -1,13 +1,4 @@
-import {
-  append,
-  type Chart,
-  type ChartState,
-  type ChartStep,
-  must,
-  type Region,
-  tupleKey,
-  unkey,
-} from "../ir.ts";
+import { append, type Chart, type ChartState, type ChartStep, must, type Region, tupleKey, unkey } from '../ir.ts';
 
 export function liftToParents(states: ChartState[], steps: ChartStep[]) {
   const depths = new Map<string, number>();
@@ -71,10 +62,7 @@ export function lift(chart: Chart): Chart {
     for (const s of liftToParents(r.states, r.steps)) {
       const f = pathIndex(s.from);
       const t = pathIndex(s.to);
-      const k =
-        s.when === undefined && f < 2 ** 26 && t < 2 ** 26
-          ? f * 2 ** 26 + t
-          : `${f},${t}:${s.when}`;
+      const k = s.when === undefined && f < 2 ** 26 && t < 2 ** 26 ? f * 2 ** 26 + t : `${f},${t}:${s.when}`;
       const prior = merged.get(k);
       if (prior) prior.label += ` or ${s.label}`;
       else merged.set(k, { ...s });

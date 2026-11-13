@@ -16,15 +16,14 @@ import {
   type TraceState,
   type Value,
   valuesOf,
-} from "../ir.ts";
+} from '../ir.ts';
 
 export const finder = (graph: Graph, names: string[]) => {
   let ids: Map<string, string> | undefined;
   const find = (values: Value[]) => {
     if (!ids) {
       ids = new Map();
-      for (const [id, s] of graph.states)
-        if (!s.excluded) ids.set(stateKey(valuesOf(s.vars, names)), id);
+      for (const [id, s] of graph.states) if (!s.excluded) ids.set(stateKey(valuesOf(s.vars, names)), id);
     }
     return ids.get(stateKey(values));
   };
@@ -32,13 +31,7 @@ export const finder = (graph: Graph, names: string[]) => {
   return find;
 };
 
-export function mark(
-  graph: Graph,
-  marks: Iterable<Mark>,
-  names: string[],
-  rules: Rule[],
-  find = finder(graph, names),
-) {
+export function mark(graph: Graph, marks: Iterable<Mark>, names: string[], rules: Rule[], find = finder(graph, names)) {
   const byName = new Map<string, Rule>();
   for (const rule of rules) byName.set(rule.name, rule);
   const past: Past = new Map();
@@ -67,15 +60,14 @@ export function addPast(
   rule: Rule,
   past: Past,
   excludes: boolean,
-  find = finder(graph, names),
+  find = finder(graph, names)
 ) {
   const trace = findTrace(counterexample, names, rule, find);
   const end = trace.length - 1;
   const from = trace[end - 1]?.id;
   const action = trace[end].action;
   const taken = (to: string | undefined) => {
-    for (const t of graph.steps)
-      if (t.from === from && t.to === to && t.action === action) return true;
+    for (const t of graph.steps) if (t.from === from && t.to === to && t.action === action) return true;
     return false;
   };
   let to = trace[end].id;
@@ -95,12 +87,7 @@ export function addPast(
   if (from !== undefined && last.past && !taken(to)) graph.steps.push({ from, to, action });
 }
 
-export function lasso(
-  graph: Graph,
-  trace: Trace,
-  names: string[],
-  find = finder(graph, names),
-): Lasso | undefined {
+export function lasso(graph: Graph, trace: Trace, names: string[], find = finder(graph, names)): Lasso | undefined {
   const { seq, loop } = findLoop(trace, names, find);
   const start = seq[0]?.id;
   if (start === undefined) return undefined;

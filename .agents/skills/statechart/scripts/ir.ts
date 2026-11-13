@@ -2,22 +2,20 @@ export type Value =
   | boolean
   | number
   | string
-  | { kind: "model"; name: string }
-  | { kind: "set"; members: Value[] }
-  | { kind: "interval"; lo: number; hi: number }
-  | { kind: "function"; printedAs: "tuple" | "record" | "pairs"; keys: Value[]; values: Value[] };
+  | { kind: 'model'; name: string }
+  | { kind: 'set'; members: Value[] }
+  | { kind: 'interval'; lo: number; hi: number }
+  | { kind: 'function'; printedAs: 'tuple' | 'record' | 'pairs'; keys: Value[]; values: Value[] };
 
 export type Vars = { [name: string]: Value };
 
-export type Rule = { kind: "invariant" | "deadlock" | "property"; name: string };
+export type Rule = { kind: 'invariant' | 'deadlock' | 'property'; name: string };
 
 type StateBase = { vars: Vars; start: boolean; breaks: Rule[] };
 
 export type PastState = StateBase & { ends: Rule[]; past: true; excluded: boolean };
 
-export type State =
-  | (StateBase & { ends?: Rule[]; past?: undefined; excluded?: undefined })
-  | PastState;
+export type State = (StateBase & { ends?: Rule[]; past?: undefined; excluded?: undefined }) | PastState;
 
 export type Step = { from: string; to: string; action: string };
 
@@ -109,7 +107,7 @@ export const EC = {
 
 export const LEVEL = { NONE: 0, ERROR: 1, TLCBUG: 2, WARNING: 3, STATE: 4 } as const;
 
-export type Outcome = "broken" | "holds" | "not checked";
+export type Outcome = 'broken' | 'holds' | 'not checked';
 
 export type Verdict = {
   rule: Rule;
@@ -146,7 +144,7 @@ export type View = {
   title?: string;
 };
 
-export const checked = Symbol("checked");
+export const checked = Symbol('checked');
 
 export type CheckedView = View & { readonly [checked]: true };
 
@@ -201,9 +199,7 @@ export type ChartState = {
   group: unknown;
 };
 
-export type Condition =
-  | { kind: "and" | "or"; otherKeys: Set<string>[] }
-  | { kind: "tuples"; otherTuples: Set<string> };
+export type Condition = { kind: 'and' | 'or'; otherKeys: Set<string>[] } | { kind: 'tuples'; otherTuples: Set<string> };
 
 export type Arrow = {
   from: string;
@@ -240,59 +236,58 @@ export type Chart = {
 };
 
 export const isRecord = (v: unknown): v is { [key: string]: unknown } =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
-export const isStrings = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.every((s) => typeof s === "string");
+export const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === 'string');
 
 export const PART = 1 << 24;
 
 export const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-export const list = (items: string[], and = "and") =>
-  items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} ${and} ${items.at(-1)}`;
+export const list = (items: string[], and = 'and') =>
+  items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} ${and} ${items.at(-1)}`;
 
 const ESCAPES: { [c: string]: string } = {
   '"': '\\"',
-  "\\": "\\\\",
-  "\n": "\\n",
-  "\t": "\\t",
-  "\r": "\\r",
-  "\f": "\\f",
+  '\\': '\\\\',
+  '\n': '\\n',
+  '\t': '\\t',
+  '\r': '\\r',
+  '\f': '\\f',
 };
 const quote = (s: string) => `"${s.replace(/["\\\n\t\r\f]/g, (c) => ESCAPES[c])}"`;
 
 const joined = (items: Value[], sep: string) => {
-  let s = "";
-  for (let i = 0; i < items.length; i++) s += (i ? sep : "") + show(items[i]);
+  let s = '';
+  for (let i = 0; i < items.length; i++) s += (i ? sep : '') + show(items[i]);
   return s;
 };
 
 export const show = (v: Value): string => {
   switch (typeof v) {
-    case "boolean":
-      return v ? "TRUE" : "FALSE";
-    case "number":
+    case 'boolean':
+      return v ? 'TRUE' : 'FALSE';
+    case 'number':
       return String(v);
-    case "string":
+    case 'string':
       return quote(v);
   }
   switch (v.kind) {
-    case "model":
+    case 'model':
       return v.name;
-    case "interval":
+    case 'interval':
       return `${v.lo}..${v.hi}`;
-    case "set":
-      return `{${joined(v.members, ", ")}}`;
-    case "function": {
-      if (v.printedAs === "tuple") return `<<${joined(v.values, ", ")}>>`;
-      const record = v.printedAs === "record";
-      let s = record ? "[" : "(";
+    case 'set':
+      return `{${joined(v.members, ', ')}}`;
+    case 'function': {
+      if (v.printedAs === 'tuple') return `<<${joined(v.values, ', ')}>>`;
+      const record = v.printedAs === 'record';
+      let s = record ? '[' : '(';
       for (let i = 0; i < v.keys.length; i++)
         s += record
-          ? `${i ? ", " : ""}${String(v.keys[i])} |-> ${show(v.values[i])}`
-          : `${i ? " @@ " : ""}${show(v.keys[i])} :> ${show(v.values[i])}`;
-      return s + (record ? "]" : ")");
+          ? `${i ? ', ' : ''}${String(v.keys[i])} |-> ${show(v.values[i])}`
+          : `${i ? ' @@ ' : ''}${show(v.keys[i])} :> ${show(v.values[i])}`;
+      return s + (record ? ']' : ')');
     }
   }
 };
@@ -323,13 +318,13 @@ export const defaultState = (vars: Vars) => {
   if (entries.length === 1) return show(entries[0][1]);
   const parts: string[] = [];
   for (const [k, v] of entries) parts.push(`${k}=${show(v)}`);
-  return parts.join(" ");
+  return parts.join(' ');
 };
 
 export const stateText = (vars: Vars) => {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(vars)) parts.push(`${k} = ${show(v)}`);
-  return parts.join(" /\\ ");
+  return parts.join(' /\\ ');
 };
 
 export const count = (n: number) => {
@@ -362,15 +357,13 @@ export const unkey = (k: string) => {
 
 export function holds(condition: Condition, others: string[]) {
   switch (condition.kind) {
-    case "and":
-      for (let j = 0; j < others.length; j++)
-        if (!condition.otherKeys[j].has(others[j])) return false;
+    case 'and':
+      for (let j = 0; j < others.length; j++) if (!condition.otherKeys[j].has(others[j])) return false;
       return true;
-    case "or":
-      for (let j = 0; j < others.length; j++)
-        if (condition.otherKeys[j].has(others[j])) return true;
+    case 'or':
+      for (let j = 0; j < others.length; j++) if (condition.otherKeys[j].has(others[j])) return true;
       return false;
-    case "tuples":
+    case 'tuples':
       return condition.otherTuples.has(tupleKey(others));
   }
 }
@@ -393,7 +386,7 @@ const setKey = (members: Value[]) => {
   const ints: number[] = [];
   let others: string[] = [];
   for (const m of members)
-    if (typeof m === "number") ints.push(m);
+    if (typeof m === 'number') ints.push(m);
     else others.push(key(m));
   for (let i = 1; i < ints.length; i++)
     if (ints[i - 1] >= ints[i]) {
@@ -401,16 +394,16 @@ const setKey = (members: Value[]) => {
       break;
     }
   if (!ascending(others)) others = others.sort(byText);
-  let s = "{";
+  let s = '{';
   for (let i = 0; i < ints.length;) {
     let j = i;
     while (j + 1 < ints.length && ints[j + 1] - ints[j] <= 1) j++;
-    s += `${s.length > 1 ? "," : ""}${span(ints[i], ints[j])}`;
+    s += `${s.length > 1 ? ',' : ''}${span(ints[i], ints[j])}`;
     i = j + 1;
   }
   for (let i = 0; i < others.length; i++)
-    if (!i || others[i] !== others[i - 1]) s += (s.length > 1 ? "," : "") + others[i];
-  return s + "}";
+    if (!i || others[i] !== others[i - 1]) s += (s.length > 1 ? ',' : '') + others[i];
+  return s + '}';
 };
 
 const functionKey = ({ keys, values }: { keys: Value[]; values: Value[] }) => {
@@ -420,40 +413,40 @@ const functionKey = ({ keys, values }: { keys: Value[]; values: Value[] }) => {
   for (let i = 0; i < keys.length; i++) {
     order.push(i);
     keyTexts.push(key(keys[i]));
-    if (typeof keys[i] === "number") ints++;
+    if (typeof keys[i] === 'number') ints++;
   }
-  const rank = (i: number) => (typeof keys[i] === "number" ? (keys[i] as number) : Infinity);
+  const rank = (i: number) => (typeof keys[i] === 'number' ? (keys[i] as number) : Infinity);
   order.sort((a, b) => rank(a) - rank(b) || byText(keyTexts[a], keyTexts[b]) || a - b);
   let tuple = ints === keys.length;
   for (let i = 0; tuple && i < order.length; i++) tuple = keys[order[i]] === i + 1;
-  let s = tuple ? "<<" : "(";
+  let s = tuple ? '<<' : '(';
   for (let i = 0, kept = 0; i < order.length; i++) {
     const k = order[i];
     if (i && keyTexts[k] === keyTexts[order[i - 1]]) continue;
     const v = key(values[k]);
-    s += tuple ? `${kept++ ? "," : ""}${v}` : `${kept++ ? "@@" : ""}${keyTexts[k]}:>${v}`;
+    s += tuple ? `${kept++ ? ',' : ''}${v}` : `${kept++ ? '@@' : ''}${keyTexts[k]}:>${v}`;
   }
-  return s + (tuple ? ">>" : ")");
+  return s + (tuple ? '>>' : ')');
 };
 
 const keys = new WeakMap<object, string>();
 
 export const key = (v: Value): string => {
   switch (typeof v) {
-    case "boolean":
-      return v ? "TRUE" : "FALSE";
-    case "number":
+    case 'boolean':
+      return v ? 'TRUE' : 'FALSE';
+    case 'number':
       return String(v);
-    case "string":
+    case 'string':
       return JSON.stringify(v);
   }
-  if (v.kind === "model") return v.name;
+  if (v.kind === 'model') return v.name;
   let k = keys.get(v);
   if (k === undefined) {
     k =
-      v.kind === "interval"
-        ? `{${v.lo > v.hi ? "" : span(v.lo, v.hi)}}`
-        : v.kind === "set"
+      v.kind === 'interval'
+        ? `{${v.lo > v.hi ? '' : span(v.lo, v.hi)}}`
+        : v.kind === 'set'
           ? setKey(v.members)
           : functionKey(v);
     keys.set(v, k);
@@ -462,8 +455,8 @@ export const key = (v: Value): string => {
 };
 
 export const stateKey = (values: Value[]) => {
-  let k = "";
-  for (let i = 0; i < values.length; i++) k += (i ? "," : "") + key(values[i]);
+  let k = '';
+  for (let i = 0; i < values.length; i++) k += (i ? ',' : '') + key(values[i]);
   return k;
 };
 
@@ -485,12 +478,7 @@ export const valuesOf = (vars: Vars, names: string[]) => {
   return values;
 };
 
-export const findTrace = <Id>(
-  counterexample: TraceState[],
-  names: string[],
-  rule: Rule,
-  find: Find<Id>,
-) => {
+export const findTrace = <Id>(counterexample: TraceState[], names: string[], rule: Rule, find: Find<Id>) => {
   const trace: (TraceState & { values: Value[]; id: Id | undefined })[] = [];
   for (const { action, vars } of counterexample) {
     const values = valuesOf(vars, names);
@@ -500,38 +488,27 @@ export const findTrace = <Id>(
   if (end < 0) throw new Error(`TLC's trace for ${rule.name} has no states.`);
   for (let i = 0; i < end; i++)
     if (trace[i].id === undefined)
-      throw new Error(
-        `TLC's trace for ${rule.name} has a state before its last that the dump does not list.`,
-      );
+      throw new Error(`TLC's trace for ${rule.name} has a state before its last that the dump does not list.`);
   return trace;
 };
 
 export const findLoop = <Id>({ seq, loop }: Trace, names: string[], find: Find<Id>) => {
   const found: { action: string; id: Id | undefined }[] = [];
-  for (const { action, vars } of seq)
-    found.push({ action, id: vars && find(valuesOf(vars, names)) });
+  for (const { action, vars } of seq) found.push({ action, id: vars && find(valuesOf(vars, names)) });
   return { seq: found, loop };
 };
 
-export const pastState = (
-  vars: Vars,
-  start: boolean,
-  marked: Iterable<Rule>,
-  excluded: boolean,
-): PastState => {
+export const pastState = (vars: Vars, start: boolean, marked: Iterable<Rule>, excluded: boolean): PastState => {
   const breaks: Rule[] = [];
   for (const r of marked) if (!hasRule(breaks, r)) breaks.push(r);
   return { vars, start, breaks, ends: [], past: true, excluded };
 };
 
-export const CHECK_DEADLOCK = "CHECK_DEADLOCK";
+export const CHECK_DEADLOCK = 'CHECK_DEADLOCK';
 
 const deadlockRule = ({ invariants, properties }: Spec): Rule => ({
-  kind: "deadlock",
-  name:
-    invariants.includes("NoDeadlock") || properties.includes("NoDeadlock")
-      ? CHECK_DEADLOCK
-      : "NoDeadlock",
+  kind: 'deadlock',
+  name: invariants.includes('NoDeadlock') || properties.includes('NoDeadlock') ? CHECK_DEADLOCK : 'NoDeadlock',
 });
 
 export const hasSection = ({ written }: Spec, ...keys: string[]) => {
@@ -541,7 +518,7 @@ export const hasSection = ({ written }: Spec, ...keys: string[]) => {
 
 export const stateRules = (spec: Spec) => {
   const rules: Rule[] = [];
-  for (const name of spec.invariants) rules.push({ kind: "invariant", name });
+  for (const name of spec.invariants) rules.push({ kind: 'invariant', name });
   if (spec.deadlock) rules.push(deadlockRule(spec));
   return rules;
 };

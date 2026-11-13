@@ -13,14 +13,14 @@ and closure behavior described in [Direct issue acceptance and closure](direct-i
 
 ## Action contract
 
-| Action | Effect and conditions |
-| --- | --- |
-| **Close issue** | Write the configured Closed state. A reason is optional. Checks, acceptance, and active work do not block closure. The current action can finish or be stopped explicitly. Closed issues cannot start or continue implementation work or automatically dispatch a subsequent action. |
-| **Accept fix** | Record explicit human acceptance independently of issue state. Allow it on open or closed issues when retained evidence satisfies the existing acceptance checks. Preserve the saved-PR recovery path and show the concrete blocker when acceptance fails. |
-| **Run retro** | Use the saved issue conversation after closure. Let the user save the retro to the issue report before removing the conversation. The report and saved retro survive cleanup and reopening. |
-| **Clean up** | Preview and remove explicitly selected dependent resources for a closed, idle issue. Record each outcome in **Cleanup results**. Allow later cleanup of skipped resources and retries of individual unresolved resources. |
-| **Reopen issue** | Reopen any closed issue that still exists. Keep the report, saved retro, and cleanup history. Create a fresh work folder when implementation next starts if the old folder was removed. |
-| **Delete issue** | Require a separate confirmation and fresh server-side proof that the issue is closed, idle, and has no remaining dependent resources. Permanently remove the report and issue-specific records. Keep the issue number reserved. |
+| Action           | Effect and conditions                                                                                                                                                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Close issue**  | Write the configured Closed state. A reason is optional. Checks, acceptance, and active work do not block closure. The current action can finish or be stopped explicitly. Closed issues cannot start or continue implementation work or automatically dispatch a subsequent action. |
+| **Accept fix**   | Record explicit human acceptance independently of issue state. Allow it on open or closed issues when retained evidence satisfies the existing acceptance checks. Preserve the saved-PR recovery path and show the concrete blocker when acceptance fails.                           |
+| **Run retro**    | Use the saved issue conversation after closure. Let the user save the retro to the issue report before removing the conversation. The report and saved retro survive cleanup and reopening.                                                                                          |
+| **Clean up**     | Preview and remove explicitly selected dependent resources for a closed, idle issue. Record each outcome in **Cleanup results**. Allow later cleanup of skipped resources and retries of individual unresolved resources.                                                            |
+| **Reopen issue** | Reopen any closed issue that still exists. Keep the report, saved retro, and cleanup history. Create a fresh work folder when implementation next starts if the old folder was removed.                                                                                              |
+| **Delete issue** | Require a separate confirmation and fresh server-side proof that the issue is closed, idle, and has no remaining dependent resources. Permanently remove the report and issue-specific records. Keep the issue number reserved.                                                      |
 
 Closing never starts acceptance, verification, cleanup, or chat archival. It also
 does not cancel a stopped or running action. Accepting a fix never changes the

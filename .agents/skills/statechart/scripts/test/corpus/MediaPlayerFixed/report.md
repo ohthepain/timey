@@ -6,4 +6,5 @@ The step you press stop changes Playback and Volume at the same time.
 The step the track ends changes Playback and Volume at the same time.
 
 ## Rules that hold
+
 TypeOK, LoudWhenStopped, NoDeadlock

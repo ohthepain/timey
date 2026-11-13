@@ -14,7 +14,7 @@
 
 **Control skill.** Pick it by surface. Browser, Electron, and web UIs use `control-ui` from `cursor-team-kit`. CLIs and TUIs use `control-cli` from `cursor-team-kit`. Native mobile uses whatever simulator-driving skill the repo has. A PR that touches two surfaces gets lanes on both. A surface with no control skill is a risk in Appendix C, and its live block still names how each lane drives it.
 
-````markdown
+```markdown
 # <Program> plan
 
 <Under ten lines. What changes, for whom, the rule the program enforces, and the PR ids in order.>
@@ -150,6 +150,6 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 ## Appendix D. Links and reading list
 
 <Docs to read before editing. Which PRs get `pstack/skills/how/SKILL.md` and `pstack/skills/interrogate/SKILL.md`. The trail per `pstack/skills/show-me-your-work/SKILL.md`.>
-````
+```
 
 **Reply:** the plan path, the PR ids with their dependencies and the review-gated set, what the prototypes proved and what stays unproven, and the check script's output.

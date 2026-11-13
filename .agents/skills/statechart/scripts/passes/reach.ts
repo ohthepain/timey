@@ -11,7 +11,7 @@ import {
   sortBy,
   type State,
   type Walk,
-} from "../ir.ts";
+} from '../ir.ts';
 
 export function walk(graph: Graph): Walk {
   const ids: string[] = [];

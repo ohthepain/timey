@@ -20,9 +20,9 @@ import {
   unkey,
   type View,
   type Walk,
-} from "../ir.ts";
+} from '../ir.ts';
 
-const anyRest: Condition = { kind: "and", otherKeys: [] };
+const anyRest: Condition = { kind: 'and', otherKeys: [] };
 
 type RegionMove = {
   f: number;
@@ -37,7 +37,7 @@ export function drawRegions(
   { names, shapes, drawnLabels, group, keys, kinds, sizes, sorted, pathSteps, notes }: Labels,
   order: Int32Array,
   found: Bug[],
-  view: View,
+  view: View
 ): Chart {
   const n = shapes.length;
   const m = drawnLabels.length;
@@ -59,8 +59,8 @@ export function drawRegions(
     R === 1
       ? (i: number) => kinds[0][i]
       : (i: number) => {
-          let c = "";
-          for (let r = 0; r < R; r++) c += (r ? "," : "") + kinds[r][i];
+          let c = '';
+          for (let r = 0; r < R; r++) c += (r ? ',' : '') + kinds[r][i];
           return c;
         };
   const dirty = new Map<number | string, number>();
@@ -107,19 +107,16 @@ export function drawRegions(
       o.members.push(i);
     }
     const parents = new Set<string>();
-    for (const s of states.values())
-      for (let i = 1; i < s.path.length; i++) parents.add(tupleKey(s.path.slice(0, i)));
+    for (const s of states.values()) for (let i = 1; i < s.path.length; i++) parents.add(tupleKey(s.path.slice(0, i)));
     for (const s of states.values()) {
       if (parents.size && parents.has(tupleKey(s.path)))
         throw new Error(
-          `The view's state() returned ${s.path.join(" / ")} both as a state and as a parent state${name ? ` in ${name}` : ""}. Give that state a child name of its own.`,
+          `The view's state() returned ${s.path.join(' / ')} both as a state and as a parent state${name ? ` in ${name}` : ''}. Give that state a child name of its own.`
         );
       const rules = new Map<string, Rule>();
       for (const i of s.members) for (const rule of tla[i].breaks) rules.set(ruleKey(rule), rule);
       s.breaks = [];
-      for (const rule of [...rules.values()].sort(
-        (a, b) => byText(a.name, b.name) || byText(a.kind, b.kind),
-      )) {
+      for (const rule of [...rules.values()].sort((a, b) => byText(a.name, b.name) || byText(a.kind, b.kind))) {
         let always = true;
         for (const i of s.members) always &&= hasRule(tla[i].breaks, rule);
         s.breaks.push({ rule, always });
@@ -138,15 +135,13 @@ export function drawRegions(
     const two = others.length === 1;
     const words = (vs: Iterable<string>) => {
       const texts: string[] = [];
-      for (const v of vs) texts.push(unkey(v).join(" / "));
-      return texts.sort(byText).join(two ? " or " : ", ");
+      for (const v of vs) texts.push(unkey(v).join(' / '));
+      return texts.sort(byText).join(two ? ' or ' : ', ');
     };
     const is = (o: number, vs: Set<string>) =>
-      two ? `when ${words(vs)}` : `${names[o]} is ${vs.size > 1 ? "one of " : ""}${words(vs)}`;
+      two ? `when ${words(vs)}` : `${names[o]} is ${vs.size > 1 ? 'one of ' : ''}${words(vs)}`;
     const isNot = (o: number, vs: string[]) =>
-      two
-        ? `unless ${words(vs)}`
-        : `${names[o]} is ${vs.length > 1 ? "none of" : "not"} ${words(vs)}`;
+      two ? `unless ${words(vs)}` : `${names[o]} is ${vs.length > 1 ? 'none of' : 'not'} ${words(vs)}`;
     const moves: RegionMove[] = [];
     const pairs = new Map<number, RegionMove>();
     const size = sizes[r];
@@ -220,23 +215,22 @@ export function drawRegions(
         for (const t of seen) if (holds(condition, t) !== takes(t)) return false;
         return true;
       };
-      const andHolds: Condition = { kind: "and", otherKeys: and };
-      const orHolds: Condition = { kind: "or", otherKeys: or };
+      const andHolds: Condition = { kind: 'and', otherKeys: and };
+      const orHolds: Condition = { kind: 'or', otherKeys: or };
       const text = move.text;
       if (fits(andHolds)) {
         const parts: string[] = [];
         for (let j = 0; j < others.length; j++) {
           const no: string[] = [];
           for (const v of all[j]) if (!and[j].has(v)) no.push(v);
-          if (no.length)
-            parts.push(and[j].size <= no.length ? is(others[j], and[j]) : isNot(others[j], no));
+          if (no.length) parts.push(and[j].size <= no.length ? is(others[j], and[j]) : isNot(others[j], no));
         }
         arrows.push({
           from: fromKey,
           to: toKey,
           label: text,
           condition: andHolds,
-          when: parts.length ? (two ? parts[0] : `when ${parts.join(" and ")}`) : undefined,
+          when: parts.length ? (two ? parts[0] : `when ${parts.join(' and ')}`) : undefined,
         });
       } else if (fits(orHolds)) {
         const parts: string[] = [];
@@ -246,14 +240,14 @@ export function drawRegions(
           to: toKey,
           label: text,
           condition: orHolds,
-          when: `when ${parts.join(" or ")}`,
+          when: `when ${parts.join(' or ')}`,
         });
       } else
         arrows.push({
           from: fromKey,
           to: toKey,
           label: text,
-          condition: { kind: "tuples", otherTuples: ok },
+          condition: { kind: 'tuples', otherTuples: ok },
         });
     }
     const steps: ChartStep[] = [];
@@ -262,7 +256,7 @@ export function drawRegions(
         from: objectOf[moves[k].f].path,
         to: objectOf[moves[k].t].path,
         label: a.label,
-        when: a.label.endsWith("]") ? undefined : a.when,
+        when: a.label.endsWith(']') ? undefined : a.when,
       });
     regions.push({ name, states: [...states.values()], steps, arrows });
     objects.push(objectOf);

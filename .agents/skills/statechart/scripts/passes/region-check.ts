@@ -1,13 +1,4 @@
-import {
-  append,
-  type Arrow,
-  holds,
-  type Labels,
-  type Region,
-  tupleKey,
-  unkey,
-  type Walk,
-} from "../ir.ts";
+import { append, type Arrow, holds, type Labels, type Region, tupleKey, unkey, type Walk } from '../ir.ts';
 
 type Move = { from: string[]; text: string; to: string[] };
 type Enabled = { i: number; a: Arrow };
@@ -16,7 +7,7 @@ export function regionsLie(
   regions: Region[],
   { names, keys, sorted, drawnLabels, together }: Labels,
   { from, to, starts }: Walk,
-  order: Int32Array,
+  order: Int32Array
 ) {
   if (names.length < 2) return undefined;
   const combo = (i: number) => {
@@ -26,33 +17,29 @@ export function regionsLie(
   };
   const words = (c: string[]) => {
     const parts: string[] = [];
-    for (let i = 0; i < names.length; i++) parts.push(`${names[i]} ${unkey(c[i]).join(" / ")}`);
-    return parts.join(", ");
+    for (let i = 0; i < names.length; i++) parts.push(`${names[i]} ${unkey(c[i]).join(' / ')}`);
+    return parts.join(', ');
   };
-  const addMove = (moves: Map<string, Move>, m: Move) =>
-    moves.set(tupleKey([m.from, m.text, m.to]), m);
+  const addMove = (moves: Map<string, Move>, m: Move) => moves.set(tupleKey([m.from, m.text, m.to]), m);
   let product: string[][] = [[]];
   for (const r of regions) {
     const next: string[][] = [];
-    for (const c of product)
-      for (const s of r.states) if (s.start) next.push([...c, tupleKey(s.path)]);
+    for (const c of product) for (const s of r.states) if (s.start) next.push([...c, tupleKey(s.path)]);
     product = next;
   }
   const realStarts = new Set<string>();
   for (const i of starts) realStarts.add(tupleKey(combo(i)));
   for (const c of product)
-    if (!realStarts.has(tupleKey(c)))
-      return `The regions chart starts at ${words(c)}, where the model never starts.`;
+    if (!realStarts.has(tupleKey(c))) return `The regions chart starts at ${words(c)}, where the model never starts.`;
   for (const [i, r] of regions.entries())
     for (const a of r.arrows)
-      if (a.condition.kind === "tuples")
-        return `In ${names[i]}, ${a.label} from ${unkey(a.from).join(" / ")} depends on the other regions in a way that one "and" or "or" condition cannot say.`;
+      if (a.condition.kind === 'tuples')
+        return `In ${names[i]}, ${a.label} from ${unkey(a.from).join(' / ')} depends on the other regions in a way that one "and" or "or" condition cannot say.`;
   const real = new Map<string, Move>();
   for (const j of sorted) {
     const before = combo(from[j]);
     const after = combo(to[j]);
-    if (tupleKey(before) !== tupleKey(after))
-      addMove(real, { from: before, text: drawnLabels[j], to: after });
+    if (tupleKey(before) !== tupleKey(after)) addMove(real, { from: before, text: drawnLabels[j], to: after });
   }
   const combos = new Map<string, string[]>();
   for (const i of order) {
@@ -65,8 +52,7 @@ export function regionsLie(
     for (const [i, r] of regions.entries()) {
       const rest: string[] = [];
       for (let k = 0; k < c.length; k++) if (k !== i) rest.push(c[k]);
-      for (const a of r.arrows)
-        if (a.from === c[i] && holds(a.condition, rest)) append(enabled, a.label, { i, a });
+      for (const a of r.arrows) if (a.from === c[i] && holds(a.condition, rest)) append(enabled, a.label, { i, a });
     }
     for (const [text, list] of enabled) {
       let groups: Enabled[][] = [];

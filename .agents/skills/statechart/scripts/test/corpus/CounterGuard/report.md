@@ -4,11 +4,14 @@ TLC reached 2 states and 1 steps. The chart draws 2 states and 1 arrows.
 TLC stopped the drawing run with exit 75, so the chart draws only the states that it reached before it stopped.
 
 ## TypeOK breaks
+
 TLC found a counterexample. It is in tlc-TypeOK.out.
 
 ## Rules not checked
+
 Lookup, NoDeadlock
 TLC stopped with exit 75 before it checked these rules:
+
 ```
 Error: Evaluating invariant Lookup failed.
 Attempted to apply tuple

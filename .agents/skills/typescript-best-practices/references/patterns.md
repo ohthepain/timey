@@ -7,7 +7,7 @@ Code examples for each rule in `SKILL.md`. The underlying principles are languag
 Brand primitives so they can't be mixed up. Validate once at the boundary. Downstream code trusts the type.
 
 ```ts
-type AgentId = string & { readonly __brand: "AgentId" };
+type AgentId = string & { readonly __brand: 'AgentId' };
 
 function isAgentId(input: string): input is AgentId {
   return isUUID(input);
@@ -34,10 +34,7 @@ Model variants with a literal discriminant. Every variant shares the field name 
 type DiffState = { loading: boolean; diff?: GitDiff; error?: string };
 
 // Do. Only valid states exist.
-type DiffState =
-  | { kind: "loading" }
-  | { kind: "ready"; diff: GitDiff }
-  | { kind: "error"; error: string };
+type DiffState = { kind: 'loading' } | { kind: 'ready'; diff: GitDiff } | { kind: 'error'; error: string };
 ```
 
 Pick one discriminant name (`kind`, `type`, `tag`) and stick to it.
@@ -53,7 +50,7 @@ type NonEmpty<T> = [T, ...T[]];
 
 // Don't: T[] plus a length check every caller must repeat
 function pickWinner(entries: string[]): string {
-  if (entries.length === 0) throw new Error("no entries");
+  if (entries.length === 0) throw new Error('no entries');
   return entries[Math.floor(Math.random() * entries.length)];
 }
 
@@ -123,7 +120,7 @@ function handle(input: any) {
 
 // Do
 function handle(input: unknown) {
-  if (typeof input === "object" && input !== null && "foo" in input) {
+  if (typeof input === 'object' && input !== null && 'foo' in input) {
     // narrowed; compiler verifies access
   }
 }
@@ -136,11 +133,11 @@ External sources include RPC payloads, `JSON.parse`, `postMessage`, IPC, file co
 Before writing a property-by-property type guard for external data, look for the repository's runtime schema library and existing schemas. Let one schema own validation and derive the TypeScript type from it. Do not maintain a schema, a duplicate interface, and a guard that can drift apart.
 
 ```ts
-import { z } from "zod";
+import { z } from 'zod';
 
 const UserSchema = z.object({
   id: z.string().uuid(),
-  role: z.enum(["admin", "member"]),
+  role: z.enum(['admin', 'member']),
 });
 
 type User = z.infer<typeof UserSchema>;
@@ -157,14 +154,14 @@ Use `safeParse` when failure is an expected branch. Use the equivalent inference
 Every `as` is a potential runtime crash. Cast only after the type system has verified the claim.
 
 ```ts
-import { z } from "zod";
+import { z } from 'zod';
 
 // Don't
 const user = data as User;
 
 // Don't
 function isUser(data: unknown): data is User {
-  return typeof data === "object" && data !== null && "id" in data;
+  return typeof data === 'object' && data !== null && 'id' in data;
 }
 
 // Do
@@ -203,7 +200,7 @@ From best to last-resort:
 
 ```ts
 function area(s: Shape): number {
-  if ("radius" in s) return Math.PI * s.radius ** 2; // narrowed to circle
+  if ('radius' in s) return Math.PI * s.radius ** 2; // narrowed to circle
   return s.width * s.height; // narrowed to rect
 }
 ```
@@ -213,8 +210,8 @@ function area(s: Shape): number {
 A guard must actually verify the claim. A lying guard is worse than `as`.
 
 ```ts
-function isCircle(s: Shape): s is Shape & { kind: "circle" } {
-  return s.kind === "circle";
+function isCircle(s: Shape): s is Shape & { kind: 'circle' } {
+  return s.kind === 'circle';
 }
 ```
 
@@ -228,9 +225,9 @@ In default arms, assign the discriminant to a `never`-typed local.
 // Value-returning switch
 function area(s: Shape): number {
   switch (s.kind) {
-    case "circle":
+    case 'circle':
       return Math.PI * s.radius ** 2;
-    case "rect":
+    case 'rect':
       return s.width * s.height;
     default: {
       const _exhaustive: never = s;
@@ -242,10 +239,10 @@ function area(s: Shape): number {
 // Void switch
 function handle(s: Shape): void {
   switch (s.kind) {
-    case "circle":
+    case 'circle':
       drawCircle(s);
       break;
-    case "rect":
+    case 'rect':
       drawRect(s);
       break;
     default: {
@@ -264,10 +261,10 @@ Return-style in value-returning switches, void-style in statement switches.
 
 ```ts
 // Don't. Widens, loses literal types.
-const config = { theme: "dark", cols: 3 } as Config;
+const config = { theme: 'dark', cols: 3 } as Config;
 
 // Do. Validates AND preserves literal types.
-const config = { theme: "dark", cols: 3 } satisfies Config;
+const config = { theme: 'dark', cols: 3 } satisfies Config;
 // config.theme is "dark" (literal), not string
 ```
 
@@ -294,8 +291,8 @@ function renderChecks(s: CheckSummary) {
 }
 
 // Do. Derive from the generated schema type.
-import type { ChecksMessage } from "<generated module>";
-function renderChecks(s: Pick<ChecksMessage, "totalCount" | "checks">) {
+import type { ChecksMessage } from '<generated module>';
+function renderChecks(s: Pick<ChecksMessage, 'totalCount' | 'checks'>) {
   /* ... */
 }
 ```

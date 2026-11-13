@@ -8,4 +8,5 @@ The step RMRcvAbortMsg changes only one of r1 and r2 at a time.
 The step RMRcvCommitMsg changes only one of r1 and r2 at a time.
 
 ## Rules that hold
+
 TPTypeOK, TCConsistent, NoDeadlock

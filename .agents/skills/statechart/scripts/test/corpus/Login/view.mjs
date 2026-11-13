@@ -1,1 +1,1 @@
-export const state = (v) => v.main.split(".");
+export const state = (v) => v.main.split('.');

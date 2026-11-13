@@ -1,6 +1,6 @@
 ---
 name: principle-fix-root-causes
-description: "Apply when debugging. Trace each symptom back to the first place the system went wrong and fix it there. A guard is a fix only when the state it handles is legitimate."
+description: 'Apply when debugging. Trace each symptom back to the first place the system went wrong and fix it there. A guard is a fix only when the state it handles is legitimate.'
 disable-model-invocation: true
 ---
 
@@ -11,6 +11,7 @@ When debugging, fix the fault, not the place where it surfaced. The symptom is w
 **Why:** A symptom fix hides the evidence and leaves the fault free to surface somewhere else. Each one makes the system harder to reason about, because the code now carries a workaround for a bug that nobody named.
 
 **Pattern:**
+
 - Reproduce first.
 - Ask "why" at each step until the answer is a wrong decision in the code, not a consequence of an earlier one.
 - When stuck, instrument. Read the actual error and the actual state. Do not guess.

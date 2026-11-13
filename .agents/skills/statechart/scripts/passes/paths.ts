@@ -11,7 +11,7 @@ import {
   type Trace,
   type TraceState,
   type Vars,
-} from "../ir.ts";
+} from '../ir.ts';
 
 export function pathGraph(names: string[]) {
   const graph: Graph = { states: new Map(), steps: [] };
