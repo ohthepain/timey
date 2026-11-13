@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const files = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'], {
@@ -14,12 +14,15 @@ const files = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-fi
 
 if (files.length === 0) process.exit(0);
 
-const snapshot = mkdtempSync(join(tmpdir(), 'timey-format-staged-'));
+// Keep snapshot paths inside the checkout. The formatter excludes files outside
+// its project root, which made staged issue reports fail or escape formatting.
+const snapshotId = randomUUID();
+const snapshotFiles = [];
 try {
-  const stagedFiles = files.map((file) => {
-    const destination = join(snapshot, file);
-    mkdirSync(dirname(destination), { recursive: true });
+  const stagedFiles = files.map((file, index) => {
+    const destination = join(root, `.timey-format-staged-${snapshotId}-${index}-${file.split('/').at(-1)}`);
     writeFileSync(destination, execFileSync('git', ['show', `:${file}`], { cwd: root, encoding: 'buffer' }));
+    snapshotFiles.push(destination);
     return destination;
   });
   const formatter = join(root, 'node_modules', '.bin', 'vp');
@@ -30,5 +33,5 @@ try {
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
 } finally {
-  rmSync(snapshot, { recursive: true, force: true });
+  for (const file of snapshotFiles) rmSync(file, { force: true });
 }
