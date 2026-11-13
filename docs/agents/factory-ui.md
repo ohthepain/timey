@@ -904,9 +904,9 @@ with no open questions and no issue strategy. It saves first, then invokes the
 normal controller with fresh guards. A failed continuation leaves saved results
 intact. Changed inputs invalidate pending confirmations.
 
-**Run retro** invokes the installed `retro` skill with the same lifecycle history.
+**Run retro** invokes the installed `retro` skill with the same lifecycle history for open and closed issues.
 Its request and result remain in Issue thread. Recommendations begin unchecked;
-only selected choices enter the normal capture flow with stable submission IDs.
+only selected choices enter the normal capture flow with stable submission IDs. **View retro recommendations** reopens the latest saved result for filing after a reload or timeout.
 An ordinary question such as “What did you do?” uses the same history when no
 named history-query skill is installed.
 

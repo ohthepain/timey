@@ -1,3 +1,4 @@
+import { moveStoredIssue } from './factory-ui/issue-report-storage.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
@@ -87,8 +88,11 @@ test('one issue conversation persists messages, role contributions and native ch
   assert.match(f.calls.findLast((call) => call.name)?.name, /^Issue: .* · waiting$/);
 });
 
-test('retro runs and retains its request and result in the saved issue conversation', async (t) => {
+test('retro on a closed report retains its request and result in the saved issue conversation', async (t) => {
   const f = fixture(t);
+  const report = join(f.queue.root, '.issues', f.input.issueId + '.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace(/^state: .*$/m, 'state: closed'));
+  moveStoredIssue(f.queue.root, f.input.issueId, 'open', 'closed');
   f.service.codex.ready = async () => {};
   f.service.codex.call = async () => ({
     data: [{ skills: [{ name: 'retro', path: join(f.queue.root, 'sample-skill.md'), enabled: true }] }],
@@ -428,6 +432,10 @@ test('history HTTP routes require the local session and preview cannot persist a
   ).json();
   assert.equal(history.issueId, f.input.issueId);
   assert.equal(f.calls.length, 0, 'Reading history starts no model turn');
+  const missingSkills = await fetch(origin + '/api/issue-chat-skills?issue=missing-issue', { headers: { cookie } });
+  assert.equal(missingSkills.status, 400);
+  assert.match((await missingSkills.json()).error, /Select an existing issue/);
+  assert.equal((await fetch(origin + '/api/server-status', { headers: { cookie } })).status, 200);
   f.service.reviewMode = 'preview';
   const response = await fetch(origin + '/api/issue-chat-send', {
     method: 'POST',

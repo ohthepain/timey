@@ -102,6 +102,7 @@ async function mutation(service, path, value, owner) {
     '/api/discussion-turn': () => service.discussions.turn(value, owner),
     '/api/discussion-skills': () => service.discussions.skills(value, owner),
     '/api/discussion-retro': () => service.discussions.retro(value, owner),
+    '/api/discussion-retro-saved': () => service.discussions.savedRetro(value, owner),
     '/api/discussion-retro-file': () => service.discussions.fileRetro(value, owner),
     '/api/discussion-summary': () => service.discussions.summarize(value, owner),
     '/api/discussion-prepare': () => service.discussions.prepare(value, owner),
@@ -259,7 +260,7 @@ function page(service, request, response, token, port) {
   const name = request.url.startsWith('/native-chat?') ? 'native-chat.html' : 'index.html';
   response.end(readFileSync(join(uiDirectory(service), name)));
 }
-function read(service, request, response, owner) {
+async function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
@@ -287,7 +288,7 @@ function read(service, request, response, owner) {
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
   };
-  if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(routes[url.pathname]()));
+  if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(await routes[url.pathname]()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));
 }

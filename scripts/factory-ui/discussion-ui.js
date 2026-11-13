@@ -175,8 +175,11 @@ const discussionUI = (() => {
     const requestIds = new Map();
     async function startRetro() {
       if (saved) throw Error('End this chat before starting another retro.');
-      const result = await call('retro', {});
+      showRetro(await call('retro', {}));
+    }
+    function showRetro(result) {
       retroResult = result;
+      requestIds.clear();
       retroPanel.replaceChildren();
       const heading = document.createElement('h3');
       heading.textContent = 'Recommendations';
@@ -263,6 +266,11 @@ const discussionUI = (() => {
         retroPanel.append(error);
       });
     }
+    node.showSavedRetro = () => {
+      toggle.setAttribute('aria-expanded', 'true');
+      body.hidden = false;
+      return run(async () => showRetro(await call('retro-saved', {})), 'Loading saved recommendations…');
+    };
     node.startRetro = () => {
       toggle.setAttribute('aria-expanded', 'true');
       body.hidden = false;
@@ -435,6 +443,7 @@ const discussionUI = (() => {
     mount,
     end,
     retro: () => panel?.startRetro?.(),
+    savedRetro: () => panel?.showSavedRetro?.(),
     grill: (stage) => {
       if (stage) panel?.startGrill(stage);
     },

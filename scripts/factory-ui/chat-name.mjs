@@ -26,7 +26,7 @@ function issueChatTitle(queue, issueId) {
 }
 
 export async function setIssueChatTitle(client, root, issueId, threadId, role, status) {
-  const issue = readQueue(root).issues.find((entry) => entry.id === issueId);
+  const issue = readQueue(root, { issueId }).issues[0] || readQueue(root, { location: 'closed', issueId }).issues[0];
   if (!issue) return null;
   const name = `${role}: ${issueNumberLabel(issue)} ${issue.title?.trim() || issue.id} · ${status}`;
   await client.call('thread/name/set', { threadId, name });

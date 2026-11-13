@@ -1,3 +1,4 @@
+import { moveStoredIssue } from './factory-ui/issue-report-storage.mjs';
 import { addPrompt, changePromptQueue } from './factory-ui/issue-prompt-queue.mjs';
 import { appendMessage, conversationMessages } from './factory-ui/conversation-store.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
@@ -211,8 +212,13 @@ test('temporary discussion lists enabled skills and invokes selected skills with
   assert.equal(f.service.store.list(new Map()).length, 0);
 });
 
-test('issue retro runs the installed skill and files only selected recommendations', async (t) => {
+test('closed issue retro runs the installed skill and files only selected recommendations', async (t) => {
   const f = fixture(t);
+  const { issueId } = f.input;
+  const report = join(f.root, '.issues', issueId + '.md');
+  writeFileSync(report, readFileSync(report, 'utf8').replace(/^state: .*$/m, 'state: closed'));
+  moveStoredIssue(f.root, issueId, 'open', 'closed');
+  f.input.session = f.discussion.open({ issueId }, f.owner).session;
   let retroIssue;
   f.service.issueChats = {
     connections: new Map(),
@@ -258,6 +264,21 @@ test('issue retro runs the installed skill and files only selected recommendatio
   assert.match(captured[0].description, /Document the trigger/);
   assert.doesNotMatch(captured[0].description, /Add a regression check/);
   assert.equal(filed.issues[0].id, 'new-issue');
+  appendMessage(f.root, issueId, {
+    id: 'saved-retro',
+    kind: 'retro-result',
+    actor: 'agent',
+    body: JSON.stringify(result),
+  });
+  const restored = () => {
+    const input = { issueId, ...f.discussion.open({ issueId }, f.owner) };
+    assert.deepEqual(f.discussion.savedRetro(input, f.owner), result);
+    return input;
+  };
+  await f.discussion.fileRetro({ ...restored(), selected: [0], requestIds: { 0: 'first' } }, f.owner);
+  await f.discussion.fileRetro({ ...restored(), selected: [0], requestIds: { 0: 'second' } }, f.owner);
+  assert.match(captured[1].description, /Add a regression check/);
+  assert.equal(captured[1].requestId, captured[2].requestId);
 });
 
 test('actual guarded report append retains only chosen output and human confirmation; replays rejected', async (t) => {
@@ -501,7 +522,7 @@ test('issue detail retro opens the temporary panel and displays unchecked recomm
   const api = async (path, input) => {
     calls.push({ path, input });
     if (path === 'discussion-open') return { session: 'retro-session' };
-    if (path === 'discussion-retro')
+    if (path === 'discussion-retro' || path === 'discussion-retro-saved')
       return {
         summary: 'One improvement to consider.',
         recommendations: [
@@ -518,8 +539,9 @@ test('issue detail retro opens the temporary panel and displays unchecked recomm
   const ui = dom.window.chatTest,
     document = dom.window.document;
   ui.mount('one', api, async () => {});
-  await ui.retro();
-  assert.ok(calls.some((call) => call.path === 'discussion-retro'));
+  await ui.savedRetro();
+  assert.ok(calls.some((call) => call.path === 'discussion-retro-saved'));
+  assert.ok(!calls.some((call) => call.path === 'discussion-retro'));
   const choices = document.querySelectorAll('.retro-recommendations input[type=checkbox]');
   assert.equal(choices.length, 1);
   assert.equal(choices[0].checked, false);

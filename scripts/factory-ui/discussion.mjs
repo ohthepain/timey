@@ -1,3 +1,5 @@
+import { conversationMessages } from './conversation-store.mjs';
+import { parseRetroResult } from './issue-chat.mjs';
 import {
   installedGrilling,
   grillingStage,
@@ -46,8 +48,10 @@ export function createDiscussions(service, create = null, now = Date.now, skill 
       return { session: session.id, stage: session.grilling || null };
     },
     context(id) {
-      const queue = readQueue(this.service.root);
-      const issue = queue.issues.find((item) => item.id === id);
+      requireThat(typeof id === 'string' && id.length > 0, 'Select an existing issue.');
+      const open = readQueue(this.service.root, { issueId: id });
+      const queue = open.issues.length ? open : readQueue(this.service.root, { location: 'closed', issueId: id });
+      const issue = queue.issues[0];
       requireThat(issue, 'Select an existing issue.');
       const policy = ['docs/agents/operating.md', 'docs/agents/verification.md', '.issues/preferences.json'].map(
         (file) => (existsSync(join(this.service.root, file)) ? readFileSync(join(this.service.root, file), 'utf8') : '')
@@ -91,10 +95,25 @@ export function createDiscussions(service, create = null, now = Date.now, skill 
         const result = await this.service.issueChats.retro(input.issueId);
         this.get(input, owner);
         session.retroRecommendations = result.recommendations;
+        session.retroResultId = conversationMessages(this.service.root, input.issueId).findLast(
+          (message) => message.kind === 'retro-result' && message.actor === 'agent'
+        )?.id;
         return result;
       } finally {
         session.busy = false;
       }
+    },
+    savedRetro(input, owner) {
+      const { session } = this.get(input, owner);
+      requireThat(!session.busy, 'Wait for the retro to finish.');
+      const saved = conversationMessages(this.service.root, input.issueId).findLast(
+        (message) => message.kind === 'retro-result' && message.actor === 'agent'
+      );
+      requireThat(saved, 'This issue has no saved retro result yet.');
+      const result = parseRetroResult(saved.body);
+      session.retroRecommendations = result.recommendations;
+      session.retroResultId = saved.id;
+      return result;
     },
     async fileRetro(input, owner) {
       const { session } = this.get(input, owner);
@@ -206,8 +225,11 @@ async function captureRetroChoices(service, session, indices, requestIds) {
   for (const index of indices) {
     try {
       issues.push(
-        ...(await service.captures.save(retroCaptureInput(session.retroRecommendations[index], requestIds[index])))
-          .issues
+        ...(
+          await service.captures.save(
+            retroCaptureInput(session.retroRecommendations[index], retroCaptureId(session, index, requestIds[index]))
+          )
+        ).issues
       );
     } catch (error) {
       errors.push({ index, message: error.message });
@@ -245,6 +267,12 @@ function validateRetroIndex(index, recommendationCount) {
     'A selected recommendation is no longer available.'
   );
   return index;
+}
+
+function retroCaptureId(session, index, fallback) {
+  if (!session.retroResultId) return fallback;
+  const hash = digest(JSON.stringify([session.issueId, session.retroResultId, index]));
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
 function retroCaptureInput(recommendation, requestId) {

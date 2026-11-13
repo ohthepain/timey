@@ -94,6 +94,7 @@ export function conversationPage(service, queue, issue, before = '') {
     issueId: issue.id,
     messages,
     hasMore: messages.length < end,
+    hasSavedRetro: timeline.some((message) => message.kind === 'retro-result'),
     cursor: messages[0]?.id,
     status: state.status,
     responseId: service.issueChats?.active.get(issue.id)?.messageId || null,

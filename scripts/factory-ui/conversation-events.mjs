@@ -1,8 +1,9 @@
 import { join } from 'node:path';
+import { storedIssuePath } from './issue-report-storage.mjs';
 import { digest } from './common.mjs';
 
 export function issueHistoryEvents(service, queue, issue) {
-  const report = join(service.root, '.issues', issue.id + '.md');
+  const report = storedIssuePath(service.root, issue.id, issue.reportLocation || 'open');
   const record = service.lifecycleRuns?.[issue.id];
   const source = { evidence: [{ path: report, label: 'Issue report' }] };
   return [

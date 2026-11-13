@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { interruptCodexTurn } from './codex.mjs';
 import { startIssueStrategy, strategyBasis } from './issue-strategy.mjs';
 import { readQueue } from './data.mjs';
@@ -57,25 +58,25 @@ class IssueChats {
     this.scheduler = new IssuePromptScheduler(this);
     this.closed = false;
   }
-  selected(issueId) {
-    const queue = readQueue(this.service.root),
-      issue = queue.issues.find((entry) => entry.id === issueId);
+  selected(issueId, includeClosed = false) {
+    requireThat(typeof issueId === 'string' && issueId.length > 0, 'Select an existing issue.');
+    const open = readQueue(this.service.root, { issueId });
+    const queue =
+      includeClosed && !open.issues.length ? readQueue(this.service.root, { location: 'closed', issueId }) : open;
+    const issue = queue.issues[0];
     requireThat(issue, 'Select an existing issue.');
     return { queue, issue };
   }
   view(issueId, before) {
-    const open = readQueue(this.service.root, { issueId });
-    const queue = open.issues.length ? open : readQueue(this.service.root, { location: 'closed', issueId });
-    const issue = queue.issues[0];
-    requireThat(issue, 'Select an existing issue.');
+    const { queue, issue } = this.selected(issueId, true);
     return { ...conversationPage(this.service, queue, issue, before), queue: this.scheduler.view(issueId) };
   }
   async skills(issueId) {
-    this.selected(issueId);
+    this.selected(issueId, true);
     return publicSkills(await listAvailableSkills(this.service.codex, this.service.root));
   }
   async retro(issueId) {
-    this.selected(issueId);
+    this.selected(issueId, true);
     const available = await listAvailableSkills(this.service.codex, this.service.root);
     requireThat(
       available.some((entry) => entry.name === 'retro'),
@@ -141,8 +142,8 @@ class IssueChats {
     }
   }
   async send(input) {
-    const { issue } = this.selected(input.issueId);
     validateMessage(input);
+    const { issue } = this.selected(input.issueId, input.mode === 'comment');
     this.service.ownServer();
     if (input.mode === 'answer') return this.sendAnswer(input);
     const queue = this.scheduler.read(issue.id);
@@ -236,7 +237,7 @@ class IssueChats {
     return this.scheduler.canDrain(id) && pendingPrompts(this.scheduler.read(id)).length > 0;
   }
   async stop(input) {
-    this.selected(input.issueId);
+    this.selected(input.issueId, true);
     this.service.ownServer();
     const active = this.active.get(input.issueId);
     requireThat(
@@ -464,17 +465,17 @@ function alignConversationThread(service, issueId, state) {
 function issueConversationCwd(service, issueId, threadId) {
   const record = service.lifecycleRuns[issueId];
   const checkout = conversationCheckout(record, threadId);
-  if (checkout) return checkout;
+  if (checkout && existsSync(checkout)) return checkout;
   const run = service.store.runs.findLast(
     (entry) => entry.issueId === issueId && entry.threadId === threadId && entry.checkout
   );
-  return run?.checkout || service.root;
+  return run?.checkout && existsSync(run.checkout) ? run.checkout : service.root;
 }
 function conversationCheckout(record = {}, threadId) {
   if (record.workThreadId === threadId && record.work) return record.work.checkout;
   return record.chatCheckout?.checkout;
 }
-function parseRetroResult(text) {
+export function parseRetroResult(text) {
   let result;
   try {
     result = JSON.parse(text);
