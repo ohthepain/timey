@@ -18,6 +18,7 @@ import { CodexConnection } from './factory-ui/codex.mjs';
 import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { checkCandidate } from './factory-ui/checks.mjs';
+import { disconnectedSavedRun, liveSavedRun } from './factory-saved-run-fixtures.mjs';
 
 function fixture(t, options = {}) {
   const { root, git } = gitFixture(t, 'factory-ui-check-');
@@ -5468,15 +5469,21 @@ test('accepting a retained fix closes directly from implementation without fabri
 test('strategy acceptance reuses exact saved checks without a legacy final-review stage', (t) => {
   const { service, root, git, result } = completedWorkFixture(t);
   const issue = service.snapshot().issues[0];
-  const run = service.store.add({ id: 'strategy-result', issues: [issue.id] }, 'issue-work', git('rev-parse', 'HEAD'));
+  const run = disconnectedSavedRun(
+    service.store,
+    { id: 'strategy-result', issues: [issue.id] },
+    'issue-work',
+    git('rev-parse', 'HEAD')
+  );
+  assert.equal(run.status, 'completed');
+  assert.equal(service.store.connected.has(run.id), false);
   const checked = {
     head: git('rev-parse', 'HEAD'),
     tree: git('rev-parse', 'HEAD^{tree}'),
     summaries: [result.verification_summary, result.audit_summary],
   };
   const readiness = { head: checked.head };
-  service.store.update(run, { issueId: issue.id, status: 'completed', result: { checked, readiness } });
-  service.store.connected.delete(run.id);
+  service.store.update(run, { issueId: issue.id, result: { checked, readiness } });
   mkdirSync(join(service.store.directory, run.id), { recursive: true });
   writeFileSync(join(service.store.directory, run.id, 'readiness.json'), JSON.stringify({ ...readiness, checked }));
   service.lifecycleRuns[issue.id] = { work: { runId: run.id, checkout: root, base: checked.head, readiness } };
@@ -5497,6 +5504,24 @@ test('strategy acceptance reuses exact saved checks without a legacy final-revie
   const accepted = selectedIssueView(service, issue.id).accepted_result;
   assert.equal(accepted.revision, checked.head);
   assert.ok(accepted.evidence.some((entry) => entry.source === result.verification_summary));
+});
+
+test('connected live issue work blocks closure', async (t) => {
+  const { service } = completedWorkFixture(t);
+  await reconcileNow(service);
+  const issue = service.snapshot().issues[0];
+  const liveRun = liveSavedRun(
+    service.store,
+    { id: 'live-issue-work', issueId: issue.id },
+    'issue-work',
+    service.snapshot().head
+  );
+  assert.equal(liveRun.issueId, issue.id);
+  assert.equal(service.store.connected.has(liveRun.id), true);
+  assert.throws(
+    () => service.decideIssue(issue.id, issue.state, 'close', issue.decisionBasis),
+    /Wait for the current issue action/
+  );
 });
 
 test('retained output history is authenticated, read-only and restricted to saved runs', async (t) => {
