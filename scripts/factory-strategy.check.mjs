@@ -31,6 +31,7 @@ import { decideIssueAndCleanup } from './factory-ui/http.mjs';
 import { DeliveryStore } from './issue-delivery-store.mjs';
 import { recoverCancelledStrategyDelivery } from './factory-ui/strategy-delivery-recovery.mjs';
 import { inspectPriorIssueInclusion } from './factory-ui/strategy-inclusion.mjs';
+import { liveSavedRun } from './factory-saved-run-fixtures.mjs';
 
 test('inclusion evidence reports PR changes separately from target updates and repairs', (t) => {
   const repo = gitFixture(t, 'timey-inclusion-');
@@ -1411,8 +1412,7 @@ test('an existing issue checkout on a different branch stops with the expected a
 
 test('an existing active assignment is not replaced by a strategy worker', (t) => {
   const f = fixture(t);
-  f.service.store.connected.add('existing');
-  f.service.store.runs.push({ id: 'existing', issueId: f.issue.id });
+  liveSavedRun(f.service.store, { id: 'existing', issueId: f.issue.id }, 'issue-work', f.queue.head);
   assert.throws(() => startIssueStrategy(f.service, f.input()), /still connected/);
   assert.equal(f.counts().calls, 0);
 });
