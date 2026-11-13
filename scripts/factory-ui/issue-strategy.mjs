@@ -69,6 +69,7 @@ function configField(saved, config, key) {
 function strategyConfigFields(work, config) {
   const saved = work?.config;
   return {
+    remote: configField(saved, config, 'remote'),
     target: configField(saved, config, 'target'),
     repository: configField(saved, config, 'repository'),
   };

@@ -1253,7 +1253,11 @@ test('Fixed closure shows the saved strategy failure while obsolete closure canc
 
 test('start requires current scope and explicit strategy permission; selecting or reading never runs work', (t) => {
   const f = fixture(t);
-  assert.equal(strategyView(f.service, f.issue).strategy, 'full-stop');
+  const view = strategyView(f.service, f.issue);
+  assert.equal(view.strategy, 'full-stop');
+  assert.equal(view.remote, 'origin');
+  assert.equal(view.target, 'main');
+  assert.doesNotMatch(JSON.stringify(view), /undefined/);
   assert.deepEqual(f.counts(), { calls: 0, merges: 0, checks: 0 });
   assert.throws(() => startIssueStrategy(f.service, { ...f.input(), approved: false }), /Explicitly start/);
   assert.throws(() => startIssueStrategy(f.service, { ...f.input(), basis: 'stale' }), /issue or strategy changed/);
