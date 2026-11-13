@@ -22,50 +22,49 @@ export function runtimeInfo(service) {
 function sourceDirty() {
   return Boolean(git(source, 'status', '--porcelain', '--untracked-files=all'));
 }
-export async function readRuntime(address, observe = () => {}, site = false) {
+export async function readRuntime(address, observe = () => {}, site = false, requestOptions = {}) {
   const url = new URL(address);
+  const timeoutMs = requestOptions.timeoutMs ?? 10000;
+  const fetchOptions = { redirect: 'error', signal: AbortSignal.timeout(timeoutMs) };
   requireThat(
     url.protocol === 'http:' && url.hostname === '127.0.0.1' && !url.username && !url.password,
     'Use a local factory URL.'
   );
-  const page = await runtimeRequest(
-    url.origin + '/',
-    { signal: AbortSignal.timeout(10000), redirect: 'error' },
-    'page',
-    observe
-  );
-  requireThat(page.ok, 'The factory page is unavailable.');
-  if (site) {
-    const html = await page.text();
-    requireThat(
-      page.headers.get('content-type')?.includes('text/html') && /<div\s+id=["']app["']/.test(html),
-      'The factory page did not return the issue interface.'
-    );
+  let cookie = requestOptions.cookie;
+  if (!cookie || site) {
+    const page = await runtimeRequest(url.origin + '/', fetchOptions, 'page', observe);
+    requireThat(page.ok, 'The factory page is unavailable.');
+    if (site) {
+      const html = await page.text();
+      requireThat(
+        page.headers.get('content-type')?.includes('text/html') && /<div\s+id=["']app["']/.test(html),
+        'The factory page did not return the issue interface.'
+      );
+    }
+    cookie = page.headers
+      .getSetCookie()
+      .map((value) => value.split(';')[0])
+      .join('; ');
   }
-  const cookie = page.headers
-    .getSetCookie()
-    .map((value) => value.split(';')[0])
-    .join('; ');
   const response = await runtimeRequest(
     url.origin + '/api/runtime',
     {
       headers: { cookie },
-      signal: AbortSignal.timeout(10000),
-      redirect: 'error',
+      ...fetchOptions,
     },
     'runtime',
     observe
   );
   requireThat(response.ok, 'This server does not expose runtime identity.');
   const identity = await response.json();
-  if (site) await checkQueue(url.origin, cookie, observe);
-  return { ...identity, url: url.origin };
+  if (site) await checkQueue(url.origin, cookie, observe, timeoutMs);
+  return { ...identity, url: url.origin, sessionCookie: cookie };
 }
 
-async function checkQueue(origin, cookie, observe) {
+async function checkQueue(origin, cookie, observe, timeoutMs) {
   const response = await runtimeRequest(
     origin + '/api/queue',
-    { headers: { cookie }, signal: AbortSignal.timeout(10000), redirect: 'error' },
+    { headers: { cookie }, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) },
     'queue',
     observe
   );

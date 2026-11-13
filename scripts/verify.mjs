@@ -76,7 +76,10 @@ function fallowEnforced(env = isolatedEnv) {
   return value === '1' || value === 'true';
 }
 function checkAssessment(name, result) {
-  if (name === 'fallow') return assessAudit(result, report.changed_files);
+  if (name === 'fallow')
+    return assessAudit(result, report.changed_files, {
+      warningsAsErrors: isolatedEnv.TIMEY_FALLOW_WARNINGS === 'error',
+    });
   return { passed: result.status === 0 && !result.error };
 }
 function recordSkippedFallow() {
@@ -242,6 +245,9 @@ try {
   // Tests may substitute the pinned binary without changing node_modules.
   const fallowCommand = isolatedEnv.TIMEY_FALLOW_COMMAND || bin('fallow');
   const fallowArgs = ['audit', '--base', base, '--format', 'json'];
+  // Each checkpoint uses a disposable export root; avoid stale cross-root
+  // incremental cache warnings while retaining the full configured audit.
+  if (fallowEnforced()) fallowArgs.push('--no-cache');
   if (report.changed_files.length === 0) fallowArgs.push('--gate', 'all');
   else fallowArgs.push(fallowAuditScope(report.changed_files));
   if (fallowEnforced()) await run('fallow', fallowCommand, fallowArgs);

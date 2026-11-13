@@ -56,17 +56,9 @@ class Coordinator {
     this.state.queuedOperations = this.waiters.map(({ operation }) => operation);
     saveCoordinator(this.service.root, this.state);
   }
-  view() {
-    const runs = this.service.store.runs;
-    const runningWorkers = runs.filter(
-      (r) => ['worker', 'integration'].includes(r.kind) && this.service.store.connected.has(r.id)
-    );
-    const active = this.state.active;
-    return redactValue({
-      paused: this.paused,
-      interrupted: this.state.interrupted || null,
-      reason: this.state.reason || '',
-      active,
+  reviewActivity() {
+    return {
+      active: this.state.active,
       waiting: (this.paused
         ? (this.state.queuedOperations || []).map((operation) => ({ operation }))
         : this.waiters
@@ -76,6 +68,18 @@ class Coordinator {
           ? 'Coordination is paused. Continue when ready.'
           : 'The coordinator is finishing its current operation.',
       })),
+    };
+  }
+  view() {
+    const runs = this.service.store.runs;
+    const runningWorkers = runs.filter(
+      (r) => ['worker', 'integration'].includes(r.kind) && this.service.store.connected.has(r.id)
+    );
+    return redactValue({
+      paused: this.paused,
+      interrupted: this.state.interrupted || null,
+      reason: this.state.reason || '',
+      ...this.reviewActivity(),
       pending: this.state.pending.length,
       threads: this.state.threads.map((thread) => ({
         id: thread.id,

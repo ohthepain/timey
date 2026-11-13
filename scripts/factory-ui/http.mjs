@@ -1,18 +1,44 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { issueStorageDirectory, migrateClosedIssues } from './issue-report-storage.mjs';
+import { listIssueStorage, moveIssueStorage, readIssueStorageReport, storedIssueId } from './issue-storage-actions.mjs';
+import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
+import { changeImplementationOrder } from './implementation-order-route.mjs';
 import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
 import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
-import { readFileSync } from 'node:fs';
+import { readQueue } from './data.mjs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { uiDirectory } from './ui-source.mjs';
 import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
+import {
+  mergeIssueStrategyPR,
+  startIssueStrategy,
+  stopIssueStrategy,
+  verifyExternalIssueDelivery,
+  verifyIssueStrategyAgain,
+} from './issue-strategy.mjs';
+import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs';
+import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
+import { openIssueWorkFolder } from './open-issue-work-folder.mjs';
+import { controlServerAction } from './server-action.mjs';
+import {
+  deleteIssueWorktree,
+  issueCleanupIdentities,
+  previewIssueCleanup,
+  previewIssueCleanupResource,
+  previewIssueCleanupWorkspaceSize,
+  startIssueCleanupRetry,
+} from './issue-cleanup.mjs';
 async function body(request) {
   let text = '';
   for await (const chunk of request) {
@@ -24,6 +50,31 @@ async function body(request) {
 function authenticated(request, token, port) {
   return (request.headers.cookie || '').split(';').some((value) => value.trim() === `timey_factory_${port}=${token}`);
 }
+
+export async function decideIssueAndCleanup(service, value) {
+  await recoverBeforeFixedAcceptance(service, value);
+  const decision = await service.decideIssue(
+    value.issueId,
+    value.state,
+    value.kind,
+    value.basis,
+    value.reason,
+    value.resolution,
+    value.cleanup
+  );
+  return decision;
+}
+
+async function recoverBeforeFixedAcceptance(service, value) {
+  if (!isFixedAcceptance(value)) return;
+  const issue = readQueue(service.root).issues.find((entry) => entry.id === value.issueId);
+  if (issue) await recoverMergedStrategyDelivery(service, issue);
+}
+
+function isFixedAcceptance(value) {
+  return value.kind === 'close' && (!value.resolution || value.resolution === 'fixed');
+}
+
 function authorize(request, token, port) {
   requireThat(request.headers.host === `127.0.0.1:${port}`, 'Use the local URL printed by this server.');
   requireThat(
@@ -49,6 +100,10 @@ async function mutation(service, path, value, owner) {
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
     '/api/discussion-open': () => service.discussions.open(value, owner),
     '/api/discussion-turn': () => service.discussions.turn(value, owner),
+    '/api/discussion-skills': () => service.discussions.skills(value, owner),
+    '/api/discussion-retro': () => service.discussions.retro(value, owner),
+    '/api/discussion-retro-saved': () => service.discussions.savedRetro(value, owner),
+    '/api/discussion-retro-file': () => service.discussions.fileRetro(value, owner),
     '/api/discussion-summary': () => service.discussions.summarize(value, owner),
     '/api/discussion-prepare': () => service.discussions.prepare(value, owner),
     '/api/discussion-commit': () => service.discussions.commit(value, owner),
@@ -64,11 +119,58 @@ async function mutation(service, path, value, owner) {
       service.ownServer();
       return prepareNativeChat(service.root, value);
     },
-    '/api/issue-strategy-stop': () => service.stopIssueStrategy(value),
-    '/api/issue-strategy-start': () => service.startIssueStrategy(value),
+    '/api/issue-strategy-stop': () => stopIssueStrategy(service, value),
+    '/api/issue-strategy-start': () => startIssueStrategy(service, value),
+    '/api/issue-strategy-verify-again': () => verifyIssueStrategyAgain(service, value),
+    '/api/issue-strategy-merge': () => mergeIssueStrategyPR(service, value),
+    '/api/issue-strategy-external-delivery': () => verifyExternalIssueDelivery(service, value),
+    '/api/issue-work-folder-open': () => openIssueWorkFolder(service, value.issueId),
     '/api/assembly-retry': () => service.retryAssembly(value),
     '/api/issue-delivery-preflight': () => prepareIssueDelivery(service, value.kind, value.input),
     '/api/issue-delivery-start': () => startIssueDelivery(service, value.token, value.humanApproved),
+    '/api/shared-queue-refresh': () => {
+      service.ownServer();
+      return { warning: service.sharedIssues?.refresh(true) };
+    },
+    '/api/shared-queue-retry': () => {
+      service.ownServer();
+      return service.sharedIssues?.retry(value.issueId);
+    },
+    '/api/shared-queue-confirm': () => {
+      service.ownServer();
+      return service.sharedIssues?.confirm(value.issueId);
+    },
+    '/api/shared-queue-publish-draft': () => {
+      service.ownServer();
+      return service.sharedIssues?.publishDraft(value.issueId);
+    },
+    '/api/shared-queue-handoff': () => {
+      service.ownServer();
+      return service.sharedIssues?.handoff(value.issueId);
+    },
+    '/api/shared-queue-recover': () => {
+      service.ownServer();
+      requireThat(value.confirmedStopped === true, 'Confirm the previous runner has stopped.');
+      return service.sharedIssues?.recover(value.issueId);
+    },
+    '/api/issue-storage-migrate': () => {
+      service.ownServer();
+      return { moved: migrateClosedIssues(service.root).length };
+    },
+    '/api/issue-storage-move': () => moveIssueStorage(service, value),
+    '/api/issue-storage-open-folder': async () => {
+      requireThat(process.platform === 'darwin', 'Finder is available on macOS.');
+      const folder = issueStorageDirectory(service.root, value.location);
+      mkdirSync(folder, { recursive: true });
+      await promisify(execFile)(
+        '/usr/bin/open',
+        ['-a', 'Finder', issueStorageDirectory(service.root, value.location)],
+        {
+          timeout: 5000,
+        }
+      );
+      return { opened: true };
+    },
     '/api/issue-capture': () => service.captures.save(value),
     '/api/integration-recovery-retry': () => service.retryIntegrationRecovery(value),
     '/api/verification-retry': () => service.retryVerification(value),
@@ -76,18 +178,29 @@ async function mutation(service, path, value, owner) {
     '/api/coordinator-stop': () => service.coordinator.stop(),
     '/api/coordinator-continue': () => service.coordinator.continue(),
     '/api/coordinator-fresh': () => service.coordinator.fresh(),
+    '/api/issue-chat-control': () => service.issueChats.control(value),
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/issue-chat-stop': () => service.issueChats.stop(value),
+    '/api/issue-cleanup-preview': () => previewIssueCleanup(service, value.issueId, value.resolution),
+    '/api/issue-cleanup-identities': () => issueCleanupIdentities(service, value.issueId, value.resolution),
+    '/api/issue-cleanup-resource': () =>
+      previewIssueCleanupResource(service, value.issueId, value.resourceId, value.resolution),
+    '/api/issue-cleanup-workspace-size': () =>
+      previewIssueCleanupWorkspaceSize(service, value.issueId, value.resourceId),
+    '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId, value.resourceId || null),
+    '/api/issue-worktree-delete': () => deleteIssueWorktree(service, value),
     '/api/server-pause': () => service.serverControl.pause(),
     '/api/server-restart': () => service.serverControl.request(),
     '/api/server-cancel-restart': () => service.serverControl.cancel(),
+    '/api/server-action': () => controlServerAction(service, value),
     '/api/lifecycle-start': () => service.startLifecycle(value),
     '/api/lifecycle-answer': () => service.answerLifecycle(value),
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
     '/api/issue-priority': () => changePriority(service, value),
-    '/api/model-settings': () => service.saveModelSettings(value),
-    '/api/issue-model-settings': () => service.saveIssueModelSettings(value),
+    '/api/implementation-order': () => changeImplementationOrder(service, value),
+    '/api/model-settings': () => saveDefaultModelSettings(service, value),
+    '/api/issue-model-settings': () => saveIssueModelSettings(service, value),
     '/api/toggle-route': () => toggleRoute(service, value),
     '/api/skip-plan-checks': () => service.skipPlanChecks(value),
     '/api/check-implementation': () => service.checkImplementation(value.issueId, value.state, value.path, value.basis),
@@ -95,8 +208,7 @@ async function mutation(service, path, value, owner) {
       service.decidePlanCheck(value.issueId, value.state, value.checkId, value.status, value.basis, value.result),
     '/api/find-worker': () => service.findConnection(value.issueId, value.state, value.basis),
     '/api/connect-worker': () => service.connectWorker(value.issueId, value.state, value.basis, value.link),
-    '/api/issue-decision': () =>
-      service.decideIssue(value.issueId, value.state, value.kind, value.basis, value.reason, value.resolution),
+    '/api/issue-decision': () => decideIssueAndCleanup(service, value),
     '/api/check-readiness': () => service.checkReadiness(value.issueId, value.state),
     '/api/progress-preflight': () => service.progressPreflight(value.issueId, value.state),
     '/api/progress-start': () => service.progressStart(value.token, value.humanApproved),
@@ -148,26 +260,42 @@ function page(service, request, response, token, port) {
   const name = request.url.startsWith('/native-chat?') ? 'native-chat.html' : 'index.html';
   response.end(readFileSync(join(uiDirectory(service), name)));
 }
-function read(service, request, response, owner) {
+async function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  const selectedIssue = url.searchParams.get('issue');
+  const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
-    '/api/native-chat': () => nativeChatStatus(service.root, url.searchParams.get('issue')),
+    '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
+    '/api/server-actions': () => service.serverControl.actions(),
     '/api/coordinator': () => service.coordinator.view(),
     '/api/issue-chat': () =>
-      service.issueChats.view(url.searchParams.get('issue'), url.searchParams.get('before') || ''),
+      service.issueChats.view(issue(url.searchParams.get('issue')), url.searchParams.get('before') || ''),
+    '/api/issue-chat-skills': () => service.issueChats.skills(issue(url.searchParams.get('issue'))),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
-    '/api/issue-report': () => service.readSavedReport(url.searchParams.get('issue')),
+    '/api/issue-storage': () => listIssueStorage(service, url.searchParams.get('location')),
+    '/api/issue-storage-report': () =>
+      readIssueStorageReport(service.root, issue(url.searchParams.get('issue')), url.searchParams.get('location')),
+    '/api/issue-report': () => service.readSavedReport(issue(url.searchParams.get('issue'))),
     '/api/check-evidence': () =>
-      service.readChecklistEvidence(url.searchParams.get('issue'), url.searchParams.get('path')),
-    '/api/queue': () => queueResponse(service.snapshot(owner), url.searchParams.get('issue')),
+      service.readChecklistEvidence(issue(url.searchParams.get('issue')), url.searchParams.get('path')),
+    '/api/issue': () => issueResponse(service, owner, issue(selectedIssue)),
+    '/api/queue': () =>
+      selectedIssue ? issueResponse(service, owner, issue(selectedIssue)) : queueResponse(service.snapshot(owner)),
+    '/api/output-history': () =>
+      outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
   };
-  if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(routes[url.pathname]()));
+  if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(await routes[url.pathname]()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));
+}
+
+function issueResponse(service, owner, id) {
+  requireThat(typeof id === 'string' && /^[\w-]+$/.test(id), 'Choose a valid saved issue ID.');
+  return queueResponse(service.snapshot(owner, { includeCoordinatorDiscussion: false, selectedIssue: id }), id);
 }
 
 function isPage(request) {
@@ -190,6 +318,7 @@ function readResource(service, request, response, owner) {
     '/queue-sort-ui.js': 'queue-sort-ui.js',
     '/file-link-ui.js': 'file-link-ui.js',
     '/coordinator-ui.js': 'coordinator-ui.js',
+    '/issue-progress-ui.js': 'issue-progress-ui.js',
     '/issue-chat-ui.js': 'issue-chat-ui.js',
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',
@@ -203,7 +332,7 @@ function readResource(service, request, response, owner) {
 }
 
 function savedRun(service, id) {
-  const run = service.store.list(service.codex.requests).find((item) => item.id === id);
+  const run = service.store.list(service.permissionRequests()).find((item) => item.id === id);
   requireThat(run, 'This saved run no longer exists.');
   return run;
 }
@@ -211,13 +340,7 @@ function savedRun(service, id) {
 function requireLiveMutation(service, path) {
   if (service.reviewMode === 'preview')
     requireThat(
-      [
-        '/api/discussion-open',
-        '/api/discussion-turn',
-        '/api/discussion-prepare',
-        '/api/discussion-summary',
-        '/api/discussion-end',
-      ].includes(path),
+      ['/api/discussion-skills', '/api/discussion-end'].includes(path),
       'This is a preview copy. Make changes and record approvals on the real issue.'
     );
 }
@@ -234,5 +357,11 @@ function deploymentAction(service, path) {
 async function postedAction(service, request, token) {
   if (request.url.startsWith('/api/deployment-')) return deploymentAction(service, request.url);
   requireThat(!service.deploymentDraining, 'The factory UI is restarting. Refresh when it is ready.');
-  return mutation(service, request.url, await body(request), token);
+  const value = await body(request);
+  if (typeof value.issueId === 'string') value.issueId = resolveIssueNumber(service, value.issueId);
+  return mutation(service, request.url, value, token);
+}
+
+function resolveIssueNumber(service, value) {
+  return storedIssueId(service.root, value);
 }

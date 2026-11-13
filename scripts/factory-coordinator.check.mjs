@@ -294,7 +294,10 @@ createInterface({input:process.stdin}).on('line',line=>{
   assert.equal(owner.view().active.turnId, 'native-turn');
   await owner.message({ id: 'native-steer', mode: 'steer', text: 'Explain the wait', turnId: 'native-turn' });
   await owner.stop();
-  await assert.rejects(turn, /stopped/);
+  await assert.rejects(
+    turn,
+    (error) => error.terminalStatus === 'interrupted' && error.partialText.includes('Retained live output')
+  );
   const rpc = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(rpc.find((m) => m.method === 'thread/start').params.sandbox, 'read-only');
   assert.match(rpc.find((m) => m.method === 'thread/name/set').params.name, / coordinator$/);

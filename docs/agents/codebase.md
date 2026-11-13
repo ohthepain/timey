@@ -3,20 +3,20 @@
 Timey is a MIDI rhythm-practice app. Read the code for current signatures and
 configuration; this map explains responsibilities and the useful starting points.
 
-| Area                     | Start reading                                                                                                                                                                        | Responsibility                                                                                                                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`, `vite.config.ts`, `src/start.ts`                                                                                                          | Shared UI, authentication context, route restoration, Vite+ and Start setup                                                                                                                                         |
-| Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                                                                                   | Display the beat and control practice                                                                                                                                                                               |
-| Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                                                                                   | Clock pulses, MIDI input/output, metronome                                                                                                                                                                          |
-| Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                                                                                  | Turn performed notes into timing/velocity feedback                                                                                                                                                                  |
-| Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                                                                                    | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
-| Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                                                                                       | Practice hierarchy and recorded performance                                                                                                                                                                         |
-| Persistence              | `src/repositories/`, `src/services/`, `domain/schema.ts`                                                                                                                             | Repository calls, server operations, relational storage in the `domain` PostgreSQL schema                                                                                                                           |
-| Authentication           | `src/server/auth-runtime/client.ts`, `src/components/auth/UserMenu.tsx`, `LoginButton.tsx`, `src/utils/authenticatedServerFn.ts`                                                     | Better Auth browser client (`/api/auth`), header sign-in/menu, cookie-backed `withAuth` via `requireDomainUser`                                                                                                     |
-| Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                            | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
-| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                               | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit                                                                                                          |
-| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                                                                                             | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
-| Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue focus/listing, ledger CLI, saved progress, manual decisions and guarded worker dispatch                                                                                                                       |
+| Area                     | Start reading                                                                                                                                                                                                         | Responsibility                                                                                                                                                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`, `vite.config.ts`, `src/start.ts`                                                                                                                                           | Shared UI, authentication context, route restoration, Vite+ and Start setup                                                                                                                                         |
+| Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                                                                                                                    | Display the beat and control practice                                                                                                                                                                               |
+| Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                                                                                                                    | Clock pulses, MIDI input/output, metronome                                                                                                                                                                          |
+| Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                                                                                                                   | Turn performed notes into timing/velocity feedback                                                                                                                                                                  |
+| Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                                                                                                                     | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
+| Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                                                                                                                        | Practice hierarchy and recorded performance                                                                                                                                                                         |
+| Persistence              | `src/repositories/`, `src/services/`, `domain/schema.ts`                                                                                                                                                              | Repository calls, server operations, relational storage in the `domain` PostgreSQL schema                                                                                                                           |
+| Authentication           | `src/server/auth-runtime/client.ts`, `src/components/auth/UserMenu.tsx`, `LoginButton.tsx`, `src/utils/authenticatedServerFn.ts`                                                                                      | Better Auth browser client (`/api/auth`), header sign-in/menu, cookie-backed `withAuth` via `requireDomainUser`                                                                                                     |
+| Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                                                             | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
+| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                                                                | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit                                                                                                          |
+| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                                                                                                                              | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
+| Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, `scripts/factory-ui/index.html`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue listing and responsive navigation, ledger CLI, saved progress, timers, manual decisions, explicit strategy verification retries and guarded worker dispatch                                                   |
 
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
 timestamp semantics. Replay uses these same services; test their interaction, not
@@ -128,6 +128,22 @@ The local queue/issue interface is `scripts/factory-ui.mjs`; its HTTP, CLI,
 human-input and result-checking modules are in `scripts/factory-ui/`. See
 [its operating guide](factory-ui.md). `scripts/factory-ui.check.mjs` exercises
 disposable queues, chat protocol fixtures and manual action boundaries.
+`factory-ui/issue-numbers.mjs` persists monotonic local issue numbers separately
+from report IDs; queue views and issue references present the number while saved
+records retain their existing IDs, branches and workspace associations. The issue
+detail header places the number in smaller muted text before the full-size title.
+`factory-ui/guard.mjs` invokes the pinned human-input helper for dispatch checks;
+subprocess failures retain exit status or signal and bounded structured helper
+diagnostics while omitting raw process output. The guard remains fail-closed.
+The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
+and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
+links routed by `scripts/factory-ui/index.html`. `issue-action-cancellation.mjs`
+cancels stopped actions directly or when an issue closes, preserving work history
+and leaving actions shared with another open issue untouched.
+The issue detail's retro button runs the installed `retro` skill through
+`issue-chat.mjs`, retaining its request and result in the issue's saved
+conversation. `discussion.mjs` and `discussion-ui.js` hold only the temporary
+selection panel; checked recommendations go through `issue-capture.mjs`.
 
 Current-stage recommendations and dispatch are in `scripts/factory-ui/next-action.mjs`
 and `progress.mjs`. `worker-history.mjs` reads the original worker through CLI RPC;
@@ -150,6 +166,14 @@ launches workers, merges code or accepts issues.
 
 `factory-ui/issue-decision.mjs` owns direct human acceptance/closure independently of lifecycle stages and
 reopening, with current report/evidence guards and preserved historical outcomes.
+`factory-ui/issue-cleanup.mjs` returns saved resource identities immediately for
+the close dialog, checks resources independently, persists cleanup as an Action,
+and rechecks each selected resource before removal/archive. Interrupted actions are
+retained for identity reconciliation before retry. Issue
+closure also archives eligible idle issue chats while preserving active or unknown
+threads. It keeps
+durable per-resource outcomes outside the removable workspace and supports retry
+without reopening the issue.
 
 `factory-ui/worker-connection.mjs` restores missing task/chat connections using
 validated existing conversations and the original ledger attach operation.
@@ -213,6 +237,17 @@ existing chats for bounded corrections. The issue screen renders the complete
 “What happened” lifecycle event history with inline timestamps and role-transition
 labels. See the UI guide for consent boundaries.
 
+`factory-ui/issue-progress-ui.js` derives the default Progress tab from existing
+issue, run, input and conversation records, including a saved PR link independent
+of the PR's current status. `runs.mjs` persists phase timing for issue-work runs;
+the Progress view shows the current phase and accumulated run time without adding a
+separate workflow record. Its manual Refresh progress control requests the current
+queue snapshot and issue conversation through the shared refresh path, without a
+page reload or a new workflow operation. `index.html` renders that projection, reuses existing
+input handlers and overlays transient Continue acknowledgment until fresh evidence
+arrives.
+`factory-ui/output-history.mjs` reads earlier public JSONL events using stable byte
+cursors through the authenticated read-only output-history endpoint.
 `factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
 `approval-options.mjs` exposes native approval choices and binds replies to pending
 requests. `lifecycle-planning.mjs` separates actual human questions from unfinished
@@ -225,8 +260,10 @@ updates launch freshness without cancelling the assignment or replanning.
 `factory-assignment-scope.mjs` binds semantic assignment fields to an actual plan
 approval, the latest answer and an unchanged supporting receipt. Source revision
 changes alone do not require a new scope decision; changed scope or altered evidence does.
-`queue-selection.mjs` selects an eligible issue in code: configured priority order,
-then oldest eligible issue, then issue ID. Running, blocked, failed, paused,
+`queue-selection.mjs` selects an eligible issue in code: saved implementation
+order first, with priority, age and issue ID as the default order for unranked issues.
+`implementation-order.mjs` reads and validates the project-local persisted order;
+`implementation-order-route.mjs` writes it through a stale-basis-guarded endpoint. Running, blocked, failed, paused,
 waiting and finished issues are excluded, including active or blocked assignments.
 Selection never calls a model. Optional queue discussion still uses the coordinator UI. Selected-issue planning and reviews
 use the issue's owning chat through `reviewIssue` and `lifecycleReview`.
@@ -269,13 +306,13 @@ covered by `factory-model-settings.check.mjs` and
 ledger reservations. It follows report/action dependencies and linked plans while
 excluding unrelated queue entries; full-queue grouping keeps its original guard.
 
-Issue discussion lives in `scripts/factory-ui/discussion.mjs` (memory-only
-sessions, issue context, expiry and one-use clicked intents),
-`discussion-codex.mjs` (dedicated ephemeral model process),
-`discussion-record.mjs` (guarded selected-output append), and `discussion-ui.js`
-(temporary panel DOM, excluded from generic draft restoration). `http.mjs` exposes
-only fixed discussion operations; `service.mjs` owns shutdown. These modules do
-not use worker recovery or RunStore. See [temporary discussion](factory-ui.md#temporary-issue-discussion).
+Issue decision review lives in `scripts/factory-ui/discussion.mjs` (bounded
+sessions and clicked intents), `issue-discussion.mjs` (saved issue queue adapter),
+`discussion-grilling.mjs` (stage interviews and exact human-quote validation),
+`discussion-record.mjs` (guarded reviewed-output append), and `discussion-ui.js`
+(review panel within Issue thread). The native issue conversation retains their
+turns. `skills.mjs` validates enabled skills; the shared slash selector and chips
+live in `issue-chat-ui.js`. See [reviewing issue discussion](factory-ui.md#reviewing-issue-discussion).
 
 `factory-ui/site-review.mjs` owns Verify review targets, available browser choices,
 open receipts and guarded human results. `site-review-ui.js` renders Open site,
@@ -292,6 +329,20 @@ and issue project. `factory-ui/queue-response.mjs` projects bounded polling data
 `factory-ui/issue-git.mjs` reads the selected issue's working branch and HEAD
 from its worker or delivery checkout, independently of the server source;
 full saved runs remain available through the authenticated on-demand endpoint.
+`queue-human-input.mjs` batches shared display-only human-input reads within one
+snapshot. Issue-specific readiness facts keep separate reads, and each new snapshot
+reads fresh state. Execution guards remain independent. This avoids per-issue
+synchronous helper launches starving the server's GitHub authentication requests.
+
+`factory-ui/strategy-publication.mjs` creates new strategy PRs through the App-authenticated
+`StrategyProvider` after independent verification. Workers return the prepared
+description and a null PR number. Publication reconciles open PRs on retry and
+validates App authorship, the pushed candidate and approved target; saved existing
+PRs retain their identity and history.
+`factory-ui/issue-strategy.mjs` resolves the configured remote target before creating
+a new issue checkout. It records coordinator commits absent from that target and
+imports them only when each exact revision and reason is supplied in the start
+instruction; existing issue checkouts retain their saved base.
 
 `scripts/factory-workflow-fixture.mjs` supplies shared disposable delivery fixtures;
 `factory-workflow.check.mjs` owns the cross-format issue-decision compatibility
@@ -305,15 +356,18 @@ matrix. `CODING_STANDARDS.md` guides semantic review of workflow gates.
 including deferred form/dialog updates and questions arriving while chat has focus.
 
 Persistent issue chat is owned by `factory-ui/issue-chat.mjs`; `conversation-store.mjs`
-retains user messages and native thread identity. `conversation-view.mjs` combines
-that history with role results and actual answer receipts without rewriting those
-owners. `conversation-context.mjs` supplies selected-issue context and full timeline
-snapshots to execution/review turns. `issue-chat-runtime.mjs` keeps the conversational
-model read-only and separate from worker/review connections; `issue-chat-ui.js`
-preserves the composer while polling role updates. Stop uses the current message ID
-and the dedicated connection’s exact native turn; lifecycle and worker connections
-are outside its cancellation path. `scripts/factory-chat.check.mjs`
-checks persistence, provenance, routing, isolation, pagination and UI drafts.
+retains messages and native identity. `conversation-events.mjs` projects sourced
+Factory outcomes; `conversation-view.mjs` combines these with actual conversation
+records. `conversation-context.mjs` supplies the same full timeline to model and
+skill turns. `issue-chat-runtime.mjs` resumes the owning thread, using read-only
+access for discussion and the issue checkout for editable requests.
+`issue-prompt-queue.mjs` owns durable prompt identities, revisions and attempt
+receipts. `issue-prompt-scheduler.mjs` coordinates FIFO dispatch, pause, stop,
+steer, uncertain receipt recovery and operation leases. `issue-operation.mjs`
+places boundaries around existing Factory owners; verification and GitHub remain
+with those owners. `issue-chat-ui.js` preserves drafts, selected skills and queued
+entry controls while polling. Chat, native-chat, history and browser checks cover
+persistence, provenance, cancellation, recovery and issue isolation.
 
 Queue lifecycle squares read the strip from `issueLifecycleView` on each issue snapshot.
 `queue-lifecycle-ui.js` renders
@@ -330,7 +384,7 @@ by the unchanged candidate/recovery polling flow. Disposable deployment fixtures
 cover HTTP/transport/decode failures, identity mismatches, successful readiness,
 bounded retention and failed-recovery lock preservation.
 
-`factory-ui/server-control.mjs` counts live actions and temporary chats, blocks new
+`factory-ui/server-control.mjs` counts live and cleanup actions and temporary chats, blocks new
 UI work while paused or draining and requests coordinator pauses. `restart-process.mjs`
 hands the installed listener to a replacement process and resumes saved paused
 controllers through normal guards. `server-control-ui.js` owns the header controls
@@ -340,7 +394,8 @@ transport tests live in `factory-server-control.check.mjs`.
 `factory-ui/closure-reasons.mjs` reads project closure choices from the local
 lifecycle Markdown. `issue-decision.mjs` keeps accepted fixes separate from
 explicit user decisions to stop work; `factory-completion.mjs` preserves the
-closure record without marking unfinished stages complete.
+closure record without marking unfinished stages complete. `issue-cleanup.mjs`
+retains cleanup previews and partial results under `.issues/factory-ui/cleanup/`.
 
 `factory-ui/priorities.mjs` reads the project’s ordered priority definitions and
 projects default Major values without backfilling reports. `issue-priority.mjs`
@@ -366,7 +421,9 @@ protocol proof only. See [the delivery contract](issue-delivery.md) and
 
 Queue sort values are projected from saved records in `factory-ui/queue-sort.mjs`
 before transport trims run events. `queue-sort-ui.js` owns presentation ordering
-and accessible controls; neither path writes lifecycle or human-input records.
+and accessible controls, including the default merged/running/queued status order.
+Manual implementation ordering is persisted separately; the other view sorts do not
+affect scheduling or issue records.
 
 Queue human-input sorting consumes the shared reader's availability and revision-bound
 deferral projection through `factory-ui/queue-human-input.mjs`. Saved delivery
@@ -430,8 +487,9 @@ Implement candidates reach pre-publication review without first requiring target
 integration. Stage advancement, custom-stage obligations and publication/merge
 permissions remain separate gates.
 
-`factory-ui/completion-repair.mjs` turns a completion finding into one durable,
-plan-linked repair recommendation. `issue-verification-start.mjs` validates both
+`factory-ui/completion-repair.mjs` defines the completion-review repair schema;
+retained repair work stays on the completion-review run until later commit-stage
+routing saves or launches it. `issue-verification-start.mjs` validates both
 verification-only starts and approved-plan repair starts against the issue branch.
 `factory-ui/run-stream.mjs` restores output after the last history checkpoint.
 Stream fragments append immediately to the existing per-run log; the full run
@@ -440,7 +498,8 @@ for state transitions. Reload replays the uncheckpointed complete log records.
 
 [Issue execution](issue-execution.md) owns the short-path and reuse contracts.
 `issue-work-chat.mjs` selects the primary conversation without replacing uncertain
-work; `direct-task.mjs` saves approved assessment tasks through existing guards.
+work; `chat-name.mjs` gives threads a role-first title and a conservative activity
+marker; `direct-task.mjs` saves approved assessment tasks through existing guards.
 `scope-coverage.mjs` retains input-specific scope decisions; `candidate-cache.mjs`
 validates immutable automated evidence before reuse. `combined-completion.mjs`
 applies final independent review findings through `completion-contract.mjs` and
@@ -469,16 +528,16 @@ before the other behavior/type/build checks and records artifact hashes in the
 full summary. `factory-ui/checks.mjs`, candidate caching and issue delivery retain
 and validate this browser evidence against the same candidate tree.
 
-Combined Clarify is configured by `factory.config.json` and projected by
-`scripts/factory-ui/clarify-policy.mjs`. `data.mjs` keeps each report's original
-content and exposes legacy state aliases; `lifecycle-runs.mjs` recognizes existing
-assignments under either state name. `lifecycle-assessment.mjs` gathers context
-through the diagnostic branch of `lifecycle-review.mjs` before plan approval.
-`plan-adaptation.mjs` retains scope comparisons without replacing human approval;
-`scope-coverage.mjs` avoids treating ordinary source commits as new understanding.
-`capture-grilling.mjs` starts opt-in post-capture conversations through the existing
-persistent chat owner after durable creation; capture identities deduplicate retries.
-See [ADR 0006](../adr/0006-combine-clarification-and-investigation.md).
+Clarification and grilling remain human input independently of lifecycle position.
+`capture-routing.mjs` validates explicit lifecycle transitions while allowing
+projects to omit the optional `ready-for-grilling` role; old reports and custom
+stages retain their saved states. `capture-grilling.mjs` starts opt-in
+post-capture conversations through the existing persistent chat owner after durable
+creation; capture identities deduplicate retries. See [ADR 0001](../adr/0001-human-input-separate-from-lifecycle.md).
+The create dialog's Grill, Go and Merge choices are independent and initially off.
+`issue-capture.mjs` stores the selected intent on each report before the browser
+starts Go or grilling; when both are selected, the issue page retains the chosen
+strategy for an explicit Continue after grilling answers and plan approval.
 
 `factory-ui/turn-failure.mjs` formats structured provider failures for both
 `codex.mjs` errors and retained `activity.mjs` output. Issue output shows explicit
@@ -501,10 +560,11 @@ source hashes; current-context usage controls early rotation rather than billing
 or turn counts. Predecessor archival follows successful replacement attachment. `coordinator-ui.js` renders its dedicated page and compact activity strip.
 Only optional queue discussion uses its separate connection. Issue planning and
 reviews use the owning issue chat; queue scheduling uses no chat. Failed or interrupted
-operations retain their results and stop for manual attention. They do not trigger AI
+legacy operations retain their results and stop for manual attention. They do not trigger AI
 recovery reviews, automatic worker continuations, completion repair assignments or
 replanning when inputs change. Explicit retry controls retain their approval guards.
-Workers and independent reviews retain their existing connections.
+Workers and independent reviews retain their existing connections. The explicit
+strategy path below permits bounded blocker repair within its active owning run.
 Behavioral coverage is in `scripts/factory-coordinator.check.mjs`.
 
 Factory verification recovery is covered by `scripts/factory-recovery.check.mjs`:
@@ -518,17 +578,42 @@ receipts, reuse of the issue checkout/chat, and final candidate checks. It does 
 use lifecycle role planning or completion manifests. `strategy-prompt.mjs` bounds
 the owning assignment; `strategy-review.mjs` implements optional bounded Sol review;
 `strategy-provider.mjs` reads live PR readiness and enforces strict protected merges.
-It honors a verified review-ruleset bypass for owner-authored PRs while keeping
-classic strict CI protection enforced for administrators.
-The issue screen shows strategy/status and collapses legacy roles into disabled
-history. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
+It evaluates review bypass separately from non-bypassable strict CI rulesets.
+`strategy-inclusion.mjs` inspects the original base against the fetched target,
+records exact branch/checkout/commit evidence, and blocks unreviewed earlier work
+before owner turns and PR publication while preserving the original base. Its PR
+comparison records the target SHA, checkout HEAD, merge base, and changed paths;
+target updates, issue commits, and repair commits are listed separately.
+Full Send binds the human-input merge guard's candidate tuple to the UUID of the
+active strategy run, the exact verified head and current PR target; the issue
+label remains display identity only.
+`github-app.mjs` owns repository-scoped installation authentication, in-memory token
+refresh and project-local credential configuration shared with worktree providers.
+The issue screen shows strategy/status, keeps a configured-target merge action visible
+throughout issue work, and collapses legacy roles into disabled history. The action
+continues the saved strategy in the owning chat so target conflicts stay with that
+work. `factory-strategy.check.mjs` covers handoff, merge boundaries, preservation,
 failures, explicit starts and missing review capabilities.
+
+`strategy-repair.mjs` owns the active run's bounded repair ledger and infrastructure
+retries; `strategy-target.mjs` fetches/merges the configured target and preserves
+conflicts for the owner. `strategy-readiness.mjs` classifies PR blockers, observes
+pending CI and reconciles an externally merged candidate. The controller preserves
+the checked PR head across Continue and reuses verification only when the confirmed
+merge has the same tree; changed merge content remains on the repair path. It retains
+implementation and independent verification before later delivery can fail;
+repair turns reuse a completed owner's chat without replaying chat creation.
+The policy is recorded in each explicit start receipt and never wakes inactive work.
 
 `factory-ui/strategy-closure.mjs` validates saved strategy verification and step
 summaries against their recorded candidate and retains their evidence for explicit
-acceptance. It does not run checks or contact the provider during closure.
+acceptance. `strategy-delivery-recovery.mjs` can recover a blocked or cancelled
+strategy's published PR at Fixed acceptance by checking its saved branch, live
+merge, current target ancestry and passing checks with GitHub, then retaining a
+durable receipt. Recovery never restarts the worker or performs merge or acceptance.
 
-`factory-restart.mjs` is the external `pnpm factory:restart` launcher. It reuses
-saved verification and deployment transport/readiness probes, permits changed
-installed source, and restarts only an owned, drained listener. Its disposable
-server checks live in `factory-restart.check.mjs`.
+`factory-restart.mjs` is the external `pnpm factory:restart` launcher. It restarts
+the current checkout as-is, including WIP, and carries that source-changed state
+through readiness. It uses deployment transport/readiness probes and restarts only
+an owned, drained listener. Its disposable server checks live in
+`factory-restart.check.mjs`.

@@ -15,9 +15,10 @@ import { gitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
-import { createFactoryServer } from './factory-ui/http.mjs';
+import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { checkCandidate } from './factory-ui/checks.mjs';
+import { disconnectedSavedRun, liveSavedRun } from './factory-saved-run-fixtures.mjs';
 
 function fixture(t, options = {}) {
   const { root, git } = gitFixture(t, 'factory-ui-check-');
@@ -54,6 +55,9 @@ function fixture(t, options = {}) {
   const service = new FactoryUI(root, options);
   t.after(() => service.close());
   return { root, git, api, proposal, service };
+}
+function selectedIssueView(service, id = '20261022-one') {
+  return service.snapshot(null, { selectedIssue: id }).issues.find((issue) => issue.id === id);
 }
 function verifiedRoute(service) {
   service.store.runs.push({
@@ -94,6 +98,7 @@ function transport(t, service) {
     if(m.method==='initialize')send({id:m.id,result:{userAgent:'fixture'}});
     if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'fixture-thread'}}});
     if(m.method==='thread/resume')send({id:m.id,result:{thread:{id:m.params.threadId}}});
+    if(m.method==='thread/read')send({id:m.id,result:{thread:{id:m.params.threadId,status:{type:'idle'},turns:[]}}});
     if(m.method==='thread/name/set')send({id:m.id,result:{}});
     if(m.method==='turn/start'){send({id:m.id,result:{turn:{id:'turn'}}});
       send({method:'item/completed',params:{threadId:m.params.threadId,item:{type:'agentMessage',text:JSON.stringify(m.params.outputSchema.properties.recommendations?{summary:'One suggestion',recommendations:[{kind:'investigate',title:'Read source',scope:'One file',reason:'Find answer',verification:'Read source',worker_prompt:'Read source.js only',merge:'none',dependencies:[],issues:['20261022-one']}]}:{outcome:'completed',implementation_complete:false,summary:'Read the file.',evidence:'source.js contains 42',remaining:[],artifacts:[]})}}});
@@ -201,9 +206,42 @@ test('a claimed successful integration cannot bypass independent verification', 
   );
 });
 
+test('issue polling returns only the selected report and its review status', async (t) => {
+  const { root, service } = fixture(t);
+  writeFileSync(
+    join(root, '.issues/20261022-two.md'),
+    '---\nid: 20261022-two\nstate: investigate\n---\n# Other issue\n'
+  );
+  const { url, cookie } = await startFactoryHttp(t, service);
+  const headers = { cookie };
+  const coordinator = service.coordinator;
+  const active = { issueId: '20261022-one', operation: 'Reviewing' };
+  coordinator.state.active = active;
+  coordinator.state.threads[0].messages.push({ role: 'Coordinator', text: 'Retained queue discussion' });
+  delete coordinator.state.pending;
+
+  const issue = await fetch(url + '/api/issue?issue=20261022-one', { headers });
+  const snapshot = await issue.json();
+  assert.equal(issue.status, 200, snapshot.error);
+  assert.deepEqual(snapshot.coordinator, { active, waiting: [] });
+  assert.equal(snapshot.issueScoped, true);
+  assert.deepEqual(
+    snapshot.issues.map((entry) => entry.id),
+    ['20261022-one']
+  );
+  assert.doesNotMatch(JSON.stringify(snapshot), /Other issue/);
+
+  coordinator.state.pending = [];
+  const queue = await fetch(url + '/api/queue?issue=', { headers });
+  assert.equal(queue.status, 200);
+  const full = await queue.json();
+  assert.equal(full.coordinator.threads[0].messages[0].text, 'Retained queue discussion');
+  assert.equal(full.issues.length, 2);
+});
+
 test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => {
   const { root, service } = fixture(t);
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
   const expired = await fetch(url + '/api/lifecycle-answer', {
@@ -256,7 +294,10 @@ test('issue planning, saving and dispatch survive unrelated queue edits without 
   changeOther('Another change after saving');
   const action = api.inspect().registry.actions[0];
   const worker = service.start(service.preflight(action.id, 'launch').token);
-  assert.equal((await settle(service, worker.runId)).status, 'completed');
+  const completedWorker = await settle(service, worker.runId);
+  assert.equal(completedWorker.status, 'completed');
+  assert.equal(completedWorker.threadId, review.threadId);
+  assert.equal(completedWorker.reusedIssueChat, true);
   assert.equal(review.status, 'completed');
   assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 1);
 });
@@ -288,6 +329,65 @@ test('queue-wide review still reconsiders grouping after an unrelated issue chan
   await settle(service, runId);
   writeFileSync(join(root, '.issues/20261022-other.md'), '---\nid: 20261022-other\nstate: investigate\n---\nNew work');
   assert.throws(() => service.saveReview(runId, service.snapshot().reviewBasis), /stale/);
+});
+
+test('queue shows the latest decision and next action, with evaluation diagnostics collapsed', () => {
+  const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
+  const source = html.slice(
+    html.indexOf('      function queueEvaluationHistory('),
+    html.indexOf('      function queue()', html.indexOf('      function queueEvaluationHistory('))
+  );
+  const render = new Function(
+    'data',
+    'progress',
+    'statusLabel',
+    'link',
+    'esc',
+    source + '; return queueEvaluationHistory;'
+  )(
+    {
+      runs: [
+        {
+          id: 'old',
+          kind: 'evaluation',
+          status: 'completed',
+          summary: 'Older selection',
+          result: { recommendations: ['old evidence'] },
+        },
+        {
+          id: 'current',
+          kind: 'evaluation',
+          status: 'completed',
+          displaySummary: 'Latest selection',
+          summary: 'Latest selection',
+          result: {
+            summary: 'Selected the highest priority issue.',
+            next_action: 'work',
+            next_step: 'Continue the selected issue. <script>unsafe()</script>',
+            recommendations: ['raw evidence'],
+          },
+        },
+      ],
+    },
+    (run) => `<section data-run="${run.id}">${run.result.recommendations}</section>`,
+    (status) => status,
+    (id) => `<a href="#/issue/${id}">${id}</a>`,
+    (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  );
+  const output = render();
+  assert.match(output, /<strong>Current decision:<\/strong>\s*Selected the highest priority issue/);
+  assert.match(
+    output,
+    /<strong>Next action:<\/strong>\s*Continue the selected issue\. &lt;script&gt;unsafe\(\)&lt;\/script&gt;/
+  );
+  assert.match(output, /<details class="queue-history"><summary>History and diagnostics<\/summary>/);
+  assert.doesNotMatch(
+    output.match(/<details class="queue-history"[\s\S]*?<\/details>/)?.[0] || '',
+    /<details[^>]*open/
+  );
+  assert.match(output, /data-run="old"/);
+  assert.match(output, /data-run="current"/);
+  assert.doesNotMatch(output.slice(0, output.indexOf('<details class="queue-history"')), /raw evidence|data-run="old"/);
 });
 
 test('queue review, saving and launching are separate explicit operations', async (t) => {
@@ -1383,16 +1483,18 @@ test('final-review buttons close with explicit acceptance and reopen without lau
   assert.equal((await reconcileNow(service)).status, 'completed');
   const before = readFileSync(join(root, '.issues/factory.json'), 'utf8');
   const snapshot = service.snapshot();
-  assert.deepEqual(service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), { state: 'closed' });
+  const closure = await service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis);
+  assert.equal(closure.state, 'closed');
   assert.throws(
     () => service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis),
     /another stage|out of date/
   );
-  const closed = service.snapshot();
-  assert.match(closed.issues[0].content, /user selected Close issue/);
-  assert.equal(closed.issues[0].state, 'closed');
+  assert.equal(service.snapshot().issues.length, 0, 'Closed issues are absent from the open queue.');
+  const closed = selectedIssueView(service);
+  assert.match(closed.content, /user selected Close issue/);
+  assert.equal(closed.state, 'closed');
   assert.deepEqual(
-    service.decideIssue('20261022-one', 'closed', 'reopen', closed.reviewBasis, 'Still fails for my file.'),
+    service.decideIssue('20261022-one', 'closed', 'reopen', closed.decisionBasis, 'Still fails for my file.'),
     { state: 'investigate' }
   );
   const reopened = service.snapshot().issues[0];
@@ -1599,7 +1701,7 @@ test('saved report rejects paths, absent files, wrong identity, symlinks and non
 
 test('saved report resource requires authentication and leaves the plans-only resource intact', async (t) => {
   const { service, root } = fixture(t);
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const headers = { cookie: page.headers.get('set-cookie').split(';')[0] };
   assert.equal((await fetch(url + '/api/issue-report?issue=20261022-one')).status, 400);
   const response = await fetch(url + '/api/issue-report?issue=20261022-one', { headers });
@@ -2206,7 +2308,7 @@ test('input summary includes pending lifecycle questions and approvals', () => {
   );
 });
 
-test('lifecycle Progress is direct, shows inline questions and disables duplicate clicks during work', () => {
+test('lifecycle Progress is direct, delegates questions to Progress and disables duplicate clicks during work', () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const source = html.slice(
     html.indexOf('      const lifecycleDrafts ='),
@@ -2218,12 +2320,24 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
     links
   );
-  const render = new Function('data', 'esc', 'busy', 'approvals', 'fileLinkUI', source + ';return lifecyclePanel;')(
+  const render = new Function(
+    'data',
+    'esc',
+    'busy',
+    'approvals',
+    'fileLinkUI',
+    'visibleLifecycleStage',
+    source + ';return Object.assign(lifecyclePanel, { input: lifecycleInput });'
+  )(
     screen,
     (value) => String(value || ''),
     false,
     () => '',
-    links.fileLinkUI
+    links.fileLinkUI,
+    (stage) =>
+      !new Set(['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close']).has(
+        stage.role
+      )
   );
   const issue = { id: 'one', state: 'investigate' };
   assert.match(render(issue), /data-lifecycle-start/);
@@ -2236,8 +2350,9 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
     updated: 'now',
     input: { type: 'questions', questions: [{ question: 'Which behavior do you want?' }] },
   };
-  assert.match(render(issue), /Which behavior do you want/);
-  assert.match(render(issue), /Send answer and continue/);
+  assert.match(render(issue), /Respond to the pending request in Progress/);
+  assert.match(render.input(issue, issue.lifecycle), /Which behavior do you want/);
+  assert.match(render.input(issue, issue.lifecycle), /Send answer and continue/);
   assert.doesNotMatch(render(issue), /data-lifecycle-start/);
   screen.lifecycle = [{ state: 'prototype', role: 'ready-to-prototype', name: 'Prototype' }];
   issue.state = 'prototype';
@@ -2276,8 +2391,7 @@ test('lifecycle Progress is direct, shows inline questions and disables duplicat
   };
   const history = render(issue);
   assert.equal((history.match(/<li>/g) || []).length, 35);
-  assert.match(history, /<strong style="color:#6d28d9">Prototype:/);
-  assert.match(history, /<strong style="color:#1d4ed8">Implement:/);
+  assert.doesNotMatch(history, /Prototype:|Implement:/);
   assert.match(history, /class="history-interrupted">\(interrupted\)/);
   assert.match(history, /class="history-time" datetime="2026-10-29T12:00:00.000Z">\[/);
   assert.match(history, /History item 34/);
@@ -2412,7 +2526,7 @@ test('Accept and close records the final checklist judgment and closes after boo
   const snapshot = service.snapshot();
   assert.equal(snapshot.issues[0].implementation.fresh, false);
   assert.deepEqual(service.decideIssue('20261022-one', 'review', 'close', snapshot.reviewBasis), { state: 'closed' });
-  const issue = service.snapshot().issues[0];
+  const issue = selectedIssueView(service);
   assert.equal(issue.state, 'closed');
   assert.equal(issue.human_checks[0].status, 'passed');
   assert.equal(issue.human_checks[0].revision, snapshot.head);
@@ -2435,7 +2549,7 @@ test('Accept and close requires actual observations and accepts the recorded sou
     changed.service.decideIssue('20261022-one', 'review', 'close', changed.service.snapshot().reviewBasis),
     { state: 'closed' }
   );
-  assert.equal(changed.service.snapshot().issues[0].accepted_result.verification_rerun, false);
+  assert.equal(selectedIssueView(changed.service).accepted_result.verification_rerun, false);
 });
 test('confirmation failure is visible inside the dialog and successful actions refresh the screen', async () => {
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
@@ -2514,7 +2628,7 @@ test('closing retains a changed administrative task log without changing test ou
   assert.deepEqual(f.service.decideIssue('20261022-one', 'review', 'close', f.service.snapshot().reviewBasis), {
     state: 'closed',
   });
-  const closed = f.service.snapshot().issues[0];
+  const closed = selectedIssueView(f.service);
   const receipt = closed.plan_verification.evidence.find((e) => e.path.endsWith('-task-record.json'));
   assert.ok(receipt);
   assert.ok(JSON.parse(readFileSync(receipt.path, 'utf8')).earlier_sha256);
@@ -2523,10 +2637,19 @@ test('closing retains a changed administrative task log without changing test ou
 
 test('direct closure gives immediate feedback, prevents duplicates, and confirms before conversation refresh finishes', async (t) => {
   const { window, snapshot } = await activityScreen(t);
+  assert.equal(window.document.querySelector('[data-issue-decision="close"]'), null);
+  snapshot.issues[0].state = 'final';
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelector('[data-issue-decision="close"]').textContent, 'Accept fix and close');
   let release,
     posts = 0,
-    conversation = 0;
+    conversation = 0,
+    identities = 0;
   window.fetch = (url) => {
+    if (url.endsWith('/issue-cleanup-identities')) {
+      identities++;
+      return Promise.resolve({ ok: true, json: async () => ({ basis: 'cleanup-basis', resources: [] }) });
+    }
     if (url.endsWith('/issue-decision')) {
       posts++;
       return new Promise((resolve) => {
@@ -2540,13 +2663,23 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
     return Promise.resolve({ ok: true, json: async () => (url.endsWith('/runtime') ? {} : snapshot) });
   };
   const button = window.document.querySelector('[data-issue-decision="close"]');
+  window.document.getElementById('confirm').showModal = function () {
+    this.open = true;
+  };
+  window.document.getElementById('confirm').close = function () {
+    this.open = false;
+  };
   assert.equal(button.textContent, 'Accept fix and close');
   button.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(identities, 1);
+  window.document.getElementById('approve').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(window.document.querySelector('[data-issue-decision-status]').textContent, /Waiting for the server/);
-  assert.equal(window.document.querySelector('[data-issue-decision="close"]').disabled, true);
-  button.click();
+  assert.equal(window.document.getElementById('approve').disabled, true);
+  window.document.getElementById('approve').click();
   assert.equal(posts, 1);
-  release({ ok: true, json: async () => ({ state: 'closed' }) });
+  release({ ok: true, json: async () => ({ state: 'closed', cleanup: { status: 'complete', results: [] } }) });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(window.document.querySelector('[data-issue-decision-status]').textContent, 'Accepted and closed.');
   assert.equal(window.document.querySelector('[data-issue-decision="close"]'), null);
@@ -2555,26 +2688,88 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
 });
 
 test('direct closure exposes the exact blocker and enables retry without a model call', async (t) => {
-  const { window } = await activityScreen(t);
-  window.fetch = async () => ({
-    ok: false,
-    json: async () => ({ error: 'Manual observation timing-check still needs a result.' }),
-  });
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].state = 'final';
+  window.screenTest.show(snapshot);
+  window.fetch = async (url) =>
+    url.endsWith('/issue-cleanup-identities')
+      ? { ok: true, json: async () => ({ basis: 'cleanup-basis', resources: [] }) }
+      : url.endsWith('/issue-decision')
+        ? { ok: false, json: async () => ({ error: 'Manual observation timing-check still needs a result.' }) }
+        : { ok: true, json: async () => snapshot };
+  window.document.getElementById('confirm').showModal = function () {
+    this.open = true;
+  };
   window.document.querySelector('[data-issue-decision="close"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  window.document.getElementById('approve').click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(window.document.querySelector('[data-issue-decision="close"]').disabled, false);
   assert.match(
     window.document.querySelector('[data-issue-decision-status][role="alert"]').textContent,
     /timing-check still needs a result/
   );
-  window.document.getElementById('confirm').showModal = function () {
-    this.open = true;
-  };
   window.document.querySelector('[data-issue-decision="choose-close"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.ok(
     window.document.querySelector('#closure-reason option[value="fixed"]'),
     'Fixed must be available outside final review'
   );
+});
+
+test('close dialog previews exact cleanup resources and disables already-deleted branches', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].state = 'final';
+  window.screenTest.show(snapshot);
+  const resources = [
+    {
+      id: 'remote',
+      kind: 'remote-branch',
+      name: 'codex/issue-one',
+      repository: 'ohthepain/timey',
+      state: 'already-deleted',
+      eligible: false,
+    },
+    {
+      id: 'workspace',
+      kind: 'workspace',
+      name: '/repo/.issues/issue-work/one',
+      estimatedBytes: 2048,
+      state: 'present',
+      eligible: true,
+    },
+    {
+      id: 'chat',
+      kind: 'chat',
+      name: 'Execution chat: Issue',
+      threadId: 'thread-1',
+      state: 'present',
+      eligible: true,
+      defaultSelected: true,
+    },
+  ];
+  window.fetch = async (url, options) => {
+    if (url.endsWith('/issue-cleanup-identities'))
+      return { ok: true, json: async () => ({ basis: 'cleanup-basis', resources }) };
+    if (url.endsWith('/issue-cleanup-resource')) {
+      const { resourceId } = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ resource: resources.find((item) => item.id === resourceId) }) };
+    }
+    return { ok: true, json: async () => snapshot };
+  };
+  window.document.getElementById('confirm').showModal = function () {
+    this.open = true;
+  };
+  window.document.querySelector('[data-issue-decision="close"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const dialog = window.document.getElementById('selection').textContent;
+  assert.match(dialog, /ohthepain\/timey:codex\/issue-one/);
+  assert.match(dialog, /Already deleted/);
+  assert.match(dialog, /\/repo\/\.issues\/issue-work\/one/);
+  assert.match(dialog, /2\.0 KB/);
+  assert.match(dialog, /Thread thread-1/);
+  assert.equal(window.document.querySelector('[data-cleanup-choice="remote"]').disabled, true);
+  assert.equal(window.document.querySelector('[data-cleanup-choice="chat"]').checked, true);
 });
 
 test('older final-review issue with an integrated commit can be accepted without fabricated stage history', (t) => {
@@ -2604,7 +2799,7 @@ test('older final-review issue with an integrated commit can be accepted without
   const snapshot = service.snapshot();
   assert.equal(snapshot.issues[0].lifecycle_history, undefined);
   assert.deepEqual(service.decideIssue('20261022-one', 'final', 'close', snapshot.reviewBasis), { state: 'closed' });
-  const closed = service.snapshot().issues[0];
+  const closed = selectedIssueView(service);
   assert.equal(closed.state, 'closed');
   assert.equal(closed.lifecycle_history.length, 1);
   assert.equal(closed.lifecycle_history[0].actor, 'human');
@@ -3385,13 +3580,14 @@ test('a status read cannot end a newer turn or infer interruption from an unload
   assert.equal(ended.length, 0);
 });
 
-async function activityScreen(t) {
+async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}) {
   const { JSDOM } = await import('jsdom');
   const { service } = lifecycleFixture(t);
   const html = readFileSync(resolve('scripts/factory-ui/index.html'), 'utf8');
   const dom = new JSDOM(html, { url: 'http://127.0.0.1/#/issue/20261022-one', runScripts: 'outside-only' });
   t.after(() => dom.window.close());
   dom.window.scrollTo = () => {};
+  dom.window.matchMedia = (media) => ({ matches: wideSidebar, media, addEventListener() {}, removeEventListener() {} });
   const script = html
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
@@ -3410,6 +3606,8 @@ async function activityScreen(t) {
       '\n' +
       readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
+      readFileSync(resolve('scripts/factory-ui/issue-progress-ui.js'), 'utf8') +
+      '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
@@ -3418,6 +3616,10 @@ async function activityScreen(t) {
       '\nwindow.screenTest = { show(value) { data = value; render(); }, update(value) { data = value; updateLiveOutput(); } };'
   );
   const snapshot = service.snapshot();
+  prepareSnapshot(snapshot);
+  // Exercise the legacy lifecycle view at a visible stage. Clarify remains saved
+  // in the fixture's history but is intentionally absent from the issue list.
+  snapshot.issues[0].state = 'investigate';
   snapshot.issues[0].lifecycle = { status: 'running', summary: 'Reading source', childRunId: 'live', events: [] };
   snapshot.runs.push({
     id: 'live',
@@ -3432,6 +3634,151 @@ async function activityScreen(t) {
   dom.window.screenTest.show(snapshot);
   return { window: dom.window, snapshot };
 }
+
+test('wide issue views keep the queue in a sidebar and show an empty selection prompt', async (t) => {
+  const { window, snapshot } = await activityScreen(t, true);
+  const sidebar = window.document.querySelector('.issue-sidebar');
+  assert.ok(sidebar);
+  assert.equal(sidebar.getAttribute('aria-label'), 'Issues');
+  assert.equal(sidebar.querySelector('#create-issue')?.getAttribute('aria-label'), 'Create issue');
+  assert.equal(
+    sidebar.querySelector('#model-settings-open')?.getAttribute('aria-label'),
+    'Open model and effort settings'
+  );
+  assert.equal(sidebar.querySelector('[data-queue-refresh]')?.getAttribute('aria-label'), 'Refresh queue');
+  assert.equal(sidebar.querySelector('[data-queue-refresh]')?.textContent, '');
+  const sort = sidebar.querySelector('#queue-sort');
+  sort.value = 'implementationOrder';
+  sort.dispatchEvent(new window.Event('change'));
+  const reorderedSidebar = window.document.querySelector('.issue-sidebar');
+  assert.ok(reorderedSidebar.querySelector('[data-implementation-drag="20261022-one"]'));
+  const selectedIssueLink = sidebar.querySelector('[aria-current="page"]');
+  assert.equal(selectedIssueLink.getAttribute('href'), '#/issue/1');
+  assert.equal(selectedIssueLink.getAttribute('aria-label'), '#1 Untitled issue');
+  assert.ok(window.document.getElementById(selectedIssueLink.getAttribute('aria-describedby')));
+  assert.equal(window.document.querySelector('.issue-workspace-content .issue-navigation-row a[href="#/queue"]'), null);
+  assert.match(window.document.querySelector('.issue-workspace-content').textContent, /One issue/);
+
+  window.location.hash = '#/issue/1';
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelector('.issue-sidebar').getAttribute('aria-label'), 'Issues');
+  assert.equal(window.document.querySelector('.issue-workspace-content h1').textContent, 'Untitled issue');
+  assert.equal(window.document.querySelector('.issue-workspace-content .issue-number').textContent, '#1');
+
+  window.location.hash = '#/queue';
+  window.screenTest.show(snapshot);
+  assert.match(window.document.querySelector('.issue-workspace-content').textContent, /Please select an issue\./);
+  assert.equal(window.document.querySelector('.issue-sidebar').getAttribute('aria-label'), 'Issue queue');
+});
+
+test('the coordinator page links back to the issue queue', async (t) => {
+  const { window, snapshot } = await activityScreen(t, true);
+  window.location.hash = '#/coordinator';
+  snapshot.coordinator = {
+    threads: [{ id: 'coordinator-thread', title: 'Coordinator', messages: [], output: [] }],
+    workers: [],
+    waiting: [],
+    paused: false,
+  };
+  window.screenTest.show(snapshot);
+  const link = window.document.querySelector('[data-view-id="coordinator"] a[href="#/queue"]');
+  assert.equal(link?.textContent, '← Issue queue');
+});
+
+test('narrow issue views retain the existing queue link and full queue page', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  assert.equal(window.document.querySelector('.issue-sidebar'), null);
+  assert.ok(window.document.querySelector('.issue-navigation-row a[href="#/queue"]'));
+
+  window.location.hash = '#/queue';
+  window.screenTest.show(snapshot);
+  assert.match(window.document.querySelector('#app').textContent, /Issue queue/);
+  assert.equal(window.document.querySelector('.issue-sidebar'), null);
+  assert.equal(window.document.querySelector('[data-queue-refresh]')?.getAttribute('aria-label'), 'Refresh queue');
+  assert.equal(window.document.querySelector('[data-queue-refresh]')?.textContent, '');
+});
+
+test('external delivery shows its PR evidence, partial scope, target recheck and pending acceptance', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].strategy = {
+    status: 'partial-delivery',
+    summary: 'PR #37 delivered part of this issue.',
+    strategy: 'full-stop',
+    solRounds: 0,
+    externalDelivery: {
+      status: 'partial-awaiting-acceptance',
+      number: 37,
+      url: 'https://github.com/fixture/timey/pull/37',
+      target: 'dev',
+      mergeCommit: 'merge-sha',
+      targetRevision: 'target-new',
+      previousTargetRevision: 'target-old',
+      targetChangedSincePreviousCheck: true,
+      behaviorEvidence: 'The first requested behavior is implemented in src/feature.ts.',
+      remainingCriteria: 'The second requested behavior remains unimplemented.',
+      checks: [{ name: 'test', conclusion: 'SUCCESS' }],
+    },
+  };
+  window.screenTest.show(snapshot);
+  const card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.match(card.textContent, /PR #37/);
+  assert.match(card.textContent, /Target changed since the previous verification/);
+  assert.match(card.textContent, /second requested behavior remains unimplemented/);
+  assert.match(card.textContent, /acceptance remains pending/);
+  assert.equal(card.querySelector('[data-external-delivery]')?.textContent, 'Verify and record other PR');
+});
+
+test('captured Grill plus Go retains the selected strategy for Continue after human input', async (t) => {
+  const { window } = await activityScreen(t, false, (snapshot) => {
+    snapshot.issues[0].capture_intent = { grill: true, go: true, strategy: 'full-send' };
+    snapshot.issues[0].strategy = { status: 'not-started', strategy: 'full-stop', runId: null, solRounds: 0 };
+  });
+  const card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.equal(card.querySelector('#issue-strategy').value, 'full-send');
+  assert.match(card.textContent, /Grilling comes first/);
+  assert.match(card.textContent, /answer and approve a plan/);
+});
+
+test('Full Send shows a separate Merge control and retains partial local update results in Progress', async (t) => {
+  const { window, snapshot } = await activityScreen(t);
+  snapshot.issues[0].strategy = {
+    status: 'ready-to-merge',
+    summary: 'The PR is ready for the Merge action.',
+    strategy: 'full-send',
+    runId: 'run-current',
+    pr: 42,
+    prHead: 'head-current',
+    prUrl: 'https://github.com/fixture/timey/pull/42',
+    target: 'dev',
+  };
+  window.screenTest.show(snapshot);
+  let card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.equal(card.querySelector('[data-strategy-merge]')?.textContent, 'Merge PR #42 on GitHub');
+  assert.equal(card.querySelector('[data-strategy-target-update]')?.textContent, 'Merge latest dev into issue branch');
+  assert.equal(card.querySelector('[data-strategy-target-update]')?.disabled, true);
+  assert.match(card.textContent, /No eligible issue branch is available yet/);
+  snapshot.issues[0].strategy.checkout = '/tmp/issue-checkout';
+  snapshot.issues[0].strategy.status = 'working';
+  window.screenTest.show(snapshot);
+  card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.equal(card.querySelector('[data-strategy-target-update]')?.disabled, false);
+  assert.match(card.textContent, /Conflicts are handled in the owning issue work/);
+  assert.equal(card.querySelector('[data-issue-decision]'), null);
+  assert.ok(window.document.querySelector('[data-issue-decision="choose-close"]'));
+
+  snapshot.issues[0].strategy = {
+    ...snapshot.issues[0].strategy,
+    status: 'merged',
+    merge: { url: 'https://github.com/fixture/timey/pull/42', revision: 'merge-revision' },
+    localDevUpdate: { status: 'not-updated', reason: 'Local dev has unfinished work; it was left untouched.' },
+  };
+  window.screenTest.show(snapshot);
+  card = window.document.querySelector('[data-view-id="strategy-20261022-one"]');
+  assert.match(card.querySelector('[data-merge-outcome]').textContent, /merge-revision/);
+  assert.match(card.querySelector('[data-local-dev-update]').textContent, /unfinished work; it was left untouched/);
+  assert.equal(card.querySelector('[data-strategy-merge]'), null);
+  assert.equal(card.querySelector('[data-strategy-target-update]')?.disabled, true);
+});
 
 test('a handed-off draft PR shows manual ownership without merge or maintenance controls', async (t) => {
   const { window, snapshot } = await activityScreen(t);
@@ -3603,7 +3950,7 @@ test('failed approval shows the error and restores an enabled button for retry',
   assert.match(window.document.getElementById('error').textContent, /Approval could not be saved/);
 });
 
-test('publication failures stay beside both approval controls through rendering and clear on explicit retry', async (t) => {
+test('publication failures stay beside the single Progress approval control through rendering and clear on explicit retry', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   snapshot.conversation = { issueId: '20261022-one', messages: [] };
   snapshot.issues[0].lifecycle = {
@@ -3627,7 +3974,7 @@ test('publication failures stay beside both approval controls through rendering 
   };
   window.screenTest.show(snapshot);
   const buttons = () => [...window.document.querySelectorAll('[data-lifecycle-answer]')];
-  assert.equal(buttons().length, 2);
+  assert.equal(buttons().length, 1);
   buttons()[0].click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   for (const button of buttons()) {
@@ -3636,15 +3983,15 @@ test('publication failures stay beside both approval controls through rendering 
     assert.match(button.nextElementSibling.textContent, /Reload this page/);
   }
   window.screenTest.show(snapshot);
-  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
-  buttons()[1].click();
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 1);
+  buttons()[0].click();
   buttons()[0].click();
   assert.equal(posts, 2, 'Only the explicit retry sends another request');
   assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
   assert.ok(buttons().every((button) => button.disabled));
   retry({ ok: false, json: async () => ({ error: 'Publication is unavailable.' }) });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 2);
+  assert.equal(window.document.querySelectorAll('.approval-feedback').length, 1);
   snapshot.issues[0].lifecycle.updated = 'replacement-request';
   window.screenTest.show(snapshot);
   assert.equal(window.document.querySelectorAll('.approval-feedback').length, 0);
@@ -3704,7 +4051,12 @@ test('activity header shows live confirmation, last activity and result checks w
 test('activity screen shows the current step and preserves expanded details, native drafts and log reading position', async (t) => {
   const { window, snapshot } = await activityScreen(t),
     document = window.document;
-  assert.match(document.querySelector('.lifecycle-progress').textContent, /Workflow stage: Clarify/);
+  assert.match(document.querySelector('.lifecycle-progress').textContent, /Workflow stage: Investigate/);
+  assert.equal(document.querySelector('[data-stage-state="clarify"]'), null);
+  assert.doesNotMatch(
+    [...document.querySelectorAll('.step-heading strong')].map((node) => node.textContent).join(' '),
+    /Clarify/
+  );
   assert.match(document.querySelector('[data-lifecycle-start]').textContent, /Working…/);
   assert.doesNotMatch(document.body.textContent, /Progress in progress/);
   const notes = [...document.querySelectorAll('details')].find(
@@ -3980,13 +4332,11 @@ test('an explicit file or checklist decision resumes a stopped lifecycle without
 test('automatic stage expansion follows the current step while explicit user expansion stays open', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   const stage = (name) => window.document.querySelector('[data-step-id="20261022-one:' + name + '"]');
-  const oldKey = 'ready-for-grilling:clarify',
-    nextKey = 'ready-for-repro:investigate';
-  assert.equal(stage(oldKey).open, true);
-  assert.equal(stage(nextKey).open, false);
+  const nextKey = 'ready-for-repro:investigate';
+  assert.equal(stage('ready-for-grilling:clarify'), null);
+  assert.equal(stage(nextKey).open, true);
   snapshot.issues[0].state = 'investigate';
   window.screenTest.show(snapshot);
-  assert.equal(stage(oldKey).open, false);
   assert.equal(stage(nextKey).open, true);
 });
 
@@ -4473,7 +4823,7 @@ test('runtime identifies the issue project separately from UI source and run det
   const { service, root } = fixture(t, { preview: true });
   const run = service.store.add({ id: 'history' }, 'worker', 'base');
   service.store.update(run, { output: [{ text: 'FULL_TRANSCRIPT_CANARY' }], instructions: 'PRIVATE_INSTRUCTIONS' });
-  const { url, page } = await httpFixture(t, service);
+  const { url, page } = await startFactoryHttp(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   const headers = { cookie };
   const runtime = await (await fetch(url + '/api/runtime', { headers })).json();
@@ -4488,15 +4838,6 @@ test('runtime identifies the issue project separately from UI source and run det
   assert.match(JSON.stringify(detail), /FULL_TRANSCRIPT_CANARY/);
   assert.equal((await fetch(url + '/api/run?id=' + run.id)).status, 400);
 });
-
-async function httpFixture(t, service) {
-  const server = createFactoryServer(service);
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  return { url, page: await fetch(url) };
-}
 
 test('an already integrated action resumes bookkeeping without another Codex turn or merge', async (t) => {
   const { root, git, api, proposal, service } = fixture(t);
@@ -4561,7 +4902,7 @@ test('recorded acceptance survives unrelated commits, branch switches and dirty 
     service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis || snapshot.reviewBasis),
     { state: 'closed' }
   );
-  const closed = service.snapshot().issues[0];
+  const closed = selectedIssueView(service);
   assert.equal(closed.accepted_result.revision, reviewed);
   assert.notEqual(closed.accepted_result.revision, git('rev-parse', 'HEAD'));
   assert.equal(closed.accepted_result.verification_rerun, false);
@@ -4581,7 +4922,7 @@ test('legacy final-review prose can be accepted without an integrated factory ac
   );
   const snapshot = service.snapshot();
   service.decideIssue('20261022-one', 'final', 'close', snapshot.issues[0].decisionBasis);
-  assert.equal(service.snapshot().issues[0].accepted_result.revision, revision);
+  assert.equal(selectedIssueView(service).accepted_result.revision, revision);
 });
 test('another issue changing cannot invalidate a selected issue acceptance button', async (t) => {
   const { service, root } = await finalChecklist(t),
@@ -4591,7 +4932,7 @@ test('another issue changing cannot invalidate a selected issue acceptance butto
     '---\nid: 20261022-other\nstate: verify\n---\nAnother issue changed\n'
   );
   service.decideIssue('20261022-one', 'review', 'close', snapshot.issues[0].decisionBasis);
-  assert.equal(service.snapshot().issues.find((issue) => issue.id === '20261022-one').state, 'closed');
+  assert.equal(selectedIssueView(service).state, 'closed');
 });
 
 const clarificationMutations = {
@@ -4781,8 +5122,8 @@ test('a real pending question stays prominent even while its issue chat is conne
     events: [],
   };
   window.screenTest.show(snapshot);
-  const panel = window.document.querySelector('.lifecycle-progress');
-  assert.match(panel.textContent, /Your input is needed/);
+  const panel = window.document.querySelector('[data-view-id^="issue-progress-"]');
+  assert.match(panel.textContent, /waiting for you/);
   assert.match(panel.textContent, /Which behavior should be preserved/);
   assert.equal(panel.querySelector('[data-lifecycle-pause]'), null);
 });
@@ -4803,7 +5144,11 @@ test('issue Git identity follows unfinished work, assembly and live HEAD without
       { kind: 'worker', actionId: 'other', checkout: '/not-this-issue' },
     ],
   };
-  assert.deepEqual(issueGit(snapshot, issue), { branch: 'codex/issue-work', revision: git('rev-parse', 'HEAD') });
+  assert.deepEqual(issueGit(snapshot, issue), {
+    checkout: root,
+    branch: 'codex/issue-work',
+    revision: git('rev-parse', 'HEAD'),
+  });
   git('commit', '--allow-empty', '-qm', 'advance');
   assert.equal(issueGit(snapshot, issue).revision, git('rev-parse', 'HEAD'));
   snapshot.actions[0].status = 'assembled';
@@ -4903,6 +5248,7 @@ test('Continue renders accessible pending, accepted and failure feedback beside 
     new Promise((resolve) => {
       finish = resolve;
     });
+  window.updateProgressView = () => {};
   window.eval('var progressRequests = new Map(); var data = {}; ' + source);
   const button = window.document.querySelector('button');
   const pending = window.startIssueProgress({ id: 'one', state: 'in-progress' });
@@ -5113,7 +5459,7 @@ test('accepting a retained fix closes directly from implementation without fabri
       };
   const closed = service.decideIssue(before.id, before.state, 'close', before.decisionBasis);
   assert.equal(closed.state, 'closed');
-  const issue = service.snapshot().issues[0];
+  const issue = selectedIssueView(service);
   assert.equal(issue.accepted_result.verification_rerun, false);
   assert.equal(issue.closure.reason, 'fixed');
   assert.equal(issue.lifecycle_history.length, before.lifecycle_history.length + 1);
@@ -5123,15 +5469,21 @@ test('accepting a retained fix closes directly from implementation without fabri
 test('strategy acceptance reuses exact saved checks without a legacy final-review stage', (t) => {
   const { service, root, git, result } = completedWorkFixture(t);
   const issue = service.snapshot().issues[0];
-  const run = service.store.add({ id: 'strategy-result', issues: [issue.id] }, 'issue-work', git('rev-parse', 'HEAD'));
+  const run = disconnectedSavedRun(
+    service.store,
+    { id: 'strategy-result', issues: [issue.id] },
+    'issue-work',
+    git('rev-parse', 'HEAD')
+  );
+  assert.equal(run.status, 'completed');
+  assert.equal(service.store.connected.has(run.id), false);
   const checked = {
     head: git('rev-parse', 'HEAD'),
     tree: git('rev-parse', 'HEAD^{tree}'),
     summaries: [result.verification_summary, result.audit_summary],
   };
   const readiness = { head: checked.head };
-  service.store.update(run, { issueId: issue.id, status: 'completed', result: { checked, readiness } });
-  service.store.connected.delete(run.id);
+  service.store.update(run, { issueId: issue.id, result: { checked, readiness } });
   mkdirSync(join(service.store.directory, run.id), { recursive: true });
   writeFileSync(join(service.store.directory, run.id, 'readiness.json'), JSON.stringify({ ...readiness, checked }));
   service.lifecycleRuns[issue.id] = { work: { runId: run.id, checkout: root, base: checked.head, readiness } };
@@ -5149,7 +5501,47 @@ test('strategy acceptance reuses exact saved checks without a legacy final-revie
   summary.checks.find((check) => check.name === 'tests').passed = true;
   writeFileSync(result.verification_summary, JSON.stringify(summary));
   assert.equal(service.decideIssue(issue.id, issue.state, 'close', issue.decisionBasis).state, 'closed');
-  const accepted = service.snapshot().issues[0].accepted_result;
+  const accepted = selectedIssueView(service, issue.id).accepted_result;
   assert.equal(accepted.revision, checked.head);
   assert.ok(accepted.evidence.some((entry) => entry.source === result.verification_summary));
+});
+
+test('connected live issue work blocks closure', async (t) => {
+  const { service } = completedWorkFixture(t);
+  await reconcileNow(service);
+  const issue = service.snapshot().issues[0];
+  const liveRun = liveSavedRun(
+    service.store,
+    { id: 'live-issue-work', issueId: issue.id },
+    'issue-work',
+    service.snapshot().head
+  );
+  assert.equal(liveRun.issueId, issue.id);
+  assert.equal(service.store.connected.has(liveRun.id), true);
+  assert.throws(
+    () => service.decideIssue(issue.id, issue.state, 'close', issue.decisionBasis),
+    /Wait for the current issue action/
+  );
+});
+
+test('retained output history is authenticated, read-only and restricted to saved runs', async (t) => {
+  const { service } = fixture(t);
+  service.store.runs.push({ id: 'retained-one' });
+  mkdirSync(service.store.directory, { recursive: true });
+  const log =
+    JSON.stringify({
+      method: 'item/completed',
+      params: { item: { type: 'agentMessage', text: 'Earlier public output' } },
+    }) + '\n';
+  writeFileSync(join(service.store.directory, 'retained-one.jsonl'), log);
+  const before = JSON.stringify(service.store.runs);
+  const { url, cookie } = await startFactoryHttp(t, service);
+  assert.equal((await fetch(url + '/api/output-history?id=retained-one')).status, 400);
+  const response = await fetch(url + '/api/output-history?id=retained-one', { headers: { cookie } });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).events[0].params.item.text, 'Earlier public output');
+  assert.equal((await fetch(url + '/api/output-history?id=../outside', { headers: { cookie } })).status, 400);
+  assert.equal((await fetch(url + '/issue-progress-ui.js', { headers: { cookie } })).status, 200);
+  assert.equal(JSON.stringify(service.store.runs), before);
+  assert.equal(readFileSync(join(service.store.directory, 'retained-one.jsonl'), 'utf8'), log);
 });

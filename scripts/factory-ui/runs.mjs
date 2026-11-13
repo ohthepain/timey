@@ -5,6 +5,12 @@ import { existsSync, mkdirSync, appendFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readJson, writeJson } from './common.mjs';
+import { advanceOperationTiming, startOperationTiming } from './operation-timing.mjs';
+
+function updateRunTiming(run, values, at) {
+  if (run.kind !== 'issue-work' || !Object.hasOwn(values, 'status')) return;
+  advanceOperationTiming(run, values.status, at);
+}
 
 export class RunStore {
   constructor(root, authorization = () => null) {
@@ -45,18 +51,21 @@ export class RunStore {
       streamOffset: 0,
       summary: 'Preparing the conversation.',
     };
+    if (kind === 'issue-work') startOperationTiming(run);
     this.runs.push(run);
     this.connected.add(run.id);
     this.save();
     return run;
   }
   update(run, values) {
+    const updated = new Date().toISOString();
+    updateRunTiming(run, values, updated);
     if (values.issueId)
       values.authorization =
         run.authorization?.kind === 'approved-plan'
           ? run.authorization
           : this.authorization({ ...run, ...values }, run.kind);
-    Object.assign(run, values, { updated: new Date().toISOString() });
+    Object.assign(run, values, { updated });
     this.save();
   }
   event(message) {

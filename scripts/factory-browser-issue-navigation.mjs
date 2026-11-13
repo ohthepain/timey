@@ -1,3 +1,11 @@
+export async function verifyIssueScopedNavigation(page) {
+  await page.getByRole('heading', { name: 'Older urgent issue', exact: true }).waitFor();
+  if (await page.locator('[data-issue-navigation]').count())
+    throw Error('Issue-scoped data exposed neighbor controls without queue context.');
+  await page.getByRole('link', { name: '← Issue queue', exact: true }).click();
+  await page.getByText('Please select an issue.', { exact: true }).waitFor();
+}
+
 export default async function issueNavigationBrowserChecks(page) {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -8,44 +16,38 @@ export default async function issueNavigationBrowserChecks(page) {
     for (const issue of data.issues) issue.queueSort = { created: created[issue.id] };
     await route.fulfill({ json: data });
   });
+  await page.route('**/api/issue?issue=*', async (route) => {
+    const queueUrl = new URL('/api/queue', route.request().url()).href;
+    const response = await route.fetch({ url: queueUrl });
+    const data = await response.json();
+    const issueId = new URL(route.request().url()).searchParams.get('issue');
+    data.issues = [data.issues.find((issue) => issue.id === issueId)];
+    data.issueScoped = true;
+    await route.fulfill({ json: data });
+  });
   await page.goto(new URL('/#/queue', page.url()).href);
   await page.locator('#queue-sort').selectOption('created');
   await page.locator('#queue-direction').click();
   const ascending = await page
-    .locator('#issues tr td:first-child > a')
-    .evaluateAll((links) => links.map((link) => decodeURIComponent(link.hash.slice(8))));
+    .locator('.issue-sidebar-link')
+    .evaluateAll((links) => links.map((link) => link.parentElement.dataset.issueRow));
   if (JSON.stringify(ascending) !== JSON.stringify(['b', 'a', 'x']))
     throw Error(`Fixture is not ascending by creation date: ${JSON.stringify(ascending)}`);
-  await page.getByRole('link', { name: 'Older urgent issue', exact: true }).click();
-  const previous = page.locator('[data-issue-navigation="previous"]');
-  const next = page.locator('[data-issue-navigation="next"]');
-  await previous.waitFor();
-  if (!(await previous.isDisabled()))
-    throw Error(
-      `Ascending boundary mismatch on ${await page.locator('h1').textContent()}: ${await previous.getAttribute('title')}`
-    );
-  if ((await next.getAttribute('title')) !== 'Go to: Newer low issue')
-    throw Error('Next tooltip does not name its destination in ascending order.');
-  await next.click();
-  await page.getByRole('heading', { name: 'Newer low issue', exact: true }).waitFor();
-  if ((await previous.getAttribute('title')) !== 'Go to: Older urgent issue')
-    throw Error('Previous tooltip does not name its destination.');
-  await page.getByRole('link', { name: '← Issue queue', exact: true }).click();
+  await page.locator('[data-issue-row="b"] .issue-sidebar-link').click();
+  await verifyIssueScopedNavigation(page);
   await page.locator('#queue-direction').click();
-  await page.getByRole('link', { name: 'Older urgent issue', exact: true }).click();
-  if ((await page.locator('[data-issue-navigation="previous"]').getAttribute('title')) !== 'Go to: Newer low issue')
-    throw Error('Previous navigation does not follow descending order.');
-  await page.locator('[data-issue-navigation="previous"]').click();
-  await page.getByRole('heading', { name: 'Newer low issue', exact: true }).waitFor();
-  if (!(await page.locator('[data-issue-navigation="previous"]').isDisabled()))
-    throw Error('The first visible issue must not have a previous issue.');
-  await page.locator('[data-issue-navigation="next"]').click();
-  await page.getByRole('heading', { name: 'Older urgent issue', exact: true }).waitFor();
+  await page.locator('[data-issue-row="b"] .issue-sidebar-link').click();
+  await verifyIssueScopedNavigation(page);
   await page.unroute('**/api/queue*');
+  await page.unroute('**/api/issue?issue=*');
   if (errors.length) throw Error(errors.join('; '));
   return {
     passed: true,
-    assertions: ['sort-order neighbors', 'destination tooltips', 'first-item boundary', 'button navigation'],
+    assertions: [
+      'queue sorting order',
+      'selected issue return link',
+      'neighbor controls stay absent from issue-scoped snapshots',
+    ],
     errors,
   };
 }

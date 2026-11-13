@@ -4,12 +4,15 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
-import { queueHumanInput } from './factory-ui/queue-human-input.mjs';
+import { queueHumanInput, queueHumanInputReader } from './factory-ui/queue-human-input.mjs';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { queueSortValues } from './factory-ui/queue-sort.mjs';
 import { queueResponse } from './factory-ui/queue-response.mjs';
 import { browserFixture as pageFixture } from './browser-fixture.mjs';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { FactoryUI } from './factory-ui/service.mjs';
 
 const lifecycle = [
   { state: 'review', role: 'ready-to-close', next: 'closed', name: 'Final review' },
@@ -23,6 +26,33 @@ const date = (day) => `2026-10-${String(day).padStart(2, '0')}T12:00:00.000Z`;
 const base = () => ({ lifecycle, actions: [], runs: [] });
 const issue = (values = {}) => ({ id: 'one', state: 'start', created: date(1), ...values });
 const event = (state, next, at, outcome = 'completed') => ({ state, next, at, outcome });
+
+test('a queue poll batches human-input reads and never caches them across snapshots', (t) => {
+  const f = deliveryFixture(t);
+  writeFileSync(
+    join(f.queue.root, '.issues/20261025-two.md'),
+    '---\nid: 20261025-two\nstate: backlog\ntitle: Second\n---\n'
+  );
+  const service = new FactoryUI(f.queue.root, { preview: true });
+  t.after(() => service.close());
+  const original = childProcess.execFileSync;
+  let reads = 0;
+  childProcess.execFileSync = function (file, args, ...options) {
+    if (args[0]?.endsWith('/human-input.mjs') && args[1] === 'read') reads++;
+    return original.call(this, file, args, ...options);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    childProcess.execFileSync = original;
+    syncBuiltinESMExports();
+  });
+  const first = service.snapshot();
+  assert.ok(first.issues.length > 1);
+  assert.equal(reads, 1, 'one shared helper read rather than one subprocess per issue');
+  service.snapshot();
+  assert.equal(reads, 2, 'the next snapshot must read fresh human-input state');
+  first.issues.forEach((issue) => assert.deepEqual(issue.humanInputView, queueHumanInput(first, issue)));
+});
 
 test('progress follows Next links and counts starts without promoting planned/skipped stages', () => {
   assert.equal(queueSortValues(base(), issue({ state: 'work' })).progress, 3);
@@ -137,6 +167,8 @@ test('shared reader resolves readiness prerequisites and revision-bound deferral
     writeFileSync(report, '---\n' + YAML.stringify(metadata, { aliasDuplicateObjects: false }) + '---\n');
     const before = readFileSync(report, 'utf8');
     const view = queueHumanInput(queue, { ...selected, ...metadata });
+    const batched = queueHumanInputReader({ ...queue, issues: [{ ...selected, ...metadata }] });
+    assert.deepEqual(batched({ ...selected, ...metadata }), view);
     assert.equal(readFileSync(report, 'utf8'), before);
     return view;
   };
@@ -237,6 +269,8 @@ function browserFixture(t) {
   const code = html.slice(first, Math.min(last < 0 ? end : last, end));
   const queue = {
     root: 'fixture',
+    implementationOrderBasis: 'fixture-basis',
+    implementationOrder: ['b', 'a', 'z'],
     lifecycle,
     actions: [],
     runs: [],
@@ -245,24 +279,27 @@ function browserFixture(t) {
         id: 'b',
         title: 'Beta',
         state: 'work',
+        implementationOrder: 0,
         queueSort: { progress: 3, lastProgress: 20, created: 10, completed: null, humanInput: 0 },
       },
       {
         id: 'a',
         title: 'Alpha',
         state: 'start',
+        implementationOrder: 1,
         queueSort: { progress: 0, lastProgress: 10, created: 20, completed: 30, humanInput: 1 },
       },
       {
         id: 'z',
         title: 'Closed',
         state: 'closed',
+        implementationOrder: 2,
         queueSort: { progress: 5, lastProgress: null, created: null, completed: null, humanInput: 0 },
       },
     ],
   };
-  win.eval(`const $ = id => document.getElementById(id); const esc = value => String(value ?? ''); const link = id => '<a>'+id+'</a>'; let data = ${JSON.stringify(queue)}; const actionCard = () => ''; const progress = () => ''; ${code}
-window.queueTest = { render() { $('app').innerHTML = queue(); bindQueueFilters(); }, replace(issues) { data.issues = issues; this.render(); }, issues: data.issues };`);
+  win.eval(`const $ = id => document.getElementById(id); const esc = value => String(value ?? ''); const link = id => '<a>'+id+'</a>'; const requests = []; const request = async (path,value) => { requests.push({path,value}); return {}; }; const refresh = async () => {}; const act = task => { void task().catch(() => {}); }; function visibleLifecycleStage(stage) { return !['ready-to-prototype', 'ready-to-fix', 'ready-to-verify', 'ready-for-commit', 'ready-to-close'].includes(stage.role); } let data = ${JSON.stringify(queue)}; const actionCard = () => ''; const progress = () => ''; const issueFolderHeading = (title) => '<h1>' + esc(title) + '</h1>'; ${code}
+window.queueTest = { render() { $('app').innerHTML = queue(); bindQueueFilters(); }, replace(issues) { data.issues = issues; this.render(); }, issues: data.issues, requests };`);
   const fixture = win.queueTest;
   fixture.render();
   return { win, fixture, document: win.document };
@@ -289,7 +326,9 @@ test('all five controls order actual queue rows, preserve filters and selection 
   };
   assert.equal(direction().textContent, '▼');
   assert.equal(document.querySelector('[data-role-filter="closed"]').checked, false);
-  assert.equal(document.querySelector('[data-role-filter="work"]').checked, true);
+  assert.equal(document.querySelector('[data-role-filter="start"]').checked, true);
+  for (const state of ['review', 'experiment', 'work'])
+    assert.equal(document.querySelector(`[data-role-filter="${state}"]`), null);
   assert.equal(document.getElementById('create-issue').textContent, '+');
   assert.equal(document.querySelector('.queue-heading').contains(document.getElementById('create-issue')), true);
   assert.equal(document.body.textContent.includes('Choose what to work on'), false);
@@ -330,7 +369,7 @@ test('all five controls order actual queue rows, preserve filters and selection 
   assert.deepEqual(ids(), ['b', 'a', 'z']);
   assert.equal(document.getElementById('queue-sort').value, 'lastProgress');
   assert.equal(direction().textContent, '▲');
-  for (const state of ['review', 'start', 'experiment', 'custom', 'closed']) setRole(state, false);
+  for (const state of ['start', 'custom', 'closed']) setRole(state, false);
   assert.deepEqual(ids(), ['b']);
   const search = document.getElementById('search');
   search.value = 'Alpha';
@@ -342,7 +381,6 @@ test('all five controls order actual queue rows, preserve filters and selection 
   setRole('start', true);
   assert.deepEqual(ids(), ['a']);
   assert.equal(document.querySelector('[data-role-filter="start"]').parentElement.querySelector('b').textContent, '1');
-  assert.equal(document.querySelector('[data-role-filter="work"]').parentElement.querySelector('b').textContent, '0');
 });
 
 test('issue navigation follows the visible sort order and has bounded neighbors', (t) => {
@@ -362,6 +400,66 @@ test('issue navigation follows the visible sort order and has bounded neighbors'
   assert.match(source, /title="\$\{destination \? `Go to: \$\{esc\(label\)\}`/);
   assert.match(source, /function issueNeighbors\(issue\)/);
   assert.ok(document.querySelector('#issues'));
+});
+
+test('default status order groups merged, running, and queued issues before other statuses', (t) => {
+  const { win, fixture, document } = browserFixture(t);
+  assert.equal(document.getElementById('queue-sort').value, 'statusOrder');
+  assert.equal(document.getElementById('queue-direction').disabled, true);
+  const issues = [
+    { id: 'queued-first', implementationOrder: 0, strategy: { status: 'queued' } },
+    { id: 'paused', implementationOrder: 1, strategy: { status: 'paused' } },
+    { id: 'running', implementationOrder: 2, strategy: { status: 'running' } },
+    { id: 'merged', implementationOrder: 3, strategy: { status: 'merged' } },
+    { id: 'queued-second', implementationOrder: 4, strategy: { status: 'queued' } },
+  ];
+  assert.deepEqual(
+    Array.from(win.queueSortUI.sort(issues, { sort: 'statusOrder', direction: 'desc' }), (entry) => entry.id),
+    ['merged', 'running', 'queued-first', 'queued-second', 'paused']
+  );
+  assert.deepEqual(
+    Array.from(fixture.issues, (entry) => entry.id),
+    ['b', 'a', 'z']
+  );
+});
+
+test('drag handles save visible reordering while preserving filtered issues', async (t) => {
+  const { win, fixture, document } = browserFixture(t);
+  const sort = document.getElementById('queue-sort');
+  sort.value = 'implementationOrder';
+  sort.dispatchEvent(new win.Event('change'));
+  assert.ok(document.querySelector('[data-implementation-drag="b"]'));
+  assert.equal(
+    document.querySelector('[data-implementation-drag="b"]').getAttribute('aria-label'),
+    'Drag to reorder Beta'
+  );
+  const handle = document.querySelector('[data-implementation-drag="a"]');
+  handle.ondragstart({ dataTransfer: { setData() {}, effectAllowed: '' } });
+  assert.equal(document.querySelector('[data-issue-row="a"]').classList.contains('is-dragged'), true);
+  document.querySelector('[data-issue-row="b"]').ondragover({
+    preventDefault() {},
+    clientY: 0,
+  });
+  assert.equal(document.querySelector('[data-issue-row="b"]').classList.contains('drop-before'), true);
+  document.querySelector('[data-issue-row="b"]').ondrop({
+    preventDefault() {},
+    clientY: 0,
+    dataTransfer: { getData: () => 'a' },
+  });
+  assert.deepEqual(
+    Array.from(document.querySelectorAll('#issues tr[data-issue-row]'), (row) => row.dataset.issueRow),
+    ['a', 'b'],
+    'the displayed order updates immediately after dropping'
+  );
+  assert.equal(document.querySelector('.is-dragged, .drop-before, .drop-after'), null);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(fixture.requests.at(-1).path, 'implementation-order');
+  assert.deepEqual(Array.from(fixture.requests.at(-1).value.order), ['a', 'b', 'z']);
+  assert.equal(fixture.requests.at(-1).value.basis, 'fixture-basis');
+  const selector = document.getElementById('queue-sort');
+  selector.value = 'created';
+  selector.dispatchEvent(new win.Event('change'));
+  assert.equal(document.querySelector('[data-implementation-drag="a"]'), null);
 });
 
 test('ties and missing values remain deterministic in both directions without mutating source', (t) => {

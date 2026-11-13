@@ -1,6 +1,7 @@
 import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { decisionBasis, retainAcceptedResult } from './recorded-result.mjs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { moveStoredIssue, storedIssuePath } from './issue-report-storage.mjs';
 import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
 import { appendReview } from './review-result.mjs';
@@ -8,10 +9,19 @@ import { digest, requireThat } from './common.mjs';
 
 import { strategyClosureResult } from './strategy-closure.mjs';
 import { recordClosingApproval } from './closure-approval.mjs';
+import {
+  archiveIssueChatsOnClose,
+  beginIssueCleanup,
+  issueHasActiveWork,
+  issueHasChats,
+  recordCleanupFailure,
+} from './issue-cleanup.mjs';
+import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
 
-export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed') {
+export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed', cleanup = null) {
   service.ownServer();
-  let queue = readQueue(service.root),
+  const location = decisionLocation(service.root, id);
+  let queue = location === 'open' ? readQueue(service.root) : readQueue(service.root, { location, issueId: id }),
     issue = progressIssue(queue, id, state);
   requireThat(validDecisionBasis(queue, issue, basis), 'This issue changed. Refresh before making a decision.');
   requireThat(['close', 'reopen'].includes(kind), 'Choose Close issue or Reopen issue.');
@@ -21,6 +31,7 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
   checkIdle(service, queue, issue, { kind, dismissed });
   const target = decisionTarget(queue, role, kind, dismissed);
   const action = { issues: [id] };
+  const shared = service.sharedIssues?.acquire(issue, true);
   const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target });
   queue = prepared.queue;
   issue = prepared.issue;
@@ -29,9 +40,64 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
   const summary = decisionSummary(kind, choice, dismissed);
   const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: prepared.accepted };
   applyClosure(result, choice, reason, target, dismissed);
-  const evidence = [{ path: join(service.root, '.issues', id + '.md'), sha256: digest(issue.content) }];
-  return recordDecision(service, queue, issue, run, result, evidence, target, basis);
+  const evidence = [{ path: storedIssuePath(service.root, id, location), sha256: digest(issue.content) }];
+  const destination = kind === 'close' ? 'closed' : 'open';
+  const moveTo = !shared && location !== destination ? destination : null;
+  if (moveTo)
+    requireThat(
+      !existsSync(storedIssuePath(service.root, id, moveTo)),
+      'Another report already exists at the destination.'
+    );
+  const decision = recordDecision(service, issue, run, result, evidence, target, basis, {
+    location,
+    moveTo,
+  });
+  if (shared) {
+    const publication = service.sharedIssues.checkpoint(
+      id,
+      kind === 'close' ? 'Issue closed' : 'Issue reopened',
+      shared,
+      undefined,
+      destination
+    );
+    return { ...decision, publication: { status: publication.status, url: publication.url, error: publication.error } };
+  }
+  if (kind !== 'close') return decision;
+  return finishIssueClosure(service, id, decision, cleanup, resolution);
 }
+
+function decisionLocation(root, id) {
+  if (existsSync(storedIssuePath(root, id, 'open'))) return 'open';
+  return existsSync(storedIssuePath(root, id, 'closed')) ? 'closed' : 'open';
+}
+
+function finishIssueClosure(service, id, decision, cleanup, resolution) {
+  cancelIssueActionsOnClose(service, id);
+  if (!cleanup) {
+    if (issueHasChats(service, id)) archiveChatsAfterClose(service, id, resolution);
+    return decision;
+  }
+  const cleanupInput = { ...cleanup, resolution };
+  runCleanupInBackground(service, id, resolution, cleanupInput);
+  return { ...decision, cleanup: { status: 'running', selected: cleanupInput.selected || [] } };
+}
+
+function archiveChatsAfterClose(service, id, resolution) {
+  const cleanupInput = { selected: [], resolution };
+  runCleanupInBackground(service, id, resolution, cleanupInput, true);
+}
+
+function runCleanupInBackground(service, id, resolution, cleanupInput, includeChats = false) {
+  service.issueCleanupTasks ||= new Map();
+  if (service.issueCleanupTasks.has(id)) return;
+  beginIssueCleanup(service, id, cleanupInput);
+  const task = Promise.resolve()
+    .then(() => archiveIssueChatsOnClose(service, id, resolution, includeChats ? null : cleanupInput))
+    .catch((error) => recordCleanupFailure(service, id, cleanupInput, error))
+    .finally(() => service.issueCleanupTasks.delete(id));
+  service.issueCleanupTasks.set(id, task);
+}
+
 function closureChoice(queue, role, kind, resolution) {
   if (kind === 'reopen') {
     requireThat(['ready-to-close', 'closed'].includes(role), 'This issue is not at final review or closed.');
@@ -44,7 +110,10 @@ function closureChoice(queue, role, kind, resolution) {
 }
 function prepareDecision(service, queue, issue, action, decision) {
   if (decision.kind === 'reopen') {
-    service.guard(service.root, action, 'advance', queue.head, { target_state: decision.target });
+    service.guard(service.root, action, 'advance', queue.head, {
+      target_state: decision.target,
+      ...(issue.reportLocation === 'closed' && { reportLocation: issue.reportLocation }),
+    });
     return { queue, issue };
   }
   if (decision.dismissed) return { queue, issue };
@@ -76,12 +145,12 @@ function applyClosure(result, choice, reason, target, dismissed) {
   result.notes = `${choice.description} ${reason.trim()} Closing without completing the work. Existing checks and unfinished steps remain unchanged.`;
   result.stage_records = [{ state: target, outcome: 'completed', actor: 'human', reason: result.summary }];
 }
-function recordDecision(service, queue, issue, run, result, evidence, target, basis) {
+function recordDecision(service, issue, run, result, evidence, target, basis, { location, moveTo }) {
   const summary = result.summary,
     id = issue.id,
     state = issue.state;
   try {
-    const current = readQueue(service.root);
+    const current = readQueue(service.root, { location, issueId: id });
     requireThat(
       decisionBasis(
         current,
@@ -90,6 +159,7 @@ function recordDecision(service, queue, issue, run, result, evidence, target, ba
       'The issue changed. Refresh before deciding.'
     );
     appendReview(service.root, issue, result, run, evidence, target);
+    if (moveTo) moveStoredIssue(service.root, id, location, moveTo);
     service.store.update(run, { issueId: id, issueState: state, status: 'completed', summary, result });
   } catch (error) {
     service.store.update(run, { issueId: id, issueState: state, status: 'blocked', summary: error.message });
@@ -116,10 +186,7 @@ function checkIdle(service, queue, issue, decision) {
       `Finish reviewing the outstanding worker result${finished?.title ? ` “${finished.title}”` : ''} before accepting this issue as fixed.`
     );
   }
-  requireThat(
-    !service.store.runs.some((r) => r.issueId === issue.id && ['preparing', 'running', 'checking'].includes(r.status)),
-    'Wait for the current issue action to finish.'
-  );
+  requireThat(!issueHasActiveWork(service, issue.id), 'Wait for the current issue action to finish.');
 }
 function decisionTarget(queue, role, kind, dismissed) {
   requireThat(!(kind === 'close' && role === 'closed'), 'This issue is already closed.');

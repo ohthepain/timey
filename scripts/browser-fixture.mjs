@@ -1,11 +1,13 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { closureReasons } from './factory-ui/closure-reasons.mjs';
 
 // Serve candidate assets with disposable data. No real issue or worker can be changed.
 export function browserFixture(root) {
   const lifecycle = [
     ['ready-for-grilling', 'backlog', 'qa', 'Clarify'],
+    ['ready-to-close', 'final', 'closed', 'Final review'],
     ['closed', 'closed', '—', 'Closed'],
     ['custom', 'qa', 'closed', 'QA'],
   ].map(([role, state, next, name]) => ({ role, state, next, name, exit: 'Fixture stage' }));
@@ -15,13 +17,20 @@ export function browserFixture(root) {
     color: ['#ff0000', '#eab308', '#22c55e'][index],
     meaning: 'Fixture priority',
   }));
+  const issueNumbers = new Map([
+    ['b', 1],
+    ['a', 2],
+    ['c', 3],
+    ['x', 4],
+  ]);
   const issues = [
-    ['b', 'Older urgent issue', 'backlog', 0, '2026-01-01', '2026-03-01'],
+    ['b', 'Older urgent issue', 'final', 0, '2026-01-01', '2026-03-01'],
     ['a', 'Newer low issue', 'qa', 2, '2026-02-01', '2026-01-01'],
     ['c', 'Newest closed issue', 'closed', 1, '2026-03-01', '2026-02-01'],
     ['x', 'Unknown metadata', 'unknown', -1, 'invalid', null],
   ].map(([id, title, state, index, created, updated]) => ({
     id,
+    issueNumber: issueNumbers.get(id),
     title,
     state,
     created,
@@ -43,6 +52,9 @@ export function browserFixture(root) {
     priorityInfo: { ...(priorities[index] || { name: 'Unknown', color: '#888888' }), index, basis: 'fixture' },
     queueLifecycle: { roles: lifecycle.map((s) => ({ ...s, label: 'Fixture stage', status: 'idle', future: false })) },
   }));
+  ['b', 'a', 'c', 'x'].forEach((id, index) => {
+    issues.find((issue) => issue.id === id).implementationOrder = index;
+  });
   const data = {
     root: '/synthetic-browser-fixture',
     head: '0'.repeat(40),
@@ -71,9 +83,11 @@ export function browserFixture(root) {
       efforts: ['low', 'medium', 'high', 'max'],
     },
     issues,
+    implementationOrder: ['b', 'a', 'c', 'x'],
+    implementationOrderBasis: 'fixture-order-basis',
     actions: [],
     runs: [],
-    closureReasons: [],
+    closureReasons: closureReasons(''),
     sourceClean: true,
     registryPresent: true,
   };
@@ -104,10 +118,24 @@ export function browserFixture(root) {
           }
           return response.end('{}');
         }
+        if (url.pathname === '/api/implementation-order') {
+          data.implementationOrder = value.order;
+          const ranks = new Map(value.order.map((id, index) => [id, index]));
+          issues.forEach((issue) => {
+            issue.implementationOrder = ranks.get(issue.id);
+          });
+          return response.end('{}');
+        }
         response.statusCode = 405;
         return response.end('{"error":"Fixture cannot launch work or save issues"}');
       }
       if (url.pathname === '/api/queue') return response.end(JSON.stringify(data));
+      if (url.pathname === '/api/issue') {
+        const issueId = url.searchParams.get('issue');
+        return response.end(
+          JSON.stringify({ ...data, issueScoped: true, issues: issues.filter((issue) => issue.id === issueId) })
+        );
+      }
       if (url.pathname === '/api/runtime')
         return response.end(
           JSON.stringify({ mode: 'preview', project: data.root, checkout: root, revision: data.head })

@@ -61,7 +61,20 @@ adds the `.nvmrc` Node bin, then Homebrew, and runs the staged audit with that
 node. Fallow is pinned to 3.35.0. Checkpoint paths invoke the installed binary,
 `fallow audit --base <resolved-commit> --format json`, in the exported snapshot,
 using the existing local dependency and `.fallowrc.json`
-`audit.gate: new-only`. The helper passes one Fallow `PATH` derived from the Git changed-file list (a single
+`audit.gate: new-only`. Enforced checkpoints disable only Fallow's incremental
+cache because each audit runs from a disposable export root and stale cross-root
+cache warnings fail strict audits; the full configured audit and gate still run.
+Full-tree `fallow dupes` and `fallow health` skip Vitest
+files (`*.test.ts(x)`) and factory script tests (`scripts/**/*.check.mjs`,
+`scripts/**/*fixture*.mjs`) via `duplicates.ignore` and `health.ignore`, and use
+`production` mode for other conventional test paths. Dead-code analysis still
+uses factory check scripts as tooling entry points. Checkpoint audit still
+analyzes changed files in the diff, including tests, when those paths are not
+ignored for that sub-analysis. A bare `npx fallow` (same as `pnpm run fallow:full`)
+prints every function above the complexity threshold and can flood the terminal;
+prefer `pnpm run fallow` (`fallow --summary`) for a short rollup, `pnpm run
+audit:staged` or `audit:diff` for checkpoint scope, or `pnpm run fallow:health`
+for the top 15 complexity hits only. The helper passes one Fallow `PATH` derived from the Git changed-file list (a single
 file, their common directory prefix, or `.` when changes span unrelated roots) so
 reported findings stay scoped to the diff instead of defaulting to the whole tree. Fallow may still build a project graph for import
 resolution; the verdict uses only **introduced** findings in those changed files.
@@ -87,25 +100,32 @@ retain strict validation and cannot infer empty scope from a saved tool report.
 
 ### Commit and step-completion checkpoints
 
-Before a commit, the pre-commit hook runs `pnpm run audit:staged`, which exports
-the staged snapshot for verification bookkeeping. **Fallow is skipped by default**
-so commits and CI `verify` are not blocked by audit findings. Set
+Before a commit, the pre-commit hook checks formatting on the exact staged file
+contents, then runs `pnpm run audit:staged`, which exports the staged snapshot
+for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
+Strategy candidate checks and CI enforce Fallow with
+`TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Their new findings, including
+warnings, must be repaired. Skipped or warning-bearing evidence cannot satisfy
+these strategy checks or be reused from the legacy cache. Set
 `TIMEY_FALLOW_ENFORCE=1` when you want the pinned Fallow audit to fail the hook,
 `audit:step`, or full `verify`. Before declaring an implementation step complete,
 including an uncommitted step, run `pnpm run audit:step -- --base <step-start-commit>`.
 Use the recorded starting revision, not the new HEAD after committing (which could
 hide that step's changes). Full `verify -- --base REF` still runs types, tests,
-build, and factory checks; only Fallow enforcement is opt-in. A successful audit
+build, and factory checks. Fallow enforcement is opt-in outside strategy and CI checks. A successful audit
 does not establish type/build/device success.
 
 A checkpoint fails on a nonzero Fallow process exit, a `fail` or `error` audit
 verdict, warning text on stderr, degraded analysis, missing/unsupported JSON, or a
-mismatched gate. A `warn` verdict with exit zero passes (introduced warn-severity
-findings are reported in evidence but do not block commits).
+mismatched gate. A `warn` verdict with exit zero passes only for legacy commands without
+`TIMEY_FALLOW_WARNINGS=error`; strict strategy/CI checks reject new warnings.
+The verifier uses `--no-cache` for Fallow so base/head analysis does not reuse an
+incompatible graph cache or produce cache-mismatch warnings. Analysis is unchanged.
 Inspect and fix findings, then rerun. Do not suppress warnings, add exclusions,
-weaken thresholds, or select a later base to make the checkpoint green. Findings
-outside the authorized scope remain explicit blockers for a human decision;
-record the failed evidence and say the step is incomplete.
+weaken thresholds, or select a later base to make the checkpoint green. An active strategy authorizes necessary blocker repairs outside the original
+feature under the [approved repair policy](../plans/autonomous-blocker-repair.md).
+Preserve product intent and record repair evidence. Other workflows retain their
+existing scope boundaries; actual human decisions and permission denials still stop.
 
 Summary evidence records the full resolved base, source HEAD, exported Git tree,
 changed files, checkpoint kind, actual command, raw log/JSON, reasons and pass/fail.
@@ -295,14 +315,27 @@ for an issue-local decision.
 
 ## Persistent issue chat checks
 
-Run `pnpm run test:chat` for the shared issue conversation: disk persistence and
-native identity reuse, issue separation, bounded history and full retrospective
-context, comments during active work, idempotent transport retries, response
-failures, current-question routing, revision checkpoints and DOM draft/focus safety.
-The aggregate factory suite includes these checks. Use real browser/provider
-smoke evidence separately from protocol fixtures; a mocked response proves no
-provider availability. Existing lifecycle and integration tests still own worker
-checkout isolation, review independence and actual approval/acceptance guards.
+Run `pnpm run test:chat` for shared issue history, stable event identities,
+source attribution, native identity reuse, FIFO queue persistence, selected skills,
+edit/remove races, exact-turn steering, lost acknowledgements and interrupted
+output recovery. These disposable fixtures distinguish confirmed verification,
+GitHub merge, local target update and closure from conversation claims.
+
+Run the discussion and Clarify checks for durable stage interviews, reopened
+review, main-composer human answers and generated-instruction quote rejection.
+Strategy and server-control checks cover queue boundaries, saved verification,
+noncancellable merge reconciliation, checkout creation and permission routing.
+`test:browser` includes queue editing with skills, reload, removal, resume and
+queueing during merge against actual candidate assets with disposable responses.
+The aggregate factory suite includes the protocol checks.
+
+Use a real provider smoke separately to verify the installed skill catalog and a
+retro plus an ordinary history query in the same thread. If `what-did-you-do` is
+not installed, the ordinary query is the coverage check. Fixture merge records
+are synthetic and establish no actual GitHub merge. Foreign native writers that
+the installed transport cannot observe must hold the queue with an explicit
+capability limitation. Existing lifecycle and integration tests still own reviewer
+independence, actual permission, merge approval and acceptance guards.
 
 ## Deployment readiness diagnostics
 

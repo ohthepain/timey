@@ -97,6 +97,12 @@ A coordinator update to one local issue that records corrections already made.
 It checks preservation of other records and source, requires no code commit, and
 leaves unperformed demonstrations and final acceptance explicit.
 
+**Progress view**:
+An explanation of an issue's current work, confirmed milestones, outstanding input
+and next action. An operation's completion names its finish line and remains
+separate from issue acceptance.
+_Avoid_: Lifecycle stage, issue acceptance
+
 ## Lifecycle Progress
 
 An explicitly started run that continues one issue through work covered by its
@@ -118,8 +124,9 @@ are distinct from chat history and the current issue records, and do not grant
 execution authority or replace approvals.
 
 **Issue conversation**:
-The single continuing conversation that is an issue's home for human messages,
-all lifecycle role contributions, questions, decisions, outcomes, and retrospectives.
+The single continuing conversation that holds the issue's history from creation
+through closure, including human messages, lifecycle contributions, decisions,
+outcomes, and retrospectives.
 _Avoid_: Temporary chat, worker chat
 
 **Revision request**:
@@ -130,6 +137,15 @@ before continuing under an approved plan. It is separate from a comment or appro
 The relative urgency of an issue, independent of its lifecycle stage. The
 project’s ordered Issue Priorities list defines adjacent levels and colors;
 issues without a saved value use Major. A priority change does not complete work.
+
+**Issue number**:
+A stable sequential local label for a queue issue. It is stored separately from
+the report ID, never reused after deletion, and distinct from a GitHub pull request
+number.
+
+**Issue claim**:
+Exclusive permission for one factory run to start or continue work on an issue.
+A claim can remain held while the run's outcome is being published.
 
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one
@@ -158,6 +174,13 @@ merge-ready PR and leaves it unmerged. Full Send additionally merges through
 provider-enforced protection. Neither implies deployment or human acceptance.
 Lifecycle roles are historical context rather than execution requirements.
 
+**Blocker repair**:
+A necessary technical correction within an explicitly active issue strategy,
+including inherited test/format failures, target-branch conflicts and new audit
+findings. It retains the original issue scope and base, separate repair commits
+and bounded attempts. It does not authorize unrelated product changes or weaken
+verification, merge protection or acceptance.
+
 **Sol Loop**:
 An optional bounded review of an issue's current candidate by one Sol reviewer.
 It may be selected with either strategy or requested afterward on retained work.
@@ -169,3 +192,7 @@ intent. Publication, merge, successful checks and strategy completion do not imp
 **Issue closure**:
 The recorded decision to end work on an issue, either with an accepted fix or a
 stated reason for closing without a fix. It is independent of historical lifecycle stages.
+
+**Issue archive**:
+A locally retained collection of closed issue reports. Archiving removes an issue
+from the Closed issues view and preserves its identity and closure.

@@ -12,8 +12,9 @@ export default async function refreshStateChecks(page) {
       body: ('Saved message ' + index + '. ').repeat(40),
     })),
   };
-  await page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch();
+  await page.route('**/api/issue?issue=b', async (route) => {
+    const queueUrl = new URL('/api/queue', route.request().url()).href;
+    const response = await route.fetch({ url: queueUrl });
     const snapshot = await response.json();
     snapshot.issues.find((issue) => issue.id === 'b').updated = 'refresh-' + revision;
     snapshot.runs.push({
@@ -30,10 +31,14 @@ export default async function refreshStateChecks(page) {
       output: [],
       approvals: [],
     });
+    snapshot.issues = [snapshot.issues.find((issue) => issue.id === 'b')];
+    snapshot.issueScoped = true;
     await route.fulfill({ json: snapshot });
   });
   await page.route('**/api/issue-chat?**', (route) => route.fulfill({ json: conversation }));
-  await page.goto(new URL('/?refresh-regression=1#/issue/b', page.url()).href);
+  await page.goto(new URL('/#/issue/b', page.url()).href);
+  await page.getByRole('heading', { name: 'Older urgent issue', exact: true }).waitFor();
+  await page.locator('[data-chat-tab="issue"]').click();
   await page.waitForFunction(
     () => document.getElementById('error').textContent || document.querySelector('[aria-label="Issue conversation"]')
   );
@@ -85,7 +90,7 @@ export default async function refreshStateChecks(page) {
   async function assertReading(label) {
     const state = await page.evaluate(() => {
       const log = document.querySelector('[aria-label="Issue conversation"]');
-      const field = document.querySelector('[aria-label="Chat input"]');
+      const field = document.querySelector('[data-chat-panel="issue"] [aria-label="Chat input"]');
       return {
         top: log.scrollTop,
         draftTop: field.scrollTop,
@@ -161,7 +166,7 @@ export default async function refreshStateChecks(page) {
     if (!(await details.evaluate((element) => element.open))) throw Error('Expanded stage collapsed');
   }
   await page.screenshot({ path: 'refresh-state.png', fullPage: false });
-  await page.unroute('**/api/queue?**');
+  await page.unroute('**/api/issue?issue=b');
   await page.unroute('**/api/issue-chat?**');
   if (errors.length) throw Error(errors.join('; '));
   return {

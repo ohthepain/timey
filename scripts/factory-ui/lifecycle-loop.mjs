@@ -1,3 +1,4 @@
+import { factoryBoundary } from './issue-operation.mjs';
 import { combinedClarify } from './clarify-policy.mjs';
 import { approvePlanAdaptation } from './plan-adaptation.mjs';
 import { draftAssembly } from './delivery-mode.mjs';
@@ -13,7 +14,7 @@ import { progressBasis, nextProgress } from './next-action.mjs';
 import { readPlan } from './plan-document.mjs';
 import { checklistView } from './plan-checks.mjs';
 import { assessLifecycle } from './lifecycle-assessment.mjs';
-import { checkLifecycleScope } from './lifecycle-review.mjs';
+import { checkLifecycleScope } from './lifecycle-scope.mjs';
 import { lifecycleEvent, saveLifecycle } from './lifecycle-store.mjs';
 import { pauseForHuman } from './lifecycle-human.mjs';
 import { waitLifecycleWork, handleLifecycleFailure, waitForChild } from './lifecycle-work.mjs';
@@ -25,6 +26,7 @@ export async function runLifecycle(service, record) {
   throw Error('Progress stopped after many actions. Completed work is saved; resume to continue.');
 }
 async function lifecycleTick(service, record) {
+  await factoryBoundary(service, record.issueId);
   if (record.status !== 'running') return false;
   if (pauseRequested(service, record)) return false;
   if (finishAfterDeliveryPublish(service, record)) return false;

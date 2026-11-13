@@ -1,3 +1,5 @@
+import { factoryBoundary } from './issue-operation.mjs';
+import { conversationState, saveConversationState } from './conversation-store.mjs';
 import { selectedWorkerTurn } from './worker-turn.mjs';
 import { startChat } from './chat-start.mjs';
 import { nameIssueChat } from './chat-name.mjs';
@@ -5,10 +7,10 @@ import { saveLifecycle } from './lifecycle-store.mjs';
 import { requireThat, git } from './common.mjs';
 
 export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'workspace-write') {
+  await factoryBoundary(service, issueId);
   const record = service.lifecycleRuns[issueId];
   service.store.update(run, { issueId, ...(record ? { issueWorkChat: true } : {}) });
-  if (!record) return startChat(service, run, cwd, sandbox);
-  const actions = record.workThreadId ? [] : service.api.inspect().registry?.actions || [];
+  const actions = record?.workThreadId ? [] : service.api.inspect().registry?.actions || [];
   const previous = service.store.runs.findLast(
     (r) =>
       r.id !== run.id &&
@@ -17,10 +19,11 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
       ['completed', 'blocked'].includes(r.status) &&
       actions.some((a) => a.id === r.actionId && a.issues.length === 1 && a.issues[0] === issueId)
   );
-  const threadId = record.workThreadId || previous?.threadId || record.assessmentThreadId;
-  if (!threadId || run.startup) {
+  const conversation = conversationState(service.root, issueId);
+  const threadId = owningThread(record, conversation) || previousThread(previous, record);
+  if (needsStartup(run, threadId)) {
     const created = await startChat(service, run, cwd, sandbox);
-    saveLifecycle(service, record, { workThreadId: created, assessmentThreadId: created });
+    retainOwner(service, issueId, record, conversation, created);
     return created;
   }
   requireThat(
@@ -49,8 +52,19 @@ export async function issueWorkChat(service, run, issueId, cwd, sandbox = 'works
   }
   if (!unloaded) await service.codex.resume(threadId, cwd, sandbox);
   service.store.update(run, { threadId, reusedIssueChat: true });
-  saveLifecycle(service, record, { workThreadId: threadId, assessmentThreadId: threadId });
+  retainOwner(service, issueId, record, conversation, threadId);
   return nameIssueChat(service, run, threadId);
+}
+
+function recordedOwnerTurn(run, threadId) {
+  if (run.startup?.status !== 'ready') return false;
+  return run.startup.threadId === threadId && Boolean(run.resultRevision);
+}
+
+function needsStartup(run, threadId) {
+  if (!threadId) return true;
+  if (!run.startup) return false;
+  return !recordedOwnerTurn(run, threadId);
 }
 
 export async function loadSavedChat(cli, threadId, cwd, sandbox) {
@@ -73,4 +87,15 @@ export async function loadSavedChat(cli, threadId, cwd, sandbox) {
     'The issue chat is busy or its state is unknown. Reconnect it before continuing; no replacement chat was created.'
   );
   return unloaded;
+}
+
+function owningThread(record, conversation) {
+  return record?.workThreadId || conversation.threadId;
+}
+function previousThread(previous, record) {
+  return previous?.threadId || record?.assessmentThreadId;
+}
+function retainOwner(service, issueId, record, conversation, threadId) {
+  if (record) saveLifecycle(service, record, { workThreadId: threadId, assessmentThreadId: threadId });
+  saveConversationState(service.root, issueId, { ...conversation, threadId });
 }

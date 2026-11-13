@@ -1,20 +1,26 @@
-import { installedGrilling, grillingStage, beginGrilling, previewGrilling } from './discussion-grilling.mjs';
+import { conversationMessages } from './conversation-store.mjs';
+import { parseRetroResult } from './issue-chat.mjs';
+import {
+  installedGrilling,
+  grillingStage,
+  beginGrilling,
+  previewGrilling,
+  restoreGrilling,
+  grillingAnswerBasis,
+  finishGrilling,
+} from './discussion-grilling.mjs';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { digest, requireThat } from './common.mjs';
-import { createDiscussionRuntime } from './discussion-codex.mjs';
+import { createIssueDiscussion } from './issue-discussion.mjs';
 import { recordDiscussion } from './discussion-record.mjs';
+import { listAvailableSkills, publicSkills, selectedSkills } from './skills.mjs';
 
 const idle = 15 * 60 * 1000,
   lifetime = 60 * 60 * 1000;
-export function createDiscussions(
-  service,
-  create = createDiscussionRuntime,
-  now = Date.now,
-  skill = installedGrilling
-) {
+export function createDiscussions(service, create = null, now = Date.now, skill = installedGrilling) {
   const manager = {
     service,
     skill,
@@ -36,14 +42,16 @@ export function createDiscussions(
         busy: false,
         intents: new Map(),
         turns: 0,
-        answers: [],
       };
+      restoreGrilling(this.service.root, session);
       this.sessions.set(session.id, session);
-      return { session: session.id };
+      return { session: session.id, stage: session.grilling || null };
     },
     context(id) {
-      const queue = readQueue(this.service.root);
-      const issue = queue.issues.find((item) => item.id === id);
+      requireThat(typeof id === 'string' && id.length > 0, 'Select an existing issue.');
+      const open = readQueue(this.service.root, { issueId: id });
+      const queue = open.issues.length ? open : readQueue(this.service.root, { location: 'closed', issueId: id });
+      const issue = queue.issues[0];
       requireThat(issue, 'Select an existing issue.');
       const policy = ['docs/agents/operating.md', 'docs/agents/verification.md', '.issues/preferences.json'].map(
         (file) => (existsSync(join(this.service.root, file)) ? readFileSync(join(this.service.root, file), 'utf8') : '')
@@ -70,34 +78,77 @@ export function createDiscussions(
       const context = this.context(input.issueId);
       if (session.basis !== context.basis) {
         this.drop(session);
-        throw Error('Issue or policy changed. Start a fresh temporary discussion.');
+        throw Error('Issue or policy changed. Reopen the decision review for the current issue.');
       }
       session.touched = this.now();
       return { session, ...context };
     },
+    async skills(input, owner) {
+      this.get(input, owner);
+      return publicSkills(await listAvailableSkills(this.service.codex, this.service.root));
+    },
+    async retro(input, owner) {
+      const { session, context } = this.get(input, owner);
+      requireThat(!session.busy, 'Wait for this response to finish.');
+      session.busy = true;
+      try {
+        const result = await this.service.issueChats.retro(input.issueId);
+        this.get(input, owner);
+        session.retroRecommendations = result.recommendations;
+        session.retroResultId = conversationMessages(this.service.root, input.issueId).findLast(
+          (message) => message.kind === 'retro-result' && message.actor === 'agent'
+        )?.id;
+        return result;
+      } finally {
+        session.busy = false;
+      }
+    },
+    savedRetro(input, owner) {
+      const { session } = this.get(input, owner);
+      requireThat(!session.busy, 'Wait for the retro to finish.');
+      const saved = conversationMessages(this.service.root, input.issueId).findLast(
+        (message) => message.kind === 'retro-result' && message.actor === 'agent'
+      );
+      requireThat(saved, 'This issue has no saved retro result yet.');
+      const result = parseRetroResult(saved.body);
+      session.retroRecommendations = result.recommendations;
+      session.retroResultId = saved.id;
+      return result;
+    },
+    async fileRetro(input, owner) {
+      const { session } = this.get(input, owner);
+      return fileRetroRecommendations(this.service, session, input);
+    },
     async turn(input, owner, internal = false) {
       const { session, context } = this.get(input, owner);
-      validateTurn(session, input.text);
+      validateTurn(session, input.text, Boolean(internal || input.skills?.length));
+      const selected =
+        internal || !input.skills?.length
+          ? []
+          : selectedSkills(await listAvailableSkills(this.service.codex, this.service.root), input.skills);
       session.busy = true;
       session.turns++;
       try {
         await this.ensureRuntime(session, context);
-        const text = await session.runtime.ask(input.text, internal ? session.skill : null);
+        const text = await session.runtime.ask(input.text, internal ? [session.skill] : selected, undefined, {
+          generated: internal,
+        });
         this.get(input, owner);
         requireThat(typeof text === 'string' && text.length <= 32000, 'Discussion response exceeded its limit.');
-        retainActualAnswer(session, input.text, internal);
         session.intents.clear();
         return { text };
       } catch {
         this.drop(session);
-        throw Error('Discussion ended or could not complete. Start a fresh temporary discussion.');
+        throw Error('Discussion ended or could not complete. Reopen the decision review for the current issue.');
       } finally {
         session.busy = false;
       }
     },
     async ensureRuntime(session, context) {
       if (session.runtime) return;
-      session.runtime = this.create(() => this.drop(session));
+      session.runtime = this.create
+        ? this.create(() => this.drop(session))
+        : createIssueDiscussion(this.service, session);
       await session.runtime.begin(context);
     },
     prepare(input, owner) {
@@ -119,7 +170,7 @@ export function createDiscussions(
         effect:
           input.kind === 'record'
             ? 'Append only this selected text as human-approved discussion output. No stage change, approval or completed grilling.'
-            : 'Start a temporary structured interview here. No transcript or grilling outcome is saved.',
+            : 'Start grilling in the saved issue conversation. Review and save decisions separately.',
       };
     },
     async commit(input, owner) {
@@ -162,12 +213,81 @@ export function createDiscussions(
   return manager;
 }
 
-function validateTurn(session, text) {
+async function fileRetroRecommendations(service, session, input) {
+  requireThat(!session.busy, 'Wait for the retro to finish.');
+  const indices = validatedRetroSelection(session.retroRecommendations, input.selected, input.requestIds);
+  return captureRetroChoices(service, session, indices, input.requestIds);
+}
+
+async function captureRetroChoices(service, session, indices, requestIds) {
+  const issues = [];
+  const errors = [];
+  for (const index of indices) {
+    try {
+      issues.push(
+        ...(
+          await service.captures.save(
+            retroCaptureInput(session.retroRecommendations[index], retroCaptureId(session, index, requestIds[index]))
+          )
+        ).issues
+      );
+    } catch (error) {
+      errors.push({ index, message: error.message });
+    }
+  }
+  return { issues, errors };
+}
+
+function validatedRetroSelection(recommendations, selected, requestIds) {
+  validateRetroSelectionList(selected);
+  validateRetroRequestIds(requestIds);
+  requireThat(Array.isArray(recommendations), 'Run a retro before filing recommendations.');
+  const indices = [...new Set(selected)];
+  return uniqueRetroIndices(indices, selected.length, recommendations.length);
+}
+
+function validateRetroSelectionList(selected) {
+  requireThat(Array.isArray(selected), 'Select at least one recommendation to file.');
+  requireThat(selected.length > 0 && selected.length <= 12, 'Select at least one recommendation to file.');
+}
+
+function validateRetroRequestIds(requestIds) {
+  requireThat(requestIds && typeof requestIds === 'object', 'Review the selected recommendations and try again.');
+  requireThat(!Array.isArray(requestIds), 'Review the selected recommendations and try again.');
+}
+
+function uniqueRetroIndices(indices, selectedCount, recommendationCount) {
+  requireThat(indices.length === selectedCount, 'A recommendation can only be selected once.');
+  return indices.map((index) => validateRetroIndex(index, recommendationCount));
+}
+
+function validateRetroIndex(index, recommendationCount) {
+  requireThat(
+    Number.isInteger(index) && index >= 0 && index < recommendationCount,
+    'A selected recommendation is no longer available.'
+  );
+  return index;
+}
+
+function retroCaptureId(session, index, fallback) {
+  if (!session.retroResultId) return fallback;
+  const hash = digest(JSON.stringify([session.issueId, session.retroResultId, index]));
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
+
+function retroCaptureInput(recommendation, requestId) {
+  return {
+    requestId,
+    description: `Title: ${recommendation.title}\n\n${recommendation.description}\n\nWhy this matters: ${recommendation.reason}\n\nVerification intent: ${recommendation.verification}`,
+  };
+}
+
+function validateTurn(session, text, hasSkills) {
   requireThat(!session.busy, 'Wait for this turn to finish.');
   requireThat(session.turns < 40, 'Discussion reached its limit. End it to start again.');
   requireThat(
-    typeof text === 'string' && text.trim() && text.length <= 8000,
-    'Enter a message under 8,000 characters.'
+    typeof text === 'string' && text.length <= 8000 && (text.trim() || hasSkills),
+    'Enter a message under 8,000 characters or choose a skill.'
   );
 }
 function validateSelection(kind, text) {
@@ -175,13 +295,15 @@ function validateSelection(kind, text) {
   if (kind === 'record') requireThat(text.trim(), 'Select output to record.');
 }
 
-function retainActualAnswer(session, text, internal) {
-  if (!internal) session.answers.push(text);
-}
 function saveStageInterview(manager, session, queue, issue, intent, input) {
   requireThat(!session.busy, 'Wait for this response to finish.');
   requireThat(!input.continue || intent.canContinue, 'Continue only from the current unfinished step.');
+  requireThat(
+    intent.interviewBasis === grillingAnswerBasis(manager.service.root, session),
+    'The interview changed. Review its results again.'
+  );
   const saved = recordDiscussion(manager.service, queue, issue, intent, input.continue === true);
+  finishGrilling(manager.service.root, session);
   manager.drop(session);
   return saved;
 }

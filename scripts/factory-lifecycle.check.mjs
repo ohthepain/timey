@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
-import { createFactoryServer } from './factory-ui/http.mjs';
+import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { toggleRoute, routeBasis } from './factory-ui/route-toggle.mjs';
 import { queueResponse } from './factory-ui/queue-response.mjs';
@@ -220,12 +220,7 @@ lifecycle_history:
 
 test('route HTTP mutation retains local session/origin/manual/preview guards and real persistence', async (t) => {
   const { service, input } = lifecycleFixture(t);
-  const server = createFactoryServer(service);
-  await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  const page = await fetch(url),
-    cookie = page.headers.get('set-cookie').split(';')[0];
+  const { url, cookie } = await startFactoryHttp(t, service);
   const send = (headers) =>
     fetch(url + '/api/toggle-route', { method: 'POST', headers, body: JSON.stringify(input()) });
   const headers = { cookie, origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' };

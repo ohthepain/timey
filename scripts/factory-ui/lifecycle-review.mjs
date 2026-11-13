@@ -1,13 +1,10 @@
-import { hasAssignmentScope, retainAssignmentScope } from '../factory-assignment-scope.mjs';
+import { factoryOperation } from './issue-operation.mjs';
 import { issueWorkChat } from './issue-work-chat.mjs';
 import { resumeReviewThread, readOnlyReviewTurn } from './review-recovery.mjs';
-import { readFileSync } from 'node:fs';
-import { scopeInput, reusedScope, retainScope } from './scope-coverage.mjs';
 import { conversationPrompt } from './conversation-context.mjs';
-import { stopLifecycle } from './lifecycle-stop.mjs';
 import { readQueue } from './data.mjs';
 import { join } from 'node:path';
-import { writeJson, requireThat, digest } from './common.mjs';
+import { writeJson } from './common.mjs';
 import { captureInstructions } from './review-instructions.mjs';
 import { lifecycleEvent, saveLifecycle } from './lifecycle-store.mjs';
 
@@ -20,23 +17,18 @@ export async function lifecycleReview(service, record, message, schema, options 
     checkout: service.root,
   });
   saveLifecycle(service, record, { childRunId: run.id });
+  return factoryOperation(
+    service,
+    record.issueId,
+    { kind: 'review', id: 'review:' + run.id, runId: run.id, cancellable: true },
+    () => performLifecycleReview(service, record, run, message, schema, options)
+  );
+}
+
+async function performLifecycleReview(service, record, run, message, schema, options) {
   try {
     const instructions = captureInstructions(service.root, join(service.store.directory, run.id));
-    const threadId = options.independent
-      ? await resumeReviewThread(
-          service,
-          run,
-          record.completionThreadId ? { threadId: record.completionThreadId } : null
-        )
-      : await issueWorkChat(service, run, record.issueId, service.root, 'read-only');
-    if (threadId) {
-      saveLifecycle(
-        service,
-        record,
-        options.independent ? { completionThreadId: threadId } : { assessmentThreadId: threadId }
-      );
-      service.store.update(run, { threadId, status: 'running', instructions });
-    }
+    const threadId = await attachLifecycleReview(service, record, run, instructions, options);
     const permissions = options.diagnostics
       ? 'This is pre-implementation Clarify work. Inspect code and run focused diagnostic or reproduction commands to establish available facts before asking the person. Use temporary locations for generated data and request actual permissions when needed. Keep project source unchanged: do not implement fixes, commit, launch workers, merge, publish or accept. Use judgment about when there is enough context to start useful implementation; it can resolve remaining technical uncertainty. Ask only for intent, preferences, unavailable observations or real permissions. Ordinary commits do not erase earlier understanding. '
       : 'Do not modify files, start work, run tests, merge, commit, approve human decisions or close anything. Only the server executes guarded actions. ';
@@ -71,49 +63,21 @@ export async function lifecycleReview(service, record, message, schema, options 
     service.store.connected.delete(run.id);
   }
 }
-const coverageSchema = {
-  type: 'object',
-  properties: {
-    within_plan: { type: 'boolean' },
-    summary: { type: 'string' },
-    question: { type: 'string' },
-  },
-  required: ['within_plan', 'summary', 'question'],
-  additionalProperties: false,
-};
-export async function checkLifecycleScope(service, record, action) {
-  requireThat(
-    action.issues.every((id) => id === record.issueId),
-    'This assignment includes another issue. It needs a separate decision.'
-  );
-  if (hasAssignmentScope(service, record, action)) return true;
-  const input = scopeInput(service, record, action, digest(readFileSync(new URL(import.meta.url))));
-  if (reusedScope(record, input)) {
-    lifecycleEvent(service, record, 'The saved scope check still applies. Continuing.');
-    return true;
+
+async function attachLifecycleReview(service, record, run, instructions, options) {
+  const threadId = options.independent
+    ? await resumeReviewThread(service, run, savedCompletionThread(record))
+    : await issueWorkChat(service, run, record.issueId, service.root, 'read-only');
+  if (threadId) {
+    saveLifecycle(
+      service,
+      record,
+      options.independent ? { completionThreadId: threadId } : { assessmentThreadId: threadId }
+    );
+    service.store.update(run, { threadId, status: 'running', instructions });
   }
-  lifecycleEvent(service, record, 'Checking that the next assignment follows your approved plan.');
-  const review = await lifecycleReview(
-    service,
-    record,
-    `Does this exact saved assignment fit entirely inside the approved plan, including scope, checks, dependencies and integration policy? Do not treat approval of a plan as permission to expand it, skip a human check, deploy or push. Read the saved issue and plan. Publication, pushes, PR merge and acceptance are separately guarded later. Missing permission for those later operations does not block implementation already covered by the plan. Automatic contribution integration is not permission to publish or merge a PR. If implementation scope itself is not covered, ask one specific question. Assignment: ${JSON.stringify(action)}.`,
-    coverageSchema
-  );
-  const { result } = review;
-  if (result.within_plan && !result.question.trim()) {
-    retainScope(service, record, input, review);
-    retainAssignmentScope(service, record, action, review.receipt);
-    saveLifecycle(service, record);
-    return true;
-  }
-  if (!result.question.trim().endsWith('?')) {
-    stopLifecycle(service, record, result.summary);
-    return false;
-  }
-  saveLifecycle(service, record, {
-    status: 'waiting',
-    summary: result.summary,
-    input: { type: 'scope', question: result.question || result.summary },
-  });
-  return false;
+  return threadId;
+}
+function savedCompletionThread(record) {
+  return record.completionThreadId ? { threadId: record.completionThreadId } : null;
 }

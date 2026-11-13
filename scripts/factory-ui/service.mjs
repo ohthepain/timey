@@ -1,12 +1,14 @@
-import { startIssueStrategy, stopIssueStrategy, strategyView } from './issue-strategy.mjs';
+import { factoryOperation } from './issue-operation.mjs';
+import { strategyView, prepareIssueChatCheckout } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
 import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
 import { createCoordinator } from './coordinator.mjs';
 import { progressBasis } from './next-action.mjs';
-import { queueHumanInput } from './queue-human-input.mjs';
+import { queueHumanInput, queueHumanInputReader } from './queue-human-input.mjs';
 import { deliveryMode, draftHandoff, draftAssembly } from './delivery-mode.mjs';
 import { checkHandoff } from './handoff-checks.mjs';
+import { createSharedIssueQueue } from './shared-issue-queue.mjs';
 import { createCaptures } from './issue-capture.mjs';
 import { stageWorkerArtifacts } from './evidence-staging.mjs';
 import { pinWorkerTurn } from './worker-turn.mjs';
@@ -28,6 +30,8 @@ import { startChat } from './chat-start.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { runtimeInfo } from './runtime.mjs';
 import { resumeDelivery } from './delivery-integration.mjs';
+import { redactValue } from './activity.mjs';
+import { cleanupActionRecords, issueCleanupRecord } from './issue-cleanup.mjs';
 
 import { createSiteReviews } from './site-review.mjs';
 import { createDiscussions } from './discussion.mjs';
@@ -72,13 +76,7 @@ import { checkImplementation } from './plan-review.mjs';
 import { decidePlanCheck } from './plan-approval.mjs';
 import { skipPlanChecks } from './plan-skips.mjs';
 import { approveReviewFile } from './review-file-access.mjs';
-import {
-  readIssueModelSettings,
-  readModelSettings,
-  saveDefaultModelSettings,
-  saveIssueModelSettings,
-  newChatModelSettings,
-} from './model-settings.mjs';
+import { readIssueModelSettings, readModelSettings, newChatModelSettings } from './model-settings.mjs';
 
 const codeAction = (action) => ['implement', 'integrate'].includes(action.kind);
 const operation = (action) =>
@@ -89,6 +87,11 @@ const operation = (action) =>
       : action.kind === 'verify'
         ? 'verify'
         : 'investigate';
+
+async function recoverWorkerTurn(service, run, error) {
+  if (run.skipRequested) throw error;
+  return recoverWorkerText(service, run, error);
+}
 
 export class FactoryUI {
   constructor(project, options = {}) {
@@ -109,6 +112,8 @@ export class FactoryUI {
     this.siteReviews = createSiteReviews(this);
     this.lifecycleRuns = loadLifecycles(this.root);
     this.lifecycleTasks = new Map();
+    this.issueCleanupTasks = new Map();
+    cleanupActionRecords(this.root, true);
     this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
     this.coordinator = createCoordinator(this, options.coordinatorConnection, (id) =>
       this.continueCoordinatorIssue(id)
@@ -136,19 +141,43 @@ export class FactoryUI {
       );
     };
     this.guard = humanGuard;
+    this.sharedIssues = createSharedIssueQueue(this, options.sharedIssues);
     installWorkerHealth(this);
   }
-  snapshot(owner = null) {
+  snapshot(owner = null, { includeCoordinatorDiscussion = true, selectedIssue = null } = {}) {
     if (!this.serverLock) this.store.reload();
+    let sharedQueueWarning;
+    if (this.sharedIssues) {
+      try {
+        this.ownServer();
+        sharedQueueWarning = this.sharedIssues.refresh();
+      } catch (error) {
+        sharedQueueWarning = error.message;
+      }
+    }
     const queue = readQueue(this.root);
-    const runs = this.store.list(this.codex.requests);
+    if (selectedIssue && /^[\w-]+$/.test(selectedIssue) && !queue.issues.some((issue) => issue.id === selectedIssue)) {
+      const closed = readQueue(this.root, { location: 'closed', issueId: selectedIssue });
+      queue.issues.push(...closed.issues);
+    }
+    const runs = this.store.list(this.permissionRequests());
+    const issues = selectedIssue ? queue.issues.filter((issue) => issue.id === selectedIssue) : queue.issues;
+    const humanInputs = queueHumanInputReader({ ...queue, issues });
     return {
       ...queue,
+      sharedQueueEnabled: Boolean(this.sharedIssues),
+      sharedQueueWarning,
       modelSettings: readModelSettings(this.root),
-      coordinator: this.coordinator.view(),
+      coordinator: includeCoordinatorDiscussion
+        ? this.coordinator.view()
+        : redactValue(this.coordinator.reviewActivity()),
       reviewBasis: digest(JSON.stringify(queue)),
-      issues: queue.issues.map((issue) => this.issueView(queue, issue, runs, owner)),
-      runs: runs.map((run) => ({ ...run, displaySummary: explainBlock(run.summary) })),
+      issues: issues.map((issue) => this.issueView(queue, issue, runs, owner, humanInputs)),
+      runs: runs.map((run) => ({
+        ...run,
+        output: redactValue(run.output || []),
+        displaySummary: redactValue(explainBlock(run.summary)),
+      })),
       actions: queue.actions.map((a) => ({
         ...a,
         launchBlocked: describeLaunch(queue, a),
@@ -158,16 +187,17 @@ export class FactoryUI {
       })),
     };
   }
-  issueView(queue, issue, runs, owner) {
+  issueView(queue, issue, runs, owner, humanInputs = (entry) => queueHumanInput(queue, entry)) {
     const readiness = readinessView(queue, issue, runs);
     const { choice: progress } = resolveNextAction(queue, issue, runs);
     const lifecycle = visibleLifecycle(this.lifecycleStatus(queue, issue, runs), progress);
     const { stageStates, queueLifecycle } = issueLifecycleView(queue, { ...issue, lifecycle }, runs, readiness);
     const issueDelivery = this.deliveries.inspect(issue.id);
-    const humanInputView = queueHumanInput(queue, { ...issue, issueDelivery });
+    const humanInputView = humanInputs({ ...issue, issueDelivery });
     return {
       ...issue,
       strategy: strategyView(this, issue),
+      sharedQueue: this.sharedIssues?.view(issue.id),
       humanInputView,
       readiness,
       verificationRecovery: verificationView(this, queue, issue),
@@ -183,13 +213,8 @@ export class FactoryUI {
       implementation: checklistView(queue, issue, runs),
       siteReview: this.siteReviews.view(queue, issue, owner),
       modelSelection: readIssueModelSettings(this.root, issue.id),
+      cleanup: issueCleanupRecord(this.root, issue.id),
     };
-  }
-  saveModelSettings(input) {
-    return saveDefaultModelSettings(this, input);
-  }
-  saveIssueModelSettings(input) {
-    return saveIssueModelSettings(this, input);
   }
   lifecycleStatus(queue, issue, runs) {
     const record = lifecycleView(this, issue);
@@ -233,8 +258,8 @@ export class FactoryUI {
   connectWorker(id, state, basis, link) {
     return connectWorker(this, id, state, basis, link);
   }
-  decideIssue(id, state, kind, basis, reason, resolution) {
-    return decideIssue(this, id, state, kind, basis, reason, resolution);
+  decideIssue(id, state, kind, basis, reason, resolution, cleanup) {
+    return decideIssue(this, id, state, kind, basis, reason, resolution, cleanup);
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);
@@ -247,12 +272,6 @@ export class FactoryUI {
       issue = queue.issues.find((i) => i.id === issueId);
     requireThat(issue, 'The saved issue no longer exists.');
     return this.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
-  }
-  stopIssueStrategy(input) {
-    return stopIssueStrategy(this, input);
-  }
-  startIssueStrategy(input) {
-    return startIssueStrategy(this, input);
   }
   startLifecycle(input) {
     return startLifecycle(this, input);
@@ -418,28 +437,75 @@ export class FactoryUI {
           this.store.runs.findLast((r) => r.actionId === action.id && r.status === 'completed' && r.retainedArtifacts)
             ?.retainedArtifacts || null,
       });
-    this.perform(run, async () => {
-      const existing = this.deliveries.inspect(action.issues[0]);
-      const result = await this.deliveries.operate('assemble', {
-        issueId: action.issues[0],
-        actionId: action.id,
-        expectedCandidate: existing?.candidate || action.basis.head,
-        review: proof(reviewPath),
-      });
-      this.store.update(run, {
-        status: 'completed',
-        summary: 'Contribution assembled on the issue branch. Issue completion and PR delivery remain separate.',
-        result,
-      });
-    });
+    this.perform(run, () =>
+      factoryOperation(
+        this,
+        action.issues[0],
+        { kind: 'assembly', id: 'assembly:' + run.id, runId: run.id, cancellable: false },
+        () => this.assembleContribution(run, action, reviewPath)
+      )
+    );
     return { runId: run.id };
   }
+  async assembleContribution(run, action, reviewPath) {
+    const existing = this.deliveries.inspect(action.issues[0]);
+    const result = await this.deliveries.operate('assemble', {
+      issueId: action.issues[0],
+      actionId: action.id,
+      expectedCandidate: existing?.candidate || action.basis.head,
+      review: proof(reviewPath),
+    });
+    this.store.update(run, {
+      status: 'completed',
+      summary: 'Contribution assembled on the issue branch. Issue completion and PR delivery remain separate.',
+      result,
+    });
+  }
   async runTurn(run, prompt) {
+    const completed = run.issueId
+      ? await factoryOperation(
+          this,
+          run.issueId,
+          { kind: 'work', id: 'work:' + run.id, runId: run.id, cancellable: true },
+          () => this.runWorkerTurn(run, prompt)
+        )
+      : await this.runWorkerTurn(run, prompt);
+    if (!completed) return;
+    const finish = () => this.finishWorker(run, completed.action, completed.result);
+    if (!run.issueId) return finish();
+    return factoryOperation(
+      this,
+      run.issueId,
+      { kind: 'verification', id: 'verification:' + run.id, runId: run.id, cancellable: false },
+      finish
+    );
+  }
+  async runWorkerTurn(run, prompt) {
     this.store.update(run, { status: 'running', summary: 'Codex is working. Permission requests will appear here.' });
-    let recovered;
-    let text;
+    const result = await this.completedWorkerResult(run, prompt);
+    const { action } = currentAction(this.root, run.actionId);
+    const delivered = normalizeWorkerOutcome(run, action, result);
+    if (delivered.outcome !== 'completed') return this.unfinished(run, delivered);
+    this.store.update(run, {
+      status: 'checking',
+      summary: 'Checking the returned result independently.',
+      result: delivered,
+    });
+    requireThat(run.kind !== 'integration', 'Reconcile historical integration without another model-executed merge.');
+    return { action, result: delivered };
+  }
+  async completedWorkerResult(run, prompt) {
+    const response = await this.workerResponse(run, prompt);
     try {
-      text = await this.codex.turn(
+      await pinWorkerTurn(this, run, response.text);
+      return await readWorkerResult(this, run, response.text, response.cli);
+    } finally {
+      if (response.cli !== this.codex) response.cli.close();
+    }
+  }
+  async workerResponse(run, prompt) {
+    try {
+      const text = await this.codex.turn(
         run.threadId,
         run.checkout,
         conversationPrompt(this, run, prompt),
@@ -447,31 +513,11 @@ export class FactoryUI {
         [],
         run.issueId ? newChatModelSettings(this.root, run.issueId) : null
       );
+      return { text, cli: this.codex };
     } catch (error) {
-      recovered = await recoverWorkerText(this, run, error);
-      text = recovered.text;
+      const recovered = await recoverWorkerTurn(this, run, error);
+      return { text: recovered.text, cli: recovered.cli || this.codex };
     }
-    let result;
-    try {
-      await pinWorkerTurn(this, run, text);
-      result = await readWorkerResult(this, run, text, recovered?.cli || this.codex);
-    } finally {
-      recovered?.cli.close();
-    }
-    const { action } = currentAction(this.root, run.actionId);
-    if (
-      run.kind === 'worker' &&
-      action.kind === 'implement' &&
-      result.implementation_complete &&
-      result.outcome !== 'completed'
-    )
-      result = { ...result, reported_outcome: result.outcome, outcome: 'completed' };
-    if (run.deliveryMode === draftHandoff && codeAction(action))
-      result = { ...result, reported_outcome: result.reported_outcome || result.outcome, outcome: 'completed' };
-    if (result.outcome !== 'completed') return this.unfinished(run, result);
-    this.store.update(run, { status: 'checking', summary: 'Checking the returned result independently.', result });
-    requireThat(run.kind !== 'integration', 'Reconcile historical integration without another model-executed merge.');
-    await this.finishWorker(run, action, result);
   }
   unfinished(run, result) {
     this.store.update(run, { status: result.outcome, summary: result.summary, result });
@@ -614,8 +660,15 @@ export class FactoryUI {
     }
   }
   async reviewIssue(run, prompt, schema) {
-    const threadId = await issueWorkChat(this, run, run.issueId, this.root, 'read-only');
-    return readOnlyReviewTurn(this, run, threadId, prompt, schema);
+    return factoryOperation(
+      this,
+      run.issueId,
+      { kind: 'review', id: 'review:' + run.id, runId: run.id, cancellable: true },
+      async () => {
+        const threadId = await issueWorkChat(this, run, run.issueId, this.root, 'read-only');
+        return readOnlyReviewTurn(this, run, threadId, prompt, schema);
+      }
+    );
   }
   evaluate(basis, issueId = null, afterReview = null) {
     this.ownServer();
@@ -698,10 +751,25 @@ export class FactoryUI {
     });
     return { savedActions: actions.map((a) => a.id) };
   }
+  prepareIssueChatCheckout(issueId) {
+    return prepareIssueChatCheckout(this, issueId);
+  }
+  permissionConnections() {
+    return [...new Set([this.codex, ...(this.issueChats.connections?.values() || [])])];
+  }
+  permissionRequests() {
+    const requests = new Map();
+    for (const connection of this.permissionConnections()) addPermissionRequests(requests, connection);
+    return requests;
+  }
   answer(runId, id, response) {
     const run = this.store.runs.find((r) => r.id === runId);
     requireThat(run && this.store.connected.has(runId), 'That worker is not connected here.');
-    this.codex.answer(id, run.threadId, response);
+    const connection = this.permissionConnections().find(
+      (owner) => owner.requests?.get(String(id))?.params.threadId === run.threadId
+    );
+    requireThat(connection, 'This permission request is no longer pending.');
+    connection.answer(id, run.threadId, response);
     return { answered: true };
   }
   close() {
@@ -810,4 +878,26 @@ function continuationOutputSchema(service, queue, issueId) {
       }
     : { type: 'null' };
   return { ...evaluationSchema, properties: { ...evaluationSchema.properties, continuation } };
+}
+
+function addPermissionRequests(requests, connection) {
+  for (const [id, request] of connection.requests || []) requests.set(permissionKey(id, request), request);
+}
+function normalizeWorkerOutcome(run, action, result) {
+  if (implementedWorker(run, action, result)) return completedOutcome({ ...result, reported_outcome: result.outcome });
+  if (run.deliveryMode === draftHandoff && codeAction(action)) return completedOutcome(result);
+  return result;
+}
+function implementedWorker(run, action, result) {
+  return workerImplementation(run, action) && result.implementation_complete && result.outcome !== 'completed';
+}
+function completedOutcome(result) {
+  return { ...result, reported_outcome: result.reported_outcome || result.outcome, outcome: 'completed' };
+}
+
+function permissionKey(id, request) {
+  return (request.params?.threadId || '') + ':' + id;
+}
+function workerImplementation(run, action) {
+  return run.kind === 'worker' && action.kind === 'implement';
 }

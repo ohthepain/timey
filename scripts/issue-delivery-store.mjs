@@ -51,6 +51,7 @@ export class DeliveryStore {
     }
   }
   retain(name, value) {
+    mkdirSync(this.directory, { recursive: true });
     const path = join(this.directory, name + '.json');
     const bytes = JSON.stringify(value, null, 2) + '\n';
     if (existsSync(path))
