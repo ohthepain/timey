@@ -124,6 +124,10 @@ Read [operating rules](operating.md) for ownership, launch and integration polic
 
 ## Local UI adapter
 
+The default browser page is the [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
+Its blocks run only on explicit starts. The `/classic` page retains the strategy
+and lifecycle adapter described below. Refreshing either page starts no new work.
+
 The [local factory UI](factory-ui.md) is an alternative front door for the same
 queue and ledger. `pnpm run factory:ui -- --project /absolute/project` serves the
 queue and issue screens locally. This adapter uses the installed Codex CLI

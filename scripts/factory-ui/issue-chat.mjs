@@ -1,3 +1,4 @@
+import { flowOwnsIssue } from './flow-ownership.mjs';
 import { existsSync } from 'node:fs';
 import { interruptCodexTurn } from './codex.mjs';
 import { startIssueStrategy, strategyBasis } from './issue-strategy.mjs';
@@ -143,6 +144,10 @@ class IssueChats {
   }
   async send(input) {
     validateMessage(input);
+    requireThat(
+      !flowOwnsIssue(this.service, input.issueId),
+      'A flow block owns this issue. Stop it before sending a classic chat prompt.'
+    );
     const { issue } = this.selected(input.issueId, input.mode === 'comment');
     this.service.ownServer();
     if (input.mode === 'answer') return this.sendAnswer(input);

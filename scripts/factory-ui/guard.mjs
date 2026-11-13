@@ -19,6 +19,9 @@ const policy = {
   acceptance_role: 'ready-to-close',
   closed_role: 'closed',
 };
+export function projectHumanInputPolicy() {
+  return structuredClone(policy);
+}
 export function inspectHumanInput(root, action, operation, head, transition = {}, adapterFacts = []) {
   const helper = join(root, '.agents/skills/issues/scripts/human-input.mjs');
   const manifest = JSON.parse(

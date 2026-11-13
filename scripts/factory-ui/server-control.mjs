@@ -45,6 +45,7 @@ export function serverControl(service, restart) {
         Math.max(connected.size, nativeActions(service.codex)) +
         controllers.length +
         (service.captures?.active || 0) +
+        (service.flows?.active.size || 0) +
         cleanupActions(service),
       operations: conversation.operations,
       uncertain: conversation.uncertain,

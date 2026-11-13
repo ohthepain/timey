@@ -196,3 +196,28 @@ stated reason for closing without a fix. It is independent of historical lifecyc
 **Issue archive**:
 A locally retained collection of closed issue reports. Archiving removes an issue
 from the Closed issues view and preserves its identity and closure.
+
+**Issue flow**:
+An explicitly controlled graph of blocks for one issue. The graph records the
+planned route; each operation requires its own start.
+
+**Flow block**:
+One visible request, advisory, work, verification, delivery, or cleanup operation.
+Its intent, selected skill, comments, progress, attempts, and evidence are inspectable.
+
+**Block attempt**:
+One execution of a block. Retry appends an attempt and preserves earlier results.
+An uncertain attempt requires reconciliation of its original execution.
+
+**Suggested block**:
+A dotted future operation that has not started. A target-change suggestion is a
+code-generated observation and grants no execution authority.
+
+**Flow lane**:
+A displayed branch of the issue graph. The issue keeps one owning conversation;
+parallel workers belong to the explicitly selected Arena or Swarm block.
+
+**Flow starting point**:
+The chosen Git branch ref and exact commit used to create an issue's checkout.
+It is independent of the delivery target. A project default remembers the ref for
+future captures, while each issue retains its original commit.

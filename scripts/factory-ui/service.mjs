@@ -99,7 +99,6 @@ export class FactoryUI {
     this.authoritativeUrl = options.authoritativeUrl || null;
     this.root = git(project, 'rev-parse', '--show-toplevel');
     this.runtimeIdentity = runtimeInfo(this);
-    this.api = factory(this.root);
     this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
     this.intents = new Map();
     this.deliveries = new IssueDelivery(this.root, {
@@ -143,6 +142,10 @@ export class FactoryUI {
     this.guard = humanGuard;
     this.sharedIssues = createSharedIssueQueue(this, options.sharedIssues);
     installWorkerHealth(this);
+  }
+  get api() {
+    this.factoryApi ||= factory(this.root);
+    return this.factoryApi;
   }
   snapshot(owner = null, { includeCoordinatorDiscussion = true, selectedIssue = null } = {}) {
     if (!this.serverLock) this.store.reload();
@@ -773,6 +776,7 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.flows?.close();
     this.store.flush();
     this.discussions.close();
     this.issueChats.close();

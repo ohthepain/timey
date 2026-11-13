@@ -1,3 +1,4 @@
+import { flowOwnsIssue } from './flow-ownership.mjs';
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { lstat as lstatAsync, readdir as readdirAsync } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
@@ -914,6 +915,7 @@ function sharedWorkspace(service, issueId, path) {
 }
 
 export function issueHasActiveWork(service, issueId) {
+  if (flowOwnsIssue(service, issueId)) return true;
   if (service.lifecycleTasks.has(issueId) || service.issueChats?.tasks?.has(issueId)) return true;
   const currentRunId = service.lifecycleRuns?.[issueId]?.work?.runId;
   return service.store.runs.some((run) => activeIssueRun(service, issueId, currentRunId, run));

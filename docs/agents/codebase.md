@@ -56,6 +56,11 @@ calculation or event data. Tests in `TempoService.test.ts`, `wireMidiTransportTo
 `EventRecorderService.test.ts` and `Transport.test.tsx` exercise those interfaces,
 including exact live/replay CSV parity and lifecycle cleanup.
 
+`scripts/factory-ui/project-settings.mjs` presents the trusted human-input policy
+from `guard.mjs` and provides explicit setup of a missing lifecycle file from the
+pinned local-issues template. The Flow header's gear opens these settings. The
+settings endpoint does not accept changes to the trusted human-input policy.
+
 The experimental native handoff starts at `scripts/factory-native-chat.mjs` and
 the `/native-chat?issue=FULL_ID` factory page. It uses the existing shared progress
 record owner for pending requests and home-chat bindings; its local CLI needs no
@@ -617,3 +622,14 @@ the current checkout as-is, including WIP, and carries that source-changed state
 through readiness. It uses deployment transport/readiness probes and restarts only
 an owned, drained listener. Its disposable server checks live in
 `factory-restart.check.mjs`.
+
+The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
+`scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
+owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
+explicit attempts, folders, capture, and artifact listing. `flow-executor.mjs`
+runs bounded blocks through the existing conversation and protected operation
+adapters. `flow-observer.mjs` reads local Git state and separately cached PR facts.
+`flow-branches.mjs` lists branch refs and stores the starting-branch default.
+The controller snapshots the chosen commit and the executor uses it for a new checkout.
+The original factory page remains at `/classic`. See the
+[implementation plan](../plans/number-2/README.md) for current verification.

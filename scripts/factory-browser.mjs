@@ -28,7 +28,16 @@ const server = browserFixture(root);
 const config = join(output, 'browser-config.json');
 writeFileSync(
   config,
-  JSON.stringify({ browser: { browserName: 'chromium', isolated: true, launchOptions: { headless: true } } })
+  JSON.stringify({
+    browser: {
+      browserName: 'chromium',
+      isolated: true,
+      launchOptions: {
+        headless: true,
+        ...(process.env.TIMEY_BROWSER_CHANNEL ? { channel: process.env.TIMEY_BROWSER_CHANNEL } : {}),
+      },
+    },
+  })
 );
 const browserSourcePaths = ['scripts/factory-ui', 'scripts/browser-fixture.mjs'];
 function browserSourceDiff() {

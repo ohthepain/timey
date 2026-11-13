@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Factory · Flow workspace</title>
+    <link rel="stylesheet" href="/flow.css" />
+    <script src="/flow-ui.js" defer></script>
+  </head>
+  <body>
+    <div id="app" class="workspace">
+      <aside class="sidebar" aria-label="Issues">
+        <div class="project-header">
+          <a class="brand" href="/flow" aria-label="Factory home"
+            ><span class="brand-mark" aria-hidden="true">⌘</span> Factory <span class="brand-tag">FLOW</span></a
+          >
+          <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path
+                d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
+              />
+              <circle cx="11" cy="12.5" r="3.5" />
+            </svg>
+          </button>
+        </div>
+        <div class="project-label" id="project-label">Local workspace</div>
+        <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
+        <label class="search-box"
+          ><span aria-hidden="true">⌕</span
+          ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
+        /></label>
+        <div class="sidebar-heading">
+          <span>Issues</span
+          ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
+        </div>
+        <nav id="issue-list" class="issue-list" aria-label="Issue list">
+          <p class="sidebar-empty">Loading issues…</p>
+        </nav>
+        <footer class="sidebar-footer">
+          <span class="connection" id="connection-status"><span class="connection-dot"></span> Connecting</span
+          ><a href="/classic" title="Open the original factory controls">Classic ↗</a>
+        </footer>
+        <div
+          id="sidebar-resizer"
+          class="sidebar-resizer"
+          role="separator"
+          aria-label="Resize issue sidebar"
+          aria-orientation="vertical"
+          aria-controls="issue-list"
+          tabindex="0"
+        ></div>
+      </aside>
+      <main class="flow-main">
+        <header class="flow-heading">
+          <div class="breadcrumb">
+            <span id="issue-type-label">Workspace</span><span class="breadcrumb-divider">/</span
+            ><span id="issue-number">Issue flow</span>
+          </div>
+          <button class="small-button" id="refresh" title="Refresh saved state">↻ <span>Refresh</span></button>
+        </header>
+        <div class="error-banner" id="error-banner" role="alert" hidden>
+          <span id="error-message"></span
+          ><button class="icon-button" id="dismiss-error" aria-label="Dismiss error">×</button>
+        </div>
+        <section class="issue-heading" id="issue-heading" hidden>
+          <div>
+            <h1 id="issue-title"></h1>
+            <p id="issue-subtitle"></p>
+          </div>
+          <button class="primary-button" id="continue-block" disabled>Continue</button>
+        </section>
+        <div id="environment" class="environment" hidden></div>
+        <section
+          id="graph-scroll"
+          class="graph-scroll"
+          aria-label="Issue flow, from starting point at the top to destination at the bottom"
+        >
+          <div class="workspace-empty" id="workspace-empty">
+            <div class="empty-graphic" aria-hidden="true"><span>◇</span><i></i><span>□</span><i></i><span>○</span></div>
+            <h1>Your work, one block at a time.</h1>
+            <p>Choose an issue to see its flow.<br />You decide what runs and what comes next.</p>
+            <button class="primary-button" id="empty-new-issue">＋ Create an issue</button>
+          </div>
+          <div id="graph" class="graph" hidden></div>
+        </section>
+        <footer class="flow-footer">
+          <span><span class="footer-dot"></span> <span id="flow-footer-label">Changes are saved locally</span></span
+          ><span class="direction-hint">Flow runs from top to bottom ↓</span>
+        </footer>
+      </main>
+      <aside class="inspector" aria-label="Block inspector">
+        <div
+          id="inspector-resizer"
+          class="inspector-resizer"
+          role="separator"
+          aria-label="Resize block inspector"
+          aria-orientation="vertical"
+          aria-controls="inspector-body"
+          tabindex="0"
+        ></div>
+        <header class="inspector-header">
+          <span class="eyebrow">INSPECTOR</span><span id="inspector-kind" class="muted">Block details</span>
+        </header>
+        <div class="inspector-title" id="inspector-title">
+          <span class="inspector-symbol" aria-hidden="true">◇</span>
+          <h2>Select a block</h2>
+        </div>
+        <div class="inspector-tabs" role="tablist" aria-label="Inspector view">
+          <button role="tab" id="tab-details" aria-selected="true" data-tab="details">Details</button
+          ><button role="tab" id="tab-conversation" aria-selected="false" data-tab="conversation">Conversation</button
+          ><button role="tab" id="tab-artifacts" aria-selected="false" data-tab="artifacts">
+            Artifacts <span id="artifact-count"></span>
+          </button>
+        </div>
+        <div class="inspector-body" id="inspector-body" role="tabpanel" aria-labelledby="tab-details">
+          <div class="inspector-empty">
+            <span aria-hidden="true">↖</span>
+            <p>Select a block to inspect its intent, progress and evidence.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <dialog id="capture-dialog" class="modal capture-modal">
+      <form id="capture-form">
+        <div class="modal-heading">
+          <div>
+            <span class="eyebrow">NEW ISSUE</span>
+            <h2>What would you like to do?</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-dialog="capture-dialog" aria-label="Close new issue">
+            ×
+          </button>
+        </div>
+        <p class="muted">Start with your own words. Refine the request in its first block.</p>
+        <label class="field"
+          >Your request<textarea
+            id="capture-description"
+            name="description"
+            rows="6"
+            required
+            placeholder="Describe a problem, a change, or something to investigate…"
+          ></textarea></label
+        ><label class="field"
+          >Issue type<select id="capture-type" name="type">
+            <option value="feature">Feature</option>
+            <option value="bug">Bug fix</option>
+            <option value="investigation">Investigation</option>
+          </select></label
+        >
+        <p id="capture-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button class="small-button" type="button" data-close-dialog="capture-dialog">Cancel</button
+          ><button class="primary-button" id="capture-submit" type="submit">Create issue</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="palette-dialog" class="modal palette-modal">
+      <div class="modal-heading">
+        <div>
+          <span class="eyebrow">BUILD YOUR FLOW</span>
+          <h2>Add a block</h2>
+        </div>
+        <button class="icon-button" data-close-dialog="palette-dialog" aria-label="Close block palette">×</button>
+      </div>
+      <p class="muted">Add the next step. Nothing runs until you start it.</p>
+      <div id="block-palette" class="block-palette"></div>
+    </dialog>
+    <dialog id="folder-dialog" class="modal">
+      <form id="folder-form">
+        <div class="modal-heading">
+          <h2>New folder</h2>
+          <button class="icon-button" type="button" data-close-dialog="folder-dialog" aria-label="Close new folder">
+            ×
+          </button>
+        </div>
+        <label class="field"
+          >Folder name<input
+            name="name"
+            id="folder-name"
+            required
+            maxlength="100"
+            placeholder="A group of related issues"
+        /></label>
+        <p id="folder-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button class="small-button" type="button" data-close-dialog="folder-dialog">Cancel</button
+          ><button class="primary-button" type="submit">Create folder</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="file-dialog" class="modal file-modal">
+      <div class="modal-heading">
+        <h2 id="file-title">Artifact</h2>
+        <button class="icon-button" data-close-dialog="file-dialog" aria-label="Close artifact">×</button>
+      </div>
+      <pre id="file-content" class="file-content"></pre>
+    </dialog>
+    <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
+      <div class="modal-heading">
+        <h2 id="project-settings-title">Project settings</h2>
+        <button class="icon-button" data-close-dialog="project-settings-dialog" aria-label="Close project settings">
+          ×
+        </button>
+      </div>
+      <div id="project-settings-content" class="settings-content" aria-live="polite"></div>
+      <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
+      <div class="modal-footer">
+        <button class="small-button" data-close-dialog="project-settings-dialog">Done</button>
+        <button class="primary-button" id="initialize-lifecycle" hidden>Initialize lifecycle configuration</button>
+      </div>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

@@ -1,3 +1,4 @@
+import { flowOwnsIssue } from './flow-ownership.mjs';
 import { factoryBoundary, factoryOperation } from './issue-operation.mjs';
 import { conversationContext } from './conversation-context.mjs';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
@@ -558,7 +559,9 @@ function selected(service, input) {
     'The issue or strategy changed. Review the current issue before starting.'
   );
   requireThat(
-    !service.lifecycleTasks.has(issue.id) && !service.issueChats.tasks.has(issue.id),
+    !service.lifecycleTasks.has(issue.id) &&
+      !service.issueChats.tasks.has(issue.id) &&
+      !flowOwnsIssue(service, issue.id),
     'This issue is already working.'
   );
   requireThat(

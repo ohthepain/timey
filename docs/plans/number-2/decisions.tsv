@@ -1,0 +1,14 @@
+ts	phase	decision	why	evidence	result
+2026-11-13T13:30:00Z	frame	Build the redesign on branch number_2	Keep the requested alternative reviewable	docs/plans/number-2/README.md	open
+2026-11-13T13:31:00Z	design	Dispatch explicit blocks separately from strategy execution	The strategy cycle automatically verifies and publishes	scripts/factory-ui/issue-strategy.mjs	chosen
+2026-11-13T12:41:00Z	audit	Supersede the timestamps in the first two rows	Those rows used placeholder times instead of the execution clock; their decisions and evidence remain accurate	docs/plans/number-2/README.md	initial timestamps are not authoritative
+2026-11-13T12:41:01Z	model	Store explicit blocks and append retry attempts	User control requires a visible operation before execution	scripts/factory-ui/flow-store.mjs	focused record checks passed
+2026-11-13T12:41:02Z	review	Exclude classic and flow writers from concurrent issue ownership	The source review reproduced overlapping ownership	scripts/factory-ui/issue-operation.mjs	guard added
+2026-11-13T12:41:03Z	observer	Suggest a new target update after an earlier target merge completed	The source review reproduced a later target change being hidden	scripts/factory-ui/flow-service.mjs	condition corrected
+2026-11-13T12:41:04Z	delivery	Add explicit publication and checked flow closure	A new flow must finish without a fabricated legacy strategy approval	scripts/factory-ui/flow-delivery.mjs	focused delivery checks passed
+2026-11-13T12:41:05Z	verification	Preserve the app root element in the new page	Existing deployment readiness checks identify this actual root	scripts/factory-ui/flow.html	rechecking
+2026-11-13T13:00:34.620717+00:00	ownership	Preserve all unreconciled attempts across failed Continue	Only an observed idle original thread releases the model claim	scripts/factory-ui/flow-ownership.mjs	focused regression passed
+2026-11-13T13:00:34.620717+00:00	compatibility	Retain blocked and completed legacy ownership claims	The existing ledger considers both exclusive claims	scripts/flow-executor.check.mjs	focused regression passed
+2026-11-13T13:00:34.620717+00:00	verification	Run factory, browser, focused flow and formatting checks	Verify the real records and user interactions before handoff	.issues/evidence/number-2	833 aggregate and 65 focused checks passed; browser passed
+2026-11-13T13:00:34.620717+00:00	audit	Run the step checkpoint against the original branch revision	Keep step evidence tied to the recorded base	.issues/evidence/number-2/audit.log	completed; Fallow skipped by repo default
+2026-11-13T13:02:54.205928+00:00	verification	Preserve parallel dependencies when reordering blocks	Moving a block must not turn a parallel lane into a sequential route	scripts/flow.check.mjs	65 focused and 13 browser checks passed

@@ -1,9 +1,51 @@
 # Local factory UI
 
+The gear beside **Flow** opens **Project settings**. It displays the human-input
+rules from the project adapter and the contents of `.issues/triage-labels.md`.
+There is no policy preset selector. The lifecycle file defines saved states,
+transitions, priorities, and closure reasons; it does not define the adapter's
+human-input policy.
+
+If the lifecycle file is missing, settings offers a preview and an explicit
+**Initialize lifecycle configuration** action using the bundled template. Restore
+the original file instead if the project used custom states. Initialization
+creates only the missing file, preserves reports and existing configuration, and
+starts no work. Retry a blocked flow step explicitly after setup. Read-only blocks
+remain available while the lifecycle file is missing.
+
+The default page is the [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
+It shows issue folders, a downward block graph, and a block inspector. Issue names
+include their numbers and wrap. Drag the sidebar's right edge or focus the resize
+handle and use the arrow keys to change its width. The inspector also resizes from
+its left edge. Its left arrow widens it and its right arrow narrows it. Home and
+End choose the minimum and maximum width for either panel. The browser remembers
+both widths and keeps enough room for the graph. In the narrow stacked layout,
+the inspector follows the graph's width and its resize handle is hidden.
+Opening an unattempted issue aligns Starting point with the graph viewport's top.
+Starting point includes a Git branch selector. It lists local and cached remote
+branches by latest commit date, newest first. Branches sharing a commit remain
+separate options. Selecting a branch saves its exact starting commit for this
+issue and remembers its ref as the project default for future issues. New issues
+snapshot that branch's current commit. Destination stays unchanged. The selector
+locks when an attempt or checkout exists. It never switches the project's current
+checkout or starts work. A missing default branch must be restored or replaced
+through an unstarted issue before creating another issue.
+Closed issues open with Destination aligned at the bottom. Other issues center
+their running or most recently attempted block within the content's scroll range.
+The graph has 16 pixels of edge room. Column scrolling stays local, with native
+bounce where supported and no pull-to-refresh. Selecting a block scrolls only enough to reveal it. The
+circular plus button adds a step. The header Continue button runs the selected
+block through the same saved-setting and confirmation guards as its inspector.
+Each block requires an explicit start. `/classic` retains the strategy and legacy queue
+controls documented below. Flow observation can show reports before lifecycle configuration
+is restored, but editable work and protected operations still require the actual
+project policy, human input, credentials, and retained evidence.
+
 Run `pnpm run factory:ui -- --project /absolute/path/to/timey` from a checkout
-containing this adapter. Open the printed loopback URL. The project must already
-have its local issue queue and factory registry; the UI never initializes or
-replaces either. The selected checkout owns the issue records and delivery configuration, so choose the
+containing this adapter. Open the printed loopback URL. Classic controls require
+an existing local issue queue and factory registry. Project settings can initialize
+only a missing lifecycle file; it does not replace reports or create a registry.
+The selected checkout owns the issue records and delivery configuration, so choose the
 authoritative project rather than an old worker checkout. In live mode the
 server uses browser assets and the restart entry from the installed adapter
 checkout. Updating code uses managed deployment with exact passing verification,

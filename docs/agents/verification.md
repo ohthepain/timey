@@ -2,6 +2,15 @@
 
 ## Commands and evidence
 
+`pnpm run test:flow` checks flow records, cancellation, exact candidate evidence,
+publication, and guarded closure in disposable projects. `pnpm run test:flow:browser`
+drives the real flow page and HTTP routes with an injected executor. Its results,
+logs, screenshots, and fixture stay under `.issues/evidence/flow-browser-*`. These
+checks establish UI and protocol behavior, not live model or GitHub execution.
+The aggregate factory and browser scripts include these checks. For an installed
+Chrome when the Playwright Chromium cache is unavailable, run
+`TIMEY_BROWSER_CHANNEL=chrome pnpm run test:browser`.
+
 For default [draft PR handoff](issue-delivery.md#default-draft-pr-handoff), attempt
 relevant checks once per changed candidate and retain failures or unavailable
 checks as such. They do not block the handoff or trigger a repair loop. Passing

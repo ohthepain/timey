@@ -1,3 +1,4 @@
+import { flowOwnsIssue } from './flow-ownership.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { issueStorageDirectory, migrateClosedIssues } from './issue-report-storage.mjs';
@@ -30,6 +31,8 @@ import {
 import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { openIssueWorkFolder } from './open-issue-work-folder.mjs';
+import { createIssueFlows } from './flow-service.mjs';
+import { initializeProjectLifecycle, readProjectSettings } from './project-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   deleteIssueWorktree,
@@ -94,7 +97,12 @@ function authorize(request, token, port) {
 }
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
-  service.serverControl?.allow(path, value);
+  if (path !== '/api/flow-action' && value.issueId)
+    requireThat(
+      !flowOwnsIssue(service, value.issueId),
+      'A flow block owns this issue. Stop it before using classic controls.'
+    );
+  if (!(path === '/api/flow-action' && value.action === 'stop')) service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
@@ -115,6 +123,8 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
+    '/api/flow-action': () => flows(service).action(value),
     '/api/native-chat-prepare': () => {
       service.ownServer();
       return prepareNativeChat(service.root, value);
@@ -257,7 +267,11 @@ async function respond(service, request, response, token, port) {
 function page(service, request, response, token, port) {
   response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
-  const name = request.url.startsWith('/native-chat?') ? 'native-chat.html' : 'index.html';
+  const name = request.url.startsWith('/native-chat?')
+    ? 'native-chat.html'
+    : request.url.startsWith('/classic')
+      ? 'index.html'
+      : 'flow.html';
   response.end(readFileSync(join(uiDirectory(service), name)));
 }
 async function read(service, request, response, owner) {
@@ -265,6 +279,9 @@ async function read(service, request, response, owner) {
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
+    '/api/project-settings': () => readProjectSettings(service.root),
+    '/api/flow': () => flows(service).view(issue(selectedIssue)),
+    '/api/flow-skills': () => flows(service).skills(issue(selectedIssue)),
     '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
@@ -299,7 +316,7 @@ function issueResponse(service, owner, id) {
 }
 
 function isPage(request) {
-  return request.method === 'GET' && (request.url === '/' || request.url.startsWith('/native-chat?'));
+  return request.method === 'GET' && ['/', '/flow', '/classic', '/native-chat'].includes(request.url.split('?')[0]);
 }
 
 async function temporaryAction(action) {
@@ -311,7 +328,13 @@ async function temporaryAction(action) {
 }
 
 function readResource(service, request, response, owner) {
+  if (request.url === '/favicon.ico') {
+    response.statusCode = 204;
+    return response.end();
+  }
   const scripts = {
+    '/flow-ui.js': 'flow-ui.js',
+    '/flow.css': 'flow.css',
     '/native-chat-ui.js': 'native-chat-ui.js',
     '/server-control-ui.js': 'server-control-ui.js',
     '/queue-lifecycle-ui.js': 'queue-lifecycle-ui.js',
@@ -325,10 +348,18 @@ function readResource(service, request, response, owner) {
     '/issue-capture-ui.js': 'issue-capture-ui.js',
   };
   if (Object.hasOwn(scripts, request.url)) {
-    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    response.setHeader(
+      'Content-Type',
+      request.url.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8'
+    );
     return response.end(readFileSync(join(uiDirectory(service), basename(scripts[request.url]))));
   }
   return read(service, request, response, owner);
+}
+
+function flows(service) {
+  service.flows ||= createIssueFlows(service);
+  return service.flows;
 }
 
 function savedRun(service, id) {

@@ -18,7 +18,17 @@ import {
 } from './issue-cleanup.mjs';
 import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
 
-export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed', cleanup = null) {
+export function decideIssue(
+  service,
+  id,
+  state,
+  kind,
+  basis,
+  reason = '',
+  resolution = 'fixed',
+  cleanup = null,
+  artifact = null
+) {
   service.ownServer();
   const location = decisionLocation(service.root, id);
   let queue = location === 'open' ? readQueue(service.root) : readQueue(service.root, { location, issueId: id }),
@@ -32,7 +42,7 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
   const target = decisionTarget(queue, role, kind, dismissed);
   const action = { issues: [id] };
   const shared = service.sharedIssues?.acquire(issue, true);
-  const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target });
+  const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target }, artifact);
   queue = prepared.queue;
   issue = prepared.issue;
   basis = decisionBasis(queue, issue);
@@ -108,7 +118,7 @@ function closureChoice(queue, role, kind, resolution) {
   const dismissed = choice.id !== 'fixed';
   return { choice, dismissed };
 }
-function prepareDecision(service, queue, issue, action, decision) {
+function prepareDecision(service, queue, issue, action, decision, suppliedArtifact) {
   if (decision.kind === 'reopen') {
     service.guard(service.root, action, 'advance', queue.head, {
       target_state: decision.target,
@@ -117,7 +127,7 @@ function prepareDecision(service, queue, issue, action, decision) {
     return { queue, issue };
   }
   if (decision.dismissed) return { queue, issue };
-  const artifact = strategyClosureResult(service, issue);
+  const artifact = suppliedArtifact || strategyClosureResult(service, issue);
   const delivery = new DeliveryStore(service.root, issue.id).read();
   requireThat(
     artifact || !delivery || delivery.state === 'verified',
