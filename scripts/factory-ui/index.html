@@ -4869,6 +4869,11 @@
               const id = button.dataset.strategyTargetUpdate;
               const issue = data.issues.find((entry) => entry.id === id);
               if (progressRequests.get(id)?.pending) return;
+              if (!issue.strategy.remote || !issue.strategy.target) {
+                document.querySelector('#strategy-feedback').textContent =
+                  'Cannot update the issue branch: configure a Git remote and target branch first.';
+                return;
+              }
               if (!window.confirm(`Fetch and merge the latest ${issue.strategy.target} into this issue branch?`))
                 return;
               progressRequests.set(id, {
