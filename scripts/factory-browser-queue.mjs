@@ -38,10 +38,10 @@ export default async function queueBrowserChecks(page) {
 
   async function verifyWideIssueNavigation() {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.locator('.issue-sidebar [aria-current="page"]').waitFor();
-    if (await page.locator('.issue-workspace-content .issue-navigation-row a[href="#/queue"]').count())
-      throw Error('Wide issue view retained separate queue navigation');
-    await page.goto(new URL('/#/queue', page.url()).href);
+    if (await page.locator('.issue-sidebar').count()) throw Error('Issue-scoped data rendered the full queue sidebar.');
+    const back = page.getByRole('link', { name: '← Issue queue', exact: true });
+    await back.waitFor();
+    await back.click();
     await page.getByText('Please select an issue.', { exact: true }).waitFor();
   }
 
@@ -51,6 +51,7 @@ export default async function queueBrowserChecks(page) {
   await page.locator('.issue-sidebar .issue-sidebar-link').first().waitFor();
   await page.getByText('Please select an issue.', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Create issue', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Refresh queue', exact: true }).waitFor();
 
   await verifyNarrowQueue();
   await verifyIssueIdentity();

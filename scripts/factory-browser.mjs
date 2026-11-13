@@ -8,6 +8,14 @@ import { git, digest } from './factory-ui/common.mjs';
 import sortingBrowserChecks from './browser-scenarios/queue-sorting.mjs';
 import { browserFixture } from './browser-fixture.mjs';
 import { routeQueueIssue, updateProgressSnapshot } from './browser-queue-route.mjs';
+import {
+  coordinatorData,
+  coordinatorIssueRoute,
+  coordinatorQueueRoute,
+  coordinatorWaiting,
+  fixtureQueue,
+} from './browser-coordinator-route.mjs';
+import { verifyIssueScopedNavigation } from './factory-browser-issue-navigation.mjs';
 
 const source = dirname(fileURLToPath(import.meta.url));
 const checkoutFlag = process.argv.indexOf('--checkout');
@@ -69,7 +77,15 @@ try {
     const path = join(output, name.replaceAll('/', '-'));
     writeFileSync(
       path,
-      `(({ routeQueueIssue, updateProgressSnapshot }) => (${check.toString()}))({ routeQueueIssue: (${routeQueueIssue.toString()}), updateProgressSnapshot: (${updateProgressSnapshot.toString()}) })`
+      `(({ routeQueueIssue, updateProgressSnapshot }) => {
+        const fixtureQueue = (${fixtureQueue.toString()});
+        const coordinatorWaiting = (${coordinatorWaiting.toString()});
+        const coordinatorData = (${coordinatorData.toString()});
+        const coordinatorQueueRoute = (${coordinatorQueueRoute.toString()});
+        const coordinatorIssueRoute = (${coordinatorIssueRoute.toString()});
+        const verifyIssueScopedNavigation = (${verifyIssueScopedNavigation.toString()});
+        return (${check.toString()});
+      })({ routeQueueIssue: (${routeQueueIssue.toString()}), updateProgressSnapshot: (${updateProgressSnapshot.toString()}) })`
     );
     const raw = await run(name, ['run-code', '--filename', path]);
     if (!/"passed":\s*true/.test(raw)) throw Error('Browser scenario returned no passing assertions: ' + name);

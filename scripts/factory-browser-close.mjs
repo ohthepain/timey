@@ -122,7 +122,7 @@ export default async function closeBrowserChecks(page) {
   if (state.attempts !== 2) throw Error('Unexpected duplicate close request.');
   await page.screenshot({ path: 'issue-closed.png', fullPage: false });
   await page.unroute('**/api/issue-decision');
-  await page.unroute('**/api/queue?**');
+  await page.unroute('**/api/issue?issue=b');
   return {
     passed: true,
     assertions: [

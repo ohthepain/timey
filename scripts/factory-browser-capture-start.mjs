@@ -4,21 +4,26 @@ export default async function captureStartChecks(page) {
   }
 
   function registerCaptureRoute(page, captures) {
-    page.route('**/api/queue?issue=*', async (route) => {
-      const response = await route.fetch();
+    page.route('**/api/issue?issue=*', async (route) => {
+      const queueUrl = new URL('/api/queue', route.request().url()).href;
+      const response = await route.fetch({ url: queueUrl });
       const snapshot = await response.json();
       const template = snapshot.issues[0];
-      captures.forEach((input, index) => {
-        snapshot.issues.push({
-          ...template,
-          id: 'capture-' + (index + 1),
-          issueNumber: index + 1,
-          title: input.description,
-          state: 'backlog',
-          stage: 'Backlog',
-          strategy: { ...template.strategy, status: 'not-started', active: false, runId: null },
-        });
-      });
+      const id = new URL(route.request().url()).searchParams.get('issue');
+      const captureIndex = Number(id?.replace('capture-', '')) - 1;
+      const input = captures[captureIndex];
+      if (!template || !input) throw Error('No saved browser fixture issue for ' + id);
+      const issue = {
+        ...template,
+        id,
+        issueNumber: captureIndex + 1,
+        title: input.description,
+        state: 'backlog',
+        stage: 'Backlog',
+        strategy: { ...template.strategy, status: 'not-started', active: false, runId: null },
+      };
+      snapshot.issues = [issue];
+      snapshot.issueScoped = true;
       await route.fulfill({ json: snapshot });
     });
     page.route('**/api/issue-capture', async (route) => {
@@ -46,6 +51,9 @@ export default async function captureStartChecks(page) {
   }
 
   async function openCapture(page, description) {
+    if (new URL(page.url()).hash !== '#/queue') await page.goto(new URL('/#/queue', page.url()).href);
+    await page.locator('#create-issue-dialog').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => !refreshing);
     await page.getByRole('button', { name: 'Create issue', exact: true }).click();
     await page.getByLabel('Description', { exact: true }).fill(description);
   }
@@ -141,6 +149,7 @@ export default async function captureStartChecks(page) {
   await verifyGoStarts(page, captures, starts);
   await verifyGrillDefersGo(page, captures, starts);
   await verifyFullSendStartFailure(page, captures, starts);
+  await page.unroute('**/api/issue?issue=*');
   await page.unroute('**/api/issue-capture');
   await page.unroute('**/api/issue-strategy-start');
   return {

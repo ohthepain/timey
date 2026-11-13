@@ -570,6 +570,23 @@
         line-height: 1;
         margin-left: auto;
       }
+      .queue-refresh-button {
+        display: inline-grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        padding: 0;
+        margin-left: auto;
+      }
+      .queue-refresh-button svg {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 2;
+      }
       .model-settings-form,
       .issue-model-settings {
         display: grid;
@@ -2563,17 +2580,20 @@
         return `<h2>Current decision and next action</h2><section class="card queue-decision" data-current-evaluation="${esc(current.id)}"><span class="badge">${esc(actionLabel)}</span><p><strong>Current decision:</strong> ${esc(decision || 'No decision summary recorded.')}</p><p><strong>Next action:</strong> ${nextAction}</p></section><details class="queue-history"><summary>History and diagnostics</summary>${prior || '<p>No older evaluations.</p>'}<h3>Current evaluation diagnostics</h3>${progress(current, false)}</details>`;
       }
       function queue() {
-        return `<div class="queue-heading">${issueFolderHeading('Issue queue', 'queue')}<button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button>${data.sharedQueueEnabled ? '<button data-shared-queue-refresh>Refresh shared queue</button>' : ''}</div>${data.sharedQueueWarning ? `<p role="status">${esc(data.sharedQueueWarning)}</p>` : ''}<div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
+        return `<div class="queue-heading">${issueFolderHeading('Issue queue', 'queue')}<span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div><div class="toolbar"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form>${queueSortUI.controls(queueFilters)}<button id="review" type="button">Choose next issue</button>${data.sharedQueueEnabled ? '<button data-shared-queue-refresh>Refresh shared queue</button>' : ''}</div>${data.sharedQueueWarning ? `<p role="status">${esc(data.sharedQueueWarning)}</p>` : ''}<div class="tablewrap"><table><thead><tr><th>Issue</th><th>Status / strategy</th></tr></thead><tbody id="issues">${rows(queueIssues())}</tbody></table></div><p id="route-feedback" role="status">${esc(queueRouteMessage)}</p><details><summary>Earlier saved assignments</summary><fieldset disabled>${
           data.actions
             .filter((a) => !['integrated', 'cancelled', 'reconciled'].includes(a.status))
             .map(actionCard)
             .join('') || '<p>No saved assignments. Choose the next issue or discuss the queue.</p>'
         }</fieldset></details>${queueEvaluationHistory()}`;
       }
+      function queueRefreshButton() {
+        return '<button class="queue-refresh-button" type="button" data-queue-refresh aria-label="Refresh queue" title="Refresh queue"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"></path><path d="M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2"></path></svg></button>';
+      }
       function issueSidebar(selectedId) {
         const issues = queueIssues();
         const heading = selectedId ? 'Issues' : 'Issue queue';
-        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button><button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div><div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
+        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div><div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
           issues.length
             ? `<nav aria-label="Issues">${issues
                 .map(
@@ -4497,6 +4517,9 @@
       function bind() {
         bindIssueFolders();
         setProgressRefreshButtons(manualRefreshPending);
+        document.querySelectorAll('[data-queue-refresh]').forEach((button) => {
+          button.onclick = () => void refresh();
+        });
         document.querySelectorAll('[data-progress-grill]').forEach((button) => {
           button.onclick = () =>
             act(async () => {

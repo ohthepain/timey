@@ -54,6 +54,7 @@ export default async function operationTimerChecks(page) {
       .evaluate((panel) => panel.getBoundingClientRect().right > innerWidth || panel.scrollWidth > panel.clientWidth)
   )
     throw Error('Progress timers overflow the narrow Progress view.');
+  await page.unroute('**/api/issue?issue=b');
   return {
     passed: true,
     assertions: [

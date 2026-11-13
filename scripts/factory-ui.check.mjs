@@ -3644,6 +3644,8 @@ test('wide issue views keep the queue in a sidebar and show an empty selection p
     sidebar.querySelector('#model-settings-open')?.getAttribute('aria-label'),
     'Open model and effort settings'
   );
+  assert.equal(sidebar.querySelector('[data-queue-refresh]')?.getAttribute('aria-label'), 'Refresh queue');
+  assert.equal(sidebar.querySelector('[data-queue-refresh]')?.textContent, '');
   const sort = sidebar.querySelector('#queue-sort');
   sort.value = 'implementationOrder';
   sort.dispatchEvent(new window.Event('change'));
@@ -3691,6 +3693,8 @@ test('narrow issue views retain the existing queue link and full queue page', as
   window.screenTest.show(snapshot);
   assert.match(window.document.querySelector('#app').textContent, /Issue queue/);
   assert.equal(window.document.querySelector('.issue-sidebar'), null);
+  assert.equal(window.document.querySelector('[data-queue-refresh]')?.getAttribute('aria-label'), 'Refresh queue');
+  assert.equal(window.document.querySelector('[data-queue-refresh]')?.textContent, '');
 });
 
 test('external delivery shows its PR evidence, partial scope, target recheck and pending acceptance', async (t) => {
@@ -5139,7 +5143,11 @@ test('issue Git identity follows unfinished work, assembly and live HEAD without
       { kind: 'worker', actionId: 'other', checkout: '/not-this-issue' },
     ],
   };
-  assert.deepEqual(issueGit(snapshot, issue), { branch: 'codex/issue-work', revision: git('rev-parse', 'HEAD') });
+  assert.deepEqual(issueGit(snapshot, issue), {
+    checkout: root,
+    branch: 'codex/issue-work',
+    revision: git('rev-parse', 'HEAD'),
+  });
   git('commit', '--allow-empty', '-qm', 'advance');
   assert.equal(issueGit(snapshot, issue).revision, git('rev-parse', 'HEAD'));
   snapshot.actions[0].status = 'assembled';

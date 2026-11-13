@@ -12,8 +12,9 @@ export default async function refreshStateChecks(page) {
       body: ('Saved message ' + index + '. ').repeat(40),
     })),
   };
-  await page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch();
+  await page.route('**/api/issue?issue=b', async (route) => {
+    const queueUrl = new URL('/api/queue', route.request().url()).href;
+    const response = await route.fetch({ url: queueUrl });
     const snapshot = await response.json();
     snapshot.issues.find((issue) => issue.id === 'b').updated = 'refresh-' + revision;
     snapshot.runs.push({
@@ -30,6 +31,8 @@ export default async function refreshStateChecks(page) {
       output: [],
       approvals: [],
     });
+    snapshot.issues = [snapshot.issues.find((issue) => issue.id === 'b')];
+    snapshot.issueScoped = true;
     await route.fulfill({ json: snapshot });
   });
   await page.route('**/api/issue-chat?**', (route) => route.fulfill({ json: conversation }));
@@ -163,7 +166,7 @@ export default async function refreshStateChecks(page) {
     if (!(await details.evaluate((element) => element.open))) throw Error('Expanded stage collapsed');
   }
   await page.screenshot({ path: 'refresh-state.png', fullPage: false });
-  await page.unroute('**/api/queue?**');
+  await page.unroute('**/api/issue?issue=b');
   await page.unroute('**/api/issue-chat?**');
   if (errors.length) throw Error(errors.join('; '));
   return {

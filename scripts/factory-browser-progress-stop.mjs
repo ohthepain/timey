@@ -24,6 +24,7 @@ export default async function blockedProgressBrowserChecks(page) {
   if (!details.includes('Saved issue record: no PR number'))
     throw Error('Optional diagnostics omitted the saved pull request record.');
   if (errors.length) throw Error(errors.join('; '));
+  await page.unroute('**/api/issue?issue=b');
   return {
     passed: true,
     assertions: ['blocked step and saved facts', 'no false failed-command claim', 'optional technical details'],

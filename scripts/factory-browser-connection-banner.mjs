@@ -28,13 +28,13 @@ export default async function connectionBannerBrowserChecks(page) {
   await page.goto(new URL('/#/queue', page.url()).href);
   await assertInitialConnectionState(page);
 
-  await page.route('**/api/queue?**', (route) => route.abort());
+  await page.route('**/api/queue', (route) => route.abort());
   await page.evaluate(async () => {
     await refresh();
   });
   await assertFailureBanner(page);
 
-  await page.unroute('**/api/queue?**');
+  await page.unroute('**/api/queue');
   await page.evaluate(async () => {
     await refresh();
   });
