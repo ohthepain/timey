@@ -30,6 +30,56 @@ import { humanGuard } from './factory-ui/guard.mjs';
 import { decideIssueAndCleanup } from './factory-ui/http.mjs';
 import { DeliveryStore } from './issue-delivery-store.mjs';
 import { recoverCancelledStrategyDelivery } from './factory-ui/strategy-delivery-recovery.mjs';
+import { inspectPriorIssueInclusion } from './factory-ui/strategy-inclusion.mjs';
+
+test('inclusion evidence reports PR changes separately from target updates and repairs', (t) => {
+  const repo = gitFixture(t, 'timey-inclusion-');
+  writeFileSync(join(repo.root, 'base.txt'), 'base\n');
+  repo.git('add', 'base.txt');
+  repo.git('commit', '-qm', 'base');
+  const base = repo.git('rev-parse', 'HEAD');
+  repo.git('branch', 'issue');
+
+  writeFileSync(join(repo.root, 'target.txt'), 'target update\n');
+  repo.git('add', 'target.txt');
+  repo.git('commit', '-qm', 'target update');
+  const target = repo.git('rev-parse', 'HEAD');
+  repo.git('checkout', '-q', 'issue');
+  repo.git('merge', '--no-edit', target);
+
+  writeFileSync(join(repo.root, 'feature.txt'), 'issue feature\n');
+  repo.git('add', 'feature.txt');
+  repo.git('commit', '-qm', 'issue feature');
+  const feature = repo.git('rev-parse', 'HEAD');
+  writeFileSync(join(repo.root, 'repair.txt'), 'necessary repair\n');
+  repo.git('add', 'repair.txt');
+  repo.git('commit', '-qm', 'necessary repair');
+  const repair = repo.git('rev-parse', 'HEAD');
+
+  const report = inspectPriorIssueInclusion(
+    {
+      checkout: repo.root,
+      base,
+      repairs: [{ attempts: [{ before: feature, after: repair }] }],
+    },
+    target
+  );
+
+  assert.equal(report.base, base);
+  assert.equal(report.head, repair);
+  assert.equal(report.pullRequest.base, target);
+  assert.equal(report.pullRequest.head, repair);
+  assert.deepEqual(report.pullRequest.files, ['A\tfeature.txt', 'A\trepair.txt']);
+  assert.deepEqual(report.targetUpdates.files, ['A\ttarget.txt']);
+  assert.deepEqual(
+    report.issueWork.commits.map((commit) => commit.revision),
+    [feature]
+  );
+  assert.deepEqual(
+    report.repairs.commits.map((commit) => commit.revision),
+    [repair]
+  );
+});
 
 function fixture(t) {
   const { queue, source } = deliveryFixture(t);

@@ -581,7 +581,9 @@ the owning assignment; `strategy-review.mjs` implements optional bounded Sol rev
 It evaluates review bypass separately from non-bypassable strict CI rulesets.
 `strategy-inclusion.mjs` inspects the original base against the fetched target,
 records exact branch/checkout/commit evidence, and blocks unreviewed earlier work
-before owner turns and PR publication while preserving the original base.
+before owner turns and PR publication while preserving the original base. Its PR
+comparison records the target SHA, checkout HEAD, merge base, and changed paths;
+target updates, issue commits, and repair commits are listed separately.
 Full Send binds the human-input merge guard's candidate tuple to the UUID of the
 active strategy run, the exact verified head and current PR target; the issue
 label remains display identity only.
