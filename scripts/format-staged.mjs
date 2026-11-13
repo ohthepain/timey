@@ -22,7 +22,8 @@ try {
     writeFileSync(destination, execFileSync('git', ['show', `:${file}`], { cwd: root, encoding: 'buffer' }));
     return destination;
   });
-  const result = spawnSync('pnpm', ['exec', 'vp', 'fmt', '--check', ...stagedFiles], {
+  const formatter = join(root, 'node_modules', '.bin', 'vp');
+  const result = spawnSync(formatter, ['fmt', '--check', ...stagedFiles], {
     cwd: root,
     stdio: 'inherit',
   });
