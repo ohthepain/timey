@@ -45,6 +45,28 @@ test('staged audit sees the index even when unstaged changes hide an unused file
   assert.equal(git('diff', '--binary', 'HEAD'), before, 'audit must not modify the original index or worktree');
 });
 
+test('staged formatter checks issue reports from an in-repository snapshot', (t) => {
+  const { root, git } = gitFixture(t, 'format-staged-');
+  mkdirSync(join(root, 'scripts'));
+  mkdirSync(join(root, '.issues'));
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'format-staged-fixture', private: true }));
+  writeFileSync(join(root, 'scripts/format-staged.mjs'), readFileSync(resolve('scripts/format-staged.mjs')));
+  writeFileSync(join(root, '.prettierignore'), '');
+  writeFileSync(join(root, '.issues/report.md'), '# A staged report  \n');
+  symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+  git('add', 'scripts/format-staged.mjs', '.prettierignore', '.issues/report.md');
+  const result = spawnSync(process.execPath, ['scripts/format-staged.mjs'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /report\.md/);
+  assert.deepEqual(
+    readdirSync(root).filter((name) => name.startsWith('.timey-format-staged-')),
+    []
+  );
+});
+
 function auditFixture(t, extraFiles = {}) {
   const { root, git } = gitFixture(t, 'audit-checkpoint-');
   writeFileSync(join(root, '.gitignore'), 'node_modules\n.issues/\n');
