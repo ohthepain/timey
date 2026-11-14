@@ -25,7 +25,7 @@ export function readPriorities(markdown) {
             .slice(1, 4)
             .map((cell) => cell.replaceAll('`', '').trim())
         )
-        .filter((row) => row[0] && !['name', '---'].includes(row[0].toLowerCase()))
+        .filter((row) => row[0] && row[0].toLowerCase() !== 'name' && !row.every((cell) => /^:?-{3,}:?$/.test(cell)))
     : defaults;
   const choices = rows.map(([name, color, meaning]) => {
     const value = colors[color?.toLowerCase()] || color;

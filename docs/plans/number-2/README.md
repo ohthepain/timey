@@ -1,5 +1,26 @@
 # Explicit issue flows
 
+## Restart after restoring triage labels
+
+Starting revision was `8dc80123ffa5fd2de52a737813a58d01c7c0d7f2`.
+The user requested a restart and retained responsibility for retrying the issue.
+
+- [x] Reproduce it yourself on the matching surface via the control skill. The restart helper rejected the committed priority table.
+- [x] Binary-search the cause. The parser treated a formatted Markdown divider as a priority because it skipped only the exact cell `---`.
+- [x] Plan the fix. One delegate changed the divider filter and added a focused regression.
+- [x] Verify on the same surface. Regression changed from 2 passing and 1 failing to 3 passing. The actual file parses all 5 priorities. Independent review found no issues.
+- [x] Stage the commits so the failing repro lands before the fix in git history. Skip. No commit request. Failing-before evidence was retained in the chat.
+- [x] Run **Opening a PR**. Skip. Local restart only.
+
+The committed labels and priority definitions were not edited. The regression is
+included in `test:factory`. The existing idle server was gracefully restarted to
+load the corrected parser. Its queue check now reaches the next missing project
+file, `.issues/preferences.json`, rather than rejecting the valid priority table.
+No preferences were invented, and no issue was retried automatically. Restore the
+preferences from the other machine before using the full queue. Formatting and
+the saved-base step audit completed with Fallow skipped by repository default.
+The parser fix and regression remain uncommitted.
+
 The goal is a three-column issue workspace where people choose each operation,
 its skill, and its order. Every operation has a visible block and retained attempts.
 The original request is preserved. Refresh reads external state without starting work.
