@@ -476,6 +476,11 @@ kbd {
 .environment-chip.good {
   color: #a9bba7;
 }
+.environment select.environment-chip {
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
 .environment a {
   color: #adbad1;
 }

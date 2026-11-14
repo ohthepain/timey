@@ -232,6 +232,17 @@ class IssueFlows {
     if (input.action === 'stop') return this.stop(flow, input);
     if (input.action !== 'comment')
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
+    if (input.action === 'update-worktree') {
+      const checkout = flowWorkspace(this.service, flow)?.checkout;
+      requireThat(checkout && existsSync(checkout), 'This issue has no available worktree.');
+      let block = flow.blocks.find((item) => item.kind === 'merge-target' && !item.attempts.length);
+      if (!block) {
+        const existing = new Set(flow.blocks.map((item) => item.id));
+        flow = editFlow(flow, { action: 'add', kind: 'merge-target' });
+        block = flow.blocks.find((item) => !existing.has(item.id));
+      }
+      return this.start(issue, flow, { blockId: block.id, action: 'start' });
+    }
     if (input.action === 'starting-point') return this.setStartingPoint(issue, flow, input);
     if (input.blockId?.startsWith('target-') && !flow.blocks.some((block) => block.id === input.blockId)) {
       const current = await this.view(issue.id);

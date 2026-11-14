@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
+import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { git } from './factory-ui/common.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -757,17 +758,24 @@ try {
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
   });
-  await check('Open worktree appears beside the branch and opens the saved checkout', async () => {
+  await check('Worktree menu opens the saved checkout and updates it from the remote target', async () => {
     await page.goto('/flow?issue=' + issueId);
     await page.locator('[data-node="__base"]').waitFor();
-    const button = page
+    const menu = page
       .locator('#environment .environment-chip')
-      .and(page.getByRole('button', { name: 'Open worktree', exact: true }));
-    assert.equal(await button.count(), 0);
-    const checkout = join(output, 'issue-checkout');
-    git(project, 'worktree', 'add', '-qb', 'fixture-issue-worktree', checkout);
+      .and(page.getByRole('combobox', { name: 'Worktree', exact: true }));
+    assert.equal(await menu.count(), 0);
+    const checkout = join(project, '.issues', 'issue-checkout');
+    const branch = 'fixture-issue-worktree';
+    const base = git(project, 'rev-parse', 'HEAD');
+    git(project, 'worktree', 'add', '-qb', branch, checkout);
+    const remote = join(output, 'remote.git');
+    git(project, 'init', '--bare', remote);
+    git(project, 'remote', 'add', 'origin', remote);
+    const target = git(project, 'commit-tree', branchTree, '-p', base, '-m', 'Target update');
+    git(project, 'push', 'origin', target + ':refs/heads/dev');
     const flow = service.flows.read(service.flows.selected(issueId));
-    service.flows.store.save({ ...flow, workspace: { checkout } }, flow.revision);
+    service.flows.store.save({ ...flow, workspace: { checkout, branch, base } }, flow.revision);
     const calls = join(output, 'opened-worktree.txt');
     writeFileSync(join(output, 'open'), '#!/bin/sh\nprintf "%s\\n" "$1" > "$TIMEY_TEST_OPEN_LOG"\n', {
       mode: 0o700,
@@ -777,13 +785,28 @@ try {
     process.env.TIMEY_TEST_OPEN_LOG = calls;
     try {
       await page.reload();
-      await button.click();
+      await menu.selectOption('open');
       await page.getByText('Opened the worktree in Finder.', { exact: true }).waitFor();
       assert.equal(readFileSync(calls, 'utf8').trim(), realpathSync(checkout));
     } finally {
       process.env.PATH = originalPath;
       delete process.env.TIMEY_TEST_OPEN_LOG;
     }
+    // The disposable project has no installed issue skill. Exercise the real Git executor.
+    service.guard = () => [];
+    service.flows.executor = createFlowExecutor(service);
+    await menu.selectOption('update');
+    const attempt = await poll(
+      async () =>
+        (await view()).flow.blocks
+          .find((block) => block.kind === 'merge-target' && block.attempts.length)
+          ?.attempts.at(-1),
+      (result) => result?.endedAt,
+      'The update should complete a merge from the fetched target.'
+    );
+    assert.equal(attempt.status, 'completed', attempt.summary);
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), target);
+    assert.equal(git(project, 'rev-parse', 'HEAD'), base);
   });
   passed = true;
 } catch (error) {

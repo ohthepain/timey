@@ -333,6 +333,8 @@
     const startingBranch = $('starting-branch');
     if (startingBranch)
       startingBranch.disabled = busy || !state.view.startingPointEditable || !state.view.branches?.length;
+    const worktreeMenu = $('worktree-menu');
+    if (worktreeMenu) worktreeMenu.disabled = busy;
   }
 
   function selectIssue(id) {
@@ -390,7 +392,14 @@
 
   function renderEnvironment() {
     const environment = state.view?.environment;
+    if (
+      environment?.worktreeExists === true &&
+      document.activeElement === $('worktree-menu') &&
+      $('environment').dataset.issue === state.issueId
+    )
+      return;
     $('environment').hidden = !environment;
+    $('environment').dataset.issue = state.issueId || '';
     if (!environment) return;
     const chips = [];
     if (environment.branch)
@@ -403,7 +412,9 @@
       );
     if (environment.ahead > 0) chips.push(`<span class="environment-chip">↑ ${escape(environment.ahead)} ahead</span>`);
     if (environment.worktreeExists === true)
-      chips.push('<button type="button" class="environment-chip" data-open-worktree>Open worktree</button>');
+      chips.push(
+        '<select class="environment-chip" id="worktree-menu" aria-label="Worktree"><option value="" disabled selected>Worktree</option><option value="open">Open</option><option value="update">Update</option></select>'
+      );
     if (environment.pr) {
       const pr = environment.pr;
       const url = safeUrl(pr.url);
@@ -1081,7 +1092,7 @@
   }
   resizeColumns();
 
-  document.addEventListener('click', async (event) => {
+  document.addEventListener('click', (event) => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
@@ -1111,10 +1122,6 @@
     if (button.hasAttribute('data-open-palette')) return openPalette();
     if (button.dataset.addKind) return void addBlock(button.dataset.addKind);
     if (button.hasAttribute('data-sync-target')) return void addBlock('merge-target');
-    if (button.hasAttribute('data-open-worktree')) {
-      if (await action('open-worktree')) toast('Opened the worktree in Finder.');
-      return;
-    }
     if (button.dataset.openFile) return void inspectFile(button.dataset.openFile);
     if (button.dataset.deleteArtifact) return void deleteArtifact(button.dataset.deleteArtifact);
     if (button.hasAttribute('data-refresh-skills')) return void refreshSkills(button);
@@ -1142,8 +1149,25 @@
     );
   });
 
-  document.addEventListener('change', (event) => {
+  document.addEventListener('change', async (event) => {
     const field = event.target;
+    if (field.id === 'worktree-menu') {
+      const operation = field.value;
+      field.value = '';
+      if (operation === 'open') {
+        if (await action('open-worktree')) toast('Opened the worktree in Finder.');
+      } else if (operation === 'update') {
+        const selected = state.issueId;
+        const result = await action('update-worktree');
+        if (result && selected === state.issueId) {
+          state.blockId = result.blockId;
+          state.tab = 'details';
+          state.graphScrollIntent = { nodeId: result.blockId, mode: 'reveal' };
+          await load(true);
+        }
+      }
+      return;
+    }
     if (field.id === 'starting-branch') {
       void (async () => {
         await action('starting-point', { ref: field.value });
