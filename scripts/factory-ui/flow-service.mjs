@@ -28,6 +28,7 @@ import {
 } from './flow-store.mjs';
 import { createFlowObserver, flowTarget, flowWorkspace } from './flow-observer.mjs';
 import { createFlowExecutor } from './flow-executor.mjs';
+import { openWorkFolder } from './open-issue-work-folder.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import {
   branchStartingPoint,
@@ -227,6 +228,7 @@ class IssueFlows {
     if (input.action === 'create-folder') return this.createFolder(input);
     const issue = this.selected(input.issueId);
     let flow = this.read(issue);
+    if (input.action === 'open-worktree') return openWorkFolder(flowWorkspace(this.service, flow)?.checkout);
     if (input.action === 'stop') return this.stop(flow, input);
     if (input.action !== 'comment')
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');

@@ -15,7 +15,8 @@ remain available while the lifecycle file is missing.
 
 The default page is the [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
 It shows issue folders, a downward block graph, and a block inspector. Issue names
-include their numbers and wrap. Drag the sidebar's right edge or focus the resize
+include their numbers and wrap. **Open worktree** in the branch status row opens
+the issue's existing checkout in Finder. Drag the sidebar's right edge or focus the resize
 handle and use the arrow keys to change its width. The inspector also resizes from
 its left edge. Its left arrow widens it and its right arrow narrows it. Home and
 End choose the minimum and maximum width for either panel. The browser remembers

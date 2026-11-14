@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -756,6 +756,34 @@ try {
     );
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
+  });
+  await check('Open worktree appears beside the branch and opens the saved checkout', async () => {
+    await page.goto('/flow?issue=' + issueId);
+    await page.locator('[data-node="__base"]').waitFor();
+    const button = page
+      .locator('#environment .environment-chip')
+      .and(page.getByRole('button', { name: 'Open worktree', exact: true }));
+    assert.equal(await button.count(), 0);
+    const checkout = join(output, 'issue-checkout');
+    git(project, 'worktree', 'add', '-qb', 'fixture-issue-worktree', checkout);
+    const flow = service.flows.read(service.flows.selected(issueId));
+    service.flows.store.save({ ...flow, workspace: { checkout } }, flow.revision);
+    const calls = join(output, 'opened-worktree.txt');
+    writeFileSync(join(output, 'open'), '#!/bin/sh\nprintf "%s\\n" "$1" > "$TIMEY_TEST_OPEN_LOG"\n', {
+      mode: 0o700,
+    });
+    const originalPath = process.env.PATH;
+    process.env.PATH = output + ':' + originalPath;
+    process.env.TIMEY_TEST_OPEN_LOG = calls;
+    try {
+      await page.reload();
+      await button.click();
+      await page.getByText('Opened the worktree in Finder.', { exact: true }).waitFor();
+      assert.equal(readFileSync(calls, 'utf8').trim(), realpathSync(checkout));
+    } finally {
+      process.env.PATH = originalPath;
+      delete process.env.TIMEY_TEST_OPEN_LOG;
+    }
   });
   passed = true;
 } catch (error) {

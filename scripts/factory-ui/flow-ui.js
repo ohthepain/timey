@@ -402,6 +402,8 @@
         `<button class="environment-chip warning" data-sync-target title="Add a block to merge changes from the target branch">↙ Target ahead by ${escape(environment.behind)}</button>`
       );
     if (environment.ahead > 0) chips.push(`<span class="environment-chip">↑ ${escape(environment.ahead)} ahead</span>`);
+    if (environment.worktreeExists === true)
+      chips.push('<button type="button" class="environment-chip" data-open-worktree>Open worktree</button>');
     if (environment.pr) {
       const pr = environment.pr;
       const url = safeUrl(pr.url);
@@ -1079,7 +1081,7 @@
   }
   resizeColumns();
 
-  document.addEventListener('click', (event) => {
+  document.addEventListener('click', async (event) => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
@@ -1109,6 +1111,10 @@
     if (button.hasAttribute('data-open-palette')) return openPalette();
     if (button.dataset.addKind) return void addBlock(button.dataset.addKind);
     if (button.hasAttribute('data-sync-target')) return void addBlock('merge-target');
+    if (button.hasAttribute('data-open-worktree')) {
+      if (await action('open-worktree')) toast('Opened the worktree in Finder.');
+      return;
+    }
     if (button.dataset.openFile) return void inspectFile(button.dataset.openFile);
     if (button.dataset.deleteArtifact) return void deleteArtifact(button.dataset.deleteArtifact);
     if (button.hasAttribute('data-refresh-skills')) return void refreshSkills(button);
