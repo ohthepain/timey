@@ -42,3 +42,5 @@ coverage/
 !/.issues/closed/
 /.issues/closed/*
 !/.issues/closed/[0-9]*.md
+!/.issues/preferences.json
+
