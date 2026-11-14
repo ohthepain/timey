@@ -42,7 +42,8 @@ export function serverControl(service, restart) {
     ].filter((name) => existsSync(join(service.root, '.issues', name)));
     return {
       actions:
-        Math.max(connected.size, nativeActions(service.codex)) +
+        connected.size +
+        nativeActions(service.codex) +
         controllers.length +
         (service.captures?.active || 0) +
         (service.flows?.active.size || 0) +

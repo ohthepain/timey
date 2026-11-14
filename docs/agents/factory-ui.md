@@ -45,6 +45,16 @@ controls documented below. Flow observation can show reports before lifecycle co
 is restored, but editable work and protected operations still require the actual
 project policy, human input, credentials, and retained evidence.
 
+The Artifacts tab shows the selected block’s latest run. Expand **Previous
+artifacts** to see the surviving files for an earlier run. **Inspect** opens the
+raw text. Turn on **Restate** for a version that follows the bro skill’s
+plain-language guidance.
+
+Every button provides clear feedback when activated. Show immediate progress for
+asynchronous operations, then report success or failure. Use a popup or toast for
+operations that run outside the block graph, such as updating a worktree. Keep
+block execution progress in its block.
+
 Run `pnpm run factory:ui -- --project /absolute/path/to/timey` from a checkout
 containing this adapter. Open the printed loopback URL. Classic controls require
 an existing local issue queue and factory registry. Project settings can initialize

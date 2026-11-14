@@ -8,6 +8,10 @@ const serverControlUI = (() => {
     requestedPause = null;
   function panel() {
     let element = document.getElementById('server-controls');
+    if (!element && document.getElementById('flow-server-restart')) {
+      actionsDialog();
+      return document.getElementById('server-controls') || document.body;
+    }
     if (element && !element.querySelector('[data-server-restart]')) {
       element.remove();
       element = null;
@@ -35,7 +39,7 @@ const serverControlUI = (() => {
       else dialog.removeAttribute('open');
     };
     dialog.addEventListener('close', () =>
-      panel().querySelector('[data-server-count]').setAttribute('aria-expanded', 'false')
+      document.getElementById('project-actions')?.setAttribute('aria-expanded', 'false')
     );
     return dialog;
   }
@@ -48,28 +52,64 @@ const serverControlUI = (() => {
       previousPid = state.pid;
     }
     const count = element.querySelector('[data-server-count]');
-    count.textContent = counts(state);
-    count.onclick = () => {
-      const dialog = actionsDialog();
-      if (!dialog.open) {
-        if (typeof dialog.showModal === 'function') dialog.showModal();
-        else dialog.setAttribute('open', '');
-      }
-      count.setAttribute('aria-expanded', 'true');
-      loadActions(dialog, request);
-    };
+    if (count) count.textContent = counts(state);
+    if (count)
+      count.onclick = () => {
+        const dialog = actionsDialog();
+        if (!dialog.open) {
+          if (typeof dialog.showModal === 'function') dialog.showModal();
+          else dialog.setAttribute('open', '');
+        }
+        count.setAttribute('aria-expanded', 'true');
+        loadActions(dialog, request);
+      };
     const toggle = element.querySelector('[data-server-toggle]');
-    toggle.checked = requestedPause ?? state.phase !== 'idle';
-    toggle.disabled = toggleUnavailable();
-    element.querySelector('[data-server-message]').textContent = message(state);
-    toggle.onchange = () => {
-      requestedPause = toggle.checked;
-      void change(toggle.checked ? 'server-pause' : 'server-cancel-restart', request);
-    };
+    const compact = document.getElementById('project-actions');
+    if (compact) {
+      const countValue = value.actions + value.chats;
+      compact.textContent = countValue === 1 ? '1 action running' : countValue + ' actions running';
+      compact.disabled = false;
+      compact.onclick = () => {
+        const dialog = actionsDialog();
+        if (!dialog.open) {
+          if (typeof dialog.showModal === 'function') dialog.showModal();
+          else dialog.setAttribute('open', '');
+        }
+        compact.setAttribute('aria-expanded', 'true');
+        loadActions(dialog, request);
+      };
+    }
+    if (toggle) {
+      toggle.checked = requestedPause ?? state.phase !== 'idle';
+      toggle.disabled = toggleUnavailable();
+      toggle.onchange = () => {
+        requestedPause = toggle.checked;
+        void change(toggle.checked ? 'server-pause' : 'server-cancel-restart', request);
+      };
+    }
     const restart = element.querySelector('[data-server-restart]');
-    restart.hidden = !state.supported;
-    restart.disabled = restartUnavailable();
-    restart.onclick = () => void change('server-restart', request);
+    if (restart) {
+      restart.hidden = !state.supported;
+      restart.disabled = restartUnavailable();
+      restart.onclick = () => void change('server-restart', request);
+    }
+    const flowToggle = document.querySelector('#flow-actions-switch [data-server-toggle]');
+    if (flowToggle) {
+      flowToggle.checked = requestedPause ?? state.phase !== 'idle';
+      flowToggle.disabled = toggleUnavailable();
+      flowToggle.onchange = () => {
+        requestedPause = flowToggle.checked;
+        void change(flowToggle.checked ? 'server-pause' : 'server-cancel-restart', request);
+      };
+    }
+    const flowRestart = document.getElementById('flow-server-restart');
+    if (flowRestart) {
+      flowRestart.hidden = !state.supported;
+      flowRestart.disabled = restartUnavailable();
+      flowRestart.onclick = () => void change('server-restart', request);
+    }
+    const flowMessage = document.querySelector('.project-actions-message');
+    if (flowMessage) flowMessage.textContent = message(state);
   }
   function refreshOpenActions(value, request) {
     const dialog = actionsDialog();

@@ -58,6 +58,7 @@
   ];
   const runningStatuses = new Set(['running', 'starting', 'stopping', 'in-progress']);
   let projectSettings = null;
+  let inspectedFile = null;
 
   function renderProjectSettings(settings) {
     projectSettings = settings;
@@ -352,12 +353,7 @@
   }
 
   function renderSidebar() {
-    const project = state.index.project;
-    $('project-label').textContent =
-      typeof project === 'string'
-        ? project.split('/').filter(Boolean).at(-1) || project
-        : project?.name || 'Local workspace';
-    $('project-label').title = typeof project === 'string' ? project : project?.path || '';
+    void updateProjectActions();
     const issues = (state.index.issues || []).filter((issue) =>
       `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
     );
@@ -365,7 +361,7 @@
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
     const row = (issue) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${statusIcon(issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span></button>`;
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span></button>`;
     const ungrouped = issues
       .filter((issue) => !issue.folder && issue.status !== 'closed')
       .map(row)
@@ -375,7 +371,8 @@
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
         if (state.search && children.length === 0) return '';
         const collapsed = state.folders.has(folder) && !state.search;
-        return `<section class="issue-folder"><button class="folder-toggle" data-folder="${escape(folder)}" aria-expanded="${!collapsed}"><span class="folder-chevron" aria-hidden="true">${collapsed ? '›' : '⌄'}</span><span aria-hidden="true">▱</span><span>${escape(folder)}</span><span class="folder-count">${children.length}</span></button><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
+        const active = children.find((issue) => issue.activeBlock);
+        return `<section class="issue-folder"><button class="folder-toggle" data-folder="${escape(folder)}" aria-expanded="${!collapsed}">${active ? activeSpinner(active.activeBlock) : `<span class="folder-chevron" aria-hidden="true">${collapsed ? '›' : '⌄'}</span><span aria-hidden="true">▱</span>`}<span>${escape(folder)}</span><span class="folder-count">${children.length}</span></button><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
       })
       .join('');
     $('issue-list').innerHTML =
@@ -388,6 +385,31 @@
               .join('')}</div></details>`
           : '') ||
       `<p class="sidebar-empty">${state.search ? 'No matching issues.' : 'Your issues will appear here.'}</p>`;
+  }
+
+  function activeSpinner(block) {
+    const color = blockStyle(block.kind).color;
+    return `<span class="status-icon active-spinner" style="--spinner-color:${color}" aria-label="Running ${escape(words(block.kind))}" title="Running ${escape(words(block.kind))}"></span>`;
+  }
+
+  async function updateProjectActions() {
+    const name = $('project-name');
+    const button = $('project-actions');
+    const project = state.index.project;
+    name.textContent =
+      typeof project === 'string'
+        ? project.split('/').filter(Boolean).at(-1) || project
+        : project?.name || 'Local workspace';
+    name.title = typeof project === 'string' ? project : project?.path || '';
+    try {
+      const status = await json('/api/server-status');
+      const count = status.actions + status.chats;
+      button.textContent = count === 1 ? '1 action running' : count + ' actions running';
+      button.disabled = false;
+    } catch {
+      button.textContent = 'Actions unavailable';
+      button.disabled = true;
+    }
   }
 
   function renderEnvironment() {
@@ -646,10 +668,11 @@
   }
 
   function evidenceLinks(attempt) {
-    return (attempt?.evidence || [])
+    return (state.view?.artifacts || [])
+      .filter((artifact) => artifact.attemptId === attempt.id)
       .map(
-        (evidence) =>
-          `<button class="evidence-link" data-open-file="${escape(evidence.path)}"><span aria-hidden="true">▤</span><span>${escape(evidence.label || evidence.path)}</span></button>`
+        (artifact) =>
+          `<button class="evidence-link" data-open-file="${escape(artifact.path)}" data-artifact-id="${escape(artifact.id)}"><span aria-hidden="true">▤</span><span>${escape(artifact.label)}</span></button>`
       )
       .join('');
   }
@@ -705,9 +728,29 @@
     return `<p class="conversation-context">One conversation belongs to this issue. Notes and output retain the block they came from.</p>${messages.length ? `<div class="timeline">${messages.map((message) => `<article class="message"><div class="message-meta"><span class="message-author">${escape(message.actor || message.role || 'Factory')}${message.blockId ? ` · ${escape(state.view.flow.blocks.find((entry) => entry.id === message.blockId)?.label || 'Block')}` : ''}</span><time>${escape(date(message.at))}</time></div><p class="message-body">${escape(message.body)}</p></article>`).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
   }
 
-  function renderArtifacts() {
-    const artifacts = state.view?.artifacts || [];
-    return `<p class="conversation-context">Saved records for this issue. Inspect an artifact before deciding to remove it.</p>${artifacts.length ? artifacts.map((artifact) => `<article class="artifact"><div class="artifact-header"><h3>${escape(artifact.label)}</h3><span class="artifact-kind">${escape(words(artifact.kind))}</span></div><p class="artifact-path">${escape(artifact.path)}</p><div class="artifact-actions">${artifact.exists ? `<button class="small-button" data-open-file="${escape(artifact.path)}">Inspect ↗</button>` : '<span class="progress-meta">Not present</span>'}${artifact.deletable && artifact.exists ? `<button class="small-button danger-button" data-delete-artifact="${escape(artifact.id)}"${state.pending ? ' disabled' : ''}>Delete</button>` : ''}</div></article>`).join('') : '<p class="inline-empty">No retained artifacts yet. Evidence and records will appear here as work is saved.</p>'}`;
+  function renderArtifacts(block, artifacts) {
+    if (!block) return '<p class="inline-empty">Select a block to see its artifacts.</p>';
+    const cards = (attempt) =>
+      artifacts
+        .filter((artifact) => artifact.attemptId === attempt.id)
+        .map(
+          (artifact) =>
+            `<article class="artifact"><div class="artifact-header"><h3>${escape(artifact.label)}</h3></div><p class="artifact-path">${escape(artifact.path)}</p><div class="artifact-actions"><button class="small-button" data-open-file="${escape(artifact.path)}" data-artifact-id="${escape(artifact.id)}">Inspect ↗</button><button class="small-button danger-button" data-delete-artifact="${escape(artifact.id)}"${state.pending ? ' disabled' : ''}>Delete</button></div></article>`
+        )
+        .join('');
+    const attempts = block.attempts;
+    const current = attempts.length ? cards(attempts.at(-1)) : '';
+    const previous = attempts
+      .slice(0, -1)
+      .map((attempt, index) => {
+        const saved = cards(attempt);
+        return saved
+          ? `<details class="attempt-history" data-artifact-run="${escape(attempt.id)}"><summary>Previous artifacts · Run ${index + 1}</summary>${saved}</details>`
+          : '';
+      })
+      .reverse()
+      .join('');
+    return (current || '<p class="inline-empty">No artifacts from the latest run.</p>') + previous;
   }
 
   function preserveEditor(renderBody) {
@@ -720,7 +763,12 @@
     const scroll = body.scrollTop;
     const outputScroll = body.querySelector('.attempt-output')?.scrollTop;
     const openHistory = body.querySelector('.attempt-history')?.open;
+    const openArtifactRuns = new Set(
+      [...body.querySelectorAll('[data-artifact-run][open]')].map((section) => section.dataset.artifactRun)
+    );
     renderBody();
+    for (const section of body.querySelectorAll('[data-artifact-run]'))
+      section.open = openArtifactRuns.has(section.dataset.artifactRun);
     if (key) {
       const replacement = [...body.querySelectorAll('[data-field], [id], [data-edit]')].find(
         (element) => (element.dataset.field || element.id || element.dataset.edit) === key
@@ -743,7 +791,8 @@
     $('inspector-title').style.setProperty('--block-color', style.color);
     $('inspector-title').innerHTML =
       `<span class="inspector-symbol" aria-hidden="true">${block ? style.icon : '◇'}</span><h2>${escape(block?.label || 'Select a block')}</h2>`;
-    $('artifact-count').textContent = state.view?.artifacts?.length || '';
+    const artifacts = (state.view?.artifacts || []).filter((artifact) => artifact.blockId === block?.id);
+    $('artifact-count').textContent = artifacts.length || '';
     for (const button of document.querySelectorAll('[data-tab]'))
       button.setAttribute('aria-selected', String(button.dataset.tab === state.tab));
     $('inspector-body').setAttribute('aria-labelledby', `tab-${state.tab}`);
@@ -751,7 +800,7 @@
       $('inspector-body').innerHTML = !state.view
         ? '<div class="inspector-empty"><span aria-hidden="true">↖</span><p>Select an issue and a block to inspect its intent, progress and evidence.</p></div>'
         : state.tab === 'artifacts'
-          ? renderArtifacts()
+          ? renderArtifacts(block, artifacts)
           : state.tab === 'conversation'
             ? renderConversation(block)
             : block
@@ -945,23 +994,60 @@
     }
   }
 
-  async function inspectFile(path) {
+  async function inspectFile(path, artifactId) {
+    const file = { artifactId, issueId: state.issueId, raw: '', restatement: null, request: null };
+    inspectedFile = file;
     $('file-title').textContent = path;
     $('file-content').textContent = 'Reading artifact…';
+    $('file-restate').checked = false;
+    $('file-restate').disabled = true;
+    $('file-restate-control').hidden = !artifactId;
     if (!$('file-dialog').open) $('file-dialog').showModal();
     try {
       const result = await json(`/api/shown-file?path=${encodeURIComponent(path)}`);
       if (result.error) throw new Error(result.error);
-      if ($('file-title').textContent === path)
-        $('file-content').textContent = result.content ?? result.file?.content ?? 'No text content returned.';
+      if (inspectedFile !== file) return;
+      file.raw = result.content ?? result.file?.content ?? '';
+      $('file-content').textContent = file.raw || 'This artifact is empty.';
+      $('file-restate').disabled = !file.raw.trim();
     } catch (error) {
-      if ($('file-title').textContent === path) $('file-content').textContent = error.message;
+      if (inspectedFile === file) $('file-content').textContent = error.message;
+    }
+  }
+
+  async function restateFile() {
+    const file = inspectedFile;
+    if (!file) return;
+    const toggle = $('file-restate');
+    const output = $('file-content');
+    if (!toggle.checked) {
+      output.textContent = file.raw;
+      return;
+    }
+    if (file.restatement !== null) {
+      output.textContent = file.restatement;
+      return;
+    }
+    output.textContent = 'Restating in plain language…';
+    file.request ||= json('/api/flow-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-factory-action': 'manual' },
+      body: JSON.stringify({ action: 'restate-artifact', issueId: file.issueId, artifactId: file.artifactId }),
+    });
+    try {
+      const result = await file.request;
+      file.restatement = result.restatement;
+      if (inspectedFile === file && toggle.checked) output.textContent = file.restatement;
+    } catch (error) {
+      if (inspectedFile === file && toggle.checked) output.textContent = error.message;
+    } finally {
+      file.request = null;
     }
   }
 
   async function deleteArtifact(id) {
     const artifact = state.view?.artifacts?.find((item) => item.id === id);
-    if (!artifact?.deletable) return;
+    if (!artifact) return;
     if (!confirm(`Permanently delete this artifact?\n\n${artifact.path}\n\nThis cannot be undone.`)) return;
     const result = await action('delete-artifact', { artifactId: id, confirmed: true });
     if (result) {
@@ -1122,7 +1208,7 @@
     if (button.hasAttribute('data-open-palette')) return openPalette();
     if (button.dataset.addKind) return void addBlock(button.dataset.addKind);
     if (button.hasAttribute('data-sync-target')) return void addBlock('merge-target');
-    if (button.dataset.openFile) return void inspectFile(button.dataset.openFile);
+    if (button.dataset.openFile) return void inspectFile(button.dataset.openFile, button.dataset.artifactId);
     if (button.dataset.deleteArtifact) return void deleteArtifact(button.dataset.deleteArtifact);
     if (button.hasAttribute('data-refresh-skills')) return void refreshSkills(button);
     if (button.hasAttribute('data-add-edit')) {
@@ -1147,6 +1233,11 @@
       field.dataset.field,
       ['iterations', 'lane'].includes(field.dataset.field) ? Number(field.value) : field.value
     );
+  });
+
+  $('file-restate').addEventListener('change', () => void restateFile());
+  $('file-dialog').addEventListener('close', () => {
+    inspectedFile = null;
   });
 
   document.addEventListener('change', async (event) => {

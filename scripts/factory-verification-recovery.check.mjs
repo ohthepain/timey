@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, symlinkSync, unlinkSync } from 'node:fs';
 import vm from 'node:vm';
 import { join } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
@@ -295,7 +295,7 @@ test('candidate verification ignores a concurrent commit-hook report and retains
   const tool = join(root, '.issues/tools/pnpm');
   writeFileSync(
     tool,
-    `#!/usr/bin/env node\nimport fs from 'node:fs';\nconst root=${JSON.stringify(root)};const value=${JSON.stringify(template)};const step=process.argv.includes('audit:step');value.checkpoint=step?'step':'verification';const path=root+'/.issues/evidence/'+value.checkpoint+'-owned-summary.json';const raw=path.replace('-summary.json','-fallow.log');fs.copyFileSync(value.checks.find(c=>c.name==='fallow').log,raw);value.checks.find(c=>c.name==='fallow').log=raw;fs.writeFileSync(path,JSON.stringify(value));fs.writeFileSync(root+'/.issues/evidence/unrelated-commit-summary.json',JSON.stringify({...value,checkpoint:'commit',base:'unrelated-base',passed:false}));console.log(fs.existsSync(root+'/.issues/legacy-output')?'PASS fallow: '+raw:'Verification summary: '+path);\n`,
+    `#!/usr/bin/env node\nimport fs from 'node:fs';\nconst root=${JSON.stringify(root)};const value=${JSON.stringify(template)};const step=process.argv.includes('audit:step');value.checkpoint=step?'step':'verification';if(fs.existsSync(root+'/.issues/snapshot-tree'))value.snapshot_tree=fs.readFileSync(root+'/.issues/snapshot-tree','utf8');const path=root+'/.issues/evidence/'+value.checkpoint+'-owned-summary.json';const raw=path.replace('-summary.json','-fallow.log');fs.copyFileSync(value.checks.find(c=>c.name==='fallow').log,raw);value.checks.find(c=>c.name==='fallow').log=raw;fs.writeFileSync(path,JSON.stringify(value));fs.writeFileSync(root+'/.issues/evidence/unrelated-commit-summary.json',JSON.stringify({...value,checkpoint:'commit',base:'unrelated-base',passed:false}));console.log(fs.existsSync(root+'/.issues/legacy-output')?'PASS fallow: '+raw:'Verification summary: '+path);\n`,
     { mode: 0o755 }
   );
   const previous = process.env.PATH;
@@ -308,6 +308,24 @@ test('candidate verification ignores a concurrent commit-hook report and retains
     writeFileSync(join(root, '.issues/legacy-output'), 'older verifier');
     const legacy = await checkCandidate(root, template.base, join(root, '.issues/legacy-check-output'));
     assert.deepEqual(legacy.summaries, result.summaries);
+    mkdirSync(join(root, 'node_modules/fixture-skill'));
+    symlinkSync('node_modules/fixture-skill', join(root, 'skill-link'));
+    unlinkSync(join(root, 'code.js'));
+    f.source.git('add', '-A');
+    const tree = f.source.git('write-tree');
+    f.source.git('reset', '--mixed', 'HEAD');
+    writeFileSync(join(root, '.issues/snapshot-tree'), tree);
+    const before = f.source.git('status', '--short');
+    const working = await checkCandidate(root, template.base, join(root, '.issues/working-check-output'), {
+      allowUncommitted: true,
+    });
+    assert.equal(working.tree, tree);
+    assert.equal(working.uncommitted, true);
+    assert.equal(f.source.git('status', '--short'), before);
+    await assert.rejects(
+      checkCandidate(root, template.base, join(root, '.issues/strict-check-output')),
+      /uncommitted source changes/
+    );
   } finally {
     process.env.PATH = previous;
   }

@@ -576,7 +576,7 @@ async function runCommand(service, ctx, options) {
       onProgress: ctx.onProgress,
     });
   if (kind === 'verify') {
-    const script = `import {checkCandidate} from ${JSON.stringify(new URL('./checks.mjs', import.meta.url).href)}; const result = await checkCandidate(${JSON.stringify(workspace.checkout)}, ${JSON.stringify(workspace.base)}, ${JSON.stringify(folder)}, {auditPolicy:'required',force:true,onProgress:text=>process.stdout.write(text)}); console.log(); console.log('FLOW_RESULT '+JSON.stringify(result));`;
+    const script = `import {checkCandidate} from ${JSON.stringify(new URL('./checks.mjs', import.meta.url).href)}; const result = await checkCandidate(${JSON.stringify(workspace.checkout)}, ${JSON.stringify(workspace.base)}, ${JSON.stringify(folder)}, {auditPolicy:'required',force:true,allowUncommitted:true,onProgress:text=>process.stdout.write(text)}); console.log(); console.log('FLOW_RESULT '+JSON.stringify(result));`;
     const output = await invoke(process.execPath, ['--input-type=module', '-e', script]);
     const line = output.split(/\r?\n/).findLast((value) => value.startsWith('FLOW_RESULT '));
     requireThat(
@@ -594,13 +594,21 @@ async function runCommand(service, ctx, options) {
       .flatMap((check) => [check.log, ...(check.artifacts || []).map((file) => file.path)])
       .map((path) => ({ path, sha256: digest(readFileSync(path)) }));
     return {
-      ...commandResult(service, ctx, result, 'Explicit verification passed.', [
-        { path: log, label: 'Verification command output' },
-        ...(result.summaries || []).map((path) => ({
-          path,
-          label: 'Verification summary',
-        })),
-      ]),
+      ...commandResult(
+        service,
+        ctx,
+        result,
+        result.uncommitted
+          ? 'Verification passed for the uncommitted source snapshot.'
+          : 'Explicit verification passed.',
+        [
+          { path: log, label: 'Verification command output' },
+          ...(result.summaries || []).map((path) => ({
+            path,
+            label: 'Verification summary',
+          })),
+        ]
+      ),
       workspace,
     };
   }

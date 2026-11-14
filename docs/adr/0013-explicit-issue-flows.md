@@ -49,7 +49,10 @@ provider-enforced protection, explicit acceptance, and cleanup ownership checks
 remain required. Missing project policy or credentials are visible blockers, not
 reasons to invent passing evidence or a legacy approval.
 
-The artifact inspector lists issue records, flow attempts, conversation files,
-command evidence, cleanup backups, and the worktree. Deleting a listed evidence
-file makes it missing and invalidates any proof that requires it. Workspace
-removal uses the protected cleanup adapter and retains its backups.
+The artifact inspector shows evidence produced by the selected block. The latest
+run appears first. Existing evidence from older runs appears in collapsed sections
+labeled by run number. Missing files and files that differ from their recorded
+digest are omitted. Deleting evidence invalidates any proof that requires it.
+Inspect shows raw text and offers a Restate toggle that applies the bro skill’s
+plain-language guidance in a temporary discussion. Workspace removal uses the protected cleanup
+adapter and retains its backups.

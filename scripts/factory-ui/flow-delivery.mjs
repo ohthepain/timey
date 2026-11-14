@@ -27,7 +27,9 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const verification = ctx.flow.blocks
     .filter((block) => block.kind === 'verify')
     .flatMap((block) => block.attempts)
-    .findLast((attempt) => attempt.status === 'completed' && attempt.result?.head === head);
+    .findLast(
+      (attempt) => attempt.status === 'completed' && !attempt.result?.uncommitted && attempt.result?.head === head
+    );
   requireThat(
     verification?.result?.proof?.length >= 2,
     'Run an explicit Verify block for this exact issue candidate. Required independent verification and step evidence are missing.'

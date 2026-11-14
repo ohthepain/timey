@@ -13,7 +13,8 @@
       <aside class="sidebar" aria-label="Issues">
         <div class="project-header">
           <a class="brand" href="/flow" aria-label="Factory home"
-            ><span class="brand-mark" aria-hidden="true">⌘</span> Factory <span class="brand-tag">FLOW</span></a
+            ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
+            ><span class="brand-tag">FLOW</span></a
           >
           <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
             <svg
@@ -32,7 +33,24 @@
             </svg>
           </button>
         </div>
-        <div class="project-label" id="project-label">Local workspace</div>
+        <div class="project-actions-row">
+          <button
+            class="project-actions"
+            id="project-actions"
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+          >
+            0 actions running
+          </button>
+          <label class="actions-switch" id="flow-actions-switch"
+            ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
+          >
+          <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
+            Restart server
+          </button>
+        </div>
+        <small class="project-actions-message" data-server-message role="status"></small>
         <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
         <label class="search-box"
           ><span aria-hidden="true">⌕</span
@@ -202,7 +220,10 @@
         <h2 id="file-title">Artifact</h2>
         <button class="icon-button" data-close-dialog="file-dialog" aria-label="Close artifact">×</button>
       </div>
-      <pre id="file-content" class="file-content"></pre>
+      <label id="file-restate-control" class="actions-switch" hidden>
+        <input id="file-restate" type="checkbox" role="switch" disabled /> Restate
+      </label>
+      <pre id="file-content" class="file-content" aria-live="polite"></pre>
     </dialog>
     <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
       <div class="modal-heading">

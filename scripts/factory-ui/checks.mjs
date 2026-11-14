@@ -7,7 +7,7 @@ import {
 } from './candidate-cache.mjs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, readFileSync, realpathSync, copyFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { assessAudit } from '../audit-result.mjs';
 import { git, readJson, requireThat, runLogged, digest, writeJson } from './common.mjs';
@@ -16,21 +16,17 @@ const activeChecks = new Map();
 export async function checkCandidate(root, base, folder, options = {}) {
   root = realpathSync(root);
   const key =
-    git(root, 'rev-parse', base) +
-    ':' +
-    git(root, 'rev-parse', 'HEAD^{tree}') +
-    ':' +
-    (options.auditPolicy || 'legacy');
+    git(root, 'rev-parse', base) + ':' + git(root, 'rev-parse', 'HEAD') + ':' + (options.auditPolicy || 'legacy');
   const active = activeChecks.get(root);
   if (active) {
     requireThat(
-      active.key === key,
+      active.key === key && !active.workingTree && !options.allowUncommitted,
       'Verification is already running for a different candidate in this checkout. Wait for its owned run to finish.'
     );
     return active.task;
   }
   const task = checkCandidateOnce(root, base, folder, options);
-  activeChecks.set(root, { key, task });
+  activeChecks.set(root, { key, task, workingTree: options.allowUncommitted });
   try {
     return await task;
   } finally {
@@ -43,13 +39,16 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
     existsSync(join(root, 'node_modules')),
     'Matching dependencies are missing from the worker checkout. Install them there before continuing.'
   );
-  requireThat(
-    !git(root, 'status', '--porcelain', '--untracked-files=all'),
-    'The candidate checkout has uncommitted source changes. Preserve them before verification.'
-  );
   git(root, 'merge-base', '--is-ancestor', base, 'HEAD');
   const treeBefore = git(root, 'rev-parse', 'HEAD^{tree}'),
+    headBefore = git(root, 'rev-parse', 'HEAD'),
+    statusBefore = git(root, 'status', '--porcelain', '--untracked-files=all'),
     resolvedBase = git(root, 'rev-parse', base);
+  requireThat(
+    !statusBefore || options.allowUncommitted,
+    'The candidate checkout has uncommitted source changes. Preserve them before verification.'
+  );
+  const sourceBefore = statusBefore ? workingSourceDigest(root) : null;
   const runner = digest(readFileSync(fileURLToPath(import.meta.url))) + ':' + (options.auditPolicy || 'legacy');
   const input = candidateInput(root, resolvedBase, runner);
   const retained = options.force
@@ -84,15 +83,25 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
     requireThat(value.checkpoint === checkpoint, 'Verification returned the wrong checkpoint.');
     summaries.push({ path, value });
   }
-  const head = git(root, 'rev-parse', 'HEAD'),
-    tree = git(root, 'rev-parse', 'HEAD^{tree}');
   requireThat(
-    !git(root, 'status', '--porcelain', '--untracked-files=all'),
-    'The checked checkout has uncommitted source changes.'
+    git(root, 'rev-parse', 'HEAD') === headBefore &&
+      git(root, 'status', '--porcelain', '--untracked-files=all') === statusBefore &&
+      (!sourceBefore || workingSourceDigest(root) === sourceBefore),
+    'The candidate checkout changed during verification. Preserve the new changes and verify them separately.'
   );
-  for (const { value } of summaries) validateSummary(value, base, tree, options);
-  const result = { head, tree, summaries: summaries.map((s) => s.path) };
-  if (input === candidateInput(root, resolvedBase, runner)) retainCandidate(root, input, result);
+  const tree = statusBefore ? summaries[0].value.snapshot_tree : treeBefore;
+  requireThat(
+    typeof tree === 'string' && /^[0-9a-f]{40,64}$/.test(tree),
+    'Verification did not identify its snapshot tree.'
+  );
+  for (const { value } of summaries) validateSummary(value, resolvedBase, tree, options);
+  const result = {
+    head: headBefore,
+    tree,
+    uncommitted: Boolean(statusBefore),
+    summaries: summaries.map((s) => s.path),
+  };
+  if (input && input === candidateInput(root, resolvedBase, runner)) retainCandidate(root, input, result);
   return result;
 }
 function auditEnvironment(options) {
@@ -179,6 +188,24 @@ export function commandSummary(root, output) {
     'The check did not identify its own verification summary.'
   );
   return path;
+}
+function workingSourceDigest(root) {
+  const files = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z')
+    .split('\0')
+    .filter(Boolean)
+    .sort();
+  return digest(
+    JSON.stringify(
+      files.map((path) => {
+        const file = join(root, path);
+        const entry = lstatSync(file, { throwIfNoEntry: false });
+        if (!entry) return [path, 'missing'];
+        if (entry.isSymbolicLink()) return [path, 'symlink', readlinkSync(file)];
+        requireThat(entry.isFile(), 'Cannot snapshot this Git entry as a regular file or symlink: ' + path);
+        return [path, entry.mode, digest(readFileSync(file))];
+      })
+    )
+  );
 }
 export function validateSummary(summary, base, tree, options = {}) {
   requireThat(

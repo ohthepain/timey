@@ -62,6 +62,11 @@ The aggregate verifier invokes `pnpm run test:factory` inside that export so its
 factory coverage follows the package entry point. A factory failure fails the
 aggregate result while the other required checks still run and report separately.
 
+The Flow **Verify** block can check saved, uncommitted source changes. Its
+verification and step audit must report the same snapshot tree. The source
+check records symlinks by their link targets and accounts for deleted files.
+For publication or merge, commit the changes and run Verify on that commit.
+
 Install the checked-in staged Fallow hook with `pnpm run hooks:install`. It refuses
 to replace another hooks directory. It runs the audit on the index snapshot before
 commit; it does not imply all tests passed. Run relevant checks as well. When the
