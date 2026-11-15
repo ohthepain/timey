@@ -356,6 +356,31 @@ kbd {
   font-size: 11px;
   text-align: left;
 }
+.folder-heading {
+  display: flex;
+  align-items: center;
+}
+.folder-heading .folder-toggle {
+  flex: 1;
+  min-width: 0;
+}
+.folder-add {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  margin: 3px 6px 0 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #a9a9a9;
+  cursor: pointer;
+}
+.folder-add:hover,
+.folder-add:focus-visible {
+  border-color: #454545;
+  background: #292929;
+  color: #fff;
+}
 .folder-chevron {
   color: #737373;
   width: 8px;

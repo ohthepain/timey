@@ -372,7 +372,7 @@
         if (state.search && children.length === 0) return '';
         const collapsed = state.folders.has(folder) && !state.search;
         const active = children.find((issue) => issue.activeBlock);
-        return `<section class="issue-folder"><button class="folder-toggle" data-folder="${escape(folder)}" aria-expanded="${!collapsed}">${active ? activeSpinner(active.activeBlock) : `<span class="folder-chevron" aria-hidden="true">${collapsed ? '›' : '⌄'}</span><span aria-hidden="true">▱</span>`}<span>${escape(folder)}</span><span class="folder-count">${children.length}</span></button><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
+        return `<section class="issue-folder"><div class="folder-heading"><button class="folder-toggle" data-folder="${escape(folder)}" aria-expanded="${!collapsed}">${active ? activeSpinner(active.activeBlock) : `<span class="folder-chevron" aria-hidden="true">${collapsed ? '›' : '⌄'}</span><span aria-hidden="true">▱</span>`}<span>${escape(folder)}</span><span class="folder-count">${children.length}</span></button><button class="folder-add" data-create-folder-issue="${escape(folder)}" aria-label="Create issue in ${escape(folder)}" title="Create issue in ${escape(folder)}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
       })
       .join('');
     $('issue-list').innerHTML =
@@ -835,6 +835,14 @@
   }
 
   function openCapture() {
+    state.captureFolder = null;
+    $('capture-error').hidden = true;
+    $('capture-dialog').showModal();
+    $('capture-description').focus();
+  }
+
+  function openCaptureInFolder(folder) {
+    state.captureFolder = folder;
     $('capture-error').hidden = true;
     $('capture-dialog').showModal();
     $('capture-description').focus();
@@ -1301,6 +1309,10 @@
   });
 
   $('new-issue').addEventListener('click', openCapture);
+  $('issue-list').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-create-folder-issue]');
+    if (button) openCaptureInFolder(button.dataset.createFolderIssue);
+  });
   $('project-settings').addEventListener('click', openProjectSettings);
   $('initialize-lifecycle').addEventListener('click', initializeLifecycle);
   $('empty-new-issue').addEventListener('click', openCapture);
@@ -1334,7 +1346,7 @@
     $('capture-error').hidden = true;
     const result = await action(
       'capture',
-      { requestId: state.captureId, description, type: $('capture-type').value },
+      { requestId: state.captureId, description, type: $('capture-type').value, folder: state.captureFolder },
       { global: true, errorId: 'capture-error' }
     );
     if (!result) return;

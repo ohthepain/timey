@@ -16,6 +16,8 @@ stores the request type and fields, target, workspace identity, blocks, dependen
 lanes, comments, and attempts. Revision checks reject conflicting edits. Retrying
 appends an attempt. Interrupted ownership remains uncertain until the original
 provider thread is reconciled. The flow survives workspace deletion.
+Folder rows in the flow sidebar provide a direct issue capture action; captured
+issues save the selected folder in their flow at creation.
 
 The optional `startingPoint` stores a full Git ref, display name, and exact commit.
 It is independent of the delivery target. Project defaults remember only the ref

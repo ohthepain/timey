@@ -240,12 +240,17 @@ try {
   });
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
-  await check('Capture retains typed wording and selected issue type', async () => {
-    await page.locator('#new-issue').click();
+  await check('Folder plus creates an issue directly in that folder and retains typed wording', async () => {
+    await page.locator('#new-folder').click();
+    await page.locator('#folder-name').fill('Browser folder');
+    await page.locator('#folder-form button[type="submit"]').click();
+    await page.locator('[data-create-folder-issue="Browser folder"]').waitFor();
+    await page.locator('[data-create-folder-issue="Browser folder"]').click();
     await page.locator('#capture-description').fill(description);
     await page.locator('#capture-type').selectOption('investigation');
     const data = await clickAction(page.locator('#capture-submit'));
     issueId = data.issue.id;
+    assert.equal(data.flow.folder, 'Browser folder');
     await page.locator('#request-form').waitFor();
     assert.equal(await page.locator('[name="wording"]').inputValue(), description);
     assert.equal(await page.locator('#request-form [name="type"]').inputValue(), 'investigation');
