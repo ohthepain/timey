@@ -17,11 +17,11 @@ class IssueChatConnection extends CodexConnection {
   }
 }
 
-export async function attachIssueChat(connection, cwd, state, retain, sandbox = 'read-only') {
+export async function attachIssueChat(connection, cwd, state, retain, sandbox = 'read-only', instructions) {
   requireNativeRegistration(state);
   connection.issueChatSandboxes ||= new Map();
   if (state.threadId) {
-    await resumeChatSandbox(connection, state.threadId, cwd, sandbox);
+    await resumeChatSandbox(connection, state.threadId, cwd, sandbox, instructions);
     const { thread } = await connection.call('thread/read', { threadId: state.threadId, includeTurns: false });
     requireIdle(thread);
     connection.issueChatSandboxes.set(state.threadId, sandbox);
@@ -31,7 +31,12 @@ export async function attachIssueChat(connection, cwd, state, retain, sandbox = 
     !state.startup || state.startup.status === 'ready',
     'Chat startup is uncertain. Reconcile its original connection; no replacement was created.'
   );
-  const threadId = await connection.start(cwd, sandbox, (startup) => retain({ startup, threadId: startup.threadId }));
+  const threadId = await connection.start(
+    cwd,
+    sandbox,
+    (startup) => retain({ startup, threadId: startup.threadId }),
+    ...(instructions === undefined ? [] : [null, cwd, instructions])
+  );
   connection.issueChatSandboxes.set(threadId, sandbox);
   return threadId;
 }
@@ -47,14 +52,15 @@ function requireIdle(thread) {
   );
 }
 
-async function resumeChatSandbox(connection, threadId, cwd, sandbox) {
-  if (connection.issueChatSandboxes.get(threadId) === sandbox) return;
+async function resumeChatSandbox(connection, threadId, cwd, sandbox, instructions) {
+  if (instructions === undefined && connection.issueChatSandboxes.get(threadId) === sandbox) return;
+  const extra = instructions === undefined ? [] : [instructions];
   try {
-    await connection.resume(threadId, cwd, sandbox);
+    await connection.resume(threadId, cwd, sandbox, ...extra);
   } catch (error) {
     requireArchived(error, threadId);
     await connection.unarchive(threadId);
-    await connection.resume(threadId, cwd, sandbox);
+    await connection.resume(threadId, cwd, sandbox, ...extra);
   }
 }
 function requireArchived(error, threadId) {

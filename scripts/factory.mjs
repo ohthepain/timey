@@ -9,10 +9,12 @@ import { decisionView, listIssues } from './factory-interface.mjs';
 import { factory, readFactoryRegistry } from './factory-ledger.mjs';
 import { statusOutput } from './factory-status.mjs';
 import { readRuntime } from './factory-ui/runtime.mjs';
+import { runViewCommand } from './factory-ui/view-command.mjs';
 export { factory };
 
 export async function runCommand(project, argv, delivery = new IssueDelivery(project)) {
   const [command, ...args] = argv;
+  if (command === 'ui') return runViewCommand(project, args);
   if (command === 'issue-storage-export') return exportIssueReports(project, args[0]);
   if (command === 'issue-storage-migrate') return migrateClosedIssues(project);
   if (command === 'issue-delivery') {

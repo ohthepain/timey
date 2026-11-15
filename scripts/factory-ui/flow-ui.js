@@ -14,7 +14,7 @@
     search: '',
     folders: new Set(),
     drafts: new Map(),
-    skills: new Map(),
+    repoFiles: new Map(),
     loading: false,
     pending: false,
     sequence: 0,
@@ -22,10 +22,12 @@
     error: '',
     connectionError: '',
     captureId: null,
+    checkedBlock: null,
     toastTimer: null,
   };
   const kinds = {
     request: { icon: '○', color: '#aaa49b', description: 'The goal and the evidence that will show it is done.' },
+    target: { icon: '⑂', color: '#7c9acb', description: 'The saved Git starting point and delivery target.' },
     sharpen: { icon: '◇', color: '#c6b66b', description: 'Refine the request and agree on what to do.' },
     grill: { icon: '◇', color: '#c6b66b', description: 'Resolve questions before the next step.' },
     understand: { icon: '⌕', color: '#a39bc3', description: 'Read the code and understand its behavior.' },
@@ -49,13 +51,6 @@
       description: 'Remove the issue checkout after reviewing its records.',
     },
   };
-  const requestFields = [
-    ['goal', 'The goal', 'What is wrong, or what do you want?'],
-    ['doneCheck', 'The done check', 'What must pass or fail?'],
-    ['proof', 'The proof', 'What output, recording or stored value should we retain?'],
-    ['knownFacts', 'What you already know', 'A symptom, a reproduction step, a log line or a link.'],
-    ['constraints', 'The real constraints', 'What should the work respect?'],
-  ];
   const runningStatuses = new Set(['running', 'starting', 'stopping', 'in-progress']);
   let projectSettings = null;
   let inspectedFile = null;
@@ -118,7 +113,16 @@
   }
 
   function blockStyle(kind) {
-    return kinds[kind] || { icon: '□', color: '#999999', description: 'An explicit step in this issue.' };
+    const fallback = kinds[kind] || { icon: '□', color: '#999999', description: 'An explicit step in this issue.' };
+    const colors = { neutral: '#aaa49b', yellow: '#c6b66b', orange: '#c69a62', green: '#76b78d', blue: '#7c9acb' };
+    const entry = state.index.catalog.find((item) => item.id === kind);
+    return entry
+      ? {
+          icon: kinds[entry.kind]?.icon || fallback.icon,
+          color: colors[entry.color] || fallback.color,
+          description: entry.description,
+        }
+      : fallback;
   }
 
   function latest(block) {
@@ -126,7 +130,10 @@
   }
 
   function status(block) {
-    return latest(block)?.status || (block?.suggested ? 'suggested' : 'ready');
+    const attempt = latest(block);
+    if (attempt?.invalidatedAt && !runningStatuses.has(attempt.status) && attempt.status !== 'uncertain')
+      return 'invalidated';
+    return attempt?.status || (block?.suggested ? 'suggested' : 'ready');
   }
 
   function isRunning(block) {
@@ -138,6 +145,7 @@
     const icons = {
       running: '◌',
       'in-progress': '◌',
+      invalidated: '○',
       ready: '○',
       completed: '✓',
       succeeded: '✓',
@@ -247,14 +255,16 @@
               ? { nodeId: '__base', mode: 'start' }
               : { nodeId: state.blockId, mode: 'center' };
       }
-      if (Array.isArray(result.availableSkills)) state.skills.set(state.issueId, result.availableSkills);
     }
     if (result.error) state.error = result.error;
     render();
   }
 
-  async function load(force = false) {
-    if (state.pending || (state.loading && !force)) return;
+  async function load(force = false, announce = false) {
+    if (state.pending || (state.loading && !force)) {
+      if (announce) toast('Wait for the current action before refreshing.');
+      return;
+    }
     if (force) state.controller?.abort();
     const controller = new AbortController();
     state.controller = controller;
@@ -270,6 +280,7 @@
       $('connection-status').className = 'connection';
       $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · 2s';
       applyView(result);
+      if (announce) toast('Saved flow refreshed.');
     } catch (error) {
       if (error.name === 'AbortError' || sequence !== state.sequence) return;
       state.connectionError = `Unable to refresh. ${error.message} The last saved view remains visible.`;
@@ -277,8 +288,29 @@
       $('connection-status').innerHTML = '<span class="connection-dot"></span> Reconnecting';
       renderErrors();
     } finally {
-      if (sequence === state.sequence) state.loading = false;
+      if (sequence === state.sequence) {
+        state.loading = false;
+        void checkOpenBlock();
+      }
     }
+  }
+
+  async function loadRepoFiles(issueId) {
+    if (state.repoFiles.has(issueId)) return;
+    const result = await json(`/api/flow-files?issue=${encodeURIComponent(issueId)}`);
+    state.repoFiles.set(issueId, result.files || []);
+    if (state.issueId !== issueId) return;
+    document.querySelectorAll('input[list^="repo-files-"]').forEach((field) => {
+      const list = field.list;
+      if (!list) return;
+      list.replaceChildren(
+        ...(result.files || []).map((path) => {
+          const option = document.createElement('option');
+          option.value = path;
+          return option;
+        })
+      );
+    });
   }
 
   async function action(name, fields = {}, options = {}) {
@@ -330,7 +362,11 @@
         field.disabled = busy;
       });
     $('continue-block').disabled =
-      busy || !activeBlock() || activeBlock().readOnly || state.view.flow.blocks.some(isRunning);
+      ['request', 'target'].includes(activeBlock()?.kind) ||
+      busy ||
+      !activeBlock() ||
+      activeBlock().readOnly ||
+      state.view.flow.blocks.some(isRunning);
     const startingBranch = $('starting-branch');
     if (startingBranch)
       startingBranch.disabled = busy || !state.view.startingPointEditable || !state.view.branches?.length;
@@ -388,7 +424,7 @@
   }
 
   function activeSpinner(block) {
-    const color = blockStyle(block.kind).color;
+    const color = blockStyle(block.definition ?? block.kind).color;
     return `<span class="status-icon active-spinner" style="--spinner-color:${color}" aria-label="Running ${escape(words(block.kind))}" title="Running ${escape(words(block.kind))}"></span>`;
   }
 
@@ -486,13 +522,27 @@
       .map(([, row]) => row.sort((a, b) => (a.lane || 0) - (b.lane || 0)));
   }
 
-  function blockCard(block) {
-    const style = blockStyle(block.kind);
+  function cardContents(block, style) {
     const attempt = latest(block);
     const currentStatus = status(block);
     const hasEvidence = attempt?.evidence?.length || 0;
-    const description = attempt?.summary || block.prompt || style.description;
-    return `<button class="block-card${state.blockId === block.id ? ' selected' : ''}${block.suggested ? ' suggested' : ''}" style="--block-color:${style.color}" data-block="${escape(block.id)}" data-node="${escape(block.id)}" aria-pressed="${state.blockId === block.id}"><span class="block-port top"></span><span class="block-topline"><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(words(block.kind))}<span class="block-status${isRunning(block) ? ' running' : ''}">${escape(words(currentStatus))}</span></span><span class="block-label">${escape(block.label || words(block.kind))}</span><span class="block-description">${escape(description)}</span><span class="block-bottomline"><span>${escape(block.skill || (block.suggested ? 'Suggested next step' : 'Choose a skill'))}</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span><span class="block-port bottom"></span></button>`;
+    const description = attempt?.summary || block.prompt || blockContent(block)?.description || style.description;
+    const parts = {
+      status: `<span class="block-topline"><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(words(block.kind))}<span class="block-status${isRunning(block) ? ' running' : ''}">${escape(words(currentStatus))}</span></span>`,
+      title: `<span class="block-label">${escape(block.label || words(block.kind))}</span>`,
+      description: `<span class="block-description">${escape(description)}</span>`,
+      footer: `<span class="block-bottomline"><span>${escape(block.skill || (block.suggested ? 'Suggested next step' : 'Choose a skill'))}</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
+    };
+    return (
+      '<span class="block-port top"></span>' + Object.values(parts).join('') + '<span class="block-port bottom"></span>'
+    );
+  }
+
+  function blockCard(block) {
+    const style = blockStyle(block.definition ?? block.kind);
+    const entry = blockContent(block);
+    const source = entry ? ` data-ui-source="${escape(entry.id)}"` : '';
+    return `<button class="block-card${state.blockId === block.id ? ' selected' : ''}${block.suggested ? ' suggested' : ''}" style="--block-color:${style.color}" data-block="${escape(block.id)}"${source} data-node="${escape(block.id)}" aria-pressed="${state.blockId === block.id}">${cardContents(block, style)}</button>`;
   }
 
   function renderGraph() {
@@ -502,10 +552,10 @@
     if (!flow) return;
     if (document.activeElement === $('starting-branch') && $('graph').dataset.issue === state.issueId) return;
     const blocks = flow.blocks || [];
-    const target = flow.target || {};
+    const target = targetData().delivery || {};
     const branch = target.branch || 'Target branch';
     const branches = state.view.branches || [];
-    const point = flow.startingPoint;
+    const point = targetData().startingPoint;
     const fixedBase = flow.workspace?.base || target.base;
     const selectedRef =
       point?.ref ||
@@ -628,14 +678,171 @@
     return `<label class="field">${escape(label)}<textarea data-field="${escape(name)}" name="${escape(name)}" rows="${rows}" placeholder="${escape(placeholder)}">${escape(value)}</textarea></label>`;
   }
 
-  function typeOptions(type) {
-    return [
-      ['feature', 'Feature'],
-      ['bug', 'Bug fix'],
-      ['investigation', 'Investigation'],
-    ]
-      .map(([value, label]) => `<option value="${value}"${type === value ? ' selected' : ''}>${label}</option>`)
-      .join('');
+  function targetData() {
+    const flow = state.view?.flow;
+    return (
+      flow?.blocks.find((block) => block.kind === 'target')?.data ?? {
+        delivery: flow?.target,
+        startingPoint: flow?.startingPoint,
+      }
+    );
+  }
+
+  function displayValue(value) {
+    if (value === undefined || value === null) return '';
+    return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+  }
+
+  function typedInput(name, detail, value) {
+    const fieldName = escape(name);
+    const fieldValue = value ?? '';
+    const type = detail.type || 'text';
+    if (type === 'long text')
+      return `<textarea name="${fieldName}" data-field="${fieldName}" rows="3">${escape(displayValue(fieldValue))}</textarea>`;
+    if (type === 'choice')
+      return `<select name="${fieldName}" data-field="${fieldName}"><option value="">Choose…</option>${(
+        detail.options || []
+      )
+        .map(
+          (option) =>
+            `<option value="${escape(option)}"${String(fieldValue) === option ? ' selected' : ''}>${escape(option)}</option>`
+        )
+        .join('')}</select>`;
+    if (type === 'boolean')
+      return `<input type="checkbox" name="${fieldName}" data-field="${fieldName}" value="true"${fieldValue === true || fieldValue === 'true' ? ' checked' : ''} />`;
+    if (type === 'filename') {
+      const listId = 'repo-files-' + fieldName;
+      const paths = state.repoFiles.get(state.issueId) || [];
+      const selected = String(fieldValue || '');
+      return `<input type="text" name="${fieldName}" data-field="${fieldName}" list="${escape(listId)}" value="${escape(selected)}" placeholder="Choose a file from this repository" /><datalist id="${escape(listId)}">${[
+        ...(selected && !paths.includes(selected) ? [selected] : []),
+        ...paths,
+      ]
+        .map((path) => `<option value="${escape(path)}"></option>`)
+        .join('')}</datalist>`;
+    }
+    if (type === 'number')
+      return `<input type="number" name="${fieldName}" data-field="${fieldName}" value="${escape(displayValue(fieldValue))}" />`;
+    if (type === 'url')
+      return `<input type="url" name="${fieldName}" data-field="${fieldName}" value="${escape(displayValue(fieldValue))}" />`;
+    return `<input type="text" name="${fieldName}" data-field="${fieldName}" value="${escape(displayValue(fieldValue))}" />`;
+  }
+
+  function readonlyInput(name, detail, value, openFile = null) {
+    const fieldName = escape(name);
+    const fieldValue = value ?? '';
+    const type = detail.type || 'text';
+    if (detail.kind === 'file' || type === 'filename') {
+      const path = detail.kind === 'file' || type === 'filename' ? (fieldValue?.path ?? fieldValue) : fieldValue;
+      if (!path) return '<span class="inline-empty">Not produced yet</span>';
+      const button = openFile
+        ? `<button class="small-button" type="button" data-open-file="${escape(openFile)}">Inspect ↗</button>`
+        : detail.kind === 'file'
+          ? `<button class="small-button" type="button" data-open-file="${escape(path)}">Inspect ↗</button>`
+          : detail.fileAvailable
+            ? `<button class="small-button" type="button" data-open-flow-file="${escape(path)}">Inspect ↗</button>`
+            : '';
+      return `<div class="readonly-file"><input type="text" readonly value="${escape(displayValue(path))}" />${button}</div>`;
+    }
+    if (type === 'long text')
+      return fieldValue === ''
+        ? '<span class="inline-empty">Not produced yet</span>'
+        : `<textarea readonly rows="3">${escape(displayValue(fieldValue))}</textarea>`;
+    if (type === 'boolean')
+      return `<input type="checkbox" disabled${fieldValue === true || fieldValue === 'true' ? ' checked' : ''} />`;
+    if (type === 'choice') {
+      const options = detail.options || [];
+      const selected = String(fieldValue);
+      return `<select disabled><option value=""${fieldValue === '' ? ' selected' : ''}>${fieldValue === '' ? 'Not produced yet' : 'Choose…'}</option>${options
+        .map(
+          (option) =>
+            `<option value="${escape(option)}"${option === selected ? ' selected' : ''}>${escape(option)}</option>`
+        )
+        .join('')}</select>`;
+    }
+    if (type === 'url') {
+      let href = '';
+      try {
+        const parsed = new URL(String(fieldValue));
+        if (['http:', 'https:'].includes(parsed.protocol)) href = parsed.href;
+      } catch {}
+      return `<div class="readonly-file"><input type="url" readonly value="${escape(displayValue(fieldValue))}" />${href ? `<a class="small-button" href="${escape(href)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}</div>`;
+    }
+    return `<input type="${type === 'number' ? 'number' : 'text'}" readonly value="${escape(displayValue(fieldValue))}" />`;
+  }
+
+  function outputsSection(block) {
+    const outputs = block.outputs || [];
+    return `<section class="detail-section"><div class="section-label">Outputs</div>${
+      outputs.length
+        ? outputs
+            .map(
+              (output) =>
+                `<label class="field"><span>${escape(output.label)}</span>${readonlyInput(output.key, output, output.value)}</label>`
+            )
+            .join('')
+        : '<p class="inline-empty">This block declares no outputs.</p>'
+    }</section>`;
+  }
+
+  function declaredDetails(block, editable = false) {
+    const fields = (block.details || []).filter((detail) => !detail.derived);
+    if (!fields.length) return '';
+    return `<section class="detail-section"><div class="section-label">Inputs</div>${fields
+      .map((detail) => {
+        const { key, label, value, candidates, selected } = detail;
+        if (!editable)
+          return `<label class="field"><span>${escape(label)}</span>${readonlyInput(key, detail, value)}</label>`;
+        const mode = draft()['mode-' + key] ?? detail.mode;
+        const current = draft()['link-' + key] ?? selected;
+        const choices = (candidates || [])
+          .map(
+            (item) =>
+              `<option value="${escape(item.blockId)}"${current === item.blockId ? ' selected' : ''}>${escape(item.address + '.' + item.output)}</option>`
+          )
+          .join('');
+        const modeControl = `<select name="mode-${escape(key)}" data-field="mode-${escape(key)}" aria-label="${escape(label + ' mode')}"><option value="manual"${mode === 'manual' ? ' selected' : ''}>Manual</option><option value="source"${mode === 'source' ? ' selected' : ''}${candidates?.length ? '' : ' disabled'}>Source</option></select>`;
+        const control =
+          mode === 'source'
+            ? candidates?.length > 1
+              ? `<select name="link-${escape(key)}" data-field="link-${escape(key)}" aria-label="${escape(label + ' source')}"><option value="">Choose a source</option>${choices}</select>${readonlyInput(key, detail, value)}`
+              : candidates?.length === 1
+                ? `<small>${escape(candidates[0].address + '.' + candidates[0].output)}</small>${readonlyInput(key, detail, value)}`
+                : '<span class="inline-empty">No matching upstream output is available.</span>'
+            : typedInput('input-' + key, detail, draft()['input-' + key] ?? value ?? '');
+        return `<div class="field"><span>${escape(label)}</span>${modeControl}${control}</div>`;
+      })
+      .join('')}</section>`;
+  }
+
+  function definitionActions(block) {
+    const definition = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
+    const path = definition?.content;
+    return `<div class="block-actions definition-actions"><button class="small-button" type="button" data-action="refresh-definition" aria-label="Refresh block definition" title="Refresh block definition">🪄</button>${path?.override ? '<button class="small-button" type="button" data-action="reveal-definition">Show in Finder</button>' : path?.bundled ? '<button class="small-button" type="button" data-action="create-override">Create override</button>' : ''}</div>`;
+  }
+
+  async function checkOpenBlock(force = false) {
+    const block = activeBlock();
+    if (!block || block.readOnly || state.pending || state.tab !== 'details' || state.view.flow.request) return;
+    const key = state.issueId + ':' + block.id;
+    if (key === state.checkedBlock && !force) return;
+    state.checkedBlock = key;
+    const result = await action('open-block', { blockId: block.id });
+    if (!result?.details || activeBlock() !== block) return;
+    if (result.revision < state.view.flow.revision) return;
+    state.view.flow.revision = result.revision;
+    if (JSON.stringify(block.details) !== JSON.stringify(result.details)) {
+      block.details = result.details;
+      renderInspector();
+    }
+  }
+
+  function retiredHistory() {
+    const blocks = (state.view.flow.retiredBlocks || []).filter((block) => block.attempts.length);
+    if (!blocks.length) return '';
+    return `<section class="detail-section"><details><summary>Blocks from earlier routes</summary>${blocks
+      .map((block) => `<h3>${escape(block.label)}</h3>${block.attempts.map(attemptCard).join('')}`)
+      .join('')}</details></section>`;
   }
 
   function saveRow() {
@@ -643,28 +850,34 @@
     return `<div class="save-row"><span id="draft-note" class="${dirty ? 'draft-note' : 'saved-note'}">${dirty ? 'Unsaved changes' : 'Saved locally'}</span><button type="submit" class="small-button" data-action="save"${state.pending ? ' disabled' : ''}>Save changes</button></div>`;
   }
 
-  function requestDetails() {
+  function requestDetails(block) {
     const flow = state.view.flow;
-    const request = flow.request || {};
-    const values = { ...request, type: flow.type, ...draft() };
+    const values = { ...block.data, ...draft() };
+    const last = latest(block);
     const folders = [...new Set([...(state.index.folders || []), ...(flow.folder ? [flow.folder] : [])])];
-    return `<section class="detail-section"><div class="section-label">Original request</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}<label class="field">Issue type<select name="type" data-field="type">${typeOptions(values.type)}</select></label>${requestFields.map(([name, label, hint]) => formField(name, label, values[name], hint)).join('')}${saveRow()}</form></section><section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder"><option value="">No folder</option>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder"${state.pending ? ' disabled' : ''}>Move issue</button></form></section><section class="detail-section"><p class="detail-copy">Save your request, then select or add the next block. Every operation starts with your click.</p></section>`;
+    const definition = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form><div class="block-actions"><button class="small-button" data-action="rebuild-flow">Rebuild flow</button></div></section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder"><option value="">No folder</option>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form></section>`;
   }
 
   function skillOptions(block, selected) {
-    const catalog = state.index.catalog.find((entry) => entry.kind === block.kind);
-    const available = state.skills.get(state.issueId) || [];
-    const skills = new Set([
-      ...(catalog?.skills || []),
-      ...available.map((skill) => (typeof skill === 'string' ? skill : skill.name)),
-      ...(selected ? [selected] : []),
-    ]);
-    return `<option value="">Use block default</option>${[...skills]
-      .filter(Boolean)
+    const catalog = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
+    const skills = catalog?.skills || [];
+    return skills
       .map(
         (skill) => `<option value="${escape(skill)}"${skill === selected ? ' selected' : ''}>${escape(skill)}</option>`
       )
-      .join('')}`;
+      .join('');
+  }
+
+  function systemPromptEditor(block, values, locked) {
+    const catalog = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
+    const skills = catalog?.skills || [];
+    const mode = draft()['prompt-mode'] || (skills.includes(values.skill) ? 'skill' : 'text');
+    const field =
+      mode === 'skill'
+        ? `<label class="field"><span>Allowed skill</span><select name="skill" data-field="skill"${locked}>${skillOptions(block, values.skill)}</select></label>`
+        : formField('prompt', 'Prompt text', values.prompt, blockStyle(block.definition ?? block.kind).description, 4);
+    return `<details class="system-prompt"><summary>System prompt <span class="muted-inline">${mode === 'skill' ? 'Skill' : 'Text'}</span></summary>${skills.length ? `<label class="field"><span>Use</span><select name="prompt-mode" data-field="prompt-mode"${locked}><option value="text"${mode === 'text' ? ' selected' : ''}>Text</option><option value="skill"${mode === 'skill' ? ' selected' : ''}>Allowed skill</option></select></label>` : ''}${field}<small>Only skills listed in this block type’s Markdown are available.</small></details>`;
   }
 
   function evidenceLinks(attempt) {
@@ -686,7 +899,7 @@
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(words(attempt.status))}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy">${escape(summary)}</p><p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output">${escape(result)}</pre>` : ''}${evidenceLinks(attempt)}</div>`;
+    return `<div class="block-progress"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(words(attempt.status))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy">${escape(summary)}</p><p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
   }
 
   function comments(block) {
@@ -704,33 +917,93 @@
     return `<section class="detail-section"><div class="section-label">Edits to apply</div>${edits.map((edit) => `<label class="check-row"><input type="checkbox" data-edit="${escape(edit.id)}"${edit.enabled !== false ? ' checked' : ''} /><span>${escape(edit.text)}</span></label>`).join('') || '<p class="inline-empty">Add an edit below. Checked edits will be included when this block runs.</p>'}<div class="edit-add"><input id="new-edit" data-field="newEdit" placeholder="Describe an edit…" aria-label="New edit" value="${escape(changes.newEdit || '')}" /><button type="button" class="small-button" data-add-edit>Add</button></div></section>`;
   }
 
+  let blockContents = new Map();
+
+  function blockContent(block) {
+    return block?.readOnly ? undefined : blockContents.get(block?.definition ?? block?.kind);
+  }
+
+  document.addEventListener('factory-ui-sources', (event) => {
+    const previous = blockContents;
+    blockContents = new Map(
+      event.detail.filter((entry) => entry.document).map((entry) => [entry.id.split('/').at(-1), entry])
+    );
+    for (const block of state.view?.flow?.blocks ?? []) {
+      const key = block.definition ?? block.kind;
+      const entry = blockContent(block);
+      if (entry?.description === previous.get(key)?.description && entry?.id === previous.get(key)?.id) continue;
+      const element = $('graph').querySelector(`[data-block="${CSS.escape(block.id)}"]`);
+      if (!element) continue;
+      if (entry) element.dataset.uiSource = entry.id;
+      else element.removeAttribute('data-ui-source');
+      const summary = latest(block)?.summary || block.prompt || entry?.description || blockStyle(key).description;
+      element.querySelector('.block-description').textContent = summary;
+    }
+    const block = activeBlock();
+    const entry = blockContent(block);
+    const prose = $('inspector-body').querySelector('.block-content');
+    if (prose && !entry) prose.remove();
+    else if (prose && entry && prose.innerHTML !== entry.inspectorHtml) {
+      prose.dataset.uiSource = entry.id;
+      prose.innerHTML = entry.inspectorHtml;
+    } else if (state.tab === 'details' && block && !block.readOnly && !prose && entry) {
+      renderInspector();
+    }
+  });
+
+  function contentSection(block) {
+    const entry = blockContent(block);
+    return entry
+      ? `<section class="detail-section block-content" data-ui-source="${escape(entry.id)}">${entry.inspectorHtml}</section>`
+      : '';
+  }
+
   function blockDetails(block) {
+    if (state.view.flow.request)
+      return '<section class="detail-section"><p class="detail-copy">Restart the Factory server to edit this flow. Your saved issue is available.</p></section>';
     if (block.readOnly)
       return `<section class="detail-section"><p class="detail-copy">This operation started through the existing issue controls. Inspect or stop it there before starting a new flow block.</p><a href="/classic?issue=${encodeURIComponent(state.issueId)}">Open its original controls</a>${block.attempts.map(attemptCard).join('')}</section>`;
-    if (block.kind === 'request') return requestDetails();
+    if (block.kind === 'request') return definitionActions(block) + requestDetails(block) + contentSection(block);
+    if (block.kind === 'target') {
+      const definition = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
+      return (
+        definitionActions(block) +
+        outputsSection(block) +
+        (definition?.prompt
+          ? `<details class="detail-section system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>`
+          : '') +
+        contentSection(block)
+      );
+    }
     const changes = draft();
     const values = { ...block, ...changes };
     const attempts = block.attempts || [];
     const last = latest(block);
-    const intent =
-      block.kind === 'verify' || block.kind === 'benchmark'
-        ? 'Verification intent'
-        : block.kind === 'prototype'
-          ? 'Prototype intent'
-          : 'Instructions';
     const running = isRunning(block);
     const locked = state.pending ? ' disabled' : '';
-    return `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span>${escape(words(status(block)))}</span></div>${last ? attemptCard(last, attempts.length - 1) : '<p class="inline-empty">This block has not run yet. Choose a skill and review its instructions before starting.</p>'}${attempts.length > 1 ? `<details class="attempt-history"><summary>${attempts.length - 1} earlier ${attempts.length === 2 ? 'attempt' : 'attempts'}</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}<div class="block-actions">${running ? `<button class="small-button danger-button" data-action="stop"${locked}>■ Stop block</button>` : `<button class="primary-button" data-action="start"${locked}>▷ ${block.kind === 'prototype' ? (last ? 'Run prototype again' : 'Run prototype') : last ? 'Retry block' : block.suggested ? 'Start this step' : 'Start block'}</button>${last ? `<button class="small-button" data-action="continue"${locked}>Continue</button>` : ''}`}</div></section><form id="block-form"><section class="detail-section" style="margin-top:23px;padding-top:22px;border-top:1px solid var(--line)"><div class="section-label">Block settings<button class="small-button" type="button" data-refresh-skills${locked}>↻ Skills</button></div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><label class="field">Skill<select name="skill" data-field="skill">${skillOptions(block, values.skill)}</select><small>Refresh skills to read the installed project catalog.</small></label>${formField('prompt', intent, values.prompt, blockStyle(block.kind).description, 4)}<div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${editChecklist(block, changes)}${saveRow()}</form><section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button><button class="small-button danger-button" data-action="remove"${running || state.pending ? ' disabled' : ''}>Remove</button></div></section>${comments(block)}`;
+    const sections = {
+      settings: `<form id="block-form">${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
+      progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(words(status(block)))}</span></div>${last ? attemptCard(last, attempts.length - 1) : `<p class="inline-empty">This block has not run yet. Review its inputs before starting.</p>`}${attempts.length > 1 ? `<details class="attempt-history"><summary>${attempts.length - 1} earlier ${attempts.length === 2 ? 'attempt' : 'attempts'}</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}<div class="block-actions">${running ? `<button class="small-button danger-button" data-action="stop"${locked}>■ Stop block</button>` : `<button class="primary-button" data-action="start"${locked}>▷ ${block.kind === 'prototype' ? (last ? 'Run prototype again' : 'Run prototype') : last ? 'Retry block' : block.suggested ? 'Start this step' : 'Start block'}</button>${last ? `<button class="small-button" data-action="continue"${locked}>Continue</button>` : ''}`}</div></section>`,
+      sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button><button class="small-button danger-button" data-action="remove"${running || state.pending ? ' disabled' : ''}>Remove</button></div></section>`,
+      notes: comments(block),
+    };
+    return definitionActions(block) + Object.values(sections).join('') + contentSection(block);
   }
 
   function renderConversation(block) {
     const messages = state.view?.conversation || [];
-    return `<p class="conversation-context">One conversation belongs to this issue. Notes and output retain the block they came from.</p>${messages.length ? `<div class="timeline">${messages.map((message) => `<article class="message"><div class="message-meta"><span class="message-author">${escape(message.actor || message.role || 'Factory')}${message.blockId ? ` · ${escape(state.view.flow.blocks.find((entry) => entry.id === message.blockId)?.label || 'Block')}` : ''}</span><time>${escape(date(message.at))}</time></div><p class="message-body">${escape(message.body)}</p></article>`).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
+    return `<p class="conversation-context">This issue’s conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map((message) => `<article class="message"><div class="message-meta"><span class="message-author">${escape(message.actor || message.role || 'Factory')}${message.blockId ? ` · ${escape(state.view.flow.blocks.find((entry) => entry.id === message.blockId)?.label || 'Block')}` : ''}</span><time>${escape(date(message.at))}</time></div><p class="message-body">${escape(message.body)}</p></article>`).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
   }
 
   function renderArtifacts(block, artifacts) {
     if (!block) return '<p class="inline-empty">Select a block to see its artifacts.</p>';
     const cards = (attempt) =>
+      Object.entries(attempt.artifacts?.values || {})
+        .map(
+          ([key, value]) =>
+            `<article class="artifact"><h3>${escape(key)}</h3><pre class="detail-value">${escape(displayValue(value))}</pre></article>`
+        )
+        .join('') +
       artifacts
         .filter((artifact) => artifact.attemptId === attempt.id)
         .map(
@@ -786,7 +1059,7 @@
 
   function renderInspector() {
     const block = activeBlock();
-    const style = blockStyle(block?.kind);
+    const style = blockStyle(block?.definition ?? block?.kind);
     $('inspector-kind').textContent = block ? words(block.kind) : 'Block details';
     $('inspector-title').style.setProperty('--block-color', style.color);
     $('inspector-title').innerHTML =
@@ -813,7 +1086,14 @@
     renderSidebar();
     const issue = state.view?.issue;
     $('issue-heading').hidden = !issue;
-    $('issue-type-label').textContent = issue ? words(state.view.flow.type || issue.type || 'Issue') : 'Workspace';
+    $('issue-type-label').textContent = issue
+      ? words(
+          state.view.flow.blocks.find((block) => block.kind === 'request')?.data?.fields?.type ||
+            state.view.flow.routeType ||
+            state.view.flow.type ||
+            'Issue'
+        )
+      : 'Workspace';
     $('issue-number').textContent = issue?.issueNumber ? `#${issue.issueNumber}` : issue ? 'Issue flow' : 'Issue flow';
     $('issue-title').textContent = issue?.title || '';
     const blocks = state.view?.flow?.blocks || [];
@@ -844,13 +1124,16 @@
     if (!state.view) return;
     $('block-palette').innerHTML =
       (state.index.catalog || [])
-        .filter((kind) => kind.kind !== 'request')
+        .filter((kind) => !['request', 'target'].includes(kind.kind))
         .map((kind) => {
-          const style = blockStyle(kind.kind);
-          return `<button class="palette-item" style="--block-color:${style.color}" data-add-kind="${escape(kind.kind)}"${state.pending ? ' disabled' : ''}><strong><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(kind.label)}</strong><small>${escape(kind.description || style.description)}</small></button>`;
+          const style = blockStyle(kind.id);
+          return `<button class="palette-item" style="--block-color:${style.color}" data-add-kind="${escape(kind.id)}"${state.pending ? ' disabled' : ''}><strong><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(kind.label)}</strong><small>${escape(kind.description || style.description)}</small></button>`;
         })
         .join('') ||
       '<p class="inline-empty">The block catalog is unavailable. Refresh the workspace to try again.</p>';
+    const errors = state.index.catalogErrors || [];
+    $('block-palette-error').textContent = errors.join('\n');
+    $('block-palette-error').hidden = !errors.length;
     $('palette-dialog').showModal();
   }
 
@@ -867,14 +1150,23 @@
     event.preventDefault();
     const key = draftKey();
     const values = new FormData(event.target);
-    const request = Object.fromEntries(
-      ['wording', ...requestFields.map(([name]) => name)].map((name) => [name, String(values.get(name) || '')])
-    );
-    const result = await action('request', { request, type: values.get('type') });
+    const wording = String(values.get('wording') || '');
+    toast('Clarifying the request…');
+    const result = await action('request', { wording });
     if (!result) return;
     state.drafts.delete(key);
-    toast('Request saved.');
-    await load(true);
+    renderInspector();
+    await offerRebuild(result);
+  }
+
+  async function offerRebuild(result) {
+    const change = result?.issueTypeChange;
+    if (
+      change &&
+      result.issue?.id === state.issueId &&
+      confirm(`Issue type changed from ${words(change.from)} to ${words(change.to)}. Rebuild the flow?`)
+    )
+      await action('rebuild-flow');
   }
 
   async function saveBlock(event) {
@@ -883,12 +1175,32 @@
     if (!block) return;
     const key = draftKey();
     const values = new FormData(event.target);
+    const promptMode = values.get('prompt-mode') || 'text';
     const changes = {
       label: String(values.get('label') || ''),
-      skill: values.get('skill') || null,
-      prompt: String(values.get('prompt') || ''),
+      skill: promptMode === 'skill' ? values.get('skill') || null : null,
+      prompt: promptMode === 'text' ? String(values.get('prompt') || '') : '',
       lane: Number(values.get('lane') || 0),
     };
+    changes.inputs = {};
+    changes.links = {};
+    for (const detail of (block.details || []).filter((item) => item.input)) {
+      const mode = values.get('mode-' + detail.key) || detail.mode;
+      if (mode === 'manual') {
+        const field = event.target.elements.namedItem('input-' + detail.key);
+        if (!field) continue;
+        let value = field.type === 'checkbox' ? field.checked : field.value;
+        if (detail.type === 'number' && value !== '') value = Number(value);
+        changes.inputs[detail.key] = value;
+      } else {
+        const selected = values.get('link-' + detail.key) || detail.selected;
+        if (detail.candidates?.length > 1 && !selected) {
+          showError(`Choose a source for ${detail.label}, or switch it to Manual.`);
+          return;
+        }
+        if (selected) changes.links[detail.key] = selected;
+      }
+    }
     if (block.kind === 'sol') changes.iterations = Number(values.get('iterations') || 1);
     if (block.kind === 'edit') changes.edits = draft().edits || block.edits || [];
     const result = await action('update', { blockId: block.id, changes });
@@ -909,13 +1221,13 @@
     if (
       block.kind === 'merge' &&
       !confirm(
-        `Merge this issue into ${state.view.flow.target?.branch || 'the target branch'}? This changes the target branch.`
+        `Merge this issue into ${targetData().delivery?.branch || 'the target branch'}? This changes the target branch.`
       )
     )
       return;
     if (
       block.kind === 'merge-target' &&
-      !confirm(`Merge changes from ${state.view.flow.target?.branch || 'the target branch'} into this issue checkout?`)
+      !confirm(`Merge changes from ${targetData().delivery?.branch || 'the target branch'} into this issue checkout?`)
     )
       return;
     if (
@@ -947,6 +1259,11 @@
     if (!block) return;
     const name = button.dataset.action;
     if (['start', 'continue'].includes(name)) return startBlock(name, block);
+    if (['refresh-definition', 'rebuild-flow', 'create-override', 'reveal-definition'].includes(name)) {
+      const result = await action(name, { blockId: block.id });
+      if (name === 'refresh-definition') await offerRebuild(result);
+      return;
+    }
     if (
       name === 'remove' &&
       !confirm(`Remove the "${block.label}" block from this flow? Its completed work may still exist in the checkout.`)
@@ -975,26 +1292,7 @@
     await load(true);
   }
 
-  async function refreshSkills(button) {
-    if (state.pending) return;
-    const selected = state.issueId;
-    button.disabled = true;
-    button.textContent = 'Refreshing…';
-    try {
-      const result = await json(`/api/flow-skills?issue=${encodeURIComponent(selected)}`);
-      if (result.error) throw new Error(result.error);
-      state.skills.set(selected, result.skills || []);
-      if (selected === state.issueId) renderInspector();
-      toast(`${result.skills?.length || 0} installed skills loaded.`);
-    } catch (error) {
-      showError(error.message);
-    } finally {
-      button.disabled = false;
-      button.textContent = '↻ Skills';
-    }
-  }
-
-  async function inspectFile(path, artifactId) {
+  async function inspectFile(path, artifactId, flowFile = false) {
     const file = { artifactId, issueId: state.issueId, raw: '', restatement: null, request: null };
     inspectedFile = file;
     $('file-title').textContent = path;
@@ -1004,7 +1302,11 @@
     $('file-restate-control').hidden = !artifactId;
     if (!$('file-dialog').open) $('file-dialog').showModal();
     try {
-      const result = await json(`/api/shown-file?path=${encodeURIComponent(path)}`);
+      const result = await json(
+        flowFile
+          ? `/api/flow-file?issue=${encodeURIComponent(file.issueId)}&path=${encodeURIComponent(path)}`
+          : `/api/shown-file?path=${encodeURIComponent(path)}`
+      );
       if (result.error) throw new Error(result.error);
       if (inspectedFile !== file) return;
       file.raw = result.content ?? result.file?.content ?? '';
@@ -1196,12 +1498,14 @@
       renderGraph();
       renderInspector();
       setBusy(state.pending);
+      void checkOpenBlock(true);
       return;
     }
     if (button.dataset.tab) {
       state.tab = button.dataset.tab;
       $('inspector-body').scrollTop = 0;
       renderInspector();
+      void checkOpenBlock(true);
       return;
     }
     if (button.dataset.closeDialog) return $(button.dataset.closeDialog).close();
@@ -1209,8 +1513,8 @@
     if (button.dataset.addKind) return void addBlock(button.dataset.addKind);
     if (button.hasAttribute('data-sync-target')) return void addBlock('merge-target');
     if (button.dataset.openFile) return void inspectFile(button.dataset.openFile, button.dataset.artifactId);
+    if (button.dataset.openFlowFile) return void inspectFile(button.dataset.openFlowFile, null, true);
     if (button.dataset.deleteArtifact) return void deleteArtifact(button.dataset.deleteArtifact);
-    if (button.hasAttribute('data-refresh-skills')) return void refreshSkills(button);
     if (button.hasAttribute('data-add-edit')) {
       const text = $('new-edit').value.trim();
       if (!text) return;
@@ -1231,8 +1535,24 @@
     if (!field.dataset.field) return;
     setDraft(
       field.dataset.field,
-      ['iterations', 'lane'].includes(field.dataset.field) ? Number(field.value) : field.value
+      field.type === 'checkbox'
+        ? field.checked
+        : ['iterations', 'lane'].includes(field.dataset.field)
+          ? Number(field.value)
+          : field.value
     );
+  });
+
+  document.addEventListener('focusin', (event) => {
+    const field = event.target;
+    if (
+      !field.dataset.field?.startsWith('input-') ||
+      !activeBlock()?.details?.some(
+        (detail) => detail.key === field.dataset.field.slice(6) && detail.type === 'filename'
+      )
+    )
+      return;
+    void loadRepoFiles(state.issueId).catch((error) => showError(`Unable to list repository files. ${error.message}`));
   });
 
   $('file-restate').addEventListener('change', () => void restateFile());
@@ -1242,6 +1562,11 @@
 
   document.addEventListener('change', async (event) => {
     const field = event.target;
+    if (field.dataset.field?.startsWith('mode-') || field.dataset.field === 'prompt-mode') {
+      setDraft(field.dataset.field, field.value);
+      renderInspector();
+      return;
+    }
     if (field.id === 'worktree-menu') {
       const operation = field.value;
       field.value = '';
@@ -1309,7 +1634,7 @@
     if (block) void startBlock('continue', block);
   });
   $('refresh').addEventListener('click', () => {
-    void load(true);
+    void load(true, true);
   });
   $('dismiss-error').addEventListener('click', () => {
     state.error = '';

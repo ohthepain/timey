@@ -203,7 +203,20 @@ planned route; each operation requires its own start.
 
 **Flow block**:
 One visible request, advisory, work, verification, delivery, or cleanup operation.
-Its intent, selected skill, comments, progress, attempts, and evidence are inspectable.
+Its Markdown declares its system prompt, Details and Artifacts. Its intent, skill,
+comments, attempts and evidence are inspectable. A block reads declared inputs
+from its own Details, the issue and upstream blocks. An edit invalidates the
+edited block and its connected successors. Details types each input and Artifacts
+types each output. An input uses either a manual value or a linked upstream
+output; the inspector shows inputs before read-only latest outputs.
+
+**Request block**:
+The owner of Your words and the agent's derived request fields. Saving the wording
+or refreshing Request reruns clarification. Rebuilding the route is a separate
+user action.
+
+**Target block**:
+The owner of the issue's saved starting point and delivery destination.
 
 **Block attempt**:
 One execution of a block. Retry appends an attempt and preserves earlier results.

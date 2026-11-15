@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
+import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-block-data.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { git } from './factory-ui/common.mjs';
@@ -39,7 +40,14 @@ git(project, 'branch', 'older', datedBranch('2000-01-01T12:00:00Z'));
 git(project, 'update-ref', 'refs/remotes/origin/recent', recentBranchCommit);
 git(project, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/recent');
 
-const assets = ['flow.html', 'flow.css', 'flow-ui.js'];
+const assets = [
+  'flow.html',
+  'flow.css',
+  'flow-ui.js',
+  'view-inspection.js',
+  'views/flow/block-inspector.md',
+  'views/flow/blocks/work.md',
+];
 const fingerprint = () =>
   Object.fromEntries(
     assets.map((name) => [
@@ -90,7 +98,23 @@ const executor = {
   },
   close() {},
 };
-service.flows = createIssueFlows(service, { executor });
+service.flows = createIssueFlows(service, {
+  executor,
+  clarify: async (_root, _definition, attempt) => {
+    const wording = attempt.details.find((item) => item.key === 'wording').value;
+    const fields = Object.fromEntries(
+      wording
+        .split('\n')
+        .slice(1)
+        .filter((line) => /^(type|goal|doneCheck|requestedProof|knownFacts|constraints): /.test(line))
+        .map((line) => {
+          const [key, ...value] = line.split(': ');
+          return [key, value.join(': ')];
+        })
+    );
+    return { artifacts: { values: fields }, summary: fields.goal };
+  },
+});
 const server = createFactoryServer(service);
 const require = createRequire(import.meta.url);
 const playwrightRequire = createRequire(require.resolve('@playwright/cli/package.json'));
@@ -99,6 +123,7 @@ let browser;
 let page;
 let issueId;
 let addedId;
+let workId;
 let passed = false;
 let failure;
 async function check(name, run) {
@@ -130,7 +155,10 @@ async function poll(read, predicate, message) {
 }
 async function clickAction(locator) {
   const responsePromise = page.waitForResponse(
-    (response) => response.url().endsWith('/api/flow-action') && response.request().method() === 'POST'
+    (response) =>
+      response.url().endsWith('/api/flow-action') &&
+      response.request().method() === 'POST' &&
+      response.request().postDataJSON().action !== 'open-block'
   );
   await locator.click();
   const response = await responsePromise;
@@ -248,9 +276,61 @@ try {
     issueId = data.issue.id;
     await page.locator('#request-form').waitFor();
     assert.equal(await page.locator('[name="wording"]').inputValue(), description);
-    assert.equal(await page.locator('#request-form [name="type"]').inputValue(), 'investigation');
-    assert.equal(data.flow.request.doneCheck, 'The text survives a reload.');
+    assert.equal(data.flow.routeType, 'investigation');
+    assert.equal(requestData(data.flow).fields, null);
     assert.equal(logs.execution.length, 0);
+  });
+  await check('Inspect and edit a tab source without starting work or losing an issue draft', async () => {
+    const path = join(project, 'factory/ui/overrides/flow/block-inspector.md');
+    const tab = page.locator('#tab-details');
+    const draft = page.locator('[name="wording"]');
+    const flowPosts = () =>
+      logs.requests.filter(({ path, method }) => path === '/api/flow-action' && method === 'POST').length;
+    const before = flowPosts();
+    await draft.fill('Unsaved UI editing fixture');
+    await page.getByRole('button', { name: 'View index' }).click();
+    await page.getByRole('button', { name: 'Block inspector · Details' }).waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Inspect UI' }).click();
+    await page.locator('#refresh').click();
+    await page.locator('#toast').filter({ hasText: 'Saved flow refreshed.' }).waitFor();
+    await tab.hover();
+    await page.getByRole('tooltip').filter({ hasText: 'Inherited' }).waitFor();
+    await tab.click({ button: 'right' });
+    await page.locator('#view-source-edit').click();
+    await page.getByLabel('Label', { exact: true }).fill('Block notes');
+    await page.getByRole('button', { name: 'Save and reload' }).click();
+    await page.getByRole('tab', { name: 'Block notes' }).waitFor();
+    assert.match(readFileSync(path, 'utf8'), /## details-tab\n\nBlock notes/);
+    assert.equal(await draft.inputValue(), 'Unsaved UI editing fixture');
+    await tab.focus();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('button', { name: 'Edit override' }).click();
+    await page.getByLabel('Label', { exact: true }).fill('Stale draft');
+    writeFileSync(path, '## details-tab\n\nExternal change\n');
+    await page.getByRole('button', { name: 'Save and reload' }).click();
+    await page.locator('#view-source-error').filter({ hasText: 'changed on disk' }).waitFor();
+    const conflictLog = logs.console.findIndex(
+      (entry) =>
+        entry.type === 'error' &&
+        entry.location.url.endsWith('/api/ui-sources') &&
+        entry.text.includes('400 (Bad Request)')
+    );
+    assert.ok(conflictLog >= 0, 'The stale editor should receive a rejected request.');
+    logs.console.splice(conflictLog, 1);
+    assert.equal(await page.getByLabel('Label', { exact: true }).inputValue(), 'Stale draft');
+    await page.keyboard.press('Escape');
+    await page.getByRole('tab', { name: 'External change' }).waitFor();
+    writeFileSync(path, '## missing-tab\n\nInvalid override\n');
+    await page.locator('#view-source-status').filter({ hasText: 'unknown section' }).waitFor();
+    assert.equal(await tab.innerText(), 'External change');
+    rmSync(path);
+    await page.getByRole('tab', { name: 'Details' }).waitFor();
+    assert.equal(await draft.inputValue(), 'Unsaved UI editing fixture');
+    assert.equal(flowPosts(), before);
+    assert.equal(logs.execution.length, 0);
+    await page.getByRole('button', { name: 'Inspect UI' }).click();
+    await draft.fill(description);
   });
   await check('New issues open with Starting point flush with the viewport top', async () => {
     await poll(graphGeometry, (value) => Math.abs(value.start) < 2, 'Starting point was not aligned with the top.');
@@ -288,7 +368,7 @@ try {
     await page.locator('#issue-title').click();
     await poll(
       view,
-      (value) => value.flow.startingPoint?.ref === 'refs/heads/recent',
+      (value) => startingPoint(value.flow)?.ref === 'refs/heads/recent',
       'The chosen branch was not saved.'
     );
     await page.reload();
@@ -296,8 +376,8 @@ try {
     assert.equal(await selector.inputValue(), 'refs/heads/recent');
     const selected = await view();
     assert.equal(selected.defaultStartingRef, 'refs/heads/recent');
-    assert.equal(selected.flow.startingPoint.commit, recentBranchCommit);
-    assert.deepEqual(selected.flow.target, data.flow.target);
+    assert.equal(startingPoint(selected.flow).commit, recentBranchCommit);
+    assert.deepEqual(deliveryTarget(selected.flow), deliveryTarget(data.flow));
     assert.equal(logs.execution.length, 0);
     await screenshot('starting-branch-selected');
   });
@@ -331,7 +411,7 @@ try {
     });
     closedId = closed.issue.id;
     assert.equal(
-      closed.flow.startingPoint.ref,
+      startingPoint(closed.flow).ref,
       'refs/heads/recent',
       'The next issue did not inherit the saved default.'
     );
@@ -340,7 +420,8 @@ try {
     mkdirSync(join(project, '.issues/closed'), { recursive: true });
     renameSync(source, join(project, '.issues/closed', closedId + '.md'));
     for (const short of [false, true]) {
-      if (short) service.flows.store.save({ ...closed.flow, blocks: [closed.flow.blocks[0]] }, closed.flow.revision);
+      if (short)
+        service.flows.store.save({ ...closed.flow, blocks: closed.flow.blocks.slice(0, 2) }, closed.flow.revision);
       await page.goto('/flow?issue=' + closedId);
       await page.locator('[data-node="__destination"]').waitFor();
       await poll(graphGeometry, (value) => Math.abs(value.end) < 2, 'The closed Destination was not bottom aligned.');
@@ -402,7 +483,7 @@ try {
     wording: description + '\nKeep this exact wording.',
     goal: 'Understand and preserve saved text.',
     doneCheck: 'Saved text is visible after two reloads.',
-    proof: 'A retained screen and saved record.',
+    requestedProof: 'A retained screen and saved record.',
     knownFacts: 'The browser can reproduce this on refresh.',
     constraints: 'Keep the original request and every attempt.',
   };
@@ -470,18 +551,31 @@ try {
     await screenshot('resizable-inspector');
     assert.equal(logs.execution.length, 0);
   });
-  await check('All request fields and type survive saving and reload', async () => {
-    for (const [name, value] of Object.entries(edited))
-      await page.locator('#request-form [name="' + name + '"]').fill(value);
-    await page.locator('#request-form [name="type"]').selectOption('bug');
+  const { wording: original, ...clarified } = edited;
+  const savedWording =
+    original +
+    '\n' +
+    Object.entries({ ...clarified, type: 'bug' })
+      .map(([key, value]) => key + ': ' + value)
+      .join('\n');
+  await check('Saving Your words retains derived fields and offers a route rebuild', async () => {
+    await page.locator('#request-form [name="wording"]').fill(savedWording);
+    const dialog = page.waitForEvent('dialog').then(async (offer) => {
+      assert.match(offer.message(), /changed from Investigation to Bug/i);
+      await offer.dismiss();
+    });
     await clickAction(page.locator('#request-form button[type="submit"]'));
+    await dialog;
     await page.reload();
     await page.locator('#request-form').waitFor();
-    for (const [name, value] of Object.entries(edited))
-      assert.equal(await page.locator('#request-form [name="' + name + '"]').inputValue(), value);
+    assert.equal(await page.locator('#request-form [name="wording"]').inputValue(), savedWording);
     const data = await view();
-    assert.equal(data.flow.type, 'bug');
-    assert.deepEqual(data.flow.request, edited);
+    assert.equal(data.flow.routeType, 'investigation');
+    assert.deepEqual(requestData(data.flow).fields, { ...clarified, type: 'bug' });
+    assert.equal(await page.locator('#request-form [name="type"]').count(), 0);
+    const rebuilt = await clickAction(page.getByRole('button', { name: 'Rebuild flow', exact: true }));
+    assert.equal(rebuilt.flow.routeType, 'bug');
+    workId = rebuilt.flow.blocks.find((item) => item.kind === 'work').id;
   });
   await check('Folders can be created and assigned without running work', async () => {
     await page.locator('#new-folder').click();
@@ -498,7 +592,7 @@ try {
   await check('Adding and saving a block retains skill, instructions and parallel lane', async () => {
     await page.getByRole('button', { name: 'Add a step', exact: true }).click();
     const data = await clickAction(page.locator('[data-add-kind="understand"]'));
-    addedId = data.flow.blocks.find((item) => item.kind === 'understand' && item.id !== 'work').id;
+    addedId = data.flow.blocks.find((item) => item.kind === 'understand' && item.id !== workId).id;
     await page.locator('#palette-dialog').waitFor({ state: 'hidden' });
     await block(addedId);
     await page.locator('#block-form [name="label"]').fill('Read the save behavior');
@@ -546,7 +640,7 @@ try {
   });
   await check('Block clicks preserve visible cards and minimally reveal clipped cards', async () => {
     await page.setViewportSize({ width: 1440, height: 600 });
-    const target = page.locator('[data-block="work"]');
+    const target = page.locator('[data-block="' + workId + '"]');
     await target.evaluate((node) => {
       const scroll = document.getElementById('graph-scroll');
       scroll.scrollTop += node.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 80;
@@ -554,7 +648,7 @@ try {
     const before = await page.locator('#graph-scroll').evaluate((node) => node.scrollTop);
     let bounds = await target.boundingBox();
     await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-    await poll(selectedGeometry, (value) => value.blockId === 'work', 'The visible block was not selected.');
+    await poll(selectedGeometry, (value) => value.blockId === workId, 'The visible block was not selected.');
     assert.ok(Math.abs((await selectedGeometry()).scrollTop - before) < 2, 'Selecting a visible card jumped.');
     await Promise.all([
       page.waitForResponse((response) => response.url().includes('/api/flow?')),
@@ -593,8 +687,64 @@ try {
     assert.equal((await view()).flow.blocks.find((item) => item.id === addedId).comments.length, 1);
     assert.equal(logs.execution.length, 0);
   });
+  const workOverride = join(project, 'factory/ui/overrides/flow/blocks/work.md');
+  await check('Work Markdown reloads headings and lists without changing layout, drafts or actions', async () => {
+    await page.getByRole('button', { name: 'Add a step', exact: true }).click();
+    const data = await clickAction(page.locator('[data-add-kind="work"]'));
+    const id = data.flow.blocks.find((item) => item.kind === 'work' && item.id !== workId).id;
+    await block(id);
+    const prose = page.locator('.block-content');
+    await prose.getByRole('heading', { name: 'Work block' }).waitFor();
+    const skillOptions = page.locator('#block-form [name="skill"] option');
+    assert.ok((await skillOptions.allTextContents()).includes('poteto-mode'));
+    const card = page.locator('[data-block="' + id + '"]');
+    await page.locator('#view-inspect').click();
+    await card.hover();
+    await page
+      .getByRole('tooltip')
+      .filter({ hasText: 'Optional user extension factory/ui/extensions/flow/blocks/work.md' })
+      .waitFor();
+    await page.locator('#view-inspect').click();
+    const layout = () => card.locator(':scope > span').evaluateAll((items) => items.map((item) => item.className));
+    const originalLayout = await layout();
+    const draft = page.locator('#block-form [name="label"]');
+    const original = await draft.inputValue();
+    const title = await card.locator('.block-label').innerText();
+    const status = await card.locator('.block-status').innerText();
+    await draft.fill('Unsaved Work draft');
+    mkdirSync(dirname(workOverride), { recursive: true });
+    const extension = join(project, 'factory/ui/extensions/flow/blocks/work.md');
+    mkdirSync(dirname(extension), { recursive: true });
+    writeFileSync(extension, '## Local evidence\n\nKeep the command output.\n');
+    writeFileSync(
+      workOverride,
+      '# Project Work\n\nReady when you are.\n\n## Evidence to retain\n\n- Command output\n- Saved artifact\n\n# Skill list\n\n- arena\n- how\n'
+    );
+    await prose.getByRole('heading', { name: 'Evidence to retain' }).waitFor();
+    await prose.getByRole('listitem').filter({ hasText: 'Command output' }).waitFor();
+    await prose.getByRole('heading', { name: 'Local evidence' }).waitFor();
+    await poll(
+      () => skillOptions.allTextContents(),
+      (labels) => labels.includes('how') && !labels.includes('poteto-mode'),
+      'Skill suggestions did not reload.'
+    );
+    assert.equal(await card.locator('.block-description').innerText(), 'Ready when you are.');
+    assert.deepEqual(await layout(), originalLayout);
+    assert.equal(await card.locator('.block-label').innerText(), title);
+    assert.equal(await card.locator('.block-status').innerText(), status);
+    assert.equal(await draft.inputValue(), 'Unsaved Work draft');
+    assert.equal(await page.locator('[data-action="start"]').count(), 1);
+    assert.equal(logs.execution.length, 0);
+    writeFileSync(workOverride, '# Empty override\n');
+    await page.locator('#view-source-status').filter({ hasText: 'needs a paragraph' }).waitFor();
+    await prose.getByRole('heading', { name: 'Evidence to retain' }).waitFor();
+    rmSync(workOverride);
+    rmSync(extension);
+    await prose.getByRole('heading', { name: 'Work block' }).waitFor();
+    await draft.fill(original);
+  });
   await check('Header Continue retains draft guards, exposes progress and disables during a run', async () => {
-    await block('work');
+    await block(workId);
     await page.locator('#block-form [name="label"]').fill('Work with saved settings');
     await page.locator('#continue-block').click();
     assert.equal(logs.execution.length, 0);
@@ -603,7 +753,7 @@ try {
     await clickAction(page.locator('#continue-block'));
     await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === 'work').attempts[0]?.output.includes('attempt 1'),
+      (data) => data.flow.blocks.find((item) => item.id === workId).attempts[0]?.output.includes('attempt 1'),
       'Progress output was not saved.'
     );
     await page.locator('.attempt-output').filter({ hasText: 'explicit attempt 1' }).waitFor();
@@ -615,7 +765,7 @@ try {
       'A running issue allows its starting branch to change.'
     );
     await page.reload();
-    await page.locator('[data-block="work"][aria-pressed="true"]').waitFor();
+    await page.locator('[data-block="' + workId + '"][aria-pressed="true"]').waitFor();
     await poll(
       selectedGeometry,
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
@@ -625,10 +775,10 @@ try {
     await clickAction(page.locator('[data-action="stop"]'));
     const stopped = await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === 'work').attempts[0]?.status === 'stopped',
+      (data) => data.flow.blocks.find((item) => item.id === workId).attempts[0]?.status === 'stopped',
       'Stop was not retained.'
     );
-    const attempt = stopped.flow.blocks.find((item) => item.id === 'work').attempts[0];
+    const attempt = stopped.flow.blocks.find((item) => item.id === workId).attempts[0];
     assert.match(attempt.output, /explicit attempt 1/);
     assert.ok(stopped.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
   });
@@ -637,10 +787,10 @@ try {
     await clickAction(page.locator('[data-action="start"]'));
     const completed = await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === 'work').attempts.at(-1)?.status === 'completed',
+      (data) => data.flow.blocks.find((item) => item.id === workId).attempts.at(-1)?.status === 'completed',
       'Retry did not complete.'
     );
-    const attempts = completed.flow.blocks.find((item) => item.id === 'work').attempts;
+    const attempts = completed.flow.blocks.find((item) => item.id === workId).attempts;
     assert.deepEqual(
       attempts.map((item) => item.status),
       ['stopped', 'completed']
@@ -667,16 +817,16 @@ try {
   });
   await check('Reload retains flow settings, comments, folder and attempt history', async () => {
     await page.reload();
-    await page.locator('[data-block="work"][aria-pressed="true"]').waitFor();
+    await page.locator('[data-block="' + workId + '"][aria-pressed="true"]').waitFor();
     const data = await view();
     assert.equal(data.flow.folder, 'Next release');
-    assert.deepEqual(data.flow.request, edited);
+    assert.deepEqual(requestData(data.flow).fields, { ...clarified, type: 'bug' });
     const added = data.flow.blocks.find((item) => item.id === addedId);
     assert.equal(added.skill, 'how');
     assert.equal(added.lane, 1);
     assert.equal(added.comments[0].text, 'Keep every partial attempt for review.');
     assert.deepEqual(
-      data.flow.blocks.find((item) => item.id === 'work').attempts.map((item) => item.status),
+      data.flow.blocks.find((item) => item.id === workId).attempts.map((item) => item.status),
       ['stopped', 'completed']
     );
     assert.equal(logs.execution.length, 2);
@@ -685,7 +835,7 @@ try {
   });
   await check('The responsive workspace keeps controls usable', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await block('work');
+    await block(workId);
     await page.locator('#block-form').scrollIntoViewIfNeeded();
     assert.equal(await page.locator('#block-form [name="label"]').isVisible(), true);
     assert.equal(await page.locator('#new-issue').isVisible(), true);
@@ -757,6 +907,19 @@ try {
     );
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
+  });
+  await check('Start in the Markdown Work layout starts exactly one block', async () => {
+    const open = (await view()).flow.blocks.find((item) => item.kind === 'work');
+    await block(open.id);
+    const progress = page.locator('#inspector-body');
+    await clickAction(progress.locator('[data-action="start"]'));
+    await poll(
+      view,
+      (data) => data.flow.blocks.find((item) => item.id === open.id).attempts.at(-1)?.status === 'completed',
+      'The Markdown Work block did not finish.'
+    );
+    assert.equal(logs.execution.length, 3);
+    assert.equal(logs.execution.at(-1).blockId, open.id);
   });
   await check('Worktree menu opens the saved checkout and updates it from the remote target', async () => {
     await page.goto('/flow?issue=' + issueId);

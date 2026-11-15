@@ -50,6 +50,16 @@ artifacts** to see the surviving files for an earlier run. **Inspect** opens the
 raw text. Turn on **Restate** for a version that follows the bro skill’s
 plain-language guidance.
 
+The Details tab shows declared **Inputs** first. Each input can use a Manual
+value or a matching upstream **Source**; unique Markdown source matches are
+selected by default. **Outputs** are read-only fields from the latest run, while
+earlier results remain in attempt history. The collapsed **System prompt** section
+lets a block use prompt text or one of the skills allowed by its Markdown. Block
+Markdown can type fields as `text`, `long text`, `number`, `boolean`, `choice`,
+`filename`, or `url`; untyped fields use text controls. Choice options are JSON
+arrays. Filename inputs choose repository files and save relative paths; URL
+outputs open only valid HTTP(S) links.
+
 Every button provides clear feedback when activated. Show immediate progress for
 asynchronous operations, then report success or failure. Use a popup or toast for
 operations that run outside the block graph, such as updating a worktree. Keep

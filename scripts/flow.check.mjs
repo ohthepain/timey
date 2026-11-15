@@ -4,11 +4,114 @@ import { cpSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } fr
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
+import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-block-data.mjs';
 import { FlowStore, newFlow, editFlow } from './factory-ui/flow-store.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowObserver } from './factory-ui/flow-observer.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/project-settings.mjs';
 import { humanGuard } from './factory-ui/guard.mjs';
+import { ViewSources } from './factory-ui/view-sources.mjs';
+import { BlockCatalog, blockExtensions, userBlocks } from './factory-ui/block-catalog.mjs';
+
+test('Markdown block defaults apply to new blocks and user definitions keep the Work operation', (t) => {
+  const { root } = gitFixture(t, 'block-catalog-');
+  const catalog = new BlockCatalog(root);
+  const issue = { id: 'test', title: 'Feature', content: '' };
+  const saved = newFlow(issue, 'dev', catalog.read().entries);
+  assert.equal(saved.blocks.find((block) => block.kind === 'work').skill, null);
+  assert.deepEqual(catalog.read().entries.find((entry) => entry.id === 'work').skills, [
+    'poteto-mode',
+    'arena',
+    'swarm',
+  ]);
+  const folder = join(root, userBlocks);
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(
+    join(folder, 'catalog.json'),
+    JSON.stringify({ work: { defaultSkill: 'arena' }, 'project-review': { label: 'Project review' } })
+  );
+  const custom = join(folder, 'project-review.md');
+  writeFileSync(custom, '# Project review\n\nReview this change.\n');
+  const result = catalog.read();
+  assert.deepEqual(result.errors, []);
+  const created = newFlow(issue, 'dev', result.entries);
+  assert.equal(created.blocks.find((block) => block.kind === 'work').skill, 'arena');
+  assert.equal(saved.blocks.find((block) => block.kind === 'work').skill, null);
+  const changed = editFlow(saved, { action: 'add', kind: 'project-review' }, result.entries);
+  const block = changed.blocks.find((item) => item.definition === 'project-review');
+  assert.equal(block.kind, 'work');
+  assert.equal(block.skill, null);
+  const workPath = join(folder, 'work.md');
+  writeFileSync(workPath, '# Skill list\n\n- `arena`\n- how\n');
+  const extensionFolder = join(root, blockExtensions);
+  mkdirSync(extensionFolder, { recursive: true });
+  const legacyExtension = join(folder, 'work_user.md');
+  writeFileSync(legacyExtension, 'Legacy note.\n');
+  const extension = join(extensionFolder, 'work.md');
+  writeFileSync(extension, '## Project notes\n\n- Keep the command output.\n');
+  const extended = catalog.read();
+  assert.deepEqual(extended.errors, []);
+  const work = extended.entries.find((entry) => entry.id === 'work');
+  assert.deepEqual(work.skills, ['arena', 'how']);
+  assert.match(work.content.html, /Complete only this block/);
+  assert.match(work.content.html, /<li>Keep the command output\.<\/li>/);
+  assert.doesNotMatch(work.content.html, /Legacy note/);
+  assert.equal(work.content.extension, extension);
+  assert.doesNotMatch(work.content.html, /Skill list/);
+  assert.equal(
+    extended.entries.some((entry) => entry.id === 'work_user'),
+    false
+  );
+  writeFileSync(workPath, '# Skill list\n\n- arena\n- arena\n');
+  const badList = catalog.read();
+  assert.match(badList.errors[0], /unique skill name/);
+  assert.deepEqual(badList.entries.find((entry) => entry.id === 'work').skills, ['arena', 'how']);
+  rmSync(workPath);
+  rmSync(extension);
+  assert.match(catalog.read().entries.find((entry) => entry.id === 'work').content.html, /Legacy note/);
+  rmSync(legacyExtension);
+  assert.deepEqual(catalog.read().entries.find((entry) => entry.id === 'work').skills, [
+    'poteto-mode',
+    'arena',
+    'swarm',
+  ]);
+  writeFileSync(custom, '---\nkind: merge\n---\n');
+  const invalid = catalog.read();
+  assert.match(invalid.errors[0], /contains front matter/);
+  assert.equal(invalid.entries.find((item) => item.id === 'project-review').kind, 'work');
+  rmSync(custom);
+  assert.equal(
+    catalog.read().entries.some((item) => item.id === 'project-review'),
+    false
+  );
+  assert.equal(block.skill, null);
+});
+
+test('UI source updates match a clean build and preserve the last valid override', (t) => {
+  const { root } = gitFixture(t, 'view-sources-');
+  const sources = new ViewSources(root);
+  const initial = sources.update();
+  const [details, conversation] = initial.entries;
+  assert.equal(details.label, 'Details');
+  assert.deepEqual(sources.update().changed, []);
+  const firstEdit = sources.edit(details.id, details.editRevision, 'Notes');
+  assert.deepEqual(firstEdit.changed, [details.view]);
+  assert.deepEqual(firstEdit.entries, new ViewSources(root).update().entries);
+  const path = join(root, details.overridePath);
+  assert.throws(() => sources.edit(conversation.id, conversation.editRevision, 'Stale'), /changed on disk/);
+  const edit = firstEdit.entries[1];
+  const updated = sources.edit(edit.id, edit.editRevision, 'Discussion');
+  assert.match(readFileSync(path, 'utf8'), /## details-tab\n\nNotes\n\n## conversation-tab\n\nDiscussion/);
+  assert.deepEqual(updated.entries, new ViewSources(root).update().entries);
+  writeFileSync(path, '## obsolete-tab\n\nTyped label\n');
+  const rejected = sources.update();
+  assert.deepEqual(rejected.changed, []);
+  assert.match(rejected.errors[0], /unknown section: obsolete-tab/);
+  assert.equal(rejected.entries[0].label, 'Notes');
+  assert.equal(new ViewSources(root).update().entries[0].label, 'Details');
+  rmSync(path);
+  assert.deepEqual(sources.update().entries, initial.entries);
+});
 
 function fixture(t) {
   const { root, git } = gitFixture(t, 'explicit-flow-');
@@ -115,13 +218,13 @@ test('starting branch options retain every ref, order commits and persist defaul
     revision: before.flow.revision,
     ref: 'refs/heads/recent',
   });
-  assert.deepEqual(selected.flow.startingPoint, { ref: 'refs/heads/recent', name: 'recent', commit: recent });
-  assert.deepEqual(selected.flow.target, before.flow.target);
+  assert.deepEqual(startingPoint(selected.flow), { ref: 'refs/heads/recent', name: 'recent', commit: recent });
+  assert.deepEqual(deliveryTarget(selected.flow), deliveryTarget(before.flow));
   assert.equal(git('branch', '--show-current'), currentBranch);
   assert.equal(selected.defaultStartingRef, 'refs/heads/recent');
   const restarted = createIssueFlows(service, { executor: executor(async () => ({ summary: 'done' })) });
   t.after(() => restarted.close());
-  assert.equal((await restarted.view(id)).flow.startingPoint.commit, recent);
+  assert.equal(startingPoint((await restarted.view(id)).flow).commit, recent);
   git('update-ref', 'refs/heads/recent', older);
   const input = {
     action: 'capture',
@@ -130,10 +233,10 @@ test('starting branch options retain every ref, order commits and persist defaul
     description: 'Start the next issue on my chosen branch',
   };
   const captured = await restarted.action(input);
-  assert.deepEqual(captured.flow.startingPoint, { ref: 'refs/heads/recent', name: 'recent', commit: older });
+  assert.deepEqual(startingPoint(captured.flow), { ref: 'refs/heads/recent', name: 'recent', commit: older });
   git('update-ref', 'refs/heads/recent', recent);
   assert.equal(
-    (await restarted.action(input)).flow.startingPoint.commit,
+    startingPoint((await restarted.action(input)).flow).commit,
     older,
     'Capture retry changed its original starting commit.'
   );
@@ -142,14 +245,16 @@ test('starting branch options retain every ref, order commits and persist defaul
     restarted.action({ action: 'starting-point', issueId: id, revision: latest.flow.revision, ref: '--help' })
   );
   const attempted = structuredClone(latest.flow);
-  attempted.blocks[0].attempts.push({ id: 'retained', status: 'completed', startedAt: '2026-11-13T12:00:00Z' });
+  attempted.blocks
+    .find((block) => block.id === 'work')
+    .attempts.push({ id: 'retained', status: 'completed', startedAt: '2026-11-13T12:00:00Z' });
   restarted.store.save(attempted, attempted.revision);
   const locked = await restarted.view(id);
   assert.equal(locked.startingPointEditable, false);
   await assert.rejects(() =>
     restarted.action({ action: 'starting-point', issueId: id, revision: locked.flow.revision, ref: 'refs/heads/older' })
   );
-  assert.equal((await restarted.view(id)).flow.startingPoint.commit, recent);
+  assert.equal(startingPoint((await restarted.view(id)).flow).commit, recent);
   git('branch', '-D', 'recent');
   await assert.rejects(
     () => restarted.action({ ...input, requestId: '00000000-0000-4000-8000-000000000122' }),
@@ -161,16 +266,16 @@ test('request data and block order persist with revision conflicts rejected', as
   const { root, id, service } = fixture(t);
   const flows = createIssueFlows(service, { executor: executor(async () => ({ summary: 'done' })) });
   let view = await flows.view(id);
-  assert.equal(view.flow.request.doneCheck, 'Saved value persists after reload.');
-  assert.equal(view.flow.type, 'bug');
+  assert.match(requestData(view.flow).wording, /Saved value persists after reload/);
+  assert.equal(view.flow.routeType, 'bug');
   const request = view.flow.blocks[0].id;
   assert.equal((await flows.view(id)).flow.blocks[0].id, request);
   view = await flows.action({ issueId: id, revision: 0, action: 'add', kind: 'repro' });
-  assert.equal(view.flow.blocks[2].kind, 'repro');
-  assert.equal(view.flow.blocks[3].kind, 'verify');
+  assert.equal(view.flow.blocks[3].kind, 'repro');
+  assert.equal(view.flow.blocks[4].kind, 'verify');
   await assert.rejects(flows.action({ issueId: id, revision: 0, action: 'folder', folder: 'Stale' }), /flow changed/);
   const reloaded = createIssueFlows(service, { executor: executor(async () => ({})) });
-  assert.equal((await reloaded.view(id)).flow.blocks[2].kind, 'repro');
+  assert.equal((await reloaded.view(id)).flow.blocks[3].kind, 'repro');
   assert.ok(existsSync(join(root, '.issues/flows', id, 'flow.json')));
 });
 
@@ -191,17 +296,17 @@ test('a block runs only on explicit start and retry retains both attempts', asyn
   await flows.action({ issueId: id, revision: 0, blockId: 'work', action: 'start' });
   await flows.active.get(id)?.task;
   let view = await flows.view(id);
-  assert.equal(view.flow.blocks[1].attempts[0].status, 'blocked');
-  assert.equal(view.flow.blocks[1].attempts[0].output, 'actual output');
+  assert.equal(view.flow.blocks.find((block) => block.id === 'work').attempts[0].status, 'blocked');
+  assert.equal(view.flow.blocks.find((block) => block.id === 'work').attempts[0].output, 'actual output');
   await flows.action({ issueId: id, revision: view.flow.revision, blockId: 'work', action: 'continue' });
   await flows.active.get(id)?.task;
   view = await flows.view(id);
   assert.deepEqual(
-    view.flow.blocks[1].attempts.map((a) => a.status),
+    view.flow.blocks.find((block) => block.id === 'work').attempts.map((a) => a.status),
     ['blocked', 'completed']
   );
   assert.equal(calls, 2);
-  assert.equal(view.flow.blocks[2].attempts.length, 0);
+  assert.equal(view.flow.blocks.find((block) => block.id === 'verify').attempts.length, 0);
 });
 
 test('stop stays available while progress revisions advance and retains partial output', async (t) => {
@@ -219,8 +324,8 @@ test('stop stays available while progress revisions advance and retains partial 
   await flows.action({ issueId: id, revision: 0, blockId: 'work', action: 'stop' });
   await task;
   const view = await flows.view(id);
-  assert.equal(view.flow.blocks[1].attempts[0].status, 'stopped');
-  assert.equal(view.flow.blocks[1].attempts[0].output, 'started');
+  assert.equal(view.flow.blocks.find((block) => block.id === 'work').attempts[0].status, 'stopped');
+  assert.equal(view.flow.blocks.find((block) => block.id === 'work').attempts[0].output, 'started');
 });
 
 test('external target changes and worktree deletion are observed without starting work', async (t) => {
@@ -229,7 +334,7 @@ test('external target changes and worktree deletion are observed without startin
   git('worktree', 'add', '-qb', 'codex/test', checkout, 'dev');
   const issue = { id, title: 'Test', content: '' };
   const flow = newFlow(issue, { branch: 'dev', remote: 'origin', base: git('rev-parse', 'dev') });
-  flow.workspace = { checkout, branch: 'codex/test', base: flow.target.base };
+  flow.workspace = { checkout, branch: 'codex/test', base: deliveryTarget(flow).base };
   const store = new FlowStore(root);
   store.save(flow, 0);
   const observer = createFlowObserver(service);
@@ -252,11 +357,16 @@ test('external target changes and worktree deletion are observed without startin
   assert.equal((await observer.observe(flow)).worktreeExists, false);
 });
 
-test('folders, request edits, comments and typed capture survive reload without model calls', async (t) => {
+test('request edits clarify only Request and leave route rebuilding to the user', async (t) => {
   const { service, id } = fixture(t);
   const flows = createIssueFlows(service, {
     executor: executor(async () => {
       throw Error('not requested');
+    }),
+    clarify: async (_root, _definition, attempt) => ({
+      artifacts: {
+        values: { type: 'investigation', goal: attempt.details.find((item) => item.key === 'wording').value },
+      },
     }),
   });
   await flows.action({ action: 'create-folder', name: 'Next release' });
@@ -266,17 +376,21 @@ test('folders, request edits, comments and typed capture survive reload without 
     issueId: id,
     revision: view.flow.revision,
     action: 'request',
-    type: 'investigation',
-    request: { ...view.flow.request, goal: 'Understand saving' },
+    wording: 'Understand saving',
   });
+  assert.equal(view.flow.routeType, 'bug');
+  assert.deepEqual(view.issueTypeChange, { from: 'bug', to: 'investigation' });
+  assert.equal(requestData(view.flow).fields.goal, 'Understand saving');
+  view = await flows.action({ issueId: id, revision: view.flow.revision, action: 'rebuild-flow' });
+  assert.equal(view.flow.routeType, 'investigation');
   view = await flows.action({
     issueId: id,
     revision: view.flow.revision,
     action: 'comment',
-    blockId: 'request',
+    blockId: view.flow.blocks.find((block) => block.kind === 'understand').id,
     text: 'Keep the original wording.',
   });
-  assert.equal(view.flow.blocks[0].comments.length, 1);
+  assert.equal(view.flow.blocks.find((item) => item.kind === 'understand').comments.length, 1);
   const input = {
     action: 'capture',
     requestId: '00000000-0000-4000-8000-000000000001',
@@ -284,8 +398,8 @@ test('folders, request edits, comments and typed capture survive reload without 
     description: 'Create a compact view\nDone: Three columns are visible.',
   };
   const captured = await flows.action(input);
-  assert.equal(captured.flow.type, 'feature');
-  assert.equal(captured.flow.request.doneCheck, 'Three columns are visible.');
+  assert.equal(captured.flow.routeType, 'feature');
+  assert.match(requestData(captured.flow).wording, /Three columns are visible/);
   assert.equal((await flows.action(input)).issue.id, captured.issue.id);
   assert.equal((await flows.view()).issues.length, 2);
 });
@@ -293,10 +407,10 @@ test('folders, request edits, comments and typed capture survive reload without 
 test('block graph rejects cycles and preserves attempted history', (t) => {
   const { root } = fixture(t);
   const flow = newFlow({ id: '20261113-one', title: 'Example', content: '' }, { branch: 'dev', remote: 'origin' });
-  flow.blocks[1].after = ['close'];
+  flow.blocks.find((block) => block.id === 'work').after = ['close'];
   assert.throws(() => new FlowStore(root).save(flow, 0), /dependencies/);
-  flow.blocks[1].after = ['request'];
-  flow.blocks[1].attempts.push({ id: 'attempt', status: 'blocked' });
+  flow.blocks.find((block) => block.id === 'work').after = ['request'];
+  flow.blocks.find((block) => block.id === 'work').attempts.push({ id: 'attempt', status: 'blocked' });
   assert.throws(() => editFlow(flow, { action: 'remove', blockId: 'work' }), /history/);
 });
 
@@ -363,7 +477,7 @@ test('new investigations propose understanding and acceptance without code deliv
   );
   assert.deepEqual(
     flow.blocks.map((block) => block.kind),
-    ['request', 'understand', 'close']
+    ['request', 'target', 'understand', 'close']
   );
 });
 
@@ -372,7 +486,7 @@ test('a disconnected flow keeps classic operations out until its original attemp
   const { flowOwnsIssue } = await import('./factory-ui/flow-ownership.mjs');
   const { factoryBoundary } = await import('./factory-ui/issue-operation.mjs');
   const flow = newFlow({ id, title: 'Example', content: '' }, { branch: 'dev', remote: 'origin' });
-  flow.blocks[1].attempts.push({ id: 'unknown-original-turn', status: 'uncertain' });
+  flow.blocks.find((block) => block.id === 'work').attempts.push({ id: 'unknown-original-turn', status: 'uncertain' });
   new FlowStore(root).save(flow, 0);
   service.flows = { active: new Map() };
   assert.equal(flowOwnsIssue(service, id), true);
@@ -412,7 +526,9 @@ test('failed continuation retains original ownership until provider idle is posi
   const { root, id, service } = fixture(t);
   const { flowOwnsIssue } = await import('./factory-ui/flow-ownership.mjs');
   const initial = newFlow({ id, title: 'Unknown original turn', content: '' }, { branch: 'dev', remote: 'origin' });
-  initial.blocks[1].attempts.push({ id: 'original', status: 'uncertain', startedAt: new Date().toISOString() });
+  initial.blocks
+    .find((block) => block.id === 'work')
+    .attempts.push({ id: 'original', status: 'uncertain', startedAt: new Date().toISOString() });
   new FlowStore(root).save(initial, 0);
   let idle = false;
   const flows = createIssueFlows(service, {
@@ -435,6 +551,44 @@ test('failed continuation retains original ownership until provider idle is posi
   await flows.active.get(id)?.task;
   assert.equal(flowOwnsIssue(service, id), false);
   view = await flows.view(id);
-  assert.ok(view.flow.blocks[1].attempts[0].reconciledAt);
-  assert.equal(view.flow.blocks[1].attempts[0].status, 'uncertain');
+  assert.ok(view.flow.blocks.find((block) => block.id === 'work').attempts[0].reconciledAt);
+  assert.equal(view.flow.blocks.find((block) => block.id === 'work').attempts[0].status, 'uncertain');
+});
+
+test('opening a changed definition stops active work and invalidates only its connected branch', async (t) => {
+  const { root, id, service } = fixture(t);
+  let calls = 0;
+  const flows = createIssueFlows(service, {
+    executor: executor(({ signal }) => {
+      calls++;
+      return new Promise((_, reject) =>
+        signal.addEventListener('abort', () => reject(Error('Interrupted by edit.')), { once: true })
+      );
+    }),
+  });
+  const issue = flows.selected(id);
+  const initial = editFlow(flows.read(issue), { action: 'add', kind: 'design', lane: 1 });
+  const independent = initial.blocks.find((block) => block.kind === 'design');
+  independent.attempts.push({ id: 'independent', status: 'completed', startedAt: new Date().toISOString() });
+  const verify = initial.blocks.find((block) => block.kind === 'verify');
+  verify.attempts.push({ id: 'proof', status: 'completed', startedAt: new Date().toISOString() });
+  flows.store.save(initial, 0);
+  await flows.action({ issueId: id, revision: 1, action: 'start', blockId: 'work' });
+  const active = flows.active.get(id);
+  const path = flows.catalog.createOverride('work');
+  writeFileSync(
+    path,
+    readFileSync(path, 'utf8').replace('Perform the requested work.', 'Perform the requested repair.')
+  );
+  await flows.action({ issueId: id, action: 'open-block', blockId: 'verify' });
+  assert.equal(active.controller.signal.aborted, false);
+  await flows.action({ issueId: id, action: 'open-block', blockId: 'work' });
+  await active.task;
+  const { flow } = await flows.view(id);
+  const attempt = (blockId) => flow.blocks.find((block) => block.id === blockId).attempts.at(-1);
+  assert.equal(attempt('work').status, 'stopped');
+  assert.ok(attempt('work').invalidatedAt);
+  assert.ok(attempt(verify.id).invalidatedAt);
+  assert.equal(attempt(independent.id).invalidatedAt, undefined);
+  assert.equal(calls, 1);
 });

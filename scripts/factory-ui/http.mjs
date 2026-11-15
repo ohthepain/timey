@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { uiDirectory } from './ui-source.mjs';
+import { ViewSources } from './view-sources.mjs';
 import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
 import {
   mergeIssueStrategyPR,
@@ -124,6 +125,10 @@ async function mutation(service, path, value, owner) {
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
+    '/api/ui-sources': () => {
+      service.ownServer();
+      return viewSources(service).edit(value.id, value.revision, value.label);
+    },
     '/api/flow-action': () => flows(service).action(value),
     '/api/native-chat-prepare': () => {
       service.ownServer();
@@ -280,8 +285,10 @@ async function read(service, request, response, owner) {
   const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
     '/api/project-settings': () => readProjectSettings(service.root),
+    '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
     '/api/flow': () => flows(service).view(issue(selectedIssue)),
-    '/api/flow-skills': () => flows(service).skills(issue(selectedIssue)),
+    '/api/flow-files': () => flows(service).files(issue(selectedIssue)),
+    '/api/flow-file': () => flows(service).file(issue(selectedIssue), url.searchParams.get('path')),
     '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
@@ -334,6 +341,7 @@ function readResource(service, request, response, owner) {
   }
   const scripts = {
     '/flow-ui.js': 'flow-ui.js',
+    '/view-inspection.js': 'view-inspection.js',
     '/flow.css': 'flow.css',
     '/native-chat-ui.js': 'native-chat-ui.js',
     '/server-control-ui.js': 'server-control-ui.js',
@@ -360,6 +368,11 @@ function readResource(service, request, response, owner) {
 function flows(service) {
   service.flows ||= createIssueFlows(service);
   return service.flows;
+}
+
+function viewSources(service) {
+  service.viewSources ||= new ViewSources(service.root, flows(service).catalog);
+  return service.viewSources;
 }
 
 function savedRun(service, id) {

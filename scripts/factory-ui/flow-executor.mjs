@@ -1,7 +1,9 @@
+import { BlockCatalog } from './block-catalog.mjs';
+import { blockDefinitionId, deliveryTarget, startingPoint, upstreamBlocks } from './flow-block-data.mjs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, realpathSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { existsSync, statSync, mkdirSync, realpathSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
 import { conversationState, saveConversationState, appendMessage } from './conversation-store.mjs';
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
@@ -15,33 +17,8 @@ import { readQueue } from './data.mjs';
 import { git, cleanEnvironment, requireThat, writeJson, digest } from './common.mjs';
 import { redactValue } from './activity.mjs';
 import { flowClosureArtifact, flowDeliveryProvider, publishFlowPR, verifiedFlowCandidate } from './flow-delivery.mjs';
+import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
 
-const modelBlocks = new Map([
-  [
-    'request',
-    'Refine the request into its goal, pass/fail done check, requested proof, known facts and constraints. Preserve the user intent.',
-  ],
-  ['refine', 'Refine the request. Preserve the user intent and separate facts from assumptions.'],
-  ['sharpen', 'Establish shared understanding and sharpen the requested outcome.'],
-  ['understand', 'Explain the requested subsystem using observed evidence.'],
-  ['design', 'Design the requested change and record decisions and unresolved choices.'],
-  ['work', 'Perform only the requested work.'],
-  ['repro', 'Reproduce the reported behavior and retain the observed result. Do not fix it.'],
-  ['tdd', 'Create the requested failing test to drive implementation. Do not implement the fix.'],
-  ['benchmark', 'Check the measurement method and retain actual command output and its limits.'],
-  ['prototype', 'Create or run only the prototype explicitly described by the user.'],
-  ['edit', 'Apply only the enabled edits listed below.'],
-  [
-    'retro',
-    'Review this issue and recommend concrete next actions. Do not create issues or perform the recommendations.',
-  ],
-  ['advice', 'Recommend skills and routing for this request. Do not execute the recommendations.'],
-  ['playbook', 'Produce a proposed playbook for this request. Do not execute its steps.'],
-  [
-    'sol',
-    'Review the current issue candidate. Report findings with evidence. Do not edit code or start nested reviewers.',
-  ],
-]);
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
 const commandBlocks = new Set(['verify', 'merge-target', 'publish', 'merge', 'close', 'delete-worktree']);
 
@@ -51,6 +28,7 @@ export function createFlowExecutor(service, options = {}) {
   const create = options.createConnection || createIssueChatConnection;
   const execute = options.execute || executeCommand;
   const attach = options.attach || attachIssueChat;
+  const catalog = new BlockCatalog(service.root);
   return {
     async run(ctx) {
       requireThat(!closed, 'The block executor is closed. Restart the server before running another block.');
@@ -60,7 +38,14 @@ export function createFlowExecutor(service, options = {}) {
       );
       const scopedService = operationService(service, ctx.issue.id);
       assertIdle(scopedService, ctx.issue.id);
-      requireThat(modelBlocks.has(ctx.block.kind) || commandBlocks.has(ctx.block.kind), 'Choose a supported block.');
+      const definition =
+        ctx.definition ?? catalog.read().entries.find((entry) => entry.id === blockDefinitionId(ctx.block));
+      const command = commandBlocks.has(ctx.block.kind);
+      requireThat(
+        command || (definition?.usable && definition.prompt),
+        'Add a System prompt to this block’s Markdown.'
+      );
+
       const controller = new AbortController();
       const forward = () => controller.abort(ctx.signal?.reason);
       ctx.signal?.addEventListener('abort', forward, { once: true });
@@ -70,19 +55,21 @@ export function createFlowExecutor(service, options = {}) {
       const bounded = (text) => ctx.onProgress?.(redactValue(String(text)).slice(-2000));
       const context = {
         ...ctx,
+        definition,
         signal: controller.signal,
         onProgress: bounded,
       };
       try {
         context.signal.throwIfAborted();
         service.ownServer();
-        return modelBlocks.has(ctx.block.kind)
+        const result = !command
           ? await runModel(service, context, owned, {
               create,
               attach,
               ...options,
             })
           : await runReconciledCommand(scopedService, context, { execute, ...options });
+        return command && !result.artifacts ? { ...result, artifacts: commandArtifacts(definition, result) } : result;
       } finally {
         ctx.signal?.removeEventListener('abort', forward);
         owned.connection?.close();
@@ -161,7 +148,7 @@ async function workspaceFor(service, ctx) {
     'The issue checkout must be inside its managed .issues folder.'
   );
   requireThat(
-    workspace.branch && workspace.branch !== ctx.flow.target.branch,
+    workspace.branch && workspace.branch !== deliveryTarget(ctx.flow).branch,
     'Issue work must use its saved branch, separate from the target.'
   );
   if (!saved?.checkout) {
@@ -200,8 +187,9 @@ async function workspaceFor(service, ctx) {
 }
 
 function startingRevision(root, flow) {
-  if (flow.startingPoint) {
-    const commit = flow.startingPoint.commit;
+  const point = startingPoint(flow);
+  if (point) {
+    const commit = point.commit;
     requireThat(
       typeof commit === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(commit),
       'The saved starting commit needs reconciliation before creating its workspace.'
@@ -210,7 +198,7 @@ function startingRevision(root, flow) {
     requireThat(resolved === commit, 'The saved starting commit could not be verified exactly.');
     return commit;
   }
-  const target = flow.target;
+  const target = deliveryTarget(flow);
   if (target.base) return git(root, 'rev-parse', '--verify', target.base);
   try {
     return git(root, 'rev-parse', '--verify', `refs/remotes/${target.remote}/${target.branch}`);
@@ -234,28 +222,78 @@ function evidenceDirectory(service, ctx) {
   return folder;
 }
 
-function blockPrompt(ctx) {
-  const enabled = (ctx.block.edits || []).filter((edit) => edit.enabled).map((edit) => edit.text);
-  return [
-    `You are executing exactly one explicit ${ctx.block.kind} block for issue ${ctx.issue.id}.`,
-    modelBlocks.get(ctx.block.kind),
-    'Stop when this block is complete. Do not continue to another block, run aggregate verification, publish, push, merge, close, delete worktrees, or perform cleanup. Verification and lifecycle operations require their own explicit blocks. A selected skill supplies method only; instructions to automatically execute later stages are outside this block.',
-    'Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.',
-    `Issue type: ${ctx.flow.type}. Request: ${JSON.stringify(ctx.flow.request)}.`,
-    `Target: ${JSON.stringify(ctx.flow.target)}.`,
-    `Issue report:\n${ctx.issue.content || ctx.issue.title || ''}`,
-    `User notes for this block:\n${(ctx.block.comments || [])
-      .slice(-20)
-      .map((comment) => comment.text)
-      .join('\n\n')}`,
-    `User instruction for this block:\n${ctx.block.prompt || ''}`,
-    ...(ctx.block.kind === 'edit' ? [`Enabled edits:\n${enabled.map((edit) => '- ' + edit).join('\n')}`] : []),
-    ...(ctx.block.attempts?.length > 1
-      ? [
-          'Continue this same block with its selected skill and the saved conversation. Retain earlier findings and failed attempts.',
-        ]
-      : []),
-  ].join('\n\n');
+function blockInput(ctx) {
+  return JSON.stringify(
+    {
+      block: ctx.block.label || ctx.block.kind,
+      details: (ctx.attempt.details ?? []).map(({ key, value }) => ({ key, value: value ?? null })),
+      notes: (ctx.block.comments || []).slice(-20).map((comment) => comment.text),
+    },
+    null,
+    2
+  );
+}
+
+function artifactInstructions(definition) {
+  const available = definition.artifacts.filter(({ key }) => key !== 'response');
+  return (
+    'End your response with a flow-result fenced JSON object when you publish declared artifacts or report a failure. Use values and files as maps keyed by the declared artifact names. File paths must be inside the saved issue checkout. For missing required inputs or proof, include a failure string naming what is missing. Include only actual results. Declared artifacts: ' +
+    JSON.stringify(available)
+  );
+}
+
+function retainModelFile(workspace, folder, { key, label }, file) {
+  const original = realpathSync(resolve(workspace.checkout, file));
+  requireThat(
+    original.startsWith(workspace.checkout + sep) &&
+      !relative(workspace.checkout, original).split(sep).includes('.git'),
+    'Choose evidence inside the issue checkout.'
+  );
+  const stat = statSync(original);
+  requireThat(stat.isFile() && stat.size <= 25 * 1024 * 1024, 'Choose a file up to 25 MB.');
+  const bytes = readFileSync(original);
+  const path = join(folder, 'artifact-' + key + '-' + basename(original).slice(-120));
+  writeFileSync(path, bytes, { mode: 0o600 });
+  return { path, label, sha256: digest(bytes) };
+}
+
+function modelArtifacts(definition, output, workspace, response) {
+  const manifest = output.match(/```flow-result\s*\n([\s\S]*?)\n```\s*$/i)?.[1];
+  const recorded = manifest ? JSON.parse(manifest) : {};
+  const files = {};
+  const values = {};
+  for (const artifact of definition.artifacts) {
+    const { key, kind, label } = artifact;
+    if (kind === 'value' && Object.hasOwn(recorded?.values ?? {}, key)) values[key] = recorded.values[key];
+    if (kind !== 'file') continue;
+    if (key === 'response') files[key] = response;
+    const file = recorded?.files?.[key];
+    if (key === 'response' || typeof file !== 'string') continue;
+    try {
+      files[key] = retainModelFile(workspace, dirname(response.path), artifact, file);
+    } catch (error) {
+      throw Error('Could not retain ' + label + ': ' + error.message);
+    }
+  }
+  const failure = typeof recorded?.failure === 'string' && recorded.failure.trim();
+  return {
+    artifacts: { values, files },
+    evidence: [response, ...Object.values(files).filter((item) => item !== response)],
+    ...(failure ? { status: 'blocked', summary: failure.slice(0, 1200) } : {}),
+  };
+}
+
+function commandArtifacts(definition, result) {
+  const values = {};
+  const files = {};
+  for (const { key, kind, label } of definition?.artifacts ?? []) {
+    if (kind === 'file') {
+      const evidence = result.evidence?.find((item) => item.key === key);
+      if (evidence) files[key] = { ...evidence, label };
+    }
+    if (kind === 'value' && key === 'candidate' && result.result?.head) values[key] = result.result.head;
+  }
+  return { values, files };
 }
 
 async function runModel(service, ctx, owned, options) {
@@ -275,12 +313,33 @@ async function runModel(service, ctx, owned, options) {
   const sandbox = readOnlyBlocks.has(ctx.block.kind) ? 'read-only' : 'workspace-write';
   if (sandbox === 'workspace-write') guardBlock(service, ctx, 'implement', workspace.base);
   const state = conversationState(service.root, ctx.issue.id);
-  const workThreadId = service.lifecycleRuns[ctx.issue.id]?.workThreadId;
+  const savedBlock = state.flowBlocks?.[ctx.block.id];
   requireThat(
-    !state.threadId || !workThreadId || state.threadId === workThreadId,
-    'The saved issue conversation and legacy worker chat differ. Reconcile their identities before continuing.'
+    !savedBlock?.startup || savedBlock.startup.status === 'ready',
+    'Chat startup is uncertain. Reconcile the original connection before continuing.'
   );
-  if (workThreadId) state.threadId = workThreadId;
+  const basis = digest(
+    JSON.stringify([
+      ctx.attempt.definitionChecksum,
+      ctx.attempt.details,
+      ctx.block.skill,
+      ctx.block.prompt,
+      ctx.block.comments,
+    ])
+  );
+  const previous = ctx.block.attempts?.findLast(
+    (attempt) =>
+      attempt.id !== ctx.attempt.id &&
+      !attempt.reconciledAt &&
+      ['running', 'stopping', 'uncertain'].includes(attempt.status)
+  );
+  const recover =
+    previous &&
+    (savedBlock?.threadId
+      ? savedBlock
+      : { threadId: state.threadId || service.lifecycleRuns[ctx.issue.id]?.workThreadId });
+  const last = ctx.block.attempts?.findLast((attempt) => attempt.id !== ctx.attempt.id);
+  const binding = ctx.continuing && !last?.invalidatedAt && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
   service.issueChats?.release(ctx.issue.id);
   const folder = evidenceDirectory(service, ctx);
   const outputPath = join(folder, 'output.txt');
@@ -315,11 +374,6 @@ async function runModel(service, ctx, owned, options) {
     await listAvailableSkills(connection, workspace.checkout),
     ctx.block.skill ? [ctx.block.skill] : []
   );
-  const previous = state.flowBlocks?.[ctx.block.id];
-  requireThat(
-    !previous || previous.skill === (ctx.block.skill || null),
-    'Continue this block with its saved skill, or add a new block for a different method.'
-  );
   const settings = newChatModelSettings(service.root, ctx.issue.id);
   let rounds = 1;
   if (ctx.block.kind === 'sol') {
@@ -334,15 +388,26 @@ async function runModel(service, ctx, owned, options) {
     settings.model = model.id;
   }
   const retain = (changes) => {
-    Object.assign(state, changes);
+    Object.assign(binding, changes);
+    state.flowBlocks = { ...state.flowBlocks, [ctx.block.id]: binding };
     saveConversationState(service.root, ctx.issue.id, state);
   };
-  const prompt = blockPrompt(ctx);
+  const prompt = blockInput(ctx);
+  const instructions = [
+    ctx.definition.prompt,
+    ctx.block.skill ? '' : ctx.block.prompt,
+    'Use only the supplied Details, instructions, and notes as inputs from this flow.',
+    artifactInstructions(ctx.definition),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   const outputs = [];
   let threadId;
   let turnDispatched = false;
   let terminalObserved = false;
   let rejectStopped;
+  let interruptTimer;
+  let finished = false;
   const stopped = new Promise((_, reject) => {
     rejectStopped = reject;
   });
@@ -359,7 +424,9 @@ async function runModel(service, ctx, owned, options) {
       return;
     }
     Promise.resolve(connection.interrupt(threadId)).then(
-      () => setTimeout(() => rejectStopped(stopError()), 0),
+      () => {
+        if (!finished) interruptTimer = setTimeout(() => rejectStopped(stopError()), 10000);
+      },
       (error) => {
         ctx.onProgress('Interruption is uncertain. ' + error.message);
         rejectStopped(stopError());
@@ -369,17 +436,25 @@ async function runModel(service, ctx, owned, options) {
   ctx.signal.addEventListener('abort', interrupt, { once: true });
   try {
     ctx.signal.throwIfAborted();
-    threadId = await Promise.race([stopped, options.attach(connection, workspace.checkout, state, retain, sandbox)]);
+    requireThat(
+      !previous || recover?.threadId,
+      'Recover the original Codex conversation before continuing this block.'
+    );
+    if (recover?.threadId && recover.threadId !== binding.threadId) {
+      await Promise.race([stopped, options.attach(connection, workspace.checkout, recover, () => {}, sandbox)]);
+      ctx.signal.throwIfAborted();
+    }
+    threadId = await Promise.race([
+      stopped,
+      options.attach(connection, workspace.checkout, binding, retain, sandbox, instructions),
+    ]);
     ctx.signal.throwIfAborted();
     await ctx.onReconciled?.();
     retain({
       threadId,
       status: 'responding',
       messageId: ctx.attempt.id,
-      flowBlocks: {
-        ...state.flowBlocks,
-        [ctx.block.id]: { skill: ctx.block.skill || null },
-      },
+      skill: ctx.block.skill || null,
     });
     appendMessage(service.root, ctx.issue.id, {
       id: 'flow-request-' + ctx.attempt.id,
@@ -432,10 +507,12 @@ async function runModel(service, ctx, owned, options) {
       blockId: ctx.block.id,
     });
     retain({ status: 'idle' });
+    const response = { path: outputPath, label: 'Block response', sha256: digest(readFileSync(outputPath)) };
+    const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);
     return {
       summary: output.slice(0, 1200),
       output,
-      evidence: [{ path: outputPath, label: 'Block response', sha256: digest(readFileSync(outputPath)) }],
+      ...retained,
       result: {
         threadId,
         skill: ctx.block.skill || null,
@@ -461,7 +538,10 @@ async function runModel(service, ctx, owned, options) {
     const partial = redactValue(error.partialText || outputs.join('\n\n') || liveText);
     if (partial) writeFileSync(outputPath, partial, { mode: 0o600 });
     retain({
-      status: error.terminalStatus === 'interrupted' ? 'idle' : 'attention',
+      status:
+        ['interrupted', 'completed', 'failed'].includes(error.terminalStatus) || terminalObserved
+          ? 'idle'
+          : 'attention',
     });
     error.evidence = [
       ...(error.evidence || []),
@@ -469,6 +549,8 @@ async function runModel(service, ctx, owned, options) {
     ];
     throw error;
   } finally {
+    finished = true;
+    clearTimeout(interruptTimer);
     ctx.signal.removeEventListener('abort', interrupt);
   }
 }
@@ -483,6 +565,9 @@ async function runCommand(service, ctx, options) {
   ctx.signal.throwIfAborted();
   const kind = ctx.block.kind;
   const record = service.lifecycleRuns[ctx.issue.id];
+  const flowWasEdited = upstreamBlocks(ctx.block, ctx.flow.blocks).some((block) =>
+    block.attempts.some((attempt) => attempt.invalidatedAt)
+  );
   if (['publish', 'merge', 'close', 'delete-worktree'].includes(kind))
     requireThat(
       ctx.input?.confirmed === true,
@@ -504,7 +589,7 @@ async function runCommand(service, ctx, options) {
   }
   if (kind === 'merge') {
     const work = record?.work;
-    if (!work?.pr || !work.prHead || !work.runId) return mergeFlowPR(service, ctx, options);
+    if (flowWasEdited || !work?.pr || !work.prHead || !work.runId) return mergeFlowPR(service, ctx, options);
     const result = await (options.merge || mergeIssueStrategyPR)(service, {
       issueId: ctx.issue.id,
       pr: work.pr,
@@ -517,15 +602,16 @@ async function runCommand(service, ctx, options) {
     const queue = readQueue(service.root);
     const issue = queue.issues.find((item) => item.id === ctx.issue.id);
     requireThat(issue, 'This issue is no longer open. Refresh its saved closure.');
-    const artifact = record?.work
-      ? null
-      : await flowClosureArtifact(
-          service,
-          ctx,
-          await workspaceFor(service, ctx),
-          evidenceDirectory(service, ctx),
-          options
-        );
+    const artifact =
+      record?.work && !flowWasEdited
+        ? null
+        : await flowClosureArtifact(
+            service,
+            ctx,
+            await workspaceFor(service, ctx),
+            evidenceDirectory(service, ctx),
+            options
+          );
     const result = await (options.closeIssue || decideIssue)(
       service,
       issue.id,
@@ -576,6 +662,25 @@ async function runCommand(service, ctx, options) {
       onProgress: ctx.onProgress,
     });
   if (kind === 'verify') {
+    const checkout = workspace.checkout;
+    if (ctx.details?.candidate)
+      requireThat(
+        git(checkout, 'rev-parse', 'HEAD') === ctx.details.candidate,
+        'The saved candidate differs from this checkout. Inspect the selected candidate before verifying.'
+      );
+    requireThat(existsSync(join(checkout, 'pnpm-lock.yaml')), 'Verify needs a pnpm-lock.yaml in the issue worktree.');
+    const workspaces = workspacePackages(checkout);
+    ctx.signal.throwIfAborted();
+    try {
+      dependencyPreflight(checkout, checkout, workspaces);
+      ctx.onProgress('Reusing matching dependencies in the issue worktree.\n');
+    } catch (error) {
+      if (error.code !== 'PREFLIGHT_DEPENDENCIES') throw error;
+      ctx.onProgress('Installing dependencies in the issue worktree with pnpm install --frozen-lockfile.\n');
+      await invoke('pnpm', ['install', '--frozen-lockfile']);
+      ctx.signal.throwIfAborted();
+      dependencyPreflight(checkout, checkout, workspaces);
+    }
     const script = `import {checkCandidate} from ${JSON.stringify(new URL('./checks.mjs', import.meta.url).href)}; const result = await checkCandidate(${JSON.stringify(workspace.checkout)}, ${JSON.stringify(workspace.base)}, ${JSON.stringify(folder)}, {auditPolicy:'required',force:true,allowUncommitted:true,onProgress:text=>process.stdout.write(text)}); console.log(); console.log('FLOW_RESULT '+JSON.stringify(result));`;
     const output = await invoke(process.execPath, ['--input-type=module', '-e', script]);
     const line = output.split(/\r?\n/).findLast((value) => value.startsWith('FLOW_RESULT '));
@@ -602,9 +707,10 @@ async function runCommand(service, ctx, options) {
           ? 'Verification passed for the uncommitted source snapshot.'
           : 'Explicit verification passed.',
         [
-          { path: log, label: 'Verification command output' },
+          { key: 'log', path: log, label: 'Verification command output' },
           ...(result.summaries || []).map((path) => ({
             path,
+            key: 'report',
             label: 'Verification summary',
           })),
         ]
@@ -616,7 +722,7 @@ async function runCommand(service, ctx, options) {
     !git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all'),
     'Preserve checkout changes in a commit before merging the target branch.'
   );
-  const { remote, branch } = ctx.flow.target;
+  const { remote, branch } = deliveryTarget(ctx.flow);
   requireThat(
     typeof remote === 'string' && /^[\w.-]+$/.test(remote) && !remote.startsWith('-'),
     'Configure a valid target remote before merging it.'
@@ -636,7 +742,7 @@ async function runCommand(service, ctx, options) {
         head: git(workspace.checkout, 'rev-parse', 'HEAD'),
       },
       'Merged the fetched target into the issue branch.',
-      [{ path: log, label: 'Target fetch and merge output' }]
+      [{ key: 'log', path: log, label: 'Target fetch and merge output' }]
     ),
     workspace,
   };
@@ -650,10 +756,10 @@ async function mergeFlowPR(service, ctx, options) {
   );
   const workspace = await workspaceFor(service, ctx);
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
-  const pr = await provider.findByBranch(workspace.branch, ctx.flow.target.branch);
+  const pr = await provider.findByBranch(workspace.branch, deliveryTarget(ctx.flow).branch);
   requireThat(
     pr,
-    `No PR exists for ${workspace.branch}. Run an explicit Publish block against ${ctx.flow.target.branch}, then explicitly retry this Merge block.`
+    `No PR exists for ${workspace.branch}. Run an explicit Publish block against ${deliveryTarget(ctx.flow).branch}, then explicitly retry this Merge block.`
   );
   const head = git(workspace.checkout, 'rev-parse', 'HEAD');
   let readiness = await provider.ready(pr, workspace.branch, head);
@@ -717,7 +823,10 @@ function commandResult(service, ctx, result, summary, evidence = []) {
   return {
     summary,
     result,
-    evidence: [...evidence, { path, label: 'Recorded operation result', sha256: digest(readFileSync(path)) }],
+    evidence: [
+      ...evidence,
+      { key: 'result', path, label: 'Recorded operation result', sha256: digest(readFileSync(path)) },
+    ],
   };
 }
 

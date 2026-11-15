@@ -20,6 +20,7 @@ function fixture(t, options = {}) {
   git('config', 'user.email', 'flow@example.invalid');
   writeFileSync(join(root, '.gitignore'), '.issues/\n');
   writeFileSync(join(root, 'source.txt'), 'Initial source.\n');
+  writeFileSync(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n');
   git('add', '.');
   git('commit', '-m', 'Fixture');
   mkdirSync(join(root, '.issues'));
@@ -30,8 +31,8 @@ function fixture(t, options = {}) {
   let emit;
   const connection = {
     async ready() {},
-    async start(cwd, sandbox, retain) {
-      calls.push({ method: 'start', cwd, sandbox });
+    async start(cwd, sandbox, retain, _issueId, _settingsRoot, instructions) {
+      calls.push({ method: 'start', cwd, sandbox, instructions });
       retain({ status: 'ready', threadId: 'the-one-issue-chat' });
       return 'the-one-issue-chat';
     },
@@ -120,7 +121,7 @@ function fixture(t, options = {}) {
   const progress = [];
   let n = 0;
   function run(kind = 'work', changes = {}) {
-    const attempt = { id: 'attempt-' + ++n };
+    const attempt = { id: 'attempt-' + ++n, details: changes.details ?? [] };
     const block = {
       id: 'block-' + kind,
       kind,
@@ -137,6 +138,7 @@ function fixture(t, options = {}) {
       block,
       attempt,
       signal: changes.signal,
+      continuing: changes.continuing,
       input: { confirmed: true },
       onProgress: (text) => progress.push(text),
       onWorkspace: (workspace) => {
@@ -180,13 +182,15 @@ test('an explicit work block makes one model turn and records its managed checko
       path: join(f.root, '.issues/sample-skill.md'),
     },
   ]);
-  assert.match(turn.prompt, /exactly one explicit work block/);
-  assert.match(turn.prompt, /Do not continue to another block/);
+  assert.equal(JSON.parse(turn.prompt).block, 'work');
+  const system = f.calls.find((call) => call.method === 'start').instructions;
+  assert.match(system, /Keep all work inside the saved issue checkout/);
+  assert.doesNotMatch(system, /Do not continue to another block/);
   assert.equal(result.workspace.branch, 'codex/issue-4');
   assert.equal(f.service.lifecycleRuns[f.issue.id].chatCheckout.checkout, result.workspace.checkout);
   assert.match(conversationFiles(f.root, f.issue.id).directory, /issue-work.*fixture-issue.*conversations/);
   assert.equal(readFileSync(result.evidence[0].path, 'utf8'), result.output);
-  assert.equal(conversationState(f.root, f.issue.id).status, 'idle');
+  assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-work'].status, 'idle');
   assert.ok(f.progress.includes('Observed progress.'));
 });
 
@@ -213,21 +217,25 @@ test('a new checkout uses the selected starting commit and retains it when the s
   assert.equal(retry.workspace.base, selected, 'A retained checkout must keep its original base.');
 });
 
-test('an explicit retry reuses the same checkout, conversation and selected skill', async (t) => {
+test('an unchanged explicit continuation reuses the same checkout, conversation and selected skill', async (t) => {
   const f = fixture(t);
   const first = await f.run('work', { skill: 'sample' });
   const second = await f.run('work', {
     skill: 'sample',
-    attempts: [{ id: 'older' }, { id: 'current' }],
+    continuing: true,
   });
   assert.deepEqual(first.workspace, second.workspace);
   assert.equal(f.calls.filter((call) => call.method === 'start').length, 1);
   assert.equal(f.calls.filter((call) => call.method === 'thread/read').length, 1);
   assert.equal(f.calls.filter((call) => call.method === 'turn').length, 2);
   assert.equal(new Set(f.calls.filter((call) => call.method === 'turn').map((call) => call.threadId)).size, 1);
-  assert.match(f.calls.filter((call) => call.method === 'turn')[1].prompt, /Continue this same block/);
+  assert.deepEqual(
+    f.calls.filter((call) => call.method === 'turn').map((call) => call.prompt),
+    [f.calls.find((call) => call.method === 'turn').prompt, f.calls.find((call) => call.method === 'turn').prompt]
+  );
   assert.equal(conversationMessages(f.root, f.issue.id).length, 4);
-  await assert.rejects(f.run('work', { skill: null }), /saved skill/);
+  await f.run('work', { skill: null, continuing: true });
+  assert.equal(f.calls.filter((call) => call.method === 'start').length, 2);
 });
 
 test('read-only request and understanding need no legacy lifecycle configuration', async (t) => {
@@ -265,6 +273,7 @@ test('prototype requires an explicit instruction and edit sends only enabled ite
   await assert.rejects(f.run('prototype', { prompt: '' }), /Describe the prototype/);
   assert.equal(f.calls.length, 0);
   await f.run('edit', {
+    details: [{ key: 'enabledEdits', value: ['Use a blue title.'] }],
     edits: [
       { id: 'yes', text: 'Use a blue title.', enabled: true },
       { id: 'no', text: 'Delete every title.', enabled: false },
@@ -324,7 +333,7 @@ test('abort interrupts the owned model turn and retains partial output with unce
     return true;
   });
   assert.equal(f.calls.filter((call) => call.method === 'interrupt').length, 1);
-  assert.equal(conversationState(f.root, f.issue.id).status, 'idle');
+  assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'idle');
 });
 
 test('provider input stops the block and preserves its request instead of hanging', async (t) => {
@@ -345,7 +354,7 @@ test('provider input stops the block and preserves its request instead of hangin
     assert.equal(JSON.parse(readFileSync(error.evidence[0].path, 'utf8')).requestId, 'question');
     return true;
   });
-  assert.equal(conversationState(f.root, f.issue.id).status, 'attention');
+  assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'attention');
 });
 
 test('protected merge and delete block without saved delivery evidence and start no model', async (t) => {
@@ -355,30 +364,44 @@ test('protected merge and delete block without saved delivery evidence and start
   assert.equal(f.calls.filter((call) => call.method === 'connection').length, 0);
 });
 
-test('explicit verification uses injected execution and retains actual returned summary paths', async (t) => {
-  const executions = [];
-  const f = fixture(t, {
-    async execute(input) {
-      executions.push(input);
-      writeFileSync(input.log, 'Fixture command result.');
-      return (
-        'FLOW_RESULT ' +
-        JSON.stringify({
-          head: 'fixture-head',
-          tree: 'fixture-tree',
-          summaries: [],
-        })
-      );
-    },
+for (const installed of ['matching', 'missing', 'stale', 'missing workspace']) {
+  test(`explicit verification prepares ${installed} dependencies and retains command evidence`, async (t) => {
+    const executions = [];
+    const lock = 'lockfileVersion: 9.0\n';
+    const workspaces = 'packages:\n  - packages/example\n';
+    function installFixture(checkout, installedLock = lock, installWorkspace = true) {
+      mkdirSync(join(checkout, 'node_modules/.pnpm'), { recursive: true });
+      writeFileSync(join(checkout, 'node_modules/.pnpm/lock.yaml'), installedLock);
+      if (installWorkspace) mkdirSync(join(checkout, 'packages/example/node_modules'), { recursive: true });
+    }
+    const f = fixture(t, {
+      async execute(input) {
+        executions.push(input);
+        writeFileSync(input.log, 'Fixture command result.');
+        if (input.command === 'pnpm') return installFixture(input.cwd);
+        return 'FLOW_RESULT ' + JSON.stringify({ head: 'fixture-head', tree: 'fixture-tree', summaries: [] });
+      },
+    });
+    // Verify prepares the saved worktree, including one already created by Work.
+    const { workspace } = await f.run('work');
+    writeFileSync(join(workspace.checkout, 'pnpm-lock.yaml'), lock);
+    writeFileSync(join(workspace.checkout, 'pnpm-workspace.yaml'), workspaces);
+    if (installed !== 'missing')
+      installFixture(workspace.checkout, installed === 'stale' ? 'old lock' : lock, installed !== 'missing workspace');
+    const modelCalls = f.calls.filter((call) => call.method === 'connection').length;
+    const result = await f.run('verify');
+    assert.deepEqual(
+      executions.map(({ command }) => command),
+      installed === 'matching' ? [process.execPath] : ['pnpm', process.execPath]
+    );
+    assert.ok(executions.every(({ cwd }) => cwd === workspace.checkout));
+    if (installed !== 'matching') assert.deepEqual(executions[0].args, ['install', '--frozen-lockfile']);
+    assert.match(executions.at(-1).args.at(-1), /checkCandidate/);
+    assert.equal(result.result.head, 'fixture-head');
+    assert.ok(result.evidence.every((item) => existsSync(item.path)));
+    assert.equal(f.calls.filter((call) => call.method === 'connection').length, modelCalls);
   });
-  const result = await f.run('verify');
-  assert.equal(executions.length, 1);
-  assert.equal(executions[0].command, process.execPath);
-  assert.match(executions[0].args.at(-1), /checkCandidate/);
-  assert.equal(result.result.head, 'fixture-head');
-  assert.ok(result.evidence.every((item) => existsSync(item.path)));
-  assert.equal(f.calls.filter((call) => call.method === 'connection').length, 0);
-});
+}
 
 test('missing saved checkout blocks instead of silently replacing it', async (t) => {
   const f = fixture(t);
@@ -410,7 +433,7 @@ test('stop during uncertain chat startup returns without creating a replacement 
   await started;
   abort.abort();
   await assert.rejects(task, /block was stopped/);
-  const state = conversationState(f.root, f.issue.id);
+  const state = conversationState(f.root, f.issue.id).flowBlocks['block-understand'];
   assert.equal(state.status, 'attention');
   assert.equal(state.startup.status, 'starting');
   await assert.rejects(f.run('understand'), /startup is uncertain/);

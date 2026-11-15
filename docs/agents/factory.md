@@ -17,6 +17,10 @@ and discussion of their required input; launching work requires another choice.
 Dependencies outside the selection are inspected and explained before proposing
 their inclusion. Existing workers are reused rather than duplicated.
 
+For changes to the block inspector's Markdown labels, follow
+[Edit the Factory UI from Markdown](../../README.md#edit-the-factory-ui-from-markdown).
+Use `pnpm run factory ui find` to locate the source and its consumers.
+
 ## Check progress
 
 `/factory status` displays a code-generated summary from the saved factory records.

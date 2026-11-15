@@ -626,10 +626,28 @@ an owned, drained listener. Its disposable server checks live in
 The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
-explicit attempts, folders, capture, and artifact listing. `flow-executor.mjs`
-runs bounded blocks through the existing conversation and protected operation
-adapters. `flow-observer.mjs` reads local Git state and separately cached PR facts.
+explicit attempts, invalidation, route rebuilding, folders, capture and artifact
+listing. `flow-block-data.mjs` resolves block addresses, declared inputs and
+retained outputs. `flow-request.mjs` derives the Request fields through a
+temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
+Codex conversations and uses the protected operation adapters for delivery. `flow-observer.mjs` reads local Git state and separately cached PR facts.
 `flow-branches.mjs` lists branch refs and stores the starting-branch default.
 The controller snapshots the chosen commit and the executor uses it for a new checkout.
 The original factory page remains at `/classic`. See the
 [implementation plan](../plans/number-2/README.md) for current verification.
+
+`factory-ui/block-catalog.mjs` resolves and renders block Markdown from the
+bundled and project directories and fingerprints the effective definition. Each directory's `catalog.json` holds skill
+defaults, ordering, and other settings. `flow-store.mjs` saves the label and
+default skill when it creates a block. Project-defined blocks use the existing
+Work operation.
+
+The block document's `# Skill list` section defines suggested skills. Its
+`# User extensions` section names the optional matching file under
+`factory/ui/extensions/flow/blocks/`, which the catalog appends as display content.
+
+The shared Flow UI owns the card layout, inspector sections, and controls.
+`factory-ui/view-sources.mjs` exposes the catalog's source locations to
+**Inspect UI**, **View index**, and `pnpm run factory ui find`. It also compiles
+the editor's tab labels. See
+[Edit the Factory UI from Markdown](../../README.md#edit-the-factory-ui-from-markdown).

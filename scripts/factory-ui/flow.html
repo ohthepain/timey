@@ -7,6 +7,7 @@
     <title>Factory · Flow workspace</title>
     <link rel="stylesheet" href="/flow.css" />
     <script src="/flow-ui.js" defer></script>
+    <script src="/view-inspection.js" defer></script>
   </head>
   <body>
     <div id="app" class="workspace">
@@ -83,7 +84,13 @@
             <span id="issue-type-label">Workspace</span><span class="breadcrumb-divider">/</span
             ><span id="issue-number">Issue flow</span>
           </div>
-          <button class="small-button" id="refresh" title="Refresh saved state">↻ <span>Refresh</span></button>
+          <div class="flow-heading-actions">
+            <button class="small-button view-inspect-toggle" id="view-inspect" type="button" aria-pressed="false">
+              Inspect UI
+            </button>
+            <button class="small-button" id="view-index-open" type="button">View index</button>
+            <button class="small-button" id="refresh" title="Refresh saved state">↻ <span>Refresh</span></button>
+          </div>
         </header>
         <div class="error-banner" id="error-banner" role="alert" hidden>
           <span id="error-message"></span
@@ -133,10 +140,30 @@
           <h2>Select a block</h2>
         </div>
         <div class="inspector-tabs" role="tablist" aria-label="Inspector view">
-          <button role="tab" id="tab-details" aria-selected="true" data-tab="details">Details</button
-          ><button role="tab" id="tab-conversation" aria-selected="false" data-tab="conversation">Conversation</button
-          ><button role="tab" id="tab-artifacts" aria-selected="false" data-tab="artifacts">
-            Artifacts <span id="artifact-count"></span>
+          <button
+            role="tab"
+            id="tab-details"
+            aria-selected="true"
+            data-tab="details"
+            data-ui-source="flow/block-inspector/details-tab"
+          >
+            <span data-ui-label>Details</span></button
+          ><button
+            role="tab"
+            id="tab-conversation"
+            aria-selected="false"
+            data-tab="conversation"
+            data-ui-source="flow/block-inspector/conversation-tab"
+          >
+            <span data-ui-label>Conversation</span></button
+          ><button
+            role="tab"
+            id="tab-artifacts"
+            aria-selected="false"
+            data-tab="artifacts"
+            data-ui-source="flow/block-inspector/artifacts-tab"
+          >
+            <span data-ui-label>Artifacts</span> <span id="artifact-count"></span>
           </button>
         </div>
         <div class="inspector-body" id="inspector-body" role="tabpanel" aria-labelledby="tab-details">
@@ -190,6 +217,7 @@
         <button class="icon-button" data-close-dialog="palette-dialog" aria-label="Close block palette">×</button>
       </div>
       <p class="muted">Add the next step. Nothing runs until you start it.</p>
+      <p id="block-palette-error" class="inline-error" role="alert" hidden></p>
       <div id="block-palette" class="block-palette"></div>
     </dialog>
     <dialog id="folder-dialog" class="modal">
@@ -240,5 +268,34 @@
       </div>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
+    <p id="view-source-status" class="view-source-status" role="status" hidden></p>
+    <div id="view-source-tooltip" class="view-source-popover view-source-tooltip" role="tooltip" hidden></div>
+    <p class="block-content definition-actions detail-value" hidden aria-hidden="true"></p>
+    <div id="view-source-menu" class="view-source-popover" aria-label="UI source options" hidden>
+      <button class="small-button" id="view-source-open" type="button">Show source</button>
+      <button class="small-button" id="view-source-copy" type="button">Copy source location</button>
+      <button class="small-button" id="view-source-edit" type="button">Edit override</button>
+    </div>
+    <dialog id="view-source-dialog" class="modal view-source-dialog" aria-labelledby="view-source-title">
+      <form id="view-source-form">
+        <div class="modal-heading"><h2 id="view-source-title">UI source</h2></div>
+        <pre id="view-source-location" class="file-content"></pre>
+        <label id="view-source-field" class="field"
+          >Label<input id="view-source-label" required maxlength="120"
+        /></label>
+        <p id="view-source-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button type="button" class="small-button" data-close-dialog="view-source-dialog">Close</button>
+          <button type="submit" class="primary-button" id="view-source-save">Save and reload</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="view-index" class="modal" aria-labelledby="view-index-title">
+      <div class="modal-heading"><h2 id="view-index-title">View index</h2></div>
+      <div id="view-index-content"></div>
+      <div class="modal-footer">
+        <button type="button" class="small-button" data-close-dialog="view-index">Close</button>
+      </div>
+    </dialog>
   </body>
 </html>

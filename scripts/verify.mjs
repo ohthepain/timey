@@ -1,4 +1,4 @@
-import { listenerPreflight, dependencyPreflight } from './verify-preflight.mjs';
+import { listenerPreflight, dependencyPreflight, workspacePackages } from './verify-preflight.mjs';
 import { fallowAuditScope } from './verify-scope.mjs';
 import { runVerificationProcess } from './verify-process.mjs';
 import { execFileSync } from 'node:child_process';
@@ -163,24 +163,6 @@ async function run(name, command, commandArgs) {
     passed: report.checks.at(-1).passed,
   });
 }
-function workspacePackages(directory) {
-  const file = join(directory, 'pnpm-workspace.yaml');
-  if (!existsSync(file)) return [];
-  const packages = [];
-  let inPackages = false;
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (/^packages:\s*$/.test(line)) {
-      inPackages = true;
-      continue;
-    }
-    if (!inPackages) continue;
-    if (/^\S/.test(line)) break;
-    const match = line.match(/^\s+-\s+['"]?([^'"#\s]+)['"]?\s*$/);
-    if (match) packages.push(match[1]);
-  }
-  return packages;
-}
-
 function copySourceFile(name) {
   const source = join(root, name),
     destination = join(snapshot, name);

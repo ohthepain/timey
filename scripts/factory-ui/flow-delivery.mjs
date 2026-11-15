@@ -1,3 +1,10 @@
+import {
+  deliveryTarget,
+  latestCurrentAttempt,
+  requestData,
+  startingPoint,
+  upstreamBlocks,
+} from './flow-block-data.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { digest, git, requireThat, writeJson } from './common.mjs';
@@ -14,8 +21,8 @@ export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
   requireThat(
     config.provider === 'github' &&
       /^[\w.-]+\/[\w.-]+$/.test(config.repository) &&
-      config.target === ctx.flow.target.branch &&
-      config.remote === ctx.flow.target.remote,
+      config.target === deliveryTarget(ctx.flow).branch &&
+      config.remote === deliveryTarget(ctx.flow).remote,
     'The saved flow and protected delivery repository, remote or target differ. Reconcile their configuration first.'
   );
   return options.provider || new StrategyProvider(workspace.checkout, config, service.root);
@@ -24,11 +31,11 @@ export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
 export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const head = git(workspace.checkout, 'rev-parse', 'HEAD');
   const tree = git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
-  const verification = ctx.flow.blocks
+  const verification = upstreamBlocks(ctx.block, ctx.flow.blocks)
     .filter((block) => block.kind === 'verify')
-    .flatMap((block) => block.attempts)
+    .map(latestCurrentAttempt)
     .findLast(
-      (attempt) => attempt.status === 'completed' && !attempt.result?.uncommitted && attempt.result?.head === head
+      (attempt) => attempt?.status === 'completed' && !attempt.result?.uncommitted && attempt.result?.head === head
     );
   requireThat(
     verification?.result?.proof?.length >= 2,
@@ -82,6 +89,7 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
 export async function publishFlowPR(service, ctx, workspace, folder, options) {
   requireThat(ctx.input?.confirmed === true, 'Confirm publication of this issue branch and PR explicitly.');
   const candidate = verifiedFlowCandidate(ctx, workspace, options);
+  const goal = ctx.details ? ctx.details.goal : requestData(ctx.flow).fields?.goal;
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   requireThat(provider.credentials, 'PR publication requires configured GitHub App credentials.');
   const identity = await provider.credentials.session();
@@ -125,9 +133,9 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
   ctx.signal.throwIfAborted();
   verifiedFlowCandidate(ctx, workspace, options);
   const publication = {
-    title: ctx.issue.title || ctx.flow.request.goal || 'Complete issue work',
+    title: ctx.issue.title || goal || 'Complete issue work',
     body: [
-      ctx.flow.request.goal || ctx.issue.title,
+      goal || ctx.issue.title,
       ctx.block.prompt || '',
       `Verified candidate ${candidate.head}.`,
       'Independent verification and the step audit passed for this exact candidate. Publication does not imply merge or acceptance.',
@@ -138,7 +146,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
   const pr = await provider.publish(workspace, candidate.head, publication);
   return {
     result: { pr: pr.number, url: pr.html_url, head: candidate.head },
-    evidence: [{ path: log, label: 'Issue branch publication output' }],
+    evidence: [{ key: 'log', path: log, label: 'Issue branch publication output' }],
     workspace: { ...workspace, pr: pr.number },
   };
 }
@@ -179,7 +187,9 @@ async function assertPublicationIdle(provider, pr, branch) {
 
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
-  if (ctx.flow.type === 'investigation') return investigationClosureArtifact(ctx, workspace);
+  const type = ctx.details ? ctx.details.type : requestData(ctx.flow).fields?.type;
+  requireThat(type, 'Missing issue type. Refresh Request before closing.');
+  if (type === 'investigation') return investigationClosureArtifact(ctx, workspace);
   const candidate = verifiedFlowCandidate(ctx, workspace, options);
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   const pr = await provider.findByBranch(workspace.branch, provider.config.target);
@@ -189,7 +199,7 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
     delivered.number === pr.number &&
       delivered.head === candidate.head &&
       delivered.branch === workspace.branch &&
-      delivered.target === ctx.flow.target.branch &&
+      delivered.target === deliveryTarget(ctx.flow).branch &&
       delivered.mergedAt &&
       delivered.mergeCommit &&
       delivered.targetRevision,
@@ -214,7 +224,7 @@ function investigationClosureArtifact(ctx, workspace) {
     saved?.checkout === workspace.checkout &&
       saved.branch === workspace.branch &&
       saved.base === workspace.base &&
-      ctx.flow.target.base === workspace.base &&
+      (startingPoint(ctx.flow)?.commit ?? deliveryTarget(ctx.flow).base ?? saved.base) === workspace.base &&
       head === workspace.base &&
       git(workspace.checkout, 'branch', '--show-current') === workspace.branch &&
       !git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all'),
@@ -230,9 +240,9 @@ function investigationClosureArtifact(ctx, workspace) {
     }),
     'Reconcile active or uncertain blocks before accepting this investigation.'
   );
-  const attempt = ctx.flow.blocks
+  const attempt = upstreamBlocks(ctx.block, ctx.flow.blocks)
     .filter((block) => ['understand', 'advice', 'playbook'].includes(block.kind))
-    .map((block) => block.attempts.at(-1))
+    .map(latestCurrentAttempt)
     .findLast(
       (attempt) =>
         attempt?.status === 'completed' &&

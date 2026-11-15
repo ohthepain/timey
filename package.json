@@ -45,6 +45,7 @@
     "drizzle-orm": "1.0.0-rc.5",
     "events": "3.3.0",
     "immer": "10.1.1",
+    "markdown-it": "14.1.0",
     "pg": "8.16.3",
     "react": "19.0.0",
     "react-dom": "19.0.0",
@@ -80,9 +81,9 @@
     "ts-node": "10.9.2",
     "typescript": "5.8.2",
     "vite": "catalog:",
+    "vite-plus": "catalog:",
     "vitest": "catalog:",
-    "yaml": "2.7.0",
-    "vite-plus": "catalog:"
+    "yaml": "2.7.0"
   },
   "engines": {
     "node": ">=22 <25"

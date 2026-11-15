@@ -47,6 +47,7 @@ function fixture(t) {
     signal: new AbortController().signal,
     onProgress() {},
     flow: {
+      type: 'feature',
       target: { branch: 'dev', remote: 'origin' },
       request: { goal: 'Make the flow explicit' },
       blocks: [

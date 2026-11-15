@@ -392,6 +392,13 @@ full verification and saved-start step/staged checkpoints still apply.
 
 ## Execution preflight and recovery
 
+An explicitly started Flow **Verify** block prepares dependencies in the saved
+issue worktree. It reuses an installation that matches the pnpm lockfile and
+declared workspaces. If dependencies are missing or stale, it runs
+`pnpm install --frozen-lockfile`, then checks the installation again before
+running verification. The block records the install output and stops if setup
+fails.
+
 Before any verification command runs, the exporter checks the installed pnpm lock
 against the exported lock and requires dependencies for each declared workspace.
 It resolves the immutable comparison commit and exported tree in the clone. Full

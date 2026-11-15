@@ -1,3 +1,4 @@
+import { deliveryTarget } from './flow-block-data.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, readFileSync } from 'node:fs';
@@ -36,14 +37,14 @@ export function createFlowObserver(service, options = {}) {
     const result = {
       observedAt: new Date().toISOString(),
       worktreeExists: checkout ? existsSync(checkout) : null,
-      targetBranch: flow.target.branch,
+      targetBranch: deliveryTarget(flow).branch,
       pr: null,
     };
     const queries = await Promise.allSettled([
       flowGit(root, 'branch', '--show-current'),
       flowGit(root, 'rev-parse', 'HEAD'),
       flowGit(root, 'status', '--porcelain', '--untracked-files=normal'),
-      resolveTarget(service.root, flow.target),
+      resolveTarget(service.root, deliveryTarget(flow)),
     ]);
     const [branch, head, dirty, targetState] = queries.map((entry) =>
       entry.status === 'fulfilled' ? entry.value : null
@@ -96,7 +97,7 @@ export function createFlowObserver(service, options = {}) {
           return;
         }
         if (branch && pr.head?.ref !== branch) throw Error('The linked PR source branch changed.');
-        if (pr.base?.ref !== flow.target.branch || pr.base?.repo?.full_name !== config.repository)
+        if (pr.base?.ref !== deliveryTarget(flow).branch || pr.base?.repo?.full_name !== config.repository)
           throw Error('The linked PR target or repository changed.');
         cache.value = {
           pr: { number: pr.number, url: pr.html_url, state: pr.state, mergedAt: pr.merged_at, head: pr.head?.sha },
