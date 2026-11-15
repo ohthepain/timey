@@ -43,6 +43,21 @@ function captureIdentity(description, type, folder) {
   return digest(JSON.stringify(folder ? [description, type, folder] : [description, type]));
 }
 
+function validateCaptureId(requestId) {
+  requireThat(typeof requestId === 'string' && /^[a-f0-9-]{36}$/.test(requestId), 'Use a stable request identity.');
+}
+
+function validateCaptureDescription(description) {
+  requireThat(
+    typeof description === 'string' && description.trim() && description.length <= 24000,
+    'Describe the issue in under 24,000 characters.'
+  );
+}
+
+function validateCaptureType(type) {
+  requireThat(!type || ['bug', 'feature', 'investigation'].includes(type), 'Choose a valid request type.');
+}
+
 class IssueFlows {
   constructor(service, options) {
     this.service = service;
@@ -466,18 +481,9 @@ class IssueFlows {
     return this.view();
   }
   async capture(input) {
-    requireThat(
-      typeof input.requestId === 'string' && /^[a-f0-9-]{36}$/.test(input.requestId),
-      'Use a stable request identity.'
-    );
-    requireThat(
-      typeof input.description === 'string' && input.description.trim() && input.description.length <= 24000,
-      'Describe the issue in under 24,000 characters.'
-    );
-    requireThat(
-      !input.type || ['bug', 'feature', 'investigation'].includes(input.type),
-      'Choose a valid request type.'
-    );
+    validateCaptureId(input.requestId);
+    validateCaptureDescription(input.description);
+    validateCaptureType(input.type);
     const folder = folderName(input.folder ?? null);
     requireCaptureFolder(folder, this.folders());
     const directory = join(this.store.directory, 'captures');
