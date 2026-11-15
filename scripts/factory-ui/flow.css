@@ -356,15 +356,15 @@ kbd {
   font-size: 11px;
   text-align: left;
 }
-.folder-heading {
+[data-folder-heading] {
   display: flex;
   align-items: center;
 }
-.folder-heading .folder-toggle {
+[data-folder-heading] .folder-toggle {
   flex: 1;
   min-width: 0;
 }
-.folder-add {
+[data-folder-add] {
   flex: 0 0 auto;
   width: 26px;
   height: 26px;
@@ -375,8 +375,8 @@ kbd {
   color: #a9a9a9;
   cursor: pointer;
 }
-.folder-add:hover,
-.folder-add:focus-visible {
+[data-folder-add]:hover,
+[data-folder-add]:focus-visible {
   border-color: #454545;
   background: #292929;
   color: #fff;
