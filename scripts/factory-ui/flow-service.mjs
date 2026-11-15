@@ -34,6 +34,15 @@ import {
 export function createIssueFlows(service, options = {}) {
   return new IssueFlows(service, options);
 }
+
+function requireCaptureFolder(folder, folders) {
+  requireThat(!folder || folders.includes(folder), 'Choose an existing folder.');
+}
+
+function captureIdentity(description, type, folder) {
+  return digest(JSON.stringify(folder ? [description, type, folder] : [description, type]));
+}
+
 class IssueFlows {
   constructor(service, options) {
     this.service = service;
@@ -470,12 +479,10 @@ class IssueFlows {
       'Choose a valid request type.'
     );
     const folder = folderName(input.folder ?? null);
-    requireThat(!folder || this.folders().includes(folder), 'Choose an existing folder.');
+    requireCaptureFolder(folder, this.folders());
     const directory = join(this.store.directory, 'captures');
     const receiptPath = join(directory, input.requestId + '.json');
-    const identity = digest(
-      JSON.stringify(folder ? [input.description, input.type, folder] : [input.description, input.type])
-    );
+    const identity = captureIdentity(input.description, input.type, folder);
     if (existsSync(receiptPath)) {
       const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
       requireThat(receipt.identity === identity, 'This request identity already contains different wording.');
