@@ -251,6 +251,13 @@ try {
     const data = await clickAction(page.locator('#capture-submit'));
     issueId = data.issue.id;
     assert.equal(data.flow.folder, 'Browser folder');
+    const createdFolder = page
+      .locator('.issue-folder')
+      .filter({ has: page.locator('.folder-toggle[data-folder="Browser folder"]') });
+    const createdIssue = createdFolder.locator('[data-issue="' + issueId + '"]');
+    await createdIssue.waitFor();
+    assert.equal(await createdIssue.getAttribute('aria-current'), 'page');
+    await screenshot('folder-plus-created-issue');
     await page.locator('#request-form').waitFor();
     assert.equal(await page.locator('[name="wording"]').inputValue(), description);
     assert.equal(await page.locator('#request-form [name="type"]').inputValue(), 'investigation');
