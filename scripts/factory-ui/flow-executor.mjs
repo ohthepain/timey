@@ -28,6 +28,7 @@ import {
   flowVerificationInput,
   runFlowVerification,
   runWorkVerification,
+  resumeWorkDependencies,
   workVerificationScript,
 } from './flow-verification.mjs';
 import { startingBranchUpstream, updateIssueBranch } from './flow-update-branch.mjs';
@@ -95,6 +96,8 @@ export function createFlowExecutor(service, options = {}) {
         options.verifyCandidate || ((ctx, workspace, folder) => runFlowVerification(ctx, workspace, folder, execute));
       const verifyWork =
         options.verifyWork || ((ctx, workspace, folder) => runWorkVerification(ctx, workspace, folder, execute));
+      const prepareWorkDependencies = (ctx, workspace, folder) =>
+        resumeWorkDependencies(ctx, workspace, folder, execute);
       try {
         context.signal.throwIfAborted();
         service.ownServer();
@@ -105,9 +108,16 @@ export function createFlowExecutor(service, options = {}) {
           execute,
           verifyCandidate,
           verifyWork,
+          prepareWorkDependencies,
           verificationInput: options.verificationInput ?? flowVerificationInput,
         };
         if (command) context.onStep('Running ' + (ctx.block.label || ctx.block.kind) + '.');
+        if (!command && context.block.kind === 'work')
+          await prepareWorkDependencies(
+            context,
+            await workspaceFor(service, context),
+            evidenceDirectory(service, context)
+          );
         const result = !command
           ? await runModel(service, context, owned, runtime)
           : await runReconciledCommand(scopedService, context, {
