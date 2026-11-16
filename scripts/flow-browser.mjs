@@ -746,6 +746,8 @@ try {
   });
   await check('Sequence controls reorder saved blocks', async () => {
     const before = (await view()).flow.blocks.map((item) => item.id);
+    const requestBlock = (await view()).flow.blocks.find((item) => item.kind === 'request');
+    assert.equal(await page.locator(`[data-node="${requestBlock.id}"] .block-icon`).textContent(), '💬');
     await clickAction(page.locator('[data-action="move"][data-direction="up"]'));
     const after = (await view()).flow.blocks.map((item) => item.id);
     assert.equal(after.indexOf(addedId), before.indexOf(addedId) + 1);
