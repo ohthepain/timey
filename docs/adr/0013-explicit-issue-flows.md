@@ -135,6 +135,7 @@ Worktree and Close with **Needs approval**.
 
 See [Close and Cleanup](../plans/flow-close-cleanup.md) and
 [Issue retros](../plans/issue-retros.md).
+On closed issues, a red square replaces Play.
 Once the issue is closed, **Archive** replaces **Close**. The menu can archive the
 saved report, reveal it in Finder, or reopen the issue for investigation.
 

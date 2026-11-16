@@ -653,7 +653,7 @@ with the exact remote/local branches, issue workspace path and estimated storage
 and linked issue chats. Already deleted resources and failed lookups remain disabled
 and distinguishable. Unmerged work is unchecked by default; dirty, shared and active
 resources are preserved. Workspace safety appears as soon as its identity is checked;
-the size estimate runs separately and never delays selection or cleanup. The server
+branch checks run independently, and the size estimate never delays selection or cleanup. The server
 rechecks each selected resource immediately before acting and records per-resource
 results outside the workspace. Issue closure
 still completes if cleanup fails; the issue then shows Cleanup incomplete and a

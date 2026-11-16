@@ -188,13 +188,14 @@ class IssueFlows {
     this.captures = new Map();
     this.closureTasks = new Map();
   }
-  issues() {
+  issues(selectedId) {
     const numbersPath = join(this.service.root, '.issues/issue-numbers.json');
     const numbers = existsSync(numbersPath) ? JSON.parse(readFileSync(numbersPath, 'utf8')).issues : {};
     const issues = [];
     const closedState = closedIssueState(this.service.root);
     for (const location of ['open', 'closed']) {
-      for (const path of listStoredIssues(this.service.root, location)) {
+      const paths = listStoredIssues(this.service.root, location);
+      for (const path of selectedId ? paths.filter((path) => basename(path, '.md') === selectedId) : paths) {
         const content = readFileSync(path, 'utf8');
         const header = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
         requireThat(header, `The issue report ${basename(path)} has no valid metadata.`);
@@ -217,7 +218,7 @@ class IssueFlows {
   }
   selected(id) {
     requireIssueId(id);
-    const issue = this.issues().find((item) => item.id === id);
+    const [issue] = this.issues(id);
     requireThat(issue, 'This issue no longer exists. Choose a saved issue.');
     return issue;
   }
@@ -439,6 +440,7 @@ class IssueFlows {
     }
     const context = worktreeCleanupService(this.service, id, { ...workspace, config });
     context.flowCleanupPreview = true;
+    context.flowCleanupIssue = issue;
     return context;
   }
   closureBusy(id) {

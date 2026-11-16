@@ -1929,3 +1929,11 @@ kbd {
   margin-inline-start: auto;
   flex-shrink: 0;
 }
+
+.closed-issue-indicator {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #a95757;
+  border-radius: 4px;
+  background: #803737;
+}

@@ -426,6 +426,8 @@
     const paused = playback?.mode === 'paused';
     const closed = state.view?.issue?.status === 'closed';
     const pending = state.view?.issue?.state === 'needs-approval';
+    button.hidden = closed;
+    $('closed-issue-indicator').hidden = !closed;
     button.disabled = busy || !playback || pending || (paused && (state.newActionsPaused || closed));
     button.title = !playback
       ? 'Restart the Timey server to use Play'

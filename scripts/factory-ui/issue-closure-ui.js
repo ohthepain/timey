@@ -97,7 +97,7 @@
         );
         renderCleanup(session.resources);
         approve.disabled = false;
-        resources.forEach((item) => void checkResource(item));
+        session.resources.forEach((item) => void checkResource(item));
       } catch (failure) {
         if (isCurrent()) showError(session, failure);
       }

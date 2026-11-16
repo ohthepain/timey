@@ -1409,11 +1409,16 @@ try {
     const archive = page.getByRole('combobox', { name: 'Archive', exact: true });
     const close = page.getByRole('button', { name: 'Close', exact: true });
     await archive.waitFor();
+    const closedIndicator = page.getByRole('img', { name: 'Issue closed' });
+    await closedIndicator.waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Play issue' }).isVisible(), false);
     assert.equal(await close.isVisible(), false);
     assert.equal(await archive.locator('option[value="reveal"]').textContent(), 'Reveal in Finder');
     page.once('dialog', (dialog) => void dialog.accept());
     await archive.selectOption('reopen');
     await close.waitFor();
+    await page.getByRole('button', { name: 'Play issue' }).waitFor();
+    assert.equal(await closedIndicator.isVisible(), false);
     assert.equal(service.flows.selected(issueId).location, 'open');
     assert.equal(await archive.isVisible(), false);
 

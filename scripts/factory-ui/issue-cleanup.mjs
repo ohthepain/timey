@@ -157,19 +157,28 @@ export function issueCleanupIdentities(service, issueId, resolution = null) {
 }
 
 export async function previewIssueCleanupResource(service, issueId, resourceIdValue, resolution = null) {
-  const identity = issueCleanupIdentities(service, issueId, resolution).resources.find(
-    (item) => item.id === resourceIdValue
-  );
-  requireThat(identity, 'Refresh the cleanup resource list before checking it.');
   const issue = cleanupIssue(service, issueId);
   const work = service.lifecycleRuns[issueId]?.work;
+  const identity = cleanupPreviewIdentity(service, issueId, work, resourceIdValue);
   const resource = await previewResourceByIdentity(service, issueId, work, identity);
   applyCleanupDefaults([resource], issue.closure?.reason || resolution, isDelivered(service, issueId, work));
-  if (service.flowCleanupPreview) await describeBranchDiscard(service, work, resource);
   return { issueId, resource };
 }
 
-async function describeBranchDiscard(service, work, resource) {
+function cleanupPreviewIdentity(service, issueId, work, id) {
+  const candidates = {
+    chat: () => identityChatResources(service, issueId),
+    workspace: () => (work?.checkout ? [identityResource('workspace', issueId, resolve(work.checkout))] : []),
+    'local-branch': () => identityBranchResources(issueId, work),
+    'remote-branch': () => identityBranchResources(issueId, work),
+  };
+  requireThat(typeof id === 'string', 'Refresh the cleanup resource list before checking it.');
+  const identity = candidates[cleanupKindFromId(id)]?.().find((item) => item.id === id);
+  requireThat(identity, 'Refresh the cleanup resource list before checking it.');
+  return identity;
+}
+
+async function describeBranchDiscard(service, work, resource, provider) {
   if (!resource.eligible || !['local-branch', 'remote-branch'].includes(resource.kind)) return;
   try {
     const { target, remote, repository } = work.config;
@@ -189,7 +198,6 @@ async function describeBranchDiscard(service, work, resource) {
       resource.discard = git(service.root, 'log', '-10', '--format=%h %s', range).split('\n').filter(Boolean);
     } else {
       const comparison = encodeURIComponent(target) + '...' + resource.revision;
-      const provider = cleanupProvider(service, work.config);
       const result = JSON.parse(await provider.gh(['api', `repos/${repository}/compare/${comparison}?per_page=10`]));
       requireThat(
         Number.isInteger(result.ahead_by) && Array.isArray(result.commits),
@@ -207,11 +215,10 @@ async function describeBranchDiscard(service, work, resource) {
 }
 
 export async function previewIssueCleanupWorkspaceSize(service, issueId, resourceIdValue) {
-  const identity = issueCleanupIdentities(service, issueId).resources.find(
-    (item) => item.id === resourceIdValue && item.kind === 'workspace'
-  );
-  requireThat(identity, 'Refresh the cleanup resource list before checking workspace size.');
+  cleanupIssue(service, issueId);
   const work = service.lifecycleRuns[issueId]?.work;
+  const identity = cleanupPreviewIdentity(service, issueId, work, resourceIdValue);
+  requireThat(identity.kind === 'workspace', 'Refresh the cleanup resource list before checking workspace size.');
   const path = resolve(work.checkout);
   const estimatedBytes = existsSync(path) ? await directoryBytes(path) : 0;
   return {
@@ -228,16 +235,17 @@ function previewResourceByIdentity(service, issueId, work, identity) {
   const previewers = {
     workspace: () => workspaceResource(service, issueId, work),
     'remote-branch': () => previewRemoteBranch(service, issueId, work),
-    'local-branch': () => previewLocalBranch(service, issueId, work),
+    'local-branch': () => previewLocalBranchWithDiscardInfo(service, issueId, work),
     chat: () => previewChat(service, issueId, identity),
   };
   return previewers[identity.kind]();
 }
 
 async function previewRemoteBranch(service, issueId, work) {
-  const remote = await inspectRemoteBranch(cleanupProvider(service, work.config), work.config.repository, work.branch);
+  const provider = cleanupProvider(service, work.config);
+  const remote = await inspectRemoteBranch(provider, work.config.repository, work.branch);
   const shared = sharedBranch(service, issueId, work.branch);
-  return remoteBranchResource(issueId, work, remote, {
+  const resource = remoteBranchResource(issueId, work, remote, {
     shared,
     remoteEligible: remoteBranchEligible(
       work.branch !== work.config.target && ownsIssueBranch(cleanupIssue(service, issueId), work.branch),
@@ -245,26 +253,33 @@ async function previewRemoteBranch(service, issueId, work) {
       shared
     ),
   });
+  if (service.flowCleanupPreview) await describeBranchDiscard(service, work, resource, provider);
+  return resource;
+}
+
+async function previewLocalBranchWithDiscardInfo(service, issueId, work) {
+  const resource = previewLocalBranch(service, issueId, work);
+  if (service.flowCleanupPreview) await describeBranchDiscard(service, work, resource);
+  return resource;
 }
 
 function previewLocalBranch(service, issueId, work) {
   const revision = branchRevision(service.root, work.branch);
-  const attachedPath = branchWorktreePath(service.root, work.branch);
-  const workspace = work.checkout ? workspaceFacts(service, issueId, work) : null;
+  const workspace = revision && work.checkout ? workspaceFacts(service, issueId, work) : null;
   const workspaceResourceForBranch = workspace
     ? { canonicalPath: workspace.canonical, eligible: workspace.eligible }
     : null;
   const facts = branchFacts(service, issueId, work.branch, workspaceResourceForBranch, { revision: null }, revision);
-  return localBranchResource(issueId, work.branch, revision, { ...facts, attachedPath });
+  return localBranchResource(issueId, work.branch, revision, facts);
 }
 
 function identityBranchResources(issueId, work) {
   if (!work?.branch) return [];
   return [
+    identityResource('local-branch', issueId, work.branch),
     ...(hasBranchConfig(work)
       ? [identityResource('remote-branch', issueId, work.branch, { repository: work.config.repository })]
       : []),
-    identityResource('local-branch', issueId, work.branch),
   ];
 }
 
@@ -739,7 +754,10 @@ function cleanupKindFromId(id) {
 
 function cleanupIssue(service, issueId) {
   requireThat(typeof issueId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(issueId), 'Select a valid issue.');
-  const found = selectedCleanupQueue(service.root, issueId).issues[0];
+  const found =
+    service.flowCleanupIssue?.id === issueId
+      ? service.flowCleanupIssue
+      : selectedCleanupQueue(service.root, issueId).issues[0];
   requireThat(found, 'Select an existing issue.');
   return found;
 }
@@ -1056,18 +1074,25 @@ function findIssueTitle(service, issueId) {
 }
 
 function issueChatRuns(service, issueId) {
-  const queue = queueReader(service.root);
   const state = conversationState(service.root, issueId);
   const bound = boundConversationThreads(state).map((threadId) => ({ threadId, kind: 'issue-chat' }));
   const tracked = service.store.runs.filter((run) => run.issueId === issueId && run.threadId);
   const runs = new Map([...bound, ...tracked].map((run) => [run.threadId, run]));
-  return [...runs.values()].filter((run) => !sharedWithOpenIssue(service, queue, run, issueId));
+  let queue;
+  const readQueue = () => (queue ??= queueReader(service.root));
+  return [...runs.values()].filter((run) => !sharedWithOpenIssue(service, readQueue, run, issueId));
 }
 
-function sharedWithOpenIssue(service, queue, run, issueId) {
-  const owner = run.actionId ? run : service.store.runs.find((entry) => entry.threadId === run.threadId);
-  const action = queue.actions.find((item) => item.id === owner?.actionId);
+function sharedWithOpenIssue(service, readQueue, run, issueId) {
+  const actionId = run.actionId || savedChatAction(service, run.threadId);
+  if (!actionId) return false;
+  const queue = readQueue();
+  const action = queue.actions.find((item) => item.id === actionId);
   return Boolean(action && openSiblingIssueIds(queue, action.issues, issueId).length);
+}
+
+function savedChatAction(service, threadId) {
+  return service.store.runs.find((entry) => entry.threadId === threadId)?.actionId;
 }
 
 function issueChatActive(service, issueId) {

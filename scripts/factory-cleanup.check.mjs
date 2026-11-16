@@ -164,7 +164,7 @@ test('cleanup dialog identities return without provider inspection or workspace 
   assert.ok(result.resources.some((item) => item.kind === 'workspace' && item.estimatedBytes === null));
 });
 
-test('a slow branch check does not hold up an independent chat status', async (t) => {
+test('a slow remote branch check does not hold up local branch or chat status', async (t) => {
   const f = fixture(t);
   const id = f.issue.id;
   const branch = `codex/issue-${id}`;
@@ -184,7 +184,10 @@ test('a slow branch check does not hold up an independent chat status', async (t
   const identities = issueCleanupIdentities(f.service, id, 'wont-do').resources;
   const remote = identities.find((item) => item.kind === 'remote-branch');
   const chat = identities.find((item) => item.kind === 'chat');
+  const local = identities.find((item) => item.kind === 'local-branch');
   const remoteResult = previewIssueCleanupResource(f.service, id, remote.id, 'wont-do');
+  const localResult = await previewIssueCleanupResource(f.service, id, local.id, 'wont-do');
+  assert.equal(localResult.resource.state, 'already-deleted');
   const chatResult = await previewIssueCleanupResource(f.service, id, chat.id, 'wont-do');
   assert.equal(chatResult.resource.state, 'present');
   releaseRemote('{"object":{"sha":"remote-revision"}}');
