@@ -275,6 +275,27 @@ test('Work repairs formatting and Fallow in its own chat and leaves full checks 
   assert.equal(checks.at(-1), 'full Verify');
 });
 
+test('Work retains the exact identity of its uncommitted checkout tree', async (t) => {
+  const f = fixture(t, {
+    async verifyWork(_ctx, workspace) {
+      writeFileSync(join(workspace.checkout, 'source.txt'), 'Uncommitted candidate.\n');
+      return { evidence: [] };
+    },
+  });
+  const worked = await f.run('work');
+  assert.equal(worked.result.base, worked.workspace.base);
+  assert.equal(worked.result.commit, worked.result.head);
+  assert.notEqual(
+    worked.result.tree,
+    execFileSync('git', ['-C', worked.workspace.checkout, 'rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim()
+  );
+  assert.equal(worked.result.uncommitted, true);
+  assert.equal(worked.artifacts.values.candidateBase, worked.result.base);
+  assert.equal(worked.artifacts.values.candidateTree, worked.result.tree);
+  assert.equal(worked.artifacts.values.candidateCommit, worked.result.commit);
+  assert.equal(worked.artifacts.values.candidateUncommitted, true);
+});
+
 test('Work stays blocked when Fallow still fails after repairs', async (t) => {
   const f = fixture(t, {
     async verifyWork() {
