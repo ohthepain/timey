@@ -1023,6 +1023,27 @@
         display: grid;
         gap: 4px;
       }
+      .issue-sidebar-folders {
+        display: grid;
+        gap: 4px;
+        margin: 0 0 12px;
+      }
+      .issue-sidebar-folder {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: 7px 9px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+      }
+      .issue-sidebar-folder[aria-current='true'],
+      .issue-sidebar-folder.drop-target {
+        background: #e2ebe3;
+      }
       .issue-sidebar-item {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
@@ -2091,6 +2112,27 @@
             }
           };
         });
+        document.querySelectorAll('[data-issue-folder-select]').forEach((button) => {
+          button.onclick = () => {
+            queueFilters.folderId = button.dataset.issueFolderSelect;
+            render();
+          };
+        });
+        document.querySelectorAll('[data-create-issue-folder]').forEach((button) => {
+          button.onclick = () => {
+            const form = document.querySelector('[data-issue-folder-form]');
+            form.hidden = false;
+            form.querySelector('input').focus();
+          };
+        });
+        document.querySelectorAll('[data-issue-folder-form]').forEach((form) => {
+          form.onsubmit = (event) => {
+            event.preventDefault();
+            const name = form.querySelector('[data-issue-folder-name]').value.trim();
+            if (!name) return;
+            void act(() => request('issue-folder-create', { name, basis: data.issueFolderBasis }));
+          };
+        });
       }
 
       function storedIssuesPage(storage) {
@@ -2461,7 +2503,7 @@
         focusedStageRoute = location.hash;
       }
       let queueRouteMessage = '';
-      const queueFilters = { search: '', roles: new Map(), sort: 'statusOrder', direction: 'desc' };
+      const queueFilters = { search: '', roles: new Map(), sort: 'statusOrder', direction: 'desc', folderId: 'all' };
       function closedIssueState(state) {
         return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
       }
@@ -2479,7 +2521,10 @@
         return queueSortUI.sort(
           data.issues.filter((issue) => {
             const stage = data.lifecycle.find((item) => item.state === issue.state);
-            return (!stage || roleSelected(stage)) && matchesQueueSearch(issue);
+            const folderMatches =
+              queueFilters.folderId === 'all' ||
+              (issue.folderId || null) === (queueFilters.folderId === 'unfiled' ? null : queueFilters.folderId);
+            return (!stage || roleSelected(stage)) && matchesQueueSearch(issue) && folderMatches;
           }),
           queueFilters
         );
@@ -2590,12 +2635,15 @@
       function issueSidebar(selectedId) {
         const issues = queueIssues();
         const heading = selectedId ? 'Issues' : 'Issue queue';
-        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div><div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
+        const folderButton = (id, label, count, drop = false) =>
+          `<button type="button" class="issue-sidebar-folder" data-issue-folder-select="${esc(id)}"${drop ? ` data-issue-folder-drop="${esc(id)}"` : ''} aria-current="${String(queueFilters.folderId === id)}"><span>${esc(label)}</span><small>${count}</small></button>`;
+        const folderMarkup = `<nav class="issue-sidebar-folders" aria-label="Issue folders">${folderButton('all', 'All issues', data.issues.length)}${folderButton('unfiled', 'Unfiled', data.issues.filter((issue) => !issue.folderId).length, true)}${(data.issueFolders || []).map((folder) => folderButton(folder.id, folder.name, data.issues.filter((issue) => issue.folderId === folder.id).length, true)).join('')}<button type="button" class="issue-sidebar-folder" data-create-issue-folder>+ New folder</button><form data-issue-folder-form hidden><label>Folder name<input data-issue-folder-name maxlength="60" required></label><button type="submit">Save folder</button></form></nav>`;
+        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div>${folderMarkup}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
           issues.length
             ? `<nav aria-label="Issues">${issues
                 .map(
                   (item) =>
-                    `<div class="issue-sidebar-item ${queueFilters.sort === 'implementationOrder' ? 'has-drag-handle' : ''}" data-issue-row="${esc(item.id)}">${queueFilters.sort === 'implementationOrder' ? `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to reorder ${esc(item.title || 'Untitled issue')}" title="Drag to set implementation order">⠿</button>` : ''}<a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.issueNumber)}" aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
+                    `<div class="issue-sidebar-item has-drag-handle" data-issue-row="${esc(item.id)}"><button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to organize ${esc(item.title || 'Untitled issue')}" title="Drag to move or reorder">⠿</button><a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.issueNumber)}" aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
                 )
                 .join('')}</nav>`
             : '<p class="issue-sidebar-empty">No issues yet.</p>'
@@ -2627,16 +2675,15 @@
         });
       }
       function bindImplementationOrder() {
-        if (queueFilters.sort !== 'implementationOrder') return;
         let draggedId = null;
         const clearDragFeedback = () => {
           draggedId = null;
           document
             .querySelectorAll(
-              '#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after, .issue-sidebar-item.is-dragged, .issue-sidebar-item.drop-before, .issue-sidebar-item.drop-after'
+              '#issues tr.is-dragged, #issues tr.drop-before, #issues tr.drop-after, .issue-sidebar-item.is-dragged, .issue-sidebar-item.drop-before, .issue-sidebar-item.drop-after, .issue-sidebar-folder.drop-target'
             )
             .forEach((row) => {
-              row.classList.remove('is-dragged', 'drop-before', 'drop-after');
+              row.classList.remove('is-dragged', 'drop-before', 'drop-after', 'drop-target');
             });
         };
         document.querySelectorAll('[data-implementation-drag]').forEach((handle) => {
@@ -2648,10 +2695,28 @@
           };
           handle.ondragend = clearDragFeedback;
         });
+        document.querySelectorAll('[data-issue-folder-drop]').forEach((folder) => {
+          folder.ondragover = (event) => {
+            if (!draggedId) return;
+            event.preventDefault();
+            folder.classList.add('drop-target');
+          };
+          folder.ondragleave = () => folder.classList.remove('drop-target');
+          folder.ondrop = (event) => {
+            event.preventDefault();
+            folder.classList.remove('drop-target');
+            const source = event.dataTransfer?.getData('text/plain') || draggedId;
+            if (!source) return;
+            const folderId = folder.dataset.issueFolderDrop === 'unfiled' ? null : folder.dataset.issueFolderDrop;
+            if ((data.issues.find((issue) => issue.id === source)?.folderId || null) === folderId) return;
+            clearDragFeedback();
+            void act(() => request('issue-folder-assign', { issueId: source, folderId, basis: data.issueFolderBasis }));
+          };
+        });
         document.querySelectorAll('#issues tr[data-issue-row], .issue-sidebar-item[data-issue-row]').forEach((row) => {
           row.ondragover = (event) => {
             event.preventDefault();
-            if (!draggedId || draggedId === row.dataset.issueRow) return;
+            if (queueFilters.sort !== 'implementationOrder' || !draggedId || draggedId === row.dataset.issueRow) return;
             const bounds = row.getBoundingClientRect();
             const after = bounds.height > 0 && event.clientY >= bounds.top + bounds.height / 2;
             row.classList.toggle('drop-before', !after);
@@ -2663,6 +2728,7 @@
           };
           row.ondrop = (event) => {
             event.preventDefault();
+            if (queueFilters.sort !== 'implementationOrder') return;
             const source = event.dataTransfer?.getData('text/plain') || draggedId;
             const destination = row.dataset.issueRow;
             if (!source || source === destination) {

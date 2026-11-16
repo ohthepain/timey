@@ -148,6 +148,13 @@ positions when dragging within a filtered view. New issues are appended after sa
 entries using configured priority, age and ID as the default order. Priority labels
 and other views are unchanged.
 
+The issue sidebar also groups reports into user-named folders. Folder assignments
+are stored in the ignored `.issues/issue-folders.json` file, separate from report
+content and lifecycle state. Drag a sidebar issue handle onto a folder to move it;
+drop it on Unfiled to remove the assignment. Select a folder to reorder its issues
+with Implementation order. The ordering is shared with the queue's implementation
+order, and hidden issues keep their positions during a folder-scoped reorder.
+
 The sort selector also offers implementation order, latest progress first, lifecycle
 progress, creation time, completion time and required human input. Direction is a
 toggle: a downward triangle means descending and an upward triangle means ascending.
