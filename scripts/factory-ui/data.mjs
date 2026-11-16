@@ -11,6 +11,7 @@ import { readImplementationOrder } from './implementation-order.mjs';
 import { sharedIssueQueueEnabled } from './shared-issue-config.mjs';
 import { queueIssueNumbers } from './issue-numbers.mjs';
 import { listStoredIssues } from './issue-report-storage.mjs';
+import { readIssueFolders } from './issue-folders.mjs';
 
 const names = {
   'ready-for-grilling': 'Clarify',
@@ -75,8 +76,9 @@ export function readQueue(project, { location = 'open', issueId } = {}) {
       stages.find((s) => s.state === (projected.aliases[report.metadata.state] || report.metadata.state))?.name ||
       report.metadata.state,
   }));
-  const order = readImplementationOrder(root, issues);
-  const ranks = new Map(order.map((id, index) => [id, index]));
+  const issueFolders = readIssueFolders(root, issues);
+  const order = readImplementationOrder(root, issues),
+    ranks = new Map(order.map((id, index) => [id, index]));
   for (const issue of issues) issue.implementationOrder = ranks.get(issue.id);
   const orderBasis = digest(JSON.stringify({ issueIds: ids.slice().sort(), order }));
   return {
@@ -89,6 +91,8 @@ export function readQueue(project, { location = 'open', issueId } = {}) {
     closureReasons: closureReasons(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8')),
     implementationOrder: order,
     implementationOrderBasis: orderBasis,
+    issueFolders: issueFolders.folders,
+    issueFolderBasis: issueFolders.basis,
     issues,
     actions: inspection.registry?.actions || [],
     registryPresent: inspection.registry !== null,

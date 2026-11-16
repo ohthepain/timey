@@ -143,6 +143,11 @@ A stable sequential local label for a queue issue. It is stored separately from
 the report ID, never reused after deletion, and distinct from a GitHub pull request
 number.
 
+**Issue folder**:
+A user-named local grouping of issues, stored separately from issue reports and
+lifecycle state. Moving an issue between folders changes its organization only;
+implementation order remains separately saved.
+
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
 A claim can remain held while the run's outcome is being published.
