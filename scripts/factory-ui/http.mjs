@@ -6,6 +6,7 @@ import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
 import { changeImplementationOrder } from './implementation-order-route.mjs';
+import { assignIssueFolder, createIssueFolder } from './issue-folders.mjs';
 import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
@@ -199,6 +200,16 @@ async function mutation(service, path, value, owner) {
     '/api/approve-review-file': () => service.approveReviewFile(value),
     '/api/issue-priority': () => changePriority(service, value),
     '/api/implementation-order': () => changeImplementationOrder(service, value),
+    '/api/issue-folder-create': () => {
+      service.ownServer();
+      const queue = readQueue(service.root);
+      return createIssueFolder(service.root, queue.issues, value);
+    },
+    '/api/issue-folder-assign': () => {
+      service.ownServer();
+      const queue = readQueue(service.root);
+      return assignIssueFolder(service.root, queue.issues, value);
+    },
     '/api/model-settings': () => saveDefaultModelSettings(service, value),
     '/api/issue-model-settings': () => saveIssueModelSettings(service, value),
     '/api/toggle-route': () => toggleRoute(service, value),

@@ -85,6 +85,8 @@ export function browserFixture(root) {
     issues,
     implementationOrder: ['b', 'a', 'c', 'x'],
     implementationOrderBasis: 'fixture-order-basis',
+    issueFolders: [],
+    issueFolderBasis: 'fixture-folder-basis-0',
     actions: [],
     runs: [],
     closureReasons: closureReasons(''),
@@ -125,6 +127,29 @@ export function browserFixture(root) {
             issue.implementationOrder = ranks.get(issue.id);
           });
           return response.end('{}');
+        }
+        if (url.pathname === '/api/issue-folder-create') {
+          if (value.basis !== data.issueFolderBasis) {
+            response.statusCode = 409;
+            return response.end('{"error":"The issue folders changed. Refresh before creating a folder."}');
+          }
+          data.issueFolders.push({ id: 'folder-' + (data.issueFolders.length + 1), name: value.name });
+          data.issueFolderBasis = 'fixture-folder-basis-' + (data.issueFolders.length + 1);
+          return response.end(JSON.stringify({ issueFolders: data.issueFolders, basis: data.issueFolderBasis }));
+        }
+        if (url.pathname === '/api/issue-folder-assign') {
+          if (value.basis !== data.issueFolderBasis) {
+            response.statusCode = 409;
+            return response.end('{"error":"The issue folders changed. Refresh before moving an issue."}');
+          }
+          const issue = issues.find((entry) => entry.id === value.issueId);
+          if (!issue || (value.folderId && !data.issueFolders.some((folder) => folder.id === value.folderId))) {
+            response.statusCode = 400;
+            return response.end('{"error":"Choose a current issue folder."}');
+          }
+          issue.folderId = value.folderId;
+          data.issueFolderBasis = 'fixture-folder-basis-' + (Number(data.issueFolderBasis.split('-').at(-1)) + 1);
+          return response.end(JSON.stringify({ issueFolders: data.issueFolders, basis: data.issueFolderBasis }));
         }
         response.statusCode = 405;
         return response.end('{"error":"Fixture cannot launch work or save issues"}');
