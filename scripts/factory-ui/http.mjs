@@ -103,7 +103,8 @@ async function mutation(service, path, value, owner) {
       !flowOwnsIssue(service, value.issueId),
       'A flow block owns this issue. Stop it before using classic controls.'
     );
-  if (!(path === '/api/flow-action' && value.action === 'stop')) service.serverControl?.allow(path, value);
+  if (!(path === '/api/flow-action' && ['stop', 'pause', 'cancel-confirmation'].includes(value.action)))
+    service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),

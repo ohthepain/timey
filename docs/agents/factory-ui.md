@@ -29,18 +29,34 @@ Opening an unattempted issue aligns Starting point with the graph viewport's top
 Starting point includes a Git branch selector. It lists local and cached remote
 branches by latest commit date, newest first. Branches sharing a commit remain
 separate options. Selecting a branch saves its exact starting commit for this
-issue and remembers its ref as the project default for future issues. New issues
-snapshot that branch's current commit. Destination stays unchanged. The selector
-locks when an attempt or checkout exists. It never switches the project's current
-checkout or starts work. A missing default branch must be restored or replaced
-through an unstarted issue before creating another issue.
+issue. New issues snapshot the configured delivery branch's current commit. The
+selector locks when work starts or a checkout exists. Selecting a branch leaves
+the project's checkout in place.
+
+Destination follows the starting branch by default. Open its picker to list
+branches on the configured GitHub remote. Selecting a branch pins it. Choose
+**Follow starting branch** to restore the default. A local starting branch matches
+the configured remote by name. A starting branch from another remote requires an
+explicit destination. Older issues with a PR use its GitHub base. Destination
+locks when the issue has a PR. If GitHub reports a changed base, accept that base
+in Destination before running Publish or Merge.
+
+Use the pencil next to the issue heading to rename it. Before the first Publish,
+review the title, source and destination branches, verified commit, and exact PR
+description. The description contains Goal, Requested proof, and Original wording
+from Request, with empty sections omitted. On later runs, Publish shows pending
+title and commit changes and preserves the existing GitHub description. A
+matching title and commit show **PR is up to date** with the link. **Confirm
+current PR** completes Publish using the existing PR.
 Closed issues open with Destination aligned at the bottom. Other issues center
 their running or most recently attempted block within the content's scroll range.
 The graph has 16 pixels of edge room. Column scrolling stays local, with native
 bounce where supported and no pull-to-refresh. Selecting a block scrolls only enough to reveal it. The
-circular plus button adds a step. The header Continue button runs the selected
-block through the same saved-setting and confirmation guards as its inspector.
-Each block requires an explicit start. `/classic` retains the strategy and legacy queue
+circular plus button adds a step. The issue header's Play/Pause button runs the
+route one eligible block at a time. A confirmation link appears in the header
+when Play reaches a protected block. The Run, Retry, Recover, or Stop button
+beside the selected block's name controls that block individually.
+`/classic` retains the strategy and legacy queue
 controls documented below. Flow observation can show reports before lifecycle configuration
 is restored, but editable work and protected operations still require the actual
 project policy, human input, credentials, and retained evidence.
@@ -1182,8 +1198,11 @@ normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
 
-The running-action count opens a list of connected actions, active cleanup, and
-recent stopped work that can be resumed or skipped. Completed and incomplete
+The running-action count includes saved actions still marked preparing, running,
+or checking. This includes interrupted preparations that block a server update.
+In Flow and Classic, the count opens the same **Action list**. It shows those actions,
+connected work, active cleanup, and recent stopped
+work that can be resumed or skipped. Completed and incomplete
 cleanup results are available on the issue page. The open list refreshes when
 the running count changes. Each entry shows its saved issue and current
 details, links to the issue and that run's output, and
@@ -1196,6 +1215,9 @@ strategy or worker assignment within the existing scope. Skip cancels a stopped
 or interruptible worker assignment while retaining its checkout and conversation;
 it is disabled for an issue strategy whose approved checks and delivery would be
 discarded. Unavailable controls explain why they cannot run in the current state.
+For a disconnected strategy still preparing with no worker thread, use **Cancel**
+to cancel that exact attempt. Factory keeps its history and any checkout. If a
+newer attempt owns the issue, its progress stays in place.
 
 **Restart server** in the header uses the same restart path as deployment and
 maintenance: it drains current work, permission replies, temporary chats and
@@ -1287,9 +1309,10 @@ and stores fresh evidence on the existing strategy run. This path starts no work
 and makes no branch or PR changes; it does not bypass any check or human acceptance.
 
 Full Send leaves a separate **Merge PR** control after verification. Selecting it
-rechecks GitHub's approving review and required checks against the exact saved
-head. If a check is pending or failing, Factory shows the check name. If approval
-is missing, Factory asks for an approving review on the current head. Once the
+rechecks GitHub readiness against the exact saved head. Flow **Merge** follows the
+same readiness rules, with its own local **Verify** result. GitHub decides which
+reviews and checks are required. Factory reports required review or check blockers
+when GitHub identifies them. Once the
 gates pass, the server creates a merge commit so Git recognizes the issue branch
 as merged. If the repository disables merge commits, the action stops. Progress
 records the GitHub merge before attempting to update local `dev`. That update runs

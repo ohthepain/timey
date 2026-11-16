@@ -57,10 +57,11 @@ The card layout, title, status, and action controls come from the shared Flow UI
 
 ### Change a block's content
 
-Open a block and choose **Create override** to copy its bundled Markdown.
-**Show in Finder** reveals the project file so you can edit it in your own
-editor. Create a new Markdown file in `factory/ui/overrides/flow/blocks/` to
-add a custom block. Pick an installed skill in the block editor, or run the
+Open a block's **Markdown** menu to reveal its definition in Finder or create
+and open a project extension in your Markdown editor. A `# System prompt`
+section in the extension adds instructions to the block's prompt.
+Create a new Markdown file in `factory/ui/overrides/flow/blocks/` to add a
+custom block. Pick an installed skill in the block editor, or run the
 block using its Markdown prompt alone. To adapt a skill, paste and edit its
 instructions in the Markdown.
 
@@ -77,9 +78,8 @@ example. An override can supply just the sections it changes. Opening or running
 a block, or clicking its wand, checks for changes to that definition. A change
 stops active work in each affected flow and makes the edited block and its
 connected successors stale. The old attempts and artifacts remain visible.
-Saving **Your words** or clicking the Request wand also reruns clarification.
-Choose **Rebuild flow** when you want to apply the clarified issue type to the
-route.
+Saving **Your words** or clicking the Request wand reruns clarification. If
+the issue type changes, Factory applies the new type's default flow.
 
 ### Set block defaults
 
@@ -101,7 +101,7 @@ blocks keep their selected skill when a default changes. A new Markdown filename
 adds a project block that uses the Work operation. Add a catalog entry to set
 its label or default skill.
 
-### Change the skill list or append project notes
+### Change the skill list
 
 The bundled block's `# Skill list` heading supplies the suggested skills. To
 replace Work's suggestions, add this to `factory/ui/overrides/flow/blocks/work.md`:
@@ -118,15 +118,68 @@ prose. Omit the section to inherit the bundled list, or leave the section empty
 to clear the suggestions. **Refresh skills** can still list other installed
 skills. The list does not select a default skill.
 
+### Append project Markdown
+
+Factory Markdown loaders that support extensions read the source first and
+append the optional project file named under `# User extensions`. Write the
+full path from the project root in that section. The
+`factory/ui/extensions/` directory mirrors the bundled `views/` tree.
+When a package update changes the bundled source, Factory appends the same
+project file to the updated source. Commit the extension to share it with the
+project team.
+
+The bundled Work definition declares this extension.
+
+```markdown
+# User extensions
+
+`factory/ui/extensions/flow/blocks/work.md`
+```
+
 To append Work notes, create `factory/ui/extensions/flow/blocks/work.md`.
-The bundled block's `# User extensions` section names the matching file.
-Factory renders it under **User extensions** in **Details**. The extensions
-folder mirrors the bundled `views/` tree, so each block keeps the same relative
-path and filename. Project-defined blocks can opt in by putting their filename
-under `# User extensions` in their block document.
+Factory shows the appended notes under **User extensions** in **Details**.
+Use a `# System prompt` heading in the extension to append instructions
+after the block's prompt. Other extension text appears in **Details**.
+Project-defined blocks can opt in by putting their extension's project-relative path under
+`# User extensions`.
 
 If you already use `factory/ui/overrides/flow/blocks/work_user.md`, you can move
 it to the new path. Factory uses the old file when the new file is absent.
+
+### Choose and edit flows
+
+Use the **Flow** button beside the issue's status to choose a flow for the issue
+type or use **Reveal in Finder** to locate its Markdown file. Edit the issue's block list directly
+to make a one-off change. Choose **Save as user flow** to save that structure as a
+reusable file under `factory/ui/flows/` and link the current issue to it.
+Commit the file to share the flow with the team.
+
+To set a project default, add a Markdown file at
+`factory/ui/extensions/flow/defaults.md` with the issue type and flow ID.
+
+```markdown
+---
+defaults:
+  bug: quick-check
+---
+```
+
+The flow ID is the Markdown filename without `.md`. In this example, save the
+definition at `factory/ui/flows/quick-check.md` and include `bug` in its
+`issueTypes`. Use the [bundled delivery flow](scripts/factory-ui/views/flow/definitions/delivery.md)
+as a format example. Keep Request first and list dependencies before the blocks
+that use them. The issue's Starting point and Destination supply its Git settings.
+An optional `# Prompt` section or `skill` field runs once when Factory builds the
+structure. The builder can add, remove, and reorder blocks after Request.
+
+The frontmatter's `extension` field gives the full Markdown path from the project
+root. Use the extension's `# Prompt` section or plain Markdown to append instructions.
+To replace the base block list before the builder runs, give the extension its
+own `blocks` list in frontmatter.
+Click the **Rebuild flow** wand to recreate the block list from the linked
+definition, apply any Markdown edits, and discard one-off block
+edits. Rebuilding keeps the progress of blocks carried forward and retains
+removed blocks in history.
 
 ### Check an override before you use it
 

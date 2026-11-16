@@ -18,6 +18,16 @@ test('Markdown block defaults apply to new blocks and user definitions keep the 
   const catalog = new BlockCatalog(root);
   const issue = { id: 'test', title: 'Feature', content: '' };
   const saved = newFlow(issue, 'dev', catalog.read().entries);
+  const beforeExtension = catalog.read().entries.find(({ id }) => id === 'work');
+  const extensionFile = catalog.openExtension('work');
+  assert.equal(catalog.openExtension('work'), extensionFile);
+  assert.equal(catalog.read().entries.find(({ id }) => id === 'work').checksum, beforeExtension.checksum);
+  writeFileSync(extensionFile, '# System prompt\n\nUse the project review steps.\n');
+  assert.equal(
+    catalog.read().entries.find(({ id }) => id === 'work').prompt,
+    beforeExtension.prompt + '\n\nUse the project review steps.'
+  );
+  rmSync(extensionFile);
   assert.equal(saved.blocks.find((block) => block.kind === 'work').skill, null);
   assert.deepEqual(catalog.read().entries.find((entry) => entry.id === 'work').skills, [
     'poteto-mode',
@@ -57,6 +67,13 @@ test('Markdown block defaults apply to new blocks and user definitions keep the 
   assert.match(work.content.html, /<li>Keep the command output\.<\/li>/);
   assert.doesNotMatch(work.content.html, /Legacy note/);
   assert.equal(work.content.extension, extension);
+  assert.equal(work.content.extensionPath, 'factory/ui/extensions/flow/blocks/work.md');
+  const workOverride = readFileSync(workPath, 'utf8');
+  const checksumForDeclaration = (declaration) => {
+    writeFileSync(workPath, workOverride + '\n# User extensions\n\n`' + declaration + '`\n');
+    return catalog.read().entries.find((entry) => entry.id === 'work').checksum;
+  };
+  assert.equal(checksumForDeclaration('factory/ui/extensions/flow/blocks/work.md'), checksumForDeclaration('work.md'));
   assert.doesNotMatch(work.content.html, /Skill list/);
   assert.equal(
     extended.entries.some((entry) => entry.id === 'work_user'),
@@ -139,6 +156,220 @@ function executor(run) {
   return { run, close() {} };
 }
 
+test('issue Play continues after confirmation and Pause lets the active block finish', async (t) => {
+  const { id, service } = fixture(t);
+  const started = [];
+  const work = Promise.withResolvers();
+  const flows = createIssueFlows(service, {
+    clarify: async () => ({ artifacts: { values: { type: 'bug', goal: 'Repair Save' } } }),
+    executor: executor(async ({ block, signal }) => {
+      started.push(block.kind);
+      if (block.kind === 'work') await work.promise;
+      assert.equal(signal.aborted, false);
+      return { summary: 'Done' };
+    }),
+  });
+  t.after(() => flows.close());
+  const action = (name, fields) =>
+    flows.action({ issueId: id, revision: flows.read(flows.selected(id)).revision, action: name, ...fields });
+  const pending = (kind) => flows.read(flows.selected(id)).blocks.find((block) => block.kind === kind);
+  const view = () => flows.view(id);
+  assert.deepEqual((await view()).autoplay, { mode: 'paused' });
+  assert.deepEqual(started, []);
+  await action('add', { kind: 'verify', afterId: pending('work').id });
+  await action('add', { kind: 'merge-target', afterId: pending('verify').id });
+  await action('play');
+  assert.deepEqual(started, ['work']);
+  assert.equal(pending('request').attempts.at(-1).status, 'completed');
+  await action('pause');
+  const running = flows.active.get(id).task;
+  work.resolve();
+  await running;
+  assert.deepEqual(started, ['work']);
+  await action('play');
+  const sync = pending('merge-target');
+  assert.deepEqual((await view()).autoplay, { mode: 'waiting', blockId: sync.id });
+  assert.deepEqual(started, ['work', 'verify']);
+  await action('cancel-confirmation', { blockId: sync.id });
+  assert.equal((await view()).autoplay.mode, 'paused');
+  await action('play');
+  await action('start', { blockId: sync.id, confirmed: true });
+  await flows.active.get(id)?.task;
+  assert.deepEqual(started, ['work', 'verify', 'merge-target']);
+  assert.deepEqual((await view()).autoplay, { mode: 'waiting', blockId: pending('publish').id });
+  for (const kind of ['publish', 'merge', 'close']) await action('remove', { blockId: pending(kind).id });
+  assert.equal((await view()).autoplay.mode, 'paused');
+  await action('play');
+  assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Flow complete' });
+});
+
+test('issue Play pauses on failure and Stop, retries once, and does not recover after restart', async (t) => {
+  const { id, service } = fixture(t);
+  const started = [];
+  const fail = Promise.withResolvers();
+  const flows = createIssueFlows(service, {
+    executor: executor(async ({ block, signal, continuing }) => {
+      started.push([block.kind, continuing]);
+      if (started.length === 1) {
+        await fail.promise;
+        throw Error('Test blocked.');
+      }
+      await new Promise((_, reject) =>
+        signal.addEventListener('abort', () => reject(Error('Stopped')), { once: true })
+      );
+    }),
+  });
+  t.after(() => flows.close());
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  flow.blocks.find((block) => block.kind === 'request').data.fields = { type: 'bug', goal: 'Repair Save' };
+  flows.store.save(flow, flow.revision);
+  const blockId = flow.blocks.find((block) => block.kind === 'work').id;
+  const action = (name) => flows.action({ issueId: id, revision: flows.read(issue).revision, action: name, blockId });
+  await action('start');
+  assert.deepEqual((await flows.view(id)).autoplay, { mode: 'paused' });
+  const manualRun = flows.active.get(id).task;
+  await flows.action({ issueId: id, revision: flow.revision, action: 'play' });
+  assert.equal((await flows.view(id)).autoplay.mode, 'playing');
+  fail.resolve();
+  await manualRun;
+  assert.deepEqual((await flows.view(id)).autoplay, { mode: 'paused', reason: 'Test blocked.' });
+  assert.equal(started.length, 1);
+  await action('play');
+  assert.equal((await flows.view(id)).autoplay.mode, 'playing');
+  const running = flows.active.get(id).task;
+  await action('stop');
+  await running;
+  assert.deepEqual(started, [
+    ['work', false],
+    ['work', true],
+  ]);
+  assert.equal((await flows.view(id)).autoplay.mode, 'paused');
+  await action('play');
+  const restarted = createIssueFlows(service, { executor: executor(async () => assert.fail('Unexpected restart')) });
+  t.after(() => restarted.close());
+  assert.deepEqual((await restarted.view(id)).autoplay, { mode: 'paused' });
+  await restarted.action({ issueId: id, revision: restarted.read(issue).revision, action: 'play' });
+  assert.match((await restarted.view(id)).autoplay.reason, /Recover Work/);
+  const lastRun = flows.active.get(id).task;
+  await action('stop');
+  await lastRun;
+});
+
+test('the issue pencil saves one title and Request edits keep verification when the criteria match', async (t) => {
+  const { root, id, service } = fixture(t);
+  let fields = {
+    type: 'bug',
+    goal: 'Repair Save',
+    requestedProof: 'Save a change and show it persists after reload.',
+    constraints: 'Use local data',
+  };
+  const flows = createIssueFlows(service, {
+    executor: executor(async () => ({ summary: 'Verified' })),
+    async clarify() {
+      return { artifacts: { values: fields } };
+    },
+  });
+  t.after(() => flows.close());
+  let view = await flows.view(id);
+  const act = async (action, input) => {
+    view = await flows.action({ action, issueId: id, revision: view.flow.revision, ...input });
+  };
+  await act('request', { wording: 'Fix Save' });
+  await act('add', { kind: 'verify', afterId: 'work' });
+  const verify = view.flow.blocks.find((block) => block.kind === 'verify');
+  await flows.action({ action: 'start', issueId: id, revision: view.flow.revision, blockId: verify.id });
+  await flows.active.get(id)?.task;
+  view = await flows.view(id);
+  const currentVerify = () => view.flow.blocks.find((block) => block.kind === 'verify').attempts.at(-1);
+  assert.equal(currentVerify().status, 'completed');
+  await act('rename-issue', { previousTitle: view.issue.title, title: 'Fix the Save button' });
+  assert.equal(view.issue.title, 'Fix the Save button');
+  assert.equal(requestData(view.flow).wording, 'Fix Save');
+  assert.equal(currentVerify().invalidatedAt, undefined);
+  const title = view.flow.blocks
+    .find((block) => block.kind === 'publish')
+    .details.find((detail) => detail.key === 'title');
+  assert.equal(title.value, view.issue.title);
+  assert.equal(title.fixed, true);
+  assert.equal(title.requestId, 'request');
+  fields = { ...fields, constraints: 'Use test data' };
+  await act('request', { wording: 'Fix the Save action' });
+  assert.equal(view.issue.title, 'Fix the Save button');
+  assert.equal(currentVerify().invalidatedAt, undefined);
+  fields = { ...fields, requestedProof: 'Reload twice' };
+  await act('request', { wording: 'Fix the Save action' });
+  assert.ok(currentVerify().invalidatedAt);
+  const report = readFileSync(join(root, '.issues', id + '.md'), 'utf8');
+  assert.match(report, /title: Fix the Save button/);
+  assert.match(report, /## Original request\n\nFix the broken save button\./);
+});
+
+test('Destination follows the starting branch until pinned, then locks to an existing PR and asks about a GitHub base change', async (t) => {
+  const { root, git, id, service } = fixture(t);
+  const config = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
+  writeFileSync(join(root, '.issues/issue-delivery-config.json'), JSON.stringify(config));
+  git('branch', 'recent');
+  git('update-ref', 'refs/remotes/upstream/recent', 'HEAD');
+  let pr;
+  const flows = createIssueFlows(service, {
+    executor: executor(async () => ({ summary: 'done' })),
+    deliveryOptions: {
+      provider: {
+        config,
+        async gh() {
+          return 'dev\nrecent\nrelease';
+        },
+        async findIssueBranchPR() {
+          return pr;
+        },
+        async inspect() {
+          return pr;
+        },
+      },
+    },
+    observer: {
+      async observe() {
+        return pr ? { pr: { number: pr.number, url: pr.html_url, branch: pr.base.ref } } : {};
+      },
+    },
+  });
+  t.after(() => flows.close());
+  let view = await flows.view(id);
+  const act = async (action, input) => {
+    view = await flows.action({ action, issueId: id, revision: view.flow.revision, ...input });
+  };
+  await act('starting-point', { ref: 'refs/heads/recent' });
+  assert.equal(view.destination.branch, 'recent');
+  assert.equal(view.destination.follows, true);
+  await act('destination', { branch: 'release' });
+  assert.equal(view.destination.branch, 'release');
+  await act('starting-point', { ref: 'refs/remotes/upstream/recent' });
+  assert.equal(view.destination.branch, 'release');
+  await act('destination', { branch: null });
+  assert.equal(view.destination.branch, null);
+  const saved = flows.read(flows.selected(id));
+  saved.workspace = { checkout: root, branch: 'codex/fixture' };
+  flows.store.save(saved, saved.revision);
+  pr = {
+    number: 9,
+    html_url: 'https://example.invalid/pr/9',
+    head: { ref: saved.workspace.branch, repo: { full_name: config.repository } },
+    base: { ref: 'dev', repo: { full_name: config.repository } },
+  };
+  view = await flows.view(id);
+  assert.equal(view.destination.locked, true);
+  assert.equal(view.destination.branch, 'dev');
+  pr.base.ref = 'release';
+  view = await flows.view(id);
+  assert.equal(view.destination.branch, 'dev');
+  assert.equal(view.destination.proposedBranch, 'release');
+  await act('accept-pr-base', { branch: 'release' });
+  assert.equal(view.destination.branch, 'release');
+  assert.equal(view.destination.proposedBranch, undefined);
+  assert.equal(view.flow.startingPoint.ref, 'refs/remotes/upstream/recent');
+});
+
 test('project setup previews and creates only the missing lifecycle without changing reports or policy', (t) => {
   const { root, id, service } = fixture(t);
   const reportPath = join(root, '.issues', id + '.md');
@@ -185,7 +416,7 @@ test('initialized lifecycle works with the actual human-input guard and retains 
   assert.throws(() => humanGuard(root, action, 'implement', null), /Human input blocks implement/);
 });
 
-test('starting branch options retain every ref, order commits and persist defaults without changing destination', async (t) => {
+test('new issues start at the destination branch while explicit starting points stay with their issue', async (t) => {
   const { root, git, id, service } = fixture(t);
   const tree = git('rev-parse', 'HEAD^{tree}');
   const commit = (date) =>
@@ -199,6 +430,7 @@ test('starting branch options retain every ref, order commits and persist defaul
   git('branch', 'same-tip', recent);
   git('branch', 'older', older);
   git('update-ref', 'refs/remotes/origin/recent', recent);
+  git('update-ref', 'refs/remotes/origin/dev', older);
   git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/recent');
   const flows = createIssueFlows(service, { executor: executor(async () => ({ summary: 'done' })) });
   t.after(() => flows.close());
@@ -219,9 +451,9 @@ test('starting branch options retain every ref, order commits and persist defaul
     ref: 'refs/heads/recent',
   });
   assert.deepEqual(startingPoint(selected.flow), { ref: 'refs/heads/recent', name: 'recent', commit: recent });
-  assert.deepEqual(deliveryTarget(selected.flow), deliveryTarget(before.flow));
+  assert.deepEqual(deliveryTarget(selected.flow), { ...deliveryTarget(before.flow), branch: 'recent' });
   assert.equal(git('branch', '--show-current'), currentBranch);
-  assert.equal(selected.defaultStartingRef, 'refs/heads/recent');
+  writeFileSync(join(root, '.issues/flows/defaults.json'), JSON.stringify({ startingRef: 'refs/heads/recent' }));
   const restarted = createIssueFlows(service, { executor: executor(async () => ({ summary: 'done' })) });
   t.after(() => restarted.close());
   assert.equal(startingPoint((await restarted.view(id)).flow).commit, recent);
@@ -230,11 +462,12 @@ test('starting branch options retain every ref, order commits and persist defaul
     action: 'capture',
     requestId: '00000000-0000-4000-8000-000000000121',
     type: 'feature',
-    description: 'Start the next issue on my chosen branch',
+    description: 'Start the next issue on the delivery branch',
   };
   const captured = await restarted.action(input);
-  assert.deepEqual(startingPoint(captured.flow), { ref: 'refs/heads/recent', name: 'recent', commit: older });
-  git('update-ref', 'refs/heads/recent', recent);
+  assert.deepEqual(startingPoint(captured.flow), { ref: 'refs/remotes/origin/dev', name: 'origin/dev', commit: older });
+  assert.equal(deliveryTarget(captured.flow).branch, 'dev');
+  git('update-ref', 'refs/remotes/origin/dev', recent);
   assert.equal(
     startingPoint((await restarted.action(input)).flow).commit,
     older,
@@ -256,10 +489,9 @@ test('starting branch options retain every ref, order commits and persist defaul
   );
   assert.equal(startingPoint((await restarted.view(id)).flow).commit, recent);
   git('branch', '-D', 'recent');
-  await assert.rejects(
-    () => restarted.action({ ...input, requestId: '00000000-0000-4000-8000-000000000122' }),
-    /branch|starting|ref/i
-  );
+  git('update-ref', '-d', 'refs/remotes/origin/dev');
+  const local = await restarted.action({ ...input, requestId: '00000000-0000-4000-8000-000000000122' });
+  assert.equal(startingPoint(local.flow).ref, 'refs/heads/dev');
 });
 
 test('request data and block order persist with revision conflicts rejected', async (t) => {
@@ -271,11 +503,11 @@ test('request data and block order persist with revision conflicts rejected', as
   const request = view.flow.blocks[0].id;
   assert.equal((await flows.view(id)).flow.blocks[0].id, request);
   view = await flows.action({ issueId: id, revision: 0, action: 'add', kind: 'repro' });
-  assert.equal(view.flow.blocks[3].kind, 'repro');
-  assert.equal(view.flow.blocks[4].kind, 'verify');
+  assert.equal(view.flow.blocks[2].kind, 'repro');
+  assert.equal(view.flow.blocks[3].kind, 'publish');
   await assert.rejects(flows.action({ issueId: id, revision: 0, action: 'folder', folder: 'Stale' }), /flow changed/);
   const reloaded = createIssueFlows(service, { executor: executor(async () => ({})) });
-  assert.equal((await reloaded.view(id)).flow.blocks[3].kind, 'repro');
+  assert.equal((await reloaded.view(id)).flow.blocks[2].kind, 'repro');
   assert.ok(existsSync(join(root, '.issues/flows', id, 'flow.json')));
 });
 
@@ -306,7 +538,10 @@ test('a block runs only on explicit start and retry retains both attempts', asyn
     ['blocked', 'completed']
   );
   assert.equal(calls, 2);
-  assert.equal(view.flow.blocks.find((block) => block.id === 'verify').attempts.length, 0);
+  assert.equal(
+    view.flow.blocks.some((block) => block.kind === 'verify'),
+    false
+  );
 });
 
 test('stop stays available while progress revisions advance and retains partial output', async (t) => {
@@ -357,7 +592,7 @@ test('external target changes and worktree deletion are observed without startin
   assert.equal((await observer.observe(flow)).worktreeExists, false);
 });
 
-test('request edits clarify only Request and leave route rebuilding to the user', async (t) => {
+test('a changed Request type applies its default Markdown flow and preserves earlier history', async (t) => {
   const { service, id } = fixture(t);
   const flows = createIssueFlows(service, {
     executor: executor(async () => {
@@ -378,11 +613,10 @@ test('request edits clarify only Request and leave route rebuilding to the user'
     action: 'request',
     wording: 'Understand saving',
   });
-  assert.equal(view.flow.routeType, 'bug');
-  assert.deepEqual(view.issueTypeChange, { from: 'bug', to: 'investigation' });
-  assert.equal(requestData(view.flow).fields.goal, 'Understand saving');
-  view = await flows.action({ issueId: id, revision: view.flow.revision, action: 'rebuild-flow' });
   assert.equal(view.flow.routeType, 'investigation');
+  assert.equal(view.flow.definition.id, 'investigation');
+  assert.equal(requestData(view.flow).fields.goal, 'Understand saving');
+  assert.ok(view.flow.retiredBlocks.some((block) => block.kind === 'work'));
   view = await flows.action({
     issueId: id,
     revision: view.flow.revision,
@@ -404,6 +638,243 @@ test('request edits clarify only Request and leave route rebuilding to the user'
   assert.equal((await flows.view()).issues.length, 2);
 });
 
+test('project defaults append, builders run once, and Markdown changes apply only on request', async (t) => {
+  const { root, service } = fixture(t);
+  const extensionDir = join(root, 'factory/ui/extensions/flow');
+  mkdirSync(join(extensionDir, 'definitions'), { recursive: true });
+  const promptPath = join(extensionDir, 'definitions/delivery.md');
+  writeFileSync(promptPath, 'Start with the **review** block.\n');
+  const customDir = join(root, 'factory/ui/flows');
+  mkdirSync(customDir);
+  writeFileSync(
+    join(customDir, 'quick.md'),
+    `---
+name: Quick check
+issueTypes: [bug]
+blocks:
+  - { id: request, block: request }
+  - { id: target, block: target, after: [request] }
+  - { id: verify, block: verify, after: [target] }
+---
+`
+  );
+  writeFileSync(join(extensionDir, 'defaults.md'), '---\ndefaults:\n  bug: quick\n---\n');
+  const prompts = [];
+  const flows = createIssueFlows(service, {
+    buildStructure: async ({ definition }) => {
+      prompts.push(definition.prompt);
+      return [...definition.blocks, { id: 'review', block: 'advice', after: ['work'], lane: 1 }];
+    },
+  });
+  async function capture(type, suffix) {
+    return flows.action({
+      action: 'capture',
+      requestId: '00000000-0000-4000-8000-00000000000' + suffix,
+      type,
+      description: 'Check saving',
+    });
+  }
+  const bug = await capture('bug', 2);
+  assert.equal(bug.flow.definition.id, 'quick');
+  assert.deepEqual(
+    bug.flow.blocks.map((block) => block.kind),
+    ['request', 'verify']
+  );
+  const [feature, sameCapture] = await Promise.all([capture('feature', 3), capture('feature', 3)]);
+  assert.equal(feature.issue.id, sameCapture.issue.id);
+  assert.equal(feature.flow.definition.id, 'delivery');
+  assert.equal(feature.flow.blocks.at(-1).kind, 'advice');
+  assert.deepEqual(feature.flow.blocks.at(-1).after, ['work']);
+  assert.deepEqual(
+    feature.flowDefinitions.available.map(({ id }) => id),
+    ['delivery']
+  );
+  assert.deepEqual(prompts, ['Start with the **review** block.']);
+  const featureId = feature.issue.id;
+  writeFileSync(promptPath, 'Start with the\nreview   block.\n');
+  assert.equal((await flows.view(featureId)).flowDefinitions.updated, false);
+  writeFileSync(promptPath, 'Start with the **design** block.\n');
+  const pending = await flows.view(featureId);
+  assert.equal(pending.flowDefinitions.updated, true);
+  assert.equal(pending.flow.definition.checksum, feature.flow.definition.checksum);
+  assert.equal(prompts.length, 1);
+  const updated = await flows.action({ action: 'rebuild-flow', issueId: featureId, revision: pending.flow.revision });
+  assert.equal(updated.flowDefinitions.updated, false);
+  assert.equal(prompts.length, 2);
+  const saved = editFlow(flows.read(flows.selected(bug.issue.id)), { action: 'add', kind: 'verify' });
+  const result = { id: 'prior-verify', status: 'completed', summary: 'Original verification result' };
+  saved.blocks.find((block) => block.kind === 'verify').attempts.push(result);
+  const withResult = flows.store.save(saved, saved.revision);
+  const switched = await flows.action({
+    action: 'select-flow',
+    flowId: 'delivery',
+    issueId: bug.issue.id,
+    revision: withResult.revision,
+  });
+  assert.equal(switched.flow.definition.id, 'delivery');
+  assert.equal(prompts.length, 3);
+  assert.deepEqual(switched.flow.retiredBlocks.find((block) => block.kind === 'verify').attempts, [result]);
+  const rebuilt = await flows.action({
+    action: 'rebuild-flow',
+    issueId: bug.issue.id,
+    revision: switched.flow.revision,
+  });
+  assert.equal(rebuilt.flow.definition.checksum, switched.flow.definition.checksum);
+  assert.equal(prompts.length, 4, 'The wand rebuilds even when the definition is unchanged.');
+  assert.deepEqual(rebuilt.flow.retiredBlocks.find((block) => block.kind === 'verify').attempts, [result]);
+});
+
+test('extension frontmatter replaces the block list before the builder reads both prompts', async (t) => {
+  const { root, id, service } = fixture(t);
+  const directory = join(root, 'factory/ui/flows');
+  mkdirSync(directory, { recursive: true });
+  mkdirSync(join(root, 'team'));
+  writeFileSync(
+    join(directory, 'review.md'),
+    `---
+name: Team review
+issueTypes: [bug]
+extension: team/review.md
+blocks:
+  - { id: request, block: request }
+  - { id: work, block: work, after: [request] }
+---
+
+# Prompt
+
+Base instructions.
+`
+  );
+  writeFileSync(
+    join(root, 'team/review.md'),
+    `---
+blocks:
+  - { id: request, block: request }
+  - { id: verify, block: verify, after: [request] }
+---
+
+# Prompt
+
+Team instructions.
+`
+  );
+  const flows = createIssueFlows(service, {
+    buildStructure: async ({ definition }) => {
+      assert.deepEqual(
+        definition.blocks.map(({ id }) => id),
+        ['request', 'verify']
+      );
+      assert.equal(definition.prompt, 'Base instructions.\n\nTeam instructions.');
+      return [definition.blocks[0], { id: 'design', block: 'design', after: ['request'] }];
+    },
+  });
+  const updated = await flows.action({ action: 'select-flow', issueId: id, revision: 0, flowId: 'review' });
+  assert.deepEqual(
+    updated.flow.blocks.map(({ kind }) => kind),
+    ['request', 'design']
+  );
+  assert.equal(updated.flow.target.branch, 'dev');
+  flows.buildStructure = async () => [{ id: 'design', block: 'design' }];
+  await assert.rejects(
+    flows.action({ action: 'rebuild-flow', issueId: id, revision: updated.flow.revision }),
+    /Start the flow with the Request block/
+  );
+  assert.deepEqual(
+    (await flows.view(id)).flow.blocks.map(({ kind }) => kind),
+    ['request', 'design']
+  );
+});
+
+test('old Target records preserve branches, dependencies and earlier progress', async (t) => {
+  const { id, service } = fixture(t);
+  const flows = createIssueFlows(service);
+  const flow = flows.read(flows.selected(id));
+  const starting = { name: 'saved', ref: 'refs/heads/saved', commit: 'a'.repeat(40) };
+  const delivery = { branch: 'release', remote: 'upstream', base: null };
+  delete flow.target;
+  delete flow.startingPoint;
+  const oldTarget = {
+    id: 'old-target',
+    kind: 'target',
+    after: ['request'],
+    attempts: [],
+    comments: [{ text: 'Keep the original branch.' }],
+    data: { delivery, startingPoint: starting },
+  };
+  flow.blocks.splice(1, 0, oldTarget);
+  const work = flow.blocks.find(({ kind }) => kind === 'work');
+  work.after = ['request', 'old-target'];
+  work.attempts.push({ id: 'saved-work', status: 'completed' });
+  flow.blocks.find(({ kind }) => kind === 'publish').links = { delivery: 'old-target' };
+  flows.store.save(flow, 0);
+  let view = await flows.view(id);
+  assert.deepEqual(view.flow.target, delivery);
+  assert.deepEqual(view.flow.startingPoint, starting);
+  assert.ok(view.flow.blocks.every(({ kind }) => kind !== 'target'));
+  assert.deepEqual(view.flow.retiredBlocks, [oldTarget]);
+  assert.deepEqual(view.flow.blocks.find(({ kind }) => kind === 'work').after, ['request']);
+  const publish = view.flow.blocks.find(({ kind }) => kind === 'publish');
+  assert.deepEqual(publish.links, {});
+  assert.equal(publish.details.find(({ key }) => key === 'delivery').value, 'saved');
+  view = await flows.action({ action: 'rebuild-flow', issueId: id, revision: view.flow.revision });
+  assert.deepEqual(view.flow.startingPoint, starting);
+  assert.equal(view.flow.blocks.find(({ kind }) => kind === 'work').attempts[0].status, 'completed');
+});
+
+test('export links the exact current structure without rebuilding or changing progress', async (t) => {
+  const { root, service, id } = fixture(t);
+  const flows = createIssueFlows(service, {
+    buildStructure: () => assert.fail('Exported flows never call a model builder'),
+  });
+  const saved = flows.read(flows.selected(id));
+  saved.blocks.find((block) => block.kind === 'work').attempts.push({ id: 'progress', status: 'completed' });
+  flows.store.save(saved, 0);
+  const act = (view, action, input = {}) =>
+    flows.action({ issueId: id, revision: view.flow.revision, action, ...input });
+  const initial = await flows.view(id);
+  const before = await act(initial, 'add', { kind: 'advice', afterId: 'work' });
+  assert.equal(before.flow.definition.checksum, initial.flow.definition.checksum);
+  const exported = await act(before, 'export-flow', { flowId: 'with-advice', name: 'With advice' });
+  assert.equal(exported.flow.definition.id, 'with-advice');
+  assert.equal(exported.flowDefinitions.updated, false);
+  const body = readFileSync(join(root, 'factory/ui/flows/with-advice.md'), 'utf8');
+  assert.match(body, /block: advice/);
+  assert.doesNotMatch(body, /progress|skill:|Build prompt/);
+  assert.equal(exported.flow.blocks.find((block) => block.kind === 'work').attempts[0].status, 'completed');
+  assert.deepEqual(
+    exported.flow.blocks.map((block) => block.id),
+    before.flow.blocks.map((block) => block.id)
+  );
+  const altered = await act(exported, 'add', { kind: 'retro', afterId: 'work' });
+  const rebuilt = await act(altered, 'rebuild-flow');
+  const structure = (view) => view.flow.blocks.map(({ id, after, lane }) => ({ id, after, lane }));
+  assert.deepEqual(structure(rebuilt), structure(exported));
+  assert.deepEqual(rebuilt.flow.blocks.find((block) => block.kind === 'work').attempts, [
+    { id: 'progress', status: 'completed' },
+  ]);
+  await assert.rejects(() => act(rebuilt, 'select-flow', { flowId: 'investigation' }), /unavailable for bug/);
+  const switched = await act(rebuilt, 'select-flow', { flowId: 'delivery' });
+  assert.equal(switched.flow.definition.id, 'delivery');
+  assert.deepEqual(switched.flow.blocks.find((block) => block.kind === 'work').attempts, [
+    { id: 'progress', status: 'completed' },
+  ]);
+  await assert.rejects(
+    () => act(switched, 'export-flow', { flowId: 'with-advice', name: 'Replacement' }),
+    /already in use/
+  );
+  const save = flows.store.save;
+  flows.store.save = () => {
+    throw Error('Could not link the export.');
+  };
+  await assert.rejects(
+    () => act(switched, 'export-flow', { flowId: 'unlinked', name: 'Unlinked' }),
+    /Could not link the export/
+  );
+  flows.store.save = save;
+  assert.equal(existsSync(join(root, 'factory/ui/flows/unlinked.md')), false);
+  assert.equal((await flows.view(id)).flow.definition.id, 'delivery');
+});
+
 test('block graph rejects cycles and preserves attempted history', (t) => {
   const { root } = fixture(t);
   const flow = newFlow({ id: '20261113-one', title: 'Example', content: '' }, { branch: 'dev', remote: 'origin' });
@@ -411,10 +882,15 @@ test('block graph rejects cycles and preserves attempted history', (t) => {
   assert.throws(() => new FlowStore(root).save(flow, 0), /dependencies/);
   flow.blocks.find((block) => block.id === 'work').after = ['request'];
   flow.blocks.find((block) => block.id === 'work').attempts.push({ id: 'attempt', status: 'blocked' });
-  assert.throws(() => editFlow(flow, { action: 'remove', blockId: 'work' }), /history/);
+  const removed = editFlow(flow, { action: 'remove', blockId: 'work' });
+  assert.equal(
+    removed.blocks.some((block) => block.id === 'work'),
+    false
+  );
+  assert.deepEqual(removed.retiredBlocks[0].attempts, [{ id: 'attempt', status: 'blocked' }]);
 });
 
-test('completed target merges do not hide a later target change and parallel lanes join before verification', async (t) => {
+test('completed target merges do not hide a later target change and parallel lanes join before publication', async (t) => {
   const { root, id, service } = fixture(t);
   const flows = createIssueFlows(service, {
     executor: executor(async () => ({})),
@@ -434,7 +910,7 @@ test('completed target merges do not hide a later target change and parallel lan
   flow = editFlow(flow, { action: 'add', kind: 'design', lane: 1 });
   const design = flow.blocks.find((block) => block.kind === 'design');
   assert.deepEqual(design.after, ['request']);
-  assert.ok(flow.blocks.find((block) => block.kind === 'verify').after.includes(design.id));
+  assert.ok(flow.blocks.find((block) => block.kind === 'publish').after.includes(design.id));
   const moved = editFlow(flow, { action: 'move', blockId: design.id, direction: 'down' });
   assert.deepEqual(moved.blocks.find((block) => block.id === design.id).after, ['request']);
 });
@@ -477,7 +953,7 @@ test('new investigations propose understanding and acceptance without code deliv
   );
   assert.deepEqual(
     flow.blocks.map((block) => block.kind),
-    ['request', 'target', 'understand', 'close']
+    ['request', 'understand', 'close']
   );
 });
 
@@ -543,7 +1019,7 @@ test('failed continuation retains original ownership until provider idle is posi
   assert.equal(flowOwnsIssue(service, id), true);
   let view = await flows.view(id);
   await assert.rejects(
-    flows.action({ issueId: id, revision: view.flow.revision, action: 'start', blockId: 'verify' }),
+    flows.action({ issueId: id, revision: view.flow.revision, action: 'start', blockId: 'merge' }),
     /reconcile/
   );
   idle = true;
@@ -567,7 +1043,8 @@ test('opening a changed definition stops active work and invalidates only its co
     }),
   });
   const issue = flows.selected(id);
-  const initial = editFlow(flows.read(issue), { action: 'add', kind: 'design', lane: 1 });
+  const withVerify = editFlow(flows.read(issue), { action: 'add', kind: 'verify', afterId: 'work' });
+  const initial = editFlow(withVerify, { action: 'add', kind: 'design', lane: 1 });
   const independent = initial.blocks.find((block) => block.kind === 'design');
   independent.attempts.push({ id: 'independent', status: 'completed', startedAt: new Date().toISOString() });
   const verify = initial.blocks.find((block) => block.kind === 'verify');
@@ -580,7 +1057,7 @@ test('opening a changed definition stops active work and invalidates only its co
     path,
     readFileSync(path, 'utf8').replace('Perform the requested work.', 'Perform the requested repair.')
   );
-  await flows.action({ issueId: id, action: 'open-block', blockId: 'verify' });
+  await flows.action({ issueId: id, action: 'open-block', blockId: verify.id });
   assert.equal(active.controller.signal.aborted, false);
   await flows.action({ issueId: id, action: 'open-block', blockId: 'work' });
   await active.task;

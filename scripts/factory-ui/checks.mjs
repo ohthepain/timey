@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { assessAudit } from '../audit-result.mjs';
+import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
 import { git, readJson, requireThat, runLogged, digest, writeJson } from './common.mjs';
 
 const activeChecks = new Map();
@@ -33,12 +34,36 @@ export async function checkCandidate(root, base, folder, options = {}) {
     activeChecks.delete(root);
   }
 }
-async function checkCandidateOnce(root, base, folder, options = {}) {
-  root = realpathSync(root);
+async function ensureWorkerDependencies(root, folder, options) {
+  const workspaces = workspacePackages(root);
+  try {
+    dependencyPreflight(root, root, workspaces);
+    return;
+  } catch (error) {
+    if (error.code !== 'PREFLIGHT_DEPENDENCIES') throw error;
+  }
+  const autoInstall = options.installDependencies ?? Boolean(options.allowUncommitted);
   requireThat(
-    existsSync(join(root, 'node_modules')),
+    existsSync(join(root, 'pnpm-lock.yaml')),
+    'Matching dependencies are missing from the worker checkout and pnpm-lock.yaml is absent. Install dependencies there before continuing.'
+  );
+  requireThat(
+    autoInstall,
     'Matching dependencies are missing from the worker checkout. Install them there before continuing.'
   );
+  mkdirSync(folder, { recursive: true });
+  await runLogged(
+    root,
+    'pnpm',
+    ['install', '--frozen-lockfile'],
+    join(folder, 'dependency-install.log'),
+    options.onProgress
+  );
+  dependencyPreflight(root, root, workspaces);
+}
+async function checkCandidateOnce(root, base, folder, options = {}) {
+  root = realpathSync(root);
+  await ensureWorkerDependencies(root, folder, options);
   git(root, 'merge-base', '--is-ancestor', base, 'HEAD');
   const treeBefore = git(root, 'rev-parse', 'HEAD^{tree}'),
     headBefore = git(root, 'rev-parse', 'HEAD'),
@@ -189,7 +214,7 @@ export function commandSummary(root, output) {
   );
   return path;
 }
-function workingSourceDigest(root) {
+export function workingSourceDigest(root) {
   const files = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z')
     .split('\0')
     .filter(Boolean)
@@ -201,6 +226,7 @@ function workingSourceDigest(root) {
         const entry = lstatSync(file, { throwIfNoEntry: false });
         if (!entry) return [path, 'missing'];
         if (entry.isSymbolicLink()) return [path, 'symlink', readlinkSync(file)];
+        if (entry.isDirectory()) return [path, 'directory', entry.mode];
         requireThat(entry.isFile(), 'Cannot snapshot this Git entry as a regular file or symlink: ' + path);
         return [path, entry.mode, digest(readFileSync(file))];
       })

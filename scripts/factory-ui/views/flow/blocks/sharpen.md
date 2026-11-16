@@ -11,7 +11,7 @@ Reach a shared understanding before choosing work.
 
 # User extensions
 
-`sharpen.md`
+`factory/ui/extensions/flow/blocks/sharpen.md`
 
 # System prompt
 
@@ -29,7 +29,6 @@ Save the proof that supports the result and report any evidence you could not ob
 | report         | issue.content          | Issue report    | long text |                                   |         |
 | type           | Request.type           | Issue type      | choice    | ["bug","feature","investigation"] |         |
 | goal           | Request.goal           | Goal            | long text |                                   |         |
-| doneCheck      | Request.doneCheck      | Done check      | long text |                                   |         |
 | requestedProof | Request.requestedProof | Requested proof | long text |                                   |         |
 | knownFacts     | Request.knownFacts     | Known facts     | long text |                                   |         |
 | constraints    | Request.constraints    | Constraints     | long text |                                   |         |

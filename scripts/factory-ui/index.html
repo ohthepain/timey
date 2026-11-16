@@ -4903,12 +4903,12 @@
               const syncOnly = button.textContent.startsWith('Record merge');
               const question = syncOnly
                 ? `GitHub already recorded PR #${pr} as merged. Update local dev if it is safe?`
-                : `Merge PR #${pr} on GitHub now? Approval and required checks will be rechecked.`;
+                : `Merge PR #${pr} on GitHub now? Factory will recheck GitHub's merge requirements.`;
               if (!window.confirm(question)) return;
               button.disabled = true;
               button.textContent = syncOnly
                 ? 'Recording merge and updating local dev…'
-                : 'Rechecking approval and checks…';
+                : 'Rechecking GitHub merge requirements…';
               await request('issue-strategy-merge', {
                 issueId,
                 pr,

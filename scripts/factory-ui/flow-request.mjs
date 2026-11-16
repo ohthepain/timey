@@ -4,7 +4,7 @@ import { createDiscussionRuntime } from './discussion-codex.mjs';
 import { digest, requireThat } from './common.mjs';
 import { redactValue } from './activity.mjs';
 
-const issueTypes = ['bug', 'feature', 'investigation'];
+import { issueTypes } from './flow-definitions.mjs';
 
 export async function clarifyRequest(root, definition, attempt, signal, discussion = createDiscussionRuntime) {
   signal.throwIfAborted();

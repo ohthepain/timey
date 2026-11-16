@@ -9,6 +9,7 @@ import {
   rmSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   statSync,
 } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
@@ -20,7 +21,7 @@ import { digest, requireThat } from './common.mjs';
 class DiscussionCodex extends CodexConnection {
   constructor() {
     super();
-    this.runtime = mkdtempSync(join(tmpdir(), 'timey-discussion-runtime-'));
+    this.runtime = realpathSync(mkdtempSync(join(tmpdir(), 'timey-discussion-runtime-')));
     this.cwd = join(this.runtime, 'workspace');
     this.home = join(this.runtime, 'codex');
     mkdirSync(this.cwd);

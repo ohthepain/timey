@@ -2,15 +2,23 @@ import { requireThat } from './common.mjs';
 
 // Every retry discovers an existing PR before writing. A lost create response
 // must never result in another PR, a personal-login fallback or a reopened PR.
-export async function findStrategyPR(provider, branch, target = provider.config.target) {
+async function findPR(provider, branch, target) {
   const query = new URLSearchParams({
     state: 'all',
     head: provider.config.repository.split('/')[0] + ':' + branch,
-    base: target,
   });
+  if (target) query.set('base', target);
   const existing = JSON.parse(await provider.gh(['api', `repos/${provider.config.repository}/pulls?${query}`]));
   requireThat(existing.length <= 1, 'Multiple PRs match this issue branch; reconcile them before publication.');
   return existing[0] || null;
+}
+
+export function findStrategyPR(provider, branch, target = provider.config.target) {
+  return findPR(provider, branch, target);
+}
+
+export function findIssueBranchPR(provider, branch) {
+  return findPR(provider, branch);
 }
 
 export async function publishStrategyPR(provider, work, head, publication) {

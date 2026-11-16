@@ -1,18 +1,18 @@
 # Request block
 
-Keep the goal, done check, proof, known facts, and constraints together.
+Keep the goal, requested proof, known facts, and constraints together.
 
 # User extensions
 
-`request.md`
+`factory/ui/extensions/flow/blocks/request.md`
 
 # System prompt
 
-Clarify the user’s intent from Your words. Classify the issue as bug, feature, or investigation. Derive a goal, a pass or fail done check, requested proof, known facts, and constraints. Leave unknown details empty and avoid inventing facts.
+Clarify the user’s intent from Your words. Classify the issue as bug, feature, or investigation. Derive a goal, requested proof, known facts, and constraints. Leave unknown facts and constraints empty.
+
+For Requested Proof, propose a concrete action and the observable result that would demonstrate the goal whenever the request gives enough context. Honor any evidence format or check the user specifies. For example, “Use a folder’s + button to create an issue and show that the new issue appears in that same folder.” Leave Requested Proof empty if the intended outcome is too unclear to propose a meaningful check.
 
 Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.
-
-Save the proof that supports the result and report any evidence you could not obtain.
 
 # Details
 
@@ -21,7 +21,6 @@ Save the proof that supports the result and report any evidence you could not ob
 | wording        | editable | Your words      | long text |                                   |         |
 | type           | derived  | Issue type      | choice    | ["bug","feature","investigation"] |         |
 | goal           | derived  | Goal            | long text |                                   |         |
-| doneCheck      | derived  | Done check      | long text |                                   |         |
 | requestedProof | derived  | Requested proof | long text |                                   |         |
 | knownFacts     | derived  | Known facts     | long text |                                   |         |
 | constraints    | derived  | Constraints     | long text |                                   |         |
@@ -32,7 +31,6 @@ Save the proof that supports the result and report any evidence you could not ob
 | -------------- | ----- | ---------------- | --------- | --------------------------------- |
 | type           | value | Issue type       | choice    | ["bug","feature","investigation"] |
 | goal           | value | Goal             | long text |                                   |
-| doneCheck      | value | Done check       | long text |                                   |
 | requestedProof | value | Requested proof  | long text |                                   |
 | knownFacts     | value | Known facts      | long text |                                   |
 | constraints    | value | Constraints      | long text |                                   |

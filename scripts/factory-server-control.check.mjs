@@ -393,6 +393,81 @@ test('running-action status opens linked issue details and exposes guarded contr
   }
 });
 
+test('old disconnected preparations appear in the count and Action list and can be cancelled individually', async (t) => {
+  const root = project(t);
+  const issueIds = ['20261110-one', '20261111-two'];
+  mkdirSync(join(root, '.issues/closed'));
+  writeFileSync(
+    join(root, '.issues/closed', issueIds[0] + '.md'),
+    `---\nid: ${issueIds[0]}\ntitle: Setup 1\nstate: closed\n---\n`
+  );
+  writeFileSync(
+    join(root, '.issues', issueIds[1] + '.md'),
+    `---\nid: ${issueIds[1]}\ntitle: Setup 2\nstate: investigate\n---\n`
+  );
+  const service = new FactoryUI(root);
+  const control = serverControl(service);
+  const dom = loadServerControlDom();
+  try {
+    const runs = issueIds.map((issueId) => {
+      const run = service.store.add({ id: 'strategy-' + issueId }, 'issue-work', 'base');
+      service.store.update(run, { issueId, summary: 'Starting the selected issue strategy.' });
+      run.updated = '2020-01-01T00:00:00.000Z';
+      service.store.connected.delete(run.id);
+      return run;
+    });
+    service.store.save();
+    service.lifecycleRuns[issueIds[0]] = {
+      issueId: issueIds[0],
+      status: 'cancelled',
+      work: { runId: 'different-attempt' },
+    };
+    service.lifecycleRuns[issueIds[1]] = {
+      issueId: issueIds[1],
+      status: 'running',
+      work: { runId: runs[1].id },
+      events: [],
+    };
+    assert.equal(control.status().actions, 2);
+    const requests = async (path, input) =>
+      path === 'server-actions' ? control.actions() : controlServerAction(service, input);
+    dom.window.controls.show(control.status(), requests);
+    const document = dom.window.document;
+    const count = document.querySelector('[data-server-count]');
+    assert.match(count.textContent, /2 actions/);
+    count.click();
+    await delay(0);
+    const cards = [...document.querySelectorAll('.server-action-card')];
+    assert.equal(cards.length, 2);
+    for (const [index, title] of ['Setup 1', 'Setup 2'].entries()) {
+      const card = cards.find((entry) => entry.textContent.includes(title));
+      const cancel = [...card.querySelectorAll('button')].find((button) => button.textContent === 'Cancel');
+      assert.equal(cancel.disabled, false);
+      cancel.click();
+      await delay(0);
+      const saved = service.store.runs.find((run) => run.id === runs[index].id);
+      assert.equal(saved.status, 'cancelled');
+      assert.equal(saved.summary, 'Starting the selected issue strategy.');
+      assert.equal(control.status().actions, 1 - index);
+    }
+    assert.equal(service.lifecycleRuns[issueIds[0]].work.runId, 'different-attempt');
+    assert.equal(service.lifecycleRuns[issueIds[1]].status, 'cancelled');
+    const uncertain = service.store.add({ id: 'possible-worker' }, 'issue-work', 'base');
+    service.store.update(uncertain, { issueId: issueIds[1], threadId: 'possible-live-thread' });
+    service.store.connected.delete(uncertain.id);
+    assert.equal(control.actions().find((item) => item.id === uncertain.id).canCancel, false);
+    await assert.rejects(
+      controlServerAction(service, { runId: uncertain.id, operation: 'cancel' }),
+      /may still have a worker/
+    );
+    assert.equal(uncertain.status, 'preparing');
+  } finally {
+    dom.window.close();
+    control.close();
+    service.close();
+  }
+});
+
 test('an open Action list drops cleanup when the running count falls', async () => {
   const dom = loadServerControlDom();
   const { document, controls } = dom.window;

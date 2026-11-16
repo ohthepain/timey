@@ -118,11 +118,5 @@
     "color": "neutral",
     "order": 20,
     "defaultSkill": null
-  },
-  "target": {
-    "label": "Target",
-    "color": "blue",
-    "order": 1,
-    "defaultSkill": null
   }
 }

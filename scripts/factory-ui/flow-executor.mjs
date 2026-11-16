@@ -9,24 +9,27 @@ import { conversationState, saveConversationState, appendMessage } from './conve
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
-import { mergeIssueStrategyPR } from './issue-strategy.mjs';
 import { deleteIssueWorktree, issueHasActiveWork } from './issue-cleanup.mjs';
 import { decideIssue } from './issue-decision.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { readQueue } from './data.mjs';
 import { git, cleanEnvironment, requireThat, writeJson, digest } from './common.mjs';
 import { redactValue } from './activity.mjs';
-import { flowClosureArtifact, flowDeliveryProvider, publishFlowPR, verifiedFlowCandidate } from './flow-delivery.mjs';
-import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
+import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
+import { mergeFlowPR } from './flow-merge.mjs';
+import { runFlowVerification } from './flow-verification.mjs';
 
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
 const commandBlocks = new Set(['verify', 'merge-target', 'publish', 'merge', 'close', 'delete-worktree']);
+const maxWorkRepairs = 3;
 
 export function createFlowExecutor(service, options = {}) {
   const active = new Map();
   let closed = false;
   const create = options.createConnection || createIssueChatConnection;
   const execute = options.execute || executeCommand;
+  const verifyCandidate =
+    options.verifyCandidate || ((ctx, workspace, folder) => runFlowVerification(ctx, workspace, folder, execute));
   const attach = options.attach || attachIssueChat;
   const catalog = new BlockCatalog(service.root);
   return {
@@ -62,13 +65,15 @@ export function createFlowExecutor(service, options = {}) {
       try {
         context.signal.throwIfAborted();
         service.ownServer();
+        const runtime = { create, attach, execute, ...options, verifyCandidate };
         const result = !command
-          ? await runModel(service, context, owned, {
-              create,
-              attach,
-              ...options,
-            })
-          : await runReconciledCommand(scopedService, context, { execute, ...options });
+          ? await runModel(service, context, owned, runtime)
+          : await runReconciledCommand(scopedService, context, {
+              ...runtime,
+              repair:
+                options.repair ??
+                ((error, round) => runMergeRepair(scopedService, context, owned, runtime, error, round)),
+            });
         return command && !result.artifacts ? { ...result, artifacts: commandArtifacts(definition, result) } : result;
       } finally {
         ctx.signal?.removeEventListener('abort', forward);
@@ -198,7 +203,7 @@ function startingRevision(root, flow) {
     requireThat(resolved === commit, 'The saved starting commit could not be verified exactly.');
     return commit;
   }
-  const target = deliveryTarget(flow);
+  const target = flow.target;
   if (target.base) return git(root, 'rev-parse', '--verify', target.base);
   try {
     return git(root, 'rev-parse', '--verify', `refs/remotes/${target.remote}/${target.branch}`);
@@ -296,6 +301,39 @@ function commandArtifacts(definition, result) {
   return { values, files };
 }
 
+async function runMergeRepair(service, ctx, owned, options, error, round) {
+  try {
+    return await runModel(service, { ...ctx, continuing: ctx.continuing || round > 1 }, owned, {
+      ...options,
+      repair: { error, round },
+    });
+  } finally {
+    owned.connection?.close();
+    owned.connection = null;
+  }
+}
+
+async function reconcileMergeRepair(service, ctx, workspace, options) {
+  const interrupted = ctx.block.attempts?.some(
+    (attempt) =>
+      attempt.id !== ctx.attempt.id &&
+      !attempt.reconciledAt &&
+      ['running', 'stopping', 'uncertain'].includes(attempt.status)
+  );
+  if (!interrupted) return;
+  const saved = conversationState(service.root, ctx.issue.id).flowBlocks?.[ctx.block.id];
+  if (!saved) return;
+  requireThat(saved.threadId, 'Recover the original Merge repair conversation before retrying.');
+  const connection = options.create({ onEvent() {} });
+  try {
+    await options.attach(connection, workspace.checkout, saved, () => {}, 'read-only');
+    ctx.signal.throwIfAborted();
+    await ctx.onReconciled?.('The original Merge repair conversation is idle.');
+  } finally {
+    connection.close();
+  }
+}
+
 async function runModel(service, ctx, owned, options) {
   requireThat(
     ctx.block.kind !== 'prototype' || ctx.block.prompt?.trim(),
@@ -342,7 +380,7 @@ async function runModel(service, ctx, owned, options) {
   const binding = ctx.continuing && !last?.invalidatedAt && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
   service.issueChats?.release(ctx.issue.id);
   const folder = evidenceDirectory(service, ctx);
-  const outputPath = join(folder, 'output.txt');
+  const outputPath = join(folder, options.repair ? 'repair-' + options.repair.round + '.txt' : 'output.txt');
   let liveText = '';
   let rejectInput;
   const inputRequired = new Promise((_, reject) => {
@@ -392,7 +430,14 @@ async function runModel(service, ctx, owned, options) {
     state.flowBlocks = { ...state.flowBlocks, [ctx.block.id]: binding };
     saveConversationState(service.root, ctx.issue.id, state);
   };
-  const prompt = blockInput(ctx);
+  const prompt = options.repair
+    ? JSON.stringify({
+        issue: blockInput(ctx),
+        task: 'Fix the specific blocker within the approved issue scope. Preserve the issue and target history. Commit the repaired candidate in this checkout. Factory will verify and publish it. If a decision, broader scope, or permission is needed, report it as a flow-result failure and stop.',
+        failure: options.repair.error.message,
+        evidence: options.repair.error.evidence ?? [],
+      })
+    : blockInput(ctx);
   const instructions = [
     ctx.definition.prompt,
     ctx.block.skill ? '' : ctx.block.prompt,
@@ -402,6 +447,9 @@ async function runModel(service, ctx, owned, options) {
     .filter(Boolean)
     .join('\n\n');
   const outputs = [];
+  const failedChecks = [];
+  let verification;
+  let repairPrompt;
   let threadId;
   let turnDispatched = false;
   let terminalObserved = false;
@@ -418,6 +466,7 @@ async function runModel(service, ctx, owned, options) {
       uncertain: true,
     });
   const interrupt = () => {
+    if (terminalObserved) return;
     if (!threadId) {
       connection.close();
       rejectStopped(stopError());
@@ -457,7 +506,7 @@ async function runModel(service, ctx, owned, options) {
       skill: ctx.block.skill || null,
     });
     appendMessage(service.root, ctx.issue.id, {
-      id: 'flow-request-' + ctx.attempt.id,
+      id: 'flow-request-' + ctx.attempt.id + (options.repair ? '-repair-' + options.repair.round : ''),
       actor: 'human',
       role: 'You',
       kind: 'flow-block-request',
@@ -466,7 +515,13 @@ async function runModel(service, ctx, owned, options) {
     });
     for (let round = 1; round <= rounds; round++) {
       ctx.signal.throwIfAborted();
-      ctx.onProgress(rounds > 1 ? `Sol iteration ${round}/${rounds}.` : `Running ${ctx.block.kind} block.`);
+      ctx.onProgress(
+        repairPrompt
+          ? `Repairing Work after verification failed (attempt ${round - 1} of ${maxWorkRepairs}).\n`
+          : ctx.block.kind === 'sol'
+            ? `Sol iteration ${round}/${rounds}.`
+            : `Running ${ctx.block.kind} block.`
+      );
       turnDispatched = true;
       terminalObserved = false;
       const text = await Promise.race([
@@ -475,14 +530,17 @@ async function runModel(service, ctx, owned, options) {
         connection.turn(
           threadId,
           workspace.checkout,
-          round === 1
-            ? prompt
-            : `${prompt}\n\nIteration ${round}/${rounds}. Recheck the previous findings against the current candidate.`,
+          repairPrompt ??
+            (round === 1
+              ? prompt
+              : `${prompt}\n\nIteration ${round}/${rounds}. Recheck the previous findings against the current candidate.`),
           undefined,
           skillInputs(skills),
           settings,
           {
-            clientId: `${ctx.attempt.id}-${round}`,
+            clientId: options.repair
+              ? `${ctx.attempt.id}-repair-${options.repair.round}`
+              : `${ctx.attempt.id}-${round}`,
             accepted(receipt) {
               retain({
                 flowReceipt: { ...receipt, attemptId: ctx.attempt.id, round },
@@ -496,10 +554,25 @@ async function runModel(service, ctx, owned, options) {
       requireThat(typeof text === 'string' && text.trim(), 'The block returned no result. Reconcile its saved turn.');
       outputs.push(redactValue(text));
       writeFileSync(outputPath, outputs.join('\n\n'), { mode: 0o600 });
+      if (ctx.block.kind === 'work') {
+        ctx.onProgress('Running the Verify checks on the Work candidate.\n');
+        try {
+          verification = await options.verifyCandidate(ctx, workspace, join(folder, `verification-${round}`));
+        } catch (error) {
+          if (ctx.signal.aborted || !error.verificationFailure || round > maxWorkRepairs) throw error;
+          failedChecks.push(...(error.evidence ?? []));
+          repairPrompt = JSON.stringify({
+            task: 'Fix the verification failures in this issue checkout. Keep the original Work scope and preserve unrelated changes. Read the following logs as evidence. Correct the underlying failures. The factory will rerun Verify on your updated candidate.',
+            summary: error.message,
+            evidence: (error.evidence ?? []).map(({ path }) => path),
+          });
+          rounds++;
+        }
+      }
     }
     const output = outputs.join('\n\n');
     appendMessage(service.root, ctx.issue.id, {
-      id: 'flow-result-' + ctx.attempt.id,
+      id: 'flow-result-' + ctx.attempt.id + (options.repair ? '-repair-' + options.repair.round : ''),
       actor: 'agent',
       role: 'Issue assistant',
       kind: 'flow-block-result',
@@ -509,14 +582,21 @@ async function runModel(service, ctx, owned, options) {
     retain({ status: 'idle' });
     const response = { path: outputPath, label: 'Block response', sha256: digest(readFileSync(outputPath)) };
     const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);
+    if (
+      verification?.result.head &&
+      ctx.definition.artifacts?.some(({ key, kind }) => key === 'candidate' && kind === 'value')
+    )
+      retained.artifacts.values.candidate = verification.result.head;
     return {
-      summary: output.slice(0, 1200),
+      summary: verification ? 'Work completed and passed the Verify checks.' : output.slice(0, 1200),
       output,
       ...retained,
+      evidence: [...retained.evidence, ...failedChecks, ...(verification?.evidence ?? [])],
       result: {
         threadId,
         skill: ctx.block.skill || null,
         iterations: rounds,
+        ...(verification && { verification: verification.result }),
         head: git(workspace.checkout, 'rev-parse', 'HEAD'),
         tree: git(workspace.checkout, 'rev-parse', 'HEAD^{tree}'),
         base: workspace.base,
@@ -544,6 +624,7 @@ async function runModel(service, ctx, owned, options) {
           : 'attention',
     });
     error.evidence = [
+      ...failedChecks,
       ...(error.evidence || []),
       ...(partial ? [{ path: outputPath, label: 'Partial block response' }] : []),
     ];
@@ -565,10 +646,13 @@ async function runCommand(service, ctx, options) {
   ctx.signal.throwIfAborted();
   const kind = ctx.block.kind;
   const record = service.lifecycleRuns[ctx.issue.id];
+  const work = record?.work;
   const flowWasEdited = upstreamBlocks(ctx.block, ctx.flow.blocks).some((block) =>
     block.attempts.some((attempt) => attempt.invalidatedAt)
   );
-  if (['publish', 'merge', 'close', 'delete-worktree'].includes(kind))
+  const useLegacyDelivery =
+    work && !flowWasEdited && deliveryTarget(ctx.flow).branch === (work.config?.target ?? ctx.flow.target?.branch);
+  if (['publish', 'close', 'delete-worktree'].includes(kind))
     requireThat(
       ctx.input?.confirmed === true,
       'Confirm this protected lifecycle operation explicitly before running the block.'
@@ -577,41 +661,34 @@ async function runCommand(service, ctx, options) {
     const workspace = await workspaceFor(service, ctx);
     const published = await publishFlowPR(service, ctx, workspace, evidenceDirectory(service, ctx), options);
     return {
-      ...commandResult(
-        service,
-        ctx,
-        published.result,
-        'Published the verified issue branch and App-authored PR. Merge and acceptance remain separate.',
-        published.evidence
-      ),
+      ...commandResult(service, ctx, published.result, published.summary, published.evidence),
       workspace: published.workspace,
+      ...(published.status ? { status: published.status } : {}),
     };
   }
   if (kind === 'merge') {
-    const work = record?.work;
-    if (flowWasEdited || !work?.pr || !work.prHead || !work.runId) return mergeFlowPR(service, ctx, options);
-    const result = await (options.merge || mergeIssueStrategyPR)(service, {
-      issueId: ctx.issue.id,
-      pr: work.pr,
-      head: work.prHead,
-      runId: work.runId,
-    });
-    return commandResult(service, ctx, result, 'The protected merge operation finished.');
+    requireThat(
+      work?.checkout || record?.chatCheckout?.checkout || ctx.flow.workspace?.checkout,
+      'No protected PR candidate or managed issue checkout is recorded. Run an explicit work block first.'
+    );
+    const workspace = await workspaceFor(service, ctx);
+    await reconcileMergeRepair(service, ctx, workspace, options);
+    const outcome = await mergeFlowPR(service, ctx, workspace, evidenceDirectory(service, ctx), options);
+    return { ...outcome, ...commandResult(service, ctx, outcome.result, outcome.summary, outcome.evidence) };
   }
   if (kind === 'close') {
     const queue = readQueue(service.root);
     const issue = queue.issues.find((item) => item.id === ctx.issue.id);
     requireThat(issue, 'This issue is no longer open. Refresh its saved closure.');
-    const artifact =
-      record?.work && !flowWasEdited
-        ? null
-        : await flowClosureArtifact(
-            service,
-            ctx,
-            await workspaceFor(service, ctx),
-            evidenceDirectory(service, ctx),
-            options
-          );
+    const artifact = useLegacyDelivery
+      ? null
+      : await flowClosureArtifact(
+          service,
+          ctx,
+          await workspaceFor(service, ctx),
+          evidenceDirectory(service, ctx),
+          options
+        );
     const result = await (options.closeIssue || decideIssue)(
       service,
       issue.id,
@@ -662,67 +739,18 @@ async function runCommand(service, ctx, options) {
       onProgress: ctx.onProgress,
     });
   if (kind === 'verify') {
-    const checkout = workspace.checkout;
-    if (ctx.details?.candidate)
-      requireThat(
-        git(checkout, 'rev-parse', 'HEAD') === ctx.details.candidate,
-        'The saved candidate differs from this checkout. Inspect the selected candidate before verifying.'
-      );
-    requireThat(existsSync(join(checkout, 'pnpm-lock.yaml')), 'Verify needs a pnpm-lock.yaml in the issue worktree.');
-    const workspaces = workspacePackages(checkout);
-    ctx.signal.throwIfAborted();
-    try {
-      dependencyPreflight(checkout, checkout, workspaces);
-      ctx.onProgress('Reusing matching dependencies in the issue worktree.\n');
-    } catch (error) {
-      if (error.code !== 'PREFLIGHT_DEPENDENCIES') throw error;
-      ctx.onProgress('Installing dependencies in the issue worktree with pnpm install --frozen-lockfile.\n');
-      await invoke('pnpm', ['install', '--frozen-lockfile']);
-      ctx.signal.throwIfAborted();
-      dependencyPreflight(checkout, checkout, workspaces);
-    }
-    const script = `import {checkCandidate} from ${JSON.stringify(new URL('./checks.mjs', import.meta.url).href)}; const result = await checkCandidate(${JSON.stringify(workspace.checkout)}, ${JSON.stringify(workspace.base)}, ${JSON.stringify(folder)}, {auditPolicy:'required',force:true,allowUncommitted:true,onProgress:text=>process.stdout.write(text)}); console.log(); console.log('FLOW_RESULT '+JSON.stringify(result));`;
-    const output = await invoke(process.execPath, ['--input-type=module', '-e', script]);
-    const line = output.split(/\r?\n/).findLast((value) => value.startsWith('FLOW_RESULT '));
-    requireThat(
-      line,
-      'The verification command did not return its recorded candidate evidence. Inspect the command log.'
-    );
-    const result = JSON.parse(line.slice('FLOW_RESULT '.length));
-    result.base = workspace.base;
-    result.proof = (result.summaries || []).map((path) => ({
-      path,
-      sha256: digest(readFileSync(path)),
-    }));
-    result.supportingProof = (result.summaries || [])
-      .flatMap((path) => JSON.parse(readFileSync(path, 'utf8')).checks || [])
-      .flatMap((check) => [check.log, ...(check.artifacts || []).map((file) => file.path)])
-      .map((path) => ({ path, sha256: digest(readFileSync(path)) }));
-    return {
-      ...commandResult(
-        service,
-        ctx,
-        result,
-        result.uncommitted
-          ? 'Verification passed for the uncommitted source snapshot.'
-          : 'Explicit verification passed.',
-        [
-          { key: 'log', path: log, label: 'Verification command output' },
-          ...(result.summaries || []).map((path) => ({
-            path,
-            key: 'report',
-            label: 'Verification summary',
-          })),
-        ]
-      ),
-      workspace,
-    };
+    const { result, evidence } = await options.verifyCandidate(ctx, workspace, folder);
+    const summary = result.uncommitted
+      ? 'Verification passed for the uncommitted source snapshot.'
+      : 'Explicit verification passed.';
+    return { ...commandResult(service, ctx, result, summary, evidence), workspace };
   }
   requireThat(
     !git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all'),
     'Preserve checkout changes in a commit before merging the target branch.'
   );
   const { remote, branch } = deliveryTarget(ctx.flow);
+  requireThat(branch, 'Choose a destination branch before merging from target.');
   requireThat(
     typeof remote === 'string' && /^[\w.-]+$/.test(remote) && !remote.startsWith('-'),
     'Configure a valid target remote before merging it.'
@@ -745,75 +773,6 @@ async function runCommand(service, ctx, options) {
       [{ key: 'log', path: log, label: 'Target fetch and merge output' }]
     ),
     workspace,
-  };
-}
-
-async function mergeFlowPR(service, ctx, options) {
-  const saved = service.lifecycleRuns[ctx.issue.id]?.chatCheckout || ctx.flow.workspace;
-  requireThat(
-    saved?.checkout,
-    'No protected PR candidate or managed issue checkout is recorded. Run an explicit work block first.'
-  );
-  const workspace = await workspaceFor(service, ctx);
-  const provider = flowDeliveryProvider(service, ctx, workspace, options);
-  const pr = await provider.findByBranch(workspace.branch, deliveryTarget(ctx.flow).branch);
-  requireThat(
-    pr,
-    `No PR exists for ${workspace.branch}. Run an explicit Publish block against ${deliveryTarget(ctx.flow).branch}, then explicitly retry this Merge block.`
-  );
-  const head = git(workspace.checkout, 'rev-parse', 'HEAD');
-  let readiness = await provider.ready(pr, workspace.branch, head);
-  if (readiness.merged)
-    return {
-      ...commandResult(
-        service,
-        ctx,
-        { ...readiness.merge, pr: pr.number, alreadyMerged: true },
-        'GitHub confirms this issue PR was merged externally. Acceptance remains separate.'
-      ),
-      workspace: { ...workspace, pr: pr.number },
-    };
-  verifiedFlowCandidate(ctx, workspace, options);
-  requireThat(
-    !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', readiness.target, head, '--', '.issues/'),
-    'Shared issue reports require their separate human-reviewed queue PR.'
-  );
-  ctx.signal.throwIfAborted();
-  service.guard(
-    service.root,
-    { id: ctx.attempt.id, issues: [ctx.issue.id], worker_revision: head },
-    'merge',
-    readiness.target
-  );
-  await provider.assertApproved(pr.number, head);
-  readiness = await provider.ready(await provider.inspect(pr.number), workspace.branch, head);
-  if (readiness.merged)
-    return {
-      ...commandResult(
-        service,
-        ctx,
-        { ...readiness.merge, pr: pr.number, alreadyMerged: true },
-        'GitHub confirms this issue PR was merged. Acceptance remains separate.'
-      ),
-      workspace: { ...workspace, pr: pr.number },
-    };
-  ctx.signal.throwIfAborted();
-  let merge;
-  try {
-    merge = await provider.merge(pr.number, head);
-  } catch (error) {
-    const reconciled = await provider.ready(await provider.inspect(pr.number), workspace.branch, head);
-    if (!reconciled.merged) throw error;
-    merge = reconciled.merge;
-  }
-  return {
-    ...commandResult(
-      service,
-      ctx,
-      { ...merge, pr: pr.number, head },
-      'GitHub confirms the protected merge. Acceptance and local target synchronization remain separate.'
-    ),
-    workspace: { ...workspace, pr: pr.number },
   };
 }
 

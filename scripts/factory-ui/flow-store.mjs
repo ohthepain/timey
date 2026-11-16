@@ -1,5 +1,6 @@
-import { blockDefinitionId, requestBlock, targetBlock, requestData } from './flow-block-data.mjs';
+import { blockDefinitionId, requestBlock, withoutTarget } from './flow-block-data.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
+import { bundledFlow } from './flow-definitions.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -43,93 +44,97 @@ function originalWording(issue) {
       ?.trim() || issue.title
   );
 }
-function defaultRoute(type, catalog) {
-  const kinds = type === 'investigation' ? ['understand', 'close'] : ['work', 'verify', 'publish', 'merge', 'close'];
-  return kinds.map((kind, index) => {
-    const block = makeBlock(kind, index ? [kinds[index - 1]] : ['request', 'target'], index > 0, catalog);
-    block.id = kind === 'understand' ? 'work' : kind;
-    if (type === 'investigation' && index) block.after = ['work'];
-    block.routeDefault = true;
-    return block;
-  });
-}
-
-export function newFlow(issue, delivery, catalog = bundledCatalog.read().entries) {
-  const request = makeBlock('request', [], false, catalog);
-  request.id = 'request';
+export function newFlow(issue, delivery, catalog = bundledCatalog.read().entries, selected) {
   const wording = originalWording(issue);
   const type = issue.request_type || inferType(wording);
-  request.data = { wording, fields: null };
-  const target = makeBlock('target', ['request'], false, catalog);
-  target.id = 'target';
-  target.data = { delivery, startingPoint: null };
-  return {
+  const definition = selected?.definition ?? bundledFlow(type);
+  const blocks = (selected?.nodes ?? definition.blocks).map((node) => {
+    const block = makeBlock(node.block, node.after, node.suggested, catalog);
+    return { ...block, id: node.id, flowKey: node.id, lane: node.lane };
+  });
+  blocks[0].data = { wording, fields: null };
+  const flow = {
     version: 1,
     issueId: issue.id,
     revision: 0,
     routeType: type,
+    target: delivery,
+    startingPoint: null,
     folder: null,
     workspace: null,
-    blocks: [request, target, ...defaultRoute(type, catalog)],
+    blocks,
   };
+  linkFlowDefinition(flow, definition);
+  return flow;
 }
 
-function migrateFlow(flow, catalog) {
+export function linkFlowDefinition(flow, { id, name, checksum }) {
+  flow.definition = { id, name, checksum };
+}
+
+function migrateFlow(flow, defaultTarget) {
   const request = requestBlock(flow);
+  request.flowKey = 'request';
   if (!request.data) {
     const { wording, proof, ...fields } = flow.request;
     request.data = { wording, fields: { ...fields, requestedProof: proof, type: flow.type } };
     flow.routeType = flow.type;
-    const defaults = new Map(defaultRoute(flow.type, catalog).map((block) => [block.id, block.kind]));
-    for (const block of flow.blocks) if (defaults.get(block.id) === block.kind) block.routeDefault = true;
   }
-  if (!targetBlock(flow)) {
-    const target = makeBlock('target', [request.id], false, catalog);
-    target.id = 'target';
-    target.data = { delivery: flow.target, startingPoint: flow.startingPoint ?? null };
-    flow.blocks.splice(flow.blocks.indexOf(request) + 1, 0, target);
+  const target = flow.blocks.find((block) => block.kind === 'target');
+  if (target) {
+    flow.target ??= target.data?.delivery;
+    flow.startingPoint ??= target.data?.startingPoint ?? null;
+    flow.blocks = withoutTarget(flow.blocks, target);
     for (const block of flow.blocks)
-      if (block.id !== target.id && block.after.includes(request.id)) block.after.push(target.id);
+      for (const key of Object.keys(block.links ?? {})) if (block.links[key] === target.id) delete block.links[key];
+    if (target.attempts?.length || target.comments?.length) (flow.retiredBlocks ??= []).push(target);
   }
+  flow.target ??= defaultTarget;
+  flow.startingPoint ??= null;
   delete flow.request;
-  delete flow.target;
-  delete flow.startingPoint;
   delete flow.type;
+  if (!flow.definition) {
+    const definition = bundledFlow(flow.routeType);
+    const kinds = new Map(definition.blocks.map((block) => [block.id, block.block]));
+    for (const block of flow.blocks) {
+      if (kinds.get(block.id) === blockDefinitionId(block) || block.routeDefault) {
+        block.flowKey = block.routeDefault
+          ? (definition.blocks.find((node) => node.block === blockDefinitionId(block))?.id ?? block.id)
+          : block.id;
+      }
+    }
+    linkFlowDefinition(flow, definition);
+  }
   return flow;
 }
 
-export function rebuildRoute(flow, catalog) {
-  const type = requestData(flow).fields?.type;
-  requireThat(type, 'Waiting for Request. Save Your words or refresh Request before rebuilding.');
-  const request = requestBlock(flow);
-  const target = targetBlock(flow);
-  const owners = new Set([request.id, target.id]);
+export function rebuildRoute(flow, type, definition, nodes, catalog) {
+  const current = new Map(flow.blocks.filter((block) => block.flowKey).map((block) => [block.flowKey, block]));
   const taken = new Set([...flow.blocks, ...(flow.retiredBlocks ?? [])].map((block) => block.id));
-  const spine = defaultRoute(type, catalog).map((template) => {
-    const current = flow.blocks.find((block) => block.routeDefault && block.kind === template.kind);
-    if (current) {
-      owners.add(current.id);
-      return { ...current };
-    }
-    if (taken.has(template.id)) template.id = randomUUID();
-    return template;
+  const ids = new Map();
+  const retained = new Set();
+  const blocks = nodes.map((node) => {
+    const before = current.get(node.id);
+    const block =
+      before && blockDefinitionId(before) === node.block
+        ? { ...before }
+        : makeBlock(node.block, [], node.suggested, catalog);
+    if (before?.id === block.id) retained.add(block.id);
+    else if (!taken.has(node.id)) block.id = node.id;
+    taken.add(block.id);
+    ids.set(node.id, block.id);
+    return {
+      ...block,
+      flowKey: node.id,
+      after: node.after.map((id) => ids.get(id)),
+      lane: node.lane,
+      suggested: !block.attempts.length && node.suggested,
+    };
   });
-  const rebuilt = [request, target, ...spine];
-  for (const [index, block] of spine.entries()) block.after = [index ? spine[index - 1].id : target.id];
-  for (const block of flow.blocks) {
-    if (owners.has(block.id) || block.routeDefault || !block.after.every((id) => owners.has(id))) continue;
-    if (!Object.values(block.links ?? {}).every((id) => owners.has(id))) continue;
-    const after = rebuilt.findLastIndex((entry) => block.after.includes(entry.id));
-    const next = rebuilt.find((entry, index) => index > after && entry.routeDefault);
-    const previousSuccessor = flow.blocks.find((entry) => entry.id === next?.id);
-    if (previousSuccessor?.after.includes(block.id)) next.after = [...new Set([...next.after, block.id])];
-    rebuilt.splice(Math.max(2, after + 1), 0, block);
-    owners.add(block.id);
-  }
-  const current = new Set(rebuilt.map((block) => block.id));
-  flow.retiredBlocks = [...(flow.retiredBlocks ?? []), ...flow.blocks.filter((block) => !current.has(block.id))];
-  flow.blocks = rebuilt;
+  flow.retiredBlocks = [...(flow.retiredBlocks ?? []), ...flow.blocks.filter((block) => !retained.has(block.id))];
+  flow.blocks = blocks;
   flow.routeType = type;
+  linkFlowDefinition(flow, definition);
   return flow;
 }
 
@@ -149,7 +154,7 @@ export class FlowStore {
       record.version === 1 && record.issueId === issue.id && Array.isArray(record.blocks),
       'The saved flow needs reconciliation. It was not reset.'
     );
-    return migrateFlow(record, catalog ?? bundledCatalog.read().entries);
+    return migrateFlow(record, target);
   }
   save(flow, expectedRevision) {
     const path = this.path(flow.issueId);
@@ -184,8 +189,11 @@ export function editFlow(flow, input, catalog) {
       const explicit = input.afterId ? next.blocks.findIndex((item) => item.id === input.afterId) : -1;
       requireThat(!input.afterId || explicit >= 0, 'Choose an existing insertion point.');
       const index = explicit >= 0 ? explicit + 1 : next.blocks.findIndex((item) => item.suggested);
-      const at = index < 0 ? next.blocks.length : index;
-      requireThat(!['request', 'target'].includes(input.kind), 'Request and Target already belong to this flow.');
+      const at = index < 0 ? next.blocks.length : Math.max(1, index);
+      requireThat(
+        !['request', 'target'].includes(input.kind),
+        'Add a block other than Request or the legacy Target block.'
+      );
       const added = makeBlock(input.kind, at ? [next.blocks[at - 1].id] : [], false, catalog);
       added.lane = validLane(input.lane ?? 0);
       added.after = laneDependencies(next.blocks, at, added.lane);
@@ -244,11 +252,11 @@ export function editFlow(flow, input, catalog) {
     },
     move() {
       requireEditable(block);
-      requireThat(!['request', 'target'].includes(block.kind), 'Request and Target stay at the beginning.');
+      requireThat(block.kind !== 'request', 'Request stays at the beginning.');
       const at = next.blocks.indexOf(block),
         to = at + (input.direction === 'up' ? 1 : -1);
       requireThat(
-        ['up', 'down'].includes(input.direction) && to > 1 && to < next.blocks.length,
+        ['up', 'down'].includes(input.direction) && to > 0 && to < next.blocks.length,
         'This block cannot move further.'
       );
       requireEditable(next.blocks[to]);
@@ -259,10 +267,14 @@ export function editFlow(flow, input, catalog) {
     },
     remove() {
       requireEditable(block);
+      requireThat(block.kind !== 'request', 'Keep the original Request.');
       requireThat(
-        !['request', 'target'].includes(block.kind) && !block.attempts.length,
-        'Keep the original request and attempted blocks as history.'
+        !block.attempts.some(
+          (attempt) => !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status)
+        ),
+        'Stop or reconcile the block before removing it.'
       );
+      if (block.attempts.length || block.comments.length) (next.retiredBlocks ??= []).push(block);
       next.blocks = next.blocks.filter((item) => item.id !== block.id);
       next.blocks.forEach((item) => {
         item.after = item.after.flatMap((id) => (id === block.id ? block.after : [id]));

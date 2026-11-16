@@ -12,6 +12,10 @@ function updateRunTiming(run, values, at) {
   advanceOperationTiming(run, values.status, at);
 }
 
+export function isActiveRun(run) {
+  return ['preparing', 'running', 'checking'].includes(run.status);
+}
+
 export class RunStore {
   constructor(root, authorization = () => null) {
     this.authorization = authorization;
@@ -25,8 +29,7 @@ export class RunStore {
     if (history.version !== 1) throw Error('Unsupported UI history. Reconcile it before proceeding.');
     this.runs = history.runs;
     if (!Array.isArray(this.runs)) throw Error('Damaged UI run history. Reconcile it; do not reset it.');
-    for (const run of this.runs.filter((r) => ['preparing', 'running', 'checking'].includes(r.status)))
-      recoverStream(run, join(this.directory, `${run.id}.jsonl`));
+    for (const run of this.runs.filter(isActiveRun)) recoverStream(run, join(this.directory, `${run.id}.jsonl`));
   }
   flush() {
     if (this.streamSave) this.save();

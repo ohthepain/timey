@@ -874,8 +874,12 @@ async function checkStrategyCandidate(service, record, run, work, force = false)
 
 async function inspectStrategyReadiness(service, work, head) {
   const provider = strategyProvider(service, work.config, work.checkout);
-  const readiness = await provider.ready(await provider.inspect(work.pr), work.branch, head);
+  const readiness = await deliveryReadiness(provider, work, await provider.inspect(work.pr), head);
   return { provider, readiness };
+}
+
+function deliveryReadiness(provider, work, pr, head) {
+  return provider.ready(pr, work.branch, head, { handoff: work.strategy === 'full-stop' });
 }
 
 async function publishVerifiedCandidate(service, record, run, head) {
@@ -896,7 +900,7 @@ function strategyOutcome(work, readiness) {
   if (work.strategy === 'full-send')
     return {
       status: 'ready-to-merge',
-      summary: `PR ${readiness.url} is ready for your Merge action. GitHub approval and required checks will be rechecked before merging.${discrepancy}`,
+      summary: `PR ${readiness.url} is ready for your Merge action. GitHub merge readiness will be rechecked before merging.${discrepancy}`,
     };
   return {
     status: 'handed-off',
@@ -983,7 +987,6 @@ async function mergeReadyCandidate(service, context, provider, readiness) {
   const latest = await inspectMergeReadiness(provider, work);
   if (latest.merged) return latest.merge;
   assertSharedReportsOutsideCodePR(service, work, latest.target, work.prHead);
-  await provider.assertApproved(work.pr, work.prHead);
   return mergeOrReconcile(provider, work);
 }
 
@@ -1083,9 +1086,6 @@ async function recordStrategyOutcome(service, record, run, issue, work, readines
 
 async function executeStrategy(service, record, run, issue, input) {
   await factoryBoundary(service, issue.id);
-  const preflightProvider = strategyProvider(service, record.work.config, service.root);
-  if (record.work.strategy === 'full-send' && input.operation !== 'review')
-    await retryInfrastructure(service, record, () => preflightProvider.assertMergeProtection());
   assertStrategyActive(record, 'Paused by you. Saved work is retained.');
   await checkoutFor(service, record, run, issue);
   const work = record.work;
@@ -1227,7 +1227,7 @@ async function reconcileCheckedDelivery(service, record, run, issue, input, work
 async function inspectReconciledPR(service, record, work, knownProvider, knownPR) {
   if (knownPR) {
     const readiness = await coordinatedReadiness(service, record, () =>
-      retryInfrastructure(service, record, () => knownProvider.ready(knownPR, work.branch, work.prHead))
+      retryInfrastructure(service, record, () => deliveryReadiness(knownProvider, work, knownPR, work.prHead))
     );
     return { provider: knownProvider, pr: knownPR, readiness };
   }
@@ -1285,7 +1285,7 @@ async function inspectSavedPR(service, record, work) {
   const pr = await retryInfrastructure(service, record, () => provider.inspect(work.pr));
   if (!pr) return { provider, pr, readiness: null };
   const readiness = await coordinatedReadiness(service, record, () =>
-    retryInfrastructure(service, record, () => provider.ready(pr, work.branch, work.prHead))
+    retryInfrastructure(service, record, () => deliveryReadiness(provider, work, pr, work.prHead))
   );
   return { provider, pr, readiness };
 }

@@ -1,6 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { requireThat, writeJson } from './common.mjs';
+import { requireThat } from './common.mjs';
 import { flowGit } from './flow-observer.mjs';
 
 export async function flowBranches(root) {
@@ -29,20 +27,6 @@ export async function flowBranches(root) {
     .map(({ symref: _, ...branch }) => branch);
 }
 
-export function defaultStartingRef(root) {
-  const path = join(root, '.issues/flows/defaults.json');
-  if (!existsSync(path)) return null;
-  const value = JSON.parse(readFileSync(path, 'utf8')).startingRef;
-  requireThat(typeof value === 'string' && value, 'The saved starting branch default needs reconciliation.');
-  return value;
-}
-
-export function saveDefaultStartingRef(root, ref) {
-  const directory = join(root, '.issues/flows');
-  mkdirSync(directory, { recursive: true });
-  writeJson(join(directory, 'defaults.json'), { startingRef: ref });
-}
-
 export function branchStartingPoint(branches, ref) {
   requireThat(typeof ref === 'string', 'Choose an available Git branch for the starting point.');
   const branch = branches.find((item) => item.ref === ref);
@@ -52,14 +36,6 @@ export function branchStartingPoint(branches, ref) {
 
 export async function captureStartingPoint(root, target) {
   const branches = await flowBranches(root);
-  const saved = defaultStartingRef(root);
-  if (saved) {
-    requireThat(
-      branches.some((branch) => branch.ref === saved),
-      'The default starting branch is unavailable. Restore that Git branch or select another starting branch on an unstarted issue before creating an issue.'
-    );
-    return branchStartingPoint(branches, saved);
-  }
   const branch =
     branches.find((item) => item.ref === `refs/remotes/${target.remote}/${target.branch}`) ||
     branches.find((item) => item.ref === `refs/heads/${target.branch}`);

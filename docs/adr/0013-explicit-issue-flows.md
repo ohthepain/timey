@@ -1,7 +1,7 @@
 # Explicit issue flows
 
-The `number_2` design makes each operation a visible block that the person starts.
-The graph is the planned route. A completed block never starts its successor.
+The `number_2` design makes each operation a visible block. The graph is the
+planned route. A person can run one block or press Play to run the route.
 This addresses the strategy runner's coupling of work, target synchronization,
 verification, publication, and readiness.
 
@@ -12,11 +12,15 @@ strategy assignments, human-input obligations, protected merge checks, and expli
 acceptance. Reading or refreshing a flow does not migrate or launch old work.
 
 Each issue has one JSON flow under `.issues/flows/ISSUE_ID/flow.json`. The flow stores blocks, dependencies, lanes, comments and attempts. Request owns
-Your words and the agent's clarified fields. Target owns the starting point and
-the delivery destination. A starting point records the full Git ref, display name
-and exact commit independently of the PR target. Project defaults remember the
-ref for future captures. Selecting a starting point never switches the project
-checkout. A retained checkout or a work attempt locks the selection.
+Your words and the agent's clarified fields. It is the required first block.
+The issue flow stores the settings for Starting point and Destination.
+Older records preserve their settings from the former Target block.
+A starting point records the full Git ref, display name and exact base commit.
+New issues start from the configured delivery branch. Destination follows the
+starting branch on the configured remote until explicitly pinned. An existing
+PR establishes the locked Destination. External base changes require explicit
+acceptance before Publish or Merge. Merge from target reads Destination and
+keeps the checkout's original base.
 
 A block type's Markdown defines its system prompt and its Details and Artifacts
 tables. Details declares the block's inputs; Artifacts declares its outputs. The
@@ -24,9 +28,9 @@ inspector renders inputs first, then read-only outputs from the latest run, and 
 collapsed System prompt section. Each input switches between Manual and Source.
 Source defaults to the unique upstream output named by the Details source; when
 there is no unique match, the person chooses a source or switches to Manual.
-Saved links use the producer's block ID. Request fields are the normal source for
-request facts and wording; Target's branch output is the normal source for branch
-fields.
+Saved links use the producer's block ID. Request fields supply request facts
+and wording. `Starting point.branch` and `Destination.delivery` read Git settings
+from the issue flow.
 
 Optional Type and Options columns shape the controls. Supported input types are
 `text`, `long text`, `number`, `boolean`, `choice`, `filename`, and `url`; missing
@@ -46,19 +50,27 @@ in history with the definition and resolved Details it actually used. Results
 returned after invalidation remain historical. Details resolve again when the
 editor opens, a block starts or a relevant edit is saved.
 
-Saving Your words or clicking the Request wand invalidates the entire flow and
-runs only Request clarification. The agent derives the issue type, goal, done
-check, requested proof, known facts and constraints. A change of type offers a
-route rebuild. Rebuild requires an explicit user action. It reconnects compatible
-custom blocks and retains displaced blocks' history. Legacy records are read in
-the new shape. The Request wand gives the user an explicit way to invalidate
-legacy results and derive fresh fields.
+Saving Your words or clicking the Request wand reruns Request clarification.
+The agent derives the issue type, goal, requested proof, known facts, and
+constraints. Requested proof proposes a concrete way to demonstrate the goal
+and honors any evidence the user asks for. If the type changes, the controller
+applies the new type's default flow. Rebuilding preserves the progress of retained blocks
+and keeps displaced blocks in history.
+
+The [user-editable flow design](../plans/user-editable-flows.md) records how
+Markdown defaults, one-time flow building, manual updates, and export work.
 
 Revision checks reject conflicting edits. Retrying appends an attempt. Interrupted
 ownership remains uncertain until the original provider thread is reconciled.
 The flow survives workspace deletion.
 
-The controller owns flow writes. The executor owns one bounded block and returns
+The controller owns flow writes. The executor owns one bounded block.
+Work collects requested proof and records any gaps in its response. It runs the
+same candidate checks as Verify before it can complete. When checks fail, Work sends the evidence to its existing conversation
+and reruns the checks after repair. Work stops after three unsuccessful repair
+turns and retains the failures. Verify independently checks the current candidate.
+
+The executor returns
 results and evidence. The observer reads Git and PR facts independently of model
 turns. Local Git queries have short timeouts. PR reads run separately and retain
 freshness and failures. An externally merged PR is an observation, not acceptance.
@@ -78,11 +90,23 @@ A continuation reuses a conversation only while its skill and inputs match. Miss
 block without substituting another method. Skill instructions do not authorize
 later verification, publication, merge, closure, or cleanup blocks.
 
-Verification runs only when selected. Publication and merge use the recorded,
-unchanged candidate and retained verification evidence. GitHub App publication,
-provider-enforced protection, explicit acceptance, and cleanup ownership checks
-remain required. Missing project policy or credentials are visible blockers, not
-reasons to invent passing evidence or a legacy approval.
+The standard delivery flow uses Publish PR and Merge to run independent
+verification when the exact issue commit lacks current evidence. Verify remains
+available as a standalone block. A change to Goal or Requested proof invalidates
+delivery verification. A new commit needs its own proof. Publish PR prepares and
+rechecks an exact preview before writing to GitHub. New PR descriptions include
+Requested proof when present. Repeat publication updates the title and commit as
+needed and preserves the original PR description.
+
+Merge fetches Destination and merges its current revision into the issue branch.
+For a changed issue commit, Merge runs independent verification, pushes the commit
+to the existing PR, and waits for required GitHub checks. It repeats if Destination
+advances. GitHub determines readiness, including repositories with zero required
+checks or unsuccessful optional checks. The Merge block Markdown sets the merge
+policy, polling interval, check timeout, and repair limit. Human-first policy
+requires approval of the current issue commit and target revision. A change to
+either revision expires approval. GitHub App publication and GitHub protection
+apply. Explicit acceptance and cleanup ownership checks remain separate.
 
 The artifact inspector shows evidence produced by the selected block. The latest
 run appears first. Invalidated results remain visible with their old inputs. Existing evidence from older runs appears in collapsed sections
@@ -91,3 +115,31 @@ digest are omitted. Deleting evidence invalidates any proof that requires it.
 Inspect shows raw text and offers a Restate toggle that applies the bro skill’s
 plain-language guidance in a temporary discussion. Workspace removal uses the protected cleanup
 adapter and retains its backups.
+
+## Issue Play and Pause
+
+The server holds Play state for each issue. Issues start paused, including after a
+server restart. Tabs can switch issues, refresh, or close while Play is active.
+Play waits for any current block, then starts the next incomplete block in route
+order. Dotted blocks on the saved route are included. A dependency must be
+complete before its successor starts.
+
+Pause lets the active block finish. Stop interrupts it and pauses the issue.
+Failure, blockers, invalidating edits, and route edits pause autoplay. Pressing
+Play again can retry an eligible failed or stopped block once. A disconnected
+attempt requires the block's explicit Recover action. Finishing the route
+returns the issue to Paused with a Flow complete message.
+
+No new actions disables Play. A running block can finish, and autoplay pauses
+if the switch is still on when it would start another block. Turn off No new
+actions and press Play to continue that route.
+
+Autoplay starts Merge preparation and waits for any human-first approval once
+the PR is ready. At other protected blocks, autoplay waits before the operation.
+While autoplay is waiting, the issue header links to the block's
+inspector. The link lets the person select the waiting block to open its existing
+confirmation. Successful completion of that confirmed block resumes Play.
+Cancelling the confirmation or manually starting a different block pauses the
+issue. The inspector keeps Run, Retry, Recover, Approve merge, or Stop beside the block name
+across tabs. Retry can reuse the block's conversation when its inputs,
+definition, and skill still match.

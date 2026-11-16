@@ -5,10 +5,8 @@ import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
 import { assertChecks, inspectReadiness, latestChecks } from './strategy-readiness.mjs';
 import { infrastructureFailure, repairableBlocker } from './strategy-repair.mjs';
-import { findStrategyPR, publishStrategyPR } from './strategy-publication.mjs';
+import { findIssueBranchPR, findStrategyPR, publishStrategyPR } from './strategy-publication.mjs';
 
-// GitHub enforces freshness through strict required checks. A verified ruleset
-// review bypass never bypasses CI or replaces server enforcement with a local lock.
 export class StrategyProvider {
   constructor(root, config, credentialRoot = root) {
     this.root = root;
@@ -88,26 +86,12 @@ export class StrategyProvider {
   async findByBranch(branch, target) {
     return findStrategyPR(this, branch, target);
   }
-  async ready(pr, branch, head) {
-    return inspectReadiness(this, pr, branch, head, () => this.canBypassOwnReview(pr));
+  async findIssueBranchPR(branch) {
+    return findIssueBranchPR(this, branch);
   }
-  async assertApproved(number, head) {
-    const view = JSON.parse(
-      await this.gh([
-        'pr',
-        'view',
-        String(number),
-        '--repo',
-        this.config.repository,
-        '--json',
-        'reviewDecision,headRefOid',
-      ])
-    );
-    requireThat(view.headRefOid === head, 'The PR head changed. Refresh its checks and approval before merging.');
-    requireThat(
-      view.reviewDecision === 'APPROVED',
-      'GitHub must show an approving review for the current PR head before merging.'
-    );
+  async ready(pr, branch, head, { handoff = false, waitForChecks = false } = {}) {
+    const reviewBypass = handoff ? () => this.canBypassOwnReview(pr) : undefined;
+    return inspectReadiness(this, pr, branch, head, reviewBypass, waitForChecks);
   }
   async canBypassOwnReview(pr) {
     const [owner] = this.config.repository.split('/');
@@ -118,7 +102,7 @@ export class StrategyProvider {
       const viewer = JSON.parse(await this.gh(['api', 'user']));
       if (!viewer.login || viewer.login !== owner || pr.user?.login !== viewer.login) return false;
     }
-    await this.assertMergeProtection();
+    await this.assertHandoffBypassProtection();
     // Classic protection may coexist with rulesets; only its absence is optional.
     try {
       const protection = JSON.parse(
@@ -153,7 +137,7 @@ export class StrategyProvider {
     }
     return true;
   }
-  async assertMergeProtection() {
+  async assertHandoffBypassProtection() {
     const pages = JSON.parse(
       await this.gh([
         'api',
@@ -181,23 +165,23 @@ export class StrategyProvider {
           parameters.strict_required_status_checks_policy === true &&
           (parameters.required_status_checks?.length || 0) > 0
       ),
-      'Full Send needs an active ruleset with strict required checks on the target branch. No merge was attempted.'
+      'Full Stop review bypass needs an active ruleset with strict required checks on the target branch. No merge was attempted.'
     );
     requireThat(
       ciRulesets.every((ruleset) => ruleset.current_user_can_bypass === 'never'),
-      'Full Send requires CI rulesets to prevent this credential from bypassing required checks, including administrators. No merge was attempted.'
+      'Full Stop review bypass requires CI rulesets to prevent this credential from bypassing required checks, including administrators. No merge was attempted.'
     );
     return true;
   }
-  async merge(number, head) {
-    await this.assertMergeProtection();
+  async merge(number, head, { beforeMerge } = {}) {
     const repository = JSON.parse(await this.gh(['api', 'repos/' + this.config.repository]));
     requireThat(
       repository.allow_merge_commit === true,
       'Enable merge commits in the GitHub repository settings before using Full Send.'
     );
     // REST merges refuse a required merge queue instead of silently enrolling it.
-    // The expected SHA is enforced remotely; strict protection enforces the base.
+    // GitHub enforces the expected head and applicable target branch requirements.
+    await beforeMerge?.();
     const merged = JSON.parse(
       await this.gh([
         'api',

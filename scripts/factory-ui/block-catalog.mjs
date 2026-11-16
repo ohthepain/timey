@@ -1,4 +1,4 @@
-import { copyFileSync, constants, lstatSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { copyFileSync, constants, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
 import { digest } from './common.mjs';
@@ -13,6 +13,23 @@ const colors = new Set(['neutral', 'yellow', 'orange', 'green', 'blue']);
 const fields = new Set(['label', 'color', 'order', 'defaultSkill']);
 const fieldTypes = new Set(['text', 'long text', 'number', 'boolean', 'choice', 'filename', 'url']);
 const validSkill = (value) => typeof value === 'string' && /^[\w.:-]{1,160}$/.test(value);
+
+function mergeWorkflow(path, section) {
+  if (section === undefined) return undefined;
+  const fence = /^```json\s*\n([\s\S]+)\n```$/.exec(section);
+  if (!fence) throw Error(path + ' needs a JSON code block under Merge workflow.');
+  const { policy, pollSeconds, checkTimeoutSeconds, repairAttempts, ...unknown } = JSON.parse(fence[1]);
+  const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
+  if (
+    Object.keys(unknown).length ||
+    !['human-first', 'automatic'].includes(policy) ||
+    !integer(pollSeconds, 1, 60) ||
+    !integer(checkTimeoutSeconds, pollSeconds, 7200) ||
+    !integer(repairAttempts, 0, 3)
+  )
+    throw Error(path + ' has invalid Merge workflow settings.');
+  return { policy, pollSeconds, checkTimeoutSeconds, repairAttempts };
+}
 
 function settings(directory) {
   const path = join(directory, 'catalog.json');
@@ -58,7 +75,16 @@ function skillList(path, lines) {
 }
 
 function content(path, text, isExtension, id) {
-  if (isExtension) return { path, text, html: markdown.render(text) };
+  if (isExtension) {
+    const tokens = markdown.parse(text, {});
+    const heading = (token) => token.type === 'heading_open' && token.tag === 'h1' && token.level === 0;
+    const index = tokens.findIndex(
+      (token, i) => heading(token) && tokens[i + 1].content.toLowerCase() === 'system prompt'
+    );
+    const next = index >= 0 && tokens.slice(index + 1).find(heading);
+    const prompt = index < 0 ? '' : text.split(/\r?\n/).slice(tokens[index].map[1], next?.map[0]).join('\n').trim();
+    return { path, text, html: markdown.render(text), prompt };
+  }
   if (/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(text))
     throw Error(path + ' contains front matter. Move block settings to catalog.json.');
   const tokens = markdown.parse(text, {});
@@ -71,7 +97,7 @@ function content(path, text, isExtension, id) {
       .slice(index + 1)
       .find((item) => item.type === 'heading_open' && item.tag === 'h1' && item.level === 0);
     const heading = tokens[index + 1].content.toLowerCase();
-    if (['system prompt', 'details', 'artifacts'].includes(heading)) {
+    if (['system prompt', 'details', 'artifacts', 'merge workflow'].includes(heading)) {
       if (sections.has(heading)) throw Error(path + ' repeats ' + heading + '.');
       sections.set(heading, lines.slice(token.map[1], end?.map[0]).join('\n').trim());
     }
@@ -155,9 +181,19 @@ function content(path, text, isExtension, id) {
     } else if (heading === 'user extensions') {
       if (hasExtensionSection) throw Error(path + ' has more than one User extensions section.');
       hasExtensionSection = true;
-      if (section && section !== id + '.md' && section !== '`' + id + '.md`')
-        throw Error(path + ' must name ' + id + '.md under User extensions.');
-      if (section) extensionFile = id + '.md';
+      const filename = id + '.md';
+      const extensionPath = blockExtensions + '/' + filename;
+      const declared = section.replace(/^`([^`]+)`$/, '$1');
+      if (declared && declared !== filename && declared !== extensionPath)
+        throw Error(path + ' must name ' + extensionPath + ' under User extensions.');
+      if (declared) extensionFile = filename;
+      if (declared === extensionPath) {
+        // Both spellings locate the same file and must keep the saved block checksum.
+        const sourceLines = text.split(/(?<=\n)/);
+        const line = sourceLines.findIndex((source, index) => index >= start && source.trim() === section);
+        sourceLines[line] = sourceLines[line].replace(extensionPath, filename);
+        text = sourceLines.join('');
+      }
     }
   }
   const paragraph = visible.findIndex((token) => token.type === 'paragraph_open');
@@ -176,6 +212,7 @@ function content(path, text, isExtension, id) {
     details: sections.has('details') ? details : undefined,
     artifacts: sections.has('artifacts') ? artifacts : undefined,
     prompt: sections.get('system prompt'),
+    mergeWorkflow: mergeWorkflow(path, sections.get('merge workflow')),
     detailsSource: sections.get('details'),
     artifactsSource: sections.get('artifacts'),
     html: markdown.renderer.render(visible, markdown.options, {}),
@@ -196,6 +233,7 @@ export class BlockCatalog {
     const project = this.project ? this.#folder(join(this.project, userBlocks), errors) : { ids: [], entries: {} };
     const entries = [];
     for (const id of new Set([...bundled.ids, ...project.ids])) {
+      if (id === 'target') continue;
       const diagnostics = [];
       const base = bundled.ids.includes(id) ? this.#content(bundledBlocks, id, diagnostics) : null;
       const override = project.ids.includes(id) ? this.#content(project.directory, id, diagnostics) : null;
@@ -205,11 +243,15 @@ export class BlockCatalog {
         errors.push(...diagnostics);
         continue;
       }
-      const extensionFile = override?.extensionFile ?? base?.extensionFile;
+      const extensionFile = override?.extensionFile ?? base?.extensionFile ?? id + '.md';
       const extension = this.project ? this.#extension(id, extensionFile, project.directory, diagnostics) : null;
+      const appliedExtension = extension?.text.trim() ? extension : null;
       errors.push(...diagnostics);
       const kind = bundled.ids.includes(id) ? id : 'work';
-      const prompt = override?.prompt ?? base?.prompt;
+      const basePrompt = override?.prompt ?? base?.prompt;
+      const prompt = appliedExtension?.prompt
+        ? [basePrompt, appliedExtension.prompt].filter(Boolean).join('\n\n')
+        : basePrompt;
       const detailsSource = override?.detailsSource ?? base?.detailsSource;
       const artifactsSource = override?.artifactsSource ?? base?.artifactsSource;
       const definitionHtml = [
@@ -225,14 +267,15 @@ export class BlockCatalog {
         override?.details === undefined ? base?.details : undefined,
         override?.artifacts === undefined ? base?.artifacts : undefined,
         override?.skills === undefined ? base?.skills : undefined,
+        ...(id === 'merge' ? [override?.mergeWorkflow === undefined ? base?.mergeWorkflow : undefined] : []),
       ];
       const effective = [
         visible.text,
         override?.path,
         override?.text,
-        extensionFile,
-        extension?.path,
-        extension?.text,
+        override?.extensionFile ?? base?.extensionFile,
+        appliedExtension?.path,
+        appliedExtension?.text,
         bundled.entries[id],
         project.entries[id],
         inherited,
@@ -253,6 +296,7 @@ export class BlockCatalog {
         details: override?.details ?? base?.details ?? [],
         artifacts: override?.artifacts ?? base?.artifacts ?? [],
         prompt,
+        mergeWorkflow: override?.mergeWorkflow ?? base?.mergeWorkflow,
         checksum: digest(JSON.stringify(effective)),
         content: {
           html: visible.html + definitionHtml + (extension?.html ? '<h2>User extensions</h2>\n' + extension.html : ''),
@@ -261,12 +305,26 @@ export class BlockCatalog {
             (extension?.html ? '<details><summary>User extensions</summary>\n' + extension.html + '</details>' : ''),
           bundled: base?.path ?? null,
           override: override?.path ?? null,
-          extension: extension?.html ? extension.path : null,
+          extension: extension?.path ?? null,
           extensionPath: extensionFile ? `${blockExtensions}/${extensionFile}` : null,
         },
       });
     }
     return { entries: entries.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)), errors };
+  }
+
+  openExtension(id) {
+    const entry = this.read().entries.find((item) => item.id === id);
+    if (!entry || !this.project) throw Error('Choose a block definition in a project.');
+    if (entry.content.extension) return entry.content.extension;
+    const destination = join(this.project, entry.content.extensionPath);
+    mkdirSync(join(this.project, blockExtensions), { recursive: true });
+    try {
+      writeFileSync(destination, '', { flag: 'wx' });
+    } catch (error) {
+      if (error.code !== 'EEXIST' || !lstatSync(destination).isFile()) throw error;
+    }
+    return destination;
   }
 
   createOverride(id) {

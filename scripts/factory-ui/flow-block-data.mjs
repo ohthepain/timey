@@ -3,22 +3,40 @@ import { digest } from './common.mjs';
 
 export const blockDefinitionId = (block) => block.definition ?? block.kind;
 export const requestBlock = (flow) => flow.blocks?.find((block) => block.kind === 'request');
-export const targetBlock = (flow) => flow.blocks?.find((block) => block.kind === 'target');
 export const requestData = (flow) =>
   requestBlock(flow)?.data ?? { wording: flow.request?.wording, fields: { ...flow.request, type: flow.type } };
-export const deliveryTarget = (flow) => targetBlock(flow)?.data?.delivery ?? flow.target;
-export const startingPoint = (flow) => targetBlock(flow)?.data?.startingPoint ?? flow.startingPoint;
+export function deliveryTarget(flow) {
+  const target = flow.target;
+  if (flow.destination?.branch) return { ...target, branch: flow.destination.branch };
+  const ref = flow.startingPoint?.ref;
+  if (!ref) return target;
+  const local = 'refs/heads/';
+  const remote = `refs/remotes/${target.remote}/`;
+  const prefix = ref.startsWith(local) ? local : ref.startsWith(remote) ? remote : null;
+  return { ...target, branch: prefix ? ref.slice(prefix.length) : null };
+}
+export const startingPoint = (flow) => flow.startingPoint;
+
+export function withoutTarget(blocks, target) {
+  return blocks
+    .filter((block) => block.id !== target.id)
+    .map((block) =>
+      block.after.includes(target.id)
+        ? { ...block, after: [...new Set(block.after.flatMap((id) => (id === target.id ? target.after : id)))] }
+        : block
+    );
+}
 
 export function latestCurrentAttempt(block) {
   const attempt = block.attempts.findLast((item) => !item.cancelledByEdit);
   return attempt?.invalidatedAt ? undefined : attempt;
 }
 
-export function invalidateBlocks(flow, seeds) {
+export function invalidateBlocks(flow, seeds, cascade = true) {
   const affected = new Set(seeds);
   const at = new Date().toISOString();
   for (const block of flow.blocks) {
-    if (block.after.some((id) => affected.has(id))) affected.add(block.id);
+    if (cascade && block.after.some((id) => affected.has(id))) affected.add(block.id);
     if (!affected.has(block.id)) continue;
     for (const attempt of block.attempts) attempt.invalidatedAt ??= at;
     if (block.kind === 'request') block.data.fields = null;
@@ -47,9 +65,7 @@ export function upstreamBlocks(block, blocks) {
 
 function artifactValue(block, key) {
   if (block.kind === 'request' && key === 'wording') return block.data.wording;
-  if (block.kind === 'target' && key === 'branch') return block.data.startingPoint?.name;
   if (block.kind === 'request' && Object.hasOwn(block.data.fields ?? {}, key)) return block.data.fields[key];
-  if (block.kind === 'target' && Object.hasOwn(block.data ?? {}, key)) return block.data[key];
   const attempt = latestCurrentAttempt(block);
   if (!['completed', 'failed', 'blocked', 'stopped'].includes(attempt?.status)) return undefined;
   if (Object.hasOwn(attempt.artifacts?.values ?? {}, key)) return attempt.artifacts.values[key];
@@ -63,11 +79,28 @@ function artifactValue(block, key) {
   }
 }
 
+const startBranch = (flow) => startingPoint(flow)?.name ?? deliveryTarget(flow)?.branch;
+const issueFlowSources = new Map([
+  ['Starting point.branch', startBranch],
+  ['Starting point.startingPoint', startingPoint],
+  ['Destination.delivery', deliveryTarget],
+  ['Destination.branch', (flow) => deliveryTarget(flow).branch],
+  ['Target.branch', startBranch],
+  ['Target.startingPoint', startingPoint],
+  ['Target.delivery', deliveryTarget],
+]);
+
 export function blockDetails(flow, issue, block, definitions) {
   const definition = definitions.get(blockDefinitionId(block));
   const addresses = blockAddresses(flow.blocks);
   const parents = upstreamBlocks(block, flow.blocks);
   return (block.declaredDetails ?? definition?.details ?? []).map(({ key, label, source, initial, type, options }) => {
+    if (source === 'Request.title' || (block.kind === 'publish' && source.startsWith('Request.'))) {
+      const producer = requestBlock(flow);
+      const field = source.slice('Request.'.length);
+      const value = field === 'title' ? issue.title : producer && artifactValue(producer, field);
+      return { key, label, type, options, value, input: true, fixed: true, requestId: producer?.id };
+    }
     if (source === 'derived')
       return {
         key,
@@ -85,18 +118,15 @@ export function blockDetails(flow, issue, block, definitions) {
         value: block.edits.filter((edit) => edit.enabled).map((edit) => edit.text),
         derived: true,
       };
+    const fixed = issueFlowSources.get(source);
+    if (fixed) return { key, label, type, options, input: true, fixed: true, value: fixed(flow) };
     const separator = source.lastIndexOf('.');
+
     const name = separator < 0 || source === 'editable' ? '' : source.slice(0, separator);
     const output = separator < 0 ? key : source.slice(separator + 1);
     const selected = block.links?.[key];
     const candidates = parents
-      .filter(
-        (item) =>
-          !name ||
-          item.id === selected ||
-          addresses.get(item.id) === name ||
-          (item.kind === 'target' && name === 'Starting point' && output === 'branch')
-      )
+      .filter((item) => !name || item.id === selected || addresses.get(item.id) === name)
       .filter((item) =>
         (item.declaredArtifacts ?? definitions.get(blockDefinitionId(item))?.artifacts ?? []).some(
           (artifact) => artifact.key === output
@@ -104,7 +134,7 @@ export function blockDetails(flow, issue, block, definitions) {
       )
       .map((item) => ({
         blockId: item.id,
-        address: item.kind === 'target' && output === 'branch' ? 'Starting point' : addresses.get(item.id),
+        address: addresses.get(item.id),
         output,
       }));
     const choice = selected
@@ -113,7 +143,8 @@ export function blockDetails(flow, issue, block, definitions) {
         ? candidates[0]
         : undefined;
     const producer = parents.find((item) => item.id === choice?.blockId);
-    const manual = Object.hasOwn(block.inputs ?? {}, key);
+    const wording = block.kind === 'request' && key === 'wording';
+    const manual = wording || Object.hasOwn(block.inputs ?? {}, key);
     const mode = manual ? 'manual' : choice ? 'source' : 'manual';
     return {
       key,
@@ -125,7 +156,13 @@ export function blockDetails(flow, issue, block, definitions) {
       selected: choice?.blockId,
       mode,
       editable: mode === 'manual',
-      value: manual ? block.inputs[key] : producer ? artifactValue(producer, output) : initial,
+      value: wording
+        ? block.data.wording
+        : manual
+          ? block.inputs[key]
+          : producer
+            ? artifactValue(producer, output)
+            : initial,
       source: choice
         ? {
             ...choice,

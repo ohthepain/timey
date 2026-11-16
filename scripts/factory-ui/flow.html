@@ -6,6 +6,7 @@
     <meta name="color-scheme" content="dark" />
     <title>Factory · Flow workspace</title>
     <link rel="stylesheet" href="/flow.css" />
+    <script src="/server-control-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
   </head>
@@ -81,8 +82,7 @@
       <main class="flow-main">
         <header class="flow-heading">
           <div class="breadcrumb">
-            <span id="issue-type-label">Workspace</span><span class="breadcrumb-divider">/</span
-            ><span id="issue-number">Issue flow</span>
+            <span>Workspace</span><span class="breadcrumb-divider">/</span><span id="issue-number">Issue flow</span>
           </div>
           <div class="flow-heading-actions">
             <button class="small-button view-inspect-toggle" id="view-inspect" type="button" aria-pressed="false">
@@ -98,10 +98,42 @@
         </div>
         <section class="issue-heading" id="issue-heading" hidden>
           <div>
-            <h1 id="issue-title"></h1>
-            <p id="issue-subtitle"></p>
+            <div class="issue-title-row">
+              <h1 id="issue-title"></h1>
+              <button
+                class="icon-button"
+                id="rename-issue"
+                type="button"
+                aria-label="Rename issue"
+                title="Rename issue"
+              >
+                ✎
+              </button>
+            </div>
+            <form id="rename-issue-form" class="issue-title-row" hidden>
+              <input id="rename-issue-title" aria-label="Issue title" maxlength="256" required />
+              <button class="small-button" type="submit">Save</button>
+              <button class="small-button" id="cancel-rename" type="button">Cancel</button>
+            </form>
+            <div class="issue-flow-meta">
+              <span id="issue-type-label"></span>
+              <span id="issue-subtitle"></span>
+              <details id="issue-flow-picker" class="issue-flow-picker">
+                <summary id="issue-flow-menu" class="small-button" title="Choose a flow">
+                  Flow <span id="issue-flow-name"></span>
+                </summary>
+                <div id="issue-flow-options" class="issue-flow-options"></div>
+              </details>
+              <button id="rebuild-flow" class="small-button" type="button" data-action="rebuild-flow">
+                <span aria-hidden="true">🪄</span> Rebuild flow
+              </button>
+            </div>
           </div>
-          <button class="primary-button" id="continue-block" disabled>Continue</button>
+          <div class="issue-playback">
+            <button class="primary-button" id="issue-playback" type="button">▷ Play</button>
+            <button class="small-button" id="waiting-block" type="button" hidden></button>
+            <span class="muted" id="playback-status" aria-live="polite"></span>
+          </div>
         </section>
         <div id="environment" class="environment" hidden></div>
         <section
@@ -136,8 +168,9 @@
           <span class="eyebrow">INSPECTOR</span><span id="inspector-kind" class="muted">Block details</span>
         </header>
         <div class="inspector-title" id="inspector-title">
-          <span class="inspector-symbol" aria-hidden="true">◇</span>
-          <h2>Select a block</h2>
+          <span class="inspector-symbol" id="inspector-symbol" aria-hidden="true">◇</span>
+          <h2 id="inspector-block-name">Select a block</h2>
+          <button class="primary-button" id="run-block" type="button" hidden></button>
         </div>
         <div class="inspector-tabs" role="tablist" aria-label="Inspector view">
           <button
@@ -220,6 +253,34 @@
       <p id="block-palette-error" class="inline-error" role="alert" hidden></p>
       <div id="block-palette" class="block-palette"></div>
     </dialog>
+    <dialog id="destination-dialog" class="modal" aria-labelledby="destination-heading">
+      <form method="dialog">
+        <h2 id="destination-heading">Destination branch</h2>
+        <p id="destination-message" role="status"></p>
+        <label class="field" id="destination-choices" hidden>
+          <span>Branch</span>
+          <select id="destination-branch"></select>
+        </label>
+        <div class="block-actions">
+          <button class="small-button" value="cancel">Cancel</button>
+          <button class="small-button" id="retry-branches" type="button" hidden>Retry</button>
+          <button class="primary-button" id="save-destination" value="save" hidden>Save destination</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="publish-dialog" class="modal publish-modal" aria-labelledby="publish-heading">
+      <form method="dialog">
+        <h2 id="publish-heading">Publish PR</h2>
+        <div id="publish-preview" aria-live="polite"></div>
+        <p id="publish-error" role="alert" hidden></p>
+        <div class="block-actions">
+          <button class="small-button" id="close-publish" value="cancel">Close</button>
+          <button class="primary-button" id="confirm-publish" type="button" hidden>Publish</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="folder-dialog" class="modal">
       <form id="folder-form">
         <div class="modal-heading">
@@ -240,6 +301,23 @@
         <div class="modal-footer">
           <button class="small-button" type="button" data-close-dialog="folder-dialog">Cancel</button
           ><button class="primary-button" type="submit">Create folder</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="export-flow-dialog" class="modal" aria-labelledby="export-flow-title">
+      <form id="export-flow-form">
+        <div class="modal-heading">
+          <h2 id="export-flow-title">Save as user flow</h2>
+          <button type="button" class="icon-button" data-close-dialog="export-flow-dialog" aria-label="Close">×</button>
+        </div>
+        <label class="field">Flow name<input name="name" maxlength="100" required autofocus /></label>
+        <label class="field">
+          File name <input name="flowId" pattern="[a-z][a-z0-9\-]{0,79}" maxlength="80" required />
+        </label>
+        <p id="export-flow-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button class="small-button" type="button" data-close-dialog="export-flow-dialog">Cancel</button>
+          <button id="export-flow-submit" class="primary-button" type="submit">Save and link</button>
         </div>
       </form>
     </dialog>

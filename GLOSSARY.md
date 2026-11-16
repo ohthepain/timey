@@ -197,9 +197,14 @@ stated reason for closing without a fix. It is independent of historical lifecyc
 A locally retained collection of closed issue reports. Archiving removes an issue
 from the Closed issues view and preserves its identity and closure.
 
+**Flow definition**:
+A reusable description of how to build an issue flow and which issue types
+can use it.
+
 **Issue flow**:
 An explicitly controlled graph of blocks for one issue. The graph records the
-planned route; each operation requires its own start.
+planned route. Run starts the selected block. Play starts the route and waits
+for any confirmations along the way.
 
 **Flow block**:
 One visible request, advisory, work, verification, delivery, or cleanup operation.
@@ -211,12 +216,9 @@ types each output. An input uses either a manual value or a linked upstream
 output; the inspector shows inputs before read-only latest outputs.
 
 **Request block**:
-The owner of Your words and the agent's derived request fields. Saving the wording
-or refreshing Request reruns clarification. Rebuilding the route is a separate
-user action.
-
-**Target block**:
-The owner of the issue's saved starting point and delivery destination.
+The required first block and owner of Your words and the derived request fields. Saving the wording
+or refreshing Request reruns clarification. A change of issue type applies that
+type's default flow.
 
 **Block attempt**:
 One execution of a block. Retry appends an attempt and preserves earlier results.
@@ -232,5 +234,9 @@ parallel workers belong to the explicitly selected Arena or Swarm block.
 
 **Flow starting point**:
 The chosen Git branch ref and exact commit used to create an issue's checkout.
-It is independent of the delivery target. A project default remembers the ref for
-future captures, while each issue retains its original commit.
+It defaults to the delivery target branch. Each issue retains its selected ref
+and commit.
+
+**Flow destination**:
+The GitHub branch used by Merge from target and as the PR base. It follows the
+starting branch until the operator pins a branch or the issue gets a PR.

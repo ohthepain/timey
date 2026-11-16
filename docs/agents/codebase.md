@@ -144,7 +144,8 @@ The header's running-action list is served by `scripts/factory-ui/server-control
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
 links routed by `scripts/factory-ui/index.html`. `issue-action-cancellation.mjs`
 cancels stopped actions directly or when an issue closes, preserving work history
-and leaving actions shared with another open issue untouched.
+and leaving actions shared with another open issue untouched. It also cancels
+an exact disconnected strategy preparation with no saved worker thread.
 The issue detail's retro button runs the installed `retro` skill through
 `issue-chat.mjs`, retaining its request and result in the issue's saved
 conversation. `discussion.mjs` and `discussion-ui.js` hold only the temporary
@@ -389,7 +390,8 @@ by the unchanged candidate/recovery polling flow. Disposable deployment fixtures
 cover HTTP/transport/decode failures, identity mismatches, successful readiness,
 bounded retention and failed-recovery lock preservation.
 
-`factory-ui/server-control.mjs` counts live and cleanup actions and temporary chats, blocks new
+`factory-ui/server-control.mjs` counts live actions, unfinished saved runs, cleanup
+and temporary chats. It blocks new
 UI work while paused or draining and requests coordinator pauses. `restart-process.mjs`
 hands the installed listener to a replacement process and resumes saved paused
 controllers through normal guards. `server-control-ui.js` owns the header controls
@@ -582,8 +584,10 @@ production retains separate connections.
 receipts, reuse of the issue checkout/chat, and final candidate checks. It does not
 use lifecycle role planning or completion manifests. `strategy-prompt.mjs` bounds
 the owning assignment; `strategy-review.mjs` implements optional bounded Sol review;
-`strategy-provider.mjs` reads live PR readiness and enforces strict protected merges.
-It evaluates review bypass separately from non-bypassable strict CI rulesets.
+`strategy-provider.mjs` reads live PR readiness through `strategy-readiness.mjs`
+and submits an exact-head merge. Flow Merge and Full Send follow GitHub's
+readiness decision. Full Stop handoff evaluates its configured review bypass
+and independent strict CI ruleset.
 `strategy-inclusion.mjs` inspects the original base against the fetched target,
 records exact branch/checkout/commit evidence, and blocks unreviewed earlier work
 before owner turns and PR publication while preserving the original base. Its PR
@@ -631,8 +635,11 @@ listing. `flow-block-data.mjs` resolves block addresses, declared inputs and
 retained outputs. `flow-request.mjs` derives the Request fields through a
 temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
 Codex conversations and uses the protected operation adapters for delivery. `flow-observer.mjs` reads local Git state and separately cached PR facts.
-`flow-branches.mjs` lists branch refs and stores the starting-branch default.
-The controller snapshots the chosen commit and the executor uses it for a new checkout.
+`flow-branches.mjs` lists local refs and snapshots the chosen commit for a new checkout.
+`flow-delivery.mjs` reads live destination branches, prepares the publication
+preview, and validates or refreshes independent verification evidence.
+`flow-merge.mjs` synchronizes the target, waits for GitHub checks, and binds
+approval to the exact issue commit and target revision.
 The original factory page remains at `/classic`. See the
 [implementation plan](../plans/number-2/README.md) for current verification.
 
@@ -643,8 +650,14 @@ default skill when it creates a block. Project-defined blocks use the existing
 Work operation.
 
 The block document's `# Skill list` section defines suggested skills. Its
-`# User extensions` section names the optional matching file under
+`# User extensions` section gives the project-relative path to the optional file under
 `factory/ui/extensions/flow/blocks/`, which the catalog appends as display content.
+
+`factory-ui/flow-definitions.mjs` loads Markdown flow definitions and project
+defaults, computes the definition checksum, and writes exported definitions.
+`factory-ui/flow-builder.mjs` runs one optional prompt or skill in a temporary
+discussion to produce the block list. The controller applies the list or
+links an export through the existing revision-checked flow store.
 
 The shared Flow UI owns the card layout, inspector sections, and controls.
 `factory-ui/view-sources.mjs` exposes the catalog's source locations to

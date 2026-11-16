@@ -14,13 +14,23 @@ import { BlockCatalog } from './block-catalog.mjs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { parse, stringify } from 'yaml';
-import { listStoredIssues, storedIssuePath } from './issue-report-storage.mjs';
+import { listStoredIssues, renameStoredIssue, storedIssuePath } from './issue-report-storage.mjs';
 import { queueIssueNumbers } from './issue-numbers.mjs';
 import { appendMessage, conversationMessages } from './conversation-store.mjs';
 import { createDiscussionRuntime } from './discussion-codex.mjs';
 import { redactValue } from './activity.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
-import { FlowStore, editFlow, folderName, inferType, makeBlock, rebuildRoute, requireIssueId } from './flow-store.mjs';
+import {
+  FlowStore,
+  editFlow,
+  folderName,
+  inferType,
+  linkFlowDefinition,
+  makeBlock,
+  newFlow,
+  rebuildRoute,
+  requireIssueId,
+} from './flow-store.mjs';
 import {
   blockAddresses,
   blockDefinitionId,
@@ -33,23 +43,38 @@ import {
   latestCurrentAttempt,
   requestBlock,
   requestData,
-  targetBlock,
 } from './flow-block-data.mjs';
 import { clarifyRequest } from './flow-request.mjs';
+import {
+  exportFlowDefinition,
+  issueTypes,
+  readFlowDefinitions,
+  selectFlowDefinition,
+  validateFlowNodes,
+} from './flow-definitions.mjs';
+import { buildFlowStructure } from './flow-builder.mjs';
 import { createFlowObserver, flowTarget, flowWorkspace } from './flow-observer.mjs';
 import { createFlowExecutor } from './flow-executor.mjs';
+import {
+  flowDeliveryProvider,
+  flowPRLink,
+  flowRemoteBranches,
+  flowVerificationHead,
+  lookupFlowPR,
+  prepareFlowPublication,
+} from './flow-delivery.mjs';
 import { openWorkFolder } from './open-issue-work-folder.mjs';
 import { readShownFile } from './shown-file.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
-import {
-  branchStartingPoint,
-  captureStartingPoint,
-  defaultStartingRef,
-  flowBranches,
-  saveDefaultStartingRef,
-} from './flow-branches.mjs';
+import { branchStartingPoint, captureStartingPoint, flowBranches } from './flow-branches.mjs';
 
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
+const confirmationBlocks = new Set(['publish', 'merge-target', 'close', 'delete-worktree']);
+const unresolvedAttempt = (attempt) =>
+  !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status);
+const completedBlock = (block) =>
+  latestCurrentAttempt(block)?.status === 'completed' ||
+  (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
 
 function listRepoFiles(root) {
   const files = [];
@@ -92,10 +117,15 @@ class IssueFlows {
     this.service = service;
     this.store = new FlowStore(service.root);
     this.catalog = new BlockCatalog(service.root);
+    this.deliveryOptions = options.deliveryOptions || {};
     this.observer = options.observer || createFlowObserver(service);
-    this.executor = options.executor || createFlowExecutor(service);
+    this.executor = options.executor || createFlowExecutor(service, this.deliveryOptions);
     this.active = new Map();
+    this.autoplay = new Map();
     this.clarify = options.clarify || clarifyRequest;
+    this.buildStructure = options.buildStructure || buildFlowStructure;
+    this.flowBuilds = new Set();
+    this.captures = new Map();
   }
   issues() {
     const numbersPath = join(this.service.root, '.issues/issue-numbers.json');
@@ -139,20 +169,15 @@ class IssueFlows {
     const issues = this.issues();
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
     let branches = [];
-    let defaultRef = null;
     let branchCatalogError;
     try {
-      [branches, defaultRef] = await Promise.all([
-        flowBranches(this.service.root),
-        Promise.resolve().then(() => defaultStartingRef(this.service.root)),
-      ]);
+      branches = await flowBranches(this.service.root);
     } catch (error) {
       branchCatalogError = error.message;
     }
     const data = {
       project: basename(this.service.root),
       branches,
-      defaultStartingRef: defaultRef,
       ...(branchCatalogError ? { branchCatalogError } : {}),
       folders: this.folders(),
       catalog,
@@ -191,7 +216,9 @@ class IssueFlows {
     if (!id) return data;
     const issue = issues.find((item) => item.id === id);
     requireThat(issue, 'This issue no longer exists. Choose a saved issue.');
-    const flow = this.visibleFlow(this.read(issue, catalog));
+    const savedFlow = this.read(issue, catalog);
+    const flow = this.visibleFlow(savedFlow);
+    const flowDefinitions = this.flowDefinitionOptions(flow, catalog);
     const legacyRun = this.service.store?.runs?.findLast(
       (run) => run.issueId === id && this.service.store.connected.has(run.id)
     );
@@ -215,6 +242,15 @@ class IssueFlows {
       flow.blocks.splice(1, 0, block);
     }
     const environment = await this.observer.observe(flow);
+    if (environment.pr && !savedFlow.destination?.pr && !this.active.has(id)) {
+      const current = this.read(issue, catalog);
+      if (current.revision === savedFlow.revision) {
+        current.destination = this.lockedDestination(environment.pr);
+        const saved = this.store.save(current, current.revision);
+        flow.destination = saved.destination;
+        flow.revision = saved.revision;
+      }
+    }
     if (
       environment.behind > 0 &&
       !flow.blocks.some(
@@ -239,11 +275,7 @@ class IssueFlows {
       else if (environment.behind > 0) selectedRow.status = 'need-merge-from-dev';
       else if (
         selectedRow.status === 'ready-to-merge' &&
-        flow.blocks
-          .filter((block) => block.kind === 'verify')
-          .at(-1)
-          ?.attempts.filter((attempt) => !attempt.invalidatedAt)
-          .at(-1)?.result?.head !== environment.head
+        !flow.blocks.some((block) => flowVerificationHead(block) === environment.head)
       )
         selectedRow.status = 'ready';
     }
@@ -270,8 +302,22 @@ class IssueFlows {
         issueNumber: issue.issueNumber,
         state: issue.state,
         location: issue.location,
+        status: selectedRow?.status,
       },
       flow,
+      autoplay: this.autoplay.get(id) ?? { mode: 'paused' },
+      destination: {
+        branch: deliveryTarget(flow).branch,
+        follows: !flow.destination?.branch,
+        locked: Boolean(flow.destination?.pr || flowWorkspace(this.service, flow)?.pr || environment.pr),
+        pr:
+          environment.pr || (flow.destination?.pr ? { number: flow.destination.pr, url: flow.destination.url } : null),
+        proposedBranch:
+          flow.destination?.pr && environment.pr?.branch !== flow.destination.branch
+            ? environment.pr?.branch
+            : undefined,
+      },
+      flowDefinitions,
       startingPointEditable: !branchCatalogError && this.startingPointEditable(issue, flow),
       environment,
       artifacts: this.artifacts(flow),
@@ -305,22 +351,106 @@ class IssueFlows {
   file(id, path) {
     return readShownFile(this.fileRoot(id), path);
   }
+  pause(issueId, reason) {
+    this.autoplay.set(issueId, { mode: 'paused', reason });
+  }
+  pauseAutoplay(issueId, reason) {
+    const mode = this.autoplay.get(issueId)?.mode;
+    if (mode === 'playing' || mode === 'waiting') this.pause(issueId, reason);
+  }
+  async advanceAutoplay(issueId, retry = false) {
+    if (this.autoplay.get(issueId)?.mode !== 'playing' || this.active.has(issueId)) return;
+    try {
+      this.service.serverControl?.allow('/api/flow-action', { action: 'play', issueId });
+      this.service.ownServer();
+      const issue = this.selected(issueId);
+      const { entries: catalog } = this.catalog.read();
+      const flow = this.read(issue, catalog);
+      const interrupted = flow.blocks.find((block) => block.attempts.some(unresolvedAttempt));
+      if (interrupted) return this.pause(issueId, `Recover ${interrupted.label} before playing.`);
+      requireThat(
+        !this.flowBuilds.has(issueId) &&
+          !issueHasActiveWork(this.service, issueId) &&
+          !this.service.lifecycleTasks?.has(issueId) &&
+          !this.service.issueChats?.active?.has(issueId),
+        'Wait for the existing issue operation to finish before playing.'
+      );
+      const next = flow.blocks.find((block) => !completedBlock(block));
+      if (!next) return this.pause(issueId, 'Flow complete');
+      const status = latestCurrentAttempt(next)?.status;
+      const needsRetry = ['failed', 'blocked', 'stopped'].includes(status);
+      if (needsRetry && !retry) return this.pause(issueId, `${next.label} needs a retry.`);
+      if (confirmationBlocks.has(next.kind) || latestCurrentAttempt(next)?.result?.mergeConfirmation) {
+        this.autoplay.set(issueId, { mode: 'waiting', blockId: next.id });
+        return;
+      }
+      if (this.checkDefinition(issue, flow, next.id, catalog)) return;
+      if (next.kind === 'request') {
+        await this.refreshRequest(issue, flow, next.data.wording, catalog, true);
+        return;
+      }
+      await this.start(issue, flow, { blockId: next.id, action: needsRetry ? 'continue' : 'start' }, catalog);
+    } catch (error) {
+      this.pauseAutoplay(issueId, redactValue(error.message));
+    }
+  }
+  autoplayFinished(issueId, block, attempt) {
+    if (this.autoplay.get(issueId)?.mode !== 'playing') return;
+    if (attempt?.status === 'completed' && !attempt.invalidatedAt) void this.advanceAutoplay(issueId);
+    else if (!attempt?.invalidatedAt && attempt?.result?.mergeConfirmation)
+      this.autoplay.set(issueId, { mode: 'waiting', blockId: block.id });
+    else this.pause(issueId, attempt?.summary || `${block.label} needs attention.`);
+  }
   async action(input) {
+    const waiting = this.autoplay.get(input.issueId);
+    try {
+      return await this.dispatch(input);
+    } catch (error) {
+      if (
+        this.autoplay.get(input.issueId) === waiting &&
+        waiting?.mode === 'waiting' &&
+        waiting.blockId === input.blockId &&
+        ['start', 'continue', 'preview-publish', 'confirm-publish'].includes(input.action)
+      )
+        this.pause(input.issueId, redactValue(error.message));
+      throw error;
+    }
+  }
+  async dispatch(input) {
     this.service.ownServer();
     if (input.action === 'capture') return this.capture(input);
     if (input.action === 'create-folder') return this.createFolder(input);
     const issue = this.selected(input.issueId);
     const { entries: catalog } = this.catalog.read();
     let flow = this.read(issue, catalog);
+    if (input.action === 'pause' || input.action === 'cancel-confirmation') {
+      const waiting = this.autoplay.get(issue.id);
+      if (input.action === 'pause' || (waiting?.mode === 'waiting' && waiting.blockId === input.blockId))
+        this.pause(issue.id);
+      return this.view(issue.id);
+    }
     if (input.action === 'open-worktree') return openWorkFolder(flowWorkspace(this.service, flow)?.checkout);
     if (input.action === 'restate-artifact') return this.restateArtifact(flow, input);
     if (input.action === 'stop') return this.stop(flow, input);
+    requireThat(!this.flowBuilds.has(issue.id), 'Wait for the flow structure to finish building.');
+    if (input.action === 'destination-branches') return this.destinationBranches(flow);
+    if (input.action === 'preview-publish' || input.action === 'confirm-publish')
+      return this.reviewPublication(issue, flow, input, catalog);
+    if (input.action === 'play') {
+      requireThat(issue.location === 'open' && issue.state !== 'closed', 'Reopen this issue before playing.');
+      if (!['playing', 'waiting'].includes(this.autoplay.get(issue.id)?.mode)) {
+        this.autoplay.set(issue.id, { mode: 'playing' });
+        void this.advanceAutoplay(issue.id, true);
+      }
+      return this.view(issue.id);
+    }
     if (!['comment', 'open-block'].includes(input.action))
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
-    if (['create-override', 'reveal-definition'].includes(input.action))
+    if (['open-block-extension', 'reveal-definition'].includes(input.action))
       return this.openDefinitionFile(issue, flow, input, catalog);
     if (
       input.action === 'request' ||
+      input.action === 'run-request' ||
       (input.action === 'refresh-definition' && input.blockId === requestBlock(flow).id)
     ) {
       const request = requestBlock(flow);
@@ -329,11 +459,43 @@ class IssueFlows {
         typeof wording === 'string' && wording.trim() && wording.length <= 24000,
         'Enter Your words in up to 24,000 characters.'
       );
+      if (input.action === 'run-request') {
+        requireThat(
+          input.blockId === request.id && !this.active.has(issue.id),
+          'Choose Request when the issue is idle.'
+        );
+        void this.refreshRequest(issue, flow, wording, catalog).catch((error) =>
+          this.pause(issue.id, redactValue(error.message))
+        );
+        return { accepted: true, issueId: issue.id, blockId: request.id };
+      }
       return this.refreshRequest(issue, flow, wording, catalog);
     }
-    if (input.action === 'rebuild-flow') return this.rebuild(issue, flow, catalog);
+    if (['rebuild-flow', 'select-flow'].includes(input.action))
+      return this.applyFlowDefinition(issue, flow, catalog, input);
+    if (input.action === 'export-flow') return this.exportFlow(issue, flow, catalog, input);
+    if (input.action === 'reveal-flow') return this.revealFlow(issue, flow, catalog);
     if (input.action === 'update-worktree') return this.updateWorktree(issue, flow, catalog);
     if (input.action === 'starting-point') return this.setStartingPoint(issue, flow, input);
+    if (input.action === 'destination' || input.action === 'accept-pr-base')
+      return this.setDestination(issue, flow, input);
+    if (input.action === 'rename-issue') {
+      const title = typeof input.title === 'string' ? input.title.trim() : '';
+      requireThat(
+        title && title.length <= 256 && !/[\r\n\x00-\x1f]/.test(title),
+        'Enter an issue title of up to 256 characters on one line.'
+      );
+      requireThat(
+        !this.active.has(issue.id) || this.active.get(issue.id).blockId === requestBlock(flow).id,
+        'Wait for the running block before renaming the issue.'
+      );
+      requireThat(input.previousTitle === issue.title, 'The issue title changed. Refresh before renaming.');
+      if (title !== issue.title) {
+        if (!existsSync(this.store.path(issue.id))) this.store.save(flow, flow.revision);
+        renameStoredIssue(this.service.root, issue, title);
+      }
+      return this.view(issue.id);
+    }
     if (input.blockId?.startsWith('target-') && !flow.blocks.some((block) => block.id === input.blockId)) {
       const current = await this.view(issue.id);
       const suggestion = current.flow.blocks.find((block) => block.id === input.blockId);
@@ -348,6 +510,27 @@ class IssueFlows {
         const block = flow.blocks.find((item) => item.id === input.blockId);
         return { revision: flow.revision, details: blockDetails(flow, issue, block, definitionMap(catalog)) };
       }
+      const block = flow.blocks.find((item) => item.id === input.blockId);
+      if (block?.kind === 'merge') {
+        const workspace = flowWorkspace(this.service, flow);
+        if (workspace?.branch) {
+          const pr = await lookupFlowPR(
+            this.deliveryProvider(flow, workspace),
+            workspace.branch,
+            flow.destination?.pr ?? workspace.pr
+          );
+          requireThat(this.read(issue).revision === flow.revision, 'The issue changed. Review Merge again.');
+          if (pr && !flow.destination?.pr) {
+            flow.destination = this.lockedDestination(flowPRLink(pr));
+            this.store.save(flow, flow.revision);
+            return this.view(issue.id);
+          }
+          requireThat(
+            !pr || pr.base.ref === deliveryTarget(flow).branch,
+            'GitHub changed the PR base. Accept it in Destination before merging.'
+          );
+        }
+      }
       return this.start(issue, flow, input, catalog);
     }
     if (input.action === 'delete-artifact') return this.deleteArtifact(flow, issue, input);
@@ -359,13 +542,56 @@ class IssueFlows {
     requireThat(definition, 'Choose a block with a Markdown definition.');
     requireThat(process.platform === 'darwin', 'Finder is available on macOS.');
     const path =
-      input.action === 'create-override' ? this.catalog.createOverride(definition.id) : definition.content.override;
-    requireThat(path, 'Create a project override before opening its file.');
+      input.action === 'open-block-extension'
+        ? this.catalog.openExtension(definition.id)
+        : (definition.content.override ?? definition.content.bundled);
+    requireThat(path, 'The block Markdown is unavailable.');
+    await promisify(execFile)('/usr/bin/open', input.action === 'reveal-definition' ? ['-R', path] : [path], {
+      timeout: 5000,
+    });
+    return this.view(issue.id);
+  }
+  flowDefinitionOptions(flow, catalog) {
+    const { entries, errors, sources } = readFlowDefinitions(this.service.root, catalog);
+    const current = entries.find((entry) => entry.id === flow.definition.id);
+    const type = requestData(flow).fields?.type ?? flow.routeType;
+    return {
+      current: flow.definition.name ?? current?.name ?? flow.definition.id,
+      available: entries.filter((entry) => entry.issueTypes.includes(type)).map(({ id, name }) => ({ id, name })),
+      updated: Boolean(current && current.checksum !== flow.definition.checksum),
+      reveal: process.platform === 'darwin' && sources.has(flow.definition.id),
+      errors,
+    };
+  }
+  async revealFlow(issue, flow, catalog) {
+    const { sources } = readFlowDefinitions(this.service.root, catalog);
+    const path = sources.get(flow.definition.id);
+    requireThat(process.platform === 'darwin' && path, 'The linked Markdown file is unavailable in Finder.');
     await promisify(execFile)('/usr/bin/open', ['-R', path], { timeout: 5000 });
     return this.view(issue.id);
   }
-  rebuild(issue, flow, catalog) {
-    requireThat(!this.active.has(issue.id), 'Wait for the current block to stop before rebuilding.');
+  exportFlow(issue, flow, catalog, input) {
+    const { definition, names, source } = exportFlowDefinition(this.service.root, input, flow, catalog);
+    for (const block of flow.blocks) block.flowKey = names.get(block.id);
+    linkFlowDefinition(flow, definition);
+    try {
+      this.store.save(flow, flow.revision);
+    } catch (error) {
+      if (existsSync(definition.path) && readFileSync(definition.path, 'utf8') === source) unlinkSync(definition.path);
+      throw error;
+    }
+    return this.view(issue.id);
+  }
+  async flowNodes(issue, type, definition, catalog, request) {
+    if (!definition.prompt && !definition.skill) return validateFlowNodes(definition.blocks, catalog);
+    const nodes = await this.buildStructure({ service: this.service, issue, type, definition, catalog, request });
+    return validateFlowNodes(nodes, catalog);
+  }
+  requireRouteIdle(issue, flow) {
+    requireThat(
+      !this.active.has(issue.id) && !this.flowBuilds.has(issue.id) && !issueHasActiveWork(this.service, issue.id),
+      'Wait for the current operation to finish.'
+    );
     requireThat(
       !flow.blocks.some((block) =>
         block.attempts.some(
@@ -374,14 +600,26 @@ class IssueFlows {
       ),
       'Reconcile the previous block before rebuilding the route.'
     );
-    const before = new Map(flow.blocks.map((block) => [block.id, block.after]));
-    rebuildRoute(flow, catalog);
-    const seeds = new Set(
-      flow.blocks
-        .filter((block) => JSON.stringify(before.get(block.id)) !== JSON.stringify(block.after))
-        .map((block) => block.id)
-    );
-    this.saveEdit(flow, seeds);
+  }
+  async applyFlowDefinition(issue, flow, catalog, input) {
+    const type = requestData(flow).fields?.type ?? flow.routeType;
+    const definitions = readFlowDefinitions(this.service.root, catalog);
+    const id = input.action === 'select-flow' ? input.flowId : type === flow.routeType ? flow.definition.id : undefined;
+    if (input.action === 'select-flow') {
+      requireThat(typeof id === 'string', 'Choose an available flow.');
+      if (type === flow.routeType && id === flow.definition.id) return this.view(issue.id);
+    }
+    const definition = selectFlowDefinition(definitions, type, id);
+    this.requireRouteIdle(issue, flow);
+    if (!input.afterClarification) this.pauseAutoplay(issue.id, 'The route changed.');
+    this.flowBuilds.add(issue.id);
+    try {
+      const nodes = await this.flowNodes(issue, type, definition, catalog, requestData(flow));
+      rebuildRoute(flow, type, definition, nodes, catalog);
+      this.store.save(flow, flow.revision);
+    } finally {
+      this.flowBuilds.delete(issue.id);
+    }
     return this.view(issue.id);
   }
   updateWorktree(issue, flow, catalog) {
@@ -400,16 +638,17 @@ class IssueFlows {
     const before = flow;
     this.validateBlockFields(issue, flow, input, catalog);
     flow = editFlow(flow, input, catalog);
-    const seeds = new Set();
-    for (const block of flow.blocks) {
-      const old = before.blocks.find((item) => item.id === block.id);
-      if (!old || JSON.stringify(old) !== JSON.stringify(block)) seeds.add(block.id);
+    if (input.action === 'update') {
+      const seeds = new Set(
+        flow.blocks
+          .filter((block, index) => JSON.stringify(block) !== JSON.stringify(before.blocks[index]))
+          .map((block) => block.id)
+      );
+      this.saveEdit(flow, seeds);
+    } else {
+      this.store.save(flow, flow.revision);
+      if (['add', 'move', 'remove'].includes(input.action)) this.pauseAutoplay(issue.id, 'The route changed.');
     }
-    if (input.action === 'remove') {
-      const removed = before.blocks.find((block) => block.id === input.blockId);
-      if (removed) for (const block of before.blocks) if (block.after.includes(removed.id)) seeds.add(block.id);
-    }
-    this.saveEdit(flow, seeds);
     if (input.action === 'comment') {
       const comment = flow.blocks.find((item) => item.id === input.blockId).comments.at(-1);
       appendMessage(this.service.root, issue.id, {
@@ -423,8 +662,8 @@ class IssueFlows {
     }
     return this.view(issue.id);
   }
-  saveEdit(flow, seeds) {
-    const affected = invalidateBlocks(flow, seeds);
+  saveEdit(flow, seeds, cascade = true, keepPlaying = false) {
+    const affected = invalidateBlocks(flow, seeds, cascade);
     const active = this.active.get(flow.issueId);
     if (active && seeds.size) {
       const block = flow.blocks.find((item) => item.id === active.blockId);
@@ -438,13 +677,16 @@ class IssueFlows {
       }
     }
     const saved = this.store.save(flow, flow.revision);
-    if (seeds.size) active?.controller.abort();
+    if (seeds.size) {
+      if (!keepPlaying) this.pauseAutoplay(flow.issueId, 'The flow changed.');
+      active?.controller.abort();
+    }
     return saved;
   }
   validateBlockFields(issue, flow, input, catalog) {
     if (input.action !== 'update') return;
     const block = flow.blocks.find((item) => item.id === input.blockId);
-    requireThat(block && !['request', 'target'].includes(block.kind), 'Edit Request and Target in their own Details.');
+    requireThat(block && block.kind !== 'request', 'Edit Request in its own Details.');
     const details = blockDetails(flow, issue, block, definitionMap(catalog));
     for (const [field, validate] of [
       [
@@ -474,7 +716,7 @@ class IssueFlows {
       requireThat(values && typeof values === 'object' && !Array.isArray(values), 'Supply valid block Details.');
       for (const [key, value] of Object.entries(values))
         requireThat(
-          details.some((detail) => detail.key === key && validate(detail, value)),
+          details.some((detail) => detail.key === key && !detail.fixed && validate(detail, value)),
           'Choose a declared block input.'
         );
     }
@@ -516,14 +758,14 @@ class IssueFlows {
       }
     return update.dirty.size > 0;
   }
-  async refreshRequest(issue, flow, wording, catalog) {
+  async refreshRequest(issue, flow, wording, catalog, keepPlaying = false) {
     const block = requestBlock(flow);
-    const previousType = block.data.fields?.type ?? flow.routeType;
+    const priorFields = block.data.fields;
     this.checkDefinition(issue, flow, block.id, catalog);
     block.data.wording = wording;
     const revision = (block.data.editId = randomUUID());
     const previous = this.active.get(issue.id);
-    this.saveEdit(flow, new Set(flow.blocks.map((item) => item.id)));
+    this.saveEdit(flow, new Set([block.id]), false, keepPlaying);
     await previous?.task;
     flow = this.read(this.selected(issue.id));
     requireThat(
@@ -533,6 +775,11 @@ class IssueFlows {
     const current = requestBlock(flow);
     const definition = catalog.find((entry) => entry.id === blockDefinitionId(current));
     const attempt = this.makeAttempt(flow, issue, current, catalog);
+    if (priorFields) {
+      current.data.lastVerificationCriteria = Object.fromEntries(
+        ['goal', 'requestedProof'].map((key) => [key, priorFields[key]])
+      );
+    }
     const controller = new AbortController();
     current.attempts.push(attempt);
     this.store.save(flow, flow.revision);
@@ -540,12 +787,115 @@ class IssueFlows {
     this.active.set(issue.id, owned);
     owned.task = this.execute(issue, flow, current.id, attempt.id, controller, {}, definition);
     await owned.task;
-    const view = await this.view(issue.id);
-    const fields = requestData(view.flow).fields;
-    return {
-      ...view,
-      ...(fields && previousType !== fields.type ? { issueTypeChange: { from: previousType, to: fields.type } } : {}),
-    };
+    const saved = this.read(issue, catalog);
+    const type = requestData(saved).fields?.type;
+    try {
+      if (type && type !== saved.routeType)
+        await this.applyFlowDefinition(issue, saved, catalog, { action: 'rebuild-flow', afterClarification: true });
+      this.autoplayFinished(issue.id, current, latestCurrentAttempt(requestBlock(this.read(issue, catalog))));
+      return this.view(issue.id);
+    } catch (error) {
+      this.pauseAutoplay(issue.id, redactValue(error.message));
+      throw error;
+    }
+  }
+  lockedDestination(pr) {
+    return { branch: pr.branch, pr: pr.number, url: pr.url };
+  }
+  deliveryProvider(flow, workspace = flowWorkspace(this.service, flow)) {
+    const checkout = workspace?.checkout && existsSync(workspace.checkout) ? workspace.checkout : this.service.root;
+    return flowDeliveryProvider(this.service, { flow }, { checkout }, this.deliveryOptions);
+  }
+  async destinationBranches(flow) {
+    try {
+      const branches = await flowRemoteBranches(this.deliveryProvider(flow));
+      return { branches: [...branches.keys()].sort((a, b) => a.localeCompare(b)) };
+    } catch {
+      return { branchesUnavailable: true };
+    }
+  }
+  async setDestination(issue, flow, input) {
+    requireThat(!this.active.has(issue.id), 'Wait for the running block before changing Destination.');
+    const workspace = flowWorkspace(this.service, flow);
+    const provider = this.deliveryProvider(flow, workspace);
+    const pr = await lookupFlowPR(provider, workspace?.branch, flow.destination?.pr ?? workspace?.pr);
+    let destination;
+    if (input.action === 'accept-pr-base') {
+      requireThat(pr && pr.base.ref === input.branch, 'The GitHub PR base changed again. Review its current branch.');
+      destination = this.lockedDestination(flowPRLink(pr));
+    } else if (pr) {
+      destination = flow.destination?.pr ? flow.destination : this.lockedDestination(flowPRLink(pr));
+    } else {
+      requireThat(!flow.destination?.pr && !workspace?.pr, 'Destination is locked to the linked PR.');
+      if (input.branch !== null) {
+        requireThat(typeof input.branch === 'string', 'Choose a destination branch.');
+        const { branches } = await this.destinationBranches(flow);
+        requireThat(branches, 'Couldn’t check branches. Retry in Destination.');
+        requireThat(branches.includes(input.branch), 'Branch unavailable. Choose another destination.');
+      }
+      destination = input.branch === null ? null : { branch: input.branch };
+    }
+    const current = this.read(issue);
+    requireThat(
+      current.revision === flow.revision && !this.active.has(issue.id),
+      'The issue changed. Refresh before changing Destination.'
+    );
+    current.destination = destination;
+    this.store.save(current, current.revision);
+    this.pauseAutoplay(issue.id, 'Destination changed.');
+    return this.view(issue.id);
+  }
+  async reviewPublication(issue, flow, input, catalog) {
+    const active = this.active.get(issue.id);
+    if (active?.blockId === requestBlock(flow).id) await active.task;
+    requireThat(!this.active.has(issue.id), 'Wait for the running block before publishing.');
+    issue = this.selected(issue.id);
+    flow = this.read(issue, catalog);
+    const request = requestBlock(flow);
+    const clarification = latestCurrentAttempt(request);
+    requireThat(
+      request.data.fields || (!request.data.editId && !clarification),
+      'Request clarification did not finish. Retry Request before publishing.'
+    );
+    this.checkDefinition(issue, flow, input.blockId, catalog);
+    const block = flow.blocks.find((item) => item.id === input.blockId);
+    requireThat(block?.kind === 'publish', 'Choose a saved Publish block.');
+    const workspace = flowWorkspace(this.service, flow);
+    requireThat(
+      workspace?.checkout && existsSync(workspace.checkout),
+      'Run Work to create an issue checkout before publishing.'
+    );
+    const provider = this.deliveryProvider(flow, workspace);
+    const pr = await lookupFlowPR(provider, workspace.branch, flow.destination?.pr ?? workspace.pr);
+    const current = this.read(issue, catalog);
+    if (current.revision !== flow.revision || this.selected(issue.id).title !== issue.title)
+      return { previewChanged: true };
+    if (pr && !flow.destination?.pr) {
+      flow.destination = this.lockedDestination(flowPRLink(pr));
+      flow = this.store.save(flow, flow.revision);
+    }
+    const { preview } = await prepareFlowPublication(this.service, { issue, flow, block }, workspace, {
+      ...this.deliveryOptions,
+      observedPR: pr,
+    });
+    if (preview.status === 'blocked' && this.autoplay.get(issue.id)?.blockId === block.id)
+      this.pause(issue.id, preview.message);
+    if (input.action === 'preview-publish' || preview.status === 'blocked' || preview.token !== input.previewToken)
+      return { publication: preview };
+    if (this.read(issue, catalog).revision !== flow.revision || this.selected(issue.id).title !== issue.title)
+      return { previewChanged: true };
+    return this.start(
+      issue,
+      flow,
+      {
+        action: input.continue ? 'continue' : 'start',
+        blockId: block.id,
+        confirmed: true,
+        previewToken: preview.token,
+      },
+      catalog,
+      true
+    );
   }
   makeAttempt(flow, issue, block, catalog) {
     const definitions = definitionMap(catalog);
@@ -578,7 +928,7 @@ class IssueFlows {
       flowWorkspace(this.service, flow) ||
       deliveryTarget(flow).base ||
       this.active.has(issue.id) ||
-      flow.blocks.some((block) => !['request', 'target'].includes(block.kind) && block.attempts.length)
+      [...flow.blocks, ...(flow.retiredBlocks ?? [])].some((block) => block.kind !== 'request' && block.attempts.length)
     )
       return false;
     if (issueHasActiveWork(this.service, issue.id) || this.service.issueChats?.active?.has(issue.id)) return false;
@@ -609,13 +959,11 @@ class IssueFlows {
       this.startingPointEditable(issue, flow),
       'The starting point is locked after an issue has started work.'
     );
-    const block = targetBlock(flow);
-    block.data.startingPoint = point;
-    this.saveEdit(flow, new Set([block.id]));
-    saveDefaultStartingRef(this.service.root, point.ref);
+    flow.startingPoint = point;
+    this.store.save(flow, flow.revision);
     return this.view(issue.id);
   }
-  async start(issue, flow, input, catalog) {
+  async start(issue, flow, input, catalog, reviewedPublish = false) {
     requireThat(
       !this.active.has(issue.id),
       'One block already owns this issue conversation. Stop it before starting another.'
@@ -632,22 +980,19 @@ class IssueFlows {
     );
     const block = flow.blocks.find((item) => item.id === input.blockId);
     requireThat(block, 'Choose a saved block.');
-    const unresolved = flow.blocks.find((item) =>
-      item.attempts.some(
-        (previous) => !previous.reconciledAt && ['running', 'stopping', 'uncertain'].includes(previous.status)
-      )
-    );
+    const unresolved = flow.blocks.find((item) => item.attempts.some(unresolvedAttempt));
     requireThat(
       !unresolved || (unresolved.id === block.id && input.action === 'continue'),
       'Continue and reconcile the disconnected block before starting different work.'
     );
     requireThat(
-      !['publish', 'merge', 'close', 'delete-worktree'].includes(block.kind) || input.confirmed === true,
+      !confirmationBlocks.has(block.kind) || block.kind === 'merge-target' || input.confirmed === true,
       'Confirm this specific protected operation before starting it.'
     );
     if (['running', 'stopping'].includes(block.attempts.at(-1)?.status))
       requireThat(input.action === 'continue', 'The previous attempt is uncertain. Inspect it before Continue.');
-    requireThat(!['request', 'target'].includes(block.kind), 'Edit Request or Target in Details.');
+    requireThat(block.kind !== 'request', 'Edit Request in Details.');
+    requireThat(block.kind !== 'publish' || reviewedPublish, 'Review Publish before confirming it.');
     const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
     requireThat(definition?.usable, 'This block’s Markdown definition is unavailable. Open Details to inspect it.');
     requireThat(
@@ -665,6 +1010,11 @@ class IssueFlows {
       this.active.delete(issue.id);
       throw error;
     }
+    const waiting = this.autoplay.get(issue.id);
+    if (waiting?.mode === 'waiting') {
+      if (waiting.blockId === block.id && input.confirmed === true) this.autoplay.set(issue.id, { mode: 'playing' });
+      else this.pause(issue.id, 'A different block was started.');
+    }
     const task = this.execute(issue, flow, block.id, attempt.id, controller, input, definition);
     this.active.get(issue.id).task = task;
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
@@ -680,6 +1030,7 @@ class IssueFlows {
   async execute(issue, flow, blockId, attemptId, controller, input, definition) {
     const block = flow.blocks.find((item) => item.id === blockId);
     const attempt = block.attempts.at(-1);
+    let outcome;
     try {
       const result =
         block.kind === 'request'
@@ -723,9 +1074,35 @@ class IssueFlows {
             });
       this.changeAttempt(issue, blockId, attemptId, (current, saved) => {
         Object.assign(current, result, { status: result.status || 'completed', endedAt: new Date().toISOString() });
+        outcome = current;
         if (result.workspace) saved.workspace = result.workspace;
+        if (block.kind === 'publish' && result.result?.pr && result.result?.target && !saved.destination?.pr) {
+          saved.destination = { branch: result.result.target, pr: result.result.pr, url: result.result.url };
+        }
         if (block.kind === 'request' && !current.invalidatedAt && current.status === 'completed') {
-          requestBlock(saved).data.fields = result.artifacts.values;
+          const request = requestBlock(saved);
+          for (const previous of request.attempts.filter(
+            (entry) => entry.id !== current.id && unresolvedAttempt(entry)
+          )) {
+            previous.status = 'uncertain';
+            previous.reconciledAt = current.endedAt;
+            previous.reconciliation = 'Request clarification was replaced by this explicit run.';
+          }
+          const previous =
+            request.data.lastVerificationCriteria ??
+            block.attempts.slice(0, -1).findLast((entry) => entry.status === 'completed')?.artifacts?.values;
+          const changesVerification = ['goal', 'requestedProof'].some(
+            (key) => (previous?.[key] || '') !== (result.artifacts.values[key] || '')
+          );
+          if (changesVerification)
+            invalidateBlocks(
+              saved,
+              new Set(
+                saved.blocks.filter((item) => ['verify', 'publish', 'merge'].includes(item.kind)).map((item) => item.id)
+              )
+            );
+          request.data.fields = result.artifacts.values;
+          delete request.data.lastVerificationCriteria;
         }
       });
     } catch (error) {
@@ -735,10 +1112,13 @@ class IssueFlows {
         current.endedAt = new Date().toISOString();
         if (error.partialText) current.output += error.partialText;
         current.evidence = error.evidence || current.evidence;
+        if (error.deliveryVerification) current.result = { verification: error.deliveryVerification };
         if (error.input) current.input = error.input;
+        outcome = current;
       });
     } finally {
       if (this.active.get(issue.id)?.attemptId === attemptId) this.active.delete(issue.id);
+      if (block.kind !== 'request') this.autoplayFinished(issue.id, block, outcome);
     }
   }
   stop(flow, input) {
@@ -748,6 +1128,7 @@ class IssueFlows {
       attempt.status = 'stopping';
       attempt.summary = 'Stopping this block. Partial output and edits are retained.';
     });
+    this.pause(flow.issueId, 'Block stopped.');
     active.controller.abort();
     return { stopping: true };
   }
@@ -769,35 +1150,51 @@ class IssueFlows {
       typeof input.description === 'string' && input.description.trim() && input.description.length <= 24000,
       'Describe the issue in under 24,000 characters.'
     );
-    requireThat(
-      !input.type || ['bug', 'feature', 'investigation'].includes(input.type),
-      'Choose a valid request type.'
-    );
+    requireThat(!input.type || issueTypes.includes(input.type), 'Choose a valid request type.');
+    const identity = digest(JSON.stringify([input.description, input.type]));
+    const pending = this.captures.get(input.requestId);
+    if (pending) {
+      requireThat(identity === pending.identity, 'This request identity already contains different wording.');
+      return pending.task;
+    }
+    const task = this.captureIssue(input, identity);
+    this.captures.set(input.requestId, { identity, task });
+    try {
+      return await task;
+    } finally {
+      this.captures.delete(input.requestId);
+    }
+  }
+  async captureIssue(input, identity) {
     const directory = join(this.store.directory, 'captures');
     const receiptPath = join(directory, input.requestId + '.json');
-    const identity = digest(JSON.stringify([input.description, input.type]));
     if (existsSync(receiptPath)) {
       const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
       requireThat(receipt.identity === identity, 'This request identity already contains different wording.');
       if (receipt.complete !== false) return this.view(receipt.id);
       const path = storedIssuePath(this.service.root, receipt.id);
-      if (!existsSync(path)) writeFileSync(path, receipt.content, { flag: 'wx', mode: 0o600 });
-      const issue = { ...receipt.metadata, content: readFileSync(path, 'utf8') };
-      if (!existsSync(this.store.path(receipt.id)))
-        this.store.save(this.withStartingPoint(issue, receipt.startingPoint), 0);
+      if (!existsSync(path)) {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, receipt.content, { flag: 'wx', mode: 0o600 });
+      }
+      if (!existsSync(this.store.path(receipt.id))) {
+        const issue = { ...receipt.metadata, content: receipt.content };
+        this.store.save(receipt.flow ?? (await this.initialFlow(issue, receipt.startingPoint)), 0);
+      }
       queueIssueNumbers(this.service.root, [receipt.id]);
       writeJson(receiptPath, { ...receipt, complete: true });
       return this.view(receipt.id);
     }
     const startingPoint = await captureStartingPoint(this.service.root, flowTarget(this.service.root));
-    if (existsSync(receiptPath)) return this.capture(input);
     const at = new Date().toISOString();
     const id = at.replace(/[-:.Z]/g, '') + '-' + randomBytes(8).toString('hex');
-    const title = input.description
-      .trim()
-      .split('\n')[0]
-      .replace(/^#+\s*/, '')
-      .slice(0, 160);
+    const title =
+      input.description
+        .trim()
+        .split('\n')[0]
+        .replace(/^#+\s*/, '')
+        .trim()
+        .slice(0, 160) || 'Untitled issue';
     const metadata = {
       id,
       title,
@@ -814,23 +1211,28 @@ class IssueFlows {
       stringify(metadata) +
       '---\n\n## Original request\n\n' +
       input.description +
-      '\n\n## Explicit flow\n\nEach block requires an explicit start. Capturing this request starts no model, verification, merge, or closure.\n';
+      '\n\n## Issue flow\n\nThe selected flow definition builds the structure. Run blocks individually or press Play to run the route.\n';
+    const issue = { ...metadata, content };
+    const flow = await this.initialFlow(issue, startingPoint);
+    requestBlock(flow).data.wording = input.description;
     mkdirSync(directory, { recursive: true });
-    writeJson(receiptPath, { id, identity, content, metadata, startingPoint, complete: false });
+    const receipt = { id, identity, content, metadata };
+    writeJson(receiptPath, { ...receipt, flow, complete: false });
     const path = storedIssuePath(this.service.root, id);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, content, { flag: 'wx', mode: 0o600 });
-    const issue = { ...metadata, content };
-    const flow = this.withStartingPoint(issue, startingPoint);
     this.store.save(flow, 0);
     queueIssueNumbers(this.service.root, [id]);
-    mkdirSync(directory, { recursive: true });
-    writeJson(receiptPath, { id, identity, content, metadata, startingPoint, complete: true });
+    writeJson(receiptPath, { ...receipt, complete: true });
     return this.view(id);
   }
-  withStartingPoint(issue, point) {
-    const flow = this.read(issue);
-    if (point) targetBlock(flow).data.startingPoint = point;
+  async initialFlow(issue, point) {
+    const catalog = this.catalog.read().entries;
+    const type = issue.request_type;
+    const definition = selectFlowDefinition(readFlowDefinitions(this.service.root, catalog), type);
+    const nodes = await this.flowNodes(issue, type, definition, catalog);
+    const flow = newFlow(issue, flowTarget(this.service.root), catalog, { definition, nodes });
+    if (point) flow.startingPoint = point;
     return flow;
   }
   artifacts(flow) {
@@ -912,9 +1314,11 @@ class IssueFlows {
       'Only listed regular artifacts inside the managed issue directory can be removed.'
     );
     unlinkSync(path);
+    this.pauseAutoplay(issue.id, 'Block evidence changed.');
     return this.view(issue.id);
   }
   close() {
+    this.autoplay.clear();
     for (const active of this.active.values()) active.controller.abort();
     this.executor.close();
   }
@@ -932,16 +1336,9 @@ function flowStatus(flow, issue, active) {
     .toSorted((a, b) => a.startedAt.localeCompare(b.startedAt))
     .at(-1);
   if (['running', 'stopping', 'uncertain'].includes(last?.status)) return 'need-input';
+  if (last?.result?.mergeConfirmation) return 'need-input';
   if (['blocked', 'failed'].includes(last?.status)) return 'blocked';
   if (last?.status === 'stopped') return 'ready';
-  if (
-    flow.blocks.some(
-      (block) =>
-        block.kind === 'verify' &&
-        latestCurrentAttempt(block)?.status === 'completed' &&
-        !latestCurrentAttempt(block)?.result?.uncommitted
-    )
-  )
-    return 'ready-to-merge';
+  if (flow.blocks.some(flowVerificationHead)) return 'ready-to-merge';
   return last ? 'ready' : 'new';
 }
