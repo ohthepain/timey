@@ -140,6 +140,7 @@ function fixture(t, options = {}) {
       flow,
       block,
       attempt,
+      definition: changes.definition,
       signal: changes.signal,
       continuing: changes.continuing,
       input: changes.input ?? { confirmed: true },
@@ -657,8 +658,13 @@ function approvalAttempt(result) {
   return { id: 'approval-attempt', status: 'blocked', result: result.result };
 }
 
+const humanFirstMerge = {
+  definition: { mergeWorkflow: { policy: 'human-first', pollSeconds: 5, checkTimeoutSeconds: 900, repairAttempts: 3 } },
+};
+
 function approveMerge(f, result) {
   return f.run('merge', {
+    ...humanFirstMerge,
     attempts: [approvalAttempt(result)],
     continuing: true,
     input: { confirmed: true, mergeToken: result.result.mergeConfirmation.token },
@@ -668,7 +674,7 @@ function approveMerge(f, result) {
 test('Merge verifies an unchanged PR once and requires approval of its exact commit and target', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
-  const first = await f.run('merge');
+  const first = await f.run('merge', humanFirstMerge);
   assert.equal(first.status, 'blocked');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
@@ -693,7 +699,7 @@ test('Merge verifies and pushes each new candidate, then expires approval if the
   });
   await f.run('understand');
   f.advanceTarget();
-  const first = await f.run('merge');
+  const first = await f.run('merge', humanFirstMerge);
   assert.equal(first.status, 'blocked');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
@@ -730,10 +736,10 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
     return turn(...args);
   };
   const result = await f.run('merge');
-  assert.equal(result.status, 'blocked');
+  assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['verify', 'push', 'ready']
+    ['verify', 'push', 'ready', 'ready', 'merge']
   );
   assert.equal(issueGit('merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
   assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
@@ -760,10 +766,10 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
   };
   const result = await f.run('merge');
   assert.equal(repairs, 1);
-  assert.ok(result.result.mergeConfirmation);
+  assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['verify', 'push', 'ready']
+    ['verify', 'push', 'ready', 'ready', 'merge']
   );
 });
 

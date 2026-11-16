@@ -8,7 +8,7 @@ Fetch Destination again before merging. If the target advanced, repeat from the 
 
 ```json
 {
-  "policy": "human-first",
+  "policy": "automatic",
   "pollSeconds": 5,
   "checkTimeoutSeconds": 900,
   "repairAttempts": 3

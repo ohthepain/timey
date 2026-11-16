@@ -123,7 +123,8 @@ pushes any changed commit to the existing PR, and waits for required GitHub chec
 It repeats if Destination
 advances. GitHub determines readiness, including repositories with zero required
 checks or unsuccessful optional checks. The Merge block Markdown sets the merge
-policy, polling interval, check timeout, and repair limit. Human-first policy
+policy, polling interval, check timeout, and repair limit. Merge defaults to
+automatic and proceeds when verification and GitHub requirements pass. Human-first policy
 requires approval of the current issue commit and target revision. A change to
 either revision expires approval. GitHub App publication and GitHub protection
 apply. Merge can repair inherited test or formatting failures and new Fallow
