@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
 import { conversationMessages, conversationState, conversationFiles } from './factory-ui/conversation-store.mjs';
+import { resumeWorkDependencies, runWorkVerification } from './factory-ui/flow-verification.mjs';
 
 function fixture(t, options = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'timey-flow-executor-')));
@@ -169,6 +170,60 @@ function fixture(t, options = {}) {
     emit: (message) => emit(message),
   };
 }
+
+test('dependency recovery retains DNS diagnostics across interruption and resumes within its retry bound', async (t) => {
+  const f = fixture(t);
+  const checkout = join(f.root, 'saved-issue-checkout');
+  mkdirSync(checkout);
+  const lock = 'lockfileVersion: 9.0\n';
+  writeFileSync(join(checkout, 'pnpm-lock.yaml'), lock);
+  const workspace = { checkout };
+  const folder = join(f.root, 'attempt-evidence');
+  const first = new AbortController();
+  const initial = {
+    signal: first.signal,
+    onProgress() {},
+  };
+  await assert.rejects(
+    runWorkVerification(initial, { ...workspace, base: 'base' }, folder, async ({ log }) => {
+      first.abort();
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(log, 'registry DNS lookup failed: ENOTFOUND');
+      throw Error('registry DNS lookup failed: ENOTFOUND');
+    }),
+    /ENOTFOUND/
+  );
+  const recoveryPath = join(checkout, '.issues/evidence/dependency-recovery.json');
+  const interrupted = JSON.parse(readFileSync(recoveryPath, 'utf8'));
+  assert.equal(interrupted.attempts.length, 1);
+  assert.equal(interrupted.attempts[0].status, 'interrupted');
+  assert.match(interrupted.attempts[0].diagnostic, /ENOTFOUND/);
+  assert.ok(existsSync(interrupted.attempts[0].log));
+
+  let installs = 0;
+  await resumeWorkDependencies(
+    { signal: new AbortController().signal, onProgress() {} },
+    workspace,
+    folder,
+    async (input) => {
+      assert.deepEqual(input.args, ['install', '--frozen-lockfile']);
+      installs += 1;
+      if (installs === 1) throw Error('registry DNS lookup failed: EAI_AGAIN');
+      mkdirSync(join(checkout, 'node_modules/.pnpm'), { recursive: true });
+      writeFileSync(join(checkout, 'node_modules/.pnpm/lock.yaml'), lock);
+      writeFileSync(input.log, 'Install completed.');
+    }
+  );
+  const recovered = JSON.parse(readFileSync(recoveryPath, 'utf8'));
+  assert.equal(installs, 2);
+  assert.equal(recovered.retryLimit, 3);
+  assert.equal(recovered.attempts.length, 3);
+  assert.equal(recovered.attempts[1].status, 'failed');
+  assert.equal(recovered.attempts[2].status, 'passed');
+  assert.equal(recovered.status, 'ready');
+  assert.match(recovered.recovery, /dependencyPreflight confirmed/);
+  assert.match(recovered.attempts[1].diagnostic, /EAI_AGAIN/);
+});
 
 test('an explicit work block makes one model turn and records its managed checkout before connection', async (t) => {
   const f = fixture(t);
