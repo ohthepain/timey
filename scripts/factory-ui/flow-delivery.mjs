@@ -84,7 +84,7 @@ function committedCandidate(workspace) {
   const tree = git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
   requireThat(
     !git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all'),
-    'The verified candidate changed. Preserve its changes in a commit and run verification again.'
+    'Commit the verified working-tree snapshot before publishing. If its content is unchanged, its verification remains valid.'
   );
   return { head, tree, base: workspace.base };
 }
@@ -114,8 +114,8 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   ];
   const current = checks.filter(
     (checked) =>
-      !checked?.uncommitted &&
-      checked?.head === candidate.head &&
+      ((!checked?.uncommitted && checked?.head === candidate.head) ||
+        (checked?.uncommitted && checked?.tree === candidate.tree)) &&
       (!base || (input && checked.base === base && checked.input === input))
   );
   requireThat(

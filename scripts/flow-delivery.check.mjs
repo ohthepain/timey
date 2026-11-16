@@ -460,6 +460,44 @@ test('candidate validation requires both checkpoints and hashes every retained c
   assert.throws(() => verifiedFlowCandidate(f.ctx, f.workspace), /independent verification and step evidence/);
 });
 
+test('an uncommitted verification survives its unchanged commit and expires when the tree changes', async (t) => {
+  const f = fixture(t);
+  const source = join(f.source.root, 'candidate-proof.txt');
+  writeFileSync(source, 'verified content\n');
+  f.source.git('add', 'candidate-proof.txt');
+  const tree = f.source.git('write-tree');
+  const paths = ['verification', 'step'].map((checkpoint) => {
+    const path = join(f.folder, `${checkpoint}.json`);
+    writeFileSync(path, JSON.stringify({ checkpoint, checks: [] }));
+    return { path, sha256: digest(readFileSync(path)) };
+  });
+  const verification = {
+    head: f.source.git('rev-parse', 'HEAD'),
+    tree,
+    base: f.workspace.base,
+    uncommitted: true,
+    proof: paths,
+    supportingProof: [],
+  };
+  f.ctx.flow.blocks[0].attempts[0].result = verification;
+  f.options.validateSummary = () => {};
+  await assert.rejects(
+    prepareFlowPublication(f.service, f.ctx, f.workspace, f.options),
+    /Commit the verified working-tree snapshot before publishing/
+  );
+
+  f.source.git('commit', '-m', 'Commit verified content');
+  assert.equal(verifiedFlowCandidate(f.ctx, f.workspace, { validateSummary: () => {} }).tree, tree);
+
+  writeFileSync(source, 'changed content\n');
+  f.source.git('add', 'candidate-proof.txt');
+  f.source.git('commit', '-m', 'Change candidate content');
+  assert.throws(
+    () => verifiedFlowCandidate(f.ctx, f.workspace, { validateSummary: () => {} }),
+    /Run an explicit Verify block/
+  );
+});
+
 function investigationFixture(t) {
   const f = fixture(t);
   unlinkSync(join(f.root, '.issues/issue-delivery-config.json'));
