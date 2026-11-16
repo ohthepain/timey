@@ -54,8 +54,12 @@ response. Use the structured failure field for blockers to completing the work.
 
 # Artifacts
 
-| Key       | Kind  | Label                    | Type | Options |
-| --------- | ----- | ------------------------ | ---- | ------- |
-| response  | file  | Block response           | file |         |
-| proof     | file  | Requested proof evidence | file |         |
-| candidate | value | Candidate commit         | text |         |
+| Key                  | Kind  | Label                    | Type    | Options |
+| -------------------- | ----- | ------------------------ | ------- | ------- |
+| response             | file  | Block response           | file    |         |
+| proof                | file  | Requested proof evidence | file    |         |
+| candidate            | value | Candidate commit         | text    |         |
+| candidateBase        | value | Candidate base           | text    |         |
+| candidateTree        | value | Candidate tree           | text    |         |
+| candidateCommit      | value | Candidate commit         | text    |         |
+| candidateUncommitted | value | Candidate uncommitted    | boolean |         |
