@@ -71,6 +71,13 @@ Revision checks reject conflicting edits. Retrying appends an attempt. Interrupt
 ownership remains uncertain until the original provider thread is reconciled.
 The flow survives workspace deletion.
 
+An active block card shows total work time across its attempts, followed by time
+on the current command or step. The second timer resets when that label changes.
+Command output remains in Progress. Finished, failed, stopped, and disconnected
+cards show the total. The total excludes time between attempts and time waiting
+for human input. If a runner disappears, its last saved activity marks the end of
+the attempt for timing.
+
 The controller owns flow writes. The executor owns one bounded block.
 Work collects requested proof and records any gaps in its response. It runs the
 same candidate checks as Verify before it can complete. When checks fail, Work sends the evidence to its existing conversation
@@ -141,6 +148,33 @@ digest are omitted. Deleting evidence invalidates any proof that requires it.
 Inspect shows raw text and offers a Restate toggle that applies the bro skill’s
 plain-language guidance in a temporary discussion. **Worktree → Delete** and
 the **Delete worktree** block use the same protected cleanup and retain its backups.
+
+## Update branch
+
+Choosing **Update branch** from the **Branch** button, running the **Update
+branch** block, or reaching the block through **Play** authorizes a local commit
+when needed. Factory runs the branch update without a second prompt. The Branch
+button runs the action directly and shows a spinner. The action leaves the flow
+graph intact.
+
+Factory fetches Destination first. If the issue branch already contains the
+fetched revision, Factory leaves any uncommitted changes in place. If there are
+destination changes to merge and the managed issue worktree has local changes,
+Factory saves them in a local commit before merging. The commit includes tracked
+edits and deletions and untracked files that Git would normally add. For partially
+staged files, the commit saves the working copy. Git-ignored untracked files
+stay outside the commit.
+
+Automatic commits run the normal Git hooks. If a hook rejects the commit, the
+update stops before the merge and shows the error. A successful update has no
+separate notification for the local commit.
+
+If Git reports conflicts from this update, Factory gives Codex one attempt. Codex
+may edit and stage only the conflicted files. It must preserve both sides and stop
+when resolution requires a decision. Factory commits the resolved merge through
+normal Git hooks. If the attempt cannot finish the merge, Factory keeps the local
+commit and the in-progress merge, lists the files that need attention, and pauses
+Play. Resolve or abort the merge in the issue worktree before another update.
 
 ## Issue Play and Pause
 

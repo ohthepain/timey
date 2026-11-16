@@ -1940,7 +1940,7 @@
         return result;
       }
       async function refresh() {
-        if (refreshing) return;
+        if (refreshing || serverControlUI.isWaitingForServer()) return;
         refreshing = true;
         const requestedRoute = location.hash;
         try {
@@ -1953,7 +1953,7 @@
             issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
             storage ? loadStoredIssues(storage) : null,
           ]);
-          if (location.hash !== requestedRoute) return;
+          if (location.hash !== requestedRoute || serverControlUI.isWaitingForServer()) return;
           data = { ...snapshot, conversation };
           progressUnavailable = false;
           $('connection-banner').hidden = true;
@@ -1983,15 +1983,9 @@
           if ($('error').textContent === refreshError) $('error').textContent = '';
           refreshError = null;
         } catch (e) {
-          if (location.hash !== requestedRoute) return;
+          if (location.hash !== requestedRoute || serverControlUI.isWaitingForServer()) return;
           progressUnavailable = true;
           updateProgressView();
-          if (await serverControlUI.reconnect(request)) {
-            $('connection-banner').hidden = true;
-            $('connection').hidden = false;
-            $('connection').textContent = 'Reconnecting after server restart…';
-            return;
-          }
           refreshError = e.message;
           $('error').textContent = refreshError;
           $('connection-banner').textContent = 'Connection needs attention';
@@ -2215,6 +2209,7 @@
         });
       }
       function refreshProgress() {
+        if (serverControlUI.isWaitingForServer()) return;
         manualRefreshPending = true;
         setProgressRefreshButtons(true);
         if (refreshing) {
@@ -4927,6 +4922,14 @@
       const issueSidebarMedia = window.matchMedia?.('(min-width: 1000px)');
       issueSidebarMedia?.addEventListener?.('change', () => {
         if (data) render();
+      });
+      serverControlUI.watchConnection(() => {
+        progressUnavailable = true;
+        updateProgressView();
+        $('connection-banner').textContent = 'Waiting for server…';
+        $('connection-banner').hidden = false;
+        $('connection').hidden = true;
+        if ($('error').textContent === refreshError) $('error').textContent = '';
       });
       refresh();
       setInterval(refresh, 4000);

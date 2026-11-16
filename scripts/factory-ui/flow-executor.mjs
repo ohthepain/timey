@@ -25,7 +25,7 @@ import { redactValue } from './activity.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
 import { runFlowVerification } from './flow-verification.mjs';
-import { reviewUpdateCommit } from './flow-update-commit.mjs';
+import { updateIssueBranch } from './flow-update-branch.mjs';
 import { runRetro } from './flow-retro.mjs';
 
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
@@ -45,9 +45,7 @@ export function createFlowExecutor(service, options = {}) {
   const active = new Map();
   let closed = false;
   const create = options.createConnection || createIssueChatConnection;
-  const execute = options.execute || executeCommand;
-  const verifyCandidate =
-    options.verifyCandidate || ((ctx, workspace, folder) => runFlowVerification(ctx, workspace, folder, execute));
+  const executeCommandImpl = options.execute || executeCommand;
   const attach = options.attach || attachIssueChat;
   const catalog = new BlockCatalog(service.root);
   return {
@@ -73,17 +71,28 @@ export function createFlowExecutor(service, options = {}) {
       if (ctx.signal?.aborted) forward();
       const owned = { controller, connection: null };
       active.set(ctx.issue.id, owned);
-      const bounded = (text) => ctx.onProgress?.(redactValue(String(text)).slice(-2000));
+      const onStep = (text) => ctx.onStep?.(redactValue(String(text)).trim().slice(0, 500));
       const context = {
         ...ctx,
         definition,
         signal: controller.signal,
-        onProgress: bounded,
+        onProgress: (text, step = false) => {
+          if (step) onStep(text);
+          ctx.onProgress?.(redactValue(String(text)).slice(-2000));
+        },
+        onStep,
       };
+      const execute = (input) => {
+        context.onStep(input.label ?? [input.command, ...input.args].join(' '));
+        return executeCommandImpl(input);
+      };
+      const verifyCandidate =
+        options.verifyCandidate || ((ctx, workspace, folder) => runFlowVerification(ctx, workspace, folder, execute));
       try {
         context.signal.throwIfAborted();
         service.ownServer();
-        const runtime = { create, attach, execute, ...options, verifyCandidate };
+        const runtime = { create, attach, ...options, execute, verifyCandidate };
+        if (command) context.onStep('Running ' + (ctx.block.label || ctx.block.kind) + '.');
         const result = !command
           ? await runModel(service, context, owned, runtime)
           : await runReconciledCommand(scopedService, context, {
@@ -91,6 +100,8 @@ export function createFlowExecutor(service, options = {}) {
               repair:
                 options.repair ??
                 ((error, round) => runMergeRepair(scopedService, context, owned, runtime, error, round)),
+              resolveBranchConflicts: (paths, target) =>
+                runBranchConflictRepair(scopedService, context, owned, runtime, paths, target),
             });
         return command && !result.artifacts ? { ...result, artifacts: commandArtifacts(definition, result) } : result;
       } finally {
@@ -346,6 +357,23 @@ async function runMergeRepair(service, ctx, owned, options, error, round) {
   }
 }
 
+async function runBranchConflictRepair(service, ctx, owned, options, paths, target) {
+  const task =
+    'Resolve only these conflicted paths and stage the resolution: ' +
+    JSON.stringify(paths) +
+    '. Preserve both sides of the merge with ' +
+    target +
+    '. If preserving both sides needs a product decision, return a flow-result failure with the decision. ' +
+    'You have one attempt. Leave HEAD and the merge in place and let Factory commit. ' +
+    'Do not edit other paths, commit, abort, reset, switch branches, push, or publish.';
+  const context = {
+    ...ctx,
+    block: { ...ctx.block, prompt: '', skill: null },
+    definition: { ...ctx.definition, prompt: task, artifacts: ctx.definition?.artifacts ?? [] },
+  };
+  return runModel(service, context, owned, { ...options, branchConflictTask: task });
+}
+
 async function reconcileMergeRepair(service, ctx, workspace, options) {
   const interrupted = ctx.block.attempts?.some(
     (attempt) =>
@@ -356,15 +384,51 @@ async function reconcileMergeRepair(service, ctx, workspace, options) {
   if (!interrupted) return;
   const saved = conversationState(service.root, ctx.issue.id).flowBlocks?.[ctx.block.id];
   if (!saved) return;
-  requireThat(saved.threadId, 'Recover the original Merge repair conversation before retrying.');
+  requireThat(saved.threadId, 'Recover the original merge repair conversation before retrying.');
   const connection = options.create({ onEvent() {} });
   try {
     await options.attach(connection, workspace.checkout, saved, () => {}, 'read-only');
     ctx.signal.throwIfAborted();
-    await ctx.onReconciled?.('The original Merge repair conversation is idle.');
+    await ctx.onReconciled?.('The original merge repair conversation is idle.');
   } finally {
     connection.close();
   }
+}
+
+function modelCommandProgress(ctx) {
+  const commands = new Map();
+  let phase;
+  return {
+    begin(step) {
+      commands.clear();
+      phase = step;
+      ctx.onProgress(step, true);
+    },
+    event(method, item) {
+      if (method === 'item/started' && item?.type === 'commandExecution' && item.command) {
+        commands.set(item.id, item.command);
+        ctx.onStep(item.command);
+      }
+      if (method === 'item/completed' && commands.delete(item?.id)) {
+        const current = [...commands.values()].at(-1) || phase;
+        if (current) ctx.onStep(current);
+      }
+    },
+    inputRequired() {
+      ctx.onInputRequired?.();
+    },
+  };
+}
+
+function modelPrompt(ctx, options) {
+  if (options.branchConflictTask) return options.branchConflictTask;
+  if (!options.repair) return blockInput(ctx);
+  return JSON.stringify({
+    issue: blockInput(ctx),
+    task: 'Fix the specific blocker within the approved issue scope. Preserve the issue and target history. Commit the repaired candidate in this checkout. Factory will verify and publish it. If a decision, broader scope, or permission is needed, report it as a flow-result failure and stop.',
+    failure: options.repair.error.message,
+    evidence: options.repair.error.evidence ?? [],
+  });
 }
 
 async function runModel(service, ctx, owned, options) {
@@ -415,6 +479,7 @@ async function runModel(service, ctx, owned, options) {
   const folder = evidenceDirectory(service, ctx);
   const outputPath = join(folder, options.repair ? 'repair-' + options.repair.round + '.txt' : 'output.txt');
   let liveText = '';
+  const progress = modelCommandProgress(ctx);
   let rejectInput;
   const inputRequired = new Promise((_, reject) => {
     rejectInput = reject;
@@ -430,7 +495,9 @@ async function runModel(service, ctx, owned, options) {
       if (params.delta) ctx.onProgress(params.delta);
       else if (message.method === 'item/started')
         ctx.onProgress(params.item?.command || params.item?.type || 'Working');
+      progress.event(message.method, params.item);
       if (message.method === 'ui/approval' || message.method === 'ui/unsupportedRequest') {
+        progress.inputRequired();
         const error = Error(
           'This block needs provider permission or human input. Its saved request requires attention before continuation.'
         );
@@ -463,14 +530,7 @@ async function runModel(service, ctx, owned, options) {
     state.flowBlocks = { ...state.flowBlocks, [ctx.block.id]: binding };
     saveConversationState(service.root, ctx.issue.id, state);
   };
-  const prompt = options.repair
-    ? JSON.stringify({
-        issue: blockInput(ctx),
-        task: 'Fix the specific blocker within the approved issue scope. Preserve the issue and target history. Commit the repaired candidate in this checkout. Factory will verify and publish it. If a decision, broader scope, or permission is needed, report it as a flow-result failure and stop.',
-        failure: options.repair.error.message,
-        evidence: options.repair.error.evidence ?? [],
-      })
-    : blockInput(ctx);
+  const prompt = modelPrompt(ctx, options);
   const instructions = [
     ctx.definition.prompt,
     ctx.block.skill ? '' : ctx.block.prompt,
@@ -548,7 +608,7 @@ async function runModel(service, ctx, owned, options) {
     });
     for (let round = 1; round <= rounds; round++) {
       ctx.signal.throwIfAborted();
-      ctx.onProgress(
+      progress.begin(
         repairPrompt
           ? `Repairing Work after verification failed (attempt ${round - 1} of ${maxWorkRepairs}).\n`
           : ctx.block.kind === 'sol'
@@ -588,7 +648,7 @@ async function runModel(service, ctx, owned, options) {
       outputs.push(redactValue(text));
       writeFileSync(outputPath, outputs.join('\n\n'), { mode: 0o600 });
       if (ctx.block.kind === 'work') {
-        ctx.onProgress('Running the Verify checks on the Work candidate.\n');
+        ctx.onProgress('Running the Verify checks on the Work candidate.\n', true);
         try {
           verification = await options.verifyCandidate(ctx, workspace, join(folder, `verification-${round}`));
         } catch (error) {
@@ -792,34 +852,23 @@ async function runCommand(service, ctx, options) {
       : 'Explicit verification passed.';
     return { ...commandResult(service, ctx, result, summary, evidence), workspace };
   }
-  const targetConfig = deliveryTarget(ctx.flow);
-  const { remote, branch } = targetConfig;
-  requireThat(branch, 'Choose a destination branch before merging from target.');
-  requireThat(
-    typeof remote === 'string' && /^[\w.-]+$/.test(remote) && !remote.startsWith('-'),
-    'Configure a valid target remote before merging it.'
+  await reconcileMergeRepair(service, ctx, workspace, options);
+  const { target, head, updated, evidence } = await updateIssueBranch(
+    workspace,
+    deliveryTarget(ctx.flow),
+    invoke,
+    options.resolveBranchConflicts,
+    ctx.signal
   );
-  git(workspace.checkout, 'check-ref-format', '--branch', branch);
-  if (ctx.input?.reviewWorkingChanges) {
-    const commitPreview = reviewUpdateCommit(workspace, folder, targetConfig, ctx.input.commitToken);
-    if (commitPreview) return { commitPreview };
-  }
-  requireCleanTargetMerge(workspace);
-  await invoke('git', ['fetch', '--no-tags', remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`]);
-  ctx.signal.throwIfAborted();
-  const target = git(workspace.checkout, 'rev-parse', '--verify', `refs/remotes/${remote}/${branch}`);
-  await invoke('git', ['merge', '--no-edit', target]);
   return {
     ...commandResult(
       service,
       ctx,
-      {
-        target,
-        targetRevision: target,
-        head: git(workspace.checkout, 'rev-parse', 'HEAD'),
-      },
-      'Merged the fetched target into the issue branch.',
-      [{ key: 'log', path: log, label: 'Target fetch and merge output' }]
+      { target, targetRevision: target, head },
+      updated
+        ? 'Merged the fetched target into the issue branch.'
+        : 'The issue branch already contains the fetched target.',
+      [{ key: 'log', path: log, label: 'Target fetch and merge output' }, ...evidence]
     ),
     workspace,
   };
@@ -836,17 +885,6 @@ function usesLegacyDelivery(service, ctx) {
     work &&
     deliveryTarget(ctx.flow).branch === (work.config?.target ?? ctx.flow.target?.branch) &&
     !upstreamBlocks(ctx.block, ctx.flow.blocks).some((block) => block.attempts.some((attempt) => attempt.invalidatedAt))
-  );
-}
-
-function requireCleanTargetMerge(workspace) {
-  const status = git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all');
-  if (!status) return;
-  const entries = status.split('\n');
-  const files = entries.slice(0, 5).join(', ');
-  const remaining = entries.length > 5 ? ` and ${entries.length - 5} more` : '';
-  throw Error(
-    `Preserve checkout changes in a commit before merging the target branch. Git reports ${files}${remaining} in ${workspace.branch}.`
   );
 }
 

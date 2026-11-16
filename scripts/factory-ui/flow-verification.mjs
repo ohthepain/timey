@@ -16,8 +16,8 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
   );
   mkdirSync(folder, { recursive: true });
   const log = join(folder, 'command.log');
-  const invoke = (command, args) =>
-    execute({ command, args, cwd: checkout, log, signal: ctx.signal, onProgress: ctx.onProgress });
+  const invoke = (command, args, label) =>
+    execute({ command, args, label, cwd: checkout, log, signal: ctx.signal, onProgress: ctx.onProgress });
   const workspaces = workspacePackages(checkout);
   ctx.signal.throwIfAborted();
   try {
@@ -44,7 +44,7 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
       }));
     }
   `;
-  const output = await invoke(process.execPath, ['--input-type=module', '-e', script]);
+  const output = await invoke(process.execPath, ['--input-type=module', '-e', script], 'Running Verify checks.');
   const commandLog = { key: 'log', path: log, label: 'Verification command output' };
   const lines = output.split(/\r?\n/);
   const failed = lines.findLast((line) => line.startsWith('FLOW_FAILURE '));

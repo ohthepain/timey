@@ -279,6 +279,10 @@ export function createFactoryServer(service, options = {}) {
     );
     try {
       requireThat(request.headers.host === `127.0.0.1:${server.address().port}`, 'Use the local factory address.');
+      if (request.method === 'GET' && request.url === '/api/health') {
+        response.statusCode = 204;
+        return response.end();
+      }
       await respond(service, request, response, token, server.address().port);
     } catch (error) {
       response.statusCode = 400;

@@ -244,6 +244,10 @@ test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => 
   const { url, page } = await startFactoryHttp(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
+  const health = await fetch(url + '/api/health');
+  assert.equal(health.status, 204);
+  assert.equal(health.headers.get('set-cookie'), null);
+  assert.equal(await health.text(), '');
   const expired = await fetch(url + '/api/lifecycle-answer', {
     method: 'POST',
     headers: { origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' },
@@ -3603,7 +3607,7 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
       readFileSync(resolve('scripts/factory-ui/issue-capture-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') +
-      '\n' +
+      '\nserverControlUI.watchConnection = () => {};\n' +
       readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-progress-ui.js'), 'utf8') +

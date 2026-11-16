@@ -18,10 +18,10 @@ It shows issue folders, a downward block graph, and a block inspector. Issue nam
 include their numbers and wrap. The **Worktree** menu appears in the branch status
 row. Its tooltip says whether a worktree has yet to be created or was deleted.
 **Open** opens it in Finder. **Update** merges the configured target branch into
-the worktree and shows progress while it runs. **Delete** opens a confirmation
-before removing the managed worktree and local branch. Update offers to commit
-local changes after showing the file list and diff for confirmation. Delete
-requires a clean worktree. Drag the sidebar’s right edge or focus the resize
+the worktree and shows progress while it runs. When an update needs to merge
+destination changes, it commits local work before merging. **Delete** requires
+a clean worktree and asks for confirmation before removing the managed worktree
+and local branch. Drag the sidebar’s right edge or focus the resize
 handle and use the arrow keys to change its width. The inspector also resizes from
 its left edge. Its left arrow widens it and its right arrow narrows it. Home and
 End choose the minimum and maximum width for either panel. The browser remembers
@@ -884,8 +884,8 @@ request/issue-answer keys preserve that feedback across redraws, preventing a
 stale approval from being submitted twice. Failed requests show an alert beside
 each copy of that exact request's control and restore it for explicit retry.
 The alert survives redraws and clears on retry or a replacement request. An
-expired page session explains that a reload is needed; no write is automatically
-replayed after reconnecting. Negative replies and answers use Sending…/Sent…
+expired page session asks for a manual reload when the server is responding.
+Negative replies and answers use Sending…/Sent…
 instead of claiming approval. This feedback changes no permission or acceptance
 rules.
 
@@ -1225,8 +1225,8 @@ newer attempt owns the issue, its progress stays in place.
 maintenance: it drains current work, permission replies, temporary chats and
 coordinator locks before handing the installed listener to a replacement on the
 same port. It installs no build. Saved chats, pending questions and progress
-remain in the project, and the browser reconnects without erasing drafts. The
-button is hidden on preview copies and while a restart is already in progress.
+remain in the project. The button is hidden on preview copies and while a restart
+is already in progress.
 
 The header displays the last four characters of the server's reported startup
 commit, with the full hash and source path in its tooltip. Unknown revisions
@@ -1541,9 +1541,11 @@ publication, merge, issue acceptance and closure remain distinct. Earlier confir
 milestones remain visible, with superseded candidate checks labelled explicitly.
 
 Statuses are running, waiting for you, blocked, failed, complete, not started and
-progress unavailable. When the factory UI cannot reconnect to its local server,
-“Connection needs attention” appears in a red banner above the header; it clears
-after a successful refresh. Lost connections show the last known update; quiet output
+progress unavailable. Flow and Classic show **Waiting for server…** alongside
+the last known update when a read-only health check gets no response or times
+out. When Factory responds to the health check again, the browser reloads the
+same URL, including the selected issue. Any interrupted action stays out of
+the reconnect sequence. Check saved progress before retrying it. Quiet output
 alone proves neither failure nor blockage. Verification shows the current command
 and exit result when available, otherwise **Running verification** without invented
 check names. Issue output keeps its recent public diagnostic stream and offers

@@ -210,9 +210,11 @@
   }
 
   function renderErrors() {
-    const message = state.error || state.connectionError;
+    const waiting = serverControlUI.isWaitingForServer();
+    const message = waiting ? 'Waiting for server…' : state.error || state.connectionError;
     $('error-banner').hidden = !message;
     $('error-message').textContent = message;
+    $('dismiss-error').hidden = waiting;
   }
 
   function toast(message) {
@@ -275,6 +277,7 @@
   }
 
   async function load(force = false, announce = false) {
+    if (serverControlUI.isWaitingForServer()) return;
     if (state.pending || (state.loading && !force)) {
       if (announce) toast('Wait for the current action before refreshing.');
       return;
@@ -289,14 +292,14 @@
       const result = await json(`/api/flow${selected ? `?issue=${encodeURIComponent(selected)}` : ''}`, {
         signal: controller.signal,
       });
-      if (sequence !== state.sequence || selected !== state.issueId) return;
+      if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
       state.connectionError = '';
       $('connection-status').className = 'connection';
       $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · 2s';
       applyView(result);
       if (announce) toast('Saved flow refreshed.');
     } catch (error) {
-      if (error.name === 'AbortError' || sequence !== state.sequence) return;
+      if (error.name === 'AbortError' || sequence !== state.sequence || serverControlUI.isWaitingForServer()) return;
       state.connectionError = `Unable to refresh. ${error.message} The last saved view remains visible.`;
       $('connection-status').className = 'connection offline';
       $('connection-status').innerHTML = '<span class="connection-dot"></span> Reconnecting';
@@ -670,13 +673,68 @@
       .map(([, row]) => row.sort((a, b) => (a.lane || 0) - (b.lane || 0)));
   }
 
+  function elapsedLabel(milliseconds) {
+    const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = String(Math.floor(seconds / 60) % 60).padStart(2, '0');
+    const remainder = String(seconds % 60).padStart(2, '0');
+    return hours ? `${hours}:${minutes}:${remainder}` : `${minutes}:${remainder}`;
+  }
+
+  function savedWorkTime(attempt) {
+    const start = Date.parse(attempt.startedAt);
+    const end = Date.parse(attempt.inputRequestedAt ?? attempt.endedAt ?? attempt.lastActiveAt);
+    return Number.isFinite(end - start) ? Math.max(0, end - start) : 0;
+  }
+
+  function blockTiming(block, attempt, currentStatus) {
+    if (!attempt) return '';
+    if (attempt.inputRequestedAt || attempt.input) return 'Needs input';
+    if (attempt.result?.mergeConfirmation && currentStatus === 'blocked') return 'Needs approval';
+    const previous = block.attempts.slice(0, -1).reduce((total, entry) => total + savedWorkTime(entry), 0);
+    const start = Date.parse(attempt.startedAt);
+    if (isRunning(block) && Number.isFinite(start)) {
+      const now = Date.now();
+      const stepStart = Date.parse(attempt.stepStartedAt ?? attempt.startedAt);
+      return `<span data-timer-start="${start}" data-timer-prior="${previous}" style="font-variant-numeric:tabular-nums" title="Total time spent on this block">${elapsedLabel(previous + now - start)}</span><span aria-hidden="true">·</span><span data-timer-start="${stepStart}" style="font-variant-numeric:tabular-nums" title="Time on the current command or step">${elapsedLabel(now - stepStart)}</span>`;
+    }
+    const label = {
+      completed: 'Finished in',
+      succeeded: 'Finished in',
+      success: 'Finished in',
+      failed: 'Failed after',
+      blocked: 'Failed after',
+      stopped: 'Stopped after',
+      uncertain: 'Disconnected after',
+    }[currentStatus];
+    const end = Date.parse(attempt.endedAt ?? attempt.lastActiveAt);
+    return label && Number.isFinite(end - start) ? `${label} ${elapsedLabel(previous + savedWorkTime(attempt))}` : '';
+  }
+
+  function updateBlockTimers() {
+    if (document.hidden || state.connectionError) return;
+    const now = Date.now();
+    for (const timer of $('graph').querySelectorAll('[data-timer-start]')) {
+      const text = elapsedLabel(Number(timer.dataset.timerPrior ?? 0) + now - Number(timer.dataset.timerStart));
+      if (timer.textContent !== text) timer.textContent = text;
+    }
+  }
+
+  function blockDescription(block, style) {
+    const attempt = latest(block);
+    if (isRunning(block) && attempt && !block.readOnly && !attempt.inputRequestedAt)
+      return attempt.step || 'Preparing this block.';
+    return attempt?.summary || block.prompt || blockContent(block)?.description || style.description;
+  }
+
   function cardContents(block, style) {
     const attempt = latest(block);
     const currentStatus = status(block);
     const hasEvidence = attempt?.evidence?.length || 0;
-    const description = attempt?.summary || block.prompt || blockContent(block)?.description || style.description;
+    const description = blockDescription(block, style);
+    const timing = blockTiming(block, attempt, currentStatus);
     const parts = {
-      status: `<span class="block-topline"><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(words(block.kind))}<span class="block-status${isRunning(block) ? ' running' : ''}">${escape(statusText(currentStatus, attempt))}</span></span>`,
+      status: `<span class="block-topline"><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(words(block.kind))}<span class="block-status${isRunning(block) && !attempt?.inputRequestedAt ? ' running' : ''}">${timing || escape(statusText(currentStatus, attempt))}</span></span>`,
       title: `<span class="block-label">${escape(block.label || words(block.kind))}</span>`,
       description: `<span class="block-description">${escape(description)}</span>`,
       footer: `<span class="block-bottomline"><span>${escape(block.skill || (block.suggested ? 'Suggested next step' : 'Choose a skill'))}</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
@@ -972,6 +1030,7 @@
 
   async function checkOpenBlock(force = false) {
     const block = activeBlock();
+    if (serverControlUI.isWaitingForServer()) return;
     if (!block || block.readOnly || state.pending || state.tab !== 'details' || state.view.flow.request) return;
     const key = state.issueId + ':' + block.id;
     if (key === state.checkedBlock && !force) return;
@@ -1088,8 +1147,7 @@
       if (!element) continue;
       if (entry) element.dataset.uiSource = entry.id;
       else element.removeAttribute('data-ui-source');
-      const summary = latest(block)?.summary || block.prompt || entry?.description || blockStyle(key).description;
-      element.querySelector('.block-description').textContent = summary;
+      element.querySelector('.block-description').textContent = blockDescription(block, blockStyle(key));
     }
     const block = activeBlock();
     const entry = blockContent(block);
@@ -1612,7 +1670,6 @@
       merge:
         approval &&
         `Merge PR #${approval.pr} into ${approval.branch}?\n\nPR commit: ${approval.head}\nTarget revision: ${approval.target}`,
-      'merge-target': 'Merge changes from the target branch into this issue checkout?',
       close: `Close "${state.view.issue.title}"? This records your decision to end this issue.`,
       'delete-worktree': worktreeDeletionPrompt(state.view.flow.workspace?.checkout),
     };
@@ -1957,40 +2014,19 @@
     inspectedFile = null;
   });
 
-  let updateCommitReview;
-
-  async function updateBranch(commitToken) {
+  async function updateBranch() {
     const issueId = state.issueId;
     state.updatingBranch = issueId;
     renderEnvironment();
     try {
-      const result = await action('update-worktree', { commitToken });
-      if (!result || state.issueId !== issueId) return;
-      if (result.commitPreview) showUpdateCommitReview(issueId, result.commitPreview);
-      else toast('Branch updated.');
+      const result = await action('update-worktree');
+      if (result && state.issueId === issueId) toast('Branch updated.');
     } finally {
       state.updatingBranch = null;
       renderEnvironment();
       void load(true);
     }
   }
-
-  function showUpdateCommitReview(issueId, preview) {
-    updateCommitReview = { issueId, token: preview.token };
-    $('update-commit-summary').textContent =
-      `Commit the listed changes on ${preview.branch} as “${preview.message}”, then merge ${preview.target}.`;
-    $('update-commit-files').textContent = preview.changes;
-    $('update-commit-patch').textContent = preview.patch;
-    $('update-commit-dialog').showModal();
-  }
-
-  $('update-commit-form').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const review = updateCommitReview;
-    updateCommitReview = null;
-    $('update-commit-dialog').close();
-    if (review?.issueId === state.issueId) void updateBranch(review.token);
-  });
 
   $('target-update-menu').addEventListener('change', async (event) => {
     const menu = event.target;
@@ -2353,8 +2389,14 @@
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) void load();
   });
+  setInterval(updateBlockTimers, 1000);
   setInterval(() => {
     if (!document.hidden) void load();
   }, 2000);
+  serverControlUI.watchConnection(() => {
+    $('connection-status').className = 'connection offline';
+    $('connection-status').innerHTML = '<span class="connection-dot"></span> Offline';
+    renderErrors();
+  });
   void load();
 })();

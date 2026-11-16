@@ -176,7 +176,7 @@ export async function ensureFlowVerification(service, ctx, workspace, folder, op
     if (!options.verifyCandidate) throw error;
   }
   service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'verify', workspace.base);
-  ctx.onProgress('Running independent Verify checks on the issue commit.\n');
+  ctx.onProgress('Running independent Verify checks on the issue commit.\n', true);
   const { result, evidence } = await options.verifyCandidate(ctx, workspace, folder);
   ctx.signal.throwIfAborted();
   const checked = verifiedFlowCandidate(ctx, workspace, { ...options, verification: result });
@@ -295,6 +295,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
     }
     ctx.signal.throwIfAborted();
     verifiedFlowCandidate(ctx, workspace, verification);
+    ctx.onProgress('Writing the GitHub PR.\n', true);
     const published = await updateFlowPR(ctx, workspace, provider, pr, preview);
     return {
       result: result(published),

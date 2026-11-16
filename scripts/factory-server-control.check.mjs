@@ -259,8 +259,8 @@ test('No new actions pauses dispatch without restarting and can be turned off', 
   }
 });
 
-test('header toggle shows immediate feedback and reconnects without erasing a draft', async () => {
-  const dom = loadServerControlDom('<header></header><textarea>keep this draft</textarea>');
+test('header toggle shows immediate feedback while the request is pending', async () => {
+  const dom = loadServerControlDom();
   const value = idleServerControl({ actions: 1 });
   const { calls, finish, request } = trackingRequest(value, (path) => (path === 'server-pause' ? 'paused' : 'idle'));
   dom.window.controls.show(value, request);
@@ -279,11 +279,6 @@ test('header toggle shows immediate feedback and reconnects without erasing a dr
   finish();
   await delay(0);
   assert.deepEqual(calls, ['server-pause', 'server-cancel-restart']);
-  dom.window.controls.show({ ...value, phase: 'draining' }, async () => value);
-  dom.window.fetch = async () => ({ ok: true });
-  await dom.window.controls.reconnect(async () => ({ ...value, actions: 0, pid: 2 }));
-  assert.equal(dom.window.document.querySelector('textarea').value, 'keep this draft');
-  assert.match(dom.window.document.querySelector('[data-server-message]').textContent, /Server restarted/);
   dom.window.close();
 });
 

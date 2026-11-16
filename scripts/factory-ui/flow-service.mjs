@@ -81,7 +81,7 @@ import { deleteIssueWorktree, issueHasActiveWork, worktreeCleanupService } from 
 import { branchStartingPoint, captureStartingPoint, flowBranches } from './flow-branches.mjs';
 
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
-const confirmationBlocks = new Set(['publish', 'merge-target', 'close', 'delete-worktree']);
+const confirmationBlocks = new Set(['publish', 'close', 'delete-worktree']);
 const retroFolder = 'Retro items';
 const closureActions = new Set(['retro-setting', 'auto-close-setting', 'retry-closure', 'skip-retro', 'cleanup-again']);
 const unresolvedAttempt = (attempt) =>
@@ -392,6 +392,7 @@ class IssueFlows {
         this.active.get(flow.issueId)?.attemptId !== attempt.id
       ) {
         attempt.status = 'uncertain';
+        attempt.endedAt ??= attempt.lastActiveAt;
         attempt.summary =
           'The previous runner disconnected. Inspect its chat and checkout before explicitly continuing. No work restarted.';
       }
@@ -838,7 +839,7 @@ class IssueFlows {
       return this.applyFlowDefinition(issue, flow, catalog, input);
     if (input.action === 'export-flow') return this.exportFlow(issue, flow, catalog, input);
     if (input.action === 'reveal-flow') return this.revealFlow(issue, flow, catalog);
-    if (input.action === 'update-worktree') return this.updateWorktree(issue, flow, catalog, input.commitToken);
+    if (input.action === 'update-worktree') return this.updateWorktree(issue, flow, catalog);
     if (input.action === 'delete-worktree') return this.deleteWorktree(issue, flow, input.expected);
     if (input.action === 'starting-point') return this.setStartingPoint(issue, flow, input);
     if (input.action === 'destination' || input.action === 'accept-pr-base')
@@ -993,12 +994,16 @@ class IssueFlows {
     }
     return this.view(issue.id);
   }
-  async updateWorktree(issue, flow, catalog, commitToken) {
+  async updateWorktree(issue, flow, catalog) {
     const checkout = flowWorkspace(this.service, flow)?.checkout;
     requireThat(checkout && existsSync(checkout), 'This issue has no available worktree.');
     requireThat(
       !issue.closed && !issueHasActiveWork(this.service, issue.id),
       'Update the branch of an idle open issue.'
+    );
+    requireThat(
+      !flow.blocks.some((block) => block.attempts.some(unresolvedAttempt)),
+      'Recover the disconnected block before updating the branch.'
     );
     const block = makeBlock('merge-target', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
@@ -1006,15 +1011,7 @@ class IssueFlows {
     this.pauseAutoplay(issue.id, 'Updating the branch manually.');
     this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
     try {
-      const result = await this.executor.run({
-        issue,
-        flow,
-        block,
-        attempt,
-        signal: controller.signal,
-        input: { confirmed: true, reviewWorkingChanges: true, commitToken },
-      });
-      if (result.commitPreview) return { commitPreview: result.commitPreview };
+      await this.executor.run({ issue, flow, block, attempt, signal: controller.signal });
     } finally {
       this.active.delete(issue.id);
     }
@@ -1307,10 +1304,12 @@ class IssueFlows {
     const details = blockDetails(flow, issue, block, definitions).map(({ candidates, ...detail }) => detail);
     block.links ??= {};
     for (const { key, selected } of details) if (selected) block.links[key] = selected;
+    const startedAt = new Date().toISOString();
     return {
       id: randomUUID(),
       status: 'running',
-      startedAt: new Date().toISOString(),
+      startedAt,
+      lastActiveAt: startedAt,
       summary: 'Preparing this block.',
       output: '',
       evidence: [],
@@ -1396,7 +1395,7 @@ class IssueFlows {
       'Continue and reconcile the disconnected block before starting different work.'
     );
     requireThat(
-      !confirmationBlocks.has(block.kind) || block.kind === 'merge-target' || input.confirmed === true,
+      !confirmationBlocks.has(block.kind) || input.confirmed === true,
       'Confirm this specific protected operation before starting it.'
     );
     if (['running', 'stopping'].includes(block.attempts.at(-1)?.status))
@@ -1432,17 +1431,27 @@ class IssueFlows {
     this.active.get(issue.id).task = task;
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
-  changeAttempt(issue, blockId, attemptId, change) {
+  changeAttempt(issue, blockId, attemptId, change = () => {}) {
     const flow = this.read(issue);
     const block = flow.blocks.find((item) => item.id === blockId);
     const attempt = block?.attempts.find((item) => item.id === attemptId);
     requireThat(attempt, 'The running block record is missing. Retain its original execution before reconciling.');
     change(attempt, flow);
+    if (['running', 'stopping'].includes(attempt.status)) attempt.lastActiveAt = new Date().toISOString();
     this.store.save(flow, flow.revision);
   }
   async execute(issue, flow, blockId, attemptId, controller, input, definition) {
     const block = flow.blocks.find((item) => item.id === blockId);
     const attempt = block.attempts.at(-1);
+    const checkpoint = setInterval(() => {
+      try {
+        this.changeAttempt(issue, blockId, attemptId);
+      } catch (error) {
+        clearInterval(checkpoint);
+        console.warn('Could not save block timing for ' + attemptId + ': ' + error.message);
+      }
+    }, 5000);
+    checkpoint.unref();
     let outcome;
     try {
       const result =
@@ -1470,6 +1479,7 @@ class IssueFlows {
                         ['running', 'stopping', 'uncertain'].includes(previous.status)
                       ) {
                         previous.reconciledAt = new Date().toISOString();
+                        previous.endedAt ??= previous.lastActiveAt;
                         previous.reconciliation = reason;
                         if (['running', 'stopping'].includes(previous.status)) previous.status = 'uncertain';
                       }
@@ -1483,6 +1493,16 @@ class IssueFlows {
                 this.changeAttempt(issue, blockId, attemptId, (current) => {
                   current.output = (current.output + String(text)).slice(-64000);
                   current.summary = String(text).trim().split('\n').at(-1)?.slice(0, 500) || current.summary;
+                }),
+              onStep: (step) =>
+                this.changeAttempt(issue, blockId, attemptId, (current) => {
+                  if (step === current.step || current.status === 'stopping' || current.inputRequestedAt) return;
+                  current.step = step;
+                  current.stepStartedAt = new Date().toISOString();
+                }),
+              onInputRequired: () =>
+                this.changeAttempt(issue, blockId, attemptId, (current) => {
+                  current.inputRequestedAt ??= new Date().toISOString();
                 }),
             });
       this.changeAttempt(issue, blockId, attemptId, (current, saved) => {
@@ -1530,6 +1550,7 @@ class IssueFlows {
         outcome = current;
       });
     } finally {
+      clearInterval(checkpoint);
       if (this.active.get(issue.id)?.attemptId === attemptId) this.active.delete(issue.id);
       if (['retro', 'cleanup'].includes(block.kind) && outcome?.status === 'completed') {
         await this.closureTasks.get(issue.id);
@@ -1550,6 +1571,8 @@ class IssueFlows {
     this.changeAttempt(this.selected(flow.issueId), input.blockId, active.attemptId, (attempt) => {
       attempt.status = 'stopping';
       attempt.summary = 'Stopping this block. Partial output and edits are retained.';
+      attempt.step = 'Stopping this block.';
+      attempt.stepStartedAt = new Date().toISOString();
     });
     this.pause(flow.issueId, 'Block stopped.');
     active.controller.abort();

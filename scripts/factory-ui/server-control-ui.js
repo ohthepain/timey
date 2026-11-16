@@ -1,9 +1,7 @@
 const serverControlUI = (() => {
-  let reconnectingSince = 0;
   let actionRequest = 0;
+  let waitingForServer = false;
   let state = null,
-    expecting = false,
-    previousPid = null,
     busy = false,
     requestedPause = null;
   function panel() {
@@ -48,10 +46,6 @@ const serverControlUI = (() => {
     const element = panel();
     refreshOpenActions(value, request);
     state = value;
-    if (['draining', 'restarting'].includes(state.phase)) {
-      expecting = true;
-      previousPid = state.pid;
-    }
     const count = element.querySelector('[data-server-count]');
     if (count) count.textContent = counts(state);
     if (count)
@@ -278,7 +272,6 @@ const serverControlUI = (() => {
     show(state, request);
     try {
       const result = await request(path, {});
-      if (path === 'server-cancel-restart') expecting = false;
       show(result, request);
     } catch (error) {
       problem = error.message;
@@ -297,32 +290,24 @@ const serverControlUI = (() => {
     const chat = value.chats === 1 ? 'chat' : 'chats';
     return `${value.actions} ${action} running · ${value.chats} open ${chat}`;
   }
-  async function reconnect(request) {
-    if (!expecting) return false;
-    beginReconnect();
-    try {
-      const page = await fetch('/', { cache: 'no-store' });
-      if (!page.ok) throw Error('The restarted page is unavailable.');
-      const current = await request('server-status');
-      if (current.pid !== previousPid) {
-        expecting = false;
-        reconnectingSince = 0;
-        show(current, request);
-        panel().querySelector('[data-server-message]').textContent = 'Server restarted. Saved progress restored.';
+  function watchConnection(onWaiting) {
+    async function probe() {
+      const response = await fetch('/api/health', {
+        cache: 'no-store',
+        credentials: 'omit',
+        signal: AbortSignal.timeout(4000),
+      }).catch(() => {
+        if (waitingForServer) return;
+        waitingForServer = true;
+        onWaiting();
+      });
+      if (waitingForServer && response?.status === 204) {
+        location.reload();
+        return;
       }
-    } catch {
-      /* Retry through the normal polling cycle. */
+      setTimeout(probe, 2000);
     }
-    return true;
+    void probe();
   }
-  function beginReconnect() {
-    reconnectingSince ||= Date.now();
-    panel().querySelector('[data-server-message]').textContent = reconnectMessage();
-  }
-  function reconnectMessage() {
-    return Date.now() - reconnectingSince > 30000
-      ? 'The server has not returned yet. Check .issues/factory-ui/server-restart.log in the project.'
-      : 'Restarting. Your saved work is kept.';
-  }
-  return { show, reconnect };
+  return { show, watchConnection, isWaitingForServer: () => waitingForServer };
 })();

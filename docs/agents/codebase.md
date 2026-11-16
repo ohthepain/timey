@@ -638,8 +638,10 @@ Codex conversations and uses the protected operation adapters for delivery. `flo
 `flow-branches.mjs` lists local refs and snapshots the chosen commit for a new checkout.
 `flow-delivery.mjs` reads live destination branches, prepares the publication
 preview, and validates or refreshes independent verification evidence.
-`flow-merge.mjs` synchronizes the target, waits for GitHub checks, and binds
-approval to the exact issue commit and target revision.
+`flow-update-branch.mjs` owns the local branch update used by the Branch button
+and the Update branch block. `flow-merge.mjs` shares its destination fetch and
+Git merge, waits for GitHub checks, and binds approval to the exact issue commit
+and target revision.
 The original factory page remains at `/classic`. See the
 [implementation plan](../plans/number-2/README.md) for current verification.
 

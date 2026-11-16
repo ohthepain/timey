@@ -12,6 +12,7 @@ import {
   verifiedFlowCandidate,
 } from './flow-delivery.mjs';
 import { permissionFailure, repairableBlocker } from './strategy-repair.mjs';
+import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 
 const headOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD');
 const treeOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
@@ -42,16 +43,8 @@ function previousApproval(ctx) {
   if (approval?.token === ctx.input.mergeToken) return approval;
 }
 
-async function fetchTarget(ctx, workspace, invoke) {
-  const { remote, branch } = deliveryTarget(ctx.flow);
-  requireThat(
-    typeof remote === 'string' && /^[\w.-]+$/.test(remote) && !remote.startsWith('-'),
-    'Invalid merge remote.'
-  );
-  git(workspace.checkout, 'check-ref-format', '--branch', branch);
-  const tracking = 'refs/remotes/' + remote + '/' + branch;
-  await invoke('git', ['fetch', '--no-tags', remote, '+refs/heads/' + branch + ':' + tracking]);
-  return git(workspace.checkout, 'rev-parse', '--verify', tracking);
+function fetchTarget(ctx, workspace, invoke) {
+  return fetchIssueTarget(workspace.checkout, deliveryTarget(ctx.flow), invoke);
 }
 
 async function synchronize(workspace, target, invoke) {
@@ -64,16 +57,13 @@ async function synchronize(workspace, target, invoke) {
     throw repairableBlocker('target-conflict', 'Resolve the target merge conflicts in the issue checkout.');
   }
   requireThat(cleanCheckout(workspace), 'Preserve checkout changes in a commit before merging the target branch.');
-  try {
-    await invoke('git', ['merge', '--no-edit', target]);
-  } catch (error) {
-    if (!git(workspace.checkout, 'ls-files', '-u')) throw error;
+  await mergeIssueTarget(workspace.checkout, target, invoke, (_, error) => {
     throw repairableBlocker(
       'target-conflict',
       'Resolve the target merge conflicts in the issue checkout.',
       error.evidence
     );
-  }
+  });
 }
 
 async function repairCandidate(ctx, workspace, error, options, state) {
@@ -85,7 +75,10 @@ async function repairCandidate(ctx, workspace, error, options, state) {
   const conflict = error.code === 'target-conflict';
   state.evidence.push(...(error.evidence ?? []));
   state.repairs += 1;
-  ctx.onProgress('Repairing the Merge candidate (' + state.repairs + '/' + state.workflow.repairAttempts + ').\n');
+  ctx.onProgress(
+    'Repairing the Merge candidate (' + state.repairs + '/' + state.workflow.repairAttempts + ').\n',
+    true
+  );
   const repair = await options.repair(error, state.repairs);
   state.evidence.push(...(repair.evidence ?? []));
   requireThat(repair.status !== 'blocked', repair.summary);
@@ -120,6 +113,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
   let merged;
   let mergeOrigin = 'factory-confirmed';
   try {
+    ctx.onProgress('Merging the GitHub PR.\n', true);
     merged = await provider.merge(pr.number, head, {
       beforeMerge: async () => {
         const actual = await lookupFlowPR(provider, workspace.branch, pr.number);
@@ -183,6 +177,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   }
   let readiness;
   try {
+    ctx.onProgress('Checking GitHub PR readiness.\n', true);
     readiness = await provider.ready(pr, workspace.branch, head, { waitForChecks: state.pushed === head });
   } catch (error) {
     if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
@@ -242,7 +237,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
         else {
           state.deadline ??= Date.now() + workflow.checkTimeoutSeconds * 1000;
           requireThat(Date.now() < state.deadline, 'GitHub checks did not finish in time. ' + error.message);
-          ctx.onProgress(error.message + '\n');
+          ctx.onProgress(error.message + '\n', true);
           await (options.mergeDelay ?? delay)(workflow.pollSeconds * 1000, undefined, { signal: ctx.signal });
         }
       }

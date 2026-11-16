@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -74,6 +74,7 @@ const logs = {
 };
 const playbackIssueId = '20261116-playback-fixture';
 const playbackWork = Promise.withResolvers();
+let firstWorkProgress;
 const service = new FactoryUI(project);
 const deliveryConfig = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
 writeFileSync(join(project, '.issues/issue-delivery-config.json'), JSON.stringify(deliveryConfig));
@@ -86,12 +87,14 @@ service.codex.call = async (method) => {
   throw Error('Unexpected model call ' + method);
 };
 const executor = {
-  async run({ signal, onProgress, block, issue }) {
+  async run({ signal, onProgress, onStep, block, issue }) {
     const number = logs.execution.length + 1;
     logs.execution.push({ number, blockId: block.id, issueId: issue.id });
+    onStep('pnpm test');
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
     if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
     if (number === 1) {
+      firstWorkProgress = { onProgress, onStep };
       await new Promise((_, reject) => {
         if (signal.aborted) return reject(Error('Stopped by the user.'));
         signal.addEventListener('abort', () => reject(Error('Stopped by the user.')), { once: true });
@@ -905,6 +908,28 @@ try {
     );
     await page.reload();
     await page.locator('[data-block="' + workId + '"][aria-pressed="true"]').waitFor();
+    const card = page.locator('[data-block="' + workId + '"]');
+    const totalTimer = card.locator('[data-timer-start]').first();
+    const stepTimer = card.locator('[data-timer-start]').last();
+    assert.equal(await card.locator('.block-description').innerText(), 'pnpm test');
+    const originalStart = await stepTimer.getAttribute('data-timer-start');
+    const originalTime = await stepTimer.innerText();
+    firstWorkProgress.onStep('pnpm test');
+    firstWorkProgress.onProgress('Test output arrived without a new command.\n');
+    await poll(
+      () => stepTimer.innerText(),
+      (time) => time !== originalTime,
+      'The command timer did not tick.'
+    );
+    assert.equal(await stepTimer.getAttribute('data-timer-start'), originalStart);
+    const totalStart = await totalTimer.getAttribute('data-timer-start');
+    firstWorkProgress.onStep('pnpm run build');
+    await card
+      .locator('.block-description')
+      .filter({ hasText: /^pnpm run build$/ })
+      .waitFor();
+    assert.notEqual(await stepTimer.getAttribute('data-timer-start'), originalStart);
+    assert.equal(await totalTimer.getAttribute('data-timer-start'), totalStart);
     await poll(
       selectedGeometry,
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
@@ -918,6 +943,11 @@ try {
       'Stop was not retained.'
     );
     const attempt = stopped.flow.blocks.find((item) => item.id === workId).attempts[0];
+    await card
+      .locator('.block-status')
+      .filter({ hasText: /^Stopped after \d+:\d+$/ })
+      .waitFor();
+    assert.equal(await card.locator('[data-timer-start]').count(), 0);
     assert.match(attempt.output, /explicit attempt 1/);
     assert.ok(stopped.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
   });
@@ -938,6 +968,14 @@ try {
     assert.match(attempts[1].output, /explicit attempt 2/);
     assert.ok(completed.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
     assert.equal(logs.execution.length, 2);
+    const seconds = Math.floor(
+      attempts.reduce((total, attempt) => total + Date.parse(attempt.endedAt) - Date.parse(attempt.startedAt), 0) / 1000
+    );
+    const expected = [Math.floor(seconds / 60), seconds % 60].map((part) => String(part).padStart(2, '0')).join(':');
+    await page
+      .locator('[data-block="' + workId + '"] .block-status')
+      .filter({ hasText: 'Finished in ' + expected })
+      .waitFor();
     await page.locator('.detail-copy').filter({ hasText: 'Explicit browser retry completed.' }).waitFor();
     await screenshot('work-completed-desktop');
   });
@@ -1117,15 +1155,6 @@ try {
     assert.ok(blocks[workIndex].after.includes(added.id));
     const draft = join(checkout, 'branch-draft.txt');
     writeFileSync(draft, 'Preserve this local change.\n');
-    await targetMenu.selectOption('update');
-    const commitDialog = page.getByRole('dialog', { name: 'Commit changes and update branch?' });
-    await commitDialog
-      .getByText(/branch-draft.txt/)
-      .first()
-      .waitFor();
-    await commitDialog.getByRole('button', { name: 'Cancel' }).click();
-    assert.equal(git(checkout, 'rev-parse', 'HEAD'), base);
-    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
     const release = Promise.withResolvers();
     await page.route('**/api/flow-action', async (route) => {
       if (route.request().postDataJSON().action === 'update-worktree') await release.promise;
@@ -1134,8 +1163,6 @@ try {
     await targetMenu.selectOption('update');
     await page.locator('#target-update-progress').waitFor();
     release.resolve();
-    await commitDialog.locator('#update-commit-patch').filter({ hasText: 'Preserve this local change.' }).waitFor();
-    await commitDialog.getByRole('button', { name: 'Commit and update branch' }).click();
     await page.getByText('Branch updated.', { exact: true }).waitFor();
     await page.unroute('**/api/flow-action');
     await targetMenu.waitFor({ state: 'hidden' });
@@ -1187,7 +1214,7 @@ try {
     saved = service.flows.read(service.flows.selected(issueId));
     assert.equal(saved.blocks.find((block) => block.id === publish.id).attempts.length, publish.attempts.length);
   });
-  await check('Issue Play respects No new actions and waits for confirmation', async () => {
+  await check('Issue Play respects No new actions and runs Update branch without confirmation', async () => {
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
@@ -1254,14 +1281,10 @@ try {
     await noNewActions.uncheck();
     await block('request');
     await page.getByRole('button', { name: 'Play issue' }).click();
-    await page.locator('#waiting-block').filter({ hasText: 'needs confirmation' }).waitFor();
-    assert.equal(await page.locator('[data-block="request"][aria-pressed="true"]').count(), 1);
-    await page.reload();
-    await page.locator('#waiting-block').click();
-    assert.equal(await page.locator('#inspector-block-name').innerText(), sync.label);
-    page.once('dialog', (dialog) => void dialog.accept());
-    await page.locator('#run-block').click();
     await page.locator('#playback-status').filter({ hasText: 'Flow complete' }).waitFor();
+    assert.equal(await page.locator('[data-block="request"][aria-pressed="true"]').count(), 1);
+    assert.equal(await page.locator('#waiting-block').isVisible(), false);
+    await page.reload();
     assert.equal((await view()).flow.blocks.find(({ id }) => id === sync.id).attempts.at(-1).status, 'completed');
     assert.deepEqual(logs.pageErrors, []);
   });
@@ -1424,6 +1447,101 @@ try {
     await page.locator(`[data-block="${added.id}"]`).waitFor({ state: 'detached' });
     assert.ok(!(await view()).flow.blocks.some((item) => item.id === added.id));
   });
+  await check('Card totals exclude input waits and stop at the last saved time after disconnect', async () => {
+    const issue = service.flows.selected(issueId);
+    let flow = service.flows.read(issue);
+    const request = flow.blocks.find((item) => item.kind === 'request');
+    const badge = page.locator('[data-block="' + request.id + '"] .block-status');
+    request.attempts = [
+      {
+        id: 'waiting-attempt',
+        status: 'uncertain',
+        startedAt: '2026-11-16T12:00:00Z',
+        inputRequestedAt: '2026-11-16T12:00:05Z',
+        endedAt: '2026-11-16T12:08:00Z',
+      },
+    ];
+    flow = service.flows.store.save(flow, flow.revision);
+    await badge.filter({ hasText: /^Needs input$/ }).waitFor();
+    request.attempts.push({
+      id: 'failed-attempt',
+      status: 'blocked',
+      startedAt: '2026-11-16T12:10:00Z',
+      endedAt: '2026-11-16T12:10:07Z',
+    });
+    flow = service.flows.store.save(flow, flow.revision);
+    await badge.filter({ hasText: /^Failed after 00:12$/ }).waitFor();
+    request.attempts.push({
+      id: 'disconnected-attempt',
+      status: 'running',
+      startedAt: '2026-11-16T12:20:00Z',
+      lastActiveAt: '2026-11-16T12:20:09Z',
+    });
+    service.flows.store.save(flow, flow.revision);
+    await badge.filter({ hasText: /^Disconnected after 00:21$/ }).waitFor();
+    await page.reload();
+    await badge.filter({ hasText: /^Disconnected after 00:21$/ }).waitFor();
+  });
+  await check(
+    'Flow and Classic reload the selected issue after a lost connection without replaying the click',
+    async () => {
+      const helperDir = '.agents/skills/issues/scripts';
+      mkdirSync(join(project, helperDir), { recursive: true });
+      for (const file of ['human-input.mjs', 'human-input-version.json']) {
+        copyFileSync(join(root, helperDir, file), join(project, helperDir, file));
+      }
+      writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
+      const screens = [
+        { path: '/?issue=' + issueId, error: '#error-message', toggle: '#flow-actions-switch input' },
+        { path: '/classic#/issue/' + issueId, error: '#error', toggle: '#server-controls [data-server-toggle]' },
+      ];
+      for (const screen of screens) {
+        await page.goto(screen.path);
+        const toggle = page.locator(screen.toggle);
+        const waiting = page.getByText('Waiting for server…', { exact: true });
+        await toggle.waitFor();
+        const url = page.url();
+
+        await context.clearCookies();
+        const expired = page.locator(screen.error).filter({ hasText: /session expired.*Reload this page/ });
+        await expired.waitFor();
+        await page.waitForResponse((response) => response.url().endsWith('/api/health') && response.status() === 204);
+        assert.equal(await expired.isVisible(), true);
+        assert.equal(await waiting.isVisible(), false);
+        assert.equal(page.url(), url);
+        await page.reload();
+
+        const release = Promise.withResolvers();
+        await page.route('**/api/health', async (route) => {
+          if (screen.path.startsWith('/classic')) await release.promise;
+          await route.abort().catch(() => {});
+        });
+        let clicks = 0;
+        await page.route('**/api/server-pause', async (route) => {
+          clicks++;
+          const response = await route.fetch();
+          assert.equal(response.status(), 200);
+          await route.abort();
+        });
+        await toggle.click();
+        await waiting.waitFor();
+        assert.equal(page.url(), url);
+        assert.equal(clicks, 1);
+
+        const reloaded = page.waitForEvent('load');
+        await page.unroute('**/api/health');
+        release.resolve();
+        await reloaded;
+        assert.equal(page.url(), url);
+        await page.locator(screen.toggle + ':checked').waitFor();
+        assert.equal(await waiting.isVisible(), false);
+        assert.equal(clicks, 1);
+        await page.unroute('**/api/server-pause');
+        await toggle.click();
+        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
+      }
+    }
+  );
   passed = true;
 } catch (error) {
   failure = error.stack;

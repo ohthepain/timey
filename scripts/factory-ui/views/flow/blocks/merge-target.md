@@ -1,6 +1,6 @@
 # Update branch block
 
-Merge the current target into the issue branch when you choose.
+Bring the destination up to date in the issue branch. Save local changes in a commit first when there are incoming changes.
 
 # User extensions
 

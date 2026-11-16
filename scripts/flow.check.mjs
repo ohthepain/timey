@@ -164,7 +164,7 @@ function executor(run) {
   return { run, close() {} };
 }
 
-test('issue Play continues after confirmation and Pause lets the active block finish', async (t) => {
+test('issue Play runs Update branch without confirmation and Pause lets the active block finish', async (t) => {
   const { id, service } = fixture(t);
   const started = [];
   const work = Promise.withResolvers();
@@ -195,14 +195,7 @@ test('issue Play continues after confirmation and Pause lets the active block fi
   await running;
   assert.deepEqual(started, ['work']);
   await action('play');
-  const sync = pending('merge-target');
-  assert.deepEqual((await view()).autoplay, { mode: 'waiting', blockId: sync.id });
-  assert.deepEqual(started, ['work', 'verify']);
-  await action('cancel-confirmation', { blockId: sync.id });
-  assert.equal((await view()).autoplay.mode, 'paused');
-  await action('play');
-  await action('start', { blockId: sync.id, confirmed: true });
-  await flows.active.get(id)?.task;
+  while (flows.active.get(id)?.task) await flows.active.get(id).task;
   assert.deepEqual(started, ['work', 'verify', 'merge-target']);
   assert.deepEqual((await view()).autoplay, { mode: 'waiting', blockId: pending('publish').id });
   for (const kind of ['publish', 'merge', 'close']) await action('remove', { blockId: pending(kind).id });
