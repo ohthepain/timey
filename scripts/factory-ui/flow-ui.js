@@ -1462,13 +1462,22 @@
     const name = button.dataset.action;
     $('issue-flow-picker').open = false;
     if (name === 'open-export-flow') {
-      $('export-flow-form').reset();
+      const { current, exportSuggestion } = state.view.flowDefinitions;
+      $('export-flow-form').elements.namedItem('name').value = current;
+      $('export-flow-id').value = exportSuggestion.flowId;
+      $('export-flow-path').dataset.directory = exportSuggestion.directory;
+      renderExportFlowPath();
       $('export-flow-error').hidden = true;
       $('export-flow-dialog').showModal();
       return;
     }
     const result = await action(name, name === 'select-flow' ? { flowId: button.dataset.flowId } : {});
     if (result && name === 'rebuild-flow') toast('Flow rebuilt.');
+  }
+
+  function renderExportFlowPath() {
+    const path = $('export-flow-path');
+    path.textContent = path.dataset.directory + '/' + ($('export-flow-id').value || 'flow-name') + '.md';
   }
 
   function openCapture() {
@@ -2368,6 +2377,7 @@
     else await load(true);
   });
 
+  $('export-flow-id').addEventListener('input', renderExportFlowPath);
   $('export-flow-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const fields = Object.fromEntries(new FormData(event.target));

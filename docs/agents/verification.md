@@ -70,9 +70,12 @@ Merge requires full Verify on the committed candidate against the fetched
 destination and reuses passing evidence when its inputs and evidence still match.
 
 Work runs `verify -- --work-checks --write-format --base REF` to format
-issue files and check Fallow before running selected test suites. It picks
-tests from the changed behavior and Requested Proof and adds a focused test
-when needed. Factory rechecks formatting and Fallow after Work's response.
+issue files and check Fallow before running focused tests for the changed
+behavior and Requested Proof. Run individual test files or scenarios directly
+when an aggregate command would include unrelated tests. Work leaves aggregate
+suites such as `pnpm run test:factory` to full candidate verification, which
+Merge requires. Add a focused test when needed. Factory rechecks formatting and
+Fallow after Work's response.
 
 Install the checked-in staged Fallow hook with `pnpm run hooks:install`. It refuses
 to replace another hooks directory. It runs the audit on the index snapshot before

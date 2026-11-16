@@ -744,6 +744,7 @@ test('extension frontmatter replaces the block list before the builder reads bot
     `---
 name: Team review
 issueTypes: [bug]
+skill: Team_Review
 extension: team/review.md
 blocks:
   - { id: request, block: request }
@@ -779,6 +780,7 @@ Team instructions.
     },
   });
   const updated = await flows.action({ action: 'select-flow', issueId: id, revision: 0, flowId: 'review' });
+  assert.deepEqual(updated.flowDefinitions.exportSuggestion, { flowId: 'team-review', directory: 'factory/ui/flows' });
   assert.deepEqual(
     updated.flow.blocks.map(({ kind }) => kind),
     ['request', 'design']
@@ -846,6 +848,7 @@ test('export links the exact current structure without rebuilding or changing pr
   assert.equal(before.flow.definition.checksum, initial.flow.definition.checksum);
   const exported = await act(before, 'export-flow', { flowId: 'with-advice', name: 'With advice' });
   assert.equal(exported.flow.definition.id, 'with-advice');
+  assert.equal(exported.flowDefinitions.exportSuggestion.flowId, 'with-advice-2');
   assert.equal(exported.flowDefinitions.updated, false);
   const body = readFileSync(join(root, 'factory/ui/flows/with-advice.md'), 'utf8');
   assert.match(body, /block: advice/);

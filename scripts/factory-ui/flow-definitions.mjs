@@ -198,7 +198,7 @@ export function readFlowDefinitions(root, catalog) {
   } catch (error) {
     errors.push(`defaults.md: ${firstIssue(error)}`);
   }
-  return { entries, defaults, errors, sources };
+  return { entries, defaults, errors, sources, occupiedIds: seen };
 }
 
 function definitionFiles(folder) {
@@ -223,6 +223,17 @@ export function selectFlowDefinition(catalog, type, id = catalog.defaults[type])
       : `Set a default flow for ${type} in defaults.md.`
   );
   return entry;
+}
+
+export function suggestFlowExport(linked, current, occupiedIds) {
+  const skillId = current?.skill?.toLowerCase().replaceAll('_', '-');
+  const base = skillId && /^[a-z]/.test(skillId) ? skillId : linked.id;
+  let flowId = base.slice(0, 80);
+  for (let copy = 2; occupiedIds.has(flowId); copy++) {
+    const suffix = '-' + copy;
+    flowId = base.slice(0, 80 - suffix.length).replace(/-+$/, '') + suffix;
+  }
+  return { flowId, directory: customDirectory };
 }
 
 export function exportFlowDefinition(root, input, flow, catalog) {

@@ -664,8 +664,11 @@ try {
     if (process.platform === 'darwin')
       assert.ok(await page.getByRole('button', { name: 'Reveal in Finder' }).isVisible());
     await page.getByRole('button', { name: 'Save as user flow', exact: true }).click();
+    assert.equal(await page.getByLabel('File name').inputValue(), 'delivery-2');
+    assert.equal(await page.locator('#export-flow-path').textContent(), 'factory/ui/flows/delivery-2.md');
     await page.getByLabel('Flow name').fill('Team delivery');
     await page.getByLabel('File name').fill('team-delivery');
+    assert.equal(await page.locator('#export-flow-path').textContent(), 'factory/ui/flows/team-delivery.md');
     const result = await clickAction(page.getByRole('button', { name: 'Save and link' }));
     assert.equal(result.flow.definition.id, 'team-delivery');
     assert.equal(result.flow.blocks.find((item) => item.kind === 'work').id, workId);

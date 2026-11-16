@@ -399,8 +399,17 @@
         </div>
         <label class="field">Flow name<input name="name" maxlength="100" required autofocus /></label>
         <label class="field">
-          File name <input name="flowId" pattern="[a-z][a-z0-9\-]{0,79}" maxlength="80" required />
+          File name
+          <input
+            id="export-flow-id"
+            name="flowId"
+            pattern="[a-z][a-z0-9\-]{0,79}"
+            maxlength="80"
+            aria-describedby="export-flow-path"
+            required
+          />
         </label>
+        <small id="export-flow-path"></small>
         <p id="export-flow-error" class="inline-error" role="alert" hidden></p>
         <div class="modal-footer">
           <button class="small-button" type="button" data-close-dialog="export-flow-dialog">Cancel</button>

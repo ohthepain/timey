@@ -64,6 +64,7 @@ import {
   issueTypes,
   readFlowDefinitions,
   selectFlowDefinition,
+  suggestFlowExport,
   validateFlowNodes,
 } from './flow-definitions.mjs';
 import { buildFlowStructure } from './flow-builder.mjs';
@@ -950,11 +951,12 @@ class IssueFlows {
     return this.view(issue.id);
   }
   flowDefinitionOptions(flow, catalog) {
-    const { entries, errors, sources } = readFlowDefinitions(this.service.root, catalog);
+    const { entries, errors, sources, occupiedIds } = readFlowDefinitions(this.service.root, catalog);
     const current = entries.find((entry) => entry.id === flow.definition.id);
     const type = requestData(flow).fields?.type ?? flow.routeType;
     return {
       current: flow.definition.name ?? current?.name ?? flow.definition.id,
+      exportSuggestion: suggestFlowExport(flow.definition, current, occupiedIds),
       available: entries.filter((entry) => entry.issueTypes.includes(type)).map(({ id, name }) => ({ id, name })),
       updated: Boolean(current && current.checksum !== flow.definition.checksum),
       reveal: process.platform === 'darwin' && sources.has(flow.definition.id),

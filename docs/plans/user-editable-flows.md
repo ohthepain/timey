@@ -66,7 +66,10 @@ only that issue. Rebuilding uses the selected flow definition and discards
 issue-specific changes to the block list.
 
 Choose **Save as user flow** to save the current block list as a new Markdown
-definition in the project's custom flows folder. The export includes
+definition under `factory/ui/flows/`. The dialog suggests a Markdown filename
+from the source skill, or from the linked flow if there is no usable skill name.
+It adds a numbered suffix when that filename is taken. You can edit the
+filename and see the resulting path before saving. The export includes
 references to block definitions, stable block keys, their order, and branch
 dependencies. Attempts, artifacts, and issue-specific inputs stay with the issue.
 An exported definition consists of the saved block structure and catalog fields

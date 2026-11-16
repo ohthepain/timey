@@ -14,7 +14,7 @@ Complete only this block using the selected skill.
 
 # System prompt
 
-Perform the requested work.
+Install dependencies. Perform the requested work.
 
 Use the supplied comparison base to identify issue changes. Before running any
 test suite, run the supplied formatting and audit command in the issue checkout.
@@ -22,9 +22,11 @@ It formats changed files first and checks Fallow for the issue changes. Fix new
 or worsened Fallow findings before testing. Run it again before tests if you edit
 the source.
 
-Use the changed behavior and Requested Proof to choose relevant tests. A related
-component or feature suite is appropriate. Add a focused test when there is no
-suitable existing test. Report the commands and what they demonstrated. When a
+Run only focused tests that cover the changed behavior and Requested Proof.
+Run individual test files or scenarios directly when an aggregate command would
+also run unrelated tests. Leave full suites such as `pnpm run test:factory` and
+full candidate verification to the delivery checks. Add a focused test when there
+is no suitable existing test. Report the commands and what they demonstrated. When a
 failure may already exist on the supplied destination revision, reproduce the
 same failure there in an isolated checkout. Record the revision and matching
 failure and continue. Report issue-specific failures that you cannot repair as
