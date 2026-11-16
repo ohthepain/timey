@@ -25,6 +25,8 @@ import { assessAudit } from './audit-result.mjs';
 const args = process.argv.slice(2);
 const staged = args.includes('--staged');
 const auditOnly = args.includes('--audit-only');
+const workChecks = args.includes('--work-checks');
+const writeFormat = workChecks && args.includes('--write-format');
 const step = args.includes('--step');
 const baseIndex = args.indexOf('--base');
 // Preserve the source index (including an alternate hook index), but never leak
@@ -49,7 +51,7 @@ mkdirSync(reportDir, { recursive: true });
 const stamp = new Date().toISOString().replaceAll(':', '-') + '-' + randomUUID();
 const report = {
   revision: head,
-  checkpoint: staged ? 'commit' : step ? 'step' : 'verification',
+  checkpoint: workChecks ? 'work' : staged ? 'commit' : step ? 'step' : 'verification',
   snapshot: staged ? 'index' : 'working-tree',
   startedAt: new Date().toISOString(),
   phases: [],
@@ -73,12 +75,12 @@ function browserArtifacts(directory) {
 }
 function fallowEnforced(env = isolatedEnv) {
   const value = env.TIMEY_FALLOW_ENFORCE;
-  return value === '1' || value === 'true';
+  return workChecks || value === '1' || value === 'true';
 }
 function checkAssessment(name, result) {
   if (name === 'fallow')
     return assessAudit(result, report.changed_files, {
-      warningsAsErrors: isolatedEnv.TIMEY_FALLOW_WARNINGS === 'error',
+      warningsAsErrors: workChecks || isolatedEnv.TIMEY_FALLOW_WARNINGS === 'error',
     });
   return { passed: result.status === 0 && !result.error };
 }
@@ -173,10 +175,34 @@ function copySourceFile(name) {
   else cpSync(source, destination, { recursive: true, dereference: false });
 }
 
+const bin = (name) => join(root, 'node_modules', '.bin', name);
+const formattingFiles = (cwd, names) =>
+  [...new Set(names)].filter((name) => lstatSync(join(cwd, name), { throwIfNoEntry: false })?.isFile());
+const formatArgs = (names) => ['--no-error-on-unmatched-pattern', ...names.map((name) => './' + name)];
+
+async function checkFormatting(base) {
+  const names = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
+    .split('\0')
+    .filter(Boolean);
+  const files = formattingFiles(snapshot, names);
+  if (files.length) await run('format-changed', bin('vp'), ['fmt', '--check', ...formatArgs(files)]);
+  else if (report.changed_files.length)
+    await run('format-changed', process.execPath, [
+      '-e',
+      'console.log("No changed regular files require formatting.")',
+    ]);
+}
+
 try {
   if (step && baseIndex < 0) throw Error('Step completion requires --base REF naming the start of the step.');
   const base = git(root, 'rev-parse', '--verify', `${baseIndex >= 0 ? args[baseIndex + 1] : 'HEAD'}^{commit}`).trim();
   report.base = base;
+  if (writeFormat) {
+    const changed = git(root, 'diff', '--name-only', '--diff-filter=ACMR', '-z', base);
+    const untracked = git(root, 'ls-files', '--others', '--exclude-standard', '-z');
+    const files = formattingFiles(root, (changed + untracked).split('\0').filter(Boolean));
+    if (files.length) execFileSync(bin('vp'), ['fmt', ...formatArgs(files)], { cwd: root, stdio: 'inherit' });
+  }
   report.phases.push({ name: 'snapshot', startedAt: new Date().toISOString() });
   execFileSync('git', ['clone', '--shared', '--no-checkout', '--quiet', root, snapshot], { env: isolatedEnv });
   git(snapshot, 'reset', '--mixed', head);
@@ -217,13 +243,8 @@ try {
   git(snapshot, 'cat-file', '-e', base + '^{commit}');
   git(snapshot, 'cat-file', '-e', report.snapshot_tree + '^{tree}');
   Object.assign(report.phases.at(-1), { finishedAt: new Date().toISOString(), passed: true });
-  if (!auditOnly) {
-    const preflight = { name: 'execution-preflight', startedAt: new Date().toISOString(), passed: false };
-    report.phases.push(preflight);
-    await listenerPreflight();
-    Object.assign(preflight, { passed: true, finishedAt: new Date().toISOString() });
-  }
-  const bin = (name) => join(root, 'node_modules', '.bin', name);
+  if (!auditOnly) await checkFormatting(base);
+  if (failure) throw Error('Fix changed-file formatting before continuing verification.');
   // Tests may substitute the pinned binary without changing node_modules.
   const fallowCommand = isolatedEnv.TIMEY_FALLOW_COMMAND || bin('fallow');
   const fallowArgs = ['audit', '--base', base, '--format', 'json'];
@@ -234,20 +255,11 @@ try {
   else fallowArgs.push(fallowAuditScope(report.changed_files));
   if (fallowEnforced()) await run('fallow', fallowCommand, fallowArgs);
   else recordSkippedFallow();
-  if (!auditOnly) {
-    const changed = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
-      .split('\0')
-      .filter(Boolean);
-    // A link is Git metadata, not a formatter input. Changed tracked targets
-    // remain independent entries; all links stay in snapshot and audit scope.
-    const regular = changed.filter((name) => !lstatSync(join(snapshot, name)).isSymbolicLink());
-    if (regular.length)
-      await run('format-changed', bin('vp'), ['fmt', '--check', '--no-error-on-unmatched-pattern', ...regular]);
-    else if (changed.length)
-      await run('format-changed', process.execPath, [
-        '-e',
-        'console.log("No changed regular files require formatting; symbolic-link metadata remains in audit scope.")',
-      ]);
+  if (!auditOnly && !workChecks && !failure) {
+    const preflight = { name: 'execution-preflight', startedAt: new Date().toISOString(), passed: false };
+    report.phases.push(preflight);
+    await listenerPreflight();
+    Object.assign(preflight, { passed: true, finishedAt: new Date().toISOString() });
     await run('browser', 'pnpm', ['run', 'test:browser']);
     await run('factory', 'pnpm', ['run', 'test:factory']);
     await run('typecheck', bin('tsc'), ['--noEmit']);

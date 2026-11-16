@@ -2,16 +2,17 @@ import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { digest, readJson, writeJson, git } from './common.mjs';
 
-export function candidateInput(root, base, runner) {
+export function candidateInput(root, base, runner, environment = process.env) {
   const modules = join(root, 'node_modules/.modules.yaml');
   if (!existsSync(modules) || git(root, 'status', '--porcelain', '--untracked-files=all')) return null;
   return digest(
     JSON.stringify({
       base: git(root, 'rev-parse', base),
+      head: git(root, 'rev-parse', 'HEAD'),
       tree: git(root, 'rev-parse', 'HEAD^{tree}'),
       runtime: process.version,
       executable: process.execPath,
-      environment: digest(JSON.stringify(Object.entries(process.env).sort())),
+      environment: digest(JSON.stringify(Object.entries(environment).sort())),
       modules: digest(readFileSync(modules)),
       locks: ['pnpm-lock.yaml', 'node_modules/.pnpm/lock.yaml'].map((path) =>
         existsSync(join(root, path)) ? digest(readFileSync(join(root, path))) : null

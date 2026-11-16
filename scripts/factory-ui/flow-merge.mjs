@@ -145,20 +145,26 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
   };
 }
 
-async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
-  const target = await fetchTarget(ctx, workspace, invoke);
-  await synchronize(workspace, target, invoke);
-  const head = headOf(workspace);
-  if (state.checked?.head !== head) {
+async function verifyMergeCandidate(service, ctx, workspace, head, options, state) {
+  const input = options.verificationInput(ctx, workspace.checkout, options.verificationBase);
+  if (state.checked?.head !== head || state.checked.verification.input !== input) {
     state.checked = await ensureFlowVerification(
       service,
       ctx,
       workspace,
-      join(state.folder, 'verify-' + head),
+      join(state.folder, 'verify-' + head + '-' + input),
       options
     );
     state.evidence.push(...state.checked.evidence);
   }
+}
+
+async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
+  const target = await fetchTarget(ctx, workspace, invoke);
+  await synchronize(workspace, target, invoke);
+  const head = headOf(workspace);
+  const verificationOptions = { ...options, verificationBase: target };
+  await verifyMergeCandidate(service, ctx, workspace, head, verificationOptions, state);
   if (pr.head.sha !== head) {
     if (state.pushed === head && state.previousHead === pr.head.sha)
       throw pending('Waiting for GitHub to observe the updated PR commit.');
@@ -166,7 +172,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
       includesCommit(workspace, head, pr.head.sha),
       'The PR branch changed independently. Reconcile it before merging.'
     );
-    verifiedFlowCandidate(ctx, workspace, { ...options, verification: state.checked.verification });
+    verifiedFlowCandidate(ctx, workspace, { ...verificationOptions, verification: state.checked.verification });
     const { remote } = deliveryTarget(ctx.flow);
     assertFlowRemote(workspace, remote, provider.config.repository);
     await invoke('git', ['push', remote, head + ':refs/heads/' + workspace.branch]);
@@ -186,7 +192,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   }
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
   if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
-  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state);
+  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, verificationOptions, state);
 }
 
 export async function mergeFlowPR(service, ctx, workspace, folder, options) {

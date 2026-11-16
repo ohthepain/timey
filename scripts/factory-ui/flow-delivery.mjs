@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { digest, git, requireThat, writeJson } from './common.mjs';
 import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
+import { flowVerificationInput } from './flow-verification.mjs';
 
 export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
   const path = join(service.root, '.issues/issue-delivery-config.json');
@@ -91,7 +92,7 @@ function committedCandidate(workspace) {
 function blockVerification(block, attempt = latestCurrentAttempt(block)) {
   if (attempt?.status !== 'completed' && !['publish', 'merge'].includes(block.kind)) return undefined;
   if (block.kind === 'verify') return attempt?.result;
-  if (['publish', 'merge'].includes(block.kind)) return attempt?.result?.verification;
+  if (['publish', 'merge', 'merge-target'].includes(block.kind)) return attempt?.result?.verification;
 }
 
 export function flowVerificationHead(block) {
@@ -101,6 +102,8 @@ export function flowVerificationHead(block) {
 
 export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const candidate = committedCandidate(workspace);
+  const base = options.verificationBase;
+  const input = base && (options.verificationInput || flowVerificationInput)(ctx, workspace.checkout, base);
   const previous = ctx.block.attempts?.filter((attempt) => attempt.id !== ctx.attempt?.id).at(-1);
   const checks = [
     options.verification,
@@ -109,7 +112,12 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
       .toReversed()
       .map((block) => blockVerification(block)),
   ];
-  const current = checks.filter((checked) => !checked?.uncommitted && checked?.head === candidate.head);
+  const current = checks.filter(
+    (checked) =>
+      !checked?.uncommitted &&
+      checked?.head === candidate.head &&
+      (!base || (input && checked.base === base && checked.input === input))
+  );
   requireThat(
     current.some((checked) => checked.proof?.length >= 2),
     'Run an explicit Verify block for this exact issue candidate. Required independent verification and step evidence are missing.'
@@ -117,7 +125,13 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   let failure;
   for (const checked of current) {
     try {
-      return { ...candidate, verification: checked, evidence: verifyEvidence(candidate, checked, options) };
+      const verificationBase = checked.destinationBase || candidate.base;
+      git(workspace.checkout, 'merge-base', '--is-ancestor', verificationBase, candidate.head);
+      return {
+        ...candidate,
+        verification: checked,
+        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, options),
+      };
     } catch (error) {
       failure ??= error;
     }
@@ -177,9 +191,11 @@ export async function ensureFlowVerification(service, ctx, workspace, folder, op
   }
   service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'verify', workspace.base);
   ctx.onProgress('Running independent Verify checks on the issue commit.\n', true);
-  const { result, evidence } = await options.verifyCandidate(ctx, workspace, folder);
+  const base = options.verificationBase;
+  const { result, evidence } = await options.verifyCandidate(ctx, base ? { ...workspace, base } : workspace, folder);
   ctx.signal.throwIfAborted();
-  const checked = verifiedFlowCandidate(ctx, workspace, { ...options, verification: result });
+  const verification = base ? { ...result, destinationBase: base } : result;
+  const checked = verifiedFlowCandidate(ctx, workspace, { ...options, verification });
   requireThat(
     checked.head === before.head,
     'The issue commit changed during verification. Review the candidate again.'
@@ -264,20 +280,21 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
   );
   if (pr && preview.status === 'confirm') await assertPublicationIdle(provider, pr, workspace.branch);
   const log = join(folder, 'publish.log');
-  const checked = await ensureFlowVerification(service, ctx, workspace, join(folder, 'verification'), options);
-  requireThat(checked.head === candidate.head, 'Publish changed. Review the updated preview before publishing.');
-  const verification = { ...options, verification: checked.verification };
-  const evidence = [...checked.evidence];
+  const requirePreviewHead = () =>
+    requireThat(
+      committedCandidate(workspace).head === candidate.head,
+      'Publish changed. Review the updated preview before publishing.'
+    );
+  const evidence = [];
   const completed = [];
   const result = (published) => ({
     pr: published.number,
     url: published.html_url,
     head: candidate.head,
     target: published.base?.ref ?? preview.target,
-    verification: checked.verification,
   });
   try {
-    verifiedFlowCandidate(ctx, workspace, verification);
+    requirePreviewHead();
     if (preview.status === 'confirm')
       service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'implement', workspace.base);
     if (preview.push) {
@@ -291,21 +308,20 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
         onProgress: ctx.onProgress,
       });
       evidence.push({ key: 'log', path: log, label: 'Issue branch publication output' });
-      completed.push('Pushed the verified commit.');
+      completed.push('Pushed the issue commit.');
     }
     ctx.signal.throwIfAborted();
-    verifiedFlowCandidate(ctx, workspace, verification);
+    requirePreviewHead();
     ctx.onProgress('Writing the GitHub PR.\n', true);
     const published = await updateFlowPR(ctx, workspace, provider, pr, preview);
     return {
       result: result(published),
       evidence,
       workspace: { ...workspace, pr: published.number },
-      summary: preview.status === 'current' ? 'PR is up to date.' : 'Published the verified issue PR.',
+      summary: preview.status === 'current' ? 'PR is up to date.' : 'Published the issue PR.',
     };
   } catch (error) {
     if (!completed.length) {
-      error.deliveryVerification = checked.verification;
       error.evidence = [...evidence, ...(error.evidence ?? [])];
       throw error;
     }
@@ -315,7 +331,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
       summary: `Needs retry. ${completed.join(' ')} ${error.message}`,
       result: current
         ? { ...result(current), head: current.head?.sha, completed }
-        : { head: candidate.head, completed, verification: checked.verification },
+        : { head: candidate.head, completed },
       evidence,
       workspace: current ? { ...workspace, pr: current.number } : workspace,
     };

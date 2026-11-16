@@ -91,6 +91,7 @@ function fixture(t, options = {}) {
     },
   };
   const executor = createFlowExecutor(service, {
+    verifyWork: async () => ({ evidence: [] }),
     ...(!options.execute && {
       verifyCandidate: async () => ({ result: { summaries: [] }, evidence: [] }),
     }),
@@ -242,56 +243,41 @@ test('a new checkout uses the selected starting commit and retains it when the s
   assert.equal(retry.workspace.base, selected, 'A retained checkout must keep its original base.');
 });
 
-test('Work repairs failed Verify checks before completing, and Verify runs the same check again', async (t) => {
+test('Work repairs formatting and Fallow in its own chat and leaves full checks to Verify', async (t) => {
   const checks = [];
   const f = fixture(t, {
-    async execute({ command, args, cwd, log }) {
-      writeFileSync(log, 'Fixture check output.');
-      if (command === 'pnpm') {
-        const installed = join(cwd, 'node_modules/.pnpm');
-        mkdirSync(installed, { recursive: true });
-        writeFileSync(join(installed, 'lock.yaml'), readFileSync(join(cwd, 'pnpm-lock.yaml')));
-        return '';
-      }
-      assert.equal(command, process.execPath);
-      assert.match(args.at(-1), /checkCandidate/);
-      assert.match(args.at(-1), /auditPolicy: 'required'/);
-      checks.push({ cwd, log });
-      if (checks.length === 1) {
-        const failedLog = join(cwd, '.issues/failed-check.log');
-        mkdirSync(join(cwd, '.issues'), { recursive: true });
-        writeFileSync(failedLog, 'A fixture check failed.');
-        return (
-          'FLOW_FAILURE ' +
-          JSON.stringify({
-            message: 'Required check failed',
-            verificationFailure: { logs: [failedLog] },
-          })
-        );
-      }
-      return 'FLOW_RESULT ' + JSON.stringify({ head: 'checked-head', summaries: [] });
+    async verifyWork(_ctx, workspace, folder) {
+      checks.push({ workspace, folder });
+      if (checks.length === 1)
+        throw Object.assign(Error('Fallow failed'), {
+          verificationFailure: true,
+          evidence: [{ label: 'Failure', path: 'fallow.log' }],
+        });
+      return { evidence: [] };
+    },
+    async verifyCandidate() {
+      checks.push('full Verify');
+      return { result: { head: 'checked-head' }, evidence: [] };
     },
   });
   const worked = await f.run('work');
-  assert.equal(worked.result.verification.head, 'checked-head');
-  assert.equal(worked.artifacts.values.candidate, 'checked-head');
-  assert.ok(worked.evidence.some(({ label }) => label === 'Failed verification checkpoint'));
+  assert.equal(worked.result.verification, undefined);
+  assert.equal(worked.artifacts.values.candidate, worked.result.head);
+  assert.ok(worked.evidence.some(({ path }) => path === 'fallow.log'));
   const turns = f.calls.filter(({ method }) => method === 'turn');
   assert.equal(turns.length, 2);
   assert.equal(turns[0].threadId, turns[1].threadId);
-  assert.match(turns[1].prompt, /failed-check\.log/);
+  assert.match(turns[0].prompt, /--work-checks[\s\S]*--write-format/);
+  assert.match(turns[1].prompt, /fallow\.log/);
+  assert.equal(checks.length, 2);
   assert.equal((await f.run('verify')).result.head, 'checked-head');
-  assert.equal(checks.length, 3);
-  assert.match(checks[0].log, /verification-1/);
-  assert.match(checks[1].log, /verification-2/);
-  assert.doesNotMatch(checks[2].log, /verification-\d/);
-  assert.equal(new Set(checks.map(({ cwd }) => cwd)).size, 1);
+  assert.equal(checks.at(-1), 'full Verify');
 });
 
-test('Work stays blocked when the full checks still fail after repairs', async (t) => {
+test('Work stays blocked when Fallow still fails after repairs', async (t) => {
   const f = fixture(t, {
-    async verifyCandidate() {
-      throw Object.assign(Error('Still failing the required check'), { verificationFailure: {} });
+    async verifyWork() {
+      throw Object.assign(Error('Still failing the required check'), { verificationFailure: true });
     },
   });
   await assert.rejects(f.run('work'), /Still failing/);
@@ -570,7 +556,7 @@ function verificationResult(workspace, folder) {
   return { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), base: workspace.base, proof };
 }
 
-function mergeFixture(t, { merged = false, onWait, repair } = {}) {
+function mergeFixture(t, { merged = false, onWait, repair, verificationInput = () => 'fixture-input' } = {}) {
   const observations = [];
   let publishedHead;
   let nextTarget = 0;
@@ -589,6 +575,7 @@ function mergeFixture(t, { merged = false, onWait, repair } = {}) {
   });
   const f = fixture(t, {
     repair,
+    verificationInput,
     async mergeDelay() {
       await onWait?.(advanceTarget);
     },
@@ -604,7 +591,7 @@ function mergeFixture(t, { merged = false, onWait, repair } = {}) {
       return git(...args);
     },
     async verifyCandidate(_ctx, workspace, folder) {
-      const result = verificationResult(workspace, folder);
+      const result = { ...verificationResult(workspace, folder), input: verificationInput() };
       observations.push({ operation: 'verify', head: result.head });
       return { result, evidence: [] };
     },
@@ -645,6 +632,26 @@ function mergeFixture(t, { merged = false, onWait, repair } = {}) {
     JSON.stringify({ provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' })
   );
   return { ...f, observations, advanceTarget };
+}
+
+for (const changed of [false, true]) {
+  test(`Merge ${changed ? 'reruns' : 'reuses'} full Verify after a branch update based on current inputs`, async (t) => {
+    let input = 'original';
+    const f = mergeFixture(t, { verificationInput: () => input });
+    await f.run('understand');
+    f.advanceTarget();
+    const update = await f.run('merge-target');
+    assert.equal(update.result.verification.input, 'original');
+    f.flow.blocks.push({
+      id: 'updated-branch',
+      kind: 'merge-target',
+      after: [],
+      attempts: [{ status: 'completed', result: update.result }],
+    });
+    if (changed) input = 'new';
+    await f.run('merge', { after: ['updated-branch'] });
+    assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, changed ? 2 : 1);
+  });
 }
 
 function approvalAttempt(result) {

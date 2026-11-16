@@ -1,6 +1,6 @@
 # Update branch block
 
-Bring the destination up to date in the issue branch. Save local changes in a commit first when there are incoming changes.
+Bring the destination up to date in the issue branch, then run full Verify. Save local changes in a commit first when there are incoming changes.
 
 # User extensions
 

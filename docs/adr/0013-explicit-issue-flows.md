@@ -80,10 +80,13 @@ for human input. If a runner disappears, its last saved activity marks the end o
 the attempt for timing.
 
 The controller owns flow writes. The executor owns one bounded block.
-Work collects requested proof and records any gaps in its response. It runs the
-same candidate checks as Verify before it can complete. When checks fail, Work sends the evidence to its existing conversation
-and reruns the checks after repair. Work stops after three unsuccessful repair
-turns and retains the failures. Verify independently checks the current candidate.
+Work formats issue changes and checks Fallow before running focused tests. It
+selects relevant tests from the changed behavior and Requested Proof, and adds a
+focused test when existing tests cannot demonstrate the behavior. A failure that
+also reproduces on the recorded destination revision is reported in the response
+and can leave Work complete. Factory rechecks formatting and Fallow after the
+response. It sends failures to the existing Work conversation and stops after
+three unsuccessful repair turns. Verify independently checks the full candidate.
 
 The executor returns
 results and evidence. The observer reads Git and PR facts independently of model
@@ -105,17 +108,19 @@ A continuation reuses a conversation only while its skill and inputs match. Miss
 block without substituting another method. Skill instructions do not authorize
 later verification, publication, merge, closure, or cleanup blocks.
 
-The standard delivery flow uses Publish PR and Merge to run independent
-verification when the exact issue commit lacks current evidence. Verify remains
-available as a standalone block. A change to Goal or Requested proof invalidates
-delivery verification. A new commit needs its own proof. Publish PR prepares and
+The standard delivery flow runs full Verify after Update branch and before Merge.
+Merge reuses passing evidence when the issue commit, destination revision,
+verification inputs and retained evidence match. Verify remains available as a
+standalone block. A change to Goal or Requested proof invalidates related flow
+results. Publish PR prepares and
 rechecks an exact preview before writing to GitHub. New PR descriptions include
 Requested proof when present. Repeat publication updates the title and commit as
 needed and preserves the original PR description.
 
 Merge fetches Destination and merges its current revision into the issue branch.
-For a changed issue commit, Merge runs independent verification, pushes the commit
-to the existing PR, and waits for required GitHub checks. It repeats if Destination
+It checks full verification for the issue commit against that destination revision,
+pushes any changed commit to the existing PR, and waits for required GitHub checks.
+It repeats if Destination
 advances. GitHub determines readiness, including repositories with zero required
 checks or unsuccessful optional checks. The Merge block Markdown sets the merge
 policy, polling interval, check timeout, and repair limit. Human-first policy
@@ -170,6 +175,12 @@ stay outside the commit.
 Automatic commits run the normal Git hooks. If a hook rejects the commit, the
 update stops before the merge and shows the error. A successful update has no
 separate notification for the local commit.
+
+Full Verify checks the updated commit against the fetched destination. If it
+fails, the Git update and its check evidence are preserved and Work can proceed.
+Merge requires a passing full Verify result. A branch already up to date can
+recheck its clean commit or reuse its passing result. A no-op update leaves
+uncommitted changes alone.
 
 If Git reports conflicts from this update, Factory gives Codex one attempt. Codex
 may edit and stage only the conflicted files. It must preserve both sides and stop

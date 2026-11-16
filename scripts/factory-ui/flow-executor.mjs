@@ -24,7 +24,13 @@ import { git, cleanEnvironment, requireThat, writeJson, digest } from './common.
 import { redactValue } from './activity.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
-import { runFlowVerification } from './flow-verification.mjs';
+import {
+  flowVerificationInput,
+  runFlowVerification,
+  runWorkVerification,
+  verifyBranchUpdate,
+  workVerificationScript,
+} from './flow-verification.mjs';
 import { updateIssueBranch } from './flow-update-branch.mjs';
 import { runRetro } from './flow-retro.mjs';
 
@@ -88,10 +94,20 @@ export function createFlowExecutor(service, options = {}) {
       };
       const verifyCandidate =
         options.verifyCandidate || ((ctx, workspace, folder) => runFlowVerification(ctx, workspace, folder, execute));
+      const verifyWork =
+        options.verifyWork || ((ctx, workspace, folder) => runWorkVerification(ctx, workspace, folder, execute));
       try {
         context.signal.throwIfAborted();
         service.ownServer();
-        const runtime = { create, attach, ...options, execute, verifyCandidate };
+        const runtime = {
+          create,
+          attach,
+          ...options,
+          execute,
+          verifyCandidate,
+          verifyWork,
+          verificationInput: options.verificationInput ?? flowVerificationInput,
+        };
         if (command) context.onStep('Running ' + (ctx.block.label || ctx.block.kind) + '.');
         const result = !command
           ? await runModel(service, context, owned, runtime)
@@ -271,12 +287,13 @@ function evidenceDirectory(service, ctx) {
   return folder;
 }
 
-function blockInput(ctx) {
+function blockInput(ctx, extra = {}) {
   return JSON.stringify(
     {
       block: ctx.block.label || ctx.block.kind,
       details: (ctx.attempt.details ?? []).map(({ key, value }) => ({ key, value: value ?? null })),
       notes: (ctx.block.comments || []).slice(-20).map((comment) => comment.text),
+      ...extra,
     },
     null,
     2
@@ -306,9 +323,13 @@ function retainModelFile(workspace, folder, { key, label }, file) {
   return { path, label, sha256: digest(bytes) };
 }
 
-function modelArtifacts(definition, output, workspace, response) {
+function modelManifest(output) {
   const manifest = output.match(/```flow-result\s*\n([\s\S]*?)\n```\s*$/i)?.[1];
-  const recorded = manifest ? JSON.parse(manifest) : {};
+  return manifest ? JSON.parse(manifest) : {};
+}
+
+function modelArtifacts(definition, output, workspace, response) {
+  const recorded = modelManifest(output);
   const files = {};
   const values = {};
   for (const artifact of definition.artifacts) {
@@ -422,6 +443,19 @@ function modelCommandProgress(ctx) {
 
 function modelPrompt(ctx, options) {
   if (options.branchConflictTask) return options.branchConflictTask;
+  if (options.workBase)
+    return blockInput(ctx, {
+      workComparisonBase: options.workBase,
+      destinationRevision: options.destinationRevision,
+      formatAndAuditCommand: [
+        'node',
+        workVerificationScript,
+        '--work-checks',
+        '--write-format',
+        '--base',
+        options.workBase,
+      ],
+    });
   if (!options.repair) return blockInput(ctx);
   return JSON.stringify({
     issue: blockInput(ctx),
@@ -429,6 +463,46 @@ function modelPrompt(ctx, options) {
     failure: options.repair.error.message,
     evidence: options.repair.error.evidence ?? [],
   });
+}
+
+function workScope(ctx, workspace) {
+  const { remote, branch } = deliveryTarget(ctx.flow);
+  if (!remote || !branch) return { workBase: workspace.base };
+  let destinationRevision;
+  try {
+    destinationRevision = git(workspace.checkout, 'rev-parse', '--verify', `refs/remotes/${remote}/${branch}^{commit}`);
+  } catch (error) {
+    if (error.status !== 128) throw error;
+    return { workBase: workspace.base };
+  }
+  return { workBase: git(workspace.checkout, 'merge-base', 'HEAD', destinationRevision), destinationRevision };
+}
+
+async function checkWorkResponse(ctx, options, workspace, folder, round, output, prompt) {
+  if (ctx.block.kind !== 'work') return {};
+  const manifest = modelManifest(output);
+  if (typeof manifest?.failure === 'string' && manifest.failure.trim()) return {};
+  try {
+    return {
+      workCheck: await options.verifyWork(ctx, workspace, join(folder, `work-checks-${round}`)),
+    };
+  } catch (error) {
+    if (ctx.signal.aborted || !error.verificationFailure || round > maxWorkRepairs) throw error;
+    return {
+      repairPrompt: JSON.stringify({
+        originalWork: prompt,
+        task: 'Fix the Work formatting or Fallow failures in this checkout. Preserve unrelated changes. Run the formatting and audit command before rerunning affected focused tests. Factory will recheck formatting and Fallow.',
+        summary: error.message,
+        evidence: (error.evidence ?? []).map(({ path }) => path),
+      }),
+      failedChecks: error.evidence ?? [],
+    };
+  }
+}
+
+function retainWorkCandidate(definition, retained, workCheck, head) {
+  if (workCheck && definition.artifacts?.some(({ key, kind }) => key === 'candidate' && kind === 'value'))
+    retained.artifacts.values.candidate = head;
 }
 
 async function runModel(service, ctx, owned, options) {
@@ -530,7 +604,8 @@ async function runModel(service, ctx, owned, options) {
     state.flowBlocks = { ...state.flowBlocks, [ctx.block.id]: binding };
     saveConversationState(service.root, ctx.issue.id, state);
   };
-  const prompt = modelPrompt(ctx, options);
+  const scope = ctx.block.kind === 'work' ? workScope(ctx, workspace) : {};
+  const prompt = modelPrompt(ctx, { ...options, ...scope });
   const instructions = [
     ctx.definition.prompt,
     ctx.block.skill ? '' : ctx.block.prompt,
@@ -541,7 +616,7 @@ async function runModel(service, ctx, owned, options) {
     .join('\n\n');
   const outputs = [];
   const failedChecks = [];
-  let verification;
+  let workCheck;
   let repairPrompt;
   let threadId;
   let turnDispatched = false;
@@ -647,20 +722,19 @@ async function runModel(service, ctx, owned, options) {
       requireThat(typeof text === 'string' && text.trim(), 'The block returned no result. Reconcile its saved turn.');
       outputs.push(redactValue(text));
       writeFileSync(outputPath, outputs.join('\n\n'), { mode: 0o600 });
-      if (ctx.block.kind === 'work') {
-        ctx.onProgress('Running the Verify checks on the Work candidate.\n', true);
-        try {
-          verification = await options.verifyCandidate(ctx, workspace, join(folder, `verification-${round}`));
-        } catch (error) {
-          if (ctx.signal.aborted || !error.verificationFailure || round > maxWorkRepairs) throw error;
-          failedChecks.push(...(error.evidence ?? []));
-          repairPrompt = JSON.stringify({
-            task: 'Fix the verification failures in this issue checkout. Keep the original Work scope and preserve unrelated changes. Read the following logs as evidence. Correct the underlying failures. The factory will rerun Verify on your updated candidate.',
-            summary: error.message,
-            evidence: (error.evidence ?? []).map(({ path }) => path),
-          });
-          rounds++;
-        }
+      const check = await checkWorkResponse(
+        ctx,
+        options,
+        { ...workspace, base: scope.workBase },
+        folder,
+        round,
+        outputs.at(-1),
+        prompt
+      );
+      ({ workCheck, repairPrompt } = check);
+      if (repairPrompt) {
+        failedChecks.push(...check.failedChecks);
+        rounds++;
       }
     }
     const output = outputs.join('\n\n');
@@ -675,22 +749,18 @@ async function runModel(service, ctx, owned, options) {
     retain({ status: 'idle' });
     const response = { path: outputPath, label: 'Block response', sha256: digest(readFileSync(outputPath)) };
     const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);
-    if (
-      verification?.result.head &&
-      ctx.definition.artifacts?.some(({ key, kind }) => key === 'candidate' && kind === 'value')
-    )
-      retained.artifacts.values.candidate = verification.result.head;
+    const head = git(workspace.checkout, 'rev-parse', 'HEAD');
+    retainWorkCandidate(ctx.definition, retained, workCheck, head);
     return {
-      summary: verification ? 'Work completed and passed the Verify checks.' : output.slice(0, 1200),
+      summary: outputs.at(-1).slice(0, 1200),
       output,
       ...retained,
-      evidence: [...retained.evidence, ...failedChecks, ...(verification?.evidence ?? [])],
+      evidence: [...retained.evidence, ...failedChecks, ...(workCheck?.evidence ?? [])],
       result: {
         threadId,
         skill: ctx.block.skill || null,
         iterations: rounds,
-        ...(verification && { verification: verification.result }),
-        head: git(workspace.checkout, 'rev-parse', 'HEAD'),
+        head,
         tree: git(workspace.checkout, 'rev-parse', 'HEAD^{tree}'),
         base: workspace.base,
       },
@@ -853,22 +923,41 @@ async function runCommand(service, ctx, options) {
     return { ...commandResult(service, ctx, result, summary, evidence), workspace };
   }
   await reconcileMergeRepair(service, ctx, workspace, options);
-  const { target, head, updated, evidence } = await updateIssueBranch(
+  const update = await updateIssueBranch(
     workspace,
     deliveryTarget(ctx.flow),
     invoke,
     options.resolveBranchConflicts,
     ctx.signal
   );
+  const { target, head, updated, evidence } = update;
+  const branchSummary = updated
+    ? 'Merged the fetched target into the issue branch.'
+    : 'The issue branch already contains the fetched target.';
+  const {
+    verification,
+    verificationFailure,
+    evidence: checks,
+  } = await verifyBranchUpdate(ctx, workspace, update, join(folder, 'verification'), (...args) => {
+    guardBlock(service, ctx, 'verify', workspace.base);
+    return options.verifyCandidate(...args);
+  });
+  const checkSummary = verification
+    ? ' Full Verify passed.'
+    : verificationFailure
+      ? ' Full Verify needs attention. ' + verificationFailure
+      : '';
   return {
     ...commandResult(
       service,
       ctx,
-      { target, targetRevision: target, head },
-      updated
-        ? 'Merged the fetched target into the issue branch.'
-        : 'The issue branch already contains the fetched target.',
-      [{ key: 'log', path: log, label: 'Target fetch and merge output' }, ...evidence]
+      { target, targetRevision: target, head, verification, verificationFailure },
+      branchSummary + checkSummary,
+      [
+        { key: 'log', path: log, label: 'Target fetch and merge output' },
+        ...evidence,
+        ...(checks ?? []).map(({ key, ...entry }) => ({ ...entry, key: 'verification-' + key })),
+      ]
     ),
     workspace,
   };
@@ -947,6 +1036,7 @@ function executeCommand({ command, args, cwd, log, signal, onProgress }) {
       else
         reject(
           Object.assign(Error(`The block command failed (${termination || code}). Inspect ${log}.`), {
+            exitCode: code,
             evidence: [{ path: log, label: 'Failed command output' }],
           })
         );

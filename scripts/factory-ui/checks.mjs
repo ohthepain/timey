@@ -11,7 +11,23 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathS
 import { join, resolve, dirname } from 'node:path';
 import { assessAudit } from '../audit-result.mjs';
 import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
-import { git, readJson, requireThat, runLogged, digest, writeJson } from './common.mjs';
+import { cleanEnvironment, git, readJson, requireThat, runLogged, digest, writeJson } from './common.mjs';
+
+function candidateRunner({ auditPolicy, verifier, scope }) {
+  const files = [fileURLToPath(import.meta.url)];
+  if (verifier)
+    files.push(
+      verifier,
+      ...['verify-scope.mjs', 'verify-process.mjs', 'verify-preflight.mjs', 'audit-result.mjs'].map((name) =>
+        join(dirname(verifier), name)
+      )
+    );
+  return digest(JSON.stringify([auditPolicy, scope, files.map((path) => digest(readFileSync(path)))]));
+}
+
+export function verificationInput(root, base, options) {
+  return candidateInput(root, base, candidateRunner(options), cleanEnvironment());
+}
 
 const activeChecks = new Map();
 export async function checkCandidate(root, base, folder, options = {}) {
@@ -74,8 +90,7 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
     'The candidate checkout has uncommitted source changes. Preserve them before verification.'
   );
   const sourceBefore = statusBefore ? workingSourceDigest(root) : null;
-  const runner = digest(readFileSync(fileURLToPath(import.meta.url))) + ':' + (options.auditPolicy || 'legacy');
-  const input = candidateInput(root, resolvedBase, runner);
+  const input = verificationInput(root, resolvedBase, options);
   const retained = options.force
     ? null
     : retainedCandidate(root, input, (value) => validateSummary(value, resolvedBase, treeBefore, options));
@@ -97,12 +112,9 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
   const attempt = join(folder, 'attempt-' + randomUUID());
   mkdirSync(attempt);
   const summaries = [];
-  for (const [checkpoint, args, log] of [
-    ['verification', ['run', 'verify', '--', '--base', base], 'verify.log'],
-    ['step', ['run', 'audit:step', '--', '--base', base], 'audit-step.log'],
-  ]) {
-    const context = { root, base: resolvedBase, tree: treeBefore, folder, attempt, input, runner, options };
-    const output = await executeCheckpoint(context, args, log);
+  for (const [checkpoint, command, args, log] of checkpointCommands(base, options.verifier)) {
+    const context = { root, base: resolvedBase, tree: treeBefore, folder, attempt, input, options };
+    const output = await executeCheckpoint(context, command, args, log);
     const path = commandSummary(root, output);
     const value = readJson(path);
     requireThat(value.checkpoint === checkpoint, 'Verification returned the wrong checkpoint.');
@@ -125,9 +137,22 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
     tree,
     uncommitted: Boolean(statusBefore),
     summaries: summaries.map((s) => s.path),
+    input,
   };
-  if (input && input === candidateInput(root, resolvedBase, runner)) retainCandidate(root, input, result);
+  if (input && input === verificationInput(root, resolvedBase, options)) retainCandidate(root, input, result);
   return result;
+}
+
+function checkpointCommands(base, script) {
+  if (script)
+    return [
+      ['verification', process.execPath, [script, '--base', base], 'verify.log'],
+      ['step', process.execPath, [script, '--step', '--audit-only', '--base', base], 'audit-step.log'],
+    ];
+  return [
+    ['verification', 'pnpm', ['run', 'verify', '--', '--base', base], 'verify.log'],
+    ['step', 'pnpm', ['run', 'audit:step', '--', '--base', base], 'audit-step.log'],
+  ];
 }
 function auditEnvironment(options) {
   return options.auditPolicy === 'required' ? { TIMEY_FALLOW_ENFORCE: '1', TIMEY_FALLOW_WARNINGS: 'error' } : {};
@@ -149,12 +174,12 @@ function assertNoRetainedFailure(failed) {
   );
 }
 
-async function executeCheckpoint(context, args, log) {
+async function executeCheckpoint(context, command, args, log) {
   const { root, folder, attempt, options } = context;
   try {
     const output = await runLogged(
       root,
-      'pnpm',
+      command,
       args,
       join(folder, log),
       options.onProgress,
@@ -170,12 +195,12 @@ async function executeCheckpoint(context, args, log) {
 
 function retainCheckpointFailure(context, log, error) {
   if (!Number.isInteger(error.exitCode)) return;
-  const { root, folder, attempt, input, base, runner } = context;
+  const { root, folder, attempt, input, base, options } = context;
   const savedLog = join(attempt, log);
   copyFileSync(join(folder, log), savedLog);
   const summaries = failedCheckpointSummaries(context, error);
   error.verificationFailure = failureEvidence(summaries, [savedLog]);
-  if (input === candidateInput(root, base, runner))
+  if (input === verificationInput(root, base, options))
     retainFailure(root, input, `Required check failed (${error.exitCode}). See ${savedLog}`, summaries, [savedLog]);
 }
 

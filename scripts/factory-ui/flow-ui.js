@@ -2022,7 +2022,7 @@
     renderEnvironment();
     try {
       const result = await action('update-worktree');
-      if (result && state.issueId === issueId) toast('Branch updated.');
+      if (result && state.issueId === issueId) toast(result.branchUpdateSummary || 'Branch updated.');
     } finally {
       state.updatingBranch = null;
       renderEnvironment();

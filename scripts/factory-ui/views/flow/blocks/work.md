@@ -16,8 +16,19 @@ Complete only this block using the selected skill.
 
 Perform the requested work.
 
-Use focused checks while editing. Factory runs the full Verify checks after your
-response and sends any reported failures back to this Work conversation for repair.
+Use the supplied comparison base to identify issue changes. Before running any
+test suite, run the supplied formatting and audit command in the issue checkout.
+It formats changed files first and checks Fallow for the issue changes. Fix new
+or worsened Fallow findings before testing. Run it again before tests if you edit
+the source.
+
+Use the changed behavior and Requested Proof to choose relevant tests. A related
+component or feature suite is appropriate. Add a focused test when there is no
+suitable existing test. Report the commands and what they demonstrated. When a
+failure may already exist on the supplied destination revision, reproduce the
+same failure there in an isolated checkout. Record the revision and matching
+failure and continue. Report issue-specific failures that you cannot repair as
+blockers. Factory checks formatting and Fallow again after the response.
 
 Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.
 

@@ -1025,12 +1025,13 @@ class IssueFlows {
     const controller = new AbortController();
     this.pauseAutoplay(issue.id, 'Updating the branch manually.');
     this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
+    let outcome;
     try {
-      await this.executor.run({ issue, flow, block, attempt, signal: controller.signal });
+      outcome = await this.executor.run({ issue, flow, block, attempt, signal: controller.signal });
     } finally {
       this.active.delete(issue.id);
     }
-    return this.view(issue.id);
+    return { ...(await this.view(issue.id)), branchUpdateSummary: outcome.summary };
   }
   async deleteWorktree(issue, flow, expected) {
     requireThat(!flow.closing || flow.closing.complete, 'Finish the saved closure sequence before deleting resources.');

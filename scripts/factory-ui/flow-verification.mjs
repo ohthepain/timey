@@ -1,15 +1,21 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
 import { digest, git, requireThat } from './common.mjs';
+import { commandSummary, verificationInput } from './checks.mjs';
+import { deliveryTarget, requestData } from './flow-block-data.mjs';
 
-export async function runFlowVerification(ctx, workspace, folder, execute) {
-  const checkout = workspace.checkout;
-  if (ctx.block.kind === 'verify' && ctx.details?.candidate)
-    requireThat(
-      git(checkout, 'rev-parse', 'HEAD') === ctx.details.candidate,
-      'The saved candidate differs from this checkout. Inspect the selected candidate before verifying.'
-    );
+export const workVerificationScript = fileURLToPath(new URL('../verify.mjs', import.meta.url));
+function fullVerificationOptions(ctx) {
+  const { goal, requestedProof } = requestData(ctx.flow).fields ?? {};
+  const { remote, branch } = deliveryTarget(ctx.flow);
+  return { auditPolicy: 'required', verifier: workVerificationScript, scope: [goal, requestedProof, remote, branch] };
+}
+export const flowVerificationInput = (ctx, checkout, base) =>
+  verificationInput(checkout, base, fullVerificationOptions(ctx));
+
+async function verificationCommand(ctx, checkout, folder, execute) {
   requireThat(
     existsSync(join(checkout, 'pnpm-lock.yaml')),
     'Verification needs a pnpm-lock.yaml in the issue worktree.'
@@ -30,12 +36,41 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
     ctx.signal.throwIfAborted();
     dependencyPreflight(checkout, checkout, workspaces);
   }
+  return { invoke, log };
+}
+
+export async function runWorkVerification(ctx, workspace, folder, execute) {
+  const { invoke, log } = await verificationCommand(ctx, workspace.checkout, folder, execute);
+  const evidence = [{ path: log, label: 'Work formatting and Fallow output' }];
+  const args = [workVerificationScript, '--work-checks', '--base', workspace.base];
+  try {
+    const output = await invoke(process.execPath, args, 'Checking Work formatting and Fallow.');
+    return { evidence: [...evidence, summaryEvidence(commandSummary(workspace.checkout, output))] };
+  } catch (error) {
+    if (!ctx.signal.aborted && Number.isInteger(error.exitCode)) {
+      error.verificationFailure = true;
+      error.evidence = evidence;
+    }
+    throw error;
+  }
+}
+
+export async function runFlowVerification(ctx, workspace, folder, execute) {
+  const checkout = workspace.checkout;
+  if (ctx.block.kind === 'verify' && ctx.details?.candidate)
+    requireThat(
+      git(checkout, 'rev-parse', 'HEAD') === ctx.details.candidate,
+      'The saved candidate differs from this checkout. Inspect the selected candidate before verifying.'
+    );
+  const { invoke, log } = await verificationCommand(ctx, checkout, folder, execute);
   const args = JSON.stringify([checkout, workspace.base, folder]);
+  const explicit = ctx.block.kind === 'verify';
   const script = `
     import { checkCandidate } from ${JSON.stringify(new URL('./checks.mjs', import.meta.url).href)};
     try {
       const result = await checkCandidate(...${args}, {
-        auditPolicy: 'required', force: true, allowUncommitted: true, onProgress: text => process.stdout.write(text)
+        ...${JSON.stringify(fullVerificationOptions(ctx))}, force: ${explicit}, retryFailed: true, allowUncommitted: ${explicit},
+        onProgress: text => process.stdout.write(text)
       });
       console.log('\\nFLOW_RESULT ' + JSON.stringify(result));
     } catch (error) {
@@ -72,6 +107,19 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
     .flatMap((check) => [check.log, ...(check.artifacts ?? []).map((file) => file.path)])
     .map(fileProof);
   return { result, evidence: [commandLog, ...(result.summaries ?? []).map(summaryEvidence)] };
+}
+
+export async function verifyBranchUpdate(ctx, workspace, update, folder, verify) {
+  if (!update.updated && git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all')) return {};
+  try {
+    const { result, evidence } = await verify(ctx, { ...workspace, base: update.target }, folder);
+    ctx.signal.throwIfAborted();
+    requireThat(result.head === update.head, 'The issue commit changed after the branch update.');
+    return { verification: { ...result, destinationBase: update.target }, evidence };
+  } catch (error) {
+    ctx.signal.throwIfAborted();
+    return { verificationFailure: error.message, evidence: error.evidence };
+  }
 }
 
 function summaryEvidence(path) {

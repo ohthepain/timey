@@ -173,7 +173,7 @@ function fixture(t) {
   };
 }
 
-test('Publish previews an unverified commit and verifies it before the first remote write', async (t) => {
+test('Publish previews and publishes the exact commit without running full Verify', async (t) => {
   const f = fixture(t);
   const verification = f.ctx.flow.blocks.pop().attempts[0].result;
   const preview = await f.preview();
@@ -187,9 +187,9 @@ test('Publish previews an unverified commit and verifies it before the first rem
   const result = await publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options);
   assert.deepEqual(
     f.calls.filter((call) => call !== 'credentials'),
-    ['verify', 'push', 'publish']
+    ['push', 'publish']
   );
-  assert.deepEqual(result.result.verification, verification);
+  assert.equal(result.result.verification, undefined);
 });
 
 test('a new flow closes through the actual decision writer with immutable verification and merged target evidence', async (t) => {
@@ -312,7 +312,7 @@ for (const changed of ['summary', 'command'])
     assert.equal(readQueue(f.root).issues[0].state, 'verify');
   });
 
-test('publication uses verified exact-head non-force push and the mandatory App publication method', async (t) => {
+test('publication uses a confirmed exact-head non-force push and the mandatory App publication method', async (t) => {
   const f = fixture(t);
   f.ctx.flow.destination = { branch: 'release' };
   const preview = await f.preview();
@@ -329,7 +329,7 @@ test('publication uses verified exact-head non-force push and the mandatory App 
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
 });
 
-test('publication refuses stale proof, missing App identity and the target branch before push', async (t) => {
+test('publication refuses a stale preview, missing App identity and the target branch before push', async (t) => {
   const f = fixture(t);
   f.provider.findByBranch = async () => null;
   f.provider.credentials = null;
@@ -344,8 +344,8 @@ test('publication refuses stale proof, missing App identity and the target branc
     /separate from the target/
   );
   f.ctx.input.previewToken = (await f.preview()).token;
-  f.ctx.flow.blocks[0].attempts[0].result.head = 'obsolete';
-  await assert.rejects(publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options), /explicit Verify block/);
+  f.ctx.issue.title += ' changed';
+  await assert.rejects(publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options), /updated preview/);
   assert.deepEqual(f.calls, []);
 });
 
@@ -431,7 +431,7 @@ test('repeat publication retries only the outstanding title, preserves the GitHu
   assert.ok(!f.calls.includes('push'));
   const failed = await f.publish();
   assert.equal(failed.status, 'blocked');
-  assert.match(failed.summary, /Needs retry.*Pushed the verified commit/);
+  assert.match(failed.summary, /Needs retry.*Pushed the issue commit/);
   assert.equal(failed.result.url, pr.html_url);
   titleFails = false;
   const pending = await f.preview();

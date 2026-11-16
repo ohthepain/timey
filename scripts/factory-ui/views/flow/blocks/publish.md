@@ -1,6 +1,6 @@
 # Publish PR block
 
-Verify the issue commit if needed, then push the branch and publish its pull request when you choose.
+Push the confirmed issue commit and publish its pull request when you choose.
 
 # User extensions
 
@@ -8,7 +8,7 @@ Verify the issue commit if needed, then push the branch and publish its pull req
 
 # System prompt
 
-Push the verified issue branch and publish its pull request when you choose.
+Push the confirmed issue commit and publish its pull request when you choose.
 
 Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.
 

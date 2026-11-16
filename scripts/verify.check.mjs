@@ -70,6 +70,8 @@ test('staged formatter checks issue reports from an in-repository snapshot', (t)
 function auditFixture(t, extraFiles = {}) {
   const { root, git } = gitFixture(t, 'audit-checkpoint-');
   writeFileSync(join(root, '.gitignore'), 'node_modules\n.issues/\n');
+  writeFileSync(join(root, '.prettierignore'), '');
+  writeFileSync(join(root, 'pnpm-workspace.yaml'), 'verifyDepsBeforeRun: false\n');
   writeFileSync(
     join(root, 'package.json'),
     JSON.stringify({
@@ -226,7 +228,7 @@ test('interface dispatch sentinel', () => {
   writeFileSync(join(root, 'index.js'), 'console.log("staged");\n');
   git('add', 'index.js');
   writeFileSync(join(root, 'index.js'), 'console.log("working");\n');
-  const run = () => {
+  const run = (...args) => {
     const before = {
       head: git('rev-parse', 'HEAD'),
       index: git('diff', '--cached', '--binary'),
@@ -236,7 +238,7 @@ test('interface dispatch sentinel', () => {
     // Start a fresh public CLI invocation, rather than a nested node:test runner.
     const env = { ...process.env, GIT_INDEX_FILE: join(root, '.git/index') };
     delete env.NODE_TEST_CONTEXT;
-    const result = spawnSync(process.execPath, [resolve('scripts/verify.mjs'), '--base', base], {
+    const result = spawnSync(process.execPath, [resolve('scripts/verify.mjs'), '--base', base, ...args], {
       cwd: root,
       encoding: 'utf8',
       env,
@@ -256,6 +258,11 @@ test('interface dispatch sentinel', () => {
   return { root, run, interfacePath, interfaceCheck };
 }
 
+function formatFixtureFile(root, path) {
+  const result = spawnSync(resolve('node_modules/.bin/vp'), ['fmt', path], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+}
+
 test('formatting handles changed symbolic links while still checking changed target source', (t) => {
   const { root, run } = aggregateFixture(t);
   symlinkSync('index.js', join(root, 'helper-link'));
@@ -264,20 +271,21 @@ test('formatting handles changed symbolic links while still checking changed tar
   assert.ok(summary.changed_files.includes('helper-link'));
   const formatting = summary.checks.find((check) => check.name === 'format-changed');
   assert.equal(formatting.passed, true);
-  assert.ok(formatting.command.includes('index.js'));
-  assert.equal(formatting.command.includes('helper-link'), false);
+  assert.ok(formatting.command.includes('./index.js'));
+  assert.equal(formatting.command.includes('./helper-link'), false);
 });
 
 test('aggregate verification dispatches the package factory suite in an isolated export', (t) => {
-  const { run, interfacePath, interfaceCheck } = aggregateFixture(t);
+  const { root, run, interfacePath, interfaceCheck } = aggregateFixture(t);
   writeFileSync(interfacePath, interfaceCheck + 'throw Error("deliberate interface failure");\n');
+  formatFixtureFile(root, 'scripts/factory-interface.check.mjs');
   const failed = run();
   assert.equal(failed.result.status, 1, failed.result.stdout + failed.result.stderr);
   assert.equal(failed.factory.passed, false, readFileSync(failed.factory.log, 'utf8'));
   assert.match(readFileSync(failed.factory.log, 'utf8'), /deliberate interface failure/);
   assert.deepEqual(
     failed.summary.checks.map((check) => check.name),
-    ['fallow', 'format-changed', 'browser', 'factory', 'typecheck', 'tests', 'build']
+    ['format-changed', 'fallow', 'browser', 'factory', 'typecheck', 'tests', 'build']
   );
   writeFileSync(interfacePath, interfaceCheck);
   const passed = run();
@@ -288,6 +296,54 @@ test('aggregate verification dispatches the package factory suite in an isolated
   );
   assert.equal(passed.summary.passed, true);
   assert.match(readFileSync(passed.factory.log, 'utf8'), /interface dispatch sentinel/);
+});
+
+test('Verify stops before Fallow and tests on an unformatted change', (t) => {
+  const { root, run } = aggregateFixture(t);
+  writeFileSync(join(root, 'index.js'), 'console.log(   "unformatted"   );\n');
+  const { result, summary } = run();
+  assert.equal(result.status, 1);
+  assert.deepEqual(
+    summary.checks.map(({ name, passed }) => [name, passed]),
+    [['format-changed', false]]
+  );
+});
+
+test('Verify stops before test suites on an introduced Fallow failure', (t) => {
+  const { root } = aggregateFixture(t);
+  writeFileSync(join(root, 'new-dead.js'), 'export const orphan = 1;\n');
+  const result = spawnSync(process.execPath, [resolve('scripts/verify.mjs'), '--base', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, TIMEY_FALLOW_ENFORCE: '1', TIMEY_FALLOW_WARNINGS: 'error' },
+  });
+  const summary = auditSummary(root);
+  assert.equal(result.status, 1);
+  assert.deepEqual(
+    summary.checks.map(({ name, passed }) => [name, passed]),
+    [
+      ['format-changed', true],
+      ['fallow', false],
+    ]
+  );
+});
+
+test('Work formats issue files and checks Fallow without starting a test suite', (t) => {
+  const { root } = aggregateFixture(t);
+  const path = join(root, 'index.js');
+  const source = 'console.log(  "work change"  );\n';
+  writeFileSync(path, source);
+  const result = spawnSync(
+    process.execPath,
+    [resolve('scripts/verify.mjs'), '--work-checks', '--write-format', '--base', 'HEAD'],
+    { cwd: root, encoding: 'utf8' }
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.notEqual(readFileSync(path, 'utf8'), source);
+  assert.deepEqual(
+    auditSummary(root).checks.map(({ name }) => name),
+    ['format-changed', 'fallow']
+  );
 });
 
 test('step and commit audits block only introduced findings in changed files', (t) => {
@@ -423,6 +479,7 @@ test('browser interaction failures block aggregate verification while remaining 
   const manifest = JSON.parse(readFileSync(path, 'utf8'));
   manifest.scripts['test:browser'] = 'node -e "throw Error(\'browser interaction regression\')"';
   writeFileSync(path, JSON.stringify(manifest));
+  formatFixtureFile(root, 'package.json');
   const { result, summary } = run();
   assert.equal(result.status, 1);
   assert.equal(summary.checks.find((check) => check.name === 'browser').passed, false);

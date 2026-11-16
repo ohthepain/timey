@@ -1140,9 +1140,16 @@ try {
       process.env.PATH = originalPath;
       delete process.env.TIMEY_TEST_OPEN_LOG;
     }
-    // The disposable project has no installed issue skill. Exercise the real Git executor.
     service.guard = () => [];
-    service.flows.executor = createFlowExecutor(service);
+    let verifiedHead;
+    service.flows.executor = createFlowExecutor(service, {
+      async verifyCandidate(_ctx, workspace) {
+        assert.equal(workspace.base, target);
+        verifiedHead = git(workspace.checkout, 'rev-parse', 'HEAD');
+        assert.equal(git(workspace.checkout, 'merge-base', verifiedHead, target), target);
+        return { result: { head: verifiedHead }, evidence: [] };
+      },
+    });
     const targetMenu = page.getByRole('combobox', { name: /Target ahead by/ });
     await targetMenu.selectOption('add');
     await page.getByText('Update branch block added.', { exact: true }).waitFor();
@@ -1163,7 +1170,9 @@ try {
     await targetMenu.selectOption('update');
     await page.locator('#target-update-progress').waitFor();
     release.resolve();
-    await page.getByText('Branch updated.', { exact: true }).waitFor();
+    await page
+      .getByText('Merged the fetched target into the issue branch. Full Verify passed.', { exact: true })
+      .waitFor();
     await page.unroute('**/api/flow-action');
     await targetMenu.waitFor({ state: 'hidden' });
     const finished = (await view()).flow.blocks;
@@ -1172,6 +1181,7 @@ try {
       blocks.map((block) => block.id)
     );
     assert.equal(finished.find((block) => block.id === added.id).attempts.length, 0);
+    assert.equal(verifiedHead, git(checkout, 'rev-parse', 'HEAD'));
     assert.equal(git(checkout, 'merge-base', 'HEAD', target), target);
     assert.equal(git(checkout, 'show', 'HEAD:branch-draft.txt'), 'Preserve this local change.');
     assert.equal(git(project, 'rev-parse', 'HEAD'), base);

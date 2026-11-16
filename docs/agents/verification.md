@@ -41,7 +41,7 @@ regular target files retain their own formatting checks.
 | `pnpm run audit:diff -- --base REF` | Fallow audit on changed files in an exported working snapshot (same new-only gate as other checkpoints)                |
 | `pnpm run audit:step -- --base REF` | Required audit before declaring an implementation step complete, even without a commit                                 |
 | `pnpm run audit:staged`             | Exact index snapshot audit; unstaged fixes cannot hide staged findings                                                 |
-| `pnpm run verify -- --base REF`     | Changed-file formatting, factory checks, types, tests, build, and Fallow; runs all and fails if any fails              |
+| `pnpm run verify -- --base REF`     | Changed-file formatting and Fallow gate the browser, Factory, type, test, and build checks                             |
 | `pnpm run format-check`             | Repository-wide formatting, including inherited drift                                                                  |
 
 Recorder tests create a unique directory under the system temporary directory for
@@ -65,7 +65,14 @@ aggregate result while the other required checks still run and report separately
 The Flow **Verify** block can check saved, uncommitted source changes. Its
 verification and step audit must report the same snapshot tree. The source
 check records symlinks by their link targets and accounts for deleted files.
-For publication or merge, commit the changes and run Verify on that commit.
+Publish PR requires a clean commit. Update branch and Merge run full Verify on
+the committed candidate against the fetched destination. Merge reuses the
+passing result when its inputs and retained evidence still match.
+
+Work runs `verify -- --work-checks --write-format --base REF` to format
+issue files and check Fallow before running selected test suites. It picks
+tests from the changed behavior and Requested Proof and adds a focused test
+when needed. Factory rechecks formatting and Fallow after Work's response.
 
 Install the checked-in staged Fallow hook with `pnpm run hooks:install`. It refuses
 to replace another hooks directory. It runs the audit on the index snapshot before
@@ -128,8 +135,9 @@ these strategy checks or be reused from the legacy cache. Set
 `audit:step`, or full `verify`. Before declaring an implementation step complete,
 including an uncommitted step, run `pnpm run audit:step -- --base <step-start-commit>`.
 Use the recorded starting revision, not the new HEAD after committing (which could
-hide that step's changes). Full `verify -- --base REF` still runs types, tests,
-build, and factory checks. Fallow enforcement is opt-in outside strategy and CI checks. A successful audit
+hide that step's changes). Full `verify -- --base REF` runs types, tests,
+build, and factory checks after formatting and Fallow pass. Fallow enforcement
+is opt-in outside Flow, strategy, and CI checks. A successful audit
 does not establish type/build/device success.
 
 A checkpoint fails on a nonzero Fallow process exit, a `fail` or `error` audit

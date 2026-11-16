@@ -283,10 +283,14 @@ test('candidate verification ignores a concurrent commit-hook report and retains
   const { realpathSync } = await import('node:fs');
   const f = deliveryFixture(t),
     root = realpathSync(f.source.root);
+  const lock = 'lockfileVersion: 9.0\n';
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
+  writeFileSync(join(root, 'pnpm-lock.yaml'), lock);
   f.source.git('add', '.');
   f.source.git('commit', '-qm', 'fixture dependencies');
-  mkdirSync(join(root, 'node_modules'));
+  mkdirSync(join(root, 'node_modules/.pnpm'), { recursive: true });
+  writeFileSync(join(root, 'node_modules/.pnpm/lock.yaml'), lock);
+  writeFileSync(join(root, 'node_modules/.modules.yaml'), 'layoutVersion: 5\n');
   mkdirSync(join(root, '.issues/evidence'));
   mkdirSync(join(root, '.issues/tools'));
   const template = JSON.parse(readFileSync(f.input.verification[0]));
@@ -305,8 +309,11 @@ test('candidate verification ignores a concurrent commit-hook report and retains
     assert.equal(result.summaries.length, 2);
     assert.ok(result.summaries.every((p) => p.includes('-owned-summary.json')));
     assert.equal(result.head, template.base);
+    assert.equal((await checkCandidate(root, template.base, join(root, '.issues/cache-hit'))).reused, true);
     writeFileSync(join(root, '.issues/legacy-output'), 'older verifier');
-    const legacy = await checkCandidate(root, template.base, join(root, '.issues/legacy-check-output'));
+    const legacy = await checkCandidate(root, template.base, join(root, '.issues/legacy-check-output'), {
+      force: true,
+    });
     assert.deepEqual(legacy.summaries, result.summaries);
     mkdirSync(join(root, 'node_modules/fixture-skill'));
     symlinkSync('node_modules/fixture-skill', join(root, 'skill-link'));
