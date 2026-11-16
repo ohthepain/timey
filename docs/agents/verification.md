@@ -82,6 +82,13 @@ suites such as `pnpm run test:factory` to full candidate verification, which
 Merge requires. Add a focused test when needed. Factory rechecks formatting and
 Fallow after Work's response.
 
+When a Work check cannot install dependencies, the issue checkout retains
+`.issues/evidence/dependency-recovery.json` and per-attempt install logs. A
+continued Work resolves an unfinished recovery record before starting its model
+turn. Transient network failures retry at most three times across interruptions;
+the record marks dependencies ready only after the installed lock and workspace
+dependencies pass `dependencyPreflight` and describes the recovery command.
+
 Install the checked-in staged Fallow hook with `pnpm run hooks:install`. It refuses
 to replace another hooks directory. It runs the audit on the index snapshot before
 commit; it does not imply all tests passed. Run relevant checks as well. When the
