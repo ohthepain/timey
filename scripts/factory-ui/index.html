@@ -2059,7 +2059,8 @@
         const disabled = issueStorageReadOnly || view.saving || !canMoveStoredIssue(entry);
         const open = `<button type="button" data-storage-report="${id}" aria-label="Open saved report for ${title}">Open saved report</button>`;
         const action = storage === 'closed' ? 'Archive' : 'Restore to closed';
-        const heading = storage === 'closed' ? `<a href="#/issue/${encodeURIComponent(entry.id)}">${title}</a>` : title;
+        const issueId = encodeURIComponent(entry.id);
+        const heading = `<a href="${storage === 'closed' ? '#/issue/' : '/?issue='}${issueId}">${title}</a>`;
         return `<tr><td><input type="checkbox" data-storage-select="${id}" aria-label="Select ${title}" ${view.selected.has(entry.id) ? 'checked' : ''} ${disabled ? 'disabled' : ''}></td><td>${heading}${storedIssueStatus(entry)}</td><td>${entry.updated ? esc(recordedDate(entry.updated)) : '—'}</td><td>${open} <button type="button" data-storage-move="${id}" aria-label="${action} ${title}" ${disabled ? 'disabled' : ''}>${action}</button></td></tr>`;
       }
 

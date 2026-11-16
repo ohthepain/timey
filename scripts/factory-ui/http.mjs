@@ -110,13 +110,18 @@ function authorize(request, token, port) {
     );
   }
 }
-async function mutation(service, path, value, owner) {
-  requireLiveMutation(service, path);
-  if (path !== '/api/flow-action' && value.issueId)
+function requireClassicIdle(service, path, value) {
+  if (['/api/flow-action', '/api/issue-storage-move'].includes(path)) return;
+  if (value.issueId)
     requireThat(
       !flowOwnsIssue(service, value.issueId),
       'A flow block owns this issue. Stop it before using classic controls.'
     );
+}
+
+async function mutation(service, path, value, owner) {
+  requireLiveMutation(service, path);
+  requireClassicIdle(service, path, value);
   if (!(path === '/api/flow-action' && ['stop', 'pause', 'cancel-confirmation'].includes(value.action)))
     service.serverControl?.allow(path, value);
   const discussionRoutes = {

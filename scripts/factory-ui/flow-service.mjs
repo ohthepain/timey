@@ -91,6 +91,10 @@ const completedBlock = (block) =>
   latestCurrentAttempt(block)?.status === 'completed' ||
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
 
+function selectedFlowRow(issues, id) {
+  return issues.find((item) => item.id === id) ?? { status: 'closed' };
+}
+
 function shouldSuggestTargetUpdate(flow, environment) {
   const id = 'target-' + environment.startingBranchRevision;
   if (!(environment.startingBranchBehind > 0) || flow.retiredBlocks?.some((block) => block.id === id)) return false;
@@ -202,7 +206,8 @@ class IssueFlows {
     const numbers = existsSync(numbersPath) ? JSON.parse(readFileSync(numbersPath, 'utf8')).issues : {};
     const issues = [];
     const closedState = closedIssueState(this.service.root);
-    for (const location of ['open', 'closed']) {
+    const locations = selectedId ? ['open', 'closed', 'archive'] : ['open', 'closed'];
+    for (const location of locations) {
       const paths = listStoredIssues(this.service.root, location);
       for (const path of selectedId ? paths.filter((path) => basename(path, '.md') === selectedId) : paths) {
         const content = readFileSync(path, 'utf8');
@@ -218,7 +223,7 @@ class IssueFlows {
           id: basename(path, '.md'),
           content,
           location,
-          closed: location === 'closed' || metadata.state === closedState,
+          closed: location !== 'open' || metadata.state === closedState,
           issueNumber: numbers?.[basename(path, '.md')],
         });
       }
@@ -290,8 +295,7 @@ class IssueFlows {
       }),
     };
     if (!id) return data;
-    const issue = issues.find((item) => item.id === id);
-    requireThat(issue, 'This issue no longer exists. Choose a saved issue.');
+    const issue = this.selected(id);
     const savedFlow = this.read(issue, catalog);
     const flow = this.visibleFlow(savedFlow);
     const flowDefinitions = this.flowDefinitionOptions(flow, catalog);
@@ -328,8 +332,8 @@ class IssueFlows {
       }
     }
     suggestTargetUpdate(flow, environment, catalog);
-    const selectedRow = data.issues.find((item) => item.id === id);
-    if (selectedRow && !['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
+    const selectedRow = selectedFlowRow(data.issues, id);
+    if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
       if (environment.pr?.mergedAt) selectedRow.status = 'merged';
       else if (environment.startingBranchBehind > 0) selectedRow.status = 'need-merge-from-dev';
       else if (
@@ -361,7 +365,7 @@ class IssueFlows {
         issueNumber: issue.issueNumber,
         state: issue.state,
         location: issue.location,
-        status: selectedRow?.status,
+        status: selectedRow.status,
         closure: issue.closure,
       },
       flow,
@@ -538,7 +542,7 @@ class IssueFlows {
     const flow = this.read(issue, catalog);
     const closing = flow.closing;
     if (!issue.closed || !closing || closing.complete || this.active.has(id)) return;
-    if (this.service.sharedIssues && !existsSync(storedIssuePath(this.service.root, id, 'closed'))) return;
+    if (this.service.sharedIssues && issue.location === 'open') return;
     const { close, retro, cleanup } = closureBlocks(flow, catalog);
     const latestForClosure = (block) => block?.attempts.findLast((attempt) => attempt.closureId === closing.id);
     if (!latestForClosure(close)) {
@@ -603,7 +607,7 @@ class IssueFlows {
     if (this.closureTasks.has(id)) return;
     const task = this.advanceClosure(id, retry, resourceId)
       .catch((error) => {
-        const issue = this.issues().find((item) => item.id === id);
+        const [issue] = this.issues(id);
         if (!issue?.closed) return;
         const flow = this.read(issue);
         if (!flow.closing) return;

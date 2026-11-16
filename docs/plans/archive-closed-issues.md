@@ -20,7 +20,7 @@ At the time of design, the local checkout held 105 closed reports totaling about
 
 ## Archive
 
-A person initiates archive from the Closed issues view. Application code validates that the report is closed, preserves it in the local archive folder, and refreshes the list. The operation starts zero model calls. It preserves the issue number and leaves the report closed. Archive is separate from chat archiving and workspace cleanup.
+A person initiates archive from the Closed issues view. Application code validates that the report is closed, preserves it in the local archive folder, and refreshes the list. The operation starts zero model calls. It preserves the issue number and leaves the report closed. An in-progress closure sequence continues after archive. The Archive list links to the saved flow, which shows progress and provides manual Cleanup for an idle issue.
 
 For a shared closed report, the proposed flow saves the local archive copy first, then prepares a report-only PR to remove the shared copy from the target. Until the PR lands, the shared report remains closed and the initiating runner shows the archive as pending. Previously published copies remain available in Git history. The local archive copy is available on the runner that performed the archive.
 

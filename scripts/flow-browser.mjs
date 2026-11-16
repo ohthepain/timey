@@ -1460,6 +1460,11 @@ try {
     await archive.waitFor({ state: 'hidden' });
     assert.equal(new URL(page.url()).searchParams.has('issue'), false);
     assert.match(readFileSync(join(project, '.issues/archive', issueId + '.md'), 'utf8'), /duplicate/);
+    await page.goto('/?issue=' + issueId);
+    await archive.waitFor();
+    assert.equal((await view()).issue.location, 'archive');
+    assert.equal(await archive.locator('option[value="archive"]').getAttribute('hidden'), '');
+    assert.equal(await archive.locator('option[value="cleanup"]').textContent(), 'Run Cleanup');
   });
   await check('The inspector delete button confirms before removing a block', async () => {
     issueId = '20261116-manual-fixed-fixture';

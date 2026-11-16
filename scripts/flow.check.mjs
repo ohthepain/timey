@@ -12,6 +12,7 @@ import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/pr
 import { humanGuard } from './factory-ui/guard.mjs';
 import { ViewSources } from './factory-ui/view-sources.mjs';
 import { BlockCatalog, blockExtensions, userBlocks } from './factory-ui/block-catalog.mjs';
+import { moveIssueStorage } from './factory-ui/issue-storage-actions.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
@@ -1060,12 +1061,14 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     requestId: randomUUID(),
   }));
   let retroRuns = 0;
+  const releaseRetro = Promise.withResolvers();
   const flows = (service.flows = createIssueFlows(service, {
     deliveryOptions: {
       runRetro: async () => {
         retroRuns++;
         assert.equal(existsSync(checkout), retroRuns <= 2);
         if (retroRuns !== 2) throw Error('Retro fixture failed');
+        await releaseRetro.promise;
         return { summary: 'Retro completed.', recommendations: proposals };
       },
     },
@@ -1122,6 +1125,16 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     false
   );
   await submit(await flows.view(id), 'retry-closure');
+  await waitUntil(() => retroRuns === 2);
+  assert.equal(flows.closureBusy(id), true);
+  const archive = moveIssueStorage(service, { action: 'archive', issueIds: [id] });
+  assert.equal(archive.results[0].status, 'archived');
+  assert.equal((await flows.view(id)).issue.location, 'archive');
+  assert.equal(
+    flows.issues().some((item) => item.id === id),
+    false
+  );
+  releaseRetro.resolve();
   await waitUntil(() => read().closing.complete);
   assert.equal(existsSync(checkout), false);
   assert.equal(git('rev-parse', branch), git('rev-parse', 'HEAD'));
@@ -1156,6 +1169,8 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   assert.equal(git('branch', '--list', branch), '');
 
   const previousClosure = read().closing.id;
+  const restore = moveIssueStorage(service, { action: 'restore', issueIds: [id] });
+  assert.equal(restore.results[0].status, 'restored');
   const closedQueue = readQueue(root, { issueId: id, location: 'closed' });
   const closedIssue = closedQueue.issues[0];
   service.decideIssue(id, closedIssue.state, 'reopen', decisionBasis(closedQueue, closedIssue));

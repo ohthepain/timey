@@ -412,6 +412,10 @@
     $('close-with-reason').disabled = busy;
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
+    const archived = issue?.location === 'archive';
+    for (const option of $('issue-archive-menu').options)
+      if (['archive', 'reveal', 'reopen'].includes(option.value)) option.hidden = archived;
+    $('issue-archive-menu').options[0].textContent = archived ? 'Archived issue' : 'Archive';
     const closing = state.view?.flow?.closing;
     const awaiting = closed && closing && !closing.complete && !state.view.closureBusy;
     $('retry-closure').hidden = !awaiting;

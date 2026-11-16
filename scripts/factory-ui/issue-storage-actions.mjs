@@ -59,8 +59,6 @@ function isActive(service, id) {
 
 function moveOne(service, action, id) {
   requireThat(!isActive(service, id), 'Wait for the current issue operation to finish.');
-  if (action === 'archive')
-    requireThat(!service.flows?.closurePending?.(id), 'Finish the issue’s closure sequence before archiving it.');
   const [from, to] = action === 'archive' ? ['closed', 'archive'] : ['archive', 'closed'];
   const path = storedIssuePath(service.root, id, from);
   if (!existsSync(path) && existsSync(storedIssuePath(service.root, id, to)))
