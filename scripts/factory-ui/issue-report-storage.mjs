@@ -14,6 +14,7 @@ import { basename, dirname, join } from 'node:path';
 import { parse, parseDocument } from 'yaml';
 import { git, requireThat } from './common.mjs';
 import { sharedIssueQueueEnabled } from './shared-issue-config.mjs';
+import { formatIssueReport } from './issue-report-format.mjs';
 
 const directories = { open: '.issues', closed: '.issues/closed', archive: '.issues/archive' };
 
@@ -101,6 +102,36 @@ function assertExpectedReport(path, id, expectedContent) {
   requireThat(expectedContent === undefined || content === expectedContent, 'The report changed before the move.');
 }
 
+export function formatArchivedIssue(root, id, expectedContent) {
+  const path = storedIssuePath(root, id, 'archive');
+  const lock = join(root, '.issues/factory.lock');
+  mkdirSync(lock);
+  try {
+    const details = reportFile(path);
+    requireThat(details, 'The archived report is missing.');
+    const content = readFileSync(path, 'utf8');
+    const formatted = formatIssueReport(content);
+    assertExpectedReport(path, id, content);
+    requireThat(
+      expectedContent === undefined || content === expectedContent || formatted === formatIssueReport(expectedContent),
+      'The local archive copy needs reconciliation.'
+    );
+    if (formatted !== content) replaceReport(path, formatted, details.mode);
+  } finally {
+    rmdirSync(lock);
+  }
+}
+
+function replaceReport(path, content, mode) {
+  const temporary = path + '.' + randomUUID() + '.tmp';
+  try {
+    writeFileSync(temporary, content, { flag: 'wx', mode: mode & 0o777 });
+    renameSync(temporary, path);
+  } finally {
+    if (stat(temporary)) unlinkSync(temporary);
+  }
+}
+
 export function renameStoredIssue(root, issue, title) {
   updateStoredIssueMetadata(root, issue, { title });
 }
@@ -108,7 +139,6 @@ export function renameStoredIssue(root, issue, title) {
 export function updateStoredIssueMetadata(root, issue, changes) {
   const path = storedIssuePath(root, issue.id, issue.location);
   const lock = join(root, '.issues/factory.lock');
-  const temporary = path + '.' + randomUUID() + '.tmp';
   mkdirSync(lock);
   try {
     const details = reportFile(path);
@@ -124,13 +154,9 @@ export function updateStoredIssueMetadata(root, issue, changes) {
     );
     for (const [key, value] of Object.entries(changes)) metadata.set(key, value);
     const replacement = metadata.toString().trimEnd().replaceAll('\n', header[1].slice(3));
-    writeFileSync(temporary, header[1] + replacement + header[3] + content.slice(header[0].length), {
-      flag: 'wx',
-      mode: details.mode & 0o777,
-    });
-    renameSync(temporary, path);
+    const next = header[1] + replacement + header[3] + content.slice(header[0].length);
+    replaceReport(path, formatIssueReport(next), details.mode);
   } finally {
-    if (stat(temporary)) unlinkSync(temporary);
     rmdirSync(lock);
   }
 }

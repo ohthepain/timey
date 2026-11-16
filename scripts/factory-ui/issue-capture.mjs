@@ -1,4 +1,5 @@
 import { storedIssuePath } from './issue-report-storage.mjs';
+import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
 import { readModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { clarificationLifecycle } from './clarify-policy.mjs';
 import { startCaptureGrilling } from './capture-grilling.mjs';
@@ -200,8 +201,8 @@ function allocate(queue, input, assessment, basis, random) {
     const content =
       '---\n' +
       stringify(metadata, { aliasDuplicateObjects: false }) +
-      '---\n\n## Original request\n\n' +
-      input.description +
+      '---\n\n' +
+      originalRequestSection(input.description) +
       '\n\n## Relevant original wording\n\n' +
       proposal.excerpt +
       '\n\n## Routing\n\n' +
@@ -211,7 +212,7 @@ function allocate(queue, input, assessment, basis, random) {
       '. Capturing saves issues before starting any selected follow-up action.\n\n## Verification intent\n\n' +
       proposal.verification +
       '\n';
-    return { id, title: proposal.title, state: route.state, content };
+    return { id, title: proposal.title, state: route.state, content: formatIssueReport(content) };
   });
   return { version: 1, requestId: input.requestId, hash: captureHash(input), basis, reports, complete: false };
 }

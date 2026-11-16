@@ -30,6 +30,7 @@ import { digest, requireThat, writeJson } from './common.mjs';
 import { closedIssueState, readQueue } from './data.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
 import { closureBlocks, setRetroBlock } from './flow-closure.mjs';
 import {
   FlowStore,
@@ -1711,12 +1712,13 @@ class IssueFlows {
       ...(input.runRetro && { run_retro: true }),
       ...(folder && { folder }),
     };
-    const content =
+    const content = formatIssueReport(
       '---\n' +
-      stringify(metadata) +
-      '---\n\n## Original request\n\n' +
-      input.description +
-      '\n\n## Issue flow\n\nThe selected flow definition builds the structure. Run blocks individually or press Play to run the route.\n';
+        stringify(metadata) +
+        '---\n\n' +
+        originalRequestSection(input.description) +
+        '\n\n## Issue flow\n\nThe selected flow definition builds the structure. Run blocks individually or press Play to run the route.\n'
+    );
     const issue = { ...metadata, content };
     const flow = await this.initialFlow(issue, startingPoint);
     flow.captureId = input.requestId;

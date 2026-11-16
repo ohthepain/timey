@@ -2,7 +2,13 @@ import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { parse } from 'yaml';
 import { readJson, requireThat } from './common.mjs';
-import { configuredClosedState, listStoredIssues, moveStoredIssue, storedIssuePath } from './issue-report-storage.mjs';
+import {
+  configuredClosedState,
+  formatArchivedIssue,
+  listStoredIssues,
+  moveStoredIssue,
+  storedIssuePath,
+} from './issue-report-storage.mjs';
 import { readSavedReport } from './report-document.mjs';
 
 function displayNumbers(root) {
@@ -57,12 +63,17 @@ function isActive(service, id) {
   );
 }
 
+function finishLocalMove(root, action, id, content) {
+  if (action === 'archive') formatArchivedIssue(root, id, content);
+  return { id, status: action === 'archive' ? 'archived' : 'restored' };
+}
+
 function moveOne(service, action, id) {
   requireThat(!isActive(service, id), 'Wait for the current issue operation to finish.');
   const [from, to] = action === 'archive' ? ['closed', 'archive'] : ['archive', 'closed'];
   const path = storedIssuePath(service.root, id, from);
   if (!existsSync(path) && existsSync(storedIssuePath(service.root, id, to)))
-    return { id, status: action === 'archive' ? 'archived' : 'restored' };
+    return finishLocalMove(service.root, action, id);
   const { content } = readSavedReport(service.root, id, from);
   requireThat(
     reportHeader(content).state === configuredClosedState(service.root),
@@ -71,7 +82,7 @@ function moveOne(service, action, id) {
   const result = service.sharedIssues?.moveStorage(id, action, content);
   if (result) return { id, ...result };
   moveStoredIssue(service.root, id, from, to, { expectedContent: content });
-  return { id, status: action === 'archive' ? 'archived' : 'restored' };
+  return finishLocalMove(service.root, action, id, content);
 }
 
 export function moveIssueStorage(service, input) {

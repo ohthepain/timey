@@ -124,8 +124,14 @@ retain strict validation and cannot infer empty scope from a saved tool report.
 GitHub Actions runs Verify for pull requests to any branch, including the
 Destination selected in Flow. Direct pushes trigger Verify on `main` and `dev`.
 
-Before a commit, the pre-commit hook checks formatting on the exact staged file
-contents, then runs `pnpm run audit:staged`, which exports the staged snapshot
+Factory formats issue reports when it captures an issue, saves report metadata
+or a lifecycle result, or completes archive. Captured original wording keeps
+its literal whitespace.
+
+Before a commit, the pre-commit hook formats staged issue reports and checks
+formatting on other staged files. It updates a working copy of a report only
+when it matches the original staged contents, preserving unstaged edits. It
+then runs `pnpm run audit:staged`, which exports the staged snapshot
 for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
 Strategy candidate checks and CI enforce Fallow with
 `TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Their new findings, including

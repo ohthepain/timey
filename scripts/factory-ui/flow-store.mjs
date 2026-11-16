@@ -41,6 +41,7 @@ function originalWording(issue) {
   return (
     issue.content
       .match(/^## (?:Original request|Relevant original wording)\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m)?.[1]
+      ?.replace(/\n\n<!-- prettier-ignore-end -->\s*$/, '')
       ?.trim() || issue.title
   );
 }

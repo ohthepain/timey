@@ -54,7 +54,7 @@ test('staged formatter checks issue reports from an in-repository snapshot', (t)
   writeFileSync(join(root, '.prettierignore'), '');
   writeFileSync(join(root, '.issues/report.md'), '# A staged report  \n');
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
-  git('add', 'scripts/format-staged.mjs', '.prettierignore', '.issues/report.md');
+  git('add', '.prettierignore', '.issues/report.md');
   const result = spawnSync(process.execPath, ['scripts/format-staged.mjs'], {
     cwd: root,
     encoding: 'utf8',
@@ -65,6 +65,22 @@ test('staged formatter checks issue reports from an in-repository snapshot', (t)
     readdirSync(root).filter((name) => name.startsWith('.timey-format-staged-')),
     []
   );
+  git('reset', '-q', '--', '.issues/report.md');
+  mkdirSync(join(root, '.issues/closed'), { recursive: true });
+  mkdirSync(join(root, '.issues/archive'), { recursive: true });
+  const closed = '.issues/closed/20261116-closed.md';
+  const archived = '.issues/archive/20261116-archived.md';
+  writeFileSync(join(root, closed), '# Closed report  \n');
+  writeFileSync(join(root, archived), '# Archived report  \n');
+  git('add', '--', closed, archived);
+  const unstaged = '# Archived report  \n\nUnstaged text.\n';
+  writeFileSync(join(root, archived), unstaged);
+  const formatted = spawnSync(process.execPath, ['scripts/format-staged.mjs'], { cwd: root, encoding: 'utf8' });
+  assert.equal(formatted.status, 0, formatted.stdout + formatted.stderr);
+  assert.equal(git('show', ':' + closed), '# Closed report');
+  assert.equal(git('show', ':' + archived), '# Archived report');
+  assert.equal(readFileSync(join(root, closed), 'utf8'), '# Closed report\n');
+  assert.equal(readFileSync(join(root, archived), 'utf8'), unstaged);
 });
 
 function auditFixture(t, extraFiles = {}) {

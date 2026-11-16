@@ -10,7 +10,13 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { digest, readJson, requireThat, writeJson } from './common.mjs';
-import { deletePendingIssueReport, moveStoredIssue, storedIssuePath } from './issue-report-storage.mjs';
+import { formatIssueReport } from './issue-report-format.mjs';
+import {
+  deletePendingIssueReport,
+  formatArchivedIssue,
+  moveStoredIssue,
+  storedIssuePath,
+} from './issue-report-storage.mjs';
 import { createSharedIssueClaims } from './shared-issue-claims.mjs';
 import { sharedIssueQueueConfig } from './shared-issue-config.mjs';
 import { createSharedIssuePublication } from './shared-issue-publication.mjs';
@@ -59,16 +65,16 @@ export function createSharedIssueQueue(service, options = {}) {
     const path = storedIssuePath(root, id, location);
     return existsSync(path) && lstatSync(path).isFile() && readFileSync(path, 'utf8') === content;
   }
+  function completeArchive(record) {
+    const closed = storedIssuePath(root, record.id, 'closed');
+    const hasClosed = existsSync(closed);
+    requireThat(!hasClosed || sameReport(record.id, 'closed', record.base), 'The local closed report changed.');
+    formatArchivedIssue(root, record.id, record.base);
+    if (hasClosed) unlinkSync(closed);
+  }
   function completeLocation(record) {
     if (record.location === undefined || record.location === record.baseLocation) return;
-    if (record.storageAction === 'archive') {
-      requireThat(sameReport(record.id, 'archive', record.base), 'The local archive copy needs reconciliation.');
-      const closed = storedIssuePath(root, record.id, 'closed');
-      if (!existsSync(closed)) return;
-      requireThat(sameReport(record.id, 'closed', record.base), 'The local closed report changed.');
-      unlinkSync(closed);
-      return;
-    }
+    if (record.storageAction === 'archive') return completeArchive(record);
     if (record.storageAction === 'delete-proposal') {
       if (existsSync(storedIssuePath(root, record.id)))
         deletePendingIssueReport(root, { id: record.id, content: record.base, state: 'needs-approval' });
@@ -215,7 +221,7 @@ export function createSharedIssueQueue(service, options = {}) {
         ? ` Code PR: ${pr}.`
         : '') +
       '\n';
-    const report = withSharedProgress(previous, outcome).trimEnd() + note;
+    const report = formatIssueReport(withSharedProgress(previous, outcome).trimEnd() + note);
     copySharedIssueFile(join(root, '.issues', id + '.md'), report);
     checkpoint(id, 'Progress ended', context, report);
   }

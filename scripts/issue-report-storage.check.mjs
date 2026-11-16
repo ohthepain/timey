@@ -141,7 +141,7 @@ test('bulk archive and restore use local files and export omits archived reports
   const { root } = fixture(t);
   const other = '20261112T125500000-ea35';
   mkdirSync(join(root, '.issues/closed'));
-  writeFileSync(storedIssuePath(root, id, 'closed'), report('finished'));
+  writeFileSync(storedIssuePath(root, id, 'closed'), report('finished') + '\n## Archived notes  \n');
   writeFileSync(storedIssuePath(root, other, 'closed'), report('finished').replace(id, other));
   writeFileSync(
     join(root, '.issues/issue-numbers.json'),
@@ -157,6 +157,7 @@ test('bulk archive and restore use local files and export omits archived reports
   };
   const move = (action, issueIds) => moveIssueStorage(service, { action, issueIds }).results.map((item) => item.status);
   assert.deepEqual(move('archive', [id, other, id]), ['archived', 'archived']);
+  assert.equal(readSavedReport(root, id, 'archive').content, report('finished') + '\n## Archived notes\n');
   assert.equal(listIssueStorage(service, 'closed').issues.length, 0);
   assert.deepEqual(
     listIssueStorage(service, 'archive').issues.map((item) => item.issueNumber),
