@@ -189,7 +189,10 @@ test('Codex approval responses are bound to the pending chat', (t) => {
 test('a claimed successful integration cannot bypass independent verification', async (t) => {
   const { root, git, api, proposal, service } = fixture(t);
   transport(t, service);
-  mkdirSync(join(root, 'node_modules'));
+  const lock = 'lockfileVersion: 9.0\n';
+  mkdirSync(join(root, 'node_modules/.pnpm'), { recursive: true });
+  writeFileSync(join(root, 'pnpm-lock.yaml'), lock);
+  writeFileSync(join(root, 'node_modules/.pnpm/lock.yaml'), lock);
   writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node -e "process.exit(1)"' } }));
   git('add', '.');
   git('commit', '-qm', 'failing independent check');
@@ -1497,6 +1500,7 @@ test('final-review buttons close with explicit acceptance and reopen without lau
   const closed = selectedIssueView(service);
   assert.match(closed.content, /user selected Close issue/);
   assert.equal(closed.state, 'closed');
+  await service.issueCleanupTasks.get('20261022-one');
   assert.deepEqual(
     service.decideIssue('20261022-one', 'closed', 'reopen', closed.decisionBasis, 'Still fails for my file.'),
     { state: 'investigate' }
@@ -2676,7 +2680,7 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
   assert.equal(button.textContent, 'Accept fix and close');
   button.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(identities, 1);
+  assert.equal(identities, 0);
   window.document.getElementById('approve').click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(window.document.querySelector('[data-issue-decision-status]').textContent, /Waiting for the server/);
@@ -2721,7 +2725,7 @@ test('direct closure exposes the exact blocker and enables retry without a model
   );
 });
 
-test('close dialog previews exact cleanup resources and disables already-deleted branches', async (t) => {
+test('the separate Cleanup dialog previews resources and disables already-deleted branches', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   snapshot.issues[0].state = 'final';
   window.screenTest.show(snapshot);
@@ -2752,28 +2756,35 @@ test('close dialog previews exact cleanup resources and disables already-deleted
       defaultSelected: true,
     },
   ];
-  window.fetch = async (url, options) => {
-    if (url.endsWith('/issue-cleanup-identities'))
-      return { ok: true, json: async () => ({ basis: 'cleanup-basis', resources }) };
-    if (url.endsWith('/issue-cleanup-resource')) {
-      const { resourceId } = JSON.parse(options.body);
-      return { ok: true, json: async () => ({ resource: resources.find((item) => item.id === resourceId) }) };
-    }
-    return { ok: true, json: async () => snapshot };
-  };
-  window.document.getElementById('confirm').showModal = function () {
+  const modal = window.document.getElementById('confirm');
+  modal.showModal = function () {
     this.open = true;
   };
-  window.document.querySelector('[data-issue-decision="close"]').click();
+  const cleanup = window.createIssueClosureDialog({
+    dialog: modal,
+    panel: window.document.getElementById('selection'),
+    approve: window.document.getElementById('approve'),
+    error: window.document.getElementById('confirmation-error'),
+    async request(name, { resourceId }) {
+      if (name === 'issue-cleanup-identities') return { resources };
+      return { resource: resources.find((item) => item.id === resourceId) };
+    },
+  });
+  await cleanup.open(() => ({
+    issueId: snapshot.issues[0].id,
+    cleanupOnly: true,
+    flowRevision: 1,
+    resolution: 'fixed',
+    closureReasons: snapshot.closureReasons,
+  }));
   await new Promise((resolve) => setTimeout(resolve, 0));
   const dialog = window.document.getElementById('selection').textContent;
   assert.match(dialog, /ohthepain\/timey:codex\/issue-one/);
   assert.match(dialog, /Already deleted/);
   assert.match(dialog, /\/repo\/\.issues\/issue-work\/one/);
   assert.match(dialog, /2\.0 KB/);
-  assert.match(dialog, /Thread thread-1/);
+  assert.equal(window.document.querySelector('[data-cleanup-choice="chat"]'), null);
   assert.equal(window.document.querySelector('[data-cleanup-choice="remote"]').disabled, true);
-  assert.equal(window.document.querySelector('[data-cleanup-choice="chat"]').checked, true);
 });
 
 test('older final-review issue with an integrated commit can be accepted without fabricated stage history', (t) => {
