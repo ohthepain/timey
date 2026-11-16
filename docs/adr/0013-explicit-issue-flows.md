@@ -24,7 +24,8 @@ keeps the checkout's original base. The **Target ahead** menu can run **Update
 branch** immediately with a progress indicator, or add an **Update branch**
 block that must succeed before **Work** can run. With Play active, **Work**
 starts when the update succeeds. The immediate action leaves
-the flow graph intact. The route's
+the flow graph intact. A suggested target update also precedes Work and
+becomes its prerequisite when run. The route's
 existing update before **Publish PR** stays in place.
 Folder rows in the flow sidebar provide a direct issue capture action; captured
 issues save the selected folder in their flow at creation.

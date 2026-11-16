@@ -34,7 +34,8 @@ import { closureBlocks, setRetroBlock } from './flow-closure.mjs';
 import {
   FlowStore,
   editFlow,
-  updateBranchIndex,
+  insertSuggestedTargetUpdate,
+  isWorkBlock,
   folderName,
   inferType,
   linkFlowDefinition,
@@ -94,6 +95,14 @@ function shouldSuggestTargetUpdate(flow, environment) {
   const id = 'target-' + environment.targetRevision;
   if (!(environment.behind > 0) || flow.retiredBlocks?.some((block) => block.id === id)) return false;
   return !flow.blocks.some((block) => coversTargetUpdate(block, id));
+}
+
+function suggestTargetUpdate(flow, environment, catalog) {
+  if (!shouldSuggestTargetUpdate(flow, environment)) return null;
+  const update = makeBlock('merge-target', [], true, catalog);
+  update.id = 'target-' + environment.targetRevision;
+  insertSuggestedTargetUpdate(flow, update);
+  return update;
 }
 
 function coversTargetUpdate(block, id) {
@@ -318,15 +327,7 @@ class IssueFlows {
         flow.revision = saved.revision;
       }
     }
-    if (shouldSuggestTargetUpdate(flow, environment)) {
-      const suggestion = makeBlock('merge-target', [], false, catalog);
-      suggestion.id = 'target-' + environment.targetRevision;
-      suggestion.suggested = true;
-      const at = updateBranchIndex(flow.blocks);
-      const index = at < 0 ? flow.blocks.length : at;
-      suggestion.after = index ? [flow.blocks[index - 1].id] : [];
-      flow.blocks.splice(index, 0, suggestion);
-    }
+    suggestTargetUpdate(flow, environment, catalog);
     const selectedRow = data.issues.find((item) => item.id === id);
     if (selectedRow && !['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
       if (environment.pr?.mergedAt) selectedRow.status = 'merged';
@@ -650,7 +651,8 @@ class IssueFlows {
           !this.service.issueChats?.active?.has(issueId),
         'Wait for the existing issue operation to finish before playing.'
       );
-      const next = flow.blocks.find((block) => !completedBlock(block));
+      const next = await this.nextAutoplayBlock(flow, catalog);
+      if (this.autoplay.get(issueId)?.mode !== 'playing') return;
       if (!next) return this.pause(issueId, 'Flow complete');
       if (['close', 'retro', 'cleanup'].includes(next.kind)) return this.pause(issueId, 'Close the issue when ready.');
       const status = latestCurrentAttempt(next)?.status;
@@ -669,6 +671,14 @@ class IssueFlows {
     } catch (error) {
       this.pauseAutoplay(issueId, redactValue(error.message));
     }
+  }
+  async nextAutoplayBlock(flow, catalog) {
+    const next = flow.blocks.find((block) => !completedBlock(block));
+    return (await this.checkSuggestedWorkUpdate(flow, next, catalog)) || next;
+  }
+  async checkSuggestedWorkUpdate(flow, block, catalog) {
+    if (!block || !isWorkBlock(block) || !flowWorkspace(this.service, flow)) return null;
+    return suggestTargetUpdate(flow, await this.observer.observe(flow), catalog);
   }
   autoplayFinished(issueId, block, attempt) {
     if (this.autoplay.get(issueId)?.mode !== 'playing') return;
@@ -870,8 +880,7 @@ class IssueFlows {
       const current = await this.view(issue.id);
       const suggestion = current.flow.blocks.find((block) => block.id === input.blockId);
       requireThat(suggestion, 'The target changed again. Refresh its suggested block.');
-      const index = current.flow.blocks.indexOf(suggestion);
-      flow.blocks.splice(index, 0, suggestion);
+      insertSuggestedTargetUpdate(flow, suggestion);
     }
     if (['start', 'continue', 'open-block', 'refresh-definition'].includes(input.action)) {
       const changed = this.checkDefinition(issue, flow, input.blockId, catalog);
@@ -905,6 +914,10 @@ class IssueFlows {
           );
         }
       }
+      requireThat(
+        !(await this.checkSuggestedWorkUpdate(flow, block, catalog)),
+        'Complete the suggested Update branch before running Work.'
+      );
       return this.start(issue, flow, input, catalog);
     }
     if (input.action === 'delete-artifact') return this.deleteArtifact(flow, issue, input);

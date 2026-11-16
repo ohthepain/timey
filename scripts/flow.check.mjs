@@ -912,6 +912,63 @@ test('Work waits for its Update branch prerequisite even when Work uses a parall
   await start(work.id, flows.read(issue).revision);
   await flows.active.get(id)?.task;
 });
+test('a suggested target update precedes Work in the graph and in Play', { timeout: 5000 }, async (t) => {
+  const { root, id, service } = fixture(t);
+  const updateStarted = Promise.withResolvers();
+  const finishUpdate = Promise.withResolvers();
+  const workStarted = Promise.withResolvers();
+  const started = [];
+  const flows = createIssueFlows(service, {
+    observer: {
+      async observe() {
+        return { behind: 1, targetRevision: 'updated-target' };
+      },
+    },
+    executor: executor(async ({ block }) => {
+      started.push(block.kind);
+      if (block.kind === 'merge-target') {
+        updateStarted.resolve();
+        await finishUpdate.promise;
+      }
+      if (block.kind === 'work') workStarted.resolve();
+      return { summary: 'Done' };
+    }),
+  });
+  t.after(() => {
+    finishUpdate.resolve();
+    flows.close();
+  });
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  flow.blocks[0].data.fields = { type: 'bug', goal: 'Repair Save' };
+  flow.blocks = flow.blocks.filter((block) => ['request', 'work'].includes(block.kind));
+  flow.blocks[1].after = ['request'];
+  flow.blocks[1].lane = 1;
+  flow.workspace = { checkout: root, branch: 'codex/fixture' };
+  const saved = flows.store.save(flow, flow.revision);
+  const graph = (await flows.view(id)).flow.blocks;
+  assert.deepEqual(
+    graph.map((block) => block.id),
+    ['request', 'target-updated-target', 'work']
+  );
+  assert.deepEqual(graph[1].after, ['request']);
+  assert.deepEqual(graph[2].after, [graph[1].id]);
+  assert.equal(graph[1].lane, graph[2].lane);
+  await assert.rejects(
+    flows.action({ issueId: id, revision: saved.revision, action: 'start', blockId: 'work' }),
+    /Complete the suggested Update branch/
+  );
+  assert.equal(flows.read(issue).blocks.length, 2);
+  await flows.action({ issueId: id, revision: saved.revision, action: 'play' });
+  await updateStarted.promise;
+  assert.deepEqual(started, ['merge-target']);
+  assert.deepEqual(flows.read(issue).blocks.at(-1).after, ['target-updated-target']);
+  finishUpdate.resolve();
+  await workStarted.promise;
+  await flows.active.get(id)?.task;
+  assert.deepEqual(started, ['merge-target', 'work']);
+});
+
 test('completed target merges do not hide a later target change and parallel lanes join before publication', async (t) => {
   const { root, id, service } = fixture(t);
   const flows = createIssueFlows(service, {

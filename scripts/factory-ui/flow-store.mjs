@@ -185,9 +185,26 @@ function validateGraph(blocks) {
     seen.add(block.id);
   }
 }
-export function updateBranchIndex(blocks) {
+function updateBranchIndex(blocks) {
   const work = blocks.findIndex(isWorkBlock);
   return work >= 0 ? work : blocks.findIndex((block) => block.suggested);
+}
+
+export function insertSuggestedTargetUpdate(flow, update) {
+  const at = updateBranchIndex(flow.blocks);
+  const index = at < 0 ? flow.blocks.length : at;
+  const next = flow.blocks[index];
+  if (next && isWorkBlock(next)) {
+    update.lane = next.lane;
+    update.after = [...next.after];
+    next.after = [update.id];
+  } else {
+    update.after = flow.blocks
+      .slice(0, index)
+      .slice(-1)
+      .map((block) => block.id);
+  }
+  flow.blocks.splice(index, 0, update);
 }
 
 export function editFlow(flow, input, catalog) {
@@ -326,7 +343,7 @@ function linkPreWorkUpdate(blocks) {
   if (!work.after.includes(update.id)) work.after.push(update.id);
 }
 
-function isWorkBlock(block) {
+export function isWorkBlock(block) {
   return ['work', 'tdd', 'edit'].includes(block.kind);
 }
 
