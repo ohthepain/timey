@@ -5,11 +5,17 @@ import { join } from 'node:path';
 import YAML from 'yaml';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
-import { flowClosureArtifact, publishFlowPR, verifiedFlowCandidate } from './factory-ui/flow-delivery.mjs';
+import {
+  flowClosureArtifact,
+  prepareFlowPublication,
+  publishFlowPR,
+  verifiedFlowCandidate,
+} from './factory-ui/flow-delivery.mjs';
 import { decideIssue } from './factory-ui/issue-decision.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
 
 function fixture(t) {
   const f = deliveryFixture(t);
@@ -47,8 +53,13 @@ function fixture(t) {
     signal: new AbortController().signal,
     onProgress() {},
     flow: {
+      type: 'feature',
       target: { branch: 'dev', remote: 'origin' },
-      request: { goal: 'Make the flow explicit' },
+      request: {
+        goal: 'Make the flow explicit',
+        requestedProof: 'Run the browser flow and show the saved issue.',
+        wording: 'Describe the work.\n\n## Original heading',
+      },
       blocks: [
         {
           kind: 'verify',
@@ -80,6 +91,12 @@ function fixture(t) {
     async findByBranch() {
       return { number: 17 };
     },
+    async findIssueBranchPR() {
+      return null;
+    },
+    async gh() {
+      return 'dev\nrelease';
+    },
     async inspectExternalDelivery(number) {
       return {
         number,
@@ -95,7 +112,10 @@ function fixture(t) {
       calls.push('publish');
       assert.equal(work.branch, workspace.branch);
       assert.equal(head, f.input.revision);
-      assert.match(publication.body, /Independent verification/);
+      assert.equal(
+        publication.body,
+        '## Goal\n\nMake the flow explicit\n\n## Requested proof\n\nRun the browser flow and show the saved issue.\n\n## Original wording\n\nDescribe the work.\n\n## Original heading'
+      );
       return { number: 17, html_url: 'https://example.invalid/pr/17' };
     },
   };
@@ -143,8 +163,34 @@ function fixture(t) {
     calls,
     close,
     edit,
+    async preview() {
+      return (await prepareFlowPublication(service, ctx, workspace, options)).preview;
+    },
+    async publish() {
+      ctx.input.previewToken = (await this.preview()).token;
+      return publishFlowPR(service, ctx, workspace, folder, options);
+    },
   };
 }
+
+test('Publish previews an unverified commit and verifies it before the first remote write', async (t) => {
+  const f = fixture(t);
+  const verification = f.ctx.flow.blocks.pop().attempts[0].result;
+  const preview = await f.preview();
+  assert.equal(preview.head, verification.head);
+  assert.equal(f.calls.includes('push'), false);
+  f.ctx.input.previewToken = preview.token;
+  f.options.verifyCandidate = async () => {
+    f.calls.push('verify');
+    return { result: verification, evidence: [] };
+  };
+  const result = await publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options);
+  assert.deepEqual(
+    f.calls.filter((call) => call !== 'credentials'),
+    ['verify', 'push', 'publish']
+  );
+  assert.deepEqual(result.result.verification, verification);
+});
 
 test('a new flow closes through the actual decision writer with immutable verification and merged target evidence', async (t) => {
   const f = fixture(t);
@@ -159,6 +205,62 @@ test('a new flow closes through the actual decision writer with immutable verifi
   assert.equal(closed.accepted_result.verification_rerun, false);
   assert.ok(closed.accepted_result.evidence.length > 2);
 });
+
+function githubClosureFixture(f, checks) {
+  const provider = new StrategyProvider(f.workspace.checkout, f.provider.config);
+  const { head } = f.ctx.flow.blocks[0].attempts[0].result;
+  const repo = { full_name: provider.config.repository };
+  provider.findByBranch = f.provider.findByBranch;
+  provider.inspect = async () => ({
+    state: 'closed',
+    merged_at: '2026-11-13T10:00:00Z',
+    merge_commit_sha: 'merge-revision',
+    head: { sha: head, ref: f.workspace.branch, repo },
+    base: { ref: 'dev', repo },
+  });
+  provider.gh = async ([command, resource]) => {
+    if (command === 'pr') return JSON.stringify({ files: [{ path: 'src/feature.ts' }], statusCheckRollup: checks });
+    if (resource.includes('/compare/')) {
+      assert.equal(resource, 'repos/test/fixture/compare/merge-revision...target-sha');
+      return JSON.stringify({ status: 'ahead', behind_by: 0 });
+    }
+    assert.equal(resource, 'graphql');
+    const pullRequest = {
+      headRefOid: head,
+      baseRefName: 'dev',
+      baseRefOid: 'base-before-merge',
+      baseRef: { target: { oid: 'target-sha' } },
+      commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: checks } } } }] },
+    };
+    return JSON.stringify([{ data: { repository: { pullRequest } } }]);
+  };
+  f.options.provider = provider;
+}
+
+const failedCheck = { __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' };
+
+for (const [label, checks] of [
+  ['no observed checks', []],
+  ['a failed optional check', [{ ...failedCheck, isRequired: false }]],
+  ['a pending optional check', [{ ...failedCheck, status: 'IN_PROGRESS', isRequired: false }]],
+])
+  test(`Close accepts a merged PR with ${label}`, async (t) => {
+    const f = fixture(t);
+    githubClosureFixture(f, checks);
+    await f.close();
+    assert.equal(readQueue(f.root, { location: 'closed', issueId: f.ctx.issue.id }).issues[0].state, 'closed');
+  });
+
+for (const [check, reason] of [
+  [failedCheck, /Failed checks/],
+  [{ ...failedCheck, status: 'IN_PROGRESS' }, /PR checks are pending/],
+])
+  test(`Close blocks on a required ${check.status === 'COMPLETED' ? 'failed' : 'pending'} check`, async (t) => {
+    const f = fixture(t);
+    githubClosureFixture(f, [{ ...check, isRequired: true }]);
+    await assert.rejects(f.close(), reason);
+    assert.equal(readQueue(f.root).issues[0].state, 'verify');
+  });
 
 for (const status of ['pending', 'failed'])
   test(`flow closure retains the actual ${status} human observation guard`, async (t) => {
@@ -212,9 +314,17 @@ for (const changed of ['summary', 'command'])
 
 test('publication uses verified exact-head non-force push and the mandatory App publication method', async (t) => {
   const f = fixture(t);
-  f.provider.findByBranch = async () => null;
+  f.ctx.flow.destination = { branch: 'release' };
+  const preview = await f.preview();
+  assert.equal(preview.target, 'release');
+  assert.equal(preview.status, 'confirm');
+  assert.ok(!f.calls.includes('push'));
+  f.ctx.input.previewToken = preview.token;
   const result = await publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options);
-  assert.deepEqual(f.calls, ['credentials', 'push', 'publish']);
+  assert.deepEqual(
+    f.calls.filter((call) => call !== 'credentials'),
+    ['push', 'publish']
+  );
   assert.equal(result.result.pr, 17);
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
 });
@@ -224,11 +334,16 @@ test('publication refuses stale proof, missing App identity and the target branc
   f.provider.findByBranch = async () => null;
   f.provider.credentials = null;
   await assert.rejects(publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options), /GitHub App credentials/);
-  f.provider.credentials = { async session() {} };
+  f.provider.credentials = {
+    async session() {
+      return { slug: 'factory' };
+    },
+  };
   await assert.rejects(
     publishFlowPR(f.service, f.ctx, { ...f.workspace, branch: 'dev' }, f.folder, f.options),
     /separate from the target/
   );
+  f.ctx.input.previewToken = (await f.preview()).token;
   f.ctx.flow.blocks[0].attempts[0].result.head = 'obsolete';
   await assert.rejects(publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options), /explicit Verify block/);
   assert.deepEqual(f.calls, []);
@@ -241,33 +356,91 @@ test('publication rejects auto-merge and merge-queue enrollment before pushing',
     state: 'open',
     user: { login: 'factory[bot]' },
     auto_merge: {},
+    html_url: 'https://example.invalid/pr/17',
     head: { ref: f.workspace.branch, repo: { full_name: 'test/fixture' } },
     base: { ref: 'dev', repo: { full_name: 'test/fixture' } },
   };
-  f.provider.findByBranch = async () => pr;
-  await assert.rejects(
-    publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options),
-    /Remove this PR from auto-merge/
-  );
+  f.provider.findIssueBranchPR = async () => pr;
+  await assert.rejects(f.publish(), /Remove this PR from auto-merge/);
   pr.auto_merge = null;
-  f.provider.gh = async () =>
-    JSON.stringify({
-      data: {
-        repository: { pullRequest: { mergeQueueEntry: { id: 'queue' } } },
-      },
-    });
+  f.provider.gh = async (args) =>
+    args.includes('--paginate')
+      ? 'dev'
+      : JSON.stringify({
+          data: {
+            repository: { pullRequest: { mergeQueueEntry: { id: 'queue' } } },
+          },
+        });
   await assert.rejects(publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options), /merge queue/);
   assert.ok(!f.calls.includes('push'));
 });
 
 test('publication preserves a personally authored PR without pushing its branch', async (t) => {
   const f = fixture(t);
-  f.provider.findByBranch = async () => ({
+  f.provider.findIssueBranchPR = async () => ({
     number: 17,
+    html_url: 'https://example.invalid/pr/17',
     user: { login: 'person' },
+    head: { ref: f.workspace.branch, repo: { full_name: 'test/fixture' } },
+    base: { ref: 'dev', repo: { full_name: 'test/fixture' } },
   });
-  await assert.rejects(publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options), /Preserve its authorship/);
+  const preview = await f.preview();
+  assert.equal(preview.pr.url, 'https://example.invalid/pr/17');
+  assert.match(preview.message, /opened manually on GitHub/);
+  await assert.rejects(f.publish(), /opened manually on GitHub/);
   assert.ok(!f.calls.includes('push'));
+});
+
+test('repeat publication retries only the outstanding title, preserves the GitHub description, and can be up to date', async (t) => {
+  const f = fixture(t);
+  const pr = {
+    number: 17,
+    html_url: 'https://example.invalid/pr/17',
+    state: 'open',
+    title: 'Old title',
+    body: 'Hand-edited on GitHub',
+    user: { login: 'factory[bot]' },
+    head: { ref: f.workspace.branch, repo: { full_name: 'test/fixture' }, sha: 'old-commit' },
+    base: { ref: 'dev', repo: { full_name: 'test/fixture' } },
+  };
+  f.provider.findIssueBranchPR = async () => pr;
+  f.provider.inspect = async () => pr;
+  let titleFails = true;
+  f.provider.gh = async (args) => {
+    if (args.includes('--paginate')) return 'dev';
+    if (args.includes('graphql')) return JSON.stringify({ data: { repository: { pullRequest: {} } } });
+    assert.ok(args.includes('PATCH'));
+    assert.deepEqual(args.slice(-2), ['-f', 'title=' + f.ctx.issue.title]);
+    if (titleFails) throw Error('GitHub title update failed.');
+    pr.title = f.ctx.issue.title;
+    return JSON.stringify(pr);
+  };
+  const push = f.options.execute;
+  f.options.execute = async (input) => {
+    await push(input);
+    pr.head.sha = f.input.revision;
+  };
+  const first = await f.preview();
+  assert.equal(first.push, true);
+  assert.equal(first.rename, true);
+  assert.equal(first.body, undefined);
+  const staleToken = first.token;
+  f.ctx.issue.title = 'Updated issue title';
+  f.ctx.input.previewToken = staleToken;
+  await assert.rejects(publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options), /updated preview/);
+  assert.ok(!f.calls.includes('push'));
+  const failed = await f.publish();
+  assert.equal(failed.status, 'blocked');
+  assert.match(failed.summary, /Needs retry.*Pushed the verified commit/);
+  assert.equal(failed.result.url, pr.html_url);
+  titleFails = false;
+  const pending = await f.preview();
+  assert.equal(pending.push, false);
+  assert.equal(pending.rename, true);
+  await f.publish();
+  assert.equal(f.calls.filter((call) => call === 'push').length, 1);
+  assert.equal(pr.body, 'Hand-edited on GitHub');
+  assert.equal((await f.preview()).status, 'current');
 });
 
 test('candidate validation requires both checkpoints and hashes every retained command before delivery', (t) => {

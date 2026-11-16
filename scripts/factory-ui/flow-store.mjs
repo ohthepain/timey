@@ -1,120 +1,29 @@
+import { blockDefinitionId, requestBlock, withoutTarget } from './flow-block-data.mjs';
+import { BlockCatalog } from './block-catalog.mjs';
+import { bundledFlow } from './flow-definitions.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { requireThat, writeJson } from './common.mjs';
 
-export const blockCatalog = [
-  ['request', 'Request', 'neutral', [], 'Keep the goal, done check, proof, known facts, and constraints together.'],
-  [
-    'sharpen',
-    'Sharpen',
-    'yellow',
-    ['sharpen', 'grill-me', 'grill-with-docs', 'in-your-own-words'],
-    'Reach a shared understanding before choosing work.',
-  ],
-  [
-    'understand',
-    'Understand',
-    'yellow',
-    ['how', 'why', 'teach', 'recall'],
-    'Read the system and explain what matters for this request.',
-  ],
-  [
-    'design',
-    'Design',
-    'yellow',
-    ['architect', 'arena', 'swarm', 'interrogate', 'grill-with-docs'],
-    'Compare designs and retain the decision.',
-  ],
-  [
-    'advice',
-    'Advice',
-    'yellow',
-    ['poteto-help', 'sharpen'],
-    'Recommend skills and routing without starting the proposed work.',
-  ],
-  [
-    'playbook',
-    'Playbook',
-    'yellow',
-    ['poteto-mode', 'figure-it-out'],
-    'Propose a sequence of blocks for the user to review.',
-  ],
-  ['repro', 'Reproduce', 'orange', [], 'Reproduce the reported behavior and retain the actual result.'],
-  ['prototype', 'Prototype', 'green', [], 'Build and run a prototype, then collect comments here.'],
-  ['tdd', 'TDD', 'green', ['tdd'], 'Write and run a failing behavior test before implementation.'],
-  ['work', 'Work', 'green', ['poteto-mode', 'arena', 'swarm'], 'Complete only this block using the selected skill.'],
-  ['edit', 'Edit', 'green', ['edit'], 'Apply only enabled items in the edit checklist.'],
-  [
-    'benchmark',
-    'Benchmark',
-    'orange',
-    ['benchmark-checklist'],
-    'Measure the intended work and retain repeatable command evidence.',
-  ],
-  ['sol', 'Sol loop', 'orange', [], 'Run the chosen number of review iterations with Sol.'],
-  ['verify', 'Verify', 'orange', [], 'Run explicit candidate checks and retain their output.'],
-  ['merge-target', 'Merge from target', 'blue', [], 'Merge the current target into the issue branch when you choose.'],
-  ['publish', 'Publish PR', 'blue', [], 'Push the verified issue branch and publish its pull request when you choose.'],
-  ['merge', 'Merge', 'blue', [], 'Inspect the current pull request and use protected merge controls.'],
-  [
-    'retro',
-    'Retro',
-    'yellow',
-    ['retro', 'show-me-your-work'],
-    'Explain what happened and record suggested follow-up issues.',
-  ],
-  ['close', 'Close', 'neutral', [], 'Record explicit acceptance through the existing closure checks.'],
-  [
-    'delete-worktree',
-    'Delete worktree',
-    'neutral',
-    [],
-    'Inspect retained resources before removing the issue checkout.',
-  ],
-].map(([kind, label, color, skills, description]) => ({ kind, label, color, skills, description }));
-
-export const requestFields = ['wording', 'goal', 'doneCheck', 'proof', 'knownFacts', 'constraints'];
 export function requireIssueId(id) {
   requireThat(typeof id === 'string' && /^[\w-]{1,100}$/.test(id), 'Choose a valid saved issue.');
-}
-export function inferRequest(wording) {
-  const field = (names) => wording.match(new RegExp(`^(?:[-*]\\s*)?(?:${names})\\s*:\\s*(.+)$`, 'im'))?.[1] || '';
-  return {
-    wording,
-    goal:
-      field('goal') ||
-      wording
-        .split('\n')
-        .find((line) => line.trim())
-        ?.slice(0, 2000) ||
-      '',
-    doneCheck: field('done(?: check)?|acceptance|success'),
-    proof: field('proof|evidence'),
-    knownFacts: field('known(?: facts)?|context|symptom|repro'),
-    constraints:
-      field('constraints?') ||
-      [
-        ...wording.matchAll(
-          /(?:don't change any code yet|zero behavior change|repro first|let me review before proceeding)/gi
-        ),
-      ]
-        .map((m) => m[0])
-        .join('\n'),
-  };
 }
 export function inferType(wording) {
   if (/\b(investigate|understand|explain|why does|research)\b/i.test(wording)) return 'investigation';
   return /\b(bug|broken|crash|fails?|error|regression|doesn't work)\b/i.test(wording) ? 'bug' : 'feature';
 }
-export function makeBlock(kind, after = [], suggested = false) {
-  const entry = blockCatalog.find((item) => item.kind === kind);
+const bundledCatalog = new BlockCatalog();
+
+export function makeBlock(kind, after = [], suggested = false, catalog = bundledCatalog.read().entries) {
+  const entry = catalog.find((item) => item.id === kind);
   requireThat(entry, 'Choose a known block type.');
   return {
     id: randomUUID(),
-    kind,
+    kind: entry.kind,
+    ...(entry.id !== entry.kind ? { definition: entry.id } : {}),
     label: entry.label,
-    skill: null,
+    skill: entry.defaultSkill,
     prompt: '',
     iterations: 1,
     lane: 0,
@@ -123,6 +32,9 @@ export function makeBlock(kind, after = [], suggested = false) {
     edits: [],
     comments: [],
     attempts: [],
+    definitionChecksum: entry.checksum,
+    declaredArtifacts: entry.artifacts,
+    declaredDetails: entry.details,
   };
 }
 function originalWording(issue) {
@@ -132,35 +44,107 @@ function originalWording(issue) {
       ?.trim() || issue.title
   );
 }
-export function newFlow(issue, target) {
-  const request = makeBlock('request');
-  request.id = 'request';
-  const type = issue.request_type || inferType(originalWording(issue));
-  const work = makeBlock(type === 'investigation' ? 'understand' : 'work', [request.id]);
-  work.id = 'work';
-  const verify = makeBlock('verify', [work.id], true);
-  verify.id = 'verify';
-  const publish = makeBlock('publish', [verify.id], true);
-  publish.id = 'publish';
-  const merge = makeBlock('merge', [publish.id], true);
-  merge.id = 'merge';
-  const close = makeBlock('close', [merge.id], true);
-  close.id = 'close';
-  return {
+export function newFlow(issue, delivery, catalog = bundledCatalog.read().entries, selected) {
+  const wording = originalWording(issue);
+  const type = issue.request_type || inferType(wording);
+  const definition = selected?.definition ?? bundledFlow(type);
+  const blocks = (selected?.nodes ?? definition.blocks).map((node) => {
+    const block = makeBlock(node.block, node.after, node.suggested, catalog);
+    return { ...block, id: node.id, flowKey: node.id, lane: node.lane };
+  });
+  blocks[0].data = { wording, fields: null, ...(issue.run_retro && { runRetro: true }) };
+  const flow = {
     version: 1,
     issueId: issue.id,
     revision: 0,
-    type,
-    folder: null,
-    request: inferRequest(originalWording(issue)),
-    target,
+    routeType: type,
+    target: delivery,
+    startingPoint: null,
+    folder: issue.folder || null,
     workspace: null,
-    blocks:
-      type === 'investigation'
-        ? [request, work, { ...close, after: [work.id] }]
-        : [request, work, verify, publish, merge, close],
+    blocks,
   };
+  linkFlowDefinition(flow, definition);
+  return flow;
 }
+
+export function linkFlowDefinition(flow, { id, name, checksum }) {
+  flow.definition = { id, name, checksum };
+}
+
+function migrateFlow(flow, defaultTarget) {
+  const request = requestBlock(flow);
+  request.flowKey = 'request';
+  if (!request.data) {
+    const { wording, proof, ...fields } = flow.request;
+    request.data = { wording, fields: { ...fields, requestedProof: proof, type: flow.type } };
+    flow.routeType = flow.type;
+  }
+  const target = flow.blocks.find((block) => block.kind === 'target');
+  if (target) {
+    flow.target ??= target.data?.delivery;
+    flow.startingPoint ??= target.data?.startingPoint ?? null;
+    flow.blocks = withoutTarget(flow.blocks, target);
+    for (const block of flow.blocks)
+      for (const key of Object.keys(block.links ?? {})) if (block.links[key] === target.id) delete block.links[key];
+    if (target.attempts?.length || target.comments?.length) (flow.retiredBlocks ??= []).push(target);
+  }
+  migrateUpdateBranchLabels(flow);
+  linkPreWorkUpdate(flow.blocks);
+  flow.target ??= defaultTarget;
+  flow.startingPoint ??= null;
+  delete flow.request;
+  delete flow.type;
+  if (!flow.definition) {
+    const definition = bundledFlow(flow.routeType);
+    const kinds = new Map(definition.blocks.map((block) => [block.id, block.block]));
+    for (const block of flow.blocks) {
+      if (kinds.get(block.id) === blockDefinitionId(block) || block.routeDefault) {
+        block.flowKey = block.routeDefault
+          ? (definition.blocks.find((node) => node.block === blockDefinitionId(block))?.id ?? block.id)
+          : block.id;
+      }
+    }
+    linkFlowDefinition(flow, definition);
+  }
+  return flow;
+}
+
+function migrateUpdateBranchLabels(flow) {
+  for (const block of [...flow.blocks, ...(flow.retiredBlocks ?? [])])
+    if (block.kind === 'merge-target' && block.label === 'Merge from target') block.label = 'Update branch';
+}
+
+export function rebuildRoute(flow, type, definition, nodes, catalog) {
+  const current = new Map(flow.blocks.filter((block) => block.flowKey).map((block) => [block.flowKey, block]));
+  const taken = new Set([...flow.blocks, ...(flow.retiredBlocks ?? [])].map((block) => block.id));
+  const ids = new Map();
+  const retained = new Set();
+  const blocks = nodes.map((node) => {
+    const before = current.get(node.id);
+    const block =
+      before && blockDefinitionId(before) === node.block
+        ? { ...before }
+        : makeBlock(node.block, [], node.suggested, catalog);
+    if (before?.id === block.id) retained.add(block.id);
+    else if (!taken.has(node.id)) block.id = node.id;
+    taken.add(block.id);
+    ids.set(node.id, block.id);
+    return {
+      ...block,
+      flowKey: node.id,
+      after: node.after.map((id) => ids.get(id)),
+      lane: node.lane,
+      suggested: !block.attempts.length && node.suggested,
+    };
+  });
+  flow.retiredBlocks = [...(flow.retiredBlocks ?? []), ...flow.blocks.filter((block) => !retained.has(block.id))];
+  flow.blocks = blocks;
+  flow.routeType = type;
+  linkFlowDefinition(flow, definition);
+  return flow;
+}
+
 export class FlowStore {
   constructor(root) {
     this.directory = join(root, '.issues/flows');
@@ -169,15 +153,15 @@ export class FlowStore {
     requireIssueId(id);
     return join(this.directory, id, 'flow.json');
   }
-  read(issue, target) {
+  read(issue, target, catalog) {
     const path = this.path(issue.id);
-    if (!existsSync(path)) return newFlow(issue, target);
+    if (!existsSync(path)) return newFlow(issue, target, catalog);
     const record = JSON.parse(readFileSync(path, 'utf8'));
     requireThat(
       record.version === 1 && record.issueId === issue.id && Array.isArray(record.blocks),
       'The saved flow needs reconciliation. It was not reset.'
     );
-    return record;
+    return migrateFlow(record, target);
   }
   save(flow, expectedRevision) {
     const path = this.path(flow.issueId);
@@ -201,41 +185,44 @@ function validateGraph(blocks) {
     seen.add(block.id);
   }
 }
-export function editFlow(flow, input) {
+export function updateBranchIndex(blocks) {
+  const work = blocks.findIndex(isWorkBlock);
+  return work >= 0 ? work : blocks.findIndex((block) => block.suggested);
+}
+
+export function editFlow(flow, input, catalog) {
   const next = structuredClone(flow);
   const block = next.blocks.find((item) => item.id === input.blockId);
   const actions = {
-    request() {
-      requireThat(['bug', 'feature', 'investigation'].includes(input.type), 'Choose bug, feature, or investigation.');
-      requireThat(
-        input.request &&
-          requestFields.every((name) => typeof input.request[name] === 'string' && input.request[name].length <= 24000),
-        'Enter valid request fields.'
-      );
-      next.type = input.type;
-      next.request = Object.fromEntries(requestFields.map((field) => [field, input.request[field]]));
-    },
     folder() {
       next.folder = folderName(input.folder);
     },
     add() {
       const explicit = input.afterId ? next.blocks.findIndex((item) => item.id === input.afterId) : -1;
       requireThat(!input.afterId || explicit >= 0, 'Choose an existing insertion point.');
-      const index = explicit >= 0 ? explicit + 1 : next.blocks.findIndex((item) => item.suggested);
-      const at = index < 0 ? next.blocks.length : index;
-      const added = makeBlock(input.kind, at ? [next.blocks[at - 1].id] : []);
-      added.lane = validLane(input.lane ?? 0);
+      const index = explicit >= 0 ? explicit + 1 : defaultInsertionIndex(next.blocks, input.kind);
+      const at = index < 0 ? next.blocks.length : Math.max(1, index);
+      requireThat(
+        !['request', 'target'].includes(input.kind),
+        'Add a block other than Request or the legacy Target block.'
+      );
+      const added = makeBlock(input.kind, at ? [next.blocks[at - 1].id] : [], false, catalog);
+      added.lane = validLane(input.lane ?? (input.kind === 'merge-target' ? next.blocks[at]?.lane : 0) ?? 0);
       added.after = laneDependencies(next.blocks, at, added.lane);
       next.blocks.splice(at, 0, added);
       const following = next.blocks[at + 1];
-      if (following && !following.attempts.length && following.lane === added.lane) following.after = [added.id];
+      if (input.kind === 'merge-target') linkPreWorkUpdate(next.blocks);
+      else if (following && !following.attempts.length && following.lane === added.lane) following.after = [added.id];
     },
     update() {
       requireEditable(block);
       const values = input.changes;
       requireThat(values && typeof values === 'object', 'Supply block edits.');
       for (const key of Object.keys(values))
-        requireThat(['label', 'skill', 'prompt', 'iterations', 'lane', 'edits'].includes(key), 'Unknown block edit.');
+        requireThat(
+          ['label', 'skill', 'prompt', 'iterations', 'lane', 'edits', 'inputs', 'links'].includes(key),
+          'Unknown block edit.'
+        );
       if ('label' in values)
         requireThat(
           typeof values.label === 'string' && values.label.trim() && values.label.length <= 160,
@@ -243,7 +230,10 @@ export function editFlow(flow, input) {
         );
       if ('skill' in values)
         requireThat(
-          values.skill === null || (typeof values.skill === 'string' && /^[\w:-]{1,100}$/.test(values.skill)),
+          values.skill === null ||
+            (typeof values.skill === 'string' &&
+              /^[\w.:-]{1,160}$/.test(values.skill) &&
+              catalog.find((entry) => entry.id === blockDefinitionId(block))?.skills?.includes(values.skill)),
           'Choose a valid installed skill.'
         );
       if ('prompt' in values)
@@ -270,17 +260,12 @@ export function editFlow(flow, input) {
             ),
           'Supply a valid edit checklist.'
         );
-      if ('skill' in values && block.attempts.length)
-        requireThat(
-          values.skill === block.skill,
-          'Keep the original skill for this block. Add a new block to choose another method.'
-        );
       Object.assign(block, values);
       if ('lane' in values) block.after = laneDependencies(next.blocks, next.blocks.indexOf(block), block.lane);
     },
     move() {
       requireEditable(block);
-      requireThat(block.kind !== 'request', 'The request stays at the beginning.');
+      requireThat(block.kind !== 'request', 'Request stays at the beginning.');
       const at = next.blocks.indexOf(block),
         to = at + (input.direction === 'up' ? 1 : -1);
       requireThat(
@@ -295,10 +280,14 @@ export function editFlow(flow, input) {
     },
     remove() {
       requireEditable(block);
+      requireThat(block.kind !== 'request', 'Keep the original Request.');
       requireThat(
-        block.kind !== 'request' && !block.attempts.length,
-        'Keep the original request and attempted blocks as history.'
+        !block.attempts.some(
+          (attempt) => !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status)
+        ),
+        'Stop or reconcile the block before removing it.'
       );
+      if (block.attempts.length || block.comments.length) (next.retiredBlocks ??= []).push(block);
       next.blocks = next.blocks.filter((item) => item.id !== block.id);
       next.blocks.forEach((item) => {
         item.after = item.after.flatMap((id) => (id === block.id ? block.after : [id]));
@@ -328,12 +317,24 @@ function validLane(value) {
   requireThat(Number.isInteger(value) && value >= 0 && value <= 3, 'Choose a lane between zero and three.');
   return value;
 }
+function linkPreWorkUpdate(blocks) {
+  const index = updateBranchIndex(blocks);
+  const work = blocks[index];
+  const update = blocks[index - 1];
+  if (!work || !isWorkBlock(work) || update?.kind !== 'merge-target') return;
+  if (!work.after.includes(update.id)) work.after.push(update.id);
+}
+
+function isWorkBlock(block) {
+  return ['work', 'tdd', 'edit'].includes(block.kind);
+}
+
+function defaultInsertionIndex(blocks, kind) {
+  return kind === 'merge-target' ? updateBranchIndex(blocks) : blocks.findIndex((item) => item.suggested);
+}
+
 function requireEditable(block) {
   requireThat(block, 'Choose a saved block.');
-  requireThat(
-    !['running', 'stopping', 'uncertain'].includes(block.attempts.at(-1)?.status),
-    'Stop or reconcile this block before changing it.'
-  );
 }
 
 function laneDependencies(blocks, index, lane) {

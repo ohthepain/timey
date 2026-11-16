@@ -4,7 +4,12 @@ import { requireThat } from './common.mjs';
 
 export function flowOwnsIssue(service, issueId) {
   if (service.flowOperationIssueId === issueId) return false;
-  if (service.flows?.active.has(issueId)) return true;
+  if (
+    service.flows?.active.has(issueId) ||
+    service.flows?.flowBuilds?.has(issueId) ||
+    service.flows?.closureTasks?.has(issueId)
+  )
+    return true;
   if (typeof issueId !== 'string' || !/^[\w-]{1,100}$/.test(issueId)) return false;
   const path = join(service.root, '.issues/flows', issueId, 'flow.json');
   if (!existsSync(path)) return false;

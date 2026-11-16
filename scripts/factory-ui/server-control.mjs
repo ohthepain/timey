@@ -6,6 +6,9 @@ import { saveLifecycle } from './lifecycle-store.mjs';
 import { readQueue } from './data.mjs';
 import { openSiblingIssueIds } from './linked-issues.mjs';
 import { cleanupActionRecords } from './issue-cleanup.mjs';
+import { canCancelInterruptedPreparation } from './issue-action-cancellation.mjs';
+import { isActiveRun } from './runs.mjs';
+import { storedIssuePath } from './issue-report-storage.mjs';
 
 const finishing = new Set([
   '/api/server-cancel-restart',
@@ -29,11 +32,13 @@ export function serverControl(service, restart) {
   const timer = setInterval(tick, 300);
   timer.unref();
   function activity() {
-    const connected = service.store.connected;
+    const runs = new Set(service.store.connected);
+    for (const run of service.store.runs) if (isActiveRun(run)) runs.add(run.id);
     const conversation = conversationActivity(service);
-    const controllers = [...service.lifecycleTasks.keys()].filter(
-      (id) => !connected.has(service.lifecycleRuns[id]?.childRunId)
-    );
+    const controllers = [...service.lifecycleTasks.keys()].filter((id) => {
+      const record = service.lifecycleRuns[id];
+      return !runs.has(record?.childRunId) && !runs.has(record?.work?.runId);
+    });
     const locks = [
       'factory.lock',
       'factory-progress.lock',
@@ -42,11 +47,13 @@ export function serverControl(service, restart) {
     ].filter((name) => existsSync(join(service.root, '.issues', name)));
     return {
       actions:
-        connected.size +
+        runs.size +
         nativeActions(service.codex) +
         controllers.length +
         (service.captures?.active || 0) +
         (service.flows?.active.size || 0) +
+        (service.flows?.flowBuilds?.size || 0) +
+        (service.flows?.captures?.size || 0) +
         cleanupActions(service),
       operations: conversation.operations,
       uncertain: conversation.uncertain,
@@ -139,9 +146,9 @@ function actionItems(service) {
   const runs = service.store.runs
     .filter((run) => listableAction(run, service))
     .sort((left, right) => Date.parse(right.updated || right.created) - Date.parse(left.updated || left.created))
-    .slice(0, 40)
-    .map((run) => actionEntry(run, service, queue))
-    .filter((item) => item.currentStrategy);
+    .map((run) => actionEntry(run, service, queue));
+  const current = runs.filter((item) => item.active);
+  const recent = runs.filter((item) => !item.active && item.currentStrategy);
   const cleanup = activeCleanups(service).map((record) => ({
     id: `cleanup:${record.issueId}`,
     title: `Cleanup: ${record.title || record.issueId}`,
@@ -158,7 +165,7 @@ function actionItems(service) {
     canPause: false,
     canSteer: false,
   }));
-  return [...cleanup, ...runs].slice(0, 40);
+  return [...cleanup, ...current, ...recent.slice(0, Math.max(0, 40 - cleanup.length - current.length))];
 }
 
 function cleanupSummary(record) {
@@ -169,7 +176,7 @@ function cleanupSummary(record) {
 }
 
 function listableAction(run, service) {
-  if (service.store.connected.has(run.id)) return true;
+  if (service.store.connected.has(run.id) || isActiveRun(run)) return true;
   return isRecentAction(run) && hasRestartableStatus(run);
 }
 
@@ -187,7 +194,7 @@ function isActionKind(run) {
 }
 
 function hasRestartableStatus(run) {
-  return ['blocked', 'failed', 'paused', 'running', 'checking'].includes(run.status);
+  return ['blocked', 'failed', 'paused'].includes(run.status);
 }
 
 function linkedIssueIds(run, action) {
@@ -211,16 +218,19 @@ function actionEntry(run, service, queue) {
   const activeIssue = issueIds.find((id) => service.lifecycleTasks.has(id));
   const strategy = strategyForIssue(service, issueIds, run);
   const connected = service.store.connected.has(run.id);
+  const interruptedPreparation = canCancelInterruptedPreparation(service, run);
   const controls = actionCapabilities(run, action, strategy, activeIssue, connected, turn, queue);
   return {
     id: run.id,
     title: actionTitle(action, run),
     kind: run.kind,
     status: run.status,
+    active: connected || isActiveRun(run),
     summary: actionSummary(run),
-    details: actionDetails(action, run),
+    details: interruptedPreparation ? 'Setup was interrupted. No worker thread was saved.' : actionDetails(action, run),
     issues,
     ...controls,
+    ...(interruptedPreparation && { canCancel: true, cancelReason: '' }),
   };
 }
 
@@ -251,7 +261,7 @@ function actionCapabilities(run, action, strategy, activeIssue, connected, turn,
   const canCancel = cancellableAction(run, action, strategy, activeIssue, connected, queue);
   return {
     currentStrategy: isCurrentStrategy(run, strategy),
-    canStop: canStopAction(activeIssue, turn),
+    canStop: connected && canStopAction(activeIssue, turn),
     canRestart,
     canSkip,
     canCancel,
@@ -307,8 +317,13 @@ function controlReason(enabled, reason) {
 }
 
 function issueLink(queue, id) {
-  const issue = queue.issues.find((item) => item.id === id);
-  return { id, title: issue?.title || id };
+  const issue = queue.issues.find((item) => item.id === id) ?? inactiveIssue(queue.root, id);
+  return { id, title: issue?.title || id, issueNumber: issue?.issueNumber };
+}
+
+function inactiveIssue(root, id) {
+  const location = ['closed', 'archive'].find((entry) => existsSync(storedIssuePath(root, id, entry)));
+  if (location) return readQueue(root, { location, issueId: id }).issues.find((item) => item.id === id);
 }
 
 function restartable(run, action, strategy, connected) {

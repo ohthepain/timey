@@ -39,8 +39,8 @@ stages. Optional queue discussion remains separate.
 
 Full Stop leaves an open, non-draft, merge-ready PR with green required checks,
 review findings addressed, and neither auto-merge nor merge-queue enrollment.
-Full Send adds an explicit Merge control after the PR is ready. The server
-rechecks GitHub's approving review and required checks for the current head when
+Full Send adds an explicit Merge control after local verification and GitHub
+readiness pass. The server rechecks GitHub readiness for the current head when
 the person selects it, then performs the protected exact-head merge and records
 the result before updating local `dev`. Local updates proceed only on a clean
 `dev` checkout and use fast-forward only; otherwise the merge remains recorded
@@ -50,13 +50,13 @@ the current strategy run UUID, verified candidate and target revision. The issue
 label used to link stored actions is not a candidate approval identity. Explicit
 Continue uses its newly authorized run identity; it never carries candidate-bound
 approval from another run.
-The adapter requires an active GitHub ruleset with strict required status checks. GitHub must
-enforce current-target freshness; local reads and locks cannot replace that rule.
-The merging credential must not bypass any applicable CI ruleset. Review rulesets
-are evaluated separately: for owner-authored or factory-app-authored PRs, the
-factory may use its verified PR-only review bypass. Requested changes still block.
-No classic protection is required; if one exists, its review requirement still
-applies. The REST merge request includes the verified head SHA and requires a
+Full Send follows GitHub's merge decision for the target branch, including
+configured reviews, required checks, and branch freshness. A GitHub-ready PR
+passes with zero checks or unsuccessful optional checks. Local verification
+is a separate requirement for the exact candidate. Full Stop retains its
+verified review bypass for owner-authored and factory-app-authored PR handoff
+when an independent strict CI ruleset prevents the credential from bypassing checks.
+The REST merge request includes the verified head SHA and requires a
 merge commit so the issue branch is part of the target's Git history. Full Send
 stops if the repository disables merge commits. The request uses the ordinary
 REST endpoint without an admin flag, default-branch push, auto-merge or queue
@@ -120,8 +120,8 @@ issue remains open for explicit human acceptance.
 
 The review ruleset grants the factory app PR-only bypass. The separate CI ruleset
 requires the GitHub Actions `test` check and up-to-date branches, with no factory
-app bypass. The owner may retain personal bypass for direct pushes. These grants
-do not authorize the factory to merge an issue that was not started as Full Send.
+app bypass. The owner may retain personal bypass for direct pushes. Full Send
+requires GitHub to report the PR ready before attempting the merge.
 The legacy delivery adapter retains its existing policy.
 
 Sol Loop is explicitly off, one round, or up to three rounds. One available Sol

@@ -17,6 +17,10 @@ and discussion of their required input; launching work requires another choice.
 Dependencies outside the selection are inspected and explained before proposing
 their inclusion. Existing workers are reused rather than duplicated.
 
+For changes to the block inspector's Markdown labels, follow
+[Edit the Factory UI from Markdown](../../README.md#edit-the-factory-ui-from-markdown).
+Use `pnpm run factory ui find` to locate the source and its consumers.
+
 ## Check progress
 
 `/factory status` displays a code-generated summary from the saved factory records.
@@ -125,8 +129,9 @@ Read [operating rules](operating.md) for ownership, launch and integration polic
 ## Local UI adapter
 
 The default browser page is the [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
-Its blocks run only on explicit starts. The `/classic` page retains the strategy
-and lifecycle adapter described below. Refreshing either page starts no new work.
+Its blocks can run individually or through the issue's Play control. The
+`/classic` page retains the strategy and lifecycle adapter described below.
+Refreshing either page starts no new work.
 
 The [local factory UI](factory-ui.md) is an alternative front door for the same
 queue and ledger. `pnpm run factory:ui -- --project /absolute/project` serves the

@@ -1,6 +1,17 @@
-import { linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmdirSync, unlinkSync } from 'node:fs';
+import {
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmdirSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
-import { parse } from 'yaml';
+import { parse, parseDocument } from 'yaml';
 import { git, requireThat } from './common.mjs';
 import { sharedIssueQueueEnabled } from './shared-issue-config.mjs';
 
@@ -88,6 +99,54 @@ function assertExpectedReport(path, id, expectedContent) {
   const content = readFileSync(path, 'utf8');
   requireThat(reportMetadata(content)?.id === id, 'The report does not belong to the selected issue.');
   requireThat(expectedContent === undefined || content === expectedContent, 'The report changed before the move.');
+}
+
+export function renameStoredIssue(root, issue, title) {
+  updateStoredIssueMetadata(root, issue, { title });
+}
+
+export function updateStoredIssueMetadata(root, issue, changes) {
+  const path = storedIssuePath(root, issue.id, issue.location);
+  const lock = join(root, '.issues/factory.lock');
+  const temporary = path + '.' + randomUUID() + '.tmp';
+  mkdirSync(lock);
+  try {
+    const details = reportFile(path);
+    requireThat(details, 'The issue report is missing.');
+    const content = readFileSync(path, 'utf8');
+    requireThat(content === issue.content, 'The issue report changed. Refresh before saving.');
+    const header = content.match(/^(---\r?\n)([\s\S]*?)(\r?\n---(?:\r?\n|$))/);
+    requireThat(header, 'The issue report has no valid metadata.');
+    const metadata = parseDocument(header[2]);
+    requireThat(
+      !metadata.errors.length && metadata.get('id') === issue.id,
+      'The report does not belong to the selected issue.'
+    );
+    for (const [key, value] of Object.entries(changes)) metadata.set(key, value);
+    const replacement = metadata.toString().trimEnd().replaceAll('\n', header[1].slice(3));
+    writeFileSync(temporary, header[1] + replacement + header[3] + content.slice(header[0].length), {
+      flag: 'wx',
+      mode: details.mode & 0o777,
+    });
+    renameSync(temporary, path);
+  } finally {
+    if (stat(temporary)) unlinkSync(temporary);
+    rmdirSync(lock);
+  }
+}
+
+export function deletePendingIssueReport(root, issue) {
+  const path = storedIssuePath(root, issue.id, 'open');
+  const lock = join(root, '.issues/factory.lock');
+  mkdirSync(lock);
+  try {
+    requireThat(reportFile(path), 'The issue report is missing.');
+    assertExpectedReport(path, issue.id, issue.content);
+    requireThat(issue.state === 'needs-approval', 'Only an issue awaiting approval can be deleted here.');
+    unlinkSync(path);
+  } finally {
+    rmdirSync(lock);
+  }
 }
 
 export function configuredClosedState(root) {

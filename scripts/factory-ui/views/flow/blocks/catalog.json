@@ -1,0 +1,128 @@
+{
+  "request": {
+    "label": "Request",
+    "color": "neutral",
+    "order": 1,
+    "defaultSkill": null
+  },
+  "sharpen": {
+    "label": "Sharpen",
+    "color": "yellow",
+    "order": 2,
+    "defaultSkill": null
+  },
+  "understand": {
+    "label": "Understand",
+    "color": "yellow",
+    "order": 3,
+    "defaultSkill": null
+  },
+  "design": {
+    "label": "Design",
+    "color": "yellow",
+    "order": 4,
+    "defaultSkill": null
+  },
+  "advice": {
+    "label": "Advice",
+    "color": "yellow",
+    "order": 5,
+    "defaultSkill": null
+  },
+  "playbook": {
+    "label": "Playbook",
+    "color": "yellow",
+    "order": 6,
+    "defaultSkill": null
+  },
+  "repro": {
+    "label": "Reproduce",
+    "color": "orange",
+    "order": 7,
+    "defaultSkill": null
+  },
+  "prototype": {
+    "label": "Prototype",
+    "color": "green",
+    "order": 8,
+    "defaultSkill": null
+  },
+  "tdd": {
+    "label": "TDD",
+    "color": "green",
+    "order": 9,
+    "defaultSkill": null
+  },
+  "work": {
+    "label": "Work",
+    "color": "green",
+    "order": 10,
+    "defaultSkill": null
+  },
+  "edit": {
+    "label": "Edit",
+    "color": "green",
+    "order": 11,
+    "defaultSkill": null
+  },
+  "benchmark": {
+    "label": "Benchmark",
+    "color": "orange",
+    "order": 12,
+    "defaultSkill": null
+  },
+  "sol": {
+    "label": "Sol loop",
+    "color": "orange",
+    "order": 13,
+    "defaultSkill": null
+  },
+  "verify": {
+    "label": "Verify",
+    "color": "orange",
+    "order": 14,
+    "defaultSkill": null
+  },
+  "merge-target": {
+    "label": "Update branch",
+    "color": "blue",
+    "order": 15,
+    "defaultSkill": null
+  },
+  "publish": {
+    "label": "Publish PR",
+    "color": "blue",
+    "order": 16,
+    "defaultSkill": null
+  },
+  "merge": {
+    "label": "Merge",
+    "color": "blue",
+    "order": 17,
+    "defaultSkill": null
+  },
+  "retro": {
+    "label": "Retro",
+    "color": "yellow",
+    "order": 18,
+    "defaultSkill": null
+  },
+  "close": {
+    "label": "Close",
+    "color": "neutral",
+    "order": 19,
+    "defaultSkill": null
+  },
+  "cleanup": {
+    "label": "Cleanup",
+    "color": "neutral",
+    "order": 20,
+    "defaultSkill": null
+  },
+  "delete-worktree": {
+    "label": "Delete worktree",
+    "color": "neutral",
+    "order": 20,
+    "defaultSkill": null
+  }
+}

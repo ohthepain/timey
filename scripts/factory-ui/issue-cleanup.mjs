@@ -4,16 +4,53 @@ import { lstat as lstatAsync, readdir as readdirAsync } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { digest, git, readJson, requireThat, writeJson } from './common.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
-import { conversationState } from './conversation-store.mjs';
+import { boundConversationThreads, conversationState } from './conversation-store.mjs';
 import { storedIssuePath } from './issue-report-storage.mjs';
 import { readQueue as queueReader } from './data.mjs';
 import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { openSiblingIssueIds } from './linked-issues.mjs';
+import { assertFlowRemote } from './flow-delivery.mjs';
 
 const activeRunStates = new Set(['preparing', 'running', 'checking']);
 
+export function worktreeCleanupService(service, issueId, workspace) {
+  const cleanupService = Object.create(service);
+  cleanupService.lifecycleRuns = Object.fromEntries(
+    Object.entries(service.lifecycleRuns).map(([id, saved]) => [
+      id,
+      saved.work || !saved.chatCheckout ? saved : { ...saved, work: saved.chatCheckout },
+    ])
+  );
+  cleanupService.lifecycleRuns[issueId] = { ...cleanupService.lifecycleRuns[issueId], issueId, work: workspace };
+  return cleanupService;
+}
+
+export async function runFlowCleanup(service, issueId, resolution, branchChoices) {
+  const selectedResources = [...(await defaultFlowCleanup(service, issueId, resolution)), ...branchChoices];
+  const result = await executeIssueCleanup(service, issueId, {
+    selected: selectedResources.map((item) => item.id),
+    selectedResources,
+    resolution,
+    automaticWorkspace: true,
+  });
+  return result.cleanup;
+}
+
+async function defaultFlowCleanup(service, issueId, resolution) {
+  const identities = issueCleanupIdentities(service, issueId, resolution).resources;
+  const workspace = identities.find((item) => item.kind === 'workspace');
+  if (!workspace) return chatResources(service, issueId);
+  const { resource } = await previewIssueCleanupResource(service, issueId, workspace.id, resolution);
+  if (resource.state === 'already-deleted') return [resource, ...(await chatResources(service, issueId))];
+  return [resource];
+}
+
 export function deleteIssueWorktree(service, { issueId, expected }) {
   service.ownServer();
+  requireThat(
+    !service.flows?.closurePending?.(issueId),
+    'Finish the saved closure sequence before deleting resources.'
+  );
   const issue = cleanupIssue(service, issueId);
   const worktree = localWorktreeIdentity(service, issue);
   if (!expected) return worktree;
@@ -128,7 +165,45 @@ export async function previewIssueCleanupResource(service, issueId, resourceIdVa
   const work = service.lifecycleRuns[issueId]?.work;
   const resource = await previewResourceByIdentity(service, issueId, work, identity);
   applyCleanupDefaults([resource], issue.closure?.reason || resolution, isDelivered(service, issueId, work));
+  if (service.flowCleanupPreview) await describeBranchDiscard(service, work, resource);
   return { issueId, resource };
+}
+
+async function describeBranchDiscard(service, work, resource) {
+  if (!resource.eligible || !['local-branch', 'remote-branch'].includes(resource.kind)) return;
+  try {
+    const { target, remote, repository } = work.config;
+    requireThat(target !== resource.name, 'The delivery branch is protected.');
+    if (resource.kind === 'local-branch') {
+      const base = [`refs/remotes/${remote}/${target}`, `refs/heads/${target}`].find((ref) => {
+        try {
+          git(service.root, 'show-ref', '--verify', '--hash', ref);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      requireThat(base, 'The target revision is unavailable.');
+      const range = base + '..' + resource.revision;
+      resource.discardCount = Number(git(service.root, 'rev-list', '--count', range));
+      resource.discard = git(service.root, 'log', '-10', '--format=%h %s', range).split('\n').filter(Boolean);
+    } else {
+      const comparison = encodeURIComponent(target) + '...' + resource.revision;
+      const provider = cleanupProvider(service, work.config);
+      const result = JSON.parse(await provider.gh(['api', `repos/${repository}/compare/${comparison}?per_page=10`]));
+      requireThat(
+        Number.isInteger(result.ahead_by) && Array.isArray(result.commits),
+        'The branch comparison is unavailable.'
+      );
+      resource.discardCount = result.ahead_by;
+      resource.discard = result.commits.map(
+        (commit) => commit.sha.slice(0, 8) + ' ' + commit.commit.message.split('\n')[0]
+      );
+    }
+  } catch {
+    resource.eligible = false;
+    resource.reason = 'Could not check what deleting this branch would discard.';
+  }
 }
 
 export async function previewIssueCleanupWorkspaceSize(service, issueId, resourceIdValue) {
@@ -164,7 +239,11 @@ async function previewRemoteBranch(service, issueId, work) {
   const shared = sharedBranch(service, issueId, work.branch);
   return remoteBranchResource(issueId, work, remote, {
     shared,
-    remoteEligible: remoteBranchEligible(work.branch === `codex/issue-${issueId}`, remote.revision, shared),
+    remoteEligible: remoteBranchEligible(
+      work.branch !== work.config.target && ownsIssueBranch(cleanupIssue(service, issueId), work.branch),
+      remote.revision,
+      shared
+    ),
   });
 }
 
@@ -180,9 +259,11 @@ function previewLocalBranch(service, issueId, work) {
 }
 
 function identityBranchResources(issueId, work) {
-  if (!hasBranchConfig(work)) return [];
+  if (!work?.branch) return [];
   return [
-    identityResource('remote-branch', issueId, work.branch, { repository: work.config.repository }),
+    ...(hasBranchConfig(work)
+      ? [identityResource('remote-branch', issueId, work.branch, { repository: work.config.repository })]
+      : []),
     identityResource('local-branch', issueId, work.branch),
   ];
 }
@@ -296,12 +377,13 @@ function previewChat(service, issueId, identity) {
 }
 
 async function availableBranchResources(service, issueId, work, workspace) {
-  if (!hasBranchConfig(work)) return [];
+  if (!work?.branch) return [];
+  if (!hasBranchConfig(work)) return [previewLocalBranch(service, issueId, work)];
   return branchResources(service, issueId, work, workspace);
 }
 
 function hasBranchConfig(work) {
-  return Boolean(work?.branch && work?.config);
+  return Boolean(work?.branch && work?.config?.repository);
 }
 
 function applyCleanupDefaults(resources, resolution, delivered) {
@@ -335,9 +417,14 @@ function validateCleanupResourceSnapshots(issueId, input) {
   const snapshots = new Map((input.selectedResources || []).map((item) => [item.id, item]));
   requireThat(snapshots.size === selected.size, 'Refresh selected cleanup checks before continuing.');
   requireThat(
-    [...selected].every(
-      (id) => snapshots.has(id) && snapshots.get(id).eligible && snapshots.get(id).state === 'present'
-    ),
+    [...selected].every((id) => {
+      const item = snapshots.get(id);
+      return (
+        item &&
+        ((item.eligible && item.state === 'present') ||
+          (input.automaticWorkspace && ['workspace', 'chat'].includes(item.kind)))
+      );
+    }),
     'Select only resources whose checks completed and confirmed they are available.'
   );
   return { preview: { issueId, resources: [...selected].map((id) => snapshots.get(id)) }, selected: [...selected] };
@@ -497,6 +584,7 @@ function retryableCleanupIds(saved, resourceIdValue = null) {
 }
 
 export function startIssueCleanupRetry(service, issueId, resourceIdValue = null) {
+  requireThat(!service.flows?.closurePending?.(issueId), 'Retry Cleanup from the issue flow.');
   const saved = readCleanup(service, issueId);
   requireThat(saved?.status === 'incomplete', 'There is no incomplete cleanup to retry.');
   requireThat(!service.issueCleanupTasks?.has(issueId), 'Cleanup is already running for this issue.');
@@ -686,7 +774,8 @@ function cleanupProvider(service, config) {
 
 function branchFacts(service, issueId, branch, workspace, remote, localRevision) {
   const shared = sharedBranch(service, issueId, branch);
-  const managed = branch === `codex/issue-${issueId}`;
+  const target = service.lifecycleRuns[issueId]?.work?.config?.target;
+  const managed = branch !== target && ownsIssueBranch(cleanupIssue(service, issueId), branch);
   const attachedPath = branchWorktreePath(service.root, branch);
   const workspaceWillBeRemoved = workspaceAttachedForRemoval(attachedPath, workspace);
   return {
@@ -970,17 +1059,11 @@ function findIssueTitle(service, issueId) {
 
 function issueChatRuns(service, issueId) {
   const queue = queueReader(service.root);
-  const runs = service.store.runs.filter(
-    (run) => run.issueId === issueId && run.threadId && !sharedWithOpenIssue(service, queue, run, issueId)
-  );
-  const saved = conversationState(service.root, issueId).threadId;
-  if (
-    saved &&
-    !runs.some((run) => run.threadId === saved) &&
-    !sharedWithOpenIssue(service, queue, { threadId: saved }, issueId)
-  )
-    runs.push({ threadId: saved, kind: 'issue-chat' });
-  return [...new Map(runs.map((run) => [run.threadId, run])).values()];
+  const state = conversationState(service.root, issueId);
+  const bound = boundConversationThreads(state).map((threadId) => ({ threadId, kind: 'issue-chat' }));
+  const tracked = service.store.runs.filter((run) => run.issueId === issueId && run.threadId);
+  const runs = new Map([...bound, ...tracked].map((run) => [run.threadId, run]));
+  return [...runs.values()].filter((run) => !sharedWithOpenIssue(service, queue, run, issueId));
 }
 
 function sharedWithOpenIssue(service, queue, run, issueId) {
@@ -1187,7 +1270,27 @@ async function removeRemoteBranch(service, item) {
   const work = service.lifecycleRuns[item.issueId]?.work;
   requireThat(work?.config, 'Saved repository information is unavailable.');
   const provider = cleanupProvider(service, work.config);
-  await deleteRemoteReference(provider, work.config.repository, work.branch, item.revision);
+  if (service.flowOperationIssueId === item.issueId) {
+    const { remote, repository } = work.config;
+    assertFlowRemote({ checkout: service.root }, remote, repository);
+    const ref = 'refs/heads/' + work.branch;
+    git(
+      service.root,
+      'push',
+      '--no-follow-tags',
+      '--recurse-submodules=no',
+      '--force-with-lease=' + ref + ':' + item.revision,
+      '--',
+      remote,
+      ':' + ref
+    );
+    requireThat(
+      (await remoteBranchRevision(provider, repository, work.branch)) === null,
+      'Remote branch deletion was not confirmed.'
+    );
+  } else {
+    await deleteRemoteReference(provider, work.config.repository, work.branch, item.revision);
+  }
   return { status: 'complete', reason: 'Remote branch deleted and absence confirmed.' };
 }
 
@@ -1208,7 +1311,7 @@ function removeLocalBranch(service, item) {
   if (!current) return { status: 'complete', reason: 'Already deleted.' };
   requireThat(current === item.revision, 'Local branch changed after preview.');
   requireThat(!branchInWorktree(service.root, item.name), 'Branch is checked out in a workspace.');
-  git(service.root, 'branch', '-D', item.name);
+  git(service.root, 'update-ref', '-d', 'refs/heads/' + item.name, item.revision);
   requireThat(!branchRevision(service.root, item.name), 'Local branch deletion was not confirmed.');
   return { status: 'complete', reason: 'Local branch deleted and absence confirmed.' };
 }

@@ -193,17 +193,45 @@ intent. Publication, merge, successful checks and strategy completion do not imp
 The recorded decision to end work on an issue, either with an accepted fix or a
 stated reason for closing without a fix. It is independent of historical lifecycle stages.
 
+**Issue cleanup**:
+Removal of a closed issue's worktree and any selected local or remote issue
+branches. Incomplete cleanup can be retried while the issue stays closed.
+
 **Issue archive**:
 A locally retained collection of closed issue reports. Archiving removes an issue
 from the Closed issues view and preserves its identity and closure.
 
+**Retro**:
+A review of what happened on an issue and what could improve future work.
+
+**Retro item**:
+A follow-up issue proposed by a retro.
+
+**Needs approval**:
+The state of an issue that awaits an explicit decision before work can start.
+
+**Flow definition**:
+A reusable description of how to build an issue flow and which issue types
+can use it.
+
 **Issue flow**:
 An explicitly controlled graph of blocks for one issue. The graph records the
-planned route; each operation requires its own start.
+planned route. Run starts the selected block. Play starts the route and waits
+for any confirmations along the way.
 
 **Flow block**:
 One visible request, advisory, work, verification, delivery, or cleanup operation.
-Its intent, selected skill, comments, progress, attempts, and evidence are inspectable.
+Its Markdown declares its system prompt, Details and Artifacts. Its intent, skill,
+comments, attempts and evidence are inspectable. A block reads declared inputs
+from its own Details, the issue and upstream blocks. An edit invalidates the
+edited block and its connected successors. Details types each input and Artifacts
+types each output. An input uses either a manual value or a linked upstream
+output; the inspector shows inputs before read-only latest outputs.
+
+**Request block**:
+The required first block and owner of Your words and the derived request fields. Saving the wording
+or refreshing Request reruns clarification. A change of issue type applies that
+type's default flow.
 
 **Block attempt**:
 One execution of a block. Retry appends an attempt and preserves earlier results.
@@ -219,5 +247,9 @@ parallel workers belong to the explicitly selected Arena or Swarm block.
 
 **Flow starting point**:
 The chosen Git branch ref and exact commit used to create an issue's checkout.
-It is independent of the delivery target. A project default remembers the ref for
-future captures, while each issue retains its original commit.
+It defaults to the delivery target branch. Each issue retains its selected ref
+and commit.
+
+**Flow destination**:
+The GitHub branch used by Merge from target and as the PR base. It follows the
+starting branch until the operator pins a branch or the issue gets a PR.

@@ -30,6 +30,7 @@ const serverControlUI = (() => {
     if (dialog) return dialog;
     dialog = document.createElement('dialog');
     dialog.id = 'server-actions-dialog';
+    if (document.getElementById('project-actions')) dialog.className = 'modal';
     dialog.setAttribute('aria-labelledby', 'server-actions-title');
     dialog.innerHTML =
       '<h2 id="server-actions-title">Action list</h2><p data-actions-empty></p><div data-server-action-list></div><button type="button" data-actions-close>Close</button>';
@@ -110,6 +111,9 @@ const serverControlUI = (() => {
     }
     const flowMessage = document.querySelector('.project-actions-message');
     if (flowMessage) flowMessage.textContent = message(state);
+    document.dispatchEvent(
+      new CustomEvent('factory-actions-paused', { detail: requestedPause ?? state.phase !== 'idle' })
+    );
   }
   function refreshOpenActions(value, request) {
     const dialog = actionsDialog();
@@ -170,14 +174,15 @@ const serverControlUI = (() => {
       links.textContent = 'No linked issue';
       return links;
     }
+    const flowWorkspace = Boolean(document.getElementById('project-actions'));
     for (const issue of item.issues) {
       const link = document.createElement('a');
-      link.href = `#/issue/${encodeURIComponent(issue.id)}`;
-      link.textContent = `Issue: ${issue.title}`;
+      link.href = flowWorkspace ? `/?issue=${encodeURIComponent(issue.id)}` : `#/issue/${encodeURIComponent(issue.id)}`;
+      link.textContent = `Issue: ${issue.title}${issue.issueNumber ? ` (#${issue.issueNumber})` : ''}`;
       links.append(link, document.createTextNode(' '));
     }
     const output = document.createElement('a');
-    output.href = `#/issue/${encodeURIComponent(item.issues[0].id)}?run=${encodeURIComponent(item.id)}`;
+    output.href = `${flowWorkspace ? '/classic' : ''}#/issue/${encodeURIComponent(item.issues[0].id)}?run=${encodeURIComponent(item.id)}`;
     output.textContent = 'Action output';
     links.append(output);
     return links;

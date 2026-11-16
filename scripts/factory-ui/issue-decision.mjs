@@ -27,7 +27,8 @@ export function decideIssue(
   reason = '',
   resolution = 'fixed',
   cleanup = null,
-  artifact = null
+  artifact = null,
+  { deferCleanup = false, automatic = false } = {}
 ) {
   service.ownServer();
   const location = decisionLocation(service.root, id);
@@ -38,6 +39,7 @@ export function decideIssue(
   const role = queue.lifecycle.find((s) => s.state === state).role;
   requireThat(typeof reason === 'string' && reason.length <= 4000, 'Keep the reason under 4,000 characters.');
   const { choice, dismissed } = closureChoice(queue, role, kind, resolution);
+  requireThat(issue.state !== 'needs-approval', 'Approve this issue before closing it.');
   checkIdle(service, queue, issue, { kind, dismissed });
   const target = decisionTarget(queue, role, kind, dismissed);
   const action = { issues: [id] };
@@ -47,9 +49,10 @@ export function decideIssue(
   issue = prepared.issue;
   basis = decisionBasis(queue, issue);
   const run = service.store.add({ id }, 'decision', queue.head);
-  const summary = decisionSummary(kind, choice, dismissed);
+  const summary = decisionSummary(kind, choice, dismissed, automatic);
   const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: prepared.accepted };
   applyClosure(result, choice, reason, target, dismissed);
+  if (automatic && result.closure) result.closure.source = 'auto-close-opt-in';
   const evidence = [{ path: storedIssuePath(service.root, id, location), sha256: digest(issue.content) }];
   const destination = kind === 'close' ? 'closed' : 'open';
   const moveTo = !shared && location !== destination ? destination : null;
@@ -73,6 +76,10 @@ export function decideIssue(
     return { ...decision, publication: { status: publication.status, url: publication.url, error: publication.error } };
   }
   if (kind !== 'close') return decision;
+  if (deferCleanup) {
+    cancelIssueActionsOnClose(service, id);
+    return decision;
+  }
   return finishIssueClosure(service, id, decision, cleanup, resolution);
 }
 
@@ -137,9 +144,10 @@ function prepareDecision(service, queue, issue, action, decision, suppliedArtifa
   issue = progressIssue(queue, issue.id, issue.state);
   return { queue, issue, accepted: checkClosure(service, queue, issue, action, artifact) };
 }
-function decisionSummary(kind, choice, dismissed) {
+function decisionSummary(kind, choice, dismissed, automatic) {
   if (kind === 'reopen') return 'Reopened by the user for investigation.';
   if (dismissed) return `Closed by the user: ${choice.label}. No fix or acceptance is claimed.`;
+  if (automatic) return 'Accepted and closed after Factory Merge using the saved opt-in.';
   return 'Accepted and closed by the user.';
 }
 function applyClosure(result, choice, reason, target, dismissed) {
@@ -181,6 +189,7 @@ function recordDecision(service, issue, run, result, evidence, target, basis, { 
 }
 
 function checkIdle(service, queue, issue, decision) {
+  requireThat(!service.issueCleanupTasks?.has(issue.id), 'Wait for this issue’s Cleanup to finish.');
   requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for this issue’s current work to finish before closing.');
   requireThat(!service.issueChats?.tasks?.has(issue.id), 'Wait for this issue’s active chat to finish before closing.');
   const actions = queue.actions.filter((a) => a.issues.includes(issue.id));

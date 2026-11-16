@@ -1,7 +1,7 @@
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { issueStorageDirectory, migrateClosedIssues } from './issue-report-storage.mjs';
+import { issueStorageDirectory, migrateClosedIssues, storedIssuePath } from './issue-report-storage.mjs';
 import { listIssueStorage, moveIssueStorage, readIssueStorageReport, storedIssueId } from './issue-storage-actions.mjs';
 import { outputHistory } from './output-history.mjs';
 import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
@@ -14,12 +14,14 @@ import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
 import { readQueue } from './data.mjs';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { decisionBasis } from './recorded-result.mjs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { uiDirectory } from './ui-source.mjs';
+import { ViewSources } from './view-sources.mjs';
 import { prepareNativeChat, nativeChatStatus } from '../factory-native-chat.mjs';
 import {
   mergeIssueStrategyPR,
@@ -55,7 +57,13 @@ function authenticated(request, token, port) {
 }
 
 export async function decideIssueAndCleanup(service, value) {
-  await recoverBeforeFixedAcceptance(service, value);
+  const artifact = isFixedAcceptance(value) ? await fixedAcceptanceArtifact(service, value) : null;
+  const useFlowClosure = value.flowRevision !== undefined && value.kind === 'close';
+  if (value.flowRevision !== undefined) {
+    requireThat(!flowOwnsIssue(service, value.issueId), 'Wait for the running block or stop it before closing.');
+    service.serverControl?.allow('/api/issue-decision', value);
+  }
+  if (useFlowClosure) return flows(service).closeWithReason(value, artifact);
   const decision = await service.decideIssue(
     value.issueId,
     value.state,
@@ -63,15 +71,22 @@ export async function decideIssueAndCleanup(service, value) {
     value.basis,
     value.reason,
     value.resolution,
-    value.cleanup
+    value.cleanup,
+    artifact
   );
+  if (value.kind === 'close') service.flows?.pauseAutoplay(value.issueId, 'Issue closed');
+  if (value.kind === 'reopen' && service.flows) service.flows.reopened(value.issueId);
   return decision;
 }
 
-async function recoverBeforeFixedAcceptance(service, value) {
-  if (!isFixedAcceptance(value)) return;
+async function fixedAcceptanceArtifact(service, value) {
+  if (value.flowRevision !== undefined) {
+    const artifact = await flows(service).manualClosureArtifact(value.issueId, value.flowRevision);
+    if (artifact) return artifact;
+  }
   const issue = readQueue(service.root).issues.find((entry) => entry.id === value.issueId);
   if (issue) await recoverMergedStrategyDelivery(service, issue);
+  return null;
 }
 
 function isFixedAcceptance(value) {
@@ -102,7 +117,8 @@ async function mutation(service, path, value, owner) {
       !flowOwnsIssue(service, value.issueId),
       'A flow block owns this issue. Stop it before using classic controls.'
     );
-  if (!(path === '/api/flow-action' && value.action === 'stop')) service.serverControl?.allow(path, value);
+  if (!(path === '/api/flow-action' && ['stop', 'pause', 'cancel-confirmation'].includes(value.action)))
+    service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
@@ -124,6 +140,10 @@ async function mutation(service, path, value, owner) {
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
+    '/api/ui-sources': () => {
+      service.ownServer();
+      return viewSources(service).edit(value.id, value.revision, value.label);
+    },
     '/api/flow-action': () => flows(service).action(value),
     '/api/native-chat-prepare': () => {
       service.ownServer();
@@ -168,6 +188,7 @@ async function mutation(service, path, value, owner) {
       return { moved: migrateClosedIssues(service.root).length };
     },
     '/api/issue-storage-move': () => moveIssueStorage(service, value),
+    '/api/issue-report-reveal': () => revealIssueReport(service, value.issueId),
     '/api/issue-storage-open-folder': async () => {
       requireThat(process.platform === 'darwin', 'Finder is available on macOS.');
       const folder = issueStorageDirectory(service.root, value.location);
@@ -192,11 +213,25 @@ async function mutation(service, path, value, owner) {
     '/api/issue-chat-send': () => service.issueChats.send(value),
     '/api/issue-chat-stop': () => service.issueChats.stop(value),
     '/api/issue-cleanup-preview': () => previewIssueCleanup(service, value.issueId, value.resolution),
-    '/api/issue-cleanup-identities': () => issueCleanupIdentities(service, value.issueId, value.resolution),
+    '/api/issue-cleanup-identities': () =>
+      issueCleanupIdentities(
+        value.flow ? flows(service).cleanupContext(value.issueId) : service,
+        value.issueId,
+        value.resolution
+      ),
     '/api/issue-cleanup-resource': () =>
-      previewIssueCleanupResource(service, value.issueId, value.resourceId, value.resolution),
+      previewIssueCleanupResource(
+        value.flow ? flows(service).cleanupContext(value.issueId) : service,
+        value.issueId,
+        value.resourceId,
+        value.resolution
+      ),
     '/api/issue-cleanup-workspace-size': () =>
-      previewIssueCleanupWorkspaceSize(service, value.issueId, value.resourceId),
+      previewIssueCleanupWorkspaceSize(
+        value.flow ? flows(service).cleanupContext(value.issueId) : service,
+        value.issueId,
+        value.resourceId
+      ),
     '/api/issue-cleanup-retry': () => startIssueCleanupRetry(service, value.issueId, value.resourceId || null),
     '/api/issue-worktree-delete': () => deleteIssueWorktree(service, value),
     '/api/server-pause': () => service.serverControl.pause(),
@@ -280,8 +315,10 @@ async function read(service, request, response, owner) {
   const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
     '/api/project-settings': () => readProjectSettings(service.root),
+    '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
     '/api/flow': () => flows(service).view(issue(selectedIssue)),
-    '/api/flow-skills': () => flows(service).skills(issue(selectedIssue)),
+    '/api/flow-files': () => flows(service).files(issue(selectedIssue)),
+    '/api/flow-file': () => flows(service).file(issue(selectedIssue), url.searchParams.get('path')),
     '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
@@ -299,6 +336,8 @@ async function read(service, request, response, owner) {
     '/api/check-evidence': () =>
       service.readChecklistEvidence(issue(url.searchParams.get('issue')), url.searchParams.get('path')),
     '/api/issue': () => issueResponse(service, owner, issue(selectedIssue)),
+    '/api/issue-closure': () =>
+      issueClosureContext(service, issue(selectedIssue), url.searchParams.get('kind') === 'reopen'),
     '/api/queue': () =>
       selectedIssue ? issueResponse(service, owner, issue(selectedIssue)) : queueResponse(service.snapshot(owner)),
     '/api/output-history': () =>
@@ -308,6 +347,36 @@ async function read(service, request, response, owner) {
   if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(await routes[url.pathname]()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));
+}
+
+async function revealIssueReport(service, issueId) {
+  requireThat(process.platform === 'darwin', 'Finder is available on macOS.');
+  const { path } = service.readSavedReport(issueId);
+  await promisify(execFile)('/usr/bin/open', ['-R', join(service.root, path)], { timeout: 5000 });
+  return { opened: true };
+}
+
+function closureReportLocation(root, issueId, reopen) {
+  return reopen && !existsSync(storedIssuePath(root, issueId)) ? 'closed' : 'open';
+}
+
+function issueClosureContext(service, issueId, reopen) {
+  requireThat(typeof issueId === 'string' && /^[\w-]+$/.test(issueId), 'Choose a valid saved issue ID.');
+  const location = closureReportLocation(service.root, issueId, reopen);
+  const queue = readQueue(service.root, { location, issueId });
+  const issue = queue.issues.find((entry) => entry.id === issueId);
+  const closed = queue.lifecycle.some((stage) => stage.role === 'closed' && stage.state === issue?.state);
+  requireThat(
+    issue && closed === reopen,
+    reopen ? 'This issue is no longer closed.' : 'This issue is no longer open. Refresh to see its saved closure.'
+  );
+  return {
+    issueId,
+    state: issue.state,
+    basis: decisionBasis(queue, issue),
+    closureReasons: queue.closureReasons,
+    sharedQueue: Boolean(service.sharedIssues),
+  };
 }
 
 function issueResponse(service, owner, id) {
@@ -334,6 +403,7 @@ function readResource(service, request, response, owner) {
   }
   const scripts = {
     '/flow-ui.js': 'flow-ui.js',
+    '/view-inspection.js': 'view-inspection.js',
     '/flow.css': 'flow.css',
     '/native-chat-ui.js': 'native-chat-ui.js',
     '/server-control-ui.js': 'server-control-ui.js',
@@ -342,6 +412,7 @@ function readResource(service, request, response, owner) {
     '/file-link-ui.js': 'file-link-ui.js',
     '/coordinator-ui.js': 'coordinator-ui.js',
     '/issue-progress-ui.js': 'issue-progress-ui.js',
+    '/issue-closure-ui.js': 'issue-closure-ui.js',
     '/issue-chat-ui.js': 'issue-chat-ui.js',
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',
@@ -360,6 +431,11 @@ function readResource(service, request, response, owner) {
 function flows(service) {
   service.flows ||= createIssueFlows(service);
   return service.flows;
+}
+
+function viewSources(service) {
+  service.viewSources ||= new ViewSources(service.root, flows(service).catalog);
+  return service.viewSources;
 }
 
 function savedRun(service, id) {

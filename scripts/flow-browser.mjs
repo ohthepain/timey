@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
+import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-block-data.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { git } from './factory-ui/common.mjs';
@@ -24,7 +25,8 @@ git(project, 'init', '-q', '-b', 'dev');
 git(project, 'config', 'user.name', 'Flow browser fixture');
 git(project, 'config', 'user.email', 'flow-browser@example.invalid');
 writeFileSync(join(project, 'source.txt'), 'Original fixture source.\n');
-git(project, 'add', 'source.txt');
+writeFileSync(join(project, '.gitignore'), '/.issues/\n');
+git(project, 'add', 'source.txt', '.gitignore');
 git(project, 'commit', '-qm', 'Browser fixture base');
 const branchTree = git(project, 'rev-parse', 'HEAD^{tree}');
 const datedBranch = (date) =>
@@ -39,7 +41,16 @@ git(project, 'branch', 'older', datedBranch('2000-01-01T12:00:00Z'));
 git(project, 'update-ref', 'refs/remotes/origin/recent', recentBranchCommit);
 git(project, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/recent');
 
-const assets = ['flow.html', 'flow.css', 'flow-ui.js'];
+const assets = [
+  'flow.html',
+  'flow.css',
+  'flow-ui.js',
+  'issue-closure-ui.js',
+  'server-control-ui.js',
+  'view-inspection.js',
+  'views/flow/block-inspector.md',
+  'views/flow/blocks/work.md',
+];
 const fingerprint = () =>
   Object.fromEntries(
     assets.map((name) => [
@@ -61,7 +72,11 @@ const logs = {
   execution: [],
   modelCalls: [],
 };
+const playbackIssueId = '20261116-playback-fixture';
+const playbackWork = Promise.withResolvers();
 const service = new FactoryUI(project);
+const deliveryConfig = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
+writeFileSync(join(project, '.issues/issue-delivery-config.json'), JSON.stringify(deliveryConfig));
 service.codex.ready = async () => {
   logs.modelCalls.push('ready');
   throw Error('This browser fixture must never start a model.');
@@ -75,6 +90,7 @@ const executor = {
     const number = logs.execution.length + 1;
     logs.execution.push({ number, blockId: block.id, issueId: issue.id });
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
+    if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
     if (number === 1) {
       await new Promise((_, reject) => {
         if (signal.aborted) return reject(Error('Stopped by the user.'));
@@ -90,7 +106,40 @@ const executor = {
   },
   close() {},
 };
-service.flows = createIssueFlows(service, { executor });
+service.flows = createIssueFlows(service, {
+  executor,
+  deliveryOptions: {
+    validateSummary() {},
+    provider: {
+      config: deliveryConfig,
+      credentials: {
+        async session() {
+          return { slug: 'factory' };
+        },
+      },
+      async findIssueBranchPR() {
+        return null;
+      },
+      async gh() {
+        return 'dev\nolder\nrecent';
+      },
+    },
+  },
+  clarify: async (_root, _definition, attempt) => {
+    const wording = attempt.details.find((item) => item.key === 'wording').value;
+    const fields = Object.fromEntries(
+      wording
+        .split('\n')
+        .slice(1)
+        .filter((line) => /^(type|goal|requestedProof|knownFacts|constraints): /.test(line))
+        .map((line) => {
+          const [key, ...value] = line.split(': ');
+          return [key, value.join(': ')];
+        })
+    );
+    return { artifacts: { values: fields }, summary: fields.goal };
+  },
+});
 const server = createFactoryServer(service);
 const require = createRequire(import.meta.url);
 const playwrightRequire = createRequire(require.resolve('@playwright/cli/package.json'));
@@ -99,6 +148,7 @@ let browser;
 let page;
 let issueId;
 let addedId;
+let workId;
 let passed = false;
 let failure;
 async function check(name, run) {
@@ -130,7 +180,10 @@ async function poll(read, predicate, message) {
 }
 async function clickAction(locator) {
   const responsePromise = page.waitForResponse(
-    (response) => response.url().endsWith('/api/flow-action') && response.request().method() === 'POST'
+    (response) =>
+      response.url().endsWith('/api/flow-action') &&
+      response.request().method() === 'POST' &&
+      response.request().postDataJSON().action !== 'open-block'
   );
   await locator.click();
   const response = await responsePromise;
@@ -238,19 +291,100 @@ try {
     await screenshot('project-settings-configured');
     await page.keyboard.press('Escape');
   });
+  await check('The Flow action count opens and closes the shared Action list', async () => {
+    const count = page.getByRole('button', { name: '0 actions running' });
+    await count.click();
+    const dialog = page.getByRole('dialog', { name: 'Action list' });
+    await dialog.getByText('No issue-linked actions are running.').waitFor();
+    assert.equal(await count.getAttribute('aria-expanded'), 'true');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    await count.and(page.locator('[aria-expanded="false"]')).waitFor();
+  });
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
-  await check('Capture retains typed wording and selected issue type', async () => {
-    await page.locator('#new-issue').click();
+  await check('Folder plus creates an issue directly in that folder and retains typed wording', async () => {
+    await page.locator('#new-folder').click();
+    await page.locator('#folder-name').fill('Browser folder');
+    await page.locator('#folder-form button[type="submit"]').click();
+    await page.locator('[data-create-folder-issue="Browser folder"]').waitFor();
+    await page.locator('[data-create-folder-issue="Browser folder"]').click();
     await page.locator('#capture-description').fill(description);
     await page.locator('#capture-type').selectOption('investigation');
     const data = await clickAction(page.locator('#capture-submit'));
     issueId = data.issue.id;
+    assert.equal(data.flow.folder, 'Browser folder');
+    const createdFolder = page
+      .locator('.issue-folder')
+      .filter({ has: page.locator('.folder-toggle[data-folder="Browser folder"]') });
+    const createdIssue = createdFolder.locator('[data-issue="' + issueId + '"]');
+    await createdIssue.waitFor();
+    assert.equal(await createdIssue.getAttribute('aria-current'), 'page');
+    await screenshot('folder-plus-created-issue');
     await page.locator('#request-form').waitFor();
+    const markdownMenu = page.locator('.block-markdown-menu');
+    await markdownMenu.getByText('Markdown', { exact: true }).click();
+    assert.ok(await markdownMenu.getByRole('button', { name: 'Reveal Markdown in Finder' }).isVisible());
+    assert.ok(await markdownMenu.getByRole('button', { name: 'Create extension' }).isVisible());
+    await markdownMenu.getByText('Markdown', { exact: true }).click();
     assert.equal(await page.locator('[name="wording"]').inputValue(), description);
-    assert.equal(await page.locator('#request-form [name="type"]').inputValue(), 'investigation');
-    assert.equal(data.flow.request.doneCheck, 'The text survives a reload.');
+    assert.equal(data.flow.routeType, 'investigation');
+    assert.equal(startingPoint(data.flow).ref, 'refs/heads/dev');
+    assert.equal(deliveryTarget(data.flow).branch, 'dev');
+    assert.equal(requestData(data.flow).fields, null);
     assert.equal(logs.execution.length, 0);
+  });
+  await check('Inspect and edit a tab source without starting work or losing an issue draft', async () => {
+    const path = join(project, 'factory/ui/overrides/flow/block-inspector.md');
+    const tab = page.locator('#tab-details');
+    const draft = page.locator('[name="wording"]');
+    const flowPosts = () =>
+      logs.requests.filter(({ path, method }) => path === '/api/flow-action' && method === 'POST').length;
+    const before = flowPosts();
+    await draft.fill('Unsaved UI editing fixture');
+    await page.getByRole('button', { name: 'View index' }).click();
+    await page.getByRole('button', { name: 'Block inspector · Details' }).waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Inspect UI' }).click();
+    await page.locator('#refresh').click();
+    await page.locator('#toast').filter({ hasText: 'Saved flow refreshed.' }).waitFor();
+    await tab.hover();
+    await page.getByRole('tooltip').filter({ hasText: 'Inherited' }).waitFor();
+    await tab.click({ button: 'right' });
+    await page.locator('#view-source-edit').click();
+    await page.getByLabel('Label', { exact: true }).fill('Block notes');
+    await page.getByRole('button', { name: 'Save and reload' }).click();
+    await page.getByRole('tab', { name: 'Block notes' }).waitFor();
+    assert.match(readFileSync(path, 'utf8'), /## details-tab\n\nBlock notes/);
+    assert.equal(await draft.inputValue(), 'Unsaved UI editing fixture');
+    await tab.focus();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('button', { name: 'Edit override' }).click();
+    await page.getByLabel('Label', { exact: true }).fill('Stale draft');
+    writeFileSync(path, '## details-tab\n\nExternal change\n');
+    await page.getByRole('button', { name: 'Save and reload' }).click();
+    await page.locator('#view-source-error').filter({ hasText: 'changed on disk' }).waitFor();
+    const conflictLog = logs.console.findIndex(
+      (entry) =>
+        entry.type === 'error' &&
+        entry.location.url.endsWith('/api/ui-sources') &&
+        entry.text.includes('400 (Bad Request)')
+    );
+    assert.ok(conflictLog >= 0, 'The stale editor should receive a rejected request.');
+    logs.console.splice(conflictLog, 1);
+    assert.equal(await page.getByLabel('Label', { exact: true }).inputValue(), 'Stale draft');
+    await page.keyboard.press('Escape');
+    await page.getByRole('tab', { name: 'External change' }).waitFor();
+    writeFileSync(path, '## missing-tab\n\nInvalid override\n');
+    await page.locator('#view-source-status').filter({ hasText: 'unknown section' }).waitFor();
+    assert.equal(await tab.innerText(), 'External change');
+    rmSync(path);
+    await page.getByRole('tab', { name: 'Details' }).waitFor();
+    assert.equal(await draft.inputValue(), 'Unsaved UI editing fixture');
+    assert.equal(flowPosts(), before);
+    assert.equal(logs.execution.length, 0);
+    await page.getByRole('button', { name: 'Inspect UI' }).click();
+    await draft.fill(description);
   });
   await check('New issues open with Starting point flush with the viewport top', async () => {
     await poll(graphGeometry, (value) => Math.abs(value.start) < 2, 'Starting point was not aligned with the top.');
@@ -288,18 +422,46 @@ try {
     await page.locator('#issue-title').click();
     await poll(
       view,
-      (value) => value.flow.startingPoint?.ref === 'refs/heads/recent',
+      (value) => startingPoint(value.flow)?.ref === 'refs/heads/recent',
       'The chosen branch was not saved.'
     );
     await page.reload();
     await selector.waitFor();
     assert.equal(await selector.inputValue(), 'refs/heads/recent');
     const selected = await view();
-    assert.equal(selected.defaultStartingRef, 'refs/heads/recent');
-    assert.equal(selected.flow.startingPoint.commit, recentBranchCommit);
-    assert.deepEqual(selected.flow.target, data.flow.target);
+    assert.equal(startingPoint(selected.flow).commit, recentBranchCommit);
+    assert.deepEqual(deliveryTarget(selected.flow), { ...deliveryTarget(data.flow), branch: 'recent' });
     assert.equal(logs.execution.length, 0);
     await screenshot('starting-branch-selected');
+  });
+  await check('Issue title and Destination edits update the saved flow through its controls', async () => {
+    const original = (await view()).issue.title;
+    const rename = async (title) => {
+      await page.getByRole('button', { name: 'Rename issue' }).click();
+      await page.getByRole('textbox', { name: 'Issue title' }).fill(title);
+      await page.locator('#rename-issue-form').getByRole('button', { name: 'Save', exact: true }).click();
+      await poll(view, (value) => value.issue.title === title, 'The issue title was not saved.');
+    };
+    await rename('Edited from the issue heading');
+    assert.equal(await page.locator('#issue-title').textContent(), 'Edited from the issue heading');
+    await rename(original);
+    const destination = page.getByRole('button', { name: 'Choose destination branch' });
+    const select = page.locator('#destination-branch');
+    await destination.click();
+    await select.waitFor();
+    assert.equal(await select.locator('option').first().textContent(), 'Follow starting branch');
+    await select.selectOption('older');
+    await page.getByRole('button', { name: 'Save destination' }).click();
+    await poll(view, (value) => value.destination.branch === 'older', 'The destination was not pinned.');
+    assert.equal((await view()).flow.startingPoint.ref, 'refs/heads/recent');
+    await destination.click();
+    await select.selectOption('');
+    await page.getByRole('button', { name: 'Save destination' }).click();
+    await poll(
+      view,
+      (value) => value.destination.follows && value.destination.branch === 'recent',
+      'Destination did not resume following Starting point.'
+    );
   });
   await check('Graph bounds stay close to the first and last blocks at every viewport height', async () => {
     for (const height of [960, 1600]) {
@@ -331,16 +493,17 @@ try {
     });
     closedId = closed.issue.id;
     assert.equal(
-      closed.flow.startingPoint.ref,
-      'refs/heads/recent',
-      'The next issue did not inherit the saved default.'
+      startingPoint(closed.flow).ref,
+      'refs/heads/dev',
+      'The next issue did not start on its destination branch.'
     );
     const source = join(project, '.issues', closedId + '.md');
     writeFileSync(source, readFileSync(source, 'utf8').replace('state: backlog', 'state: closed'));
     mkdirSync(join(project, '.issues/closed'), { recursive: true });
     renameSync(source, join(project, '.issues/closed', closedId + '.md'));
     for (const short of [false, true]) {
-      if (short) service.flows.store.save({ ...closed.flow, blocks: [closed.flow.blocks[0]] }, closed.flow.revision);
+      if (short)
+        service.flows.store.save({ ...closed.flow, blocks: closed.flow.blocks.slice(0, 2) }, closed.flow.revision);
       await page.goto('/flow?issue=' + closedId);
       await page.locator('[data-node="__destination"]').waitFor();
       await poll(graphGeometry, (value) => Math.abs(value.end) < 2, 'The closed Destination was not bottom aligned.');
@@ -401,8 +564,7 @@ try {
   const edited = {
     wording: description + '\nKeep this exact wording.',
     goal: 'Understand and preserve saved text.',
-    doneCheck: 'Saved text is visible after two reloads.',
-    proof: 'A retained screen and saved record.',
+    requestedProof: 'Reload twice and capture a screen showing the saved text.',
     knownFacts: 'The browser can reproduce this on refresh.',
     constraints: 'Keep the original request and every attempt.',
   };
@@ -470,18 +632,78 @@ try {
     await screenshot('resizable-inspector');
     assert.equal(logs.execution.length, 0);
   });
-  await check('All request fields and type survive saving and reload', async () => {
-    for (const [name, value] of Object.entries(edited))
-      await page.locator('#request-form [name="' + name + '"]').fill(value);
-    await page.locator('#request-form [name="type"]').selectOption('bug');
+  const { wording: original, ...clarified } = edited;
+  const savedWording =
+    original +
+    '\n' +
+    Object.entries({ ...clarified, type: 'bug' })
+      .map(([key, value]) => key + ': ' + value)
+      .join('\n');
+  await check('Saving Your words retains derived fields and applies the new type default', async () => {
+    await page.locator('#request-form [name="wording"]').fill(savedWording);
     await clickAction(page.locator('#request-form button[type="submit"]'));
     await page.reload();
     await page.locator('#request-form').waitFor();
-    for (const [name, value] of Object.entries(edited))
-      assert.equal(await page.locator('#request-form [name="' + name + '"]').inputValue(), value);
+    assert.equal(await page.locator('#request-form [name="wording"]').inputValue(), savedWording);
     const data = await view();
-    assert.equal(data.flow.type, 'bug');
-    assert.deepEqual(data.flow.request, edited);
+    assert.equal(data.flow.routeType, 'bug');
+    assert.deepEqual(requestData(data.flow).fields, { ...clarified, type: 'bug' });
+    assert.equal(await page.locator('#request-form [name="type"]').count(), 0);
+    assert.equal(await page.locator('#issue-flow-name').textContent(), 'Standard delivery');
+    workId = data.flow.blocks.find((item) => item.kind === 'work').id;
+  });
+  await check('The Flow menu saves and switches routes, and the wand rebuilds with results intact', async () => {
+    const menu = page.locator('#issue-flow-menu');
+    const flows = page.getByRole('group', { name: 'Flows for this issue type' });
+    const expected = (await view()).flow.blocks.find((block) => block.kind === 'request').attempts;
+    await menu.click();
+    assert.equal(await flows.getByRole('button', { name: 'Investigation', exact: true }).count(), 0);
+    if (process.platform === 'darwin')
+      assert.ok(await page.getByRole('button', { name: 'Reveal in Finder' }).isVisible());
+    await page.getByRole('button', { name: 'Save as user flow', exact: true }).click();
+    await page.getByLabel('Flow name').fill('Team delivery');
+    await page.getByLabel('File name').fill('team-delivery');
+    const result = await clickAction(page.getByRole('button', { name: 'Save and link' }));
+    assert.equal(result.flow.definition.id, 'team-delivery');
+    assert.equal(result.flow.blocks.find((item) => item.kind === 'work').id, workId);
+    await page.locator('#export-flow-dialog').waitFor({ state: 'hidden' });
+    await menu.click();
+    const switched = await clickAction(flows.getByRole('button', { name: 'Standard delivery', exact: true }));
+    assert.equal(switched.flow.definition.id, 'delivery');
+    await menu.click();
+    const linked = await clickAction(flows.getByRole('button', { name: 'Team delivery', exact: true }));
+    assert.equal(linked.flow.definition.id, 'team-delivery');
+    const path = join(project, 'factory/ui/flows/team-delivery.md');
+    const source = readFileSync(path, 'utf8');
+    writeFileSync(path, source.replace('name: Team delivery', 'name: Updated team delivery'));
+    const changed = await view();
+    assert.equal(changed.flowDefinitions.updated, true);
+    const wand = page.getByRole('button', { name: 'Rebuild flow', exact: true });
+    const updated = await clickAction(wand);
+    assert.equal(updated.flowDefinitions.updated, false);
+    assert.equal(updated.flow.definition.id, 'team-delivery');
+    const rebuilt = await clickAction(wand);
+    assert.ok(rebuilt.flow.revision > updated.flow.revision);
+    for (const data of [result, switched, linked, updated, rebuilt]) {
+      assert.deepEqual(data.flow.blocks.find((block) => block.kind === 'request').attempts, expected);
+    }
+  });
+  await check('Polling preserves expanded text and the Closed issues list', async () => {
+    const system = page
+      .locator('#inspector-body details')
+      .filter({ has: page.getByText('System prompt', { exact: true }) });
+    const inputs = page
+      .locator('#inspector-body details')
+      .filter({ has: page.getByText('Details used', { exact: true }) });
+    const closed = page.locator('#closed-issues');
+    for (const section of [system, inputs, closed]) {
+      if ((await section.getAttribute('open')) === null) await section.locator('summary').click();
+    }
+    const flow = service.flows.read(service.flows.selected(issueId));
+    flow.blocks.find((block) => block.kind === 'request').attempts.at(-1).summary = 'Updated while reading.';
+    service.flows.store.save(flow, flow.revision);
+    await page.locator('#inspector-body').getByText('Updated while reading.', { exact: true }).waitFor();
+    for (const section of [system, inputs, closed]) assert.notEqual(await section.getAttribute('open'), null);
   });
   await check('Folders can be created and assigned without running work', async () => {
     await page.locator('#new-folder').click();
@@ -495,20 +717,25 @@ try {
     await page.locator('.issue-folder .issue-row').filter({ hasText: 'Understand why' }).waitFor();
     assert.equal(logs.execution.length, 0);
   });
-  await check('Adding and saving a block retains skill, instructions and parallel lane', async () => {
+  await check('Adding and saving a block retains the selected prompt mode and parallel lane', async () => {
     await page.getByRole('button', { name: 'Add a step', exact: true }).click();
     const data = await clickAction(page.locator('[data-add-kind="understand"]'));
-    addedId = data.flow.blocks.find((item) => item.kind === 'understand' && item.id !== 'work').id;
+    addedId = data.flow.blocks.find((item) => item.kind === 'understand' && item.id !== workId).id;
     await page.locator('#palette-dialog').waitFor({ state: 'hidden' });
     await block(addedId);
     await page.locator('#block-form [name="label"]').fill('Read the save behavior');
+    await page.locator('#block-form .system-prompt summary').click();
+    await page.locator('#block-form [name="prompt-mode"]').selectOption('skill');
     await page.locator('#block-form [name="skill"]').selectOption('how');
-    await page.locator('#block-form [name="prompt"]').fill('Trace how saving works and retain exact evidence.');
     await page.locator('#block-form [name="lane"]').selectOption('1');
+    await clickAction(page.locator('#block-form button[type="submit"]'));
+    assert.equal((await view()).flow.blocks.find((item) => item.id === addedId).skill, 'how');
+    await page.locator('#block-form [name="prompt-mode"]').selectOption('text');
+    await page.locator('#block-form [name="prompt"]').fill('Trace how saving works and retain exact evidence.');
     await clickAction(page.locator('#block-form button[type="submit"]'));
     const saved = (await view()).flow.blocks.find((item) => item.id === addedId);
     assert.equal(saved.label, 'Read the save behavior');
-    assert.equal(saved.skill, 'how');
+    assert.equal(saved.skill, null);
     assert.equal(saved.prompt, 'Trace how saving works and retain exact evidence.');
     assert.equal(saved.lane, 1);
     assert.equal(saved.attempts.length, 0);
@@ -546,15 +773,15 @@ try {
   });
   await check('Block clicks preserve visible cards and minimally reveal clipped cards', async () => {
     await page.setViewportSize({ width: 1440, height: 600 });
-    const target = page.locator('[data-block="work"]');
-    await target.evaluate((node) => {
+    const target = page.locator('[data-block="' + workId + '"]');
+    const visible = await target.evaluate((node) => {
       const scroll = document.getElementById('graph-scroll');
       scroll.scrollTop += node.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 80;
+      return { scrollTop: scroll.scrollTop, box: node.getBoundingClientRect().toJSON() };
     });
-    const before = await page.locator('#graph-scroll').evaluate((node) => node.scrollTop);
-    let bounds = await target.boundingBox();
-    await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-    await poll(selectedGeometry, (value) => value.blockId === 'work', 'The visible block was not selected.');
+    const before = visible.scrollTop;
+    await page.mouse.click(visible.box.x + visible.box.width / 2, visible.box.y + visible.box.height / 2);
+    await poll(selectedGeometry, (value) => value.blockId === workId, 'The visible block was not selected.');
     assert.ok(Math.abs((await selectedGeometry()).scrollTop - before) < 2, 'Selecting a visible card jumped.');
     await Promise.all([
       page.waitForResponse((response) => response.url().includes('/api/flow?')),
@@ -566,7 +793,7 @@ try {
       scroll.scrollTop += node.getBoundingClientRect().top - scroll.getBoundingClientRect().top + 30;
     });
     const clipped = await selectedGeometry();
-    bounds = await target.boundingBox();
+    const bounds = await target.evaluate((node) => node.getBoundingClientRect().toJSON());
     const viewport = await page.locator('#graph-scroll').boundingBox();
     assert.ok(bounds.y < viewport.y - 20, 'The test card must be clipped before selection.');
     await page.mouse.click(bounds.x + bounds.width / 2, viewport.y + 20);
@@ -575,7 +802,7 @@ try {
       (value) => value.scrollTop < clipped.scrollTop - 20,
       'The clipped card was not revealed.'
     );
-    const revealed = await target.boundingBox();
+    const revealed = await target.evaluate((node) => node.getBoundingClientRect().toJSON());
     const after = await selectedGeometry();
     assert.ok(revealed.y >= viewport.y - 1);
     assert.ok(revealed.y + revealed.height <= viewport.y + viewport.height + 1);
@@ -593,29 +820,91 @@ try {
     assert.equal((await view()).flow.blocks.find((item) => item.id === addedId).comments.length, 1);
     assert.equal(logs.execution.length, 0);
   });
-  await check('Header Continue retains draft guards, exposes progress and disables during a run', async () => {
-    await block('work');
+  const workOverride = join(project, 'factory/ui/overrides/flow/blocks/work.md');
+  await check('Work Markdown reloads headings and lists without changing layout, drafts or actions', async () => {
+    await page.getByRole('button', { name: 'Add a step', exact: true }).click();
+    const data = await clickAction(page.locator('[data-add-kind="work"]'));
+    const id = data.flow.blocks.find((item) => item.kind === 'work' && item.id !== workId).id;
+    await block(id);
+    const prose = page.locator('.block-content');
+    await prose.getByRole('heading', { name: 'Work block' }).waitFor();
+    await page.locator('#block-form .system-prompt summary').click();
+    await page.locator('#block-form [name="prompt-mode"]').selectOption('skill');
+    const skillOptions = page.locator('#block-form [name="skill"] option');
+    assert.ok((await skillOptions.allTextContents()).includes('poteto-mode'));
+    const card = page.locator('[data-block="' + id + '"]');
+    await page.locator('#view-inspect').click();
+    await card.hover();
+    await page
+      .getByRole('tooltip')
+      .filter({ hasText: 'Optional user extension factory/ui/extensions/flow/blocks/work.md' })
+      .waitFor();
+    await page.locator('#view-inspect').click();
+    const layout = () => card.locator(':scope > span').evaluateAll((items) => items.map((item) => item.className));
+    const originalLayout = await layout();
+    const draft = page.locator('#block-form [name="label"]');
+    const original = await draft.inputValue();
+    const title = await card.locator('.block-label').innerText();
+    const status = await card.locator('.block-status').innerText();
+    await draft.fill('Unsaved Work draft');
+    mkdirSync(dirname(workOverride), { recursive: true });
+    const extension = join(project, 'factory/ui/extensions/flow/blocks/work.md');
+    mkdirSync(dirname(extension), { recursive: true });
+    writeFileSync(extension, '## Local evidence\n\nKeep the command output.\n');
+    writeFileSync(
+      workOverride,
+      '# Project Work\n\nReady when you are.\n\n## Evidence to retain\n\n- Command output\n- Saved artifact\n\n# Skill list\n\n- arena\n- how\n'
+    );
+    await prose.getByRole('heading', { name: 'Evidence to retain' }).waitFor();
+    await prose.getByRole('listitem').filter({ hasText: 'Command output' }).waitFor();
+    await prose.getByText('User extensions', { exact: true }).click();
+    await prose.getByRole('heading', { name: 'Local evidence' }).waitFor();
+    await poll(
+      () => skillOptions.allTextContents(),
+      (labels) => labels.includes('how') && !labels.includes('poteto-mode'),
+      'Skill suggestions did not reload.'
+    );
+    assert.equal(await card.locator('.block-description').innerText(), 'Ready when you are.');
+    assert.deepEqual(await layout(), originalLayout);
+    assert.equal(await card.locator('.block-label').innerText(), title);
+    assert.equal(await card.locator('.block-status').innerText(), status);
+    assert.equal(await draft.inputValue(), 'Unsaved Work draft');
+    assert.equal(await page.locator('[data-action="start"]').count(), 1);
+    assert.equal(logs.execution.length, 0);
+    writeFileSync(workOverride, '# Empty override\n');
+    await page.locator('#view-source-status').filter({ hasText: 'needs a paragraph' }).waitFor();
+    await prose.getByRole('heading', { name: 'Evidence to retain' }).waitFor();
+    rmSync(workOverride);
+    rmSync(extension);
+    await prose.getByRole('heading', { name: 'Work block' }).waitFor();
+    await draft.fill(original);
+  });
+  await check('Inspector Run guards drafts and switches to Stop during a run', async () => {
+    await block(workId);
     await page.locator('#block-form [name="label"]').fill('Work with saved settings');
-    await page.locator('#continue-block').click();
+    await page.locator('#run-block').click();
     assert.equal(logs.execution.length, 0);
     await page.locator('#error-banner').waitFor();
     await clickAction(page.locator('#block-form button[type="submit"]'));
-    await clickAction(page.locator('#continue-block'));
+    await clickAction(page.locator('#run-block'));
     await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === 'work').attempts[0]?.output.includes('attempt 1'),
+      (data) => data.flow.blocks.find((item) => item.id === workId).attempts[0]?.output.includes('attempt 1'),
       'Progress output was not saved.'
     );
     await page.locator('.attempt-output').filter({ hasText: 'explicit attempt 1' }).waitFor();
     assert.equal(logs.execution.length, 1);
-    assert.equal(await page.locator('#continue-block').isDisabled(), true);
+    assert.equal(await page.locator('#run-block').innerText(), '■ Stop');
+    await page.getByRole('tab', { name: 'Conversation' }).click();
+    assert.equal(await page.locator('#run-block').innerText(), '■ Stop');
+    await page.getByRole('tab', { name: 'Details' }).click();
     assert.equal(
       await page.locator('#starting-branch').isDisabled(),
       true,
       'A running issue allows its starting branch to change.'
     );
     await page.reload();
-    await page.locator('[data-block="work"][aria-pressed="true"]').waitFor();
+    await page.locator('[data-block="' + workId + '"][aria-pressed="true"]').waitFor();
     await poll(
       selectedGeometry,
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
@@ -625,22 +914,22 @@ try {
     await clickAction(page.locator('[data-action="stop"]'));
     const stopped = await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === 'work').attempts[0]?.status === 'stopped',
+      (data) => data.flow.blocks.find((item) => item.id === workId).attempts[0]?.status === 'stopped',
       'Stop was not retained.'
     );
-    const attempt = stopped.flow.blocks.find((item) => item.id === 'work').attempts[0];
+    const attempt = stopped.flow.blocks.find((item) => item.id === workId).attempts[0];
     assert.match(attempt.output, /explicit attempt 1/);
     assert.ok(stopped.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
   });
   await check('Retry retains both attempts and does not start the next block', async () => {
-    await page.locator('[data-action="start"]').filter({ hasText: 'Retry block' }).waitFor();
-    await clickAction(page.locator('[data-action="start"]'));
+    await page.locator('#run-block').filter({ hasText: 'Retry' }).waitFor();
+    await clickAction(page.locator('#run-block'));
     const completed = await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === 'work').attempts.at(-1)?.status === 'completed',
+      (data) => data.flow.blocks.find((item) => item.id === workId).attempts.at(-1)?.status === 'completed',
       'Retry did not complete.'
     );
-    const attempts = completed.flow.blocks.find((item) => item.id === 'work').attempts;
+    const attempts = completed.flow.blocks.find((item) => item.id === workId).attempts;
     assert.deepEqual(
       attempts.map((item) => item.status),
       ['stopped', 'completed']
@@ -667,16 +956,17 @@ try {
   });
   await check('Reload retains flow settings, comments, folder and attempt history', async () => {
     await page.reload();
-    await page.locator('[data-block="work"][aria-pressed="true"]').waitFor();
+    await page.locator('[data-block="' + workId + '"][aria-pressed="true"]').waitFor();
     const data = await view();
     assert.equal(data.flow.folder, 'Next release');
-    assert.deepEqual(data.flow.request, edited);
+    assert.deepEqual(requestData(data.flow).fields, { ...clarified, type: 'bug' });
     const added = data.flow.blocks.find((item) => item.id === addedId);
-    assert.equal(added.skill, 'how');
+    assert.equal(added.skill, null);
+    assert.equal(added.prompt, 'Trace how saving works and retain exact evidence.');
     assert.equal(added.lane, 1);
     assert.equal(added.comments[0].text, 'Keep every partial attempt for review.');
     assert.deepEqual(
-      data.flow.blocks.find((item) => item.id === 'work').attempts.map((item) => item.status),
+      data.flow.blocks.find((item) => item.id === workId).attempts.map((item) => item.status),
       ['stopped', 'completed']
     );
     assert.equal(logs.execution.length, 2);
@@ -685,7 +975,7 @@ try {
   });
   await check('The responsive workspace keeps controls usable', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await block('work');
+    await block(workId);
     await page.locator('#block-form').scrollIntoViewIfNeeded();
     assert.equal(await page.locator('#block-form [name="label"]').isVisible(), true);
     assert.equal(await page.locator('#new-issue').isVisible(), true);
@@ -758,13 +1048,26 @@ try {
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
   });
+  await check('Run beside the Work name starts exactly one block', async () => {
+    const open = (await view()).flow.blocks.find((item) => item.kind === 'work');
+    await block(open.id);
+    await clickAction(page.locator('#run-block'));
+    await poll(
+      view,
+      (data) => data.flow.blocks.find((item) => item.id === open.id).attempts.at(-1)?.status === 'completed',
+      'The Markdown Work block did not finish.'
+    );
+    assert.equal(logs.execution.length, 3);
+    assert.equal(logs.execution.at(-1).blockId, open.id);
+  });
   await check('Worktree menu opens the saved checkout and updates it from the remote target', async () => {
     await page.goto('/flow?issue=' + issueId);
     await page.locator('[data-node="__base"]').waitFor();
     const menu = page
       .locator('#environment .environment-chip')
       .and(page.getByRole('combobox', { name: 'Worktree', exact: true }));
-    assert.equal(await menu.count(), 0);
+    assert.equal(await menu.isDisabled(), true);
+    assert.equal(await menu.getAttribute('title'), 'No worktree has been created for this issue.');
     const checkout = join(project, '.issues', 'issue-checkout');
     const branch = 'fixture-issue-worktree';
     const base = git(project, 'rev-parse', 'HEAD');
@@ -773,9 +1076,16 @@ try {
     git(project, 'init', '--bare', remote);
     git(project, 'remote', 'add', 'origin', remote);
     const target = git(project, 'commit-tree', branchTree, '-p', base, '-m', 'Target update');
-    git(project, 'push', 'origin', target + ':refs/heads/dev');
+    git(project, 'push', 'origin', target + ':refs/heads/older');
     const flow = service.flows.read(service.flows.selected(issueId));
-    service.flows.store.save({ ...flow, workspace: { checkout, branch, base } }, flow.revision);
+    service.flows.store.save(
+      {
+        ...flow,
+        destination: { branch: 'older' },
+        workspace: { checkout, branch, base },
+      },
+      flow.revision
+    );
     const calls = join(output, 'opened-worktree.txt');
     writeFileSync(join(output, 'open'), '#!/bin/sh\nprintf "%s\\n" "$1" > "$TIMEY_TEST_OPEN_LOG"\n', {
       mode: 0o700,
@@ -795,18 +1105,290 @@ try {
     // The disposable project has no installed issue skill. Exercise the real Git executor.
     service.guard = () => [];
     service.flows.executor = createFlowExecutor(service);
-    await menu.selectOption('update');
-    const attempt = await poll(
-      async () =>
-        (await view()).flow.blocks
-          .find((block) => block.kind === 'merge-target' && block.attempts.length)
-          ?.attempts.at(-1),
-      (result) => result?.endedAt,
-      'The update should complete a merge from the fetched target.'
+    const targetMenu = page.getByRole('combobox', { name: /Target ahead by/ });
+    await targetMenu.selectOption('add');
+    await page.getByText('Update branch block added.', { exact: true }).waitFor();
+    const blocks = (await view()).flow.blocks;
+    const workIndex = blocks.findIndex((block) => block.kind === 'work');
+    const added = blocks[workIndex - 1];
+    assert.equal(added.kind, 'merge-target');
+    assert.equal(added.label, 'Update branch');
+    assert.equal(added.attempts.length, 0);
+    assert.ok(blocks[workIndex].after.includes(added.id));
+    const release = Promise.withResolvers();
+    await page.route('**/api/flow-action', async (route) => {
+      if (route.request().postDataJSON().action === 'update-worktree') await release.promise;
+      await route.continue();
+    });
+    await targetMenu.selectOption('update');
+    await page.locator('#target-update-progress').waitFor();
+    release.resolve();
+    await page.getByText('Branch updated.', { exact: true }).waitFor();
+    await page.unroute('**/api/flow-action');
+    await targetMenu.waitFor({ state: 'hidden' });
+    const finished = (await view()).flow.blocks;
+    assert.deepEqual(
+      finished.map((block) => block.id),
+      blocks.map((block) => block.id)
     );
-    assert.equal(attempt.status, 'completed', attempt.summary);
+    assert.equal(finished.find((block) => block.id === added.id).attempts.length, 0);
     assert.equal(git(checkout, 'rev-parse', 'HEAD'), target);
     assert.equal(git(project, 'rev-parse', 'HEAD'), base);
+  });
+  await check('Publish previews the exact description and refreshes it before any remote write', async () => {
+    const issue = service.flows.selected(issueId);
+    const flow = service.flows.read(issue);
+    git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');
+    const publish = flow.blocks.find((block) => block.kind === 'publish');
+    const request = flow.blocks.find((block) => block.kind === 'request');
+    request.data.wording = 'Original wording with a heading\n\n### User details\n\nKeep this exact text.';
+    request.data.fields = {
+      type: 'feature',
+      goal: 'Preview exactly',
+      requestedProof: 'Browser output',
+    };
+    service.flows.store.save(flow, flow.revision);
+    await page.reload();
+    await page.locator(`[data-block="${publish.id}"]`).click();
+    await page.getByRole('button', { name: 'Open Request' }).waitFor();
+    await page.locator('#run-block').click();
+    const description = page.locator('#publish-description');
+    await description.waitFor();
+    assert.equal(
+      await description.textContent(),
+      '## Goal\n\nPreview exactly\n\n## Requested proof\n\nBrowser output\n\n## Original wording\n\n' +
+        request.data.wording
+    );
+    await screenshot('publish-preview');
+    let saved = service.flows.read(issue);
+    await service.flows.action({
+      action: 'rename-issue',
+      issueId,
+      revision: saved.revision,
+      previousTitle: issue.title,
+      title: 'A renamed issue',
+    });
+    await page.locator('#publish-preview').getByText('A renamed issue', { exact: true }).waitFor();
+    await page.locator('#close-publish').click();
+    saved = service.flows.read(service.flows.selected(issueId));
+    assert.equal(saved.blocks.find((block) => block.id === publish.id).attempts.length, publish.attempts.length);
+  });
+  await check('Issue Play respects No new actions and waits for confirmation', async () => {
+    service.flows.executor.close();
+    service.flows.executor = executor;
+    const previousIssueId = issueId;
+    writeFileSync(
+      join(project, '.issues', playbackIssueId + '.md'),
+      `---\nid: ${playbackIssueId}\ntitle: Playback fixture\nstate: backlog\ncreated: 2026-11-16T12:00:00Z\n---\n\n## Original request\n\nTest autoplay.\n`
+    );
+    issueId = playbackIssueId;
+    const issue = service.flows.selected(issueId);
+    const flow = service.flows.read(issue);
+    flow.blocks = flow.blocks.filter(({ kind }) => ['request', 'work'].includes(kind));
+    flow.blocks[0].data.fields = { type: 'feature', goal: 'Test autoplay' };
+    let saved = service.flows.store.save(flow, flow.revision);
+    await service.flows.action({
+      action: 'add',
+      issueId,
+      revision: saved.revision,
+      kind: 'verify',
+      afterId: 'work',
+    });
+    saved = service.flows.read(issue);
+    const verify = saved.blocks.find(({ kind }) => kind === 'verify');
+    await service.flows.action({
+      action: 'add',
+      issueId,
+      revision: saved.revision,
+      kind: 'merge-target',
+      afterId: verify.id,
+    });
+    saved = service.flows.read(issue);
+    const sync = saved.blocks.find(({ kind }) => kind === 'merge-target');
+    await page.goto(new URL('/?issue=' + issueId, page.url()).href);
+    await page.getByRole('button', { name: 'Play issue' }).click();
+    await poll(
+      view,
+      (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'running',
+      'Work did not start.'
+    );
+    await page.locator(`[data-issue="${previousIssueId}"]`).click();
+    await page.locator('#issue-title').filter({ hasText: 'A renamed issue' }).waitFor();
+    assert.equal((await view()).autoplay.mode, 'playing');
+    await page.locator(`[data-issue="${issueId}"]`).click();
+    await page.getByRole('button', { name: 'Pause issue' }).click();
+    await poll(view, (data) => data.autoplay.mode === 'paused', 'Pause was not applied.');
+    await page.getByRole('button', { name: 'Play issue' }).click();
+    await poll(view, (data) => data.autoplay.mode === 'playing', 'Play did not resume during Work.');
+    const noNewActions = page.locator('#flow-actions-switch [data-server-toggle]');
+    await noNewActions.check();
+    await poll(
+      async () => (await page.request.get('/api/server-status')).json(),
+      (data) => data.phase === 'paused',
+      'No new actions did not pause the server.'
+    );
+    assert.equal(await page.getByRole('button', { name: 'Pause issue' }).isEnabled(), true);
+    playbackWork.resolve();
+    const paused = await poll(
+      view,
+      (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'completed',
+      'Work did not finish after Pause.'
+    );
+    assert.equal(paused.flow.blocks.find(({ id }) => id === verify.id).attempts.length, 0);
+    assert.equal(paused.autoplay.mode, 'paused');
+    await page.waitForFunction(() => document.getElementById('issue-playback').disabled);
+    await noNewActions.uncheck();
+    await block('request');
+    await page.getByRole('button', { name: 'Play issue' }).click();
+    await page.locator('#waiting-block').filter({ hasText: 'needs confirmation' }).waitFor();
+    assert.equal(await page.locator('[data-block="request"][aria-pressed="true"]').count(), 1);
+    await page.reload();
+    await page.locator('#waiting-block').click();
+    assert.equal(await page.locator('#inspector-block-name').innerText(), sync.label);
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.locator('#run-block').click();
+    await page.locator('#playback-status').filter({ hasText: 'Flow complete' }).waitFor();
+    assert.equal((await view()).flow.blocks.find(({ id }) => id === sync.id).attempts.at(-1).status, 'completed');
+    assert.deepEqual(logs.pageErrors, []);
+  });
+  await check('The issue header closes with a reason and runs only Cleanup by default', async () => {
+    const close = page.getByRole('button', { name: 'Close', exact: true });
+    assert.equal(await page.locator('#worktree-hint + #close-with-reason').count(), 1);
+    const dialog = page.getByRole('dialog', { name: 'Close this issue' });
+    const executionCount = logs.execution.length;
+    await close.click();
+    await dialog.getByLabel('Reason', { exact: true }).locator('option[value="fixed"]').waitFor({ state: 'attached' });
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.equal(logs.requests.filter(({ path }) => path === '/api/issue-decision').length, 0);
+    await close.click();
+    await dialog.getByLabel('Reason', { exact: true }).selectOption('duplicate');
+    await dialog.getByLabel('Details or related issue (optional)').fill('Already covered by issue #44');
+    await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    await close.waitFor({ state: 'hidden' });
+    assert.deepEqual(
+      logs.execution.slice(executionCount).map(({ blockId }) => blockId),
+      [service.flows.read(service.flows.selected(issueId)).blocks.find(({ kind }) => kind === 'cleanup').id]
+    );
+    const saved = service.flows.selected(issueId);
+    assert.equal(saved.location, 'closed');
+    assert.equal(saved.closure.reason, 'duplicate');
+    assert.equal(saved.closure.details, 'Already covered by issue #44');
+    assert.equal(saved.accepted_result, undefined);
+  });
+  await check('Manual Fixed accepts retained Flow investigation evidence before running Cleanup', async () => {
+    issueId = '20261116-manual-fixed-fixture';
+    writeFileSync(
+      join(project, '.issues', issueId + '.md'),
+      `---\nid: ${issueId}\ntitle: Manual Fixed fixture\nstate: backlog\nrequest_type: investigation\ncreated: 2026-11-16T12:00:00Z\n---\n\nInvestigate the test project.\n`
+    );
+    const flow = service.flows.read(service.flows.selected(issueId));
+    const checkout = join(project, '.issues/issue-work', issueId);
+    const branch = 'codex/issue-' + issueId;
+    const base = git(project, 'rev-parse', 'HEAD');
+    git(project, 'worktree', 'add', '-qb', branch, checkout, base);
+    flow.workspace = { checkout, branch, base };
+    flow.blocks[0].data.fields = { type: 'investigation' };
+    const understand = flow.blocks.find(({ kind }) => kind === 'understand');
+    const path = join(project, '.issues', 'manual-fixed-evidence.txt');
+    const output = 'The project serves the saved issue flow.';
+    writeFileSync(path, output);
+    understand.attempts.push({
+      id: 'fixture-understand',
+      status: 'completed',
+      startedAt: '2026-11-16T12:00:00Z',
+      output,
+      evidence: [{ path, sha256: createHash('sha256').update(output).digest('hex') }],
+      result: { head: base, base, tree: git(checkout, 'rev-parse', 'HEAD^{tree}') },
+    });
+    service.flows.store.save(flow, flow.revision);
+    const executionCount = logs.execution.length;
+    await page.goto(new URL('/?issue=' + issueId, page.url()).href);
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Close this issue' });
+    await dialog.getByLabel('Reason', { exact: true }).selectOption('fixed');
+    await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    const saved = service.flows.selected(issueId);
+    assert.equal(saved.closure.reason, 'fixed');
+    assert.equal(saved.accepted_result.revision, base);
+    assert.equal(readFileSync(saved.accepted_result.evidence[0].path, 'utf8'), output);
+    assert.deepEqual(
+      logs.execution.slice(executionCount).map(({ blockId }) => blockId),
+      [service.flows.read(saved).blocks.find(({ kind }) => kind === 'cleanup').id]
+    );
+    assert.deepEqual(logs.pageErrors, []);
+  });
+  await check('Create issue opts into approval and Retro without starting work', async () => {
+    const previous = issueId;
+    const runs = logs.execution.length;
+    const create = page.locator('#capture-dialog');
+    await page.locator('#new-issue').click();
+    assert.equal(await create.getByLabel('Run a retro').isChecked(), false);
+    assert.equal(await create.getByLabel('Needs approval').isChecked(), false);
+    await create.getByLabel('Your request').fill('Review an idle approval proposal');
+    await create.getByLabel('Run a retro').check();
+    await create.getByLabel('Needs approval').check();
+    await create.getByRole('button', { name: 'Create issue', exact: true }).click();
+    const approval = page.getByRole('combobox', { name: 'Needs approval', exact: true });
+    await approval.waitFor();
+    await page.locator('#close-with-reason').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#worktree-menu').isVisible(), false);
+    await approval.selectOption('approve-issue');
+    await page.locator('#close-with-reason').waitFor();
+    assert.equal(await approval.isVisible(), false);
+    assert.equal(logs.execution.length, runs);
+    await page.goto(new URL('/?issue=' + previous, page.url()).href);
+  });
+  await check('Worktree Delete requires confirmation and shows why the menu is disabled afterward', async () => {
+    const { checkout, branch } = (await view()).flow.workspace;
+    const menu = page.getByRole('combobox', { name: 'Worktree', exact: true });
+    const cancel = page.waitForEvent('dialog');
+    await menu.selectOption('delete');
+    const preview = await cancel;
+    assert.match(preview.message(), /Delete this issue worktree/);
+    assert.ok(preview.message().includes(realpathSync(checkout)));
+    await preview.dismiss();
+    assert.ok(readFileSync(join(checkout, 'source.txt'), 'utf8'));
+
+    const uncommitted = join(checkout, 'draft.txt');
+    writeFileSync(uncommitted, 'Uncommitted work.');
+    page.once('dialog', (dialog) => void dialog.accept());
+    await menu.selectOption('delete');
+    await page.locator('#error-message').filter({ hasText: 'Unsaved workspace changes' }).waitFor();
+    assert.equal(readFileSync(uncommitted, 'utf8'), 'Uncommitted work.');
+    rmSync(uncommitted);
+
+    page.once('dialog', (dialog) => void dialog.accept());
+    await menu.selectOption('delete');
+    await page.getByText('Worktree deleted.', { exact: true }).waitFor();
+    assert.equal(await menu.isDisabled(), true);
+    assert.equal(await menu.getAttribute('title'), 'This issue’s worktree has been deleted.');
+    assert.throws(() => readFileSync(join(checkout, 'source.txt')), /ENOENT/);
+    assert.equal(git(project, 'branch', '--list', branch), '');
+    assert.equal(service.flows.selected(issueId).closure.reason, 'fixed');
+  });
+  await check('Closed issues can be reopened or archived from Flow', async () => {
+    const archive = page.getByRole('combobox', { name: 'Archive', exact: true });
+    const close = page.getByRole('button', { name: 'Close', exact: true });
+    await archive.waitFor();
+    assert.equal(await close.isVisible(), false);
+    assert.equal(await archive.locator('option[value="reveal"]').textContent(), 'Reveal in Finder');
+    page.once('dialog', (dialog) => void dialog.accept());
+    await archive.selectOption('reopen');
+    await close.waitFor();
+    assert.equal(service.flows.selected(issueId).location, 'open');
+    assert.equal(await archive.isVisible(), false);
+
+    issueId = playbackIssueId;
+    await page.goto('/?issue=' + issueId);
+    await archive.waitFor();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await archive.selectOption('archive');
+    await page.getByText('Issue archived.', { exact: true }).waitFor();
+    await archive.waitFor({ state: 'hidden' });
+    assert.equal(new URL(page.url()).searchParams.has('issue'), false);
+    assert.match(readFileSync(join(project, '.issues/archive', issueId + '.md'), 'utf8'), /duplicate/);
   });
   passed = true;
 } catch (error) {

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cleanEnvironment, readJson, requireThat, writeJson } from './common.mjs';
 import { ensureIssueNumbers } from './issue-numbers.mjs';
+import { parse } from 'yaml';
 
 const numbersPath = '.issues/issue-numbers.json';
 const issueIdPattern = /^\d{8}T\d{6}(?:\d{3})?Z?-[a-f0-9]{4,32}$/;
@@ -27,7 +28,7 @@ function requestedReport(report, location, role = 'checkpoint') {
   const present = ['open', 'closed'].includes(location) && typeof report === 'string' && report.length > 0;
   requireThat(
     present || (report === null && location === null),
-    `A queue ${role} needs a report at a valid location or an explicit archive removal.`
+    `A queue ${role} needs a report at a valid location or an explicit removal.`
   );
   return { report, location };
 }
@@ -395,8 +396,11 @@ export function createSharedIssuePublication({
     if (sameReport(live, candidate) && Number.isSafeInteger(number))
       return { issueId, status: 'landed', issueNumber: number };
     requireThat(
-      candidate.location !== null || live.location === 'closed',
-      'Only a shared closed report can be removed for archive.'
+      candidate.location !== null ||
+        live.location === 'closed' ||
+        (live.location === 'open' &&
+          parse(live.report.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || '')?.state === 'needs-approval'),
+      'Only a shared closed report or an issue awaiting approval can be removed.'
     );
     const record = {
       ...prepare(issueId, candidate, live),

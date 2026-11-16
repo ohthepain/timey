@@ -162,7 +162,14 @@ export class CodexConnection {
   clearRequests(threadId) {
     for (const [id, request] of this.requests) if (request.params.threadId === threadId) this.requests.delete(id);
   }
-  async start(cwd, sandbox = 'workspace-write', onStartup = () => {}, issueId = null, settingsRoot = cwd) {
+  async start(
+    cwd,
+    sandbox = 'workspace-write',
+    onStartup = () => {},
+    issueId = null,
+    settingsRoot = cwd,
+    instructions
+  ) {
     await this.ready();
     onStartup({ status: 'starting' });
     const settings = newChatModelSettings(settingsRoot, issueId);
@@ -175,6 +182,7 @@ export class CodexConnection {
         approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
         ...permissionToolConfig(sandbox),
         serviceName: 'timey-factory-ui',
+        ...(instructions === undefined ? {} : { developerInstructions: instructions }),
         model: settings.model,
       },
       () =>
@@ -188,7 +196,7 @@ export class CodexConnection {
     this.approvalReviewers.set(result.thread.id, sandbox === 'workspace-write' ? 'auto_review' : 'user');
     return result.thread.id;
   }
-  async resume(threadId, cwd, sandbox = 'workspace-write') {
+  async resume(threadId, cwd, sandbox = 'workspace-write', instructions) {
     await this.ready();
     await this.call('thread/resume', {
       threadId,
@@ -197,6 +205,7 @@ export class CodexConnection {
       approvalPolicy: 'on-request',
       approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user',
       ...permissionToolConfig(sandbox),
+      ...(instructions === undefined ? {} : { developerInstructions: instructions }),
       excludeTurns: true,
     });
     this.approvalReviewers.set(threadId, sandbox === 'workspace-write' ? 'auto_review' : 'user');

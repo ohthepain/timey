@@ -20,6 +20,7 @@ function fixture(t, options = {}) {
   git('config', 'user.email', 'flow@example.invalid');
   writeFileSync(join(root, '.gitignore'), '.issues/\n');
   writeFileSync(join(root, 'source.txt'), 'Initial source.\n');
+  writeFileSync(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n');
   git('add', '.');
   git('commit', '-m', 'Fixture');
   mkdirSync(join(root, '.issues'));
@@ -30,8 +31,8 @@ function fixture(t, options = {}) {
   let emit;
   const connection = {
     async ready() {},
-    async start(cwd, sandbox, retain) {
-      calls.push({ method: 'start', cwd, sandbox });
+    async start(cwd, sandbox, retain, _issueId, _settingsRoot, instructions) {
+      calls.push({ method: 'start', cwd, sandbox, instructions });
       retain({ status: 'ready', threadId: 'the-one-issue-chat' });
       return 'the-one-issue-chat';
     },
@@ -90,6 +91,9 @@ function fixture(t, options = {}) {
     },
   };
   const executor = createFlowExecutor(service, {
+    ...(!options.execute && {
+      verifyCandidate: async () => ({ result: { summaries: [] }, evidence: [] }),
+    }),
     createConnection({ onEvent }) {
       emit = onEvent;
       calls.push({ method: 'connection' });
@@ -108,7 +112,6 @@ function fixture(t, options = {}) {
     type: 'feature',
     request: {
       goal: issue.title,
-      doneCheck: 'One turn.',
       proof: 'Saved output.',
       knownFacts: '',
       constraints: '',
@@ -120,7 +123,7 @@ function fixture(t, options = {}) {
   const progress = [];
   let n = 0;
   function run(kind = 'work', changes = {}) {
-    const attempt = { id: 'attempt-' + ++n };
+    const attempt = { id: 'attempt-' + ++n, details: changes.details ?? [] };
     const block = {
       id: 'block-' + kind,
       kind,
@@ -137,7 +140,8 @@ function fixture(t, options = {}) {
       block,
       attempt,
       signal: changes.signal,
-      input: { confirmed: true },
+      continuing: changes.continuing,
+      input: changes.input ?? { confirmed: true },
       onProgress: (text) => progress.push(text),
       onWorkspace: (workspace) => {
         calls.push({ method: 'workspace', workspace });
@@ -166,7 +170,22 @@ function fixture(t, options = {}) {
 
 test('an explicit work block makes one model turn and records its managed checkout before connection', async (t) => {
   const f = fixture(t);
-  const result = await f.run('work', { skill: 'sample' });
+  const turnResult = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await turnResult(...args);
+    const proof = join(args[1], '.issues', 'observed-proof.txt');
+    mkdirSync(join(args[1], '.issues'), { recursive: true });
+    writeFileSync(proof, 'The created issue appeared in the same folder.');
+    return [
+      'Observed the issue in the same folder. The browser was unavailable for the reload check.',
+      '',
+      '```flow-result',
+      '{"files":{"proof":".issues/observed-proof.txt"}}',
+      '```',
+    ].join('\n');
+  };
+  const requestedProof = 'Create an issue from the folder and show it there before and after reload.';
+  const result = await f.run('work', { skill: 'sample', details: [{ key: 'requestedProof', value: requestedProof }] });
   assert.equal(f.calls.filter((call) => call.method === 'turn').length, 1);
   assert.equal(f.calls.find((call) => call.method === 'start').sandbox, 'workspace-write');
   assert.ok(
@@ -180,13 +199,23 @@ test('an explicit work block makes one model turn and records its managed checko
       path: join(f.root, '.issues/sample-skill.md'),
     },
   ]);
-  assert.match(turn.prompt, /exactly one explicit work block/);
-  assert.match(turn.prompt, /Do not continue to another block/);
+  assert.equal(JSON.parse(turn.prompt).block, 'work');
+  assert.deepEqual(JSON.parse(turn.prompt).details, [{ key: 'requestedProof', value: requestedProof }]);
+  const system = f.calls.find((call) => call.method === 'start').instructions;
+  assert.match(system, /Keep all work inside the saved issue checkout/);
+  assert.match(system, /Use Requested Proof to check the current result/);
+  assert.doesNotMatch(system, /Do not continue to another block/);
   assert.equal(result.workspace.branch, 'codex/issue-4');
   assert.equal(f.service.lifecycleRuns[f.issue.id].chatCheckout.checkout, result.workspace.checkout);
   assert.match(conversationFiles(f.root, f.issue.id).directory, /issue-work.*fixture-issue.*conversations/);
   assert.equal(readFileSync(result.evidence[0].path, 'utf8'), result.output);
-  assert.equal(conversationState(f.root, f.issue.id).status, 'idle');
+  assert.match(result.output, /The browser was unavailable for the reload check/);
+  assert.equal(result.status, undefined);
+  assert.equal(
+    readFileSync(result.artifacts.files.proof.path, 'utf8'),
+    'The created issue appeared in the same folder.'
+  );
+  assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-work'].status, 'idle');
   assert.ok(f.progress.includes('Observed progress.'));
 });
 
@@ -213,21 +242,81 @@ test('a new checkout uses the selected starting commit and retains it when the s
   assert.equal(retry.workspace.base, selected, 'A retained checkout must keep its original base.');
 });
 
-test('an explicit retry reuses the same checkout, conversation and selected skill', async (t) => {
+test('Work repairs failed Verify checks before completing, and Verify runs the same check again', async (t) => {
+  const checks = [];
+  const f = fixture(t, {
+    async execute({ command, args, cwd, log }) {
+      writeFileSync(log, 'Fixture check output.');
+      if (command === 'pnpm') {
+        const installed = join(cwd, 'node_modules/.pnpm');
+        mkdirSync(installed, { recursive: true });
+        writeFileSync(join(installed, 'lock.yaml'), readFileSync(join(cwd, 'pnpm-lock.yaml')));
+        return '';
+      }
+      assert.equal(command, process.execPath);
+      assert.match(args.at(-1), /checkCandidate/);
+      assert.match(args.at(-1), /auditPolicy: 'required'/);
+      checks.push({ cwd, log });
+      if (checks.length === 1) {
+        const failedLog = join(cwd, '.issues/failed-check.log');
+        mkdirSync(join(cwd, '.issues'), { recursive: true });
+        writeFileSync(failedLog, 'A fixture check failed.');
+        return (
+          'FLOW_FAILURE ' +
+          JSON.stringify({
+            message: 'Required check failed',
+            verificationFailure: { logs: [failedLog] },
+          })
+        );
+      }
+      return 'FLOW_RESULT ' + JSON.stringify({ head: 'checked-head', summaries: [] });
+    },
+  });
+  const worked = await f.run('work');
+  assert.equal(worked.result.verification.head, 'checked-head');
+  assert.equal(worked.artifacts.values.candidate, 'checked-head');
+  assert.ok(worked.evidence.some(({ label }) => label === 'Failed verification checkpoint'));
+  const turns = f.calls.filter(({ method }) => method === 'turn');
+  assert.equal(turns.length, 2);
+  assert.equal(turns[0].threadId, turns[1].threadId);
+  assert.match(turns[1].prompt, /failed-check\.log/);
+  assert.equal((await f.run('verify')).result.head, 'checked-head');
+  assert.equal(checks.length, 3);
+  assert.match(checks[0].log, /verification-1/);
+  assert.match(checks[1].log, /verification-2/);
+  assert.doesNotMatch(checks[2].log, /verification-\d/);
+  assert.equal(new Set(checks.map(({ cwd }) => cwd)).size, 1);
+});
+
+test('Work stays blocked when the full checks still fail after repairs', async (t) => {
+  const f = fixture(t, {
+    async verifyCandidate() {
+      throw Object.assign(Error('Still failing the required check'), { verificationFailure: {} });
+    },
+  });
+  await assert.rejects(f.run('work'), /Still failing/);
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 4);
+});
+
+test('an unchanged explicit continuation reuses the same checkout, conversation and selected skill', async (t) => {
   const f = fixture(t);
   const first = await f.run('work', { skill: 'sample' });
   const second = await f.run('work', {
     skill: 'sample',
-    attempts: [{ id: 'older' }, { id: 'current' }],
+    continuing: true,
   });
   assert.deepEqual(first.workspace, second.workspace);
   assert.equal(f.calls.filter((call) => call.method === 'start').length, 1);
   assert.equal(f.calls.filter((call) => call.method === 'thread/read').length, 1);
   assert.equal(f.calls.filter((call) => call.method === 'turn').length, 2);
   assert.equal(new Set(f.calls.filter((call) => call.method === 'turn').map((call) => call.threadId)).size, 1);
-  assert.match(f.calls.filter((call) => call.method === 'turn')[1].prompt, /Continue this same block/);
+  assert.deepEqual(
+    f.calls.filter((call) => call.method === 'turn').map((call) => call.prompt),
+    [f.calls.find((call) => call.method === 'turn').prompt, f.calls.find((call) => call.method === 'turn').prompt]
+  );
   assert.equal(conversationMessages(f.root, f.issue.id).length, 4);
-  await assert.rejects(f.run('work', { skill: null }), /saved skill/);
+  await f.run('work', { skill: null, continuing: true });
+  assert.equal(f.calls.filter((call) => call.method === 'start').length, 2);
 });
 
 test('read-only request and understanding need no legacy lifecycle configuration', async (t) => {
@@ -265,6 +354,7 @@ test('prototype requires an explicit instruction and edit sends only enabled ite
   await assert.rejects(f.run('prototype', { prompt: '' }), /Describe the prototype/);
   assert.equal(f.calls.length, 0);
   await f.run('edit', {
+    details: [{ key: 'enabledEdits', value: ['Use a blue title.'] }],
     edits: [
       { id: 'yes', text: 'Use a blue title.', enabled: true },
       { id: 'no', text: 'Delete every title.', enabled: false },
@@ -324,7 +414,7 @@ test('abort interrupts the owned model turn and retains partial output with unce
     return true;
   });
   assert.equal(f.calls.filter((call) => call.method === 'interrupt').length, 1);
-  assert.equal(conversationState(f.root, f.issue.id).status, 'idle');
+  assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'idle');
 });
 
 test('provider input stops the block and preserves its request instead of hanging', async (t) => {
@@ -345,7 +435,7 @@ test('provider input stops the block and preserves its request instead of hangin
     assert.equal(JSON.parse(readFileSync(error.evidence[0].path, 'utf8')).requestId, 'question');
     return true;
   });
-  assert.equal(conversationState(f.root, f.issue.id).status, 'attention');
+  assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'attention');
 });
 
 test('protected merge and delete block without saved delivery evidence and start no model', async (t) => {
@@ -355,30 +445,44 @@ test('protected merge and delete block without saved delivery evidence and start
   assert.equal(f.calls.filter((call) => call.method === 'connection').length, 0);
 });
 
-test('explicit verification uses injected execution and retains actual returned summary paths', async (t) => {
-  const executions = [];
-  const f = fixture(t, {
-    async execute(input) {
-      executions.push(input);
-      writeFileSync(input.log, 'Fixture command result.');
-      return (
-        'FLOW_RESULT ' +
-        JSON.stringify({
-          head: 'fixture-head',
-          tree: 'fixture-tree',
-          summaries: [],
-        })
-      );
-    },
+for (const installed of ['matching', 'missing', 'stale', 'missing workspace']) {
+  test(`explicit verification prepares ${installed} dependencies and retains command evidence`, async (t) => {
+    const executions = [];
+    const lock = 'lockfileVersion: 9.0\n';
+    const workspaces = 'packages:\n  - packages/example\n';
+    function installFixture(checkout, installedLock = lock, installWorkspace = true) {
+      mkdirSync(join(checkout, 'node_modules/.pnpm'), { recursive: true });
+      writeFileSync(join(checkout, 'node_modules/.pnpm/lock.yaml'), installedLock);
+      if (installWorkspace) mkdirSync(join(checkout, 'packages/example/node_modules'), { recursive: true });
+    }
+    const f = fixture(t, {
+      async execute(input) {
+        executions.push(input);
+        writeFileSync(input.log, 'Fixture command result.');
+        if (input.command === 'pnpm') return installFixture(input.cwd);
+        return 'FLOW_RESULT ' + JSON.stringify({ head: 'fixture-head', tree: 'fixture-tree', summaries: [] });
+      },
+    });
+    // Verify prepares dependencies in an existing managed worktree.
+    const { workspace } = await f.run('understand');
+    writeFileSync(join(workspace.checkout, 'pnpm-lock.yaml'), lock);
+    writeFileSync(join(workspace.checkout, 'pnpm-workspace.yaml'), workspaces);
+    if (installed !== 'missing')
+      installFixture(workspace.checkout, installed === 'stale' ? 'old lock' : lock, installed !== 'missing workspace');
+    const modelCalls = f.calls.filter((call) => call.method === 'connection').length;
+    const result = await f.run('verify');
+    assert.deepEqual(
+      executions.map(({ command }) => command),
+      installed === 'matching' ? [process.execPath] : ['pnpm', process.execPath]
+    );
+    assert.ok(executions.every(({ cwd }) => cwd === workspace.checkout));
+    if (installed !== 'matching') assert.deepEqual(executions[0].args, ['install', '--frozen-lockfile']);
+    assert.match(executions.at(-1).args.at(-1), /checkCandidate/);
+    assert.equal(result.result.head, 'fixture-head');
+    assert.ok(result.evidence.every((item) => existsSync(item.path)));
+    assert.equal(f.calls.filter((call) => call.method === 'connection').length, modelCalls);
   });
-  const result = await f.run('verify');
-  assert.equal(executions.length, 1);
-  assert.equal(executions[0].command, process.execPath);
-  assert.match(executions[0].args.at(-1), /checkCandidate/);
-  assert.equal(result.result.head, 'fixture-head');
-  assert.ok(result.evidence.every((item) => existsSync(item.path)));
-  assert.equal(f.calls.filter((call) => call.method === 'connection').length, 0);
-});
+}
 
 test('missing saved checkout blocks instead of silently replacing it', async (t) => {
   const f = fixture(t);
@@ -410,7 +514,7 @@ test('stop during uncertain chat startup returns without creating a replacement 
   await started;
   abort.abort();
   await assert.rejects(task, /block was stopped/);
-  const state = conversationState(f.root, f.issue.id);
+  const state = conversationState(f.root, f.issue.id).flowBlocks['block-understand'];
   assert.equal(state.status, 'attention');
   assert.equal(state.startup.status, 'starting');
   await assert.rejects(f.run('understand'), /startup is uncertain/);
@@ -455,99 +559,191 @@ test('stop reaches explicit command execution and preserves its log', async (t) 
   assert.equal(receivedSignal.aborted, true);
 });
 
-function mergeFixture(t, merged = false) {
+function verificationResult(workspace, folder) {
+  const git = (...args) => execFileSync('git', ['-C', workspace.checkout, ...args], { encoding: 'utf8' }).trim();
+  mkdirSync(folder, { recursive: true });
+  const proof = ['verification', 'step'].map((checkpoint) => {
+    const path = join(folder, checkpoint + '.json');
+    writeFileSync(path, JSON.stringify({ checkpoint }));
+    return { path, sha256: digest(readFileSync(path)) };
+  });
+  return { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), base: workspace.base, proof };
+}
+
+function mergeFixture(t, { merged = false, onWait, repair } = {}) {
   const observations = [];
+  let publishedHead;
+  let nextTarget = 0;
+  const advanceTarget = () => {
+    const file = 'target-' + ++nextTarget + '.txt';
+    writeFileSync(join(f.root, file), 'Change on target.\n');
+    f.git('add', file);
+    f.git('commit', '-m', file);
+  };
+  const pullRequest = (branch = f.flow.workspace.branch) => ({
+    number: 9,
+    state: merged ? 'closed' : 'open',
+    merged_at: merged ? '2026-11-16T00:00:00Z' : null,
+    head: { sha: publishedHead || f.flow.workspace.base, ref: branch, repo: { full_name: 'test/fixture' } },
+    base: { ref: 'dev', repo: { full_name: 'test/fixture' } },
+  });
   const f = fixture(t, {
+    repair,
+    async mergeDelay() {
+      await onWait?.(advanceTarget);
+    },
+    async execute({ cwd, args }) {
+      const git = (...values) =>
+        execFileSync('git', ['-C', cwd, ...values], { encoding: 'utf8', stdio: 'pipe' }).trim();
+      if (args[0] === 'fetch') return git('update-ref', 'refs/remotes/origin/dev', f.git('rev-parse', 'dev'));
+      if (args[0] === 'push') {
+        publishedHead = args[2].split(':')[0];
+        observations.push({ operation: 'push', head: publishedHead });
+        return;
+      }
+      return git(...args);
+    },
+    async verifyCandidate(_ctx, workspace, folder) {
+      const result = verificationResult(workspace, folder);
+      observations.push({ operation: 'verify', head: result.head });
+      return { result, evidence: [] };
+    },
     provider: {
-      async findByBranch(branch, target) {
-        observations.push({ operation: 'find', branch, target });
-        return { number: 9 };
+      config: { repository: 'test/fixture', target: 'dev' },
+      async gh() {
+        return JSON.stringify({ data: { repository: { pullRequest: {} } } });
       },
-      async ready(_pr, branch, head) {
-        observations.push({ operation: 'ready', branch, head });
+      async findIssueBranchPR(branch) {
+        return pullRequest(branch);
+      },
+      async ready(pr, branch, head) {
+        assert.equal(head, pr.head.sha);
+        observations.push({ operation: 'ready', head });
         return {
+          head,
           merged,
-          target: 'target-revision',
+          target: f.git('rev-parse', 'dev'),
           ...(merged ? { merge: { revision: 'actual-merge', url: 'https://example.invalid/pr/9' } } : {}),
         };
       },
-      async inspect(number) {
-        observations.push({ operation: 'inspect', number });
-        return { number };
+      async inspect() {
+        return pullRequest();
       },
-      async assertApproved(number, head) {
-        observations.push({ operation: 'approved', number, head });
-      },
-      async merge(number, head) {
-        observations.push({ operation: 'merge', number, head });
+      async merge(_number, head, { beforeMerge }) {
+        await beforeMerge();
+        observations.push({ operation: 'merge', head });
         return { revision: 'actual-merge', url: 'https://example.invalid/pr/9' };
       },
     },
-    validateSummary(summary, base, tree, policy) {
-      observations.push({ operation: 'validate', checkpoint: summary.checkpoint, base, tree, policy });
+    validateSummary(_summary, _base, _tree, policy) {
+      assert.equal(policy.auditPolicy, 'required');
     },
   });
+  f.git('remote', 'add', 'origin', 'git@github.com:test/fixture.git');
   writeFileSync(
     join(f.root, '.issues/issue-delivery-config.json'),
     JSON.stringify({ provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' })
   );
-  return { ...f, observations };
+  return { ...f, observations, advanceTarget };
 }
 
-function retainVerification(f) {
-  const workspace = f.flow.workspace;
-  const head = execFileSync('git', ['-C', workspace.checkout, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  const tree = execFileSync('git', ['-C', workspace.checkout, 'rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
-  const proof = ['verification', 'step'].map((checkpoint) => {
-    const path = join(f.root, '.issues', checkpoint + '.json');
-    writeFileSync(path, JSON.stringify({ checkpoint }));
-    return { path, sha256: digest(readFileSync(path)) };
-  });
-  f.flow.blocks.push({
-    kind: 'verify',
-    attempts: [{ status: 'completed', result: { head, tree, base: workspace.base, proof } }],
-  });
-  return proof;
+function approvalAttempt(result) {
+  return { id: 'approval-attempt', status: 'blocked', result: result.result };
 }
 
-test('new-flow merge discovers its external PR and validates exact independent evidence before protected merge', async (t) => {
+function approveMerge(f, result) {
+  return f.run('merge', {
+    attempts: [approvalAttempt(result)],
+    continuing: true,
+    input: { confirmed: true, mergeToken: result.result.mergeConfirmation.token },
+  });
+}
+
+test('Merge verifies an unchanged PR once and requires approval of its exact commit and target', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
-  retainVerification(f);
-  const result = await f.run('merge');
+  const first = await f.run('merge');
+  assert.equal(first.status, 'blocked');
+  assert.deepEqual(
+    f.observations.map(({ operation }) => operation),
+    ['verify', 'ready']
+  );
+  const result = await approveMerge(f, first);
   assert.equal(result.result.revision, 'actual-merge');
   assert.equal(result.workspace.pr, 9);
-  assert.equal(f.service.lifecycleRuns[f.issue.id].work, undefined);
   assert.deepEqual(
-    f.observations.map((item) => item.operation),
-    ['find', 'ready', 'validate', 'validate', 'approved', 'inspect', 'ready', 'merge']
-  );
-  assert.ok(
-    f.observations
-      .filter((item) => item.operation === 'validate')
-      .every((item) => item.policy.auditPolicy === 'required')
+    f.observations.map(({ operation }) => operation),
+    ['verify', 'ready', 'ready', 'ready', 'merge']
   );
   assert.equal(f.calls.filter((item) => item.method === 'guard').at(-1).args[2], 'merge');
 });
 
-test('new-flow merge refuses missing or changed retained verification evidence', async (t) => {
+test('Merge verifies and pushes each new candidate, then expires approval if the target moves again', async (t) => {
+  let waits = 0;
+  const f = mergeFixture(t, {
+    onWait(advance) {
+      if (++waits === 1) advance();
+    },
+  });
+  await f.run('understand');
+  f.advanceTarget();
+  const first = await f.run('merge');
+  assert.equal(first.status, 'blocked');
+  assert.deepEqual(
+    f.observations.map(({ operation }) => operation),
+    ['verify', 'push', 'verify', 'push', 'ready']
+  );
+  assert.equal(first.result.mergeConfirmation.target, f.git('rev-parse', 'dev'));
+  f.advanceTarget();
+  const second = await approveMerge(f, first);
+  assert.equal(second.status, 'blocked');
+  assert.notEqual(second.result.mergeConfirmation.token, first.result.mergeConfirmation.token);
+  assert.equal(
+    f.observations.some(({ operation }) => operation === 'merge'),
+    false
+  );
+  assert.equal((await approveMerge(f, second)).result.revision, 'actual-merge');
+});
+
+test('Merge repairs a target conflict in its owning checkout before it verifies or pushes', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
-  await assert.rejects(f.run('merge'), /Run an explicit Verify block/);
-  const proof = retainVerification(f);
-  writeFileSync(proof[0].path, 'Changed retained summary.');
-  await assert.rejects(f.run('merge'), /verification evidence changed/);
-  assert.equal(f.observations.filter((item) => item.operation === 'merge').length, 0);
+  const { checkout } = f.flow.workspace;
+  const issueGit = (...args) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8' }).trim();
+  writeFileSync(join(checkout, 'source.txt'), 'Issue changes.\n');
+  issueGit('commit', '-am', 'Issue changes');
+  writeFileSync(join(f.root, 'source.txt'), 'Target changes.\n');
+  f.git('commit', '-am', 'Target changes');
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.equal(args[1], checkout);
+    assert.match(args[2], /Resolve the target merge conflicts/);
+    writeFileSync(join(checkout, 'source.txt'), 'Issue and target changes.\n');
+    issueGit('add', 'source.txt');
+    issueGit('commit', '--no-edit');
+    return turn(...args);
+  };
+  const result = await f.run('merge');
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(
+    f.observations.map(({ operation }) => operation),
+    ['verify', 'push', 'ready']
+  );
+  assert.equal(issueGit('merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
+  assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
 });
 
 test('external merge reconciliation records GitHub facts without manufacturing verification or acceptance', async (t) => {
-  const f = mergeFixture(t, true);
+  const f = mergeFixture(t, { merged: true });
   await f.run('understand');
   const result = await f.run('merge');
   assert.equal(result.result.alreadyMerged, true);
   assert.equal(result.result.revision, 'actual-merge');
   assert.match(result.summary, /Acceptance remains separate/);
-  assert.equal(f.observations.filter((item) => item.operation === 'merge').length, 0);
+  assert.deepEqual(
+    f.observations.map(({ operation }) => operation),
+    ['ready']
+  );
 });
 
 test('new-flow deletion passes its actual checkout through the unchanged protected cleanup adapter', async (t) => {

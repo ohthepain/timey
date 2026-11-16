@@ -16,9 +16,11 @@ remain available while the lifecycle file is missing.
 The default page is the [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
 It shows issue folders, a downward block graph, and a block inspector. Issue names
 include their numbers and wrap. The **Worktree** menu appears in the branch status
-row when a checkout exists. **Open** opens it in Finder. **Update** starts a
-Merge from target block that fetches the configured target branch and merges it
-into the issue worktree. The merge requires a clean worktree. Drag the sidebar's
+row. Its tooltip says whether a worktree has yet to be created or was deleted.
+**Open** opens it in Finder. **Update** merges the configured target branch into
+the worktree and shows progress while it runs. **Delete** opens a confirmation
+before removing the managed worktree and local branch. Update and Delete require
+a clean worktree. Drag the sidebar's
 right edge or focus the resize
 handle and use the arrow keys to change its width. The inspector also resizes from
 its left edge. Its left arrow widens it and its right arrow narrows it. Home and
@@ -29,18 +31,34 @@ Opening an unattempted issue aligns Starting point with the graph viewport's top
 Starting point includes a Git branch selector. It lists local and cached remote
 branches by latest commit date, newest first. Branches sharing a commit remain
 separate options. Selecting a branch saves its exact starting commit for this
-issue and remembers its ref as the project default for future issues. New issues
-snapshot that branch's current commit. Destination stays unchanged. The selector
-locks when an attempt or checkout exists. It never switches the project's current
-checkout or starts work. A missing default branch must be restored or replaced
-through an unstarted issue before creating another issue.
+issue. New issues snapshot the configured delivery branch's current commit. The
+selector locks when work starts or a checkout exists. Selecting a branch leaves
+the project's checkout in place.
+
+Destination follows the starting branch by default. Open its picker to list
+branches on the configured GitHub remote. Selecting a branch pins it. Choose
+**Follow starting branch** to restore the default. A local starting branch matches
+the configured remote by name. A starting branch from another remote requires an
+explicit destination. Older issues with a PR use its GitHub base. Destination
+locks when the issue has a PR. If GitHub reports a changed base, accept that base
+in Destination before running Publish or Merge.
+
+Use the pencil next to the issue heading to rename it. Before the first Publish,
+review the title, source and destination branches, verified commit, and exact PR
+description. The description contains Goal, Requested proof, and Original wording
+from Request, with empty sections omitted. On later runs, Publish shows pending
+title and commit changes and preserves the existing GitHub description. A
+matching title and commit show **PR is up to date** with the link. **Confirm
+current PR** completes Publish using the existing PR.
 Closed issues open with Destination aligned at the bottom. Other issues center
 their running or most recently attempted block within the content's scroll range.
 The graph has 16 pixels of edge room. Column scrolling stays local, with native
 bounce where supported and no pull-to-refresh. Selecting a block scrolls only enough to reveal it. The
-circular plus button adds a step. The header Continue button runs the selected
-block through the same saved-setting and confirmation guards as its inspector.
-Each block requires an explicit start. `/classic` retains the strategy and legacy queue
+circular plus button adds a step. The issue header's Play/Pause button runs the
+route one eligible block at a time. A confirmation link appears in the header
+when Play reaches a protected block. The Run, Retry, Recover, or Stop button
+beside the selected block's name controls that block individually.
+`/classic` retains the strategy and legacy queue
 controls documented below. Flow observation can show reports before lifecycle configuration
 is restored, but editable work and protected operations still require the actual
 project policy, human input, credentials, and retained evidence.
@@ -49,6 +67,16 @@ The Artifacts tab shows the selected block’s latest run. Expand **Previous
 artifacts** to see the surviving files for an earlier run. **Inspect** opens the
 raw text. Turn on **Restate** for a version that follows the bro skill’s
 plain-language guidance.
+
+The Details tab shows declared **Inputs** first. Each input can use a Manual
+value or a matching upstream **Source**; unique Markdown source matches are
+selected by default. **Outputs** are read-only fields from the latest run, while
+earlier results remain in attempt history. The collapsed **System prompt** section
+lets a block use prompt text or one of the skills allowed by its Markdown. Block
+Markdown can type fields as `text`, `long text`, `number`, `boolean`, `choice`,
+`filename`, or `url`; untyped fields use text controls. Choice options are JSON
+arrays. Filename inputs choose repository files and save relative paths; URL
+outputs open only valid HTTP(S) links.
 
 Every button provides clear feedback when activated. Show immediate progress for
 asynchronous operations, then report success or failure. Use a popup or toast for
@@ -1172,8 +1200,11 @@ normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
 
-The running-action count opens a list of connected actions, active cleanup, and
-recent stopped work that can be resumed or skipped. Completed and incomplete
+The running-action count includes saved actions still marked preparing, running,
+or checking. This includes interrupted preparations that block a server update.
+In Flow and Classic, the count opens the same **Action list**. It shows those actions,
+connected work, active cleanup, and recent stopped
+work that can be resumed or skipped. Completed and incomplete
 cleanup results are available on the issue page. The open list refreshes when
 the running count changes. Each entry shows its saved issue and current
 details, links to the issue and that run's output, and
@@ -1186,6 +1217,9 @@ strategy or worker assignment within the existing scope. Skip cancels a stopped
 or interruptible worker assignment while retaining its checkout and conversation;
 it is disabled for an issue strategy whose approved checks and delivery would be
 discarded. Unavailable controls explain why they cannot run in the current state.
+For a disconnected strategy still preparing with no worker thread, use **Cancel**
+to cancel that exact attempt. Factory keeps its history and any checkout. If a
+newer attempt owns the issue, its progress stays in place.
 
 **Restart server** in the header uses the same restart path as deployment and
 maintenance: it drains current work, permission replies, temporary chats and
@@ -1205,7 +1239,9 @@ connector above them. Every square still links to its expanded issue step.
 
 ## Closing without completing the work
 
-Every open issue has **Close with reason…** above its chat. Choose a reason and
+An open, approved issue has **Close** beside **Worktree** in Flow and
+**Close with reason…** above its chat in Classic. Both buttons open the closure
+dialog. Choose a reason and
 optionally add details or the duplicate issue ID. The project’s editable
 `.issues/triage-labels.md` defines the reasons in a Closed reasons table with
 ID, Label and Meaning columns. Older projects use the standard reasons until
@@ -1217,9 +1253,17 @@ must finish first. Accepting the issue as Fixed still requires that outstanding
 result to be reviewed. The report records the reason, label, time and optional
 details, and the page shows them after closure. Reopening preserves the decision
 in history.
-Changed reports or reason lists invalidate an open decision; duplicate submissions
-cannot close twice. This explicit user disposition is separate from automatic
-Progress, which still cannot close issues.
+Changed reports or reason lists invalidate an open decision. In Flow, manual
+Close records the decision, runs the opted-in Retro, then starts Cleanup.
+Turn on auto-close in Request to record Fixed after Factory confirms its own
+merge and the existing acceptance requirements pass. Each branch requires its
+own deletion choice. In shared queue mode, Cleanup waits for the reviewed
+closure to reach the shared queue.
+
+Create issue offers **Run a retro** and **Needs approval**. Both start unchecked.
+Retro files follow-ups in **Retro items** as **Needs approval**. **Approve**
+keeps the item in its folder and restores normal controls. **Delete** asks for
+confirmation before removing the item. [Issue retros](../plans/issue-retros.md)
 
 When an open issue has a saved strategy PR and checkout, **Verify this commit again**
 appears beside **Close with reason…**. It reruns the required local checks against
@@ -1277,9 +1321,10 @@ and stores fresh evidence on the existing strategy run. This path starts no work
 and makes no branch or PR changes; it does not bypass any check or human acceptance.
 
 Full Send leaves a separate **Merge PR** control after verification. Selecting it
-rechecks GitHub's approving review and required checks against the exact saved
-head. If a check is pending or failing, Factory shows the check name. If approval
-is missing, Factory asks for an approving review on the current head. Once the
+rechecks GitHub readiness against the exact saved head. Flow **Merge** follows the
+same readiness rules, with its own local **Verify** result. GitHub decides which
+reviews and checks are required. Factory reports required review or check blockers
+when GitHub identifies them. Once the
 gates pass, the server creates a merge commit so Git recognizes the issue branch
 as merged. If the repository disables merge commits, the action stops. Progress
 records the GitHub merge before attempting to update local `dev`. That update runs

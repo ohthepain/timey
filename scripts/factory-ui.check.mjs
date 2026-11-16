@@ -3608,6 +3608,8 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
       '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-progress-ui.js'), 'utf8') +
       '\n' +
+      readFileSync(resolve('scripts/factory-ui/issue-closure-ui.js'), 'utf8') +
+      '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +

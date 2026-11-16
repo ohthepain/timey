@@ -114,6 +114,9 @@ retain strict validation and cannot infer empty scope from a saved tool report.
 
 ### Commit and step-completion checkpoints
 
+GitHub Actions runs Verify for pull requests to any branch, including the
+Destination selected in Flow. Direct pushes trigger Verify on `main` and `dev`.
+
 Before a commit, the pre-commit hook checks formatting on the exact staged file
 contents, then runs `pnpm run audit:staged`, which exports the staged snapshot
 for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
@@ -391,6 +394,13 @@ Neither command targets the authoritative queue or starts factory work. Required
 full verification and saved-start step/staged checkpoints still apply.
 
 ## Execution preflight and recovery
+
+An explicitly started Flow **Verify** block prepares dependencies in the saved
+issue worktree. It reuses an installation that matches the pnpm lockfile and
+declared workspaces. If dependencies are missing or stale, it runs
+`pnpm install --frozen-lockfile`, then checks the installation again before
+running verification. The block records the install output and stops if setup
+fails.
 
 Before any verification command runs, the exporter checks the installed pnpm lock
 against the exported lock and requires dependencies for each declared workspace.

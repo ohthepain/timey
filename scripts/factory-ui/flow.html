@@ -6,7 +6,10 @@
     <meta name="color-scheme" content="dark" />
     <title>Factory · Flow workspace</title>
     <link rel="stylesheet" href="/flow.css" />
+    <script src="/server-control-ui.js" defer></script>
+    <script src="/issue-closure-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
+    <script src="/view-inspection.js" defer></script>
   </head>
   <body>
     <div id="app" class="workspace">
@@ -80,10 +83,15 @@
       <main class="flow-main">
         <header class="flow-heading">
           <div class="breadcrumb">
-            <span id="issue-type-label">Workspace</span><span class="breadcrumb-divider">/</span
-            ><span id="issue-number">Issue flow</span>
+            <span>Workspace</span><span class="breadcrumb-divider">/</span><span id="issue-number">Issue flow</span>
           </div>
-          <button class="small-button" id="refresh" title="Refresh saved state">↻ <span>Refresh</span></button>
+          <div class="flow-heading-actions">
+            <button class="small-button view-inspect-toggle" id="view-inspect" type="button" aria-pressed="false">
+              Inspect UI
+            </button>
+            <button class="small-button" id="view-index-open" type="button">View index</button>
+            <button class="small-button" id="refresh" title="Refresh saved state">↻ <span>Refresh</span></button>
+          </div>
         </header>
         <div class="error-banner" id="error-banner" role="alert" hidden>
           <span id="error-message"></span
@@ -91,12 +99,87 @@
         </div>
         <section class="issue-heading" id="issue-heading" hidden>
           <div>
-            <h1 id="issue-title"></h1>
-            <p id="issue-subtitle"></p>
+            <div class="issue-title-row">
+              <h1 id="issue-title"></h1>
+              <button
+                class="icon-button"
+                id="rename-issue"
+                type="button"
+                aria-label="Rename issue"
+                title="Rename issue"
+              >
+                ✎
+              </button>
+            </div>
+            <form id="rename-issue-form" class="issue-title-row" hidden>
+              <input id="rename-issue-title" aria-label="Issue title" maxlength="256" required />
+              <button class="small-button" type="submit">Save</button>
+              <button class="small-button" id="cancel-rename" type="button">Cancel</button>
+            </form>
+            <div class="issue-flow-meta">
+              <span id="issue-type-label"></span>
+              <span id="issue-subtitle"></span>
+              <details id="issue-flow-picker" class="issue-flow-picker">
+                <summary id="issue-flow-menu" class="small-button" title="Choose a flow">
+                  Flow <span id="issue-flow-name"></span>
+                </summary>
+                <div id="issue-flow-options" class="issue-flow-options"></div>
+              </details>
+              <button id="rebuild-flow" class="small-button" type="button" data-action="rebuild-flow">
+                <span aria-hidden="true">🪄</span> Rebuild flow
+              </button>
+            </div>
           </div>
-          <button class="primary-button" id="continue-block" disabled>Continue</button>
+          <div class="issue-playback">
+            <button class="primary-button" id="issue-playback" type="button">▷ Play</button>
+            <button class="small-button" id="waiting-block" type="button" hidden></button>
+            <button class="small-button" id="retry-closure" type="button" hidden>Continue closure</button>
+            <button class="small-button" id="skip-retro" type="button" hidden>Continue to Cleanup</button>
+            <span class="muted" id="playback-status" aria-live="polite"></span>
+          </div>
         </section>
-        <div id="environment" class="environment" hidden></div>
+        <div id="environment" class="environment" hidden>
+          <div id="environment-status" class="environment-status"></div>
+          <select class="environment-chip warning" id="target-update-menu" aria-label="Target branch is ahead" hidden>
+            <option value="" disabled selected></option>
+            <option value="update">Update branch</option>
+            <option value="add">Add update branch block</option>
+          </select>
+          <span class="environment-chip warning" id="target-update-progress" role="status" hidden>
+            <span class="status-icon active-spinner" style="--spinner-color: currentColor" aria-hidden="true"></span>
+            Updating branch…
+          </span>
+          <span id="worktree-hint">
+            <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
+              <option value="" disabled selected>Worktree</option>
+              <option value="open">Open</option>
+              <option value="update">Update</option>
+              <option value="delete">Delete</option>
+            </select>
+          </span>
+          <button
+            class="environment-chip issue-close-control"
+            id="close-with-reason"
+            type="button"
+            title="Close with reason"
+            aria-haspopup="dialog"
+            hidden
+          >
+            Close
+          </button>
+          <select class="environment-chip" id="issue-approval-menu" aria-label="Needs approval" hidden>
+            <option value="" disabled selected>Needs approval</option>
+            <option value="approve-issue">Approve</option>
+            <option value="delete-pending-issue">Delete</option>
+          </select>
+          <select class="environment-chip" id="issue-archive-menu" aria-label="Archive" hidden>
+            <option value="" disabled selected>Archive</option>
+            <option value="archive">Archive issue</option>
+            <option value="reveal">Reveal in Finder</option>
+            <option value="reopen">Reopen</option>
+            <option value="cleanup">Run Cleanup</option>
+          </select>
+        </div>
         <section
           id="graph-scroll"
           class="graph-scroll"
@@ -129,14 +212,35 @@
           <span class="eyebrow">INSPECTOR</span><span id="inspector-kind" class="muted">Block details</span>
         </header>
         <div class="inspector-title" id="inspector-title">
-          <span class="inspector-symbol" aria-hidden="true">◇</span>
-          <h2>Select a block</h2>
+          <span class="inspector-symbol" id="inspector-symbol" aria-hidden="true">◇</span>
+          <h2 id="inspector-block-name">Select a block</h2>
+          <button class="primary-button" id="run-block" type="button" hidden></button>
         </div>
         <div class="inspector-tabs" role="tablist" aria-label="Inspector view">
-          <button role="tab" id="tab-details" aria-selected="true" data-tab="details">Details</button
-          ><button role="tab" id="tab-conversation" aria-selected="false" data-tab="conversation">Conversation</button
-          ><button role="tab" id="tab-artifacts" aria-selected="false" data-tab="artifacts">
-            Artifacts <span id="artifact-count"></span>
+          <button
+            role="tab"
+            id="tab-details"
+            aria-selected="true"
+            data-tab="details"
+            data-ui-source="flow/block-inspector/details-tab"
+          >
+            <span data-ui-label>Details</span></button
+          ><button
+            role="tab"
+            id="tab-conversation"
+            aria-selected="false"
+            data-tab="conversation"
+            data-ui-source="flow/block-inspector/conversation-tab"
+          >
+            <span data-ui-label>Conversation</span></button
+          ><button
+            role="tab"
+            id="tab-artifacts"
+            aria-selected="false"
+            data-tab="artifacts"
+            data-ui-source="flow/block-inspector/artifacts-tab"
+          >
+            <span data-ui-label>Artifacts</span> <span id="artifact-count"></span>
           </button>
         </div>
         <div class="inspector-body" id="inspector-body" role="tabpanel" aria-labelledby="tab-details">
@@ -174,6 +278,8 @@
             <option value="investigation">Investigation</option>
           </select></label
         >
+        <label><input type="checkbox" id="capture-retro" /> Run a retro</label>
+        <label><input type="checkbox" id="capture-needs-approval" /> Needs approval</label>
         <p id="capture-error" class="inline-error" role="alert" hidden></p>
         <div class="modal-footer">
           <button class="small-button" type="button" data-close-dialog="capture-dialog">Cancel</button
@@ -190,8 +296,49 @@
         <button class="icon-button" data-close-dialog="palette-dialog" aria-label="Close block palette">×</button>
       </div>
       <p class="muted">Add the next step. Nothing runs until you start it.</p>
+      <p id="block-palette-error" class="inline-error" role="alert" hidden></p>
       <div id="block-palette" class="block-palette"></div>
     </dialog>
+    <dialog id="issue-closure-dialog" class="modal" aria-labelledby="issue-closure-heading">
+      <form id="issue-closure-form">
+        <div class="closure-fields" id="issue-closure-fields"></div>
+        <p class="closure-error" id="issue-closure-error" role="alert"></p>
+        <div class="modal-footer">
+          <button class="small-button" id="cancel-issue-closure" type="button" data-close-dialog="issue-closure-dialog">
+            Cancel
+          </button>
+          <button class="primary-button" id="confirm-issue-closure" type="submit">Close issue</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="destination-dialog" class="modal" aria-labelledby="destination-heading">
+      <form method="dialog">
+        <h2 id="destination-heading">Destination branch</h2>
+        <p id="destination-message" role="status"></p>
+        <label class="field" id="destination-choices" hidden>
+          <span>Branch</span>
+          <select id="destination-branch"></select>
+        </label>
+        <div class="block-actions">
+          <button class="small-button" value="cancel">Cancel</button>
+          <button class="small-button" id="retry-branches" type="button" hidden>Retry</button>
+          <button class="primary-button" id="save-destination" value="save" hidden>Save destination</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="publish-dialog" class="modal publish-modal" aria-labelledby="publish-heading">
+      <form method="dialog">
+        <h2 id="publish-heading">Publish PR</h2>
+        <div id="publish-preview" aria-live="polite"></div>
+        <p id="publish-error" role="alert" hidden></p>
+        <div class="block-actions">
+          <button class="small-button" id="close-publish" value="cancel">Close</button>
+          <button class="primary-button" id="confirm-publish" type="button" hidden>Publish</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="folder-dialog" class="modal">
       <form id="folder-form">
         <div class="modal-heading">
@@ -212,6 +359,23 @@
         <div class="modal-footer">
           <button class="small-button" type="button" data-close-dialog="folder-dialog">Cancel</button
           ><button class="primary-button" type="submit">Create folder</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="export-flow-dialog" class="modal" aria-labelledby="export-flow-title">
+      <form id="export-flow-form">
+        <div class="modal-heading">
+          <h2 id="export-flow-title">Save as user flow</h2>
+          <button type="button" class="icon-button" data-close-dialog="export-flow-dialog" aria-label="Close">×</button>
+        </div>
+        <label class="field">Flow name<input name="name" maxlength="100" required autofocus /></label>
+        <label class="field">
+          File name <input name="flowId" pattern="[a-z][a-z0-9\-]{0,79}" maxlength="80" required />
+        </label>
+        <p id="export-flow-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button class="small-button" type="button" data-close-dialog="export-flow-dialog">Cancel</button>
+          <button id="export-flow-submit" class="primary-button" type="submit">Save and link</button>
         </div>
       </form>
     </dialog>
@@ -240,5 +404,50 @@
       </div>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
+    <p id="view-source-status" class="view-source-status" role="status" hidden></p>
+    <div id="view-source-tooltip" class="view-source-popover view-source-tooltip" role="tooltip" hidden></div>
+    <p class="block-content definition-actions detail-value" hidden aria-hidden="true"></p>
+    <div id="view-source-menu" class="view-source-popover" aria-label="UI source options" hidden>
+      <button class="small-button" id="view-source-open" type="button">Show source</button>
+      <button class="small-button" id="view-source-copy" type="button">Copy source location</button>
+      <button class="small-button" id="view-source-edit" type="button">Edit override</button>
+    </div>
+    <dialog id="view-source-dialog" class="modal view-source-dialog" aria-labelledby="view-source-title">
+      <form id="view-source-form">
+        <div class="modal-heading"><h2 id="view-source-title">UI source</h2></div>
+        <pre id="view-source-location" class="file-content"></pre>
+        <label id="view-source-field" class="field"
+          >Label<input id="view-source-label" required maxlength="120"
+        /></label>
+        <p id="view-source-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button type="button" class="small-button" data-close-dialog="view-source-dialog">Close</button>
+          <button type="submit" class="primary-button" id="view-source-save">Save and reload</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="view-index" class="modal" aria-labelledby="view-index-title">
+      <div class="modal-heading"><h2 id="view-index-title">View index</h2></div>
+      <div id="view-index-content"></div>
+      <div class="modal-footer">
+        <button type="button" class="small-button" data-close-dialog="view-index">Close</button>
+      </div>
+    </dialog>
+    <script>
+      const captureDialog = document.getElementById('capture-dialog');
+      window.captureFolder = () => captureDialog.dataset.folder;
+      document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('new-issue').addEventListener('click', () => {
+          delete captureDialog.dataset.folder;
+          window.openFlowCapture();
+        });
+        document.getElementById('issue-list').addEventListener('click', (event) => {
+          const button = event.target.closest('[data-create-folder-issue]');
+          if (!button) return;
+          captureDialog.dataset.folder = button.dataset.createFolderIssue;
+          window.openFlowCapture();
+        });
+      });
+    </script>
   </body>
 </html>
