@@ -630,8 +630,10 @@ test('a changed Request type applies its default Markdown flow and preserves ear
     requestId: '00000000-0000-4000-8000-000000000001',
     type: 'feature',
     description: 'Create a compact view\nDone: Three columns are visible.',
+    folder: 'Next release',
   };
   const captured = await flows.action(input);
+  assert.equal(captured.flow.folder, 'Next release');
   assert.equal(captured.flow.routeType, 'feature');
   assert.match(requestData(captured.flow).wording, /Three columns are visible/);
   assert.equal((await flows.action(input)).issue.id, captured.issue.id);

@@ -21,6 +21,8 @@ starting branch on the configured remote until explicitly pinned. An existing
 PR establishes the locked Destination. External base changes require explicit
 acceptance before Publish or Merge. Merge from target reads Destination and
 keeps the checkout's original base.
+Folder rows in the flow sidebar provide a direct issue capture action; captured
+issues save the selected folder in their flow at creation.
 
 A block type's Markdown defines its system prompt and its Details and Artifacts
 tables. Details declares the block's inputs; Artifacts declares its outputs. The

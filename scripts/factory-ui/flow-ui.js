@@ -434,7 +434,7 @@
         if (state.search && children.length === 0) return '';
         const collapsed = state.folders.has(folder) && !state.search;
         const active = children.find((issue) => issue.activeBlock);
-        return `<section class="issue-folder"><button class="folder-toggle" data-folder="${escape(folder)}" aria-expanded="${!collapsed}">${active ? activeSpinner(active.activeBlock) : `<span class="folder-chevron" aria-hidden="true">${collapsed ? '›' : '⌄'}</span><span aria-hidden="true">▱</span>`}<span>${escape(folder)}</span><span class="folder-count">${children.length}</span></button><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
+        return `<section class="issue-folder"><div class="sidebar-heading"><button class="folder-toggle" data-folder="${escape(folder)}" aria-expanded="${!collapsed}">${active ? activeSpinner(active.activeBlock) : `<span class="folder-chevron" aria-hidden="true">${collapsed ? '›' : '⌄'}</span><span aria-hidden="true">▱</span>`}<span>${escape(folder)}</span><span class="folder-count">${children.length}</span></button><button class="icon-button" data-create-folder-issue="${escape(folder)}" aria-label="Create issue in ${escape(folder)}" title="Create issue in ${escape(folder)}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
       })
       .join('');
     const list = $('issue-list');
@@ -1915,6 +1915,7 @@
     }
   });
 
+  window.openFlowCapture = openCapture;
   $('new-issue').addEventListener('click', openCapture);
   $('rename-issue').addEventListener('click', () => {
     const form = $('rename-issue-form');
@@ -2000,7 +2001,7 @@
     $('capture-error').hidden = true;
     const result = await action(
       'capture',
-      { requestId: state.captureId, description, type: $('capture-type').value },
+      { requestId: state.captureId, description, type: $('capture-type').value, folder: window.captureFolder() },
       { global: true, errorId: 'capture-error' }
     );
     if (!result) return;

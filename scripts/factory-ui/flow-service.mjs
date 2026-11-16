@@ -112,6 +112,30 @@ function repoFilePath(root, path) {
 export function createIssueFlows(service, options = {}) {
   return new IssueFlows(service, options);
 }
+
+function requireCaptureFolder(folder, folders) {
+  requireThat(!folder || folders.includes(folder), 'Choose an existing folder.');
+}
+
+function captureIdentity(description, type, folder) {
+  return digest(JSON.stringify(folder ? [description, type, folder] : [description, type]));
+}
+
+function validateCaptureId(requestId) {
+  requireThat(typeof requestId === 'string' && /^[a-f0-9-]{36}$/.test(requestId), 'Use a stable request identity.');
+}
+
+function validateCaptureDescription(description) {
+  requireThat(
+    typeof description === 'string' && description.trim() && description.length <= 24000,
+    'Describe the issue in under 24,000 characters.'
+  );
+}
+
+function validateCaptureType(type) {
+  requireThat(!type || ['bug', 'feature', 'investigation'].includes(type), 'Choose a valid request type.');
+}
+
 class IssueFlows {
   constructor(service, options) {
     this.service = service;
@@ -1142,22 +1166,18 @@ class IssueFlows {
     return this.view();
   }
   async capture(input) {
-    requireThat(
-      typeof input.requestId === 'string' && /^[a-f0-9-]{36}$/.test(input.requestId),
-      'Use a stable request identity.'
-    );
-    requireThat(
-      typeof input.description === 'string' && input.description.trim() && input.description.length <= 24000,
-      'Describe the issue in under 24,000 characters.'
-    );
-    requireThat(!input.type || issueTypes.includes(input.type), 'Choose a valid request type.');
-    const identity = digest(JSON.stringify([input.description, input.type]));
+    validateCaptureId(input.requestId);
+    validateCaptureDescription(input.description);
+    validateCaptureType(input.type);
+    const folder = folderName(input.folder ?? null);
+    requireCaptureFolder(folder, this.folders());
+    const identity = captureIdentity(input.description, input.type, folder);
     const pending = this.captures.get(input.requestId);
     if (pending) {
       requireThat(identity === pending.identity, 'This request identity already contains different wording.');
       return pending.task;
     }
-    const task = this.captureIssue(input, identity);
+    const task = this.captureIssue(input, identity, folder);
     this.captures.set(input.requestId, { identity, task });
     try {
       return await task;
@@ -1165,7 +1185,7 @@ class IssueFlows {
       this.captures.delete(input.requestId);
     }
   }
-  async captureIssue(input, identity) {
+  async captureIssue(input, identity, folder) {
     const directory = join(this.store.directory, 'captures');
     const receiptPath = join(directory, input.requestId + '.json');
     if (existsSync(receiptPath)) {
@@ -1179,7 +1199,9 @@ class IssueFlows {
       }
       if (!existsSync(this.store.path(receipt.id))) {
         const issue = { ...receipt.metadata, content: receipt.content };
-        this.store.save(receipt.flow ?? (await this.initialFlow(issue, receipt.startingPoint)), 0);
+        const flow = receipt.flow ?? (await this.initialFlow(issue, receipt.startingPoint));
+        if (receipt.folder != null) flow.folder = receipt.folder;
+        this.store.save(flow, 0);
       }
       queueIssueNumbers(this.service.root, [receipt.id]);
       writeJson(receiptPath, { ...receipt, complete: true });
@@ -1215,15 +1237,16 @@ class IssueFlows {
     const issue = { ...metadata, content };
     const flow = await this.initialFlow(issue, startingPoint);
     requestBlock(flow).data.wording = input.description;
+    flow.folder = folder;
     mkdirSync(directory, { recursive: true });
-    const receipt = { id, identity, content, metadata };
+    const receipt = { id, identity, content, metadata, startingPoint, folder };
     writeJson(receiptPath, { ...receipt, flow, complete: false });
     const path = storedIssuePath(this.service.root, id);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, content, { flag: 'wx', mode: 0o600 });
     this.store.save(flow, 0);
     queueIssueNumbers(this.service.root, [id]);
-    writeJson(receiptPath, { ...receipt, complete: true });
+    writeJson(receiptPath, { ...receipt, flow, complete: true });
     return this.view(id);
   }
   async initialFlow(issue, point) {
