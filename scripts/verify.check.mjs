@@ -86,6 +86,7 @@ function auditFixture(t, extraFiles = {}) {
   mkdirSync(join(root, 'scripts'));
   for (const name of [
     'format-staged.mjs',
+    'format-files.mjs',
     'verify.mjs',
     'verify-scope.mjs',
     'verify-process.mjs',

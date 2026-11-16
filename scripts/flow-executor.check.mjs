@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
@@ -799,10 +799,40 @@ test('Update branch stops before merging when a normal Git hook rejects the loca
   f.git('config', 'core.hooksPath', hooks);
   writeFileSync(join(hooks, 'pre-commit'), '#!/bin/sh\necho fixture-rejected >&2\nexit 1\n', { mode: 0o755 });
   writeFileSync(join(f.checkout, 'source.txt'), 'Keep this work.\n');
-  await assert.rejects(f.run('merge-target'), /commit|command failed/i);
+  await assert.rejects(f.run('merge-target'), /fixture-rejected/);
   assert.equal(f.work('rev-parse', 'HEAD'), head);
   assert.equal(f.work('show', ':source.txt'), 'Keep this work.');
   assert.equal(existsSync(join(f.checkout, 'incoming.txt')), false);
+});
+
+test('Update branch formats local changes before running the save commit hook', async (t) => {
+  const f = await branchUpdateFixture(t);
+  const target = f.advance();
+  const formatter = resolve('node_modules/.bin/vp');
+  const hooks = join(f.root, '.git', 'hooks');
+  f.git('config', 'core.hooksPath', hooks);
+  mkdirSync(join(f.checkout, 'node_modules/.bin'), { recursive: true });
+  writeFileSync(join(f.root, '.git/info/exclude'), 'node_modules/\n');
+  writeFileSync(
+    join(f.checkout, 'node_modules/.bin/vp'),
+    `#!${process.execPath}\nrequire('node:child_process').execFileSync(${JSON.stringify(formatter)}, process.argv.slice(2), { stdio: 'inherit' });\n`,
+    { mode: 0o755 }
+  );
+  writeFileSync(
+    join(hooks, 'pre-commit'),
+    [
+      '#!/bin/sh',
+      'if git diff --cached --name-only | grep -qx settings.json; then',
+      '  test "$(git show :settings.json)" = \'{ "ready": true }\'',
+      'fi',
+    ].join('\n') + '\n',
+    { mode: 0o755 }
+  );
+  writeFileSync(join(f.checkout, 'package.json'), '{"name":"branch-update-fixture","private":true}\n');
+  writeFileSync(join(f.checkout, 'settings.json'), '{"ready":true}\n');
+  await f.run('merge-target');
+  assert.equal(f.work('show', 'HEAD:settings.json'), '{ "ready": true }');
+  assert.equal(f.work('merge-base', 'HEAD', target), target);
 });
 
 for (const resolves of [true, false]) {

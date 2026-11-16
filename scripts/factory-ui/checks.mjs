@@ -18,8 +18,8 @@ function candidateRunner({ auditPolicy, verifier, scope }) {
   if (verifier)
     files.push(
       verifier,
-      ...['verify-scope.mjs', 'verify-process.mjs', 'verify-preflight.mjs', 'audit-result.mjs'].map((name) =>
-        join(dirname(verifier), name)
+      ...['verify-scope.mjs', 'verify-process.mjs', 'verify-preflight.mjs', 'audit-result.mjs', 'format-files.mjs'].map(
+        (name) => join(dirname(verifier), name)
       )
     );
   return digest(JSON.stringify([auditPolicy, scope, files.map((path) => digest(readFileSync(path)))]));

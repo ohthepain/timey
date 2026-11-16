@@ -1037,6 +1037,7 @@ function executeCommand({ command, args, cwd, log, signal, onProgress }) {
         reject(
           Object.assign(Error(`The block command failed (${termination || code}). Inspect ${log}.`), {
             exitCode: code,
+            commandOutput: output,
             evidence: [{ path: log, label: 'Failed command output' }],
           })
         );

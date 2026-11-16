@@ -172,9 +172,11 @@ edits and deletions and untracked files that Git would normally add. For partial
 staged files, the commit saves the working copy. Git-ignored untracked files
 stay outside the commit.
 
-Automatic commits run the normal Git hooks. If a hook rejects the commit, the
-update stops before the merge and shows the error. A successful update has no
-separate notification for the local commit.
+Factory formats changed regular files with the checkout's installed formatter
+before saving the local commit. Automatic commits run the normal Git hooks. If
+formatting or a hook fails, the update stops before the merge and shows the
+command output. A successful update has no separate notification for the local
+commit.
 
 Full Verify checks the updated commit against the fetched destination. If it
 fails, the Git update and its check evidence are preserved and Work can proceed.

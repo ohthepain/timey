@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { formatArgs, formattingFiles } from '../format-files.mjs';
 import { git, requireThat } from './common.mjs';
 
 const gitOperations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer'];
@@ -105,16 +107,31 @@ export async function mergeIssueTarget(checkout, target, invoke, onConflict) {
 }
 
 function reportSaveFailure(error) {
-  error.message =
-    'Could not save local changes before merging. ' + (error.commandOutput?.trim().slice(-1000) || error.message);
+  const details = error.commandOutput?.trim().slice(-1000);
+  error.message = 'Could not save local changes before merging. ' + error.message;
+  if (details) error.message += '\n\n' + details;
   throw error;
+}
+
+async function formatLocalChanges(checkout, invoke) {
+  const formatter = join(checkout, 'node_modules', '.bin', 'vp');
+  if (!existsSync(formatter)) return;
+  const files = formattingFiles(checkout, paths(checkout, 'diff', '--cached', '--name-only', '--diff-filter=ACMR'));
+  if (!files.length) return;
+  await invoke(formatter, ['fmt', ...formatArgs(files)]);
+  await invoke('git', ['--literal-pathspecs', 'add', '--', ...files]);
 }
 
 async function saveLocalChanges(checkout, invoke) {
   if (!status(checkout)) return;
-  await invoke('git', ['add', '-A']);
-  if (!git(checkout, 'diff', '--cached', '--name-only')) return;
-  await invoke('git', ['commit', '-m', 'Save issue work before updating branch']).catch(reportSaveFailure);
+  try {
+    await invoke('git', ['add', '-A']);
+    await formatLocalChanges(checkout, invoke);
+    if (!git(checkout, 'diff', '--cached', '--name-only')) return;
+    await invoke('git', ['commit', '-m', 'Save issue work before updating branch']);
+  } catch (error) {
+    reportSaveFailure(error);
+  }
 }
 
 export async function updateIssueBranch(workspace, destination, invoke, repair, signal) {

@@ -1,4 +1,5 @@
 import { listenerPreflight, dependencyPreflight, workspacePackages } from './verify-preflight.mjs';
+import { formatArgs, formattingFiles } from './format-files.mjs';
 import { fallowAuditScope } from './verify-scope.mjs';
 import { runVerificationProcess } from './verify-process.mjs';
 import { execFileSync } from 'node:child_process';
@@ -176,9 +177,6 @@ function copySourceFile(name) {
 }
 
 const bin = (name) => join(root, 'node_modules', '.bin', name);
-const formattingFiles = (cwd, names) =>
-  [...new Set(names)].filter((name) => lstatSync(join(cwd, name), { throwIfNoEntry: false })?.isFile());
-const formatArgs = (names) => ['--no-error-on-unmatched-pattern', ...names.map((name) => './' + name)];
 
 async function checkFormatting(base) {
   const names = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
