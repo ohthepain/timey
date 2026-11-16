@@ -34,6 +34,30 @@ import {
 export function createIssueFlows(service, options = {}) {
   return new IssueFlows(service, options);
 }
+
+function requireCaptureFolder(folder, folders) {
+  requireThat(!folder || folders.includes(folder), 'Choose an existing folder.');
+}
+
+function captureIdentity(description, type, folder) {
+  return digest(JSON.stringify(folder ? [description, type, folder] : [description, type]));
+}
+
+function validateCaptureId(requestId) {
+  requireThat(typeof requestId === 'string' && /^[a-f0-9-]{36}$/.test(requestId), 'Use a stable request identity.');
+}
+
+function validateCaptureDescription(description) {
+  requireThat(
+    typeof description === 'string' && description.trim() && description.length <= 24000,
+    'Describe the issue in under 24,000 characters.'
+  );
+}
+
+function validateCaptureType(type) {
+  requireThat(!type || ['bug', 'feature', 'investigation'].includes(type), 'Choose a valid request type.');
+}
+
 class IssueFlows {
   constructor(service, options) {
     this.service = service;
@@ -457,21 +481,14 @@ class IssueFlows {
     return this.view();
   }
   async capture(input) {
-    requireThat(
-      typeof input.requestId === 'string' && /^[a-f0-9-]{36}$/.test(input.requestId),
-      'Use a stable request identity.'
-    );
-    requireThat(
-      typeof input.description === 'string' && input.description.trim() && input.description.length <= 24000,
-      'Describe the issue in under 24,000 characters.'
-    );
-    requireThat(
-      !input.type || ['bug', 'feature', 'investigation'].includes(input.type),
-      'Choose a valid request type.'
-    );
+    validateCaptureId(input.requestId);
+    validateCaptureDescription(input.description);
+    validateCaptureType(input.type);
+    const folder = folderName(input.folder ?? null);
+    requireCaptureFolder(folder, this.folders());
     const directory = join(this.store.directory, 'captures');
     const receiptPath = join(directory, input.requestId + '.json');
-    const identity = digest(JSON.stringify([input.description, input.type]));
+    const identity = captureIdentity(input.description, input.type, folder);
     if (existsSync(receiptPath)) {
       const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
       requireThat(receipt.identity === identity, 'This request identity already contains different wording.');
@@ -481,7 +498,11 @@ class IssueFlows {
       const issue = { ...receipt.metadata, content: readFileSync(path, 'utf8') };
       if (!existsSync(this.store.path(receipt.id)))
         this.store.save(
-          { ...this.read(issue), ...(receipt.startingPoint ? { startingPoint: receipt.startingPoint } : {}) },
+          {
+            ...this.read(issue),
+            folder: receipt.folder ?? null,
+            ...(receipt.startingPoint ? { startingPoint: receipt.startingPoint } : {}),
+          },
           0
         );
       queueIssueNumbers(this.service.root, [receipt.id]);
@@ -516,18 +537,19 @@ class IssueFlows {
       input.description +
       '\n\n## Explicit flow\n\nEach block requires an explicit start. Capturing this request starts no model, verification, merge, or closure.\n';
     mkdirSync(directory, { recursive: true });
-    writeJson(receiptPath, { id, identity, content, metadata, startingPoint, complete: false });
+    writeJson(receiptPath, { id, identity, content, metadata, startingPoint, folder, complete: false });
     const path = storedIssuePath(this.service.root, id);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, content, { flag: 'wx', mode: 0o600 });
     const issue = { ...metadata, content };
     const flow = this.read(issue);
+    flow.folder = folder;
     flow.request = request;
     flow.startingPoint = startingPoint;
     this.store.save(flow, 0);
     queueIssueNumbers(this.service.root, [id]);
     mkdirSync(directory, { recursive: true });
-    writeJson(receiptPath, { id, identity, content, metadata, startingPoint, complete: true });
+    writeJson(receiptPath, { id, identity, content, metadata, startingPoint, folder, complete: true });
     return this.view(id);
   }
   artifacts(flow) {

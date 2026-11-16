@@ -240,5 +240,21 @@
       </div>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
+    <script>
+      const captureDialog = document.getElementById('capture-dialog');
+      window.captureFolder = () => captureDialog.dataset.folder;
+      document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('new-issue').addEventListener('click', () => {
+          delete captureDialog.dataset.folder;
+          window.openFlowCapture();
+        });
+        document.getElementById('issue-list').addEventListener('click', (event) => {
+          const button = event.target.closest('[data-create-folder-issue]');
+          if (!button) return;
+          captureDialog.dataset.folder = button.dataset.createFolderIssue;
+          window.openFlowCapture();
+        });
+      });
+    </script>
   </body>
 </html>
