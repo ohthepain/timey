@@ -117,6 +117,11 @@ rechecks an exact preview before writing to GitHub. New PR descriptions include
 Requested proof when present. Repeat publication updates the title and commit as
 needed and preserves the original PR description.
 
+Work records candidate base, tree, commit and uncommitted state from the actual
+checkout snapshot. Publish requires a committed candidate. Verification for an
+uncommitted tree can be reused after that same tree is committed; a different tree
+requires verification again.
+
 Merge fetches Destination and merges its current revision into the issue branch.
 It checks full verification for the issue commit against that destination revision,
 pushes any changed commit to the existing PR, and waits for required GitHub checks.

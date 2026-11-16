@@ -255,6 +255,12 @@ The chosen Git branch ref and exact commit used to create an issue's checkout.
 It defaults to the delivery target branch. Each issue retains its selected ref
 and commit.
 
+**Flow candidate identity**:
+The base commit, source tree, current commit and uncommitted state captured for a
+flow result. Publication requires a clean committed candidate. Verification of an
+uncommitted tree remains valid after that exact tree is committed, and expires when
+its content changes.
+
 **Flow destination**:
 The GitHub branch used as the PR base and by Merge. It follows the
 starting branch until the operator pins a branch or the issue gets a PR.

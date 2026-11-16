@@ -1,9 +1,20 @@
 import { BlockCatalog } from './block-catalog.mjs';
 import { blockDefinitionId, deliveryTarget, startingPoint, upstreamBlocks } from './flow-block-data.mjs';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, statSync, mkdirSync, realpathSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import {
+  existsSync,
+  statSync,
+  mkdirSync,
+  realpathSync,
+  readFileSync,
+  writeFileSync,
+  appendFileSync,
+  mkdtempSync,
+  rmSync,
+} from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
 import { conversationState, saveConversationState, appendMessage } from './conversation-store.mjs';
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
@@ -509,6 +520,38 @@ function retainWorkCandidate(definition, retained, workCheck, head) {
     retained.artifacts.values.candidate = head;
 }
 
+function workingTree(workspace) {
+  const status = git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all');
+  const index = mkdtempSync(join(tmpdir(), 'timey-flow-index-'));
+  const indexPath = join(index, 'index');
+  const run = (...args) =>
+    execFileSync('git', ['-C', workspace.checkout, ...args], {
+      encoding: 'utf8',
+      env: { ...process.env, GIT_INDEX_FILE: indexPath },
+      stdio: 'pipe',
+    }).trim();
+  try {
+    run('read-tree', 'HEAD');
+    run('add', '-A');
+    return { tree: run('write-tree'), uncommitted: Boolean(status) };
+  } finally {
+    rmSync(index, { recursive: true, force: true });
+  }
+}
+
+function retainCandidateIdentity(definition, retained, workspace, head) {
+  const candidate = workingTree(workspace);
+  const values = {
+    candidateBase: workspace.base,
+    candidateTree: candidate.tree,
+    candidateCommit: head,
+    candidateUncommitted: candidate.uncommitted,
+  };
+  for (const [key, value] of Object.entries(values))
+    if (definition.artifacts?.some((artifact) => artifact.key === key)) retained.artifacts.values[key] = value;
+  return candidate;
+}
+
 async function runModel(service, ctx, owned, options) {
   requireThat(
     ctx.block.kind !== 'prototype' || ctx.block.prompt?.trim(),
@@ -754,6 +797,7 @@ async function runModel(service, ctx, owned, options) {
     const response = { path: outputPath, label: 'Block response', sha256: digest(readFileSync(outputPath)) };
     const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);
     const head = git(workspace.checkout, 'rev-parse', 'HEAD');
+    const candidate = retainCandidateIdentity(ctx.definition, retained, workspace, head);
     retainWorkCandidate(ctx.definition, retained, workCheck, head);
     return {
       summary: outputs.at(-1).slice(0, 1200),
@@ -765,8 +809,10 @@ async function runModel(service, ctx, owned, options) {
         skill: ctx.block.skill || null,
         iterations: rounds,
         head,
-        tree: git(workspace.checkout, 'rev-parse', 'HEAD^{tree}'),
+        tree: candidate.tree,
         base: workspace.base,
+        commit: head,
+        uncommitted: candidate.uncommitted,
       },
       workspace,
     };
