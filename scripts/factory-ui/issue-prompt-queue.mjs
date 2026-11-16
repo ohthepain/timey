@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { conversationFiles } from './conversation-store.mjs';
 import { requireThat, writeJson } from './common.mjs';
+import { readProgress } from '../factory-progress.mjs';
 
 const prompt = z.object({
   id: z.string(),
@@ -65,8 +66,13 @@ const terminal = new Set(['completed', 'interrupted', 'failed', 'removed']);
 export function pendingPrompts(queue) {
   return queue.entries.filter((entry) => !terminal.has(entry.status));
 }
-export function readPromptQueue(root, issueId) {
-  const path = conversationFiles(root, issueId).queue;
+export function readPromptQueues(root, issueIds) {
+  if (!issueIds.size) return [];
+  const progress = readProgress(root);
+  return Array.from(issueIds, (id) => readPromptQueue(root, id, progress));
+}
+export function readPromptQueue(root, issueId, progress) {
+  const path = conversationFiles(root, issueId, progress).queue;
   if (!existsSync(path))
     return {
       version: 1,

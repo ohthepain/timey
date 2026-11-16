@@ -25,6 +25,7 @@ function fixture(t) {
   const service = new FactoryUI(queue.root);
   t.after(() => service.close());
   service.ownServer = () => {};
+  service.codex.ready = async () => {};
   return { queue, service, issue: readQueue(queue.root).issues[0] };
 }
 
@@ -55,6 +56,38 @@ test('Delete worktree removes the issue checkout and local branch while the issu
   assert.equal(existsSync(checkout), false);
   assert.equal(git(queue.root, 'branch', '--list', branch), '');
   assert.equal(readQueue(queue.root).issues.find((item) => item.id === issue.id).state, issue.state);
+});
+
+test('Cleanup checks a saved unloaded chat before removing its worktree', async (t) => {
+  const { queue, service, issue } = fixture(t);
+  const checkout = join(queue.root, '.issues/issue-work', issue.id);
+  const branch = `codex/issue-${issue.issueNumber}`;
+  git(queue.root, 'worktree', 'add', '-b', branch, checkout, 'HEAD');
+  service.lifecycleRuns[issue.id] = { issueId: issue.id, work: { branch, checkout } };
+  service.store.runs.push({ issueId: issue.id, threadId: 'saved-chat', status: 'completed' });
+  let ready = false;
+  let status = 'notLoaded';
+  let resumedStatus = 'active';
+  let archived = false;
+  service.codex.ready = async () => {
+    ready = true;
+  };
+  service.codex.call = async (method) => {
+    assert.equal(ready, true);
+    if (method === 'thread/read') return { thread: { status: { type: status } } };
+    if (method === 'thread/resume') status = resumedStatus;
+    if (method === 'thread/archive') archived = true;
+    return {};
+  };
+  const input = { issueId: issue.id };
+  const expected = deleteIssueWorktree(service, input);
+  await assert.rejects(deleteIssueWorktree(service, { ...input, expected }), /issue chat is still active/);
+  assert.equal(existsSync(checkout), true);
+  status = 'notLoaded';
+  resumedStatus = 'idle';
+  await deleteIssueWorktree(service, { ...input, expected });
+  assert.equal(archived, true);
+  assert.equal(existsSync(checkout), false);
 });
 
 test('Delete worktree can clear a missing checkout after an old disconnected strategy attempt', async (t) => {

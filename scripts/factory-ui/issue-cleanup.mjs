@@ -910,9 +910,7 @@ async function workspaceResource(service, issueId, work) {
     state: workspaceState(facts.exists, eligible),
     eligible,
     defaultSelected: false,
-    reason:
-      workspaceReason(facts) ||
-      (unavailableChat ? 'An issue chat is active or could not be checked; preserve the workspace.' : null),
+    reason: workspaceReason(facts) || (unavailableChat ? unavailableChat.reason : null),
   };
 }
 
@@ -1090,11 +1088,22 @@ async function inspectChat(service, run, issueTitle, active) {
   if (chatIsLocallyActive(service, run, active))
     return chatState(common, 'active', false, 'Active chats are preserved.');
   try {
-    const response = await service.codex.call('thread/read', { threadId: run.threadId });
-    return chatThreadState(common, response.thread || response);
+    return chatThreadState(common, await readCleanupThread(service.codex, run.threadId));
   } catch (error) {
     return chatReadFailure(common, error);
   }
+}
+
+async function readCleanupThread(connection, threadId) {
+  await connection.ready();
+  const read = async () => {
+    const response = await connection.call('thread/read', { threadId, includeTurns: false });
+    return response.thread || response;
+  };
+  const thread = await read();
+  if (thread.archived || thread.status?.type !== 'notLoaded') return thread;
+  await connection.call('thread/resume', { threadId, excludeTurns: true });
+  return read();
 }
 
 function chatIsLocallyActive(service, run, active) {
@@ -1107,13 +1116,10 @@ function chatThreadState(common, thread) {
 }
 
 function liveChatState(common, thread) {
-  const idle = thread.status?.type === 'idle';
-  return chatState(
-    common,
-    idle ? 'present' : 'active',
-    idle,
-    idle ? null : 'Chat is active or its status is unknown; it is preserved.'
-  );
+  const type = thread.status?.type;
+  if (type === 'idle') return chatState(common, 'present', true, null);
+  if (type === 'active') return chatState(common, 'active', false, 'An issue chat is still active.');
+  return chatState(common, 'unknown', false, 'The linked chat’s idle status could not be confirmed.');
 }
 
 function chatReadFailure(common, error) {
@@ -1122,7 +1128,7 @@ function chatReadFailure(common, error) {
     common,
     archived ? 'already-archived' : 'unknown',
     false,
-    archived ? 'Already archived.' : 'Chat status could not be checked; it is preserved.'
+    archived ? 'Already archived.' : 'The linked chat could not be checked. Retry after reconnecting to Codex.'
   );
 }
 
@@ -1399,8 +1405,10 @@ function copyProof(proof, directory) {
 }
 
 async function archiveChat(service, item) {
-  const current = await service.codex.call('thread/read', { threadId: item.threadId });
-  const thread = current.thread || current;
+  const thread = await readCleanupThread(service.codex, item.threadId).catch((error) => {
+    if (/is archived/.test(error.message)) return { archived: true };
+    throw error;
+  });
   if (thread.archived) return { status: 'complete', reason: 'Chat already archived.' };
   requireThat(thread.status?.type === 'idle', 'Chat is not idle; it was preserved.');
   await service.codex.call('thread/name/set', {

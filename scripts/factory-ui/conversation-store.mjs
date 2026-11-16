@@ -3,9 +3,9 @@ import { join, relative, resolve, sep } from 'node:path';
 import { requireThat, writeJson } from './common.mjs';
 import { readProgress } from '../factory-progress.mjs';
 
-export function conversationFiles(root, issueId) {
+export function conversationFiles(root, issueId, progress) {
   requireThat(typeof issueId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(issueId), 'Select a valid issue.');
-  const directory = issueConversationDirectory(root, issueId);
+  const directory = issueConversationDirectory(root, issueId, (progress ?? readProgress(root))[issueId]);
   return {
     directory,
     log: join(directory, 'messages.jsonl'),
@@ -15,9 +15,8 @@ export function conversationFiles(root, issueId) {
   };
 }
 
-function issueConversationDirectory(root, issueId) {
+function issueConversationDirectory(root, issueId, record) {
   const legacy = join(root, '.issues/conversations', issueId);
-  const record = readProgress(root)[issueId];
   const checkout = savedCheckout(record);
   const managedRoot = join(root, '.issues');
   if (typeof checkout !== 'string' || !existsSync(checkout) || !existsSync(managedRoot)) return legacy;

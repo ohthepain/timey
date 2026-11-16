@@ -128,7 +128,7 @@ export async function restartFactory(options = {}) {
             mode: 'live',
             sourceChanged: target.sourceChanged,
           },
-          { timeoutMs: requestTimeout }
+          { timeoutMs: requestTimeout, issueListPath: '/api/flow' }
         );
         receipt.readiness = observed;
         return observed.outcome === 'ready';

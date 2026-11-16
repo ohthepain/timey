@@ -209,7 +209,7 @@
   function workspaceChats(resource) {
     if (resource.kind !== 'workspace' || !resource.chats?.length) return '';
     const count = resource.chats.length;
-    return `<small>Also archives linked issue chats (${count}).</small>`;
+    return `<small>Linked issue chats (${count}).</small>`;
   }
 
   function formatBytes(bytes) {

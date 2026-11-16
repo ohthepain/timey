@@ -124,7 +124,7 @@ class IssueChats {
     return this.scheduler.reconcileOperation(issueId, operation, callback);
   }
   activity() {
-    const queues = [...this.scheduler.known].map((id) => this.scheduler.read(id));
+    const queues = this.scheduler.knownQueues();
     return {
       operations: queues.filter((queue) => queue.operation).length,
       uncertain: queues.filter((queue) => pendingPrompts(queue).some((entry) => entry.status === 'uncertain')).length,

@@ -660,7 +660,8 @@ still completes if cleanup fails; the issue then shows Cleanup incomplete and a
 bounded Retry cleanup action. Eligible idle chats associated with the issue are
 archived when the issue workspace is removed; the workspace row states how many
 linked chats it will archive. There is no separate chat cleanup choice. Active or
-unknown chats prevent workspace removal, and local conversation transcripts are
+unknown chats prevent workspace removal. Factory loads saved, unloaded chats to
+check whether they are idle. Local conversation transcripts are
 stored inside the issue workspace so they are removed with it. Native Codex chats
 remain app-managed and archiving them is not reported as disk savings.
 
@@ -950,6 +951,10 @@ prompts in FIFO order before automatic Factory work continues through its existi
 guards. Controls bind to the selected issue and prompt revision so competing tabs
 cannot edit or dispatch a claimed entry twice.
 
+To recover waiting prompts after a restart, Factory discovers issue IDs from the
+open report filenames and uses one saved progress read to locate their prompt
+queues. It checks the current queue again before dispatching a prompt.
+
 **Pause** lets the current turn or operation finish and holds subsequent prompts
 and Factory work. **Stop** interrupts a confirmed cancellable turn or operation,
 retains partial output and checkout edits, and holds later work until **Resume**.
@@ -1095,7 +1100,7 @@ pnpm factory:restart --checkout /absolute/checkout --project /absolute/project -
 The external launcher permits changed installed source, pauses new actions, waits
 for existing work/approvals/chats/locks to drain, verifies process ownership and
 rechecks the candidate before stopping only the identified old PID with SIGTERM.
-It then verifies the replacement's HTML, authenticated queue, PID and commit hash.
+It then verifies the replacement's HTML, authenticated Flow issue list, PID and commit hash.
 `--timeout MS` bounds each waiting phase (default 30000). Busy work is never force
 killed. Issue work paused at an action boundary stays saved for explicit Continue.
 

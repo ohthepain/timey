@@ -8,6 +8,8 @@ import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { createIssueChats } from './factory-ui/issue-chat.mjs';
 import { conversationMessages, conversationState, appendMessage } from './factory-ui/conversation-store.mjs';
+import { addPrompt } from './factory-ui/issue-prompt-queue.mjs';
+import { writeProgress } from './factory-progress.mjs';
 import { conversationPrompt } from './factory-ui/conversation-context.mjs';
 import { prepareNativeChat, bindNativeChat } from './factory-native-chat.mjs';
 import { createIssueChatConnection, attachIssueChat } from './factory-ui/issue-chat-runtime.mjs';
@@ -728,6 +730,30 @@ test('durable queue retains pause, FIFO, selected skills and edited positions ac
   assert.equal(calls[0].skills[0].name, 'retro');
   assert.match(calls[1].prompt, /Latest prompt: Third/);
   assert.equal(f.service.issueChats.view(id).queue.entries.length, 0);
+});
+
+test('the scheduler discovers and drains an unopened saved worktree prompt after restart', async (t) => {
+  const f = fixture(t);
+  const root = f.queue.root;
+  const issueId = f.input.issueId;
+  const checkout = join(root, '.issues', 'managed-worktree');
+  f.queue.git('worktree', 'add', '-q', '--detach', checkout);
+  writeProgress(root, { issueId, chatCheckout: { checkout } });
+  addPrompt(root, { issueId, id: 'saved-worktree-prompt', mode: 'comment', text: 'Saved in the worktree.' });
+  const savedQueue = join(checkout, '.issues', 'conversations', issueId, 'queue.json');
+  assert.equal(JSON.parse(readFileSync(savedQueue, 'utf8')).entries[0].status, 'waiting');
+
+  f.service.issueChats.close();
+  f.service.issueChats = createIssueChats(f.service, () => f.connection);
+  f.service.issueChats.scheduler.tick();
+  await f.finish();
+  f.service.issueChats.scheduler.tick();
+  await f.finish();
+
+  const calls = f.calls.filter((call) => call.prompt);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].prompt, /Saved in the worktree/);
+  assert.equal(JSON.parse(readFileSync(savedQueue, 'utf8')).entries[0].status, 'completed');
 });
 
 test('two tabs cannot dispatch or mutate a claimed prompt twice', async (t) => {
