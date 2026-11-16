@@ -25,6 +25,7 @@ import { redactValue } from './activity.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
 import { runFlowVerification } from './flow-verification.mjs';
+import { reviewUpdateCommit } from './flow-update-commit.mjs';
 import { runRetro } from './flow-retro.mjs';
 
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
@@ -791,14 +792,19 @@ async function runCommand(service, ctx, options) {
       : 'Explicit verification passed.';
     return { ...commandResult(service, ctx, result, summary, evidence), workspace };
   }
-  requireCleanTargetMerge(workspace);
-  const { remote, branch } = deliveryTarget(ctx.flow);
+  const targetConfig = deliveryTarget(ctx.flow);
+  const { remote, branch } = targetConfig;
   requireThat(branch, 'Choose a destination branch before merging from target.');
   requireThat(
     typeof remote === 'string' && /^[\w.-]+$/.test(remote) && !remote.startsWith('-'),
     'Configure a valid target remote before merging it.'
   );
   git(workspace.checkout, 'check-ref-format', '--branch', branch);
+  if (ctx.input?.reviewWorkingChanges) {
+    const commitPreview = reviewUpdateCommit(workspace, folder, targetConfig, ctx.input.commitToken);
+    if (commitPreview) return { commitPreview };
+  }
+  requireCleanTargetMerge(workspace);
   await invoke('git', ['fetch', '--no-tags', remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`]);
   ctx.signal.throwIfAborted();
   const target = git(workspace.checkout, 'rev-parse', '--verify', `refs/remotes/${remote}/${branch}`);

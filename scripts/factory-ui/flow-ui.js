@@ -1957,17 +1957,40 @@
     inspectedFile = null;
   });
 
-  async function updateBranch() {
-    state.updatingBranch = state.issueId;
+  let updateCommitReview;
+
+  async function updateBranch(commitToken) {
+    const issueId = state.issueId;
+    state.updatingBranch = issueId;
     renderEnvironment();
     try {
-      if (await action('update-worktree')) toast('Branch updated.');
+      const result = await action('update-worktree', { commitToken });
+      if (!result || state.issueId !== issueId) return;
+      if (result.commitPreview) showUpdateCommitReview(issueId, result.commitPreview);
+      else toast('Branch updated.');
     } finally {
       state.updatingBranch = null;
       renderEnvironment();
       void load(true);
     }
   }
+
+  function showUpdateCommitReview(issueId, preview) {
+    updateCommitReview = { issueId, token: preview.token };
+    $('update-commit-summary').textContent =
+      `Commit the listed changes on ${preview.branch} as “${preview.message}”, then merge ${preview.target}.`;
+    $('update-commit-files').textContent = preview.changes;
+    $('update-commit-patch').textContent = preview.patch;
+    $('update-commit-dialog').showModal();
+  }
+
+  $('update-commit-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const review = updateCommitReview;
+    updateCommitReview = null;
+    $('update-commit-dialog').close();
+    if (review?.issueId === state.issueId) void updateBranch(review.token);
+  });
 
   $('target-update-menu').addEventListener('change', async (event) => {
     const menu = event.target;

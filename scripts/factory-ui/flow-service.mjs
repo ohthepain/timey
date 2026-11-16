@@ -838,7 +838,7 @@ class IssueFlows {
       return this.applyFlowDefinition(issue, flow, catalog, input);
     if (input.action === 'export-flow') return this.exportFlow(issue, flow, catalog, input);
     if (input.action === 'reveal-flow') return this.revealFlow(issue, flow, catalog);
-    if (input.action === 'update-worktree') return this.updateWorktree(issue, flow, catalog);
+    if (input.action === 'update-worktree') return this.updateWorktree(issue, flow, catalog, input.commitToken);
     if (input.action === 'delete-worktree') return this.deleteWorktree(issue, flow, input.expected);
     if (input.action === 'starting-point') return this.setStartingPoint(issue, flow, input);
     if (input.action === 'destination' || input.action === 'accept-pr-base')
@@ -993,7 +993,7 @@ class IssueFlows {
     }
     return this.view(issue.id);
   }
-  async updateWorktree(issue, flow, catalog) {
+  async updateWorktree(issue, flow, catalog, commitToken) {
     const checkout = flowWorkspace(this.service, flow)?.checkout;
     requireThat(checkout && existsSync(checkout), 'This issue has no available worktree.');
     requireThat(
@@ -1006,7 +1006,15 @@ class IssueFlows {
     this.pauseAutoplay(issue.id, 'Updating the branch manually.');
     this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
     try {
-      await this.executor.run({ issue, flow, block, attempt, signal: controller.signal, input: { confirmed: true } });
+      const result = await this.executor.run({
+        issue,
+        flow,
+        block,
+        attempt,
+        signal: controller.signal,
+        input: { confirmed: true, reviewWorkingChanges: true, commitToken },
+      });
+      if (result.commitPreview) return { commitPreview: result.commitPreview };
     } finally {
       this.active.delete(issue.id);
     }

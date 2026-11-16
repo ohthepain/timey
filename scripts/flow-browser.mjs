@@ -1115,6 +1115,17 @@ try {
     assert.equal(added.label, 'Update branch');
     assert.equal(added.attempts.length, 0);
     assert.ok(blocks[workIndex].after.includes(added.id));
+    const draft = join(checkout, 'branch-draft.txt');
+    writeFileSync(draft, 'Preserve this local change.\n');
+    await targetMenu.selectOption('update');
+    const commitDialog = page.getByRole('dialog', { name: 'Commit changes and update branch?' });
+    await commitDialog
+      .getByText(/branch-draft.txt/)
+      .first()
+      .waitFor();
+    await commitDialog.getByRole('button', { name: 'Cancel' }).click();
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), base);
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
     const release = Promise.withResolvers();
     await page.route('**/api/flow-action', async (route) => {
       if (route.request().postDataJSON().action === 'update-worktree') await release.promise;
@@ -1123,6 +1134,8 @@ try {
     await targetMenu.selectOption('update');
     await page.locator('#target-update-progress').waitFor();
     release.resolve();
+    await commitDialog.locator('#update-commit-patch').filter({ hasText: 'Preserve this local change.' }).waitFor();
+    await commitDialog.getByRole('button', { name: 'Commit and update branch' }).click();
     await page.getByText('Branch updated.', { exact: true }).waitFor();
     await page.unroute('**/api/flow-action');
     await targetMenu.waitFor({ state: 'hidden' });
@@ -1132,7 +1145,8 @@ try {
       blocks.map((block) => block.id)
     );
     assert.equal(finished.find((block) => block.id === added.id).attempts.length, 0);
-    assert.equal(git(checkout, 'rev-parse', 'HEAD'), target);
+    assert.equal(git(checkout, 'merge-base', 'HEAD', target), target);
+    assert.equal(git(checkout, 'show', 'HEAD:branch-draft.txt'), 'Preserve this local change.');
     assert.equal(git(project, 'rev-parse', 'HEAD'), base);
   });
   await check('Publish previews the exact description and refreshes it before any remote write', async () => {

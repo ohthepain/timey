@@ -746,6 +746,34 @@ test('external merge reconciliation records GitHub facts without manufacturing v
   );
 });
 
+test('Update branch commits only the reviewed snapshot and then merges the target', async (t) => {
+  const f = fixture(t);
+  f.git('remote', 'add', 'origin', f.root);
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  const initialHead = f.git('-C', checkout, 'rev-parse', 'HEAD');
+  const tracked = join(checkout, 'source.txt');
+  writeFileSync(tracked, 'Reviewed change.\n');
+  writeFileSync(join(checkout, 'draft.txt'), 'New file.\n');
+  const input = { confirmed: true, reviewWorkingChanges: true };
+  const { commitPreview } = await f.run('merge-target', { input });
+  assert.match(commitPreview.patch, /Reviewed change/);
+  assert.match(commitPreview.changes, /A\s+draft.txt/);
+  assert.equal(f.git('-C', checkout, 'diff', '--cached', '--name-only'), '');
+  assert.equal(f.git('-C', checkout, 'rev-parse', 'HEAD'), initialHead);
+  writeFileSync(tracked, 'Changed after review.\n');
+  const confirm = (commitToken) => f.run('merge-target', { input: { ...input, commitToken } });
+  await assert.rejects(confirm(commitPreview.token), /Review the commit again/);
+  assert.equal(f.git('-C', checkout, 'diff', '--cached', '--name-only'), '');
+  const reviewedAgain = (await f.run('merge-target', { input })).commitPreview;
+  const result = await confirm(reviewedAgain.token);
+  assert.ok(result.result.target);
+  assert.equal(f.git('-C', checkout, 'show', 'HEAD:source.txt'), 'Changed after review.');
+  assert.equal(f.git('-C', checkout, 'show', 'HEAD:draft.txt'), 'New file.');
+  assert.equal(f.git('-C', checkout, 'status', '--porcelain'), '');
+  assert.equal(f.git('-C', checkout, 'stash', 'list'), '');
+});
+
 test('Update branch names the tracked and untracked files blocking the merge', async (t) => {
   const f = fixture(t);
   await f.run('understand');
