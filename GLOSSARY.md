@@ -251,5 +251,9 @@ It defaults to the delivery target branch. Each issue retains its selected ref
 and commit.
 
 **Flow destination**:
-The GitHub branch used by Merge from target and as the PR base. It follows the
+The GitHub branch used as the PR base and by Merge. It follows the
 starting branch until the operator pins a branch or the issue gets a PR.
+
+**Update Branch**:
+The Flow block that fetches the branch recorded in Starting point and brings
+its latest commits into the issue branch.

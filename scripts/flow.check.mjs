@@ -164,15 +164,16 @@ function executor(run) {
   return { run, close() {} };
 }
 
-test('issue Play runs Update branch without confirmation and Pause lets the active block finish', async (t) => {
+test('issue Play runs Update Branch without confirmation and Pause lets the active block finish', async (t) => {
   const { id, service } = fixture(t);
   const started = [];
   const work = Promise.withResolvers();
   const flows = createIssueFlows(service, {
     clarify: async () => ({ artifacts: { values: { type: 'bug', goal: 'Repair Save' } } }),
-    executor: executor(async ({ block, signal }) => {
+    executor: executor(async ({ block, signal, input }) => {
       started.push(block.kind);
       if (block.kind === 'work') await work.promise;
+      if (block.kind === 'publish') assert.equal(input.automaticPublication, true);
       assert.equal(signal.aborted, false);
       return { summary: 'Done' };
     }),
@@ -185,7 +186,7 @@ test('issue Play runs Update branch without confirmation and Pause lets the acti
   assert.deepEqual((await view()).autoplay, { mode: 'paused' });
   assert.deepEqual(started, []);
   await action('add', { kind: 'verify', afterId: pending('work').id });
-  await action('add', { kind: 'merge-target', afterId: pending('verify').id });
+  await action('add', { kind: 'update-branch', afterId: pending('verify').id });
   await action('play');
   assert.deepEqual(started, ['work']);
   assert.equal(pending('request').attempts.at(-1).status, 'completed');
@@ -196,8 +197,8 @@ test('issue Play runs Update branch without confirmation and Pause lets the acti
   assert.deepEqual(started, ['work']);
   await action('play');
   while (flows.active.get(id)?.task) await flows.active.get(id).task;
-  assert.deepEqual(started, ['work', 'verify', 'merge-target']);
-  assert.deepEqual((await view()).autoplay, { mode: 'waiting', blockId: pending('publish').id });
+  assert.deepEqual(started, ['work', 'verify', 'update-branch', 'publish', 'merge']);
+  assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Close the issue when ready.' });
   for (const kind of ['publish', 'merge', 'close']) await action('remove', { blockId: pending(kind).id });
   assert.equal((await view()).autoplay.mode, 'paused');
   await action('play');
@@ -579,7 +580,12 @@ test('external target changes and worktree deletion are observed without startin
   git('add', 'source.txt');
   git('commit', '-qm', 'advance');
   git('branch', '-f', 'dev', 'HEAD');
+  const destinationOnly = await observer.observe(flow);
+  assert.equal(destinationOnly.behind, 1);
+  assert.equal(destinationOnly.startingBranchBehind, undefined);
+  git('update-ref', 'refs/remotes/origin/dev', 'HEAD');
   const observed = await observer.observe(flow);
+  assert.equal(observed.startingBranchBehind, 1);
   assert.equal(observed.behind, 1);
   assert.equal(observed.targetRevision, git('rev-parse', 'dev'));
   const flows = createIssueFlows(service, {
@@ -588,7 +594,7 @@ test('external target changes and worktree deletion are observed without startin
     }),
   });
   const view = await flows.view(id);
-  assert.equal(view.flow.blocks.filter((b) => b.kind === 'merge-target').length, 1);
+  assert.equal(view.flow.blocks.filter((b) => b.kind === 'update-branch').length, 1);
   git('worktree', 'remove', checkout);
   assert.equal((await observer.observe(flow)).worktreeExists, false);
 });
@@ -893,20 +899,20 @@ test('block graph rejects cycles and preserves attempted history', (t) => {
   assert.deepEqual(removed.retiredBlocks[0].attempts, [{ id: 'attempt', status: 'blocked' }]);
 });
 
-test('Work waits for its Update branch prerequisite even when Work uses a parallel lane', async (t) => {
+test('Work waits for its Update Branch prerequisite even when Work uses a parallel lane', async (t) => {
   const { id, service } = fixture(t);
   const flows = createIssueFlows(service, { executor: executor(async () => ({ summary: 'Completed' })) });
   const issue = flows.selected(id);
   const flow = flows.read(issue);
   flow.blocks.find((block) => block.id === 'work').lane = 1;
-  const next = editFlow(flow, { action: 'add', kind: 'merge-target' });
+  const next = editFlow(flow, { action: 'add', kind: 'update-branch' });
   const saved = flows.store.save(next, flow.revision);
   const work = saved.blocks.find((block) => block.id === 'work');
   const update = saved.blocks[saved.blocks.indexOf(work) - 1];
   assert.equal(update.lane, work.lane);
   assert.ok(work.after.includes(update.id));
   const start = (blockId, revision) => flows.action({ action: 'start', issueId: id, blockId, revision });
-  await assert.rejects(start(work.id, saved.revision), /Complete Update branch successfully/);
+  await assert.rejects(start(work.id, saved.revision), /Complete Update Branch successfully/);
   await start(update.id, saved.revision);
   await flows.active.get(id)?.task;
   await start(work.id, flows.read(issue).revision);
@@ -921,12 +927,12 @@ test('a suggested target update precedes Work in the graph and in Play', { timeo
   const flows = createIssueFlows(service, {
     observer: {
       async observe() {
-        return { behind: 1, targetRevision: 'updated-target' };
+        return { startingBranchBehind: 1, startingBranchRevision: 'updated-target' };
       },
     },
     executor: executor(async ({ block }) => {
       started.push(block.kind);
-      if (block.kind === 'merge-target') {
+      if (block.kind === 'update-branch') {
         updateStarted.resolve();
         await finishUpdate.promise;
       }
@@ -956,17 +962,17 @@ test('a suggested target update precedes Work in the graph and in Play', { timeo
   assert.equal(graph[1].lane, graph[2].lane);
   await assert.rejects(
     flows.action({ issueId: id, revision: saved.revision, action: 'start', blockId: 'work' }),
-    /Complete the suggested Update branch/
+    /Complete the suggested Update Branch/
   );
   assert.equal(flows.read(issue).blocks.length, 2);
   await flows.action({ issueId: id, revision: saved.revision, action: 'play' });
   await updateStarted.promise;
-  assert.deepEqual(started, ['merge-target']);
+  assert.deepEqual(started, ['update-branch']);
   assert.deepEqual(flows.read(issue).blocks.at(-1).after, ['target-updated-target']);
   finishUpdate.resolve();
   await workStarted.promise;
   await flows.active.get(id)?.task;
-  assert.deepEqual(started, ['merge-target', 'work']);
+  assert.deepEqual(started, ['update-branch', 'work']);
 });
 
 test('completed target merges do not hide a later target change and parallel lanes join before publication', async (t) => {
@@ -975,17 +981,17 @@ test('completed target merges do not hide a later target change and parallel lan
     executor: executor(async () => ({})),
     observer: {
       async observe() {
-        return { behind: 1, targetRevision: 'new-target', observedAt: new Date().toISOString() };
+        return { startingBranchBehind: 1, startingBranchRevision: 'new-target', observedAt: new Date().toISOString() };
       },
     },
   });
   let flow = flows.read(flows.selected(id));
-  flow = editFlow(flow, { action: 'add', kind: 'merge-target' });
+  flow = editFlow(flow, { action: 'add', kind: 'update-branch' });
   const workIndex = flow.blocks.findIndex((block) => block.kind === 'work');
-  assert.equal(flow.blocks[workIndex - 1].label, 'Update branch');
+  assert.equal(flow.blocks[workIndex - 1].label, 'Update Branch');
   assert.ok(flow.blocks[workIndex].after.includes(flow.blocks[workIndex - 1].id));
   flow.blocks
-    .find((block) => block.kind === 'merge-target')
+    .find((block) => block.kind === 'update-branch')
     .attempts.push({ id: 'old', status: 'completed', result: { target: 'old-target' } });
   new FlowStore(root).save(flow, 0);
   const view = await flows.view(id);

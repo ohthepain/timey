@@ -83,8 +83,8 @@
     "order": 14,
     "defaultSkill": null
   },
-  "merge-target": {
-    "label": "Update branch",
+  "update-branch": {
+    "label": "Update Branch",
     "color": "blue",
     "order": 15,
     "defaultSkill": null

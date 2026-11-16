@@ -109,19 +109,6 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
   return { result, evidence: [commandLog, ...(result.summaries ?? []).map(summaryEvidence)] };
 }
 
-export async function verifyBranchUpdate(ctx, workspace, update, folder, verify) {
-  if (!update.updated && git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all')) return {};
-  try {
-    const { result, evidence } = await verify(ctx, { ...workspace, base: update.target }, folder);
-    ctx.signal.throwIfAborted();
-    requireThat(result.head === update.head, 'The issue commit changed after the branch update.');
-    return { verification: { ...result, destinationBase: update.target }, evidence };
-  } catch (error) {
-    ctx.signal.throwIfAborted();
-    return { verificationFailure: error.message, evidence: error.evidence };
-  }
-}
-
 function summaryEvidence(path) {
   return { path, key: 'report', label: 'Verification summary' };
 }

@@ -329,6 +329,17 @@ test('publication uses a confirmed exact-head non-force push and the mandatory A
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
 });
 
+test('publication authorized by Play creates the PR without a preview confirmation', async (t) => {
+  const f = fixture(t);
+  f.ctx.input = { automaticPublication: true };
+  const result = await publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options);
+  assert.equal(result.result.pr, 17);
+  assert.deepEqual(
+    f.calls.filter((call) => call !== 'credentials'),
+    ['push', 'publish']
+  );
+});
+
 test('publication refuses a stale preview, missing App identity and the target branch before push', async (t) => {
   const f = fixture(t);
   f.provider.findByBranch = async () => null;

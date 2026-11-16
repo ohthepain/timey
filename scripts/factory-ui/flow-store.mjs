@@ -89,7 +89,7 @@ function migrateFlow(flow, defaultTarget) {
       for (const key of Object.keys(block.links ?? {})) if (block.links[key] === target.id) delete block.links[key];
     if (target.attempts?.length || target.comments?.length) (flow.retiredBlocks ??= []).push(target);
   }
-  migrateUpdateBranchLabels(flow);
+  migrateUpdateBranch(flow);
   linkPreWorkUpdate(flow.blocks);
   flow.target ??= defaultTarget;
   flow.startingPoint ??= null;
@@ -110,9 +110,13 @@ function migrateFlow(flow, defaultTarget) {
   return flow;
 }
 
-function migrateUpdateBranchLabels(flow) {
-  for (const block of [...flow.blocks, ...(flow.retiredBlocks ?? [])])
-    if (block.kind === 'merge-target' && block.label === 'Merge from target') block.label = 'Update branch';
+function migrateUpdateBranch(flow) {
+  for (const block of [...flow.blocks, ...(flow.retiredBlocks ?? [])]) {
+    if (block.kind !== 'merge-target') continue;
+    block.kind = 'update-branch';
+    if (block.definition === 'merge-target') block.definition = 'update-branch';
+    if (['Merge from target', 'Update branch'].includes(block.label)) block.label = 'Update Branch';
+  }
 }
 
 export function rebuildRoute(flow, type, definition, nodes, catalog) {
@@ -224,11 +228,11 @@ export function editFlow(flow, input, catalog) {
         'Add a block other than Request or the legacy Target block.'
       );
       const added = makeBlock(input.kind, at ? [next.blocks[at - 1].id] : [], false, catalog);
-      added.lane = validLane(input.lane ?? (input.kind === 'merge-target' ? next.blocks[at]?.lane : 0) ?? 0);
+      added.lane = validLane(input.lane ?? (input.kind === 'update-branch' ? next.blocks[at]?.lane : 0) ?? 0);
       added.after = laneDependencies(next.blocks, at, added.lane);
       next.blocks.splice(at, 0, added);
       const following = next.blocks[at + 1];
-      if (input.kind === 'merge-target') linkPreWorkUpdate(next.blocks);
+      if (input.kind === 'update-branch') linkPreWorkUpdate(next.blocks);
       else if (following && !following.attempts.length && following.lane === added.lane) following.after = [added.id];
     },
     update() {
@@ -339,7 +343,7 @@ function linkPreWorkUpdate(blocks) {
   const index = updateBranchIndex(blocks);
   const work = blocks[index];
   const update = blocks[index - 1];
-  if (!work || !isWorkBlock(work) || update?.kind !== 'merge-target') return;
+  if (!work || !isWorkBlock(work) || update?.kind !== 'update-branch') return;
   if (!work.after.includes(update.id)) work.after.push(update.id);
 }
 
@@ -348,7 +352,7 @@ export function isWorkBlock(block) {
 }
 
 function defaultInsertionIndex(blocks, kind) {
-  return kind === 'merge-target' ? updateBranchIndex(blocks) : blocks.findIndex((item) => item.suggested);
+  return kind === 'update-branch' ? updateBranchIndex(blocks) : blocks.findIndex((item) => item.suggested);
 }
 
 function requireEditable(block) {

@@ -17,7 +17,7 @@ const blockId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const issueType = z.enum(issueTypes);
 const node = z.strictObject({
   id: blockId,
-  block: blockId,
+  block: blockId.transform((id) => (id === 'merge-target' ? 'update-branch' : id)),
   after: z.array(blockId).default([]),
   lane: z.number().int().min(0).max(3).default(0),
   suggested: z.boolean().default(false),

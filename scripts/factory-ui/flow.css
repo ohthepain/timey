@@ -1925,6 +1925,35 @@ kbd {
   background: #493130;
 }
 
+.issue-pr-menu {
+  position: relative;
+}
+.environment .issue-pr-control {
+  color: #b9ccf2;
+  border-color: #425a83;
+  background: #222e44;
+  cursor: pointer;
+}
+.issue-pr-control::after {
+  content: '▾';
+}
+.environment .issue-pr-control:hover {
+  background: #2d3e5b;
+}
+.issue-pr-menu .issue-flow-options {
+  left: 0;
+  right: auto;
+  min-width: 110px;
+}
+.issue-pr-menu a {
+  display: block;
+  padding: 6px 8px;
+  text-decoration: none;
+}
+.issue-pr-menu a:hover {
+  background: #2d3e5b;
+}
+
 .block-delete-control {
   margin-inline-start: auto;
   flex-shrink: 0;

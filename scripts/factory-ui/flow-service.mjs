@@ -82,7 +82,7 @@ import { deleteIssueWorktree, issueHasActiveWork, worktreeCleanupService } from 
 import { branchStartingPoint, captureStartingPoint, flowBranches } from './flow-branches.mjs';
 
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
-const confirmationBlocks = new Set(['publish', 'close', 'delete-worktree']);
+const confirmationBlocks = new Set(['close', 'delete-worktree']);
 const retroFolder = 'Retro items';
 const closureActions = new Set(['retro-setting', 'auto-close-setting', 'retry-closure', 'skip-retro', 'cleanup-again']);
 const unresolvedAttempt = (attempt) =>
@@ -92,31 +92,31 @@ const completedBlock = (block) =>
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
 
 function shouldSuggestTargetUpdate(flow, environment) {
-  const id = 'target-' + environment.targetRevision;
-  if (!(environment.behind > 0) || flow.retiredBlocks?.some((block) => block.id === id)) return false;
+  const id = 'target-' + environment.startingBranchRevision;
+  if (!(environment.startingBranchBehind > 0) || flow.retiredBlocks?.some((block) => block.id === id)) return false;
   return !flow.blocks.some((block) => coversTargetUpdate(block, id));
 }
 
 function suggestTargetUpdate(flow, environment, catalog) {
   if (!shouldSuggestTargetUpdate(flow, environment)) return null;
-  const update = makeBlock('merge-target', [], true, catalog);
-  update.id = 'target-' + environment.targetRevision;
+  const update = makeBlock('update-branch', [], true, catalog);
+  update.id = 'target-' + environment.startingBranchRevision;
   insertSuggestedTargetUpdate(flow, update);
   return update;
 }
 
 function coversTargetUpdate(block, id) {
   return (
-    block.kind === 'merge-target' &&
+    block.kind === 'update-branch' &&
     (block.id === id || !block.attempts.length || ['running', 'stopping'].includes(block.attempts.at(-1)?.status))
   );
 }
 
 function requireBranchUpdate(flow, block) {
   const pending = flow.blocks.find(
-    (parent) => parent.kind === 'merge-target' && block.after.includes(parent.id) && !completedBlock(parent)
+    (parent) => parent.kind === 'update-branch' && block.after.includes(parent.id) && !completedBlock(parent)
   );
-  requireThat(!pending, 'Complete Update branch successfully before running this block.');
+  requireThat(!pending, 'Complete Update Branch successfully before running this block.');
 }
 
 function listRepoFiles(root) {
@@ -331,7 +331,7 @@ class IssueFlows {
     const selectedRow = data.issues.find((item) => item.id === id);
     if (selectedRow && !['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
       if (environment.pr?.mergedAt) selectedRow.status = 'merged';
-      else if (environment.behind > 0) selectedRow.status = 'need-merge-from-dev';
+      else if (environment.startingBranchBehind > 0) selectedRow.status = 'need-merge-from-dev';
       else if (
         selectedRow.status === 'ready-to-merge' &&
         !flow.blocks.some((block) => flowVerificationHead(block) === environment.head)
@@ -372,7 +372,10 @@ class IssueFlows {
         follows: !flow.destination?.branch,
         locked: Boolean(flow.destination?.pr || flowWorkspace(this.service, flow)?.pr || environment.pr),
         pr:
-          environment.pr || (flow.destination?.pr ? { number: flow.destination.pr, url: flow.destination.url } : null),
+          environment.pr ||
+          (flow.destination?.pr
+            ? { number: flow.destination.pr, url: flow.destination.url, title: flow.destination.title }
+            : null),
         proposedBranch:
           flow.destination?.pr && environment.pr?.branch !== flow.destination.branch
             ? environment.pr?.branch
@@ -667,7 +670,7 @@ class IssueFlows {
         await this.refreshRequest(issue, flow, next.data.wording, catalog, true);
         return;
       }
-      await this.start(issue, flow, { blockId: next.id, action: needsRetry ? 'continue' : 'start' }, catalog);
+      await this.start(issue, flow, { blockId: next.id, action: needsRetry ? 'continue' : 'start' }, catalog, 'play');
     } catch (error) {
       this.pauseAutoplay(issueId, redactValue(error.message));
     }
@@ -804,7 +807,10 @@ class IssueFlows {
         this.pause(issue.id);
       return this.view(issue.id);
     }
-    if (input.action === 'open-worktree') return openWorkFolder(flowWorkspace(this.service, flow)?.checkout);
+    if (input.action === 'open-worktree')
+      return openWorkFolder(flowWorkspace(this.service, flow)?.checkout, undefined, {
+        terminal: input.terminal === true,
+      });
     if (input.action === 'restate-artifact') return this.restateArtifact(flow, input);
     if (input.action === 'stop') return this.stop(flow, input);
     requireThat(!this.flowBuilds.has(issue.id), 'Wait for the flow structure to finish building.');
@@ -916,7 +922,7 @@ class IssueFlows {
       }
       requireThat(
         !(await this.checkSuggestedWorkUpdate(flow, block, catalog)),
-        'Complete the suggested Update branch before running Work.'
+        'Complete the suggested Update Branch before running Work.'
       );
       return this.start(issue, flow, input, catalog);
     }
@@ -1020,7 +1026,7 @@ class IssueFlows {
       !flow.blocks.some((block) => block.attempts.some(unresolvedAttempt)),
       'Recover the disconnected block before updating the branch.'
     );
-    const block = makeBlock('merge-target', [], false, catalog);
+    const block = makeBlock('update-branch', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
     const controller = new AbortController();
     this.pauseAutoplay(issue.id, 'Updating the branch manually.');
@@ -1217,7 +1223,7 @@ class IssueFlows {
     }
   }
   lockedDestination(pr) {
-    return { branch: pr.branch, pr: pr.number, url: pr.url };
+    return { branch: pr.branch, pr: pr.number, url: pr.url, title: pr.title };
   }
   deliveryProvider(flow, workspace = flowWorkspace(this.service, flow)) {
     const checkout = workspace?.checkout && existsSync(workspace.checkout) ? workspace.checkout : this.service.root;
@@ -1311,7 +1317,7 @@ class IssueFlows {
         previewToken: preview.token,
       },
       catalog,
-      true
+      'reviewed'
     );
   }
   makeAttempt(flow, issue, block, catalog) {
@@ -1381,7 +1387,7 @@ class IssueFlows {
     this.store.save(flow, flow.revision);
     return this.view(issue.id);
   }
-  async start(issue, flow, input, catalog, reviewedPublish = false) {
+  async start(issue, flow, input, catalog, publication = null) {
     requireThat(
       !this.active.has(issue.id),
       'One block already owns this issue conversation. Stop it before starting another.'
@@ -1417,7 +1423,14 @@ class IssueFlows {
     if (['running', 'stopping'].includes(block.attempts.at(-1)?.status))
       requireThat(input.action === 'continue', 'The previous attempt is uncertain. Inspect it before Continue.');
     requireThat(block.kind !== 'request', 'Edit Request in Details.');
-    requireThat(block.kind !== 'publish' || reviewedPublish, 'Review Publish before confirming it.');
+    if (block.kind === 'publish') {
+      requireThat(publication, 'Review Publish or use Play to publish the branch.');
+      const request = requestBlock(flow);
+      requireThat(
+        request.data.fields || (!request.data.editId && !latestCurrentAttempt(request)),
+        'Request clarification did not finish. Retry Request before publishing.'
+      );
+    }
     const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
     requireThat(definition?.usable, 'This block’s Markdown definition is unavailable. Open Details to inspect it.');
     requireThat(
@@ -1443,7 +1456,15 @@ class IssueFlows {
       if (waiting.blockId === block.id && input.confirmed === true) this.autoplay.set(issue.id, { mode: 'playing' });
       else this.pause(issue.id, 'A different block was started.');
     }
-    const task = this.execute(issue, flow, block.id, attempt.id, controller, input, definition);
+    const task = this.execute(
+      issue,
+      flow,
+      block.id,
+      attempt.id,
+      controller,
+      { ...input, automaticPublication: block.kind === 'publish' && publication === 'play' },
+      definition
+    );
     this.active.get(issue.id).task = task;
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
@@ -1526,7 +1547,12 @@ class IssueFlows {
         outcome = current;
         if (result.workspace) saved.workspace = result.workspace;
         if (block.kind === 'publish' && result.result?.pr && result.result?.target && !saved.destination?.pr) {
-          saved.destination = { branch: result.result.target, pr: result.result.pr, url: result.result.url };
+          saved.destination = this.lockedDestination({
+            branch: result.result.target,
+            number: result.result.pr,
+            url: result.result.url,
+            title: result.result.title,
+          });
         }
         if (block.kind === 'request' && !current.invalidatedAt && current.status === 'completed') {
           const request = requestBlock(saved);

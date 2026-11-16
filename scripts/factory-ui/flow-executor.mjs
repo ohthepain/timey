@@ -28,16 +28,15 @@ import {
   flowVerificationInput,
   runFlowVerification,
   runWorkVerification,
-  verifyBranchUpdate,
   workVerificationScript,
 } from './flow-verification.mjs';
-import { updateIssueBranch } from './flow-update-branch.mjs';
+import { startingBranchUpstream, updateIssueBranch } from './flow-update-branch.mjs';
 import { runRetro } from './flow-retro.mjs';
 
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
 const commandBlocks = new Set([
   'verify',
-  'merge-target',
+  'update-branch',
   'publish',
   'merge',
   'retro',
@@ -382,7 +381,7 @@ async function runBranchConflictRepair(service, ctx, owned, options, paths, targ
   const task =
     'Resolve only these conflicted paths and stage the resolution: ' +
     JSON.stringify(paths) +
-    '. Preserve both sides of the merge with ' +
+    '. Leave tests to Verify. Preserve both sides of the merge with ' +
     target +
     '. If preserving both sides needs a product decision, return a flow-result failure with the decision. ' +
     'You have one attempt. Leave HEAD and the merge in place and let Factory commit. ' +
@@ -459,7 +458,12 @@ function modelPrompt(ctx, options) {
   if (!options.repair) return blockInput(ctx);
   return JSON.stringify({
     issue: blockInput(ctx),
-    task: 'Fix the specific blocker within the approved issue scope. Preserve the issue and target history. Commit the repaired candidate in this checkout. Factory will verify and publish it. If a decision, broader scope, or permission is needed, report it as a flow-result failure and stop.',
+    task: [
+      'Diagnose and fix the blocker using the saved evidence. Merge authorizes the smallest repairs needed for its required checks, including repairs outside the original feature when they address an inherited failure.',
+      'Reproduce and repair inherited test failures, formatting failures, and new Fallow findings that block delivery. Preserve the behavior and coverage the checks protect. Use focused checks to confirm the repair.',
+      'Preserve the issue and target history. Commit the repaired candidate in this checkout. Factory will run the full verification and publish the checked candidate.',
+      'If a product decision, unrelated change, or permission is required, stop and end your response with a flow-result fenced JSON object containing a failure string that names the blocker.',
+    ].join('\n'),
     failure: options.repair.error.message,
     evidence: options.repair.error.evidence ?? [],
   });
@@ -837,7 +841,7 @@ async function runCommand(service, ctx, options) {
       status: complete ? 'completed' : 'blocked',
     };
   }
-  if (['publish', 'close', 'delete-worktree'].includes(kind))
+  if (['close', 'delete-worktree'].includes(kind))
     requireThat(
       ctx.input?.confirmed === true,
       'Confirm this protected lifecycle operation explicitly before running the block.'
@@ -923,40 +927,24 @@ async function runCommand(service, ctx, options) {
     return { ...commandResult(service, ctx, result, summary, evidence), workspace };
   }
   await reconcileMergeRepair(service, ctx, workspace, options);
-  const update = await updateIssueBranch(
-    workspace,
-    deliveryTarget(ctx.flow),
-    invoke,
-    options.resolveBranchConflicts,
-    ctx.signal
-  );
-  const { target, head, updated, evidence } = update;
+  const upstream = await startingBranchUpstream(ctx.flow, (...args) => git(workspace.checkout, ...args));
+  const update = await updateIssueBranch(workspace, upstream, invoke, options.resolveBranchConflicts, ctx.signal);
+  const { target, head, updated, message, evidence } = update;
   const branchSummary = updated
-    ? 'Merged the fetched target into the issue branch.'
-    : 'The issue branch already contains the fetched target.';
-  const {
-    verification,
-    verificationFailure,
-    evidence: checks,
-  } = await verifyBranchUpdate(ctx, workspace, update, join(folder, 'verification'), (...args) => {
-    guardBlock(service, ctx, 'verify', workspace.base);
-    return options.verifyCandidate(...args);
-  });
-  const checkSummary = verification
-    ? ' Full Verify passed.'
-    : verificationFailure
-      ? ' Full Verify needs attention. ' + verificationFailure
-      : '';
+    ? 'Updated the issue branch from the starting branch.'
+    : 'The issue branch already contains the fetched starting branch.';
+  const messagePath = join(folder, 'merge-message.txt');
+  writeFileSync(messagePath, message + '\n', { mode: 0o600 });
   return {
     ...commandResult(
       service,
       ctx,
-      { target, targetRevision: target, head, verification, verificationFailure },
-      branchSummary + checkSummary,
+      { upstream: upstream.remote + '/' + upstream.branch, fetchedCommit: target, head, containsFetchedCommit: true },
+      branchSummary,
       [
-        { key: 'log', path: log, label: 'Target fetch and merge output' },
+        { key: 'mergeMessage', path: messagePath, label: 'Merge message', sha256: digest(readFileSync(messagePath)) },
+        { key: 'log', path: log, label: 'Branch fetch and merge output' },
         ...evidence,
-        ...(checks ?? []).map(({ key, ...entry }) => ({ ...entry, key: 'verification-' + key })),
       ]
     ),
     workspace,

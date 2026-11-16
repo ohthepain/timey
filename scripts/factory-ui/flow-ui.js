@@ -43,7 +43,7 @@
     verify: { icon: '✓', color: '#c69a62', description: 'Check the result against your verification intent.' },
     publish: { icon: '↥', color: '#7c9acb', description: 'Push the verified branch and publish its pull request.' },
     merge: { icon: '⑂', color: '#7c9acb', description: 'Merge the issue into its target branch.' },
-    'merge-target': { icon: '⑂', color: '#7c9acb', description: 'Bring target branch changes into the issue.' },
+    'update-branch': { icon: '⑂', color: '#7c9acb', description: 'Bring starting branch changes into the issue.' },
     retro: { icon: '↶', color: '#aaa0ca', description: 'Record lessons and suggested follow-up work.' },
     close: { icon: '⊙', color: '#999999', description: 'Record the decision to close this issue.' },
     'delete-worktree': {
@@ -535,15 +535,7 @@
     if (environment.dirty === true) chips.push('<span class="environment-chip warning">● Uncommitted changes</span>');
     renderTargetUpdate(environment);
     if (environment.ahead > 0) chips.push(`<span class="environment-chip">↑ ${escape(environment.ahead)} ahead</span>`);
-    if (environment.pr) {
-      const pr = environment.pr;
-      const url = safeUrl(pr.url);
-      chips.push(
-        url
-          ? `<a class="environment-chip${pr.mergedAt ? ' good' : ''}" href="${escape(url)}" target="_blank" rel="noopener noreferrer">PR #${escape(pr.number)} · ${escape(pr.mergedAt ? 'merged' : words(pr.state))} ↗</a>`
-          : `<span class="environment-chip">PR #${escape(pr.number)} · ${escape(words(pr.state))}</span>`
-      );
-    }
+    renderPullRequest(state.view.destination?.pr);
     if (environment.error || environment.remoteError)
       chips.push(
         `<span class="environment-chip warning" title="${escape(environment.error || environment.remoteError)}">Environment check incomplete</span>`
@@ -552,12 +544,30 @@
     $('environment').title = environment.observedAt ? `Git observed ${date(environment.observedAt)}` : '';
   }
 
+  function renderPullRequest(pr) {
+    const menu = $('issue-pr-menu');
+    const link = $('issue-pr-link');
+    const url = safeUrl(pr?.url);
+    menu.hidden = !url;
+    if (link.href !== url) menu.open = false;
+    if (!url) return;
+    const label = $('issue-pr-label');
+    label.textContent = 'PR#' + pr.number;
+    label.title = pr.title?.trim() || label.textContent;
+    link.href = url;
+    const review = new URL(url);
+    review.pathname = review.pathname.replace(/\/$/, '') + '/files';
+    review.search = '';
+    review.hash = '';
+    $('issue-pr-review').href = review.href;
+  }
+
   function renderTargetUpdate(environment) {
     const menu = $('target-update-menu');
-    const label = `Target ahead by ${environment.behind}`;
+    const label = `Starting branch ahead by ${environment.startingBranchBehind}`;
     const updating = state.updatingBranch === state.issueId;
     $('target-update-progress').hidden = !updating;
-    menu.hidden = updating || !(environment.behind > 0);
+    menu.hidden = updating || !(environment.startingBranchBehind > 0);
     menu.options[0].textContent = '↙ ' + label;
     menu.setAttribute('aria-label', label);
     menu.options[1].disabled = environment.worktreeExists !== true;
@@ -1485,7 +1495,7 @@
     const selected = activeBlock();
     const result = await action('add', {
       kind,
-      ...(selected && !selected.suggested && kind !== 'merge-target' ? { afterId: selected.id } : {}),
+      ...(selected && !selected.suggested && kind !== 'update-branch' ? { afterId: selected.id } : {}),
     });
     if (!result) return;
     $('palette-dialog').close();
@@ -2035,7 +2045,7 @@
     const operation = menu.value;
     menu.value = '';
     if (operation === 'update') return updateBranch();
-    if (operation === 'add' && (await action('add', { kind: 'merge-target' }))) toast('Update branch block added.');
+    if (operation === 'add' && (await action('add', { kind: 'update-branch' }))) toast('Update Branch block added.');
   });
 
   document.addEventListener('change', async (event) => {
@@ -2052,8 +2062,10 @@
     if (field.id === 'worktree-menu') {
       const operation = field.value;
       field.value = '';
-      if (operation === 'open') {
-        if (await action('open-worktree')) toast('Opened the worktree in Finder.');
+      if (operation === 'open' || operation === 'terminal') {
+        const terminal = operation === 'terminal';
+        if (await action('open-worktree', { terminal }))
+          toast(terminal ? 'Opened Terminal in the worktree.' : 'Opened the worktree in Finder.');
       } else if (operation === 'update') {
         await updateBranch();
       } else if (operation === 'delete') {
@@ -2228,6 +2240,9 @@
     }));
   }
   $('close-with-reason').addEventListener('click', openClosure);
+  $('issue-pr-menu').addEventListener('click', (event) => {
+    if (event.target.closest('a')) $('issue-pr-menu').open = false;
+  });
   $('retry-closure').addEventListener('click', () => void action('retry-closure'));
   $('skip-retro').addEventListener('click', () => {
     if (confirm('Continue to Cleanup without a completed retro?')) void action('skip-retro');

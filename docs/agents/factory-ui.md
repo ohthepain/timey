@@ -43,13 +43,19 @@ explicit destination. Older issues with a PR use its GitHub base. Destination
 locks when the issue has a PR. If GitHub reports a changed base, accept that base
 in Destination before running Publish or Merge.
 
-Use the pencil next to the issue heading to rename it. Before the first Publish,
+Use the pencil next to the issue heading to rename it. Play publishes when the
+candidate and destination checks pass. When running Publish directly,
 review the title, source and destination branches, verified commit, and exact PR
 description. The description contains Goal, Requested proof, and Original wording
 from Request, with empty sections omitted. On later runs, Publish shows pending
 title and commit changes and preserves the existing GitHub description. A
 matching title and commit show **PR is up to date** with the link. **Confirm
 current PR** completes Publish using the existing PR.
+The PR menu beside Worktree and Close shows the PR number. **Open** opens the
+pull request. **Approve** opens the GitHub review page, where you submit the
+approval using the GitHub account signed in to your browser.
+The Worktree menu's **Open Terminal** option opens macOS Terminal in the
+selected issue's checkout.
 Closed issues open with Destination aligned at the bottom. Other issues center
 their running or most recently attempted block within the content's scroll range.
 The graph has 16 pixels of edge room. Column scrolling stays local, with native

@@ -556,7 +556,8 @@ function verificationResult(workspace, folder) {
   return { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), base: workspace.base, proof };
 }
 
-function mergeFixture(t, { merged = false, onWait, repair, verificationInput = () => 'fixture-input' } = {}) {
+function mergeFixture(t, { merged = false, onWait, repair, beforeVerify } = {}) {
+  const verificationInput = () => 'fixture-input';
   const observations = [];
   let publishedHead;
   let nextTarget = 0;
@@ -591,6 +592,7 @@ function mergeFixture(t, { merged = false, onWait, repair, verificationInput = (
       return git(...args);
     },
     async verifyCandidate(_ctx, workspace, folder) {
+      await beforeVerify?.(workspace);
       const result = { ...verificationResult(workspace, folder), input: verificationInput() };
       observations.push({ operation: 'verify', head: result.head });
       return { result, evidence: [] };
@@ -634,25 +636,22 @@ function mergeFixture(t, { merged = false, onWait, repair, verificationInput = (
   return { ...f, observations, advanceTarget };
 }
 
-for (const changed of [false, true]) {
-  test(`Merge ${changed ? 'reruns' : 'reuses'} full Verify after a branch update based on current inputs`, async (t) => {
-    let input = 'original';
-    const f = mergeFixture(t, { verificationInput: () => input });
-    await f.run('understand');
-    f.advanceTarget();
-    const update = await f.run('merge-target');
-    assert.equal(update.result.verification.input, 'original');
-    f.flow.blocks.push({
-      id: 'updated-branch',
-      kind: 'merge-target',
-      after: [],
-      attempts: [{ status: 'completed', result: update.result }],
-    });
-    if (changed) input = 'new';
-    await f.run('merge', { after: ['updated-branch'] });
-    assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, changed ? 2 : 1);
+test('Update Branch leaves full verification of the updated candidate to Merge', async (t) => {
+  const f = mergeFixture(t);
+  await f.run('understand');
+  f.advanceTarget();
+  const update = await f.run('update-branch');
+  assert.ok(update.result.fetchedCommit);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 0);
+  f.flow.blocks.push({
+    id: 'updated-branch',
+    kind: 'update-branch',
+    after: [],
+    attempts: [{ status: 'completed', result: update.result }],
   });
-}
+  await f.run('merge', { after: ['updated-branch'] });
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+});
 
 function approvalAttempt(result) {
   return { id: 'approval-attempt', status: 'blocked', result: result.result };
@@ -740,6 +739,34 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
   assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
 });
 
+test('Merge asks its worker to repair an inherited browser failure and verifies the repaired commit', async (t) => {
+  const f = mergeFixture(t, {
+    beforeVerify({ checkout }) {
+      if (readFileSync(join(checkout, 'source.txt'), 'utf8') === 'Initial source.\n')
+        throw Object.assign(Error('Closure waited for background resource checks.'), { verificationFailure: true });
+    },
+  });
+  await f.run('understand');
+  const turn = f.connection.turn.bind(f.connection);
+  let repairs = 0;
+  f.connection.turn = async (...args) => {
+    const [, checkout, prompt] = args;
+    assert.match(prompt, /repair inherited test failures/);
+    assert.match(prompt, /Closure waited for background resource checks/);
+    repairs++;
+    writeFileSync(join(checkout, 'source.txt'), 'Browser scenario repaired.\n');
+    execFileSync('git', ['-C', checkout, 'commit', '-am', 'Repair inherited browser failure']);
+    return turn(...args);
+  };
+  const result = await f.run('merge');
+  assert.equal(repairs, 1);
+  assert.ok(result.result.mergeConfirmation);
+  assert.deepEqual(
+    f.observations.map(({ operation }) => operation),
+    ['verify', 'push', 'ready']
+  );
+});
+
 test('external merge reconciliation records GitHub facts without manufacturing verification or acceptance', async (t) => {
   const f = mergeFixture(t, { merged: true });
   await f.run('understand');
@@ -771,27 +798,53 @@ async function branchUpdateFixture(t, targetFile = 'incoming.txt') {
   };
 }
 
-test('Update branch fetches first and silently saves full local changes only when behind', async (t) => {
+test('Update Branch fetches first and silently saves full local changes only when behind', async (t) => {
   const f = await branchUpdateFixture(t);
   const initialHead = f.work('rev-parse', 'HEAD');
   writeFileSync(join(f.checkout, 'source.txt'), 'Staged change.\n');
   f.work('add', 'source.txt');
   writeFileSync(join(f.checkout, 'source.txt'), 'Working copy.\n');
   writeFileSync(join(f.checkout, 'draft.txt'), 'New file.\n');
-  await f.run('merge-target');
+  const current = await f.run('update-branch');
+  assert.equal(readFileSync(current.artifacts.files.mergeMessage.path, 'utf8'), 'Already up to date.\n');
   assert.equal(f.work('rev-parse', 'HEAD'), initialHead);
   assert.equal(f.work('show', ':source.txt'), 'Staged change.');
   assert.equal(f.work('ls-files', '--others', '--exclude-standard'), 'draft.txt');
 
   const target = f.advance();
-  await f.run('merge-target');
+  const updated = await f.run('update-branch');
   assert.equal(f.work('merge-base', 'HEAD', target), target);
   assert.equal(f.work('show', 'HEAD:source.txt'), 'Working copy.');
   assert.equal(f.work('show', 'HEAD:draft.txt'), 'New file.');
   assert.equal(f.work('status', '--porcelain'), '');
+  assert.equal(
+    readFileSync(updated.artifacts.files.mergeMessage.path, 'utf8').trim(),
+    f.work('show', '-s', '--format=%B')
+  );
 });
 
-test('Update branch stops before merging when a normal Git hook rejects the local commit', async (t) => {
+test('Update Branch uses the local starting branch upstream independently of Destination', async (t) => {
+  const f = await branchUpdateFixture(t);
+  const base = f.work('rev-parse', 'HEAD');
+  f.git('branch', 'local-start', base);
+  f.flow.startingPoint = { ref: 'refs/heads/local-start', name: 'local-start', commit: base };
+  f.flow.destination = { branch: 'unrelated-destination' };
+  const target = f.advance();
+  await assert.rejects(f.run('update-branch'), /starting branch has no remote upstream/);
+  assert.equal(f.work('rev-parse', 'HEAD'), base);
+  f.git('fetch', 'origin', 'dev');
+  f.git('branch', '--set-upstream-to=origin/dev', 'local-start');
+  const updated = await f.run('update-branch');
+  assert.deepEqual(updated.result, {
+    upstream: 'origin/dev',
+    fetchedCommit: target,
+    head: target,
+    containsFetchedCommit: true,
+  });
+  assert.match(readFileSync(updated.artifacts.files.mergeMessage.path, 'utf8'), /^Fast-forwarded to /);
+});
+
+test('Update Branch stops before merging when a normal Git hook rejects the local commit', async (t) => {
   const f = await branchUpdateFixture(t);
   f.advance();
   const head = f.work('rev-parse', 'HEAD');
@@ -799,13 +852,13 @@ test('Update branch stops before merging when a normal Git hook rejects the loca
   f.git('config', 'core.hooksPath', hooks);
   writeFileSync(join(hooks, 'pre-commit'), '#!/bin/sh\necho fixture-rejected >&2\nexit 1\n', { mode: 0o755 });
   writeFileSync(join(f.checkout, 'source.txt'), 'Keep this work.\n');
-  await assert.rejects(f.run('merge-target'), /fixture-rejected/);
+  await assert.rejects(f.run('update-branch'), /fixture-rejected/);
   assert.equal(f.work('rev-parse', 'HEAD'), head);
   assert.equal(f.work('show', ':source.txt'), 'Keep this work.');
   assert.equal(existsSync(join(f.checkout, 'incoming.txt')), false);
 });
 
-test('Update branch formats local changes before running the save commit hook', async (t) => {
+test('Update Branch formats local changes before running the save commit hook', async (t) => {
   const f = await branchUpdateFixture(t);
   const target = f.advance();
   const formatter = resolve('node_modules/.bin/vp');
@@ -830,13 +883,13 @@ test('Update branch formats local changes before running the save commit hook', 
   );
   writeFileSync(join(f.checkout, 'package.json'), '{"name":"branch-update-fixture","private":true}\n');
   writeFileSync(join(f.checkout, 'settings.json'), '{"ready":true}\n');
-  await f.run('merge-target');
+  await f.run('update-branch');
   assert.equal(f.work('show', 'HEAD:settings.json'), '{ "ready": true }');
   assert.equal(f.work('merge-base', 'HEAD', target), target);
 });
 
 for (const resolves of [true, false]) {
-  test(`Update branch gives Codex one conflict attempt and ${resolves ? 'commits the resolution' : 'retains the merge'}`, async (t) => {
+  test(`Update Branch gives Codex one conflict attempt and ${resolves ? 'commits the resolution' : 'retains the merge'}`, async (t) => {
     const f = await branchUpdateFixture(t, 'source.txt');
     const target = f.advance();
     writeFileSync(join(f.checkout, 'source.txt'), 'Local change.\n');
@@ -852,15 +905,15 @@ for (const resolves of [true, false]) {
       return turn(...args);
     };
     if (resolves) {
-      await f.run('merge-target');
+      await f.run('update-branch');
       assert.equal(f.work('rev-parse', 'HEAD^2'), target);
       assert.equal(f.work('show', 'HEAD:source.txt'), 'Local change.\nIncoming change.');
       assert.equal(f.work('status', '--porcelain'), '');
     } else {
-      await assert.rejects(f.run('merge-target'), /Files to review: source.txt.*Choose a default/);
+      await assert.rejects(f.run('update-branch'), /Files to review: source.txt.*Choose a default/);
       assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
       assert.equal(f.work('show', 'HEAD:source.txt'), 'Local change.');
-      await assert.rejects(f.run('merge-target'), /already in progress.*source.txt/);
+      await assert.rejects(f.run('update-branch'), /already in progress.*source.txt/);
       f.work('merge', '--abort');
       assert.equal(f.work('show', 'HEAD:source.txt'), 'Local change.');
     }

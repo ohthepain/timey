@@ -150,7 +150,7 @@
           <div id="environment-status" class="environment-status"></div>
           <select class="environment-chip warning" id="target-update-menu" aria-label="Target branch is ahead" hidden>
             <option value="" disabled selected></option>
-            <option value="update">Update branch</option>
+            <option value="update">Update Branch</option>
             <option value="add">Add update branch block</option>
           </select>
           <span class="environment-chip warning" id="target-update-progress" role="status" hidden>
@@ -161,6 +161,7 @@
             <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
               <option value="" disabled selected>Worktree</option>
               <option value="open">Open</option>
+              <option value="terminal">Open Terminal</option>
               <option value="update">Update</option>
               <option value="delete">Delete</option>
             </select>
@@ -175,6 +176,15 @@
           >
             Close
           </button>
+          <details class="issue-pr-menu" id="issue-pr-menu" hidden>
+            <summary class="environment-chip issue-pr-control" id="issue-pr-label"></summary>
+            <div class="issue-flow-options">
+              <a id="issue-pr-link" target="_blank" rel="noopener noreferrer">Open</a>
+              <a id="issue-pr-review" target="_blank" rel="noopener noreferrer" title="Review and approve on GitHub"
+                >Approve</a
+              >
+            </div>
+          </details>
           <select class="environment-chip" id="issue-approval-menu" aria-label="Needs approval" hidden>
             <option value="" disabled selected>Needs approval</option>
             <option value="approve-issue">Approve</option>

@@ -19,12 +19,12 @@ A starting point records the full Git ref, display name and exact base commit.
 New issues start from the configured delivery branch. Destination follows the
 starting branch on the configured remote until explicitly pinned. An existing
 PR establishes the locked Destination. External base changes require explicit
-acceptance before Publish or Merge. Update branch reads Destination and
-keeps the checkout's original base. The **Target ahead** menu can run **Update
-branch** immediately with a progress indicator, or add an **Update branch**
+acceptance before Publish or Merge. Update Branch fetches the upstream of Starting point and
+keeps the checkout's original base. The **Starting branch ahead** menu can run **Update
+Branch** immediately with a progress indicator, or add an **Update Branch**
 block that must succeed before **Work** can run. With Play active, **Work**
 starts when the update succeeds. The immediate action leaves
-the flow graph intact. A suggested target update also precedes Work and
+the flow graph intact. A suggested starting branch update also precedes Work and
 becomes its prerequisite when run. The route's
 existing update before **Publish PR** stays in place.
 Folder rows in the flow sidebar provide a direct issue capture action; captured
@@ -92,8 +92,8 @@ The executor returns
 results and evidence. The observer reads Git and PR facts independently of model
 turns. Local Git queries have short timeouts. PR reads run separately and retain
 freshness and failures. An externally merged PR is an observation, not acceptance.
-Target changes produce a dotted merge-from-target suggestion, never an automatic
-merge. Git fetches remain explicit operations or external Git-tool work.
+Factory suggests Update Branch when the cached upstream of Starting point
+contains commits missing from the issue branch. Git fetches remain explicit operations or external Git-tool work.
 
 The issue timeline groups notes and results from its blocks. Model blocks use
 their own Codex conversations so each receives its declared inputs independently.
@@ -108,7 +108,7 @@ A continuation reuses a conversation only while its skill and inputs match. Miss
 block without substituting another method. Skill instructions do not authorize
 later verification, publication, merge, closure, or cleanup blocks.
 
-The standard delivery flow runs full Verify after Update branch and before Merge.
+The standard delivery flow verifies the updated candidate at delivery.
 Merge reuses passing evidence when the issue commit, destination revision,
 verification inputs and retained evidence match. Verify remains available as a
 standalone block. A change to Goal or Requested proof invalidates related flow
@@ -126,7 +126,10 @@ checks or unsuccessful optional checks. The Merge block Markdown sets the merge
 policy, polling interval, check timeout, and repair limit. Human-first policy
 requires approval of the current issue commit and target revision. A change to
 either revision expires approval. GitHub App publication and GitHub protection
-apply. Close confirms that the target still contains the merged PR and checks
+apply. Merge can repair inherited test or formatting failures and new Fallow
+findings that block required checks. It commits the smallest repair that
+preserves the behavior and coverage under test, then verifies the candidate again.
+Close confirms that the target still contains the merged PR and checks
 only the GitHub checks required for that PR. Zero required checks is valid.
 Explicit acceptance and cleanup ownership checks remain separate.
 
@@ -156,15 +159,17 @@ Inspect shows raw text and offers a Restate toggle that applies the bro skill’
 plain-language guidance in a temporary discussion. **Worktree → Delete** and
 the **Delete worktree** block use the same protected cleanup and retain its backups.
 
-## Update branch
+## Update Branch
 
-Choosing **Update branch** from the **Branch** button, running the **Update
-branch** block, or reaching the block through **Play** authorizes a local commit
+Choosing **Update Branch** from the **Branch** button, running the **Update
+Branch** block, or reaching the block through **Play** authorizes a local commit
 when needed. Factory runs the branch update without a second prompt. The Branch
 button runs the action directly and shows a spinner. The action leaves the flow
 graph intact.
 
-Factory fetches Destination first. If the issue branch already contains the
+Factory fetches the exact remote branch selected in Starting point, or the
+configured remote upstream of a local starting branch. A local branch without
+a remote upstream stops with a clear error. If the issue branch already contains the
 fetched revision, Factory leaves any uncommitted changes in place. If there are
 destination changes to merge and the managed issue worktree has local changes,
 Factory saves them in a local commit before merging. The commit includes tracked
@@ -178,11 +183,11 @@ formatting or a hook fails, the update stops before the merge and shows the
 command output. A successful update has no separate notification for the local
 commit.
 
-Full Verify checks the updated commit against the fetched destination. If it
-fails, the Git update and its check evidence are preserved and Work can proceed.
-Merge requires a passing full Verify result. A branch already up to date can
-recheck its clean commit or reuse its passing result. A no-op update leaves
-uncommitted changes alone.
+Update Branch records the fetched commit and resulting issue commit after
+checking Git ancestry. It retains Git’s merge commit message or reports a
+fast-forward or already up-to-date result. Publish PR and Merge use passing
+verification for their committed candidate and fetched destination. A no-op
+update leaves uncommitted changes alone.
 
 If Git reports conflicts from this update, Factory gives Codex one attempt. Codex
 may edit and stage only the conflicted files. It must preserve both sides and stop
@@ -209,6 +214,8 @@ No new actions disables Play. A running block can finish, and autoplay pauses
 if the switch is still on when it would start another block. Turn off No new
 actions and press Play to continue that route.
 
+Play authorizes Publish PR to push the checked candidate and create or update its
+pull request. Factory checks the candidate and GitHub destination before writing.
 Autoplay starts Merge preparation and waits for any human-first approval once
 the PR is ready. At other protected blocks, autoplay waits before the operation.
 While autoplay is waiting, the issue header links to the block's

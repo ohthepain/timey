@@ -189,7 +189,10 @@ test('Codex approval responses are bound to the pending chat', (t) => {
 test('a claimed successful integration cannot bypass independent verification', async (t) => {
   const { root, git, api, proposal, service } = fixture(t);
   transport(t, service);
-  mkdirSync(join(root, 'node_modules'));
+  const lock = 'lockfileVersion: 9.0\n';
+  mkdirSync(join(root, 'node_modules/.pnpm'), { recursive: true });
+  writeFileSync(join(root, 'pnpm-lock.yaml'), lock);
+  writeFileSync(join(root, 'node_modules/.pnpm/lock.yaml'), lock);
   writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node -e "process.exit(1)"' } }));
   git('add', '.');
   git('commit', '-qm', 'failing independent check');
@@ -1497,6 +1500,7 @@ test('final-review buttons close with explicit acceptance and reopen without lau
   const closed = selectedIssueView(service);
   assert.match(closed.content, /user selected Close issue/);
   assert.equal(closed.state, 'closed');
+  await service.issueCleanupTasks.get('20261022-one');
   assert.deepEqual(
     service.decideIssue('20261022-one', 'closed', 'reopen', closed.decisionBasis, 'Still fails for my file.'),
     { state: 'investigate' }

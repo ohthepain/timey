@@ -92,7 +92,7 @@ function committedCandidate(workspace) {
 function blockVerification(block, attempt = latestCurrentAttempt(block)) {
   if (attempt?.status !== 'completed' && !['publish', 'merge'].includes(block.kind)) return undefined;
   if (block.kind === 'verify') return attempt?.result;
-  if (['publish', 'merge', 'merge-target'].includes(block.kind)) return attempt?.result?.verification;
+  if (['publish', 'merge', 'update-branch'].includes(block.kind)) return attempt?.result?.verification;
 }
 
 export function flowVerificationHead(block) {
@@ -270,15 +270,30 @@ export async function prepareFlowPublication(service, ctx, workspace, options = 
   return { preview, candidate, provider, pr, remote };
 }
 
-export async function publishFlowPR(service, ctx, workspace, folder, options) {
-  requireThat(ctx.input?.confirmed === true, 'Confirm publication of this issue branch and PR explicitly.');
-  const { preview, candidate, provider, pr, remote } = await prepareFlowPublication(service, ctx, workspace, options);
+async function preparePublicationAttempt(service, ctx, workspace, options) {
+  const automatic = ctx.input?.automaticPublication === true;
+  requireThat(
+    automatic || ctx.input?.confirmed === true,
+    'Confirm publication of this issue branch and PR explicitly.'
+  );
+  const prepared = await prepareFlowPublication(service, ctx, workspace, options);
+  const { preview, provider, pr } = prepared;
   requireThat(preview.status !== 'blocked', preview.message);
   requireThat(
-    preview.token === ctx.input.previewToken,
+    automatic || preview.token === ctx.input.previewToken,
     'Publish changed. Review the updated preview before publishing.'
   );
   if (pr && preview.status === 'confirm') await assertPublicationIdle(provider, pr, workspace.branch);
+  return prepared;
+}
+
+export async function publishFlowPR(service, ctx, workspace, folder, options) {
+  const { preview, candidate, provider, pr, remote } = await preparePublicationAttempt(
+    service,
+    ctx,
+    workspace,
+    options
+  );
   const log = join(folder, 'publish.log');
   const requirePreviewHead = () =>
     requireThat(
@@ -290,6 +305,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
   const result = (published) => ({
     pr: published.number,
     url: published.html_url,
+    title: published.title,
     head: candidate.head,
     target: published.base?.ref ?? preview.target,
   });
@@ -315,7 +331,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
     ctx.onProgress('Writing the GitHub PR.\n', true);
     const published = await updateFlowPR(ctx, workspace, provider, pr, preview);
     return {
-      result: result(published),
+      result: { ...result(published), title: published.title || preview.title },
       evidence,
       workspace: { ...workspace, pr: published.number },
       summary: preview.status === 'current' ? 'PR is up to date.' : 'Published the issue PR.',

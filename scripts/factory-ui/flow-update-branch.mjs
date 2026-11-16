@@ -13,6 +13,26 @@ const head = (checkout) => git(checkout, 'rev-parse', 'HEAD');
 const branch = (checkout) => git(checkout, 'branch', '--show-current');
 const status = (checkout) => git(checkout, 'status', '--porcelain', '--untracked-files=all');
 
+export async function startingBranchUpstream(flow, readGit) {
+  const { remote, branch } = flow.target;
+  const ref = flow.startingPoint?.ref ?? `refs/remotes/${remote}/${branch}`;
+  const remoteRef = /^refs\/remotes\/([^/]+)\/(.+)$/.exec(ref);
+  if (remoteRef) return { remote: remoteRef[1], branch: remoteRef[2], tracking: ref };
+  return localBranchUpstream(ref, readGit);
+}
+
+async function localBranchUpstream(ref, readGit) {
+  const upstream = await readGit(
+    'for-each-ref',
+    '--format=%(refname)%09%(upstream:remotename)%09%(upstream:remoteref)%09%(upstream)',
+    ref
+  );
+  const line = upstream.split('\n').find((entry) => entry.startsWith(ref + '\t'));
+  const match = /^([^\t]+)\t([\w-][\w.-]*)\trefs\/heads\/([^\t]+)\t(.+)$/.exec(line ?? '');
+  requireThat(match, 'The starting branch has no remote upstream. Configure one before running Update Branch.');
+  return { remote: match[2], branch: match[3], tracking: match[4] };
+}
+
 function requireIdleCheckout({ checkout, branch: issueBranch }) {
   requireThat(branch(checkout) === issueBranch, 'The issue branch changed. Open the managed issue branch and retry.');
   const operation = gitOperations.some((name) =>
@@ -26,9 +46,9 @@ function requireIdleCheckout({ checkout, branch: issueBranch }) {
   );
 }
 
-function containsTarget(checkout, target) {
+function containsTarget(checkout, target, candidate) {
   try {
-    git(checkout, 'merge-base', '--is-ancestor', target, 'HEAD');
+    git(checkout, 'merge-base', '--is-ancestor', target, candidate);
     return true;
   } catch (error) {
     if (error.status === 1) return false;
@@ -84,16 +104,21 @@ async function resolveConflicts({ checkout, branch: issueBranch }, target, files
   }
 }
 
-export async function fetchIssueTarget(checkout, { remote, branch: targetBranch }, invoke) {
+export async function fetchIssueTarget(checkout, { remote, branch: targetBranch, tracking }, invoke) {
   requireThat(targetBranch, 'Choose a destination branch before updating the issue branch.');
   requireThat(
-    typeof remote === 'string' && /^[\w.-]+$/.test(remote) && !remote.startsWith('-'),
+    /^(?!-)[\w.-]+$/.test(remote ?? ''),
     'Configure a valid destination remote before updating the issue branch.'
   );
   git(checkout, 'check-ref-format', '--branch', targetBranch);
-  const tracking = 'refs/remotes/' + remote + '/' + targetBranch;
-  await invoke('git', ['fetch', '--no-tags', remote, '+refs/heads/' + targetBranch + ':' + tracking]);
-  return git(checkout, 'rev-parse', '--verify', tracking);
+  const refspec = fetchBranchRefspec(targetBranch, tracking ?? 'refs/remotes/' + remote + '/' + targetBranch);
+  await invoke('git', ['fetch', '--no-tags', remote, refspec]);
+  return git(checkout, 'rev-parse', '--verify', refspec.split(':')[1] ?? 'FETCH_HEAD');
+}
+
+function fetchBranchRefspec(branch, tracking) {
+  const source = 'refs/heads/' + branch;
+  return tracking.startsWith('refs/remotes/') ? '+' + source + ':' + tracking : source;
 }
 
 export async function mergeIssueTarget(checkout, target, invoke, onConflict) {
@@ -134,21 +159,29 @@ async function saveLocalChanges(checkout, invoke) {
   }
 }
 
-export async function updateIssueBranch(workspace, destination, invoke, repair, signal) {
+export async function updateIssueBranch(workspace, upstream, invoke, repair, signal) {
   const { checkout } = workspace;
   requireIdleCheckout(workspace);
-  const target = await fetchIssueTarget(checkout, destination, invoke);
+  const target = await fetchIssueTarget(checkout, upstream, invoke);
   signal.throwIfAborted();
   requireIdleCheckout(workspace);
-  if (containsTarget(checkout, target)) return { target, head: head(checkout), updated: false, evidence: [] };
+  const current = head(checkout);
+  if (containsTarget(checkout, target, current))
+    return { target, head: current, message: 'Already up to date.', evidence: [] };
 
   await saveLocalChanges(checkout, invoke);
   signal.throwIfAborted();
   requireIdleCheckout(workspace);
   requireThat(!status(checkout), 'Files changed while saving local work. Review the issue worktree before updating.');
+  const before = head(checkout);
   const evidence = await mergeIssueTarget(checkout, target, invoke, (files) => {
     signal.throwIfAborted();
     return resolveConflicts(workspace, target, files, invoke, repair, signal);
   });
-  return { target, head: head(checkout), updated: true, evidence: evidence ?? [] };
+  const result = head(checkout);
+  requireThat(containsTarget(checkout, target, result), 'The issue branch does not contain the fetched commit.');
+  requireThat(result !== before, 'Git did not move the issue branch to the updated commit.');
+  const message =
+    result === target ? 'Fast-forwarded to ' + target + '.' : git(checkout, 'show', '-s', '--format=%B', result);
+  return { target, head: result, updated: true, message, evidence: evidence ?? [] };
 }

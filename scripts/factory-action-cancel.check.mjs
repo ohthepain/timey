@@ -70,7 +70,7 @@ test('closing cancels stopped issue actions, preserves completed and shared acti
   const activeChat = f.service.store.add({ id: 'active-chat' }, 'worker', 'base');
   f.service.store.update(activeChat, { issueId: id, threadId: 'active-thread', status: 'blocked' });
   f.service.store.connected.delete(activeChat.id);
-  f.service.codex.turns.set('active-thread', { id: 'still-running' });
+  f.service.codex.turns.set('active-thread', { id: 'still-running', reject() {} });
   const calls = [];
   f.service.codex.call = async (method, params) => {
     calls.push([method, params.threadId]);

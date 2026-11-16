@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { cleanEnvironment } from './common.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { flowPRLink, lookupFlowPR } from './flow-delivery.mjs';
+import { startingBranchUpstream } from './flow-update-branch.mjs';
 
 const execute = promisify(execFile);
 export async function flowGit(root, ...args) {
@@ -61,6 +62,7 @@ export function createFlowObserver(service, options = {}) {
     });
     const failures = queries.filter((entry) => entry.status === 'rejected');
     if (failures.length) result.error = failures.map((entry) => entry.reason.message).join('\n');
+    await observeStartingBranch(root, flow, result).catch(() => {});
     if (target && checkout && result.worktreeExists) {
       try {
         const [behind, ahead] = (await flowGit(root, 'rev-list', '--left-right', '--count', `${target}...HEAD`))
@@ -101,7 +103,7 @@ export function createFlowObserver(service, options = {}) {
           return;
         }
         cache.value = {
-          pr: { ...flowPRLink(pr), head: pr.head?.sha },
+          pr: { ...flowPRLink(pr), title: pr.title, head: pr.head?.sha },
           remoteObservedAt: new Date().toISOString(),
         };
       })
@@ -113,6 +115,14 @@ export function createFlowObserver(service, options = {}) {
       });
   }
   return { observe };
+}
+async function observeStartingBranch(root, flow, result) {
+  if (!result.worktreeExists) return;
+  const readGit = (...args) => flowGit(root, ...args);
+  const upstream = await startingBranchUpstream(flow, readGit);
+  const revision = await readGit('rev-parse', '--verify', upstream.tracking + '^{commit}');
+  const behind = await readGit('rev-list', '--count', `${result.head}..${revision}`);
+  Object.assign(result, { startingBranchRevision: revision, startingBranchBehind: Number(behind) });
 }
 async function resolveTarget(root, target) {
   const local = await flowGit(root, 'rev-parse', '--verify', `refs/heads/${target.branch}`).catch(() => null);

@@ -6,13 +6,12 @@ Agreed design for the Factory issue flow.
 
 - Close and Cleanup run as a separate sequence in the same issue flow.
 - Confirming Close in the UI starts the sequence with the selected reason.
-  The dialog offers separate, unchecked choices for deleting the local and
-  remote issue branches. Cleanup attempts to remove the eligible worktree for
-  every closure reason. Manual Close waits for active work to finish or be
-  stopped explicitly.
+  The dialog is ready without discovering cleanup resources. Cleanup attempts
+  to remove the eligible worktree for every closure reason. Manual Close waits
+  for active work to finish or be stopped explicitly.
 - To delete a branch with unmerged work, select that branch explicitly after
-  reviewing what work its deletion would discard. The dialog identifies each
-  affected branch and the unmerged work at risk. Cleanup rechecks resource
+  reviewing what work its deletion would discard. The separate Cleanup dialog
+  identifies each affected branch and the unmerged work at risk. Cleanup rechecks resource
   identity, ownership, and safety before deleting anything.
 - Automatic closure requires an explicit opt-in for the issue. It records
   Fixed after Factory's Merge block succeeds and the existing requirements
@@ -40,7 +39,7 @@ requirements for Fixed.
 
 ## Verification cases
 
-- Confirm manual Close with a non-Fixed reason and neither branch selected.
+- Confirm manual Close with a non-Fixed reason while cleanup discovery is unavailable.
   Check that the issue closes, Cleanup removes the eligible worktree, and
   both branches remain.
 - Select an unmerged local or remote branch. Check that the dialog identifies

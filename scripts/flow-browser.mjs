@@ -1115,6 +1115,7 @@ try {
     git(project, 'remote', 'add', 'origin', remote);
     const target = git(project, 'commit-tree', branchTree, '-p', base, '-m', 'Target update');
     git(project, 'push', 'origin', target + ':refs/heads/older');
+    git(project, 'branch', '--set-upstream-to=origin/older', 'recent');
     const flow = service.flows.read(service.flows.selected(issueId));
     service.flows.store.save(
       {
@@ -1125,7 +1126,7 @@ try {
       flow.revision
     );
     const calls = join(output, 'opened-worktree.txt');
-    writeFileSync(join(output, 'open'), '#!/bin/sh\nprintf "%s\\n" "$1" > "$TIMEY_TEST_OPEN_LOG"\n', {
+    writeFileSync(join(output, 'open'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$TIMEY_TEST_OPEN_LOG"\n', {
       mode: 0o700,
     });
     const originalPath = process.env.PATH;
@@ -1136,28 +1137,31 @@ try {
       await menu.selectOption('open');
       await page.getByText('Opened the worktree in Finder.', { exact: true }).waitFor();
       assert.equal(readFileSync(calls, 'utf8').trim(), realpathSync(checkout));
+      await menu.selectOption('terminal');
+      await page.getByText('Opened Terminal in the worktree.', { exact: true }).waitFor();
+      assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n'), [
+        '-b',
+        'com.apple.Terminal',
+        realpathSync(checkout),
+      ]);
     } finally {
       process.env.PATH = originalPath;
       delete process.env.TIMEY_TEST_OPEN_LOG;
     }
     service.guard = () => [];
-    let verifiedHead;
     service.flows.executor = createFlowExecutor(service, {
-      async verifyCandidate(_ctx, workspace) {
-        assert.equal(workspace.base, target);
-        verifiedHead = git(workspace.checkout, 'rev-parse', 'HEAD');
-        assert.equal(git(workspace.checkout, 'merge-base', verifiedHead, target), target);
-        return { result: { head: verifiedHead }, evidence: [] };
+      async verifyCandidate() {
+        assert.fail('Update Branch must not run Verify.');
       },
     });
-    const targetMenu = page.getByRole('combobox', { name: /Target ahead by/ });
+    const targetMenu = page.getByRole('combobox', { name: /Starting branch ahead by/ });
     await targetMenu.selectOption('add');
-    await page.getByText('Update branch block added.', { exact: true }).waitFor();
+    await page.getByText('Update Branch block added.', { exact: true }).waitFor();
     const blocks = (await view()).flow.blocks;
     const workIndex = blocks.findIndex((block) => block.kind === 'work');
     const added = blocks[workIndex - 1];
-    assert.equal(added.kind, 'merge-target');
-    assert.equal(added.label, 'Update branch');
+    assert.equal(added.kind, 'update-branch');
+    assert.equal(added.label, 'Update Branch');
     assert.equal(added.attempts.length, 0);
     assert.ok(blocks[workIndex].after.includes(added.id));
     const draft = join(checkout, 'branch-draft.txt');
@@ -1170,9 +1174,7 @@ try {
     await targetMenu.selectOption('update');
     await page.locator('#target-update-progress').waitFor();
     release.resolve();
-    await page
-      .getByText('Merged the fetched target into the issue branch. Full Verify passed.', { exact: true })
-      .waitFor();
+    await page.getByText('Updated the issue branch from the starting branch.', { exact: true }).waitFor();
     await page.unroute('**/api/flow-action');
     await targetMenu.waitFor({ state: 'hidden' });
     const finished = (await view()).flow.blocks;
@@ -1181,7 +1183,6 @@ try {
       blocks.map((block) => block.id)
     );
     assert.equal(finished.find((block) => block.id === added.id).attempts.length, 0);
-    assert.equal(verifiedHead, git(checkout, 'rev-parse', 'HEAD'));
     assert.equal(git(checkout, 'merge-base', 'HEAD', target), target);
     assert.equal(git(checkout, 'show', 'HEAD:branch-draft.txt'), 'Preserve this local change.');
     assert.equal(git(project, 'rev-parse', 'HEAD'), base);
@@ -1201,6 +1202,7 @@ try {
     service.flows.store.save(flow, flow.revision);
     await page.reload();
     await page.locator(`[data-block="${publish.id}"]`).click();
+    assert.equal(await page.locator('#issue-pr-menu').isVisible(), false);
     await page.getByRole('button', { name: 'Open Request' }).waitFor();
     await page.locator('#run-block').click();
     const description = page.locator('#publish-description');
@@ -1223,8 +1225,24 @@ try {
     await page.locator('#close-publish').click();
     saved = service.flows.read(service.flows.selected(issueId));
     assert.equal(saved.blocks.find((block) => block.id === publish.id).attempts.length, publish.attempts.length);
+    const destination = saved.destination;
+    const url = 'https://github.com/test/fixture/pull/17';
+    saved.destination = { branch: 'older', pr: 17, url, title: 'Update the folder controls' };
+    saved = service.flows.store.save(saved, saved.revision);
+    await page.reload();
+    const menu = page.locator('#issue-pr-menu');
+    await menu.getByText('PR#17', { exact: true }).click();
+    const link = menu.getByRole('link', { name: 'Open', exact: true });
+    await link.waitFor();
+    assert.equal(await link.getAttribute('href'), url);
+    assert.equal(await link.getAttribute('target'), '_blank');
+    const approve = menu.getByRole('link', { name: 'Approve', exact: true });
+    assert.equal(await approve.getAttribute('href'), url + '/files');
+    assert.equal(await approve.getAttribute('target'), '_blank');
+    saved.destination = destination;
+    service.flows.store.save(saved, saved.revision);
   });
-  await check('Issue Play respects No new actions and runs Update branch without confirmation', async () => {
+  await check('Issue Play respects No new actions and runs Update Branch without confirmation', async () => {
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
@@ -1251,11 +1269,11 @@ try {
       action: 'add',
       issueId,
       revision: saved.revision,
-      kind: 'merge-target',
+      kind: 'update-branch',
       afterId: verify.id,
     });
     saved = service.flows.read(issue);
-    const sync = saved.blocks.find(({ kind }) => kind === 'merge-target');
+    const sync = saved.blocks.find(({ kind }) => kind === 'update-branch');
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
     await page.getByRole('button', { name: 'Play issue' }).click();
     await poll(

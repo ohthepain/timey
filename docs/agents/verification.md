@@ -65,9 +65,9 @@ aggregate result while the other required checks still run and report separately
 The Flow **Verify** block can check saved, uncommitted source changes. Its
 verification and step audit must report the same snapshot tree. The source
 check records symlinks by their link targets and accounts for deleted files.
-Publish PR requires a clean commit. Update branch and Merge run full Verify on
-the committed candidate against the fetched destination. Merge reuses the
-passing result when its inputs and retained evidence still match.
+Update Branch checks that the issue branch contains the fetched starting commit. Publish PR requires a clean commit.
+Merge requires full Verify on the committed candidate against the fetched
+destination and reuses passing evidence when its inputs and evidence still match.
 
 Work runs `verify -- --work-checks --write-format --base REF` to format
 issue files and check Fallow before running selected test suites. It picks
