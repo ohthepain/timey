@@ -1390,6 +1390,26 @@ try {
     assert.equal(new URL(page.url()).searchParams.has('issue'), false);
     assert.match(readFileSync(join(project, '.issues/archive', issueId + '.md'), 'utf8'), /duplicate/);
   });
+  await check('The inspector delete button confirms before removing a block', async () => {
+    issueId = '20261116-manual-fixed-fixture';
+    const issue = service.flows.selected(issueId);
+    const flow = service.flows.read(issue);
+    await service.flows.action({ action: 'add', issueId, revision: flow.revision, kind: 'advice' });
+    const added = service.flows.read(issue).blocks.find((item) => item.kind === 'advice');
+    await page.goto('/?issue=' + issueId);
+    await block('request');
+    const remove = page.getByRole('button', { name: 'Delete block', exact: true });
+    assert.equal(await remove.isDisabled(), true);
+    await block(added.id);
+    await page.getByRole('tab', { name: 'Conversation' }).click();
+    page.once('dialog', (dialog) => void dialog.dismiss());
+    await remove.click();
+    assert.ok((await view()).flow.blocks.some((item) => item.id === added.id));
+    page.once('dialog', (dialog) => void dialog.accept());
+    await clickAction(remove);
+    await page.locator(`[data-block="${added.id}"]`).waitFor({ state: 'detached' });
+    assert.ok(!(await view()).flow.blocks.some((item) => item.id === added.id));
+  });
   passed = true;
 } catch (error) {
   failure = error.stack;

@@ -1924,3 +1924,8 @@ kbd {
 .issue-close-control:hover {
   background: #493130;
 }
+
+.block-delete-control {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}

@@ -209,12 +209,23 @@
           tabindex="0"
         ></div>
         <header class="inspector-header">
-          <span class="eyebrow">INSPECTOR</span><span id="inspector-kind" class="muted">Block details</span>
+          <span class="eyebrow">INSPECTOR</span>
+          <span id="inspector-kind" class="muted">Block details</span>
         </header>
         <div class="inspector-title" id="inspector-title">
           <span class="inspector-symbol" id="inspector-symbol" aria-hidden="true">◇</span>
           <h2 id="inspector-block-name">Select a block</h2>
           <button class="primary-button" id="run-block" type="button" hidden></button>
+          <button
+            class="icon-button block-delete-control"
+            id="delete-block"
+            type="button"
+            data-action="remove"
+            aria-label="Delete block"
+            hidden
+          >
+            ×
+          </button>
         </div>
         <div class="inspector-tabs" role="tablist" aria-label="Inspector view">
           <button

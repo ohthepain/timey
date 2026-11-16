@@ -90,6 +90,19 @@ const completedBlock = (block) =>
   latestCurrentAttempt(block)?.status === 'completed' ||
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
 
+function shouldSuggestTargetUpdate(flow, environment) {
+  const id = 'target-' + environment.targetRevision;
+  if (!(environment.behind > 0) || flow.retiredBlocks?.some((block) => block.id === id)) return false;
+  return !flow.blocks.some((block) => coversTargetUpdate(block, id));
+}
+
+function coversTargetUpdate(block, id) {
+  return (
+    block.kind === 'merge-target' &&
+    (block.id === id || !block.attempts.length || ['running', 'stopping'].includes(block.attempts.at(-1)?.status))
+  );
+}
+
 function requireBranchUpdate(flow, block) {
   const pending = flow.blocks.find(
     (parent) => parent.kind === 'merge-target' && block.after.includes(parent.id) && !completedBlock(parent)
@@ -304,16 +317,7 @@ class IssueFlows {
         flow.revision = saved.revision;
       }
     }
-    if (
-      environment.behind > 0 &&
-      !flow.blocks.some(
-        (block) =>
-          block.kind === 'merge-target' &&
-          (block.id === 'target-' + environment.targetRevision ||
-            !block.attempts.length ||
-            ['running', 'stopping'].includes(block.attempts.at(-1)?.status))
-      )
-    ) {
+    if (shouldSuggestTargetUpdate(flow, environment)) {
       const suggestion = makeBlock('merge-target', [], false, catalog);
       suggestion.id = 'target-' + environment.targetRevision;
       suggestion.suggested = true;

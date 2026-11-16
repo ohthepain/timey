@@ -938,7 +938,10 @@ test('completed target merges do not hide a later target change and parallel lan
     .find((block) => block.kind === 'merge-target')
     .attempts.push({ id: 'old', status: 'completed', result: { target: 'old-target' } });
   new FlowStore(root).save(flow, 0);
-  assert.ok((await flows.view(id)).flow.blocks.some((block) => block.id === 'target-new-target'));
+  const view = await flows.view(id);
+  assert.ok(view.flow.blocks.some((block) => block.id === 'target-new-target'));
+  await flows.action({ action: 'remove', issueId: id, revision: view.flow.revision, blockId: 'target-new-target' });
+  assert.ok(!(await flows.view(id)).flow.blocks.some((block) => block.id === 'target-new-target'));
   flow = editFlow(flow, { action: 'add', kind: 'design', lane: 1 });
   const design = flow.blocks.find((block) => block.kind === 'design');
   assert.deepEqual(design.after, ['request']);

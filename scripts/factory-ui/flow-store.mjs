@@ -287,7 +287,8 @@ export function editFlow(flow, input, catalog) {
         ),
         'Stop or reconcile the block before removing it.'
       );
-      if (block.attempts.length || block.comments.length) (next.retiredBlocks ??= []).push(block);
+      if (block.attempts.length || block.comments.length || block.id.startsWith('target-'))
+        (next.retiredBlocks ??= []).push(block);
       next.blocks = next.blocks.filter((item) => item.id !== block.id);
       next.blocks.forEach((item) => {
         item.after = item.after.flatMap((id) => (id === block.id ? block.after : [id]));

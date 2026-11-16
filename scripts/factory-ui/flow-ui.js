@@ -374,7 +374,7 @@
         button.disabled =
           busy ||
           (runsBlock && operationPaused(activeBlock())) ||
-          (button.dataset.action === 'remove' && isRunning(activeBlock()));
+          (button.id === 'delete-block' && Boolean(blockDeletionReason(activeBlock())));
       });
     document
       .querySelectorAll('#inspector-body input, #inspector-body select, #inspector-body textarea')
@@ -1141,7 +1141,7 @@
     const sections = {
       settings: `<form id="block-form">${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
       progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${last ? attemptCard(last, attempts.length - 1) : `<p class="inline-empty">This block has not run yet. Review its inputs before starting.</p>`}${attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${attempts.length - 1} earlier ${attempts.length === 2 ? 'attempt' : 'attempts'}</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`,
-      sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button><button class="small-button danger-button" data-action="remove"${running || state.pending ? ' disabled' : ''}>Remove</button></div></section>`,
+      sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button></div></section>`,
       notes: comments(block),
     };
     return definitionActions(block) + Object.values(sections).join('') + contentSection(block);
@@ -1246,6 +1246,22 @@
     runButton.classList.toggle('danger-button', running);
   }
 
+  function blockDeletionReason(block) {
+    if (!block) return 'Select a block.';
+    if (block.kind === 'request') return 'Request is required for the issue flow.';
+    if (block.readOnly) return 'Manage this operation from its original controls.';
+    const closing = state.view?.flow.closing;
+    if (closing && !closing.complete) return 'Finish the closure sequence before deleting blocks.';
+    if (isRunning(block) || status(block) === 'uncertain') return 'Stop or reconcile the block before deleting it.';
+    return '';
+  }
+
+  function renderBlockDeletion(block) {
+    const button = $('delete-block');
+    button.hidden = !block;
+    button.title = blockDeletionReason(block) || 'Delete block';
+  }
+
   function renderInspector() {
     const block = activeBlock();
     const style = blockStyle(block?.definition ?? block?.kind);
@@ -1254,6 +1270,7 @@
     $('inspector-symbol').textContent = block ? style.icon : '◇';
     $('inspector-block-name').textContent = block?.label || 'Select a block';
     renderBlockRunControl(block);
+    renderBlockDeletion(block);
     setBusy(state.pending);
     const artifacts = (state.view?.artifacts || []).filter((artifact) => artifact.blockId === block?.id);
     $('artifact-count').textContent = artifacts.length || '';

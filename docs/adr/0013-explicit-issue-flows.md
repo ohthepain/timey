@@ -131,6 +131,9 @@ See [Close and Cleanup](../plans/flow-close-cleanup.md) and
 Once the issue is closed, **Archive** replaces **Close**. The menu can archive the
 saved report, reveal it in Finder, or reopen the issue for investigation.
 
+Use **×** in the inspector’s top-right corner to remove a block after
+confirmation. The original Request remains part of the flow.
+
 The artifact inspector shows evidence produced by the selected block. The latest
 run appears first. Invalidated results remain visible with their old inputs. Existing evidence from older runs appears in collapsed sections
 labeled by run number. Missing files and files that differ from their recorded
