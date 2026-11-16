@@ -72,11 +72,11 @@ Revision checks reject conflicting edits. Retrying appends an attempt. Interrupt
 ownership remains uncertain until the original provider thread is reconciled.
 The flow survives workspace deletion.
 
-An active block card shows total work time across its attempts, followed by time
+An active block card shows time on the current attempt, followed by time
 on the current command or step. The second timer resets when that label changes.
 Command output remains in Progress. Finished, failed, stopped, and disconnected
-cards show the total. The total excludes time between attempts and time waiting
-for human input. If a runner disappears, its last saved activity marks the end of
+cards show the latest attempt's duration. A retry starts its timer at zero.
+Time waiting for human input is excluded. If a runner disappears, its last saved activity marks the end of
 the attempt for timing.
 
 The controller owns flow writes. The executor owns one bounded block.

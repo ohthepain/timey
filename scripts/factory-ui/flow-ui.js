@@ -703,12 +703,11 @@
     if (!attempt) return '';
     if (attempt.inputRequestedAt || attempt.input) return 'Needs input';
     if (attempt.result?.mergeConfirmation && currentStatus === 'blocked') return 'Needs approval';
-    const previous = block.attempts.slice(0, -1).reduce((total, entry) => total + savedWorkTime(entry), 0);
     const start = Date.parse(attempt.startedAt);
     if (isRunning(block) && Number.isFinite(start)) {
       const now = Date.now();
       const stepStart = Date.parse(attempt.stepStartedAt ?? attempt.startedAt);
-      return `<span data-timer-start="${start}" data-timer-prior="${previous}" style="font-variant-numeric:tabular-nums" title="Total time spent on this block">${elapsedLabel(previous + now - start)}</span><span aria-hidden="true">·</span><span data-timer-start="${stepStart}" style="font-variant-numeric:tabular-nums" title="Time on the current command or step">${elapsedLabel(now - stepStart)}</span>`;
+      return `<span data-timer-start="${start}" style="font-variant-numeric:tabular-nums" title="Time on this attempt">${elapsedLabel(now - start)}</span><span aria-hidden="true">·</span><span data-timer-start="${stepStart}" style="font-variant-numeric:tabular-nums" title="Time on the current command or step">${elapsedLabel(now - stepStart)}</span>`;
     }
     const label = {
       completed: 'Finished in',
@@ -720,14 +719,14 @@
       uncertain: 'Disconnected after',
     }[currentStatus];
     const end = Date.parse(attempt.endedAt ?? attempt.lastActiveAt);
-    return label && Number.isFinite(end - start) ? `${label} ${elapsedLabel(previous + savedWorkTime(attempt))}` : '';
+    return label && Number.isFinite(end - start) ? `${label} ${elapsedLabel(savedWorkTime(attempt))}` : '';
   }
 
   function updateBlockTimers() {
     if (document.hidden || state.connectionError) return;
     const now = Date.now();
     for (const timer of $('graph').querySelectorAll('[data-timer-start]')) {
-      const text = elapsedLabel(Number(timer.dataset.timerPrior ?? 0) + now - Number(timer.dataset.timerStart));
+      const text = elapsedLabel(now - Number(timer.dataset.timerStart));
       if (timer.textContent !== text) timer.textContent = text;
     }
   }

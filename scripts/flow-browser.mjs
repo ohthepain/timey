@@ -909,7 +909,7 @@ try {
     await page.reload();
     await page.locator('[data-block="' + workId + '"][aria-pressed="true"]').waitFor();
     const card = page.locator('[data-block="' + workId + '"]');
-    const totalTimer = card.locator('[data-timer-start]').first();
+    const attemptTimer = card.locator('[data-timer-start]').first();
     const stepTimer = card.locator('[data-timer-start]').last();
     assert.equal(await card.locator('.block-description').innerText(), 'pnpm test');
     const originalStart = await stepTimer.getAttribute('data-timer-start');
@@ -922,14 +922,14 @@ try {
       'The command timer did not tick.'
     );
     assert.equal(await stepTimer.getAttribute('data-timer-start'), originalStart);
-    const totalStart = await totalTimer.getAttribute('data-timer-start');
+    const attemptStart = await attemptTimer.getAttribute('data-timer-start');
     firstWorkProgress.onStep('pnpm run build');
     await card
       .locator('.block-description')
       .filter({ hasText: /^pnpm run build$/ })
       .waitFor();
     assert.notEqual(await stepTimer.getAttribute('data-timer-start'), originalStart);
-    assert.equal(await totalTimer.getAttribute('data-timer-start'), totalStart);
+    assert.equal(await attemptTimer.getAttribute('data-timer-start'), attemptStart);
     await poll(
       selectedGeometry,
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
@@ -968,9 +968,8 @@ try {
     assert.match(attempts[1].output, /explicit attempt 2/);
     assert.ok(completed.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
     assert.equal(logs.execution.length, 2);
-    const seconds = Math.floor(
-      attempts.reduce((total, attempt) => total + Date.parse(attempt.endedAt) - Date.parse(attempt.startedAt), 0) / 1000
-    );
+    const retry = attempts.at(-1);
+    const seconds = Math.floor((Date.parse(retry.endedAt) - Date.parse(retry.startedAt)) / 1000);
     const expected = [Math.floor(seconds / 60), seconds % 60].map((part) => String(part).padStart(2, '0')).join(':');
     await page
       .locator('[data-block="' + workId + '"] .block-status')
@@ -1480,7 +1479,7 @@ try {
     await page.locator(`[data-block="${added.id}"]`).waitFor({ state: 'detached' });
     assert.ok(!(await view()).flow.blocks.some((item) => item.id === added.id));
   });
-  await check('Card totals exclude input waits and stop at the last saved time after disconnect', async () => {
+  await check('Block timers reset for each attempt and stop at the last saved time after disconnect', async () => {
     const issue = service.flows.selected(issueId);
     let flow = service.flows.read(issue);
     const request = flow.blocks.find((item) => item.kind === 'request');
@@ -1503,7 +1502,7 @@ try {
       endedAt: '2026-11-16T12:10:07Z',
     });
     flow = service.flows.store.save(flow, flow.revision);
-    await badge.filter({ hasText: /^Failed after 00:12$/ }).waitFor();
+    await badge.filter({ hasText: /^Failed after 00:07$/ }).waitFor();
     request.attempts.push({
       id: 'disconnected-attempt',
       status: 'running',
@@ -1511,9 +1510,9 @@ try {
       lastActiveAt: '2026-11-16T12:20:09Z',
     });
     service.flows.store.save(flow, flow.revision);
-    await badge.filter({ hasText: /^Disconnected after 00:21$/ }).waitFor();
+    await badge.filter({ hasText: /^Disconnected after 00:09$/ }).waitFor();
     await page.reload();
-    await badge.filter({ hasText: /^Disconnected after 00:21$/ }).waitFor();
+    await badge.filter({ hasText: /^Disconnected after 00:09$/ }).waitFor();
   });
   await check(
     'Flow and Classic reload the selected issue after a lost connection without replaying the click',
