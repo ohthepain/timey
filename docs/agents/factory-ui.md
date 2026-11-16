@@ -20,8 +20,8 @@ row. Its tooltip says whether a worktree has yet to be created or was deleted.
 **Open** opens it in Finder. **Update** merges the configured target branch into
 the worktree and shows progress while it runs. **Delete** opens a confirmation
 before removing the managed worktree and local branch. Update and Delete require
-a clean worktree. Drag the sidebar's
-right edge or focus the resize
+a clean worktree. An update blocked by local changes lists the files Git sees
+in the issue’s worktree. Drag the sidebar’s right edge or focus the resize
 handle and use the arrow keys to change its width. The inspector also resizes from
 its left edge. Its left arrow widens it and its right arrow narrows it. Home and
 End choose the minimum and maximum width for either panel. The browser remembers

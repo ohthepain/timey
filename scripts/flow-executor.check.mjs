@@ -746,6 +746,22 @@ test('external merge reconciliation records GitHub facts without manufacturing v
   );
 });
 
+test('Update branch names the tracked and untracked files blocking the merge', async (t) => {
+  const f = fixture(t);
+  await f.run('understand');
+  const { checkout, branch } = f.flow.workspace;
+  writeFileSync(join(checkout, 'source.txt'), 'Local change.\n');
+  writeFileSync(join(checkout, 'draft.txt'), 'Untracked work.\n');
+  await assert.rejects(f.run('merge-target'), (error) => {
+    assert.match(error.message, /Preserve checkout changes/);
+    assert.ok(error.message.includes('source.txt'));
+    assert.ok(error.message.includes('draft.txt'));
+    assert.ok(error.message.includes(branch));
+    return true;
+  });
+  assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Local change.\n');
+});
+
 test('new-flow deletion passes its actual checkout through the unchanged protected cleanup adapter', async (t) => {
   const calls = [];
   const f = fixture(t, {

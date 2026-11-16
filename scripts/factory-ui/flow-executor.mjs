@@ -791,10 +791,7 @@ async function runCommand(service, ctx, options) {
       : 'Explicit verification passed.';
     return { ...commandResult(service, ctx, result, summary, evidence), workspace };
   }
-  requireThat(
-    !git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all'),
-    'Preserve checkout changes in a commit before merging the target branch.'
-  );
+  requireCleanTargetMerge(workspace);
   const { remote, branch } = deliveryTarget(ctx.flow);
   requireThat(branch, 'Choose a destination branch before merging from target.');
   requireThat(
@@ -833,6 +830,17 @@ function usesLegacyDelivery(service, ctx) {
     work &&
     deliveryTarget(ctx.flow).branch === (work.config?.target ?? ctx.flow.target?.branch) &&
     !upstreamBlocks(ctx.block, ctx.flow.blocks).some((block) => block.attempts.some((attempt) => attempt.invalidatedAt))
+  );
+}
+
+function requireCleanTargetMerge(workspace) {
+  const status = git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all');
+  if (!status) return;
+  const entries = status.split('\n');
+  const files = entries.slice(0, 5).join(', ');
+  const remaining = entries.length > 5 ? ` and ${entries.length - 5} more` : '';
+  throw Error(
+    `Preserve checkout changes in a commit before merging the target branch. Git reports ${files}${remaining} in ${workspace.branch}.`
   );
 }
 
