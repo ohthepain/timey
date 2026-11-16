@@ -28,7 +28,7 @@
     toastTimer: null,
   };
   const kinds = {
-    request: { icon: '🗨︎', color: '#aaa49b', description: 'The goal and the evidence that will show it is done.' },
+    request: { icon: '💬', color: '#aaa49b', description: 'The goal and the evidence that will show it is done.' },
     sharpen: { icon: '◇', color: '#c6b66b', description: 'Refine the request and agree on what to do.' },
     grill: { icon: '◇', color: '#c6b66b', description: 'Resolve questions before the next step.' },
     understand: { icon: '⌕', color: '#a39bc3', description: 'Read the code and understand its behavior.' },
