@@ -194,6 +194,22 @@ test('Publish previews and publishes the exact commit without running full Verif
 
 test('a new flow closes through the actual decision writer with immutable verification and merged target evidence', async (t) => {
   const f = fixture(t);
+  const { tree } = f.ctx.flow.blocks[0].attempts[0].result;
+  const proofPath = join(f.folder, 'work-proof.json');
+  writeFileSync(proofPath, '{"observations":["moved into folder","reordered","moved out"]}');
+  const file = { path: proofPath, sha256: digest(readFileSync(proofPath)), label: 'Requested proof evidence' };
+  for (const [id, candidateTree, proof] of [
+    ['matched', tree, file],
+    ['changed', 'older-tree', file],
+    ['unavailable', tree, { ...file, sha256: 'incorrect' }],
+    ['missing', tree, undefined],
+  ]) {
+    f.ctx.flow.blocks.push({
+      id,
+      kind: 'work',
+      attempts: [{ id, status: 'completed', result: { tree: candidateTree }, artifacts: { files: { proof } } }],
+    });
+  }
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
   await f.close();
   const closed = readQueue(f.root, {
@@ -203,7 +219,21 @@ test('a new flow closes through the actual decision writer with immutable verifi
   assert.equal(closed.state, 'closed');
   assert.equal(closed.accepted_result.revision, f.input.revision);
   assert.equal(closed.accepted_result.verification_rerun, false);
-  assert.ok(closed.accepted_result.evidence.length > 2);
+  assert.ok(closed.accepted_result.evidence.some(({ sha256 }) => sha256 === file.sha256));
+  const manifest = JSON.parse(readFileSync(join(f.folder, 'merged-delivery.json'), 'utf8'));
+  assert.equal(manifest.candidateTree, tree);
+  assert.equal(manifest.workProof.requested, f.ctx.flow.request.requestedProof);
+  assert.deepEqual(
+    manifest.workProof.attempts.map(({ status }) => status),
+    ['retained', 'different-tree', 'unavailable', 'missing']
+  );
+  assert.deepEqual(manifest.workProof.attempts[0], {
+    blockId: 'matched',
+    attemptId: 'matched',
+    tree,
+    status: 'retained',
+    file,
+  });
 });
 
 function githubClosureFixture(f, checks) {

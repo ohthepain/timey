@@ -419,6 +419,28 @@ export async function assertPublicationIdle(provider, pr, branch) {
   );
 }
 
+function deliveryWorkProof(ctx, candidate) {
+  const requested = requestData(ctx.flow).fields?.requestedProof;
+  const work = upstreamBlocks(ctx.block, ctx.flow.blocks).filter(({ kind }) => kind === 'work');
+  return {
+    requested,
+    attempts: work.map((block) => {
+      const attempt = latestCurrentAttempt(block);
+      const file = attempt?.artifacts?.files?.proof;
+      const tree = attempt?.result?.tree;
+      const record = { blockId: block.id, attemptId: attempt?.id, tree };
+      if (attempt?.status !== 'completed' || !file?.sha256) return { ...record, status: 'missing' };
+      if (tree !== candidate.tree) return { ...record, status: 'different-tree' };
+      try {
+        if (digest(readFileSync(file.path)) === file.sha256) return { ...record, status: 'retained', file };
+      } catch {
+        // A missing proof file is recorded as a gap.
+      }
+      return { ...record, status: 'unavailable' };
+    }),
+  };
+}
+
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
   const type = ctx.details ? ctx.details.type : requestData(ctx.flow).fields?.type;
@@ -445,11 +467,16 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
     'The issue candidate changed while checking its merged PR. Review the current result before accepting.'
   );
   const path = join(folder, 'merged-delivery.json');
-  writeJson(path, delivered);
+  const workProof = deliveryWorkProof(ctx, candidate);
+  writeJson(path, { ...delivered, candidateTree: candidate.tree, workProof });
   return {
     revision: candidate.head,
     checkout: workspace.checkout,
-    evidence: [...candidate.evidence, { path, sha256: digest(readFileSync(path)) }],
+    evidence: [
+      ...candidate.evidence,
+      ...workProof.attempts.flatMap(({ file }) => (file ? [file] : [])),
+      { path, sha256: digest(readFileSync(path)) },
+    ],
   };
 }
 

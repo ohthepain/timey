@@ -69,6 +69,11 @@ Update Branch checks that the issue branch contains the fetched starting commit.
 Merge requires full Verify on the committed candidate against the fetched
 destination and reuses passing evidence when its inputs and evidence still match.
 
+When closing a delivered flow, the delivery manifest records the verified
+candidate tree and the upstream Work blocks' requested proof. It retains proof
+whose hash and recorded Work tree match the delivered candidate. The manifest
+records missing or unavailable proof and proof from a different tree as gaps.
+
 Work runs `verify -- --work-checks --write-format --base REF` to format
 issue files and check Fallow before running focused tests for the changed
 behavior and Requested Proof. Run individual test files or scenarios directly
