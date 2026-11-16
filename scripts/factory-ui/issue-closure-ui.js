@@ -45,12 +45,11 @@
     }
 
     function initializeFields(session, reasons, sharedQueue) {
-      const flow = session.decision.flowRevision !== undefined;
       const explanation = sharedQueue
         ? sharedExplanation
-        : flow
-          ? 'Cleanup removes the eligible worktree. Select a branch only if you want it deleted. Fixed requires the existing acceptance checks.'
-          : localExplanation;
+        : session.decision.cleanupOnly
+          ? 'Review the resources before running Cleanup.'
+          : 'Fixed requires the existing acceptance checks.';
       const options = reasons.map(reasonOption).join('');
       session.heading.insertAdjacentHTML(
         'afterend',
@@ -64,7 +63,7 @@
         panel.querySelector('#reopen-reason').closest('label').hidden = true;
         reason.value = session.decision.resolution || reason.value;
       }
-      if ((sharedQueue && !session.decision.cleanupOnly) || !reason.value) {
+      if (!session.decision.cleanupOnly || !reason.value) {
         approve.disabled = !reason.value;
         return;
       }
@@ -163,8 +162,6 @@
   };
 
   const sharedExplanation = 'The factory prepares a report PR for human review. Local work is preserved.';
-  const localExplanation =
-    'Fixed still requires the existing acceptance checks. Unmerged work is preserved by default. Select a branch or workspace only if you want it removed.';
 
   function reasonOption(choice) {
     const selected = choice.id === 'fixed' ? ' selected' : '';
