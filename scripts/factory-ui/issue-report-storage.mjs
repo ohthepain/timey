@@ -102,6 +102,10 @@ function assertExpectedReport(path, id, expectedContent) {
 }
 
 export function renameStoredIssue(root, issue, title) {
+  updateStoredIssueMetadata(root, issue, { title });
+}
+
+export function updateStoredIssueMetadata(root, issue, changes) {
   const path = storedIssuePath(root, issue.id, issue.location);
   const lock = join(root, '.issues/factory.lock');
   const temporary = path + '.' + randomUUID() + '.tmp';
@@ -110,7 +114,7 @@ export function renameStoredIssue(root, issue, title) {
     const details = reportFile(path);
     requireThat(details, 'The issue report is missing.');
     const content = readFileSync(path, 'utf8');
-    requireThat(content === issue.content, 'The issue report changed. Refresh before renaming.');
+    requireThat(content === issue.content, 'The issue report changed. Refresh before saving.');
     const header = content.match(/^(---\r?\n)([\s\S]*?)(\r?\n---(?:\r?\n|$))/);
     requireThat(header, 'The issue report has no valid metadata.');
     const metadata = parseDocument(header[2]);
@@ -118,7 +122,7 @@ export function renameStoredIssue(root, issue, title) {
       !metadata.errors.length && metadata.get('id') === issue.id,
       'The report does not belong to the selected issue.'
     );
-    metadata.set('title', title);
+    for (const [key, value] of Object.entries(changes)) metadata.set(key, value);
     const replacement = metadata.toString().trimEnd().replaceAll('\n', header[1].slice(3));
     writeFileSync(temporary, header[1] + replacement + header[3] + content.slice(header[0].length), {
       flag: 'wx',
@@ -127,6 +131,20 @@ export function renameStoredIssue(root, issue, title) {
     renameSync(temporary, path);
   } finally {
     if (stat(temporary)) unlinkSync(temporary);
+    rmdirSync(lock);
+  }
+}
+
+export function deletePendingIssueReport(root, issue) {
+  const path = storedIssuePath(root, issue.id, 'open');
+  const lock = join(root, '.issues/factory.lock');
+  mkdirSync(lock);
+  try {
+    requireThat(reportFile(path), 'The issue report is missing.');
+    assertExpectedReport(path, issue.id, issue.content);
+    requireThat(issue.state === 'needs-approval', 'Only an issue awaiting approval can be deleted here.');
+    unlinkSync(path);
+  } finally {
     rmdirSync(lock);
   }
 }

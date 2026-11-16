@@ -1,0 +1,64 @@
+# Issue retros
+
+Agreed design. See the [Close and Cleanup design](flow-close-cleanup.md) for
+the closure sequence.
+
+## Agreed behavior
+
+- The Request block owns the **Run a retro** setting. Create issue offers the
+  same setting, unchecked by default. The flow includes **Retro** only when the
+  setting is on.
+- For opted-in issues, the sequence is **Close → Retro → Cleanup**. Both the
+  issue header and the flow follow this sequence. Retro can read the history
+  before Cleanup removes the worktree transcript or archives chats.
+- If Retro fails, the issue stays Closed and Cleanup waits. The user can retry
+  Retro or explicitly continue to Cleanup.
+- Retro creates follow-ups immediately in the **Retro items** issue folder.
+  Approval is required before work starts on those follow-ups.
+- Automatically generated issues default to **Needs approval**. Create issue
+  offers **Needs approval** as an unchecked option for manual capture.
+- An issue awaiting approval shows **Needs approval** in place of
+  **Worktree** and **Close**. The menu offers **Approve** and **Delete**.
+  **Approve** restores the normal controls, keeps the issue in its current
+  folder, and leaves it idle.
+  **Delete** asks for confirmation that names the issue, then permanently
+  removes it.
+- Issue creation and implementation can happen on different machines. Saved
+  issue conversations can start before an issue worktree exists.
+- Closing a reopened issue runs a fresh Retro if **Run a retro** is still on.
+  Retrying a Retro preserves earlier approval and deletion decisions for its
+  follow-ups.
+
+## Conversation history today
+
+- Flow model blocks start and continue separate Codex threads in the managed
+  issue worktree. The local timeline stores block prompts and responses, and
+  the Flow UI shows its last 100 entries. Codex owns the native threads.
+  [Flow executor](../../scripts/factory-ui/flow-executor.mjs#L352)
+- Request clarification, the prompted flow builder, and artifact Restate use a
+  temporary workspace. Request keeps its result in the saved attempt. The flow
+  builder keeps the resulting structure.
+  [Temporary discussion runtime](../../scripts/factory-ui/discussion-codex.mjs#L20)
+- Classic can start a conversation in the project root before an issue has a
+  worktree. It can resume the same thread in the managed checkout when work
+  starts. The local transcript moves to the checkout when Factory finds it.
+  Legacy workers can use separate worktrees.
+  [Classic issue chat](../../scripts/factory-ui/issue-chat.mjs#L318),
+  [Conversation storage](../../scripts/factory-ui/conversation-store.mjs#L18)
+
+## Retro input
+
+Use the issue report and the history Retro can access from the saved timeline,
+flow attempts, and linked Codex threads. Include earlier attempts, retired
+blocks, and recorded worker results. Preserve the order within each thread.
+Use recorded times and saved attempt order to place events across threads.
+Report missing history and uncertain ordering in the retro. Save the result
+outside the worktree so it remains available after Cleanup.
+
+In shared queue mode, the report can travel with the queue. Local transcripts,
+worktrees, and runtime records stay on their runner.
+[Shared queue design](shared-issue-queue.md)
+
+Shared closure and deletion use the queue's reviewed report updates. Cleanup
+waits for the reviewed closure so the runner can retain its worktree while the
+report is pending.

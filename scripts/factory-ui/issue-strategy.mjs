@@ -550,6 +550,7 @@ function selected(service, input) {
   const queue = readQueue(service.root),
     issue = queue.issues.find((item) => item.id === input.issueId);
   requireThat(issue && /^[a-zA-Z0-9_-]+$/.test(issue.id), 'Select an existing issue.');
+  requireThat(issue.state !== 'needs-approval', 'Approve this issue before starting work.');
   requireThat(
     !['closed', 'ready-to-close'].includes(queue.lifecycle.find((stage) => stage.state === issue.state)?.role),
     'Reopen this issue explicitly before starting work.'
@@ -617,6 +618,7 @@ export async function prepareIssueChatCheckout(service, issueId) {
   const queue = readQueue(service.root);
   const issue = queue.issues.find((entry) => entry.id === issueId);
   requireThat(issue, 'Select an existing issue.');
+  requireThat(issue.state !== 'needs-approval', 'Approve this issue before creating its worktree.');
   requireThat(
     queue.lifecycle.find((stage) => stage.state === issue.state)?.role !== 'closed',
     'Reopen this issue before editing code.'

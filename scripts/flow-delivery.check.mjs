@@ -15,6 +15,7 @@ import { decideIssue } from './factory-ui/issue-decision.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
 
 function fixture(t) {
   const f = deliveryFixture(t);
@@ -204,6 +205,62 @@ test('a new flow closes through the actual decision writer with immutable verifi
   assert.equal(closed.accepted_result.verification_rerun, false);
   assert.ok(closed.accepted_result.evidence.length > 2);
 });
+
+function githubClosureFixture(f, checks) {
+  const provider = new StrategyProvider(f.workspace.checkout, f.provider.config);
+  const { head } = f.ctx.flow.blocks[0].attempts[0].result;
+  const repo = { full_name: provider.config.repository };
+  provider.findByBranch = f.provider.findByBranch;
+  provider.inspect = async () => ({
+    state: 'closed',
+    merged_at: '2026-11-13T10:00:00Z',
+    merge_commit_sha: 'merge-revision',
+    head: { sha: head, ref: f.workspace.branch, repo },
+    base: { ref: 'dev', repo },
+  });
+  provider.gh = async ([command, resource]) => {
+    if (command === 'pr') return JSON.stringify({ files: [{ path: 'src/feature.ts' }], statusCheckRollup: checks });
+    if (resource.includes('/compare/')) {
+      assert.equal(resource, 'repos/test/fixture/compare/merge-revision...target-sha');
+      return JSON.stringify({ status: 'ahead', behind_by: 0 });
+    }
+    assert.equal(resource, 'graphql');
+    const pullRequest = {
+      headRefOid: head,
+      baseRefName: 'dev',
+      baseRefOid: 'base-before-merge',
+      baseRef: { target: { oid: 'target-sha' } },
+      commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: checks } } } }] },
+    };
+    return JSON.stringify([{ data: { repository: { pullRequest } } }]);
+  };
+  f.options.provider = provider;
+}
+
+const failedCheck = { __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' };
+
+for (const [label, checks] of [
+  ['no observed checks', []],
+  ['a failed optional check', [{ ...failedCheck, isRequired: false }]],
+  ['a pending optional check', [{ ...failedCheck, status: 'IN_PROGRESS', isRequired: false }]],
+])
+  test(`Close accepts a merged PR with ${label}`, async (t) => {
+    const f = fixture(t);
+    githubClosureFixture(f, checks);
+    await f.close();
+    assert.equal(readQueue(f.root, { location: 'closed', issueId: f.ctx.issue.id }).issues[0].state, 'closed');
+  });
+
+for (const [check, reason] of [
+  [failedCheck, /Failed checks/],
+  [{ ...failedCheck, status: 'IN_PROGRESS' }, /PR checks are pending/],
+])
+  test(`Close blocks on a required ${check.status === 'COMPLETED' ? 'failed' : 'pending'} check`, async (t) => {
+    const f = fixture(t);
+    githubClosureFixture(f, [{ ...check, isRequired: true }]);
+    await assert.rejects(f.close(), reason);
+    assert.equal(readQueue(f.root).issues[0].state, 'verify');
+  });
 
 for (const status of ['pending', 'failed'])
   test(`flow closure retains the actual ${status} human observation guard`, async (t) => {

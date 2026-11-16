@@ -12,6 +12,14 @@ import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/pr
 import { humanGuard } from './factory-ui/guard.mjs';
 import { ViewSources } from './factory-ui/view-sources.mjs';
 import { BlockCatalog, blockExtensions, userBlocks } from './factory-ui/block-catalog.mjs';
+import { FactoryUI } from './factory-ui/service.mjs';
+import { readQueue } from './factory-ui/data.mjs';
+import { decisionBasis } from './factory-ui/recorded-result.mjs';
+import { issueCleanupIdentities, previewIssueCleanupResource } from './factory-ui/issue-cleanup.mjs';
+import { saveConversationState } from './factory-ui/conversation-store.mjs';
+import { runRetro } from './factory-ui/flow-retro.mjs';
+import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 test('Markdown block defaults apply to new blocks and user definitions keep the Work operation', (t) => {
   const { root } = gitFixture(t, 'block-catalog-');
@@ -847,7 +855,7 @@ test('export links the exact current structure without rebuilding or changing pr
     exported.flow.blocks.map((block) => block.id),
     before.flow.blocks.map((block) => block.id)
   );
-  const altered = await act(exported, 'add', { kind: 'retro', afterId: 'work' });
+  const altered = await act(exported, 'add', { kind: 'sharpen', afterId: 'work' });
   const rebuilt = await act(altered, 'rebuild-flow');
   const structure = (view) => view.flow.blocks.map(({ id, after, lane }) => ({ id, after, lane }));
   assert.deepEqual(structure(rebuilt), structure(exported));
@@ -892,6 +900,25 @@ test('block graph rejects cycles and preserves attempted history', (t) => {
   assert.deepEqual(removed.retiredBlocks[0].attempts, [{ id: 'attempt', status: 'blocked' }]);
 });
 
+test('Work waits for its Update branch prerequisite even when Work uses a parallel lane', async (t) => {
+  const { id, service } = fixture(t);
+  const flows = createIssueFlows(service, { executor: executor(async () => ({ summary: 'Completed' })) });
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  flow.blocks.find((block) => block.id === 'work').lane = 1;
+  const next = editFlow(flow, { action: 'add', kind: 'merge-target' });
+  const saved = flows.store.save(next, flow.revision);
+  const work = saved.blocks.find((block) => block.id === 'work');
+  const update = saved.blocks[saved.blocks.indexOf(work) - 1];
+  assert.equal(update.lane, work.lane);
+  assert.ok(work.after.includes(update.id));
+  const start = (blockId, revision) => flows.action({ action: 'start', issueId: id, blockId, revision });
+  await assert.rejects(start(work.id, saved.revision), /Complete Update branch successfully/);
+  await start(update.id, saved.revision);
+  await flows.active.get(id)?.task;
+  await start(work.id, flows.read(issue).revision);
+  await flows.active.get(id)?.task;
+});
 test('completed target merges do not hide a later target change and parallel lanes join before publication', async (t) => {
   const { root, id, service } = fixture(t);
   const flows = createIssueFlows(service, {
@@ -904,6 +931,9 @@ test('completed target merges do not hide a later target change and parallel lan
   });
   let flow = flows.read(flows.selected(id));
   flow = editFlow(flow, { action: 'add', kind: 'merge-target' });
+  const workIndex = flow.blocks.findIndex((block) => block.kind === 'work');
+  assert.equal(flow.blocks[workIndex - 1].label, 'Update branch');
+  assert.ok(flow.blocks[workIndex].after.includes(flow.blocks[workIndex - 1].id));
   flow.blocks
     .find((block) => block.kind === 'merge-target')
     .attempts.push({ id: 'old', status: 'completed', result: { target: 'old-target' } });
@@ -945,6 +975,237 @@ test('cleanup remains explicitly runnable after issue closure while new code wor
   });
   await flows.active.get(id)?.task;
   assert.equal(ran, 'delete-worktree');
+});
+
+test('opted-in closure holds the worktree until Retro succeeds and files idle approval issues', async (t) => {
+  const { id, root, git } = fixture(t);
+  cpSync(new URL('../.issues/triage-labels.md', import.meta.url), join(root, '.issues/triage-labels.md'));
+  const helperDirectory = join(root, '.agents/skills/issues/scripts');
+  mkdirSync(helperDirectory, { recursive: true });
+  for (const file of ['human-input.mjs', 'human-input-version.json'])
+    cpSync(new URL('../.agents/skills/issues/scripts/' + file, import.meta.url), join(helperDirectory, file));
+  writeFileSync(join(root, '.gitignore'), '/.issues/\n');
+  git('add', '.gitignore');
+  git('commit', '-qm', 'Ignore fixture runtime');
+  const branch = 'codex/issue-' + id;
+  const checkout = join(root, '.issues/issue-work', id);
+  mkdirSync(join(root, '.issues/issue-work'));
+  git('worktree', 'add', '-qb', branch, checkout);
+  const service = new FactoryUI(root);
+  t.after(() => service.close());
+  const proposals = ['Keep this proposal', 'Remove this proposal'].map((title) => ({
+    title,
+    description: 'Follow-up description.',
+    reason: 'Observed friction.',
+    verification: 'Re-run the check.',
+    requestId: randomUUID(),
+  }));
+  let retroRuns = 0;
+  const flows = (service.flows = createIssueFlows(service, {
+    deliveryOptions: {
+      runRetro: async () => {
+        retroRuns++;
+        assert.equal(existsSync(checkout), retroRuns <= 2);
+        if (retroRuns !== 2) throw Error('Retro fixture failed');
+        return { summary: 'Retro completed.', recommendations: proposals };
+      },
+    },
+  }));
+  let flow = flows.read(flows.selected(id));
+  flow.workspace = { checkout, branch, base: git('rev-parse', 'HEAD') };
+  flows.store.save(flow, flow.revision);
+  const submit = (view, action, extra) =>
+    flows.action({
+      issueId: view.issue.id,
+      revision: view.flow.revision,
+      action,
+      ...extra,
+    });
+  const waitUntil = async (condition) => {
+    for (let index = 0; index < 200; index++) {
+      if (condition()) return;
+      await delay(20);
+    }
+    assert.fail('The expected closure state was not reached.');
+  };
+  let view = await flows.view(id);
+  assert.equal(
+    view.flow.blocks.some((item) => item.kind === 'retro'),
+    false
+  );
+  view = await submit(view, 'retro-setting', { enabled: true });
+  assert.equal(
+    view.flow.blocks.some((item) => item.kind === 'retro'),
+    true
+  );
+  const queue = readQueue(root, { issueId: id });
+  const issue = queue.issues[0];
+  flows.closeWithReason({
+    issueId: id,
+    flowRevision: view.flow.revision,
+    state: issue.state,
+    basis: decisionBasis(queue, issue),
+    resolution: 'duplicate',
+    reason: 'Fixture.',
+  });
+  const read = () => flows.read(flows.selected(id));
+  await waitUntil(
+    () =>
+      read()
+        .blocks.find((item) => item.kind === 'retro')
+        ?.attempts.at(-1)?.status === 'blocked'
+  );
+  assert.equal(flows.selected(id).closed, true);
+  assert.equal(existsSync(checkout), true);
+  assert.equal(read().blocks.find((item) => item.kind === 'cleanup').attempts.length, 0);
+  assert.equal(
+    flows.issues().some((item) => item.state === 'needs-approval'),
+    false
+  );
+  await submit(await flows.view(id), 'retry-closure');
+  await waitUntil(() => read().closing.complete);
+  assert.equal(existsSync(checkout), false);
+  assert.equal(git('rev-parse', branch), git('rev-parse', 'HEAD'));
+  const children = flows.issues().filter((item) => item.state === 'needs-approval');
+  assert.equal(children.length, 2);
+  const [keep, remove] = proposals.map(({ title }) => children.find((child) => child.title === title));
+  const pending = await flows.view(keep.id);
+  assert.equal(pending.flow.folder, 'Retro items');
+  await assert.rejects(submit(pending, 'play'), /Approve/);
+  const approved = await submit(pending, 'approve-issue');
+  assert.equal(approved.issue.state, 'backlog');
+  assert.equal(approved.issue.issueNumber, pending.issue.issueNumber);
+  assert.equal(approved.flow.folder, 'Retro items');
+  assert.equal(
+    approved.flow.blocks.every((item) => item.attempts.length === 0),
+    true
+  );
+  await submit(await flows.view(remove.id), 'delete-pending-issue', { title: remove.title });
+  await flows.fileRetroItems(proposals);
+  assert.equal(
+    flows.issues().some((item) => item.id === remove.id),
+    false
+  );
+  assert.equal(flows.issues().filter((item) => item.title === keep.title).length, 1);
+
+  const context = flows.cleanupContext(id);
+  const local = issueCleanupIdentities(context, id).resources.find((item) => item.kind === 'local-branch');
+  const { resource } = await previewIssueCleanupResource(context, id, local.id);
+  assert.equal(resource.eligible, true);
+  await submit(await flows.view(id), 'cleanup-again', { cleanup: { selectedResources: [resource] } });
+  await waitUntil(() => read().closing.complete && !flows.closureBusy(id));
+  assert.equal(git('branch', '--list', branch), '');
+
+  const previousClosure = read().closing.id;
+  const closedQueue = readQueue(root, { issueId: id, location: 'closed' });
+  const closedIssue = closedQueue.issues[0];
+  service.decideIssue(id, closedIssue.state, 'reopen', decisionBasis(closedQueue, closedIssue));
+  flows.reopened(id);
+  const reopenedQueue = readQueue(root, { issueId: id });
+  const reopened = reopenedQueue.issues[0];
+  flows.closeWithReason({
+    issueId: id,
+    flowRevision: read().revision,
+    state: reopened.state,
+    basis: decisionBasis(reopenedQueue, reopened),
+    resolution: 'obsolete',
+    reason: 'Fixture reopened.',
+  });
+  await waitUntil(() => !flows.closureBusy(id));
+  assert.notEqual(read().closing.id, previousClosure);
+  assert.equal(retroRuns, 3);
+  await submit(await flows.view(id), 'skip-retro');
+  await waitUntil(() => read().closing.complete);
+  assert.equal(read().closing.skipRetro, true);
+});
+
+test('automatic closure requires an unrevoked opt-in and a Factory-confirmed Merge', async (t) => {
+  const { id, service } = fixture(t);
+  const confirmed = { summary: 'Confirmed merge', result: { mergeOrigin: 'factory-confirmed' } };
+  let outcome = Promise.resolve(confirmed);
+  const flows = createIssueFlows(service, { executor: executor(() => outcome) });
+  const closed = [];
+  flows.autoClose = async (issueId) => closed.push(issueId);
+  const action = async (name, fields) => {
+    const { flow } = await flows.view(id);
+    return flows.action({ issueId: id, revision: flow.revision, action: name, ...fields });
+  };
+  const start = () => action('start', { blockId: 'merge' });
+  await start();
+  await flows.active.get(id)?.task;
+  assert.deepEqual(closed, []);
+
+  await action('auto-close-setting', { enabled: true });
+  outcome = Promise.resolve({ summary: 'Observed merge', result: { mergeOrigin: 'observed-merged' } });
+  await start();
+  await flows.active.get(id)?.task;
+  assert.deepEqual(closed, []);
+
+  const merge = Promise.withResolvers();
+  outcome = merge.promise;
+  await start();
+  const pending = flows.active.get(id)?.task;
+  await action('auto-close-setting', { enabled: false });
+  merge.resolve(confirmed);
+  await pending;
+  assert.deepEqual(closed, []);
+
+  await action('auto-close-setting', { enabled: true });
+  await start();
+  await flows.active.get(id)?.task;
+  assert.deepEqual(closed, [id]);
+});
+
+test('Retro reads linked threads in the available provider and reports missing history', async (t) => {
+  const { root, id } = fixture(t);
+  cpSync(new URL('../.issues/triage-labels.md', import.meta.url), join(root, '.issues/triage-labels.md'));
+  const service = new FactoryUI(root);
+  t.after(() => service.close());
+  const flows = createIssueFlows(service);
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  saveConversationState(root, id, {
+    threadId: 'late',
+    flowBlocks: {
+      work: { threadId: 'early' },
+      verify: { threadId: 'missing' },
+    },
+  });
+  let ready = false;
+  service.codex.ready = async () => {
+    ready = true;
+  };
+  service.codex.call = async (method, { threadId, includeTurns }) => {
+    assert.equal(ready, true);
+    assert.equal(method, 'thread/read');
+    assert.equal(includeTurns, true);
+    if (threadId === 'missing') throw Error('History stored on another runner');
+    return { thread: { createdAt: threadId === 'early' ? 1 : 2, turns: [{ items: [] }] } };
+  };
+  const result = await runRetro(
+    service,
+    {
+      issue,
+      flow,
+      definition: { prompt: 'Review the issue.' },
+      signal: new AbortController().signal,
+    },
+    () => ({
+      async begin() {},
+      async ask(input) {
+        const history = JSON.parse(input);
+        assert.deepEqual(
+          history.threads.map(({ id }) => id),
+          ['early', 'late', 'missing']
+        );
+        assert.equal(history.threads[2].unavailable, true);
+        return JSON.stringify({ summary: 'Reviewed the available history.', recommendations: [] });
+      },
+      close() {},
+    })
+  );
+  assert.equal(result.summary, 'Reviewed the available history.');
+  assert.equal(flow.workspace, null);
 });
 
 test('new investigations propose understanding and acceptance without code delivery blocks', (t) => {

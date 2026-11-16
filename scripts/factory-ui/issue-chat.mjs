@@ -21,7 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { IssuePromptScheduler } from './issue-prompt-scheduler.mjs';
 import { addPrompt, readPromptQueue, changePrompt, pendingPrompts } from './issue-prompt-queue.mjs';
 
-const retroSchema = {
+export const retroSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -149,6 +149,7 @@ class IssueChats {
       'A flow block owns this issue. Stop it before sending a classic chat prompt.'
     );
     const { issue } = this.selected(input.issueId, input.mode === 'comment');
+    requireThat(issue.state !== 'needs-approval', 'Approve this issue before starting its chat.');
     this.service.ownServer();
     if (input.mode === 'answer') return this.sendAnswer(input);
     const queue = this.scheduler.read(issue.id);

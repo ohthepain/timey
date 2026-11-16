@@ -261,8 +261,8 @@ export class FactoryUI {
   connectWorker(id, state, basis, link) {
     return connectWorker(this, id, state, basis, link);
   }
-  decideIssue(id, state, kind, basis, reason, resolution, cleanup) {
-    return decideIssue(this, id, state, kind, basis, reason, resolution, cleanup);
+  decideIssue(id, state, kind, basis, reason, resolution, cleanup, artifact, options) {
+    return decideIssue(this, id, state, kind, basis, reason, resolution, cleanup, artifact, options);
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);

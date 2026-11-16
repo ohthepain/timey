@@ -193,9 +193,22 @@ intent. Publication, merge, successful checks and strategy completion do not imp
 The recorded decision to end work on an issue, either with an accepted fix or a
 stated reason for closing without a fix. It is independent of historical lifecycle stages.
 
+**Issue cleanup**:
+Removal of a closed issue's worktree and any selected local or remote issue
+branches. Incomplete cleanup can be retried while the issue stays closed.
+
 **Issue archive**:
 A locally retained collection of closed issue reports. Archiving removes an issue
 from the Closed issues view and preserves its identity and closure.
+
+**Retro**:
+A review of what happened on an issue and what could improve future work.
+
+**Retro item**:
+A follow-up issue proposed by a retro.
+
+**Needs approval**:
+The state of an issue that awaits an explicit decision before work can start.
 
 **Flow definition**:
 A reusable description of how to build an issue flow and which issue types

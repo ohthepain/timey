@@ -65,6 +65,9 @@ export function conversationState(root, issueId) {
   const saved = readConversationState(state, issueId);
   return nativeConversationState(saved, readProgress(root)[issueId]?.nativeChat);
 }
+export function boundConversationThreads(state) {
+  return [state.threadId, ...Object.values(state.flowBlocks || {}).map((block) => block.threadId)].filter(Boolean);
+}
 function readConversationState(path, issueId) {
   if (!existsSync(path)) return { version: 1, issueId, status: 'idle' };
   const saved = JSON.parse(readFileSync(path, 'utf8'));

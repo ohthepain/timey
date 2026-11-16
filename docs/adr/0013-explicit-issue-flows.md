@@ -19,8 +19,13 @@ A starting point records the full Git ref, display name and exact base commit.
 New issues start from the configured delivery branch. Destination follows the
 starting branch on the configured remote until explicitly pinned. An existing
 PR establishes the locked Destination. External base changes require explicit
-acceptance before Publish or Merge. Merge from target reads Destination and
-keeps the checkout's original base.
+acceptance before Publish or Merge. Update branch reads Destination and
+keeps the checkout's original base. The **Target ahead** menu can run **Update
+branch** immediately with a progress indicator, or add an **Update branch**
+block that must succeed before **Work** can run. With Play active, **Work**
+starts when the update succeeds. The immediate action leaves
+the flow graph intact. The route's
+existing update before **Publish PR** stays in place.
 Folder rows in the flow sidebar provide a direct issue capture action; captured
 issues save the selected folder in their flow at creation.
 
@@ -108,15 +113,31 @@ checks or unsuccessful optional checks. The Merge block Markdown sets the merge
 policy, polling interval, check timeout, and repair limit. Human-first policy
 requires approval of the current issue commit and target revision. A change to
 either revision expires approval. GitHub App publication and GitHub protection
-apply. Explicit acceptance and cleanup ownership checks remain separate.
+apply. Close confirms that the target still contains the merged PR and checks
+only the GitHub checks required for that PR. Zero required checks is valid.
+Explicit acceptance and cleanup ownership checks remain separate.
+
+An open, approved issue has **Close** beside **Worktree**. The header and Close
+block use the same dialog and start a separate closure sequence in the issue
+flow. Close records the selected reason, then Retro runs if enabled in Request.
+Cleanup runs last. If Retro fails, Cleanup waits for a retry or an explicit
+choice to continue. Closing as **Fixed** still requires retained evidence and
+all acceptance checks. Auto-close requires explicit consent for the delivery
+and starts only after Factory confirms its own Merge. Pending issues replace
+Worktree and Close with **Needs approval**.
+
+See [Close and Cleanup](../plans/flow-close-cleanup.md) and
+[Issue retros](../plans/issue-retros.md).
+Once the issue is closed, **Archive** replaces **Close**. The menu can archive the
+saved report, reveal it in Finder, or reopen the issue for investigation.
 
 The artifact inspector shows evidence produced by the selected block. The latest
 run appears first. Invalidated results remain visible with their old inputs. Existing evidence from older runs appears in collapsed sections
 labeled by run number. Missing files and files that differ from their recorded
 digest are omitted. Deleting evidence invalidates any proof that requires it.
 Inspect shows raw text and offers a Restate toggle that applies the bro skill’s
-plain-language guidance in a temporary discussion. Workspace removal uses the protected cleanup
-adapter and retains its backups.
+plain-language guidance in a temporary discussion. **Worktree → Delete** and
+the **Delete worktree** block use the same protected cleanup and retain its backups.
 
 ## Issue Play and Pause
 

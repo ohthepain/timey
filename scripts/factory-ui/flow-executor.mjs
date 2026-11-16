@@ -9,7 +9,14 @@ import { conversationState, saveConversationState, appendMessage } from './conve
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
-import { deleteIssueWorktree, issueHasActiveWork } from './issue-cleanup.mjs';
+import {
+  deleteIssueWorktree,
+  issueCleanupRecord,
+  issueHasActiveWork,
+  retryIssueCleanup,
+  runFlowCleanup,
+  worktreeCleanupService,
+} from './issue-cleanup.mjs';
 import { decideIssue } from './issue-decision.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { readQueue } from './data.mjs';
@@ -18,9 +25,19 @@ import { redactValue } from './activity.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
 import { runFlowVerification } from './flow-verification.mjs';
+import { runRetro } from './flow-retro.mjs';
 
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
-const commandBlocks = new Set(['verify', 'merge-target', 'publish', 'merge', 'close', 'delete-worktree']);
+const commandBlocks = new Set([
+  'verify',
+  'merge-target',
+  'publish',
+  'merge',
+  'retro',
+  'close',
+  'cleanup',
+  'delete-worktree',
+]);
 const maxWorkRepairs = 3;
 
 export function createFlowExecutor(service, options = {}) {
@@ -129,7 +146,7 @@ function assertIdle(service, issueId) {
   );
 }
 
-async function workspaceFor(service, ctx) {
+async function workspaceFor(service, ctx, prepare = true) {
   const record = service.lifecycleRuns[ctx.issue.id] || {
     id: randomUUID(),
     issueId: ctx.issue.id,
@@ -138,6 +155,7 @@ async function workspaceFor(service, ctx) {
     retriedRuns: [],
   };
   const saved = record.work || record.chatCheckout || ctx.flow.workspace;
+  requireThat(prepare || saved?.checkout, 'The issue needs a saved checkout before accepting its result.');
   const workspace = saved?.checkout
     ? { checkout: saved.checkout, branch: saved.branch, base: saved.base }
     : {
@@ -186,9 +204,23 @@ async function workspaceFor(service, ctx) {
   );
   git(canonical, 'rev-parse', '--verify', workspace.base);
   workspace.checkout = canonical;
-  if (!record.work) saveLifecycle(service, record, { chatCheckout: { ...workspace } });
+  if (prepare && !record.work) saveLifecycle(service, record, { chatCheckout: { ...workspace } });
   await ctx.onWorkspace?.(workspace);
   return workspace;
+}
+
+export async function manualFlowClosureArtifact(service, issue, flow, options) {
+  const ctx = {
+    issue,
+    flow,
+    block: {},
+    attempt: { id: randomUUID() },
+    input: { confirmed: true },
+    signal: new AbortController().signal,
+  };
+  if (usesLegacyDelivery(service, ctx) || !flow.workspace?.checkout) return null;
+  const workspace = await workspaceFor(service, ctx, false);
+  return flowClosureArtifact(service, ctx, workspace, evidenceDirectory(service, ctx), options);
 }
 
 function startingRevision(root, flow) {
@@ -647,11 +679,33 @@ async function runCommand(service, ctx, options) {
   const kind = ctx.block.kind;
   const record = service.lifecycleRuns[ctx.issue.id];
   const work = record?.work;
-  const flowWasEdited = upstreamBlocks(ctx.block, ctx.flow.blocks).some((block) =>
-    block.attempts.some((attempt) => attempt.invalidatedAt)
-  );
-  const useLegacyDelivery =
-    work && !flowWasEdited && deliveryTarget(ctx.flow).branch === (work.config?.target ?? ctx.flow.target?.branch);
+  if (kind === 'retro') {
+    const result = await (options.runRetro || runRetro)(service, ctx);
+    return commandResult(service, ctx, result, result.summary);
+  }
+  if (kind === 'cleanup') {
+    const saved = work || record?.chatCheckout || ctx.flow.workspace;
+    const workspace = saved && { ...saved };
+    if (workspace && !workspace.config) {
+      try {
+        workspace.config = await flowCleanupConfig(service, ctx, workspace, options);
+      } catch {
+        const { branch: target, remote } = deliveryTarget(ctx.flow);
+        workspace.config = { target, remote };
+      }
+    }
+    const cleanupService = workspace ? worktreeCleanupService(service, ctx.issue.id, workspace) : service;
+    const previous = issueCleanupRecord(service.root, ctx.issue.id);
+    const result =
+      !ctx.input.freshCleanup && previous?.status === 'incomplete' && previous.closure?.at === ctx.issue.closure?.at
+        ? (await retryIssueCleanup(cleanupService, ctx.issue.id, previous, ctx.input.resourceId)).cleanup
+        : await runFlowCleanup(cleanupService, ctx.issue.id, ctx.flow.closing.resolution, ctx.flow.closing.branches);
+    const complete = result.status === 'complete';
+    return {
+      ...commandResult(service, ctx, result, complete ? 'Cleanup complete.' : 'Cleanup needs attention.'),
+      status: complete ? 'completed' : 'blocked',
+    };
+  }
   if (['publish', 'close', 'delete-worktree'].includes(kind))
     requireThat(
       ctx.input?.confirmed === true,
@@ -680,7 +734,7 @@ async function runCommand(service, ctx, options) {
     const queue = readQueue(service.root);
     const issue = queue.issues.find((item) => item.id === ctx.issue.id);
     requireThat(issue, 'This issue is no longer open. Refresh its saved closure.');
-    const artifact = useLegacyDelivery
+    const artifact = usesLegacyDelivery(service, ctx)
       ? null
       : await flowClosureArtifact(
           service,
@@ -704,17 +758,9 @@ async function runCommand(service, ctx, options) {
     return commandResult(service, ctx, result, 'The protected acceptance and closure operation finished.');
   }
   if (kind === 'delete-worktree') {
-    requireThat(
-      record?.work?.checkout || record?.chatCheckout?.checkout,
-      'No managed checkout is recorded for this issue.'
-    );
-    const cleanupService = Object.create(service);
-    cleanupService.lifecycleRuns = Object.fromEntries(
-      Object.entries(service.lifecycleRuns).map(([id, saved]) => [
-        id,
-        saved.work || !saved.chatCheckout ? saved : { ...saved, work: saved.chatCheckout },
-      ])
-    );
+    const workspace = record?.work || record?.chatCheckout || ctx.flow.workspace;
+    requireThat(workspace?.checkout, 'No managed checkout is recorded for this issue.');
+    const cleanupService = worktreeCleanupService(service, ctx.issue.id, workspace);
     const remove = options.deleteWorktree || deleteIssueWorktree;
     const expected = await remove(cleanupService, { issueId: ctx.issue.id });
     ctx.signal.throwIfAborted();
@@ -774,6 +820,20 @@ async function runCommand(service, ctx, options) {
     ),
     workspace,
   };
+}
+
+async function flowCleanupConfig(service, ctx, workspace, options) {
+  const { flowDeliveryProvider } = await import('./flow-delivery.mjs');
+  return flowDeliveryProvider(service, ctx, workspace, options).config;
+}
+
+function usesLegacyDelivery(service, ctx) {
+  const work = service.lifecycleRuns[ctx.issue.id]?.work;
+  return (
+    work &&
+    deliveryTarget(ctx.flow).branch === (work.config?.target ?? ctx.flow.target?.branch) &&
+    !upstreamBlocks(ctx.block, ctx.flow.blocks).some((block) => block.attempts.some((attempt) => attempt.invalidatedAt))
+  );
 }
 
 function commandResult(service, ctx, result, summary, evidence = []) {

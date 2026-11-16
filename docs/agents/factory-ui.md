@@ -16,9 +16,11 @@ remain available while the lifecycle file is missing.
 The default page is the [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
 It shows issue folders, a downward block graph, and a block inspector. Issue names
 include their numbers and wrap. The **Worktree** menu appears in the branch status
-row when a checkout exists. **Open** opens it in Finder. **Update** starts a
-Merge from target block that fetches the configured target branch and merges it
-into the issue worktree. The merge requires a clean worktree. Drag the sidebar's
+row. Its tooltip says whether a worktree has yet to be created or was deleted.
+**Open** opens it in Finder. **Update** merges the configured target branch into
+the worktree and shows progress while it runs. **Delete** opens a confirmation
+before removing the managed worktree and local branch. Update and Delete require
+a clean worktree. Drag the sidebar's
 right edge or focus the resize
 handle and use the arrow keys to change its width. The inspector also resizes from
 its left edge. Its left arrow widens it and its right arrow narrows it. Home and
@@ -1237,7 +1239,9 @@ connector above them. Every square still links to its expanded issue step.
 
 ## Closing without completing the work
 
-Every open issue has **Close with reason…** above its chat. Choose a reason and
+An open, approved issue has **Close** beside **Worktree** in Flow and
+**Close with reason…** above its chat in Classic. Both buttons open the closure
+dialog. Choose a reason and
 optionally add details or the duplicate issue ID. The project’s editable
 `.issues/triage-labels.md` defines the reasons in a Closed reasons table with
 ID, Label and Meaning columns. Older projects use the standard reasons until
@@ -1249,9 +1253,17 @@ must finish first. Accepting the issue as Fixed still requires that outstanding
 result to be reviewed. The report records the reason, label, time and optional
 details, and the page shows them after closure. Reopening preserves the decision
 in history.
-Changed reports or reason lists invalidate an open decision; duplicate submissions
-cannot close twice. This explicit user disposition is separate from automatic
-Progress, which still cannot close issues.
+Changed reports or reason lists invalidate an open decision. In Flow, manual
+Close records the decision, runs the opted-in Retro, then starts Cleanup.
+Turn on auto-close in Request to record Fixed after Factory confirms its own
+merge and the existing acceptance requirements pass. Each branch requires its
+own deletion choice. In shared queue mode, Cleanup waits for the reviewed
+closure to reach the shared queue.
+
+Create issue offers **Run a retro** and **Needs approval**. Both start unchecked.
+Retro files follow-ups in **Retro items** as **Needs approval**. **Approve**
+keeps the item in its folder and restores normal controls. **Delete** asks for
+confirmation before removing the item. [Issue retros](../plans/issue-retros.md)
 
 When an open issue has a saved strategy PR and checkout, **Verify this commit again**
 appears beside **Close with reason…**. It reruns the required local checks against

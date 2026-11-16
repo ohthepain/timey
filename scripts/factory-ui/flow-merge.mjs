@@ -118,6 +118,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
   service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id], worker_revision: head }, 'merge', target);
   ctx.signal.throwIfAborted();
   let merged;
+  let mergeOrigin = 'factory-confirmed';
   try {
     merged = await provider.merge(pr.number, head, {
       beforeMerge: async () => {
@@ -142,9 +143,10 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
       throw error;
     }
     merged = (await provider.ready(actual, workspace.branch, head)).merge;
+    mergeOrigin = 'observed-merged';
   }
   return {
-    result: { ...merged, pr: pr.number, head, target, verification, checks: readiness.checks },
+    result: { ...merged, pr: pr.number, head, target, verification, checks: readiness.checks, mergeOrigin },
     summary: 'GitHub confirms the protected merge.',
   };
 }

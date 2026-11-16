@@ -590,7 +590,7 @@ kbd {
 .environment-chip.good {
   color: #a9bba7;
 }
-.environment select.environment-chip {
+.environment select {
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -1866,4 +1866,61 @@ kbd {
 .block-markdown-menu .issue-flow-options {
   right: 0;
   left: auto;
+}
+
+.environment-status {
+  display: contents;
+}
+.worktree-menu:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.closure-fields {
+  display: grid;
+  gap: 14px;
+  line-height: 1.5;
+}
+.closure-fields > :where(label) {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.closure-reason {
+  width: 100%;
+  min-width: 0;
+}
+.closure-fields :where(textarea) {
+  min-height: 72px;
+  resize: vertical;
+}
+.closure-fields :where(fieldset) {
+  min-width: 0;
+  border: 1px solid var(--line);
+  padding: 10px;
+}
+.closure-fields .cleanup-choice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.closure-fields :where(small) {
+  display: block;
+}
+.closure-error {
+  color: #f3a5a5;
+  margin: 12px 0 0;
+}
+.closure-error:empty {
+  display: none;
+}
+
+.issue-close-control {
+  color: #e2b5ae;
+  border-color: #674442;
+  background: #362625;
+}
+.issue-close-control:hover {
+  background: #493130;
 }

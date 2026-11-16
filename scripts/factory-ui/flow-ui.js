@@ -17,6 +17,7 @@
     repoFiles: new Map(),
     loading: false,
     pending: false,
+    updatingBranch: null,
     newActionsPaused: false,
     sequence: 0,
     controller: null,
@@ -235,6 +236,14 @@
     return result;
   }
 
+  function post(path, value) {
+    return json('/api/' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-factory-action': 'manual' },
+      body: JSON.stringify(value),
+    });
+  }
+
   function applyView(result) {
     state.index = { ...state.index, ...result };
     if (result.flow && result.issue && result.issue.id === state.issueId) {
@@ -254,7 +263,7 @@
           result.flow.blocks[0]?.id ||
           null;
         state.graphScrollIntent =
-          result.issue.location === 'closed' || result.issue.state === 'closed'
+          result.issue.status === 'closed'
             ? { nodeId: '__destination', mode: 'end' }
             : attempted.length === 0
               ? { nodeId: '__base', mode: 'start' }
@@ -334,10 +343,10 @@
     renderErrors();
     setBusy(true);
     try {
-      const result = await json('/api/flow-action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-factory-action': 'manual' },
-        body: JSON.stringify({ action: name, ...(options.global ? {} : { issueId: selected, revision }), ...fields }),
+      const result = await post('flow-action', {
+        action: name,
+        ...(options.global ? {} : { issueId: selected, revision }),
+        ...fields,
       });
       if (result.error) throw new Error(result.error);
       if (selected === state.issueId && result.flow) applyView(result);
@@ -370,7 +379,8 @@
     document
       .querySelectorAll('#inspector-body input, #inspector-body select, #inspector-body textarea')
       .forEach((field) => {
-        field.disabled = busy;
+        const closureSetting = ['retro-setting', 'auto-close-setting'].includes(field.id);
+        field.disabled = busy || (closureSetting && state.view?.issue?.status === 'closed');
       });
     const runBlock = $('run-block');
     runBlock.disabled =
@@ -383,16 +393,37 @@
     const startingBranch = $('starting-branch');
     if (startingBranch)
       startingBranch.disabled = busy || !state.view?.startingPointEditable || !state.view.branches?.length;
-    const worktreeMenu = $('worktree-menu');
-    if (worktreeMenu) worktreeMenu.disabled = busy;
+    $('target-update-menu').disabled = busy;
+    $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
+    updateIssueDecisionControls(busy);
+  }
+
+  function updateIssueDecisionControls(busy) {
+    const issue = state.view?.issue;
+    const closed = issue?.status === 'closed';
+    const pending = issue?.state === 'needs-approval';
+    $('worktree-hint').hidden = pending;
+    $('issue-approval-menu').hidden = !pending;
+    $('issue-approval-menu').disabled = busy;
+    $('close-with-reason').hidden = !issue || closed || pending;
+    $('close-with-reason').disabled = busy;
+    $('issue-archive-menu').hidden = !closed;
+    $('issue-archive-menu').disabled = busy;
+    const closing = state.view?.flow?.closing;
+    const awaiting = closed && closing && !closing.complete && !state.view.closureBusy;
+    $('retry-closure').hidden = !awaiting;
+    $('retry-closure').disabled = busy;
+    $('skip-retro').hidden = !awaiting || !closing.retro || closing.filedRetro || closing.skipRetro;
+    $('skip-retro').disabled = busy;
   }
 
   function updatePlaybackAvailability(busy) {
     const button = $('issue-playback');
     const playback = state.view?.autoplay;
     const paused = playback?.mode === 'paused';
-    const closed = state.view?.issue?.location === 'closed' || state.view?.issue?.state === 'closed';
-    button.disabled = busy || !playback || (paused && (state.newActionsPaused || closed));
+    const closed = state.view?.issue?.status === 'closed';
+    const pending = state.view?.issue?.state === 'needs-approval';
+    button.disabled = busy || !playback || pending || (paused && (state.newActionsPaused || closed));
     button.title = !playback
       ? 'Restart the Timey server to use Play'
       : paused && state.newActionsPaused
@@ -408,7 +439,8 @@
     state.view = null;
     state.error = '';
     const url = new URL(location.href);
-    url.searchParams.set('issue', id);
+    if (id) url.searchParams.set('issue', id);
+    else url.searchParams.delete('issue');
     history.replaceState(null, '', url);
     render();
     void load(true);
@@ -489,29 +521,15 @@
 
   function renderEnvironment() {
     const environment = state.view?.environment;
-    if (
-      environment?.worktreeExists === true &&
-      document.activeElement === $('worktree-menu') &&
-      $('environment').dataset.issue === state.issueId
-    )
-      return;
     $('environment').hidden = !environment;
-    $('environment').dataset.issue = state.issueId || '';
     if (!environment) return;
+    renderWorktreeHint(environment.worktreeExists);
     const chips = [];
     if (environment.branch)
       chips.push(`<span class="environment-chip" title="Current issue branch">⑂ ${escape(environment.branch)}</span>`);
     if (environment.dirty === true) chips.push('<span class="environment-chip warning">● Uncommitted changes</span>');
-    if (environment.worktreeExists === false) chips.push('<span class="environment-chip">No checkout</span>');
-    if (environment.behind > 0)
-      chips.push(
-        `<button class="environment-chip warning" data-sync-target title="Add a block to merge changes from the target branch">↙ Target ahead by ${escape(environment.behind)}</button>`
-      );
+    renderTargetUpdate(environment);
     if (environment.ahead > 0) chips.push(`<span class="environment-chip">↑ ${escape(environment.ahead)} ahead</span>`);
-    if (environment.worktreeExists === true)
-      chips.push(
-        '<select class="environment-chip" id="worktree-menu" aria-label="Worktree"><option value="" disabled selected>Worktree</option><option value="open">Open</option><option value="update">Update</option></select>'
-      );
     if (environment.pr) {
       const pr = environment.pr;
       const url = safeUrl(pr.url);
@@ -525,8 +543,29 @@
       chips.push(
         `<span class="environment-chip warning" title="${escape(environment.error || environment.remoteError)}">Environment check incomplete</span>`
       );
-    $('environment').innerHTML = chips.join('');
+    $('environment-status').innerHTML = chips.join('');
     $('environment').title = environment.observedAt ? `Git observed ${date(environment.observedAt)}` : '';
+  }
+
+  function renderTargetUpdate(environment) {
+    const menu = $('target-update-menu');
+    const label = `Target ahead by ${environment.behind}`;
+    const updating = state.updatingBranch === state.issueId;
+    $('target-update-progress').hidden = !updating;
+    menu.hidden = updating || !(environment.behind > 0);
+    menu.options[0].textContent = '↙ ' + label;
+    menu.setAttribute('aria-label', label);
+    menu.options[1].disabled = environment.worktreeExists !== true;
+  }
+
+  function renderWorktreeHint(exists) {
+    const text = {
+      true: 'Manage this issue’s worktree.',
+      false: 'This issue’s worktree has been deleted.',
+      null: 'No worktree has been created for this issue.',
+    }[exists];
+    $('worktree-hint').title = text;
+    $('worktree-menu').title = text;
   }
 
   function safeUrl(value) {
@@ -966,7 +1005,10 @@
     const last = latest(block);
     const folders = [...new Set([...(state.index.folders || []), ...(flow.folder ? [flow.folder] : [])])];
     const definition = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
-    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form></section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder"><option value="">No folder</option>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form></section>`;
+    const open = state.view.issue.status !== 'closed';
+    const disabled = open ? '' : ' disabled';
+    const settings = `<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder"><option value="">No folder</option>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form></section>`;
   }
 
   function skillOptions(block, selected) {
@@ -1070,6 +1112,18 @@
       : '';
   }
 
+  function cleanupResults(attempt) {
+    return (attempt?.result?.results || [])
+      .map((item) => {
+        const retry =
+          ['failed', 'preserved'].includes(item.status) && !state.view.closureBusy
+            ? `<button class="small-button" type="button" data-cleanup-retry="${escape(item.id)}">Retry</button>`
+            : '';
+        return `<p>${escape(item.name || item.kind || 'Resource')} · ${escape(item.reason)} ${retry}</p>`;
+      })
+      .join('');
+  }
+
   function blockDetails(block) {
     if (state.view.flow.request)
       return '<section class="detail-section"><p class="detail-copy">Restart the Factory server to edit this flow. Your saved issue is available.</p></section>';
@@ -1081,6 +1135,8 @@
     const attempts = block.attempts || [];
     const last = latest(block);
     const running = isRunning(block);
+    if (['retro', 'cleanup'].includes(block.kind))
+      return `<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;
     const locked = state.pending ? ' disabled' : '';
     const sections = {
       settings: `<form id="block-form">${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
@@ -1162,13 +1218,7 @@
       body.querySelector('.attempt-output').scrollTop = outputScroll;
   }
 
-  function renderInspector() {
-    const block = activeBlock();
-    const style = blockStyle(block?.definition ?? block?.kind);
-    $('inspector-kind').textContent = block ? words(block.kind) : 'Block details';
-    $('inspector-title').style.setProperty('--block-color', style.color);
-    $('inspector-symbol').textContent = block ? style.icon : '◇';
-    $('inspector-block-name').textContent = block?.label || 'Select a block';
+  function renderBlockRunControl(block) {
     const runButton = $('run-block');
     const running = isRunning(block);
     const recovering = block?.attempts.some(
@@ -1176,7 +1226,13 @@
     );
     const retrying = ['blocked', 'failed', 'stopped'].includes(status(block));
     const continuing = recovering || retrying;
-    runButton.hidden = !block || block.readOnly || Boolean(state.view.flow.request);
+    runButton.hidden =
+      !block ||
+      block.readOnly ||
+      Boolean(state.view.flow.request) ||
+      state.view.issue.state === 'needs-approval' ||
+      (!running && ['retro', 'cleanup'].includes(block.kind)) ||
+      (block.kind === 'close' && state.view.issue.status === 'closed');
     runButton.dataset.action = running ? 'stop' : continuing ? 'continue' : 'start';
     runButton.textContent = running
       ? '■ Stop'
@@ -1188,6 +1244,16 @@
             ? 'Retry'
             : '▷ Run';
     runButton.classList.toggle('danger-button', running);
+  }
+
+  function renderInspector() {
+    const block = activeBlock();
+    const style = blockStyle(block?.definition ?? block?.kind);
+    $('inspector-kind').textContent = block ? words(block.kind) : 'Block details';
+    $('inspector-title').style.setProperty('--block-color', style.color);
+    $('inspector-symbol').textContent = block ? style.icon : '◇';
+    $('inspector-block-name').textContent = block?.label || 'Select a block';
+    renderBlockRunControl(block);
     setBusy(state.pending);
     const artifacts = (state.view?.artifacts || []).filter((artifact) => artifact.blockId === block?.id);
     $('artifact-count').textContent = artifacts.length || '';
@@ -1217,6 +1283,20 @@
     inspectorRender = { scope, html };
   }
 
+  function renderPlayback(blocks) {
+    const playback = state.view?.autoplay;
+    const playing = playback?.mode === 'playing' || playback?.mode === 'waiting';
+    const waiting = blocks.find((block) => playback?.mode === 'waiting' && playback.blockId === block.id);
+    $('issue-playback').textContent = playing ? 'Ⅱ Pause' : '▷ Play';
+    $('issue-playback').setAttribute('aria-label', playing ? 'Pause issue' : 'Play issue');
+    const waitingButton = $('waiting-block');
+    waitingButton.hidden = !waiting;
+    waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
+    waitingButton.dataset.block = waiting?.id || '';
+    $('playback-status').textContent =
+      state.view?.flow?.closing?.error || (waiting ? '' : playback?.reason || (playing ? 'Playing' : 'Paused'));
+  }
+
   function render() {
     renderSidebar();
     const issue = state.view?.issue;
@@ -1237,18 +1317,9 @@
     const running = blocks.find((block) => isRunning(block));
     const completed = blocks.filter((block) => ['completed', 'succeeded', 'success'].includes(status(block))).length;
     $('issue-subtitle').textContent = issue
-      ? `${words(issue.status || 'new')} · ${blocks.length} blocks${completed ? ` · ${completed} completed` : ''}${running ? ` · ${running.label} running` : ''}`
+      ? `${words(issue.status || 'new')}${closureLabel(issue)} · ${blocks.length} blocks${completed ? ` · ${completed} completed` : ''}${running ? ` · ${running.label} running` : ''}`
       : '';
-    const playback = state.view?.autoplay;
-    const playing = playback?.mode === 'playing' || playback?.mode === 'waiting';
-    const waiting = blocks.find((block) => playback?.mode === 'waiting' && playback.blockId === block.id);
-    $('issue-playback').textContent = playing ? 'Ⅱ Pause' : '▷ Play';
-    $('issue-playback').setAttribute('aria-label', playing ? 'Pause issue' : 'Play issue');
-    const waitingButton = $('waiting-block');
-    waitingButton.hidden = !waiting;
-    waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
-    waitingButton.dataset.block = waiting?.id || '';
-    $('playback-status').textContent = waiting ? '' : playback?.reason || (playing ? 'Playing' : 'Paused');
+    renderPlayback(blocks);
     $('flow-footer-label').textContent = running
       ? `${running.label} is running`
       : state.view
@@ -1260,6 +1331,10 @@
     renderInspector();
     renderErrors();
     setBusy(state.pending);
+  }
+
+  function closureLabel(issue) {
+    return issue.status === 'closed' && issue.closure ? ` · ${issue.closure.label}` : '';
   }
 
   function renderFlowPicker() {
@@ -1316,7 +1391,7 @@
     if (!state.view) return;
     $('block-palette').innerHTML =
       (state.index.catalog || [])
-        .filter((kind) => kind.kind !== 'request')
+        .filter((kind) => !['request', 'retro', 'cleanup'].includes(kind.kind))
         .map((kind) => {
           const style = blockStyle(kind.id);
           return `<button class="palette-item" style="--block-color:${style.color}" data-add-kind="${escape(kind.id)}"${state.pending ? ' disabled' : ''}><strong><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(kind.label)}</strong><small>${escape(kind.description || style.description)}</small></button>`;
@@ -1331,7 +1406,10 @@
 
   async function addBlock(kind) {
     const selected = activeBlock();
-    const result = await action('add', { kind, ...(selected && !selected.suggested ? { afterId: selected.id } : {}) });
+    const result = await action('add', {
+      kind,
+      ...(selected && !selected.suggested && kind !== 'merge-target' ? { afterId: selected.id } : {}),
+    });
     if (!result) return;
     $('palette-dialog').close();
     toast('Block added. Choose its skill and start it when ready.');
@@ -1512,13 +1590,14 @@
       return;
     }
     const approval = mergeApproval(block);
+    if (block.kind === 'close') return openClosure();
     const confirmations = {
       merge:
         approval &&
         `Merge PR #${approval.pr} into ${approval.branch}?\n\nPR commit: ${approval.head}\nTarget revision: ${approval.target}`,
       'merge-target': 'Merge changes from the target branch into this issue checkout?',
       close: `Close "${state.view.issue.title}"? This records your decision to end this issue.`,
-      'delete-worktree': `Delete this issue checkout and its local conversation files?\n\n${state.view.flow.workspace?.checkout || 'No checkout path is recorded.'}\n\nReview the artifacts before proceeding.`,
+      'delete-worktree': worktreeDeletionPrompt(state.view.flow.workspace?.checkout),
     };
     if (block.kind === 'publish') return openPublication(block, name === 'continue');
     const confirmed = Boolean(confirmations[block.kind]);
@@ -1532,6 +1611,17 @@
       ...(approval ? { mergeToken: approval.token } : {}),
     });
     if (result) await load(true);
+  }
+
+  function worktreeDeletionPrompt(path = 'No checkout path is recorded.') {
+    return `Delete this issue worktree, its local branch, and its local conversation files?\n\n${path}\n\nReview the artifacts before proceeding.`;
+  }
+
+  async function deleteWorktree() {
+    const issueId = state.issueId;
+    const expected = await action('delete-worktree');
+    if (!expected || state.issueId !== issueId || !confirm(worktreeDeletionPrompt(expected.path))) return;
+    if (await action('delete-worktree', { expected })) toast('Worktree deleted.');
   }
 
   async function blockAction(button) {
@@ -1771,6 +1861,7 @@
     if (button.dataset.acceptBase) {
       return void action('accept-pr-base', { branch: button.dataset.acceptBase });
     }
+    if (button.dataset.cleanupRetry) return void action('retry-closure', { resourceId: button.dataset.cleanupRetry });
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
     if (button.dataset.folder) {
       const folder = button.dataset.folder;
@@ -1799,7 +1890,6 @@
     if (button.dataset.closeDialog) return $(button.dataset.closeDialog).close();
     if (button.hasAttribute('data-open-palette')) return openPalette();
     if (button.dataset.addKind) return void addBlock(button.dataset.addKind);
-    if (button.hasAttribute('data-sync-target')) return void addBlock('merge-target');
     if (button.dataset.openFile) return void inspectFile(button.dataset.openFile, button.dataset.artifactId);
     if (button.dataset.openFlowFile) return void inspectFile(button.dataset.openFlowFile, null, true);
     if (button.dataset.deleteArtifact) return void deleteArtifact(button.dataset.deleteArtifact);
@@ -1850,8 +1940,32 @@
     inspectedFile = null;
   });
 
+  async function updateBranch() {
+    state.updatingBranch = state.issueId;
+    renderEnvironment();
+    try {
+      if (await action('update-worktree')) toast('Branch updated.');
+    } finally {
+      state.updatingBranch = null;
+      renderEnvironment();
+      void load(true);
+    }
+  }
+
+  $('target-update-menu').addEventListener('change', async (event) => {
+    const menu = event.target;
+    const operation = menu.value;
+    menu.value = '';
+    if (operation === 'update') return updateBranch();
+    if (operation === 'add' && (await action('add', { kind: 'merge-target' }))) toast('Update branch block added.');
+  });
+
   document.addEventListener('change', async (event) => {
     const field = event.target;
+    if (['retro-setting', 'auto-close-setting'].includes(field.id)) {
+      if (!(await action(field.id, { enabled: field.checked }))) field.checked = !field.checked;
+      return;
+    }
     if (field.dataset.field?.startsWith('mode-') || field.dataset.field === 'prompt-mode') {
       setDraft(field.dataset.field, field.value);
       renderInspector();
@@ -1863,14 +1977,9 @@
       if (operation === 'open') {
         if (await action('open-worktree')) toast('Opened the worktree in Finder.');
       } else if (operation === 'update') {
-        const selected = state.issueId;
-        const result = await action('update-worktree');
-        if (result && selected === state.issueId) {
-          state.blockId = result.blockId;
-          state.tab = 'details';
-          state.graphScrollIntent = { nodeId: result.blockId, mode: 'reveal' };
-          await load(true);
-        }
+        await updateBranch();
+      } else if (operation === 'delete') {
+        await deleteWorktree();
       }
       return;
     }
@@ -1961,6 +2070,146 @@
   $('project-settings').addEventListener('click', openProjectSettings);
   $('initialize-lifecycle').addEventListener('click', initializeLifecycle);
   $('empty-new-issue').addEventListener('click', openCapture);
+  const closureModal = $('issue-closure-dialog');
+  const closureFields = $('issue-closure-fields');
+  const closureButton = $('confirm-issue-closure');
+  const closureCancel = $('cancel-issue-closure');
+  const closureError = $('issue-closure-error');
+  const closureDialog = window.createIssueClosureDialog({
+    dialog: closureModal,
+    panel: closureFields,
+    approve: closureButton,
+    error: closureError,
+    request: (name, data) => post(name, { ...data, flow: true }),
+  });
+  closureModal.addEventListener('cancel', (event) => {
+    if (closureFields.inert) event.preventDefault();
+  });
+  async function archiveIssue(issueId) {
+    if (!confirm('Archive this closed issue?')) return;
+    const {
+      results: [result],
+    } = await post('issue-storage-move', { action: 'archive', issueId, issueIds: [issueId] });
+    if (result.status === 'archived' || result.status === 'published') {
+      state.index.issues = state.index.issues.filter((issue) => issue.id !== issueId);
+      if (state.issueId === issueId) selectIssue(null);
+      toast('Issue archived.');
+    } else if (result.status === 'review') {
+      toast('Archive is awaiting review on the shared queue.');
+    } else {
+      throw Error(result.error || 'The issue could not be archived.');
+    }
+  }
+
+  async function reopenIssue(issueId) {
+    if (!confirm('Reopen this issue and return it to investigation?')) return;
+    const context = await json('/api/issue-closure?kind=reopen&issue=' + encodeURIComponent(issueId));
+    await post('issue-decision', { ...context, kind: 'reopen' });
+    toast('Issue reopened.');
+  }
+
+  $('issue-archive-menu').addEventListener('change', async (event) => {
+    const menu = event.target;
+    const operation = menu.value;
+    menu.value = '';
+    const issueId = state.view?.issue?.id;
+    if (!issueId || state.pending) return;
+    if (operation === 'cleanup') {
+      const { flow, issue } = state.view;
+      return void closureDialog.open(() => ({
+        issueId,
+        flowRevision: flow.revision,
+        cleanupOnly: true,
+        resolution: issue.closure?.reason,
+        closureReasons: [
+          { id: issue.closure?.reason || 'fixed', label: issue.closure?.label || 'Fixed', description: '' },
+        ],
+      }));
+    }
+    state.pending = true;
+    setBusy(true);
+    try {
+      if (operation === 'archive') await archiveIssue(issueId);
+      if (operation === 'reveal') await post('issue-report-reveal', { issueId });
+      if (operation === 'reopen') await reopenIssue(issueId);
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      state.pending = false;
+      setBusy(false);
+      void load(true);
+    }
+  });
+
+  function openClosure() {
+    const { issue, flow } = state.view;
+    void closureDialog.open(async () => ({
+      ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
+      kind: 'close',
+      flowRevision: flow.revision,
+    }));
+  }
+  $('close-with-reason').addEventListener('click', openClosure);
+  $('retry-closure').addEventListener('click', () => void action('retry-closure'));
+  $('skip-retro').addEventListener('click', () => {
+    if (confirm('Continue to Cleanup without a completed retro?')) void action('skip-retro');
+  });
+  $('issue-approval-menu').addEventListener('change', async (event) => {
+    const menu = event.target;
+    const choice = menu.value;
+    menu.value = '';
+    const { issue } = state.view;
+    if (choice === 'delete-pending-issue' && !confirm(`Permanently delete “${issue.title}”?`)) return;
+    const result = await action(choice, { title: issue.title });
+    if (!result) return;
+    if (result.publication) {
+      toast(result.publication.status === 'review' ? 'Deletion awaits shared queue review.' : result.publication.error);
+      return;
+    }
+    if (choice === 'delete-pending-issue') selectIssue(null);
+    void load(true);
+  });
+  $('issue-closure-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (closureButton.disabled) return;
+    const decision = closureDialog.decision();
+    closureButton.disabled = true;
+    closureCancel.disabled = true;
+    closureFields.inert = true;
+    closureButton.textContent = 'Closing…';
+    closureError.textContent = '';
+    try {
+      if (decision.cleanupOnly) {
+        if (await action('cleanup-again', { revision: decision.flowRevision, cleanup: decision.cleanup }))
+          closureModal.close();
+        return;
+      }
+      const result = await post('issue-decision', decision);
+      if (state.view?.issue.id === decision.issueId) {
+        const issue = state.view.issue;
+        issue.status = 'closed';
+        issue.state = result.state;
+        state.view.autoplay = { mode: 'paused', reason: 'Issue closed' };
+        render();
+      }
+      closureModal.close();
+      toast(
+        result.publication?.status === 'review'
+          ? 'Saved locally. The shared report is awaiting human review.'
+          : result.publication?.status === 'failed'
+            ? 'Saved locally. Shared report publication needs attention.'
+            : 'Issue closed.'
+      );
+      void load(true);
+    } catch (error) {
+      closureError.textContent = error.message;
+    } finally {
+      closureButton.textContent = 'Close issue';
+      closureButton.disabled = false;
+      closureCancel.disabled = false;
+      closureFields.inert = false;
+    }
+  });
   $('issue-playback').addEventListener('click', () => {
     if (state.view?.autoplay?.mode !== 'paused') return void action('pause');
     const hasDraft = [...state.drafts].some(
@@ -2001,12 +2250,21 @@
     $('capture-error').hidden = true;
     const result = await action(
       'capture',
-      { requestId: state.captureId, description, type: $('capture-type').value, folder: window.captureFolder() },
+      {
+        requestId: state.captureId,
+        description,
+        type: $('capture-type').value,
+        folder: window.captureFolder(),
+        needsApproval: $('capture-needs-approval').checked,
+        runRetro: $('capture-retro').checked,
+      },
       { global: true, errorId: 'capture-error' }
     );
     if (!result) return;
     state.captureId = null;
     $('capture-description').value = '';
+    $('capture-retro').checked = false;
+    $('capture-needs-approval').checked = false;
     $('capture-dialog').close();
     toast('Issue created. Its blocks are ready for you to choose.');
     const id = result.issue?.id || result.issueId;

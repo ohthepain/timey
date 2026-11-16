@@ -395,7 +395,7 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   const pr = await provider.findByBranch(workspace.branch, provider.config.target);
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
-  const delivered = await provider.inspectExternalDelivery(pr.number);
+  const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
   requireThat(
     delivered.number === pr.number &&
       delivered.head === candidate.head &&
@@ -407,7 +407,10 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
     'The merged PR does not match the verified issue candidate and target. Reconcile its delivery before accepting.'
   );
   ctx.signal.throwIfAborted();
-  verifiedFlowCandidate(ctx, workspace, options);
+  requireThat(
+    verifiedFlowCandidate(ctx, workspace, options).head === candidate.head,
+    'The issue candidate changed while checking its merged PR. Review the current result before accepting.'
+  );
   const path = join(folder, 'merged-delivery.json');
   writeJson(path, delivered);
   return {

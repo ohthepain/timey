@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { digest, readJson, requireThat, writeJson } from './common.mjs';
-import { moveStoredIssue, storedIssuePath } from './issue-report-storage.mjs';
+import { deletePendingIssueReport, moveStoredIssue, storedIssuePath } from './issue-report-storage.mjs';
 import { createSharedIssueClaims } from './shared-issue-claims.mjs';
 import { sharedIssueQueueConfig } from './shared-issue-config.mjs';
 import { createSharedIssuePublication } from './shared-issue-publication.mjs';
@@ -69,6 +69,12 @@ export function createSharedIssueQueue(service, options = {}) {
       unlinkSync(closed);
       return;
     }
+    if (record.storageAction === 'delete-proposal') {
+      if (existsSync(storedIssuePath(root, record.id)))
+        deletePendingIssueReport(root, { id: record.id, content: record.base, state: 'needs-approval' });
+      service.flows?.removePendingFlow(record.id);
+      return;
+    }
     const from = record.storageAction === 'restore' ? 'archive' : record.baseLocation;
     if (!from) return;
     if (sameReport(record.id, record.location, record.report) && !existsSync(storedIssuePath(root, record.id, from)))
@@ -92,7 +98,10 @@ export function createSharedIssueQueue(service, options = {}) {
     completeLocation(record);
     const own = claims.own(record.id);
     if (own && record.claim?.oid === own.oid) release(record.id, own);
-    return save(record, { status: 'published', url: result.url, error: null });
+    const saved = save(record, { status: 'published', url: result.url, error: null });
+    if (record.location === 'closed' && service.flows?.closurePending(record.id))
+      queueMicrotask(() => service.flows?.resumeClosure(record.id));
+    return saved;
   }
   function reconcile(record) {
     if (record.status !== 'review' || active(record.id)) return;
@@ -129,7 +138,7 @@ export function createSharedIssueQueue(service, options = {}) {
     const key = (location === 'closed' ? 'closed/' : '') + id + '.md';
     return existsSync(syncState) ? readJson(syncState)[key]?.hash : undefined;
   }
-  function acquire(issue, allowDraft = false, restoring = false) {
+  function acquire(issue, allowDraft = false, restoring = false, storageAction) {
     const pending = receipt(issue.id);
     requireThat(
       !pending || pending.status === 'published',
@@ -157,7 +166,7 @@ export function createSharedIssueQueue(service, options = {}) {
       throw error;
     }
     const context = { claim, base: initial.report, baseLocation: initial.location };
-    save({ id: issue.id, ...context }, { status: 'claimed' });
+    save({ id: issue.id, ...context, storageAction }, { status: 'claimed' });
     return context;
   }
   function publish(record, reprepare = false) {
@@ -251,8 +260,7 @@ export function createSharedIssueQueue(service, options = {}) {
     const live = publication.readTarget(id);
     if (action === 'archive' && live.report === null) return null;
     requireThat(action === 'restore' || live.location === 'closed', 'Close the shared issue before archiving it.');
-    const context = acquire({ id, content }, false, action === 'restore');
-    save(receipt(id), { storageAction: action });
+    const context = acquire({ id, content }, false, action === 'restore', action);
     return saveStorageCheckpoint(id, action, content, context);
   }
   function saveStorageCheckpoint(id, action, content, context) {
@@ -277,6 +285,19 @@ export function createSharedIssueQueue(service, options = {}) {
     const record = receipt(id);
     return record?.storageAction ? publicState(record) : null;
   }
+  function deleteProposal(issue) {
+    const previous = receipt(issue.id);
+    if (previous?.storageAction !== 'delete-proposal' || previous.status === 'published') {
+      const context = acquire(issue, false, false, 'delete-proposal');
+      return checkpointProposalDeletion(issue.id, context);
+    }
+    if (previous.status === 'review') return publicState(previous);
+    if (previous.status === 'claimed') return recover(issue.id);
+    return retry(issue.id);
+  }
+  function checkpointProposalDeletion(id, context) {
+    return publicState(checkpoint(id, 'Delete unapproved issue', context, null, null, 'delete-proposal'));
+  }
   function recover(id) {
     requireThat(!active(id), 'Wait for the current run to stop before reconciling its claim.');
     const claim = claims.own(id);
@@ -295,6 +316,7 @@ export function createSharedIssueQueue(service, options = {}) {
         live.report === saved.base && live.location === saved.baseLocation,
         'The shared report changed before recovery.'
       );
+      if (action === 'delete-proposal') return checkpointProposalDeletion(id, { ...saved, claim });
       const source = action === 'archive' ? 'closed' : 'archive';
       return saveStorageCheckpoint(id, action, localReport(id, source), {
         claim,
@@ -372,6 +394,7 @@ export function createSharedIssueQueue(service, options = {}) {
     publishDraft,
     moveStorage,
     storageStatus,
+    deleteProposal,
     view,
   };
 }

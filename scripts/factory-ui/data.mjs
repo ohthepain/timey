@@ -29,6 +29,11 @@ function lifecycle(root) {
     .filter((c) => names[c[1]] || c[1] === 'custom')
     .map((c) => ({ role: c[1], state: c[2], next: c[3], exit: c[4], name: names[c[1]] || c[2] }));
 }
+export function closedIssueState(root) {
+  return existsSync(join(root, '.issues/triage-labels.md'))
+    ? lifecycle(root).find((stage) => stage.role === 'closed')?.state
+    : 'closed';
+}
 function references(content, heading, ids) {
   const section = content.match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'))?.[1] || '';
   return ids.filter((id) => section.includes(id));
@@ -118,6 +123,8 @@ export function describeLaunch(queue, action) {
   return launchProblem(queue, action)?.message || null;
 }
 export function launchProblem(queue, action) {
+  if (queue.issues.some((issue) => issue.state === 'needs-approval' && action.issues.includes(issue.id)))
+    return { code: 'needs-approval', message: 'Approve this issue before starting work.' };
   if (!queue.registryPresent)
     return {
       code: 'registry-missing',

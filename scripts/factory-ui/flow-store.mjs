@@ -52,7 +52,7 @@ export function newFlow(issue, delivery, catalog = bundledCatalog.read().entries
     const block = makeBlock(node.block, node.after, node.suggested, catalog);
     return { ...block, id: node.id, flowKey: node.id, lane: node.lane };
   });
-  blocks[0].data = { wording, fields: null };
+  blocks[0].data = { wording, fields: null, ...(issue.run_retro && { runRetro: true }) };
   const flow = {
     version: 1,
     issueId: issue.id,
@@ -60,7 +60,7 @@ export function newFlow(issue, delivery, catalog = bundledCatalog.read().entries
     routeType: type,
     target: delivery,
     startingPoint: null,
-    folder: null,
+    folder: issue.folder || null,
     workspace: null,
     blocks,
   };
@@ -89,6 +89,8 @@ function migrateFlow(flow, defaultTarget) {
       for (const key of Object.keys(block.links ?? {})) if (block.links[key] === target.id) delete block.links[key];
     if (target.attempts?.length || target.comments?.length) (flow.retiredBlocks ??= []).push(target);
   }
+  migrateUpdateBranchLabels(flow);
+  linkPreWorkUpdate(flow.blocks);
   flow.target ??= defaultTarget;
   flow.startingPoint ??= null;
   delete flow.request;
@@ -106,6 +108,11 @@ function migrateFlow(flow, defaultTarget) {
     linkFlowDefinition(flow, definition);
   }
   return flow;
+}
+
+function migrateUpdateBranchLabels(flow) {
+  for (const block of [...flow.blocks, ...(flow.retiredBlocks ?? [])])
+    if (block.kind === 'merge-target' && block.label === 'Merge from target') block.label = 'Update branch';
 }
 
 export function rebuildRoute(flow, type, definition, nodes, catalog) {
@@ -178,6 +185,11 @@ function validateGraph(blocks) {
     seen.add(block.id);
   }
 }
+export function updateBranchIndex(blocks) {
+  const work = blocks.findIndex(isWorkBlock);
+  return work >= 0 ? work : blocks.findIndex((block) => block.suggested);
+}
+
 export function editFlow(flow, input, catalog) {
   const next = structuredClone(flow);
   const block = next.blocks.find((item) => item.id === input.blockId);
@@ -188,18 +200,19 @@ export function editFlow(flow, input, catalog) {
     add() {
       const explicit = input.afterId ? next.blocks.findIndex((item) => item.id === input.afterId) : -1;
       requireThat(!input.afterId || explicit >= 0, 'Choose an existing insertion point.');
-      const index = explicit >= 0 ? explicit + 1 : next.blocks.findIndex((item) => item.suggested);
+      const index = explicit >= 0 ? explicit + 1 : defaultInsertionIndex(next.blocks, input.kind);
       const at = index < 0 ? next.blocks.length : Math.max(1, index);
       requireThat(
         !['request', 'target'].includes(input.kind),
         'Add a block other than Request or the legacy Target block.'
       );
       const added = makeBlock(input.kind, at ? [next.blocks[at - 1].id] : [], false, catalog);
-      added.lane = validLane(input.lane ?? 0);
+      added.lane = validLane(input.lane ?? (input.kind === 'merge-target' ? next.blocks[at]?.lane : 0) ?? 0);
       added.after = laneDependencies(next.blocks, at, added.lane);
       next.blocks.splice(at, 0, added);
       const following = next.blocks[at + 1];
-      if (following && !following.attempts.length && following.lane === added.lane) following.after = [added.id];
+      if (input.kind === 'merge-target') linkPreWorkUpdate(next.blocks);
+      else if (following && !following.attempts.length && following.lane === added.lane) following.after = [added.id];
     },
     update() {
       requireEditable(block);
@@ -304,6 +317,22 @@ function validLane(value) {
   requireThat(Number.isInteger(value) && value >= 0 && value <= 3, 'Choose a lane between zero and three.');
   return value;
 }
+function linkPreWorkUpdate(blocks) {
+  const index = updateBranchIndex(blocks);
+  const work = blocks[index];
+  const update = blocks[index - 1];
+  if (!work || !isWorkBlock(work) || update?.kind !== 'merge-target') return;
+  if (!work.after.includes(update.id)) work.after.push(update.id);
+}
+
+function isWorkBlock(block) {
+  return ['work', 'tdd', 'edit'].includes(block.kind);
+}
+
+function defaultInsertionIndex(blocks, kind) {
+  return kind === 'merge-target' ? updateBranchIndex(blocks) : blocks.findIndex((item) => item.suggested);
+}
+
 function requireEditable(block) {
   requireThat(block, 'Choose a saved block.');
 }

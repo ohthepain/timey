@@ -148,6 +148,7 @@ function claimsIssue(entry, action) {
 }
 
 function validateDispatchableReport(report, action, closed) {
+  assert(report.state !== 'needs-approval', 'Approve this issue before dispatching work.');
   assert(
     report.state !== closed && !report.grill_later && !report.kind?.startsWith('wayfinder-'),
     'Closed, deferred or planning-only report is not dispatchable.'

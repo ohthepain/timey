@@ -7,6 +7,7 @@
     <title>Factory · Flow workspace</title>
     <link rel="stylesheet" href="/flow.css" />
     <script src="/server-control-ui.js" defer></script>
+    <script src="/issue-closure-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
   </head>
@@ -132,10 +133,53 @@
           <div class="issue-playback">
             <button class="primary-button" id="issue-playback" type="button">▷ Play</button>
             <button class="small-button" id="waiting-block" type="button" hidden></button>
+            <button class="small-button" id="retry-closure" type="button" hidden>Continue closure</button>
+            <button class="small-button" id="skip-retro" type="button" hidden>Continue to Cleanup</button>
             <span class="muted" id="playback-status" aria-live="polite"></span>
           </div>
         </section>
-        <div id="environment" class="environment" hidden></div>
+        <div id="environment" class="environment" hidden>
+          <div id="environment-status" class="environment-status"></div>
+          <select class="environment-chip warning" id="target-update-menu" aria-label="Target branch is ahead" hidden>
+            <option value="" disabled selected></option>
+            <option value="update">Update branch</option>
+            <option value="add">Add update branch block</option>
+          </select>
+          <span class="environment-chip warning" id="target-update-progress" role="status" hidden>
+            <span class="status-icon active-spinner" style="--spinner-color: currentColor" aria-hidden="true"></span>
+            Updating branch…
+          </span>
+          <span id="worktree-hint">
+            <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
+              <option value="" disabled selected>Worktree</option>
+              <option value="open">Open</option>
+              <option value="update">Update</option>
+              <option value="delete">Delete</option>
+            </select>
+          </span>
+          <button
+            class="environment-chip issue-close-control"
+            id="close-with-reason"
+            type="button"
+            title="Close with reason"
+            aria-haspopup="dialog"
+            hidden
+          >
+            Close
+          </button>
+          <select class="environment-chip" id="issue-approval-menu" aria-label="Needs approval" hidden>
+            <option value="" disabled selected>Needs approval</option>
+            <option value="approve-issue">Approve</option>
+            <option value="delete-pending-issue">Delete</option>
+          </select>
+          <select class="environment-chip" id="issue-archive-menu" aria-label="Archive" hidden>
+            <option value="" disabled selected>Archive</option>
+            <option value="archive">Archive issue</option>
+            <option value="reveal">Reveal in Finder</option>
+            <option value="reopen">Reopen</option>
+            <option value="cleanup">Run Cleanup</option>
+          </select>
+        </div>
         <section
           id="graph-scroll"
           class="graph-scroll"
@@ -234,6 +278,8 @@
             <option value="investigation">Investigation</option>
           </select></label
         >
+        <label><input type="checkbox" id="capture-retro" /> Run a retro</label>
+        <label><input type="checkbox" id="capture-needs-approval" /> Needs approval</label>
         <p id="capture-error" class="inline-error" role="alert" hidden></p>
         <div class="modal-footer">
           <button class="small-button" type="button" data-close-dialog="capture-dialog">Cancel</button
@@ -252,6 +298,18 @@
       <p class="muted">Add the next step. Nothing runs until you start it.</p>
       <p id="block-palette-error" class="inline-error" role="alert" hidden></p>
       <div id="block-palette" class="block-palette"></div>
+    </dialog>
+    <dialog id="issue-closure-dialog" class="modal" aria-labelledby="issue-closure-heading">
+      <form id="issue-closure-form">
+        <div class="closure-fields" id="issue-closure-fields"></div>
+        <p class="closure-error" id="issue-closure-error" role="alert"></p>
+        <div class="modal-footer">
+          <button class="small-button" id="cancel-issue-closure" type="button" data-close-dialog="issue-closure-dialog">
+            Cancel
+          </button>
+          <button class="primary-button" id="confirm-issue-closure" type="submit">Close issue</button>
+        </div>
+      </form>
     </dialog>
     <dialog id="destination-dialog" class="modal" aria-labelledby="destination-heading">
       <form method="dialog">

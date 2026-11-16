@@ -45,6 +45,7 @@ const assets = [
   'flow.html',
   'flow.css',
   'flow-ui.js',
+  'issue-closure-ui.js',
   'server-control-ui.js',
   'view-inspection.js',
   'views/flow/block-inspector.md',
@@ -1065,7 +1066,8 @@ try {
     const menu = page
       .locator('#environment .environment-chip')
       .and(page.getByRole('combobox', { name: 'Worktree', exact: true }));
-    assert.equal(await menu.count(), 0);
+    assert.equal(await menu.isDisabled(), true);
+    assert.equal(await menu.getAttribute('title'), 'No worktree has been created for this issue.');
     const checkout = join(project, '.issues', 'issue-checkout');
     const branch = 'fixture-issue-worktree';
     const base = git(project, 'rev-parse', 'HEAD');
@@ -1103,16 +1105,33 @@ try {
     // The disposable project has no installed issue skill. Exercise the real Git executor.
     service.guard = () => [];
     service.flows.executor = createFlowExecutor(service);
-    await menu.selectOption('update');
-    const attempt = await poll(
-      async () =>
-        (await view()).flow.blocks
-          .find((block) => block.kind === 'merge-target' && block.attempts.length)
-          ?.attempts.at(-1),
-      (result) => result?.endedAt,
-      'The update should complete a merge from the fetched target.'
+    const targetMenu = page.getByRole('combobox', { name: /Target ahead by/ });
+    await targetMenu.selectOption('add');
+    await page.getByText('Update branch block added.', { exact: true }).waitFor();
+    const blocks = (await view()).flow.blocks;
+    const workIndex = blocks.findIndex((block) => block.kind === 'work');
+    const added = blocks[workIndex - 1];
+    assert.equal(added.kind, 'merge-target');
+    assert.equal(added.label, 'Update branch');
+    assert.equal(added.attempts.length, 0);
+    assert.ok(blocks[workIndex].after.includes(added.id));
+    const release = Promise.withResolvers();
+    await page.route('**/api/flow-action', async (route) => {
+      if (route.request().postDataJSON().action === 'update-worktree') await release.promise;
+      await route.continue();
+    });
+    await targetMenu.selectOption('update');
+    await page.locator('#target-update-progress').waitFor();
+    release.resolve();
+    await page.getByText('Branch updated.', { exact: true }).waitFor();
+    await page.unroute('**/api/flow-action');
+    await targetMenu.waitFor({ state: 'hidden' });
+    const finished = (await view()).flow.blocks;
+    assert.deepEqual(
+      finished.map((block) => block.id),
+      blocks.map((block) => block.id)
     );
-    assert.equal(attempt.status, 'completed', attempt.summary);
+    assert.equal(finished.find((block) => block.id === added.id).attempts.length, 0);
     assert.equal(git(checkout, 'rev-parse', 'HEAD'), target);
     assert.equal(git(project, 'rev-parse', 'HEAD'), base);
   });
@@ -1231,6 +1250,145 @@ try {
     await page.locator('#playback-status').filter({ hasText: 'Flow complete' }).waitFor();
     assert.equal((await view()).flow.blocks.find(({ id }) => id === sync.id).attempts.at(-1).status, 'completed');
     assert.deepEqual(logs.pageErrors, []);
+  });
+  await check('The issue header closes with a reason and runs only Cleanup by default', async () => {
+    const close = page.getByRole('button', { name: 'Close', exact: true });
+    assert.equal(await page.locator('#worktree-hint + #close-with-reason').count(), 1);
+    const dialog = page.getByRole('dialog', { name: 'Close this issue' });
+    const executionCount = logs.execution.length;
+    await close.click();
+    await dialog.getByLabel('Reason', { exact: true }).locator('option[value="fixed"]').waitFor({ state: 'attached' });
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.equal(logs.requests.filter(({ path }) => path === '/api/issue-decision').length, 0);
+    await close.click();
+    await dialog.getByLabel('Reason', { exact: true }).selectOption('duplicate');
+    await dialog.getByLabel('Details or related issue (optional)').fill('Already covered by issue #44');
+    await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    await close.waitFor({ state: 'hidden' });
+    assert.deepEqual(
+      logs.execution.slice(executionCount).map(({ blockId }) => blockId),
+      [service.flows.read(service.flows.selected(issueId)).blocks.find(({ kind }) => kind === 'cleanup').id]
+    );
+    const saved = service.flows.selected(issueId);
+    assert.equal(saved.location, 'closed');
+    assert.equal(saved.closure.reason, 'duplicate');
+    assert.equal(saved.closure.details, 'Already covered by issue #44');
+    assert.equal(saved.accepted_result, undefined);
+  });
+  await check('Manual Fixed accepts retained Flow investigation evidence before running Cleanup', async () => {
+    issueId = '20261116-manual-fixed-fixture';
+    writeFileSync(
+      join(project, '.issues', issueId + '.md'),
+      `---\nid: ${issueId}\ntitle: Manual Fixed fixture\nstate: backlog\nrequest_type: investigation\ncreated: 2026-11-16T12:00:00Z\n---\n\nInvestigate the test project.\n`
+    );
+    const flow = service.flows.read(service.flows.selected(issueId));
+    const checkout = join(project, '.issues/issue-work', issueId);
+    const branch = 'codex/issue-' + issueId;
+    const base = git(project, 'rev-parse', 'HEAD');
+    git(project, 'worktree', 'add', '-qb', branch, checkout, base);
+    flow.workspace = { checkout, branch, base };
+    flow.blocks[0].data.fields = { type: 'investigation' };
+    const understand = flow.blocks.find(({ kind }) => kind === 'understand');
+    const path = join(project, '.issues', 'manual-fixed-evidence.txt');
+    const output = 'The project serves the saved issue flow.';
+    writeFileSync(path, output);
+    understand.attempts.push({
+      id: 'fixture-understand',
+      status: 'completed',
+      startedAt: '2026-11-16T12:00:00Z',
+      output,
+      evidence: [{ path, sha256: createHash('sha256').update(output).digest('hex') }],
+      result: { head: base, base, tree: git(checkout, 'rev-parse', 'HEAD^{tree}') },
+    });
+    service.flows.store.save(flow, flow.revision);
+    const executionCount = logs.execution.length;
+    await page.goto(new URL('/?issue=' + issueId, page.url()).href);
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Close this issue' });
+    await dialog.getByLabel('Reason', { exact: true }).selectOption('fixed');
+    await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    const saved = service.flows.selected(issueId);
+    assert.equal(saved.closure.reason, 'fixed');
+    assert.equal(saved.accepted_result.revision, base);
+    assert.equal(readFileSync(saved.accepted_result.evidence[0].path, 'utf8'), output);
+    assert.deepEqual(
+      logs.execution.slice(executionCount).map(({ blockId }) => blockId),
+      [service.flows.read(saved).blocks.find(({ kind }) => kind === 'cleanup').id]
+    );
+    assert.deepEqual(logs.pageErrors, []);
+  });
+  await check('Create issue opts into approval and Retro without starting work', async () => {
+    const previous = issueId;
+    const runs = logs.execution.length;
+    const create = page.locator('#capture-dialog');
+    await page.locator('#new-issue').click();
+    assert.equal(await create.getByLabel('Run a retro').isChecked(), false);
+    assert.equal(await create.getByLabel('Needs approval').isChecked(), false);
+    await create.getByLabel('Your request').fill('Review an idle approval proposal');
+    await create.getByLabel('Run a retro').check();
+    await create.getByLabel('Needs approval').check();
+    await create.getByRole('button', { name: 'Create issue', exact: true }).click();
+    const approval = page.getByRole('combobox', { name: 'Needs approval', exact: true });
+    await approval.waitFor();
+    await page.locator('#close-with-reason').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#worktree-menu').isVisible(), false);
+    await approval.selectOption('approve-issue');
+    await page.locator('#close-with-reason').waitFor();
+    assert.equal(await approval.isVisible(), false);
+    assert.equal(logs.execution.length, runs);
+    await page.goto(new URL('/?issue=' + previous, page.url()).href);
+  });
+  await check('Worktree Delete requires confirmation and shows why the menu is disabled afterward', async () => {
+    const { checkout, branch } = (await view()).flow.workspace;
+    const menu = page.getByRole('combobox', { name: 'Worktree', exact: true });
+    const cancel = page.waitForEvent('dialog');
+    await menu.selectOption('delete');
+    const preview = await cancel;
+    assert.match(preview.message(), /Delete this issue worktree/);
+    assert.ok(preview.message().includes(realpathSync(checkout)));
+    await preview.dismiss();
+    assert.ok(readFileSync(join(checkout, 'source.txt'), 'utf8'));
+
+    const uncommitted = join(checkout, 'draft.txt');
+    writeFileSync(uncommitted, 'Uncommitted work.');
+    page.once('dialog', (dialog) => void dialog.accept());
+    await menu.selectOption('delete');
+    await page.locator('#error-message').filter({ hasText: 'Unsaved workspace changes' }).waitFor();
+    assert.equal(readFileSync(uncommitted, 'utf8'), 'Uncommitted work.');
+    rmSync(uncommitted);
+
+    page.once('dialog', (dialog) => void dialog.accept());
+    await menu.selectOption('delete');
+    await page.getByText('Worktree deleted.', { exact: true }).waitFor();
+    assert.equal(await menu.isDisabled(), true);
+    assert.equal(await menu.getAttribute('title'), 'This issue’s worktree has been deleted.');
+    assert.throws(() => readFileSync(join(checkout, 'source.txt')), /ENOENT/);
+    assert.equal(git(project, 'branch', '--list', branch), '');
+    assert.equal(service.flows.selected(issueId).closure.reason, 'fixed');
+  });
+  await check('Closed issues can be reopened or archived from Flow', async () => {
+    const archive = page.getByRole('combobox', { name: 'Archive', exact: true });
+    const close = page.getByRole('button', { name: 'Close', exact: true });
+    await archive.waitFor();
+    assert.equal(await close.isVisible(), false);
+    assert.equal(await archive.locator('option[value="reveal"]').textContent(), 'Reveal in Finder');
+    page.once('dialog', (dialog) => void dialog.accept());
+    await archive.selectOption('reopen');
+    await close.waitFor();
+    assert.equal(service.flows.selected(issueId).location, 'open');
+    assert.equal(await archive.isVisible(), false);
+
+    issueId = playbackIssueId;
+    await page.goto('/?issue=' + issueId);
+    await archive.waitFor();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await archive.selectOption('archive');
+    await page.getByText('Issue archived.', { exact: true }).waitFor();
+    await archive.waitFor({ state: 'hidden' });
+    assert.equal(new URL(page.url()).searchParams.has('issue'), false);
+    assert.match(readFileSync(join(project, '.issues/archive', issueId + '.md'), 'utf8'), /duplicate/);
   });
   passed = true;
 } catch (error) {

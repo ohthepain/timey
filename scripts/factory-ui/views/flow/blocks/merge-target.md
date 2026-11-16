@@ -1,4 +1,4 @@
-# Merge from target block
+# Update branch block
 
 Merge the current target into the issue branch when you choose.
 

@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
-import { assertChecks, inspectReadiness, latestChecks } from './strategy-readiness.mjs';
+import { assertChecks, inspectReadiness, inspectRequiredPRChecks, latestChecks } from './strategy-readiness.mjs';
 import { infrastructureFailure, repairableBlocker } from './strategy-repair.mjs';
 import { findIssueBranchPR, findStrategyPR, publishStrategyPR } from './strategy-publication.mjs';
 
@@ -40,44 +40,25 @@ export class StrategyProvider {
     requireThat(Number.isSafeInteger(number) && number > 0, 'Return the actual issue PR number.');
     return JSON.parse(await this.gh(['api', `repos/${this.config.repository}/pulls/${number}`]));
   }
-  async inspectExternalDelivery(number) {
+  async inspectExternalDelivery(number, { requiredChecksOnly = false } = {}) {
     requireThat(Number.isSafeInteger(number) && number > 0, 'Enter the pull request number to verify.');
     const pr = await this.inspect(number);
     assertExternalPRState(pr);
     assertExternalPRRepository(pr, this.config.repository);
     assertExternalPRTarget(pr, this.config.target, this.config.repository);
-    const comparison = JSON.parse(
-      await this.gh([
-        'api',
-        `repos/${this.config.repository}/compare/${encodeURIComponent(pr.merge_commit_sha)}...${encodeURIComponent(this.config.target)}`,
-      ])
-    );
-    assertCurrentTargetContainsPR(comparison);
-    const view = JSON.parse(
-      await this.gh([
-        'pr',
-        'view',
-        String(number),
-        '--repo',
-        this.config.repository,
-        '--json',
-        'statusCheckRollup,files',
-      ])
-    );
-    const checks = latestChecks(view.statusCheckRollup || []);
-    assertChecks(checks);
-    assertExternalFiles(view.files);
+    const { targetRevision, checks, files } = await externalDeliveryEvidence(this, number, pr, requiredChecksOnly);
+    assertExternalFiles(files);
     return {
       number,
       url: pr.html_url,
       target: pr.base.ref,
-      targetRevision: comparison.head_sha,
+      targetRevision,
       branch: pr.head.ref,
       head: pr.head.sha,
       mergedAt: pr.merged_at,
       mergeCommit: pr.merge_commit_sha,
       checks,
-      files: view.files.map((file) => file.path),
+      files: files.map((file) => file.path),
     };
   }
   async publish(work, head, publication) {
@@ -202,6 +183,37 @@ export class StrategyProvider {
     );
     return { url: pr.html_url, revision: pr.merge_commit_sha };
   }
+}
+
+async function externalDeliveryEvidence(provider, number, pr, requiredChecksOnly) {
+  if (requiredChecksOnly) {
+    const ready = await inspectRequiredPRChecks(provider, number, pr.head.sha);
+    await compareExternalTarget(provider, pr.merge_commit_sha, ready.targetRevision);
+    const { files } = await externalPRFields(provider, number, 'files');
+    return { ...ready, files };
+  }
+  const comparison = await compareExternalTarget(provider, pr.merge_commit_sha, provider.config.target);
+  const { statusCheckRollup, files } = await externalPRFields(provider, number, 'statusCheckRollup,files');
+  const checks = latestChecks(statusCheckRollup ?? []);
+  assertChecks(checks);
+  return { targetRevision: comparison.head_sha, checks, files };
+}
+
+async function compareExternalTarget(provider, merged, target) {
+  const comparison = JSON.parse(
+    await provider.gh([
+      'api',
+      `repos/${provider.config.repository}/compare/${encodeURIComponent(merged)}...${encodeURIComponent(target)}`,
+    ])
+  );
+  assertCurrentTargetContainsPR(comparison);
+  return comparison;
+}
+
+async function externalPRFields(provider, number, fields) {
+  return JSON.parse(
+    await provider.gh(['pr', 'view', String(number), '--repo', provider.config.repository, '--json', fields])
+  );
 }
 
 function assertExternalPRState(pr) {

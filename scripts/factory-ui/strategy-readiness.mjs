@@ -8,6 +8,7 @@ const readinessQuery = `
         headRefOid
         baseRefName
         baseRefOid
+        baseRef { target { oid } }
         mergeStateStatus
         reviewDecision
         autoMergeRequest { enabledAt }
@@ -220,14 +221,17 @@ function assertPassingChecks(checks) {
     throw pendingReadiness('PR checks are pending: ' + pending.map((check) => check.name ?? check.context).join(', '));
 }
 
+function assertRequiredChecks(checks) {
+  assertPassingChecks(checks.filter((check) => check.isRequired));
+}
+
 function pendingReadiness(message) {
   return Object.assign(Error(message), { code: 'STRATEGY_PENDING' });
 }
 
 function assertMergeState(view, checks, waitForChecks) {
   const state = view.mergeStateStatus;
-  if (['CLEAN', 'HAS_HOOKS', 'UNSTABLE'].includes(state))
-    return assertPassingChecks(checks.filter((check) => check.isRequired));
+  if (['CLEAN', 'HAS_HOOKS', 'UNSTABLE'].includes(state)) return assertRequiredChecks(checks);
   if (state === 'BLOCKED') assertBlockedPR(view, checks, waitForChecks);
   const blocker = mergeStateErrors.get(state);
   throw blocker ? blocker() : Error('GitHub has not reported this PR ready to merge.');
@@ -249,6 +253,14 @@ export async function inspectReadiness(provider, pr, branch, head, canBypassHand
   if (canBypassHandoffReview) await assertHandoffReadiness(pr, live, checks, canBypassHandoffReview);
   else if (!pr.merged_at) assertMergeState(live, checks, waitForChecks);
   return readinessResult(pr, head, live.baseRefOid, checks);
+}
+
+export async function inspectRequiredPRChecks(provider, number, head) {
+  const { live, checks } = await observeReadiness(provider, number, head);
+  assertRequiredChecks(checks);
+  const targetRevision = live.baseRef?.target?.oid;
+  requireThat(targetRevision, 'GitHub did not resolve the current target branch for the merged PR.');
+  return { targetRevision, checks };
 }
 
 async function observeReadiness(provider, number, head) {

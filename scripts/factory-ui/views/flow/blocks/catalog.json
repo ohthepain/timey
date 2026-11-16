@@ -84,7 +84,7 @@
     "defaultSkill": null
   },
   "merge-target": {
-    "label": "Merge from target",
+    "label": "Update branch",
     "color": "blue",
     "order": 15,
     "defaultSkill": null
@@ -111,6 +111,12 @@
     "label": "Close",
     "color": "neutral",
     "order": 19,
+    "defaultSkill": null
+  },
+  "cleanup": {
+    "label": "Cleanup",
+    "color": "neutral",
+    "order": 20,
     "defaultSkill": null
   },
   "delete-worktree": {
