@@ -47,14 +47,15 @@ function fixture(t, behavior = {}) {
     store: { runs: [], connected: new Map() },
   };
   const queue = createSharedIssueQueue(service, {
-    pushDirect(commit, destination, claim) {
-      pushes.push({ commit, destination, claim });
+    pushDirect(commit, destination, claim, expectedHead) {
+      pushes.push({ commit, destination, claim, expectedHead });
       behavior.before?.({ root, remote, commit, claim, pushes });
       git(
         root,
         'push',
         '--atomic',
         `--force-with-lease=${claimRef}:${claim.oid}`,
+        `--force-with-lease=${destination}:${expectedHead}`,
         'origin',
         `${commit}:${destination}`,
         `:${claimRef}`
@@ -198,6 +199,7 @@ registerHooks({load(url, context, next) {
       repository: 'example/timey',
       targetRef: target,
       commit,
+      expectedHead: git(root, 'rev-parse', `${commit}^`),
       releaseClaim: { issueId: id, oid: claim.oid },
     }),
     encoding: 'utf8',
@@ -206,5 +208,117 @@ registerHooks({load(url, context, next) {
   assert.equal(output.includes('private-fixture-token'), false);
   assert.equal(git(remote, 'rev-parse', target), commit);
   assert.equal(git(remote, 'for-each-ref', claimRef), '');
+  assert.throws(
+    () =>
+      execFileSync(process.execPath, ['--import', pathToFileURL(preload).href, helper], {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: tools + ':' + process.env.PATH,
+          ATOMIC_TEST_REMOTE: remote,
+          ATOMIC_TEST_GIT: realGit,
+        },
+        input: JSON.stringify({
+          repository: 'example/timey',
+          targetRef: target,
+          commit,
+          expectedHead: commit,
+          releaseClaim: { issueId: id, oid: claim.oid },
+        }),
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }),
+    /directly extend/
+  );
+  assert.equal(git(remote, 'rev-parse', target), commit);
   owner.forgetReleased(claim);
+});
+
+function traceGit(t) {
+  const directory = mkdtempSync(join(tmpdir(), 'archive-batch-trace-'));
+  const previous = process.env.GIT_TRACE;
+  process.env.GIT_TRACE = join(directory, 'git.trace');
+  t.after(() => {
+    if (previous === undefined) delete process.env.GIT_TRACE;
+    else process.env.GIT_TRACE = previous;
+    rmSync(directory, { recursive: true, force: true });
+  });
+}
+
+function tracedFetches(action) {
+  const path = process.env.GIT_TRACE;
+  const previous = process.env.GIT_TRACE;
+  const offset = existsSync(path) ? readFileSync(path, 'utf8').length : 0;
+  process.env.GIT_TRACE = path;
+  try {
+    action();
+  } finally {
+    if (previous === undefined) delete process.env.GIT_TRACE;
+    else process.env.GIT_TRACE = previous;
+  }
+  return readFileSync(path, 'utf8')
+    .slice(offset)
+    .split('\n')
+    .filter((line) => /built-in: git fetch /.test(line)).length;
+}
+
+test('a direct archive batches from its verified claim snapshot with three total fetches', (t) => {
+  traceGit(t);
+  const { root, queue, pushes } = fixture(t);
+  const fetches = tracedFetches(() => assert.equal(queue.moveStorage(id, 'archive', content).status, 'published'));
+  assert.equal(fetches, 3);
+  assert.equal(pushes[0].expectedHead, git(root, 'rev-parse', `${pushes[0].commit}^`));
+});
+
+test('a target rewind rejects a stale batch even when its commit would otherwise fast-forward', (t) => {
+  let original;
+  let advanced;
+  const { root, remote, queue, pushes } = fixture(t, {
+    before({ remote, pushes, claim }) {
+      if (pushes.length === 1) git(remote, 'update-ref', target, original);
+      else assert.equal(git(remote, 'rev-parse', claimRef), claim.oid);
+    },
+  });
+  original = git(remote, 'rev-parse', target);
+  advanced = git(root, 'commit-tree', git(root, 'rev-parse', 'HEAD^{tree}'), '-p', original, '-m', 'Advanced queue');
+  git(root, 'push', 'origin', `${advanced}:${target}`);
+  assert.equal(queue.moveStorage(id, 'archive', content).status, 'published');
+  assert.equal(pushes.length, 2);
+  assert.equal(pushes[0].expectedHead, advanced);
+  assert.equal(pushes[1].expectedHead, original);
+  assert.equal(git(remote, 'rev-parse', target), pushes[1].commit);
+});
+
+test('a changed selected report rejects the batch and retains the changed remote report', (t) => {
+  let changed;
+  const { root, remote, queue, pushes } = fixture(t, {
+    before({ root, remote, pushes }) {
+      if (pushes.length !== 1) return;
+      writeFileSync(join(root, '.issues/closed', id + '.md'), content + 'Changed remotely.\n');
+      git(root, 'add', '.issues/closed/' + id + '.md');
+      git(root, 'commit', '-qm', 'Change selected report');
+      changed = git(root, 'rev-parse', 'HEAD');
+      git(root, 'push', 'origin', `${changed}:${target}`);
+      writeFileSync(join(root, '.issues/closed', id + '.md'), content);
+    },
+  });
+  assert.equal(queue.moveStorage(id, 'archive', content).status, 'failed');
+  assert.equal(pushes.length, 1);
+  assert.equal(git(remote, 'rev-parse', target), changed);
+  assert.match(git(remote, 'show', `${target}:.issues/closed/${id}.md`), /Changed remotely/);
+  assert.equal(readFileSync(join(root, '.issues/closed', id + '.md'), 'utf8'), content);
+  assert.equal(git(remote, 'rev-parse', claimRef), pushes[0].claim.oid);
+});
+
+test('an explicit archive retry fetches fresh state instead of reusing its saved batch head', (t) => {
+  traceGit(t);
+  const { root, queue } = fixture(t, {
+    after({ root }) {
+      writeFileSync(join(root, '.issues/archive', id + '.md'), content + 'Conflicting copy.\n');
+    },
+  });
+  assert.equal(queue.moveStorage(id, 'archive', content).status, 'failed');
+  writeFileSync(join(root, '.issues/archive', id + '.md'), content);
+  const fetches = tracedFetches(() => assert.equal(queue.retry(id).status, 'published'));
+  assert.equal(fetches, 1);
 });

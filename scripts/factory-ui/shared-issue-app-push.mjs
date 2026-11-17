@@ -4,7 +4,7 @@ import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
 
 // This process bridges the synchronous queue publisher and async App authentication.
-const { repository, targetRef, commit, releaseClaim } = JSON.parse(readFileSync(0, 'utf8'));
+const { repository, targetRef, commit, releaseClaim, expectedHead } = JSON.parse(readFileSync(0, 'utf8'));
 requireThat(typeof repository === 'string' && /^[\w.-]+\/[\w.-]+$/.test(repository), 'Invalid repository.');
 requireThat(typeof commit === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(commit), 'Invalid commit.');
 requireThat(
@@ -24,6 +24,13 @@ function archiveClaimRef(claim) {
   return 'refs/heads/claims/' + claim.issueId;
 }
 const claimRef = archiveClaimRef(releaseClaim);
+if (expectedHead !== undefined) {
+  requireThat(Boolean(claimRef), 'A target hash guard requires an archive claim.');
+  requireThat(
+    typeof expectedHead === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(expectedHead),
+    'Invalid expected queue head.'
+  );
+}
 requireThat(!claimRef || targetRef !== claimRef, 'Queue target must differ from the claim ref.');
 const url = `https://github.com/${repository}.git`;
 const remote = 'timey-queue-app';
@@ -41,6 +48,11 @@ const git = (args, authentication = {}) =>
   }).trim();
 
 git(['check-ref-format', targetRef]);
+if (expectedHead !== undefined)
+  requireThat(
+    git(['rev-parse', `${commit}^`]) === expectedHead,
+    'The queue commit must directly extend its expected head.'
+  );
 const pushUrls = git(['remote', '-v'])
   .split('\n')
   .filter((line) => line.startsWith(`${remote}\t`) && line.endsWith(' (push)'));
@@ -71,6 +83,7 @@ try {
       '--no-follow-tags',
       '--recurse-submodules=no',
       ...(claimRef ? ['--atomic', `--force-with-lease=${claimRef}:${releaseClaim.oid}`] : []),
+      ...(expectedHead === undefined ? [] : [`--force-with-lease=${targetRef}:${expectedHead}`]),
       remote,
       `${commit}:${targetRef}`,
       ...(claimRef ? [`:${claimRef}`] : []),

@@ -218,8 +218,9 @@ export function createSharedIssueQueue(service, options = {}) {
     );
     const claim = claims.acquire(issue.id);
     remoteClaims.set(issue.id, claim);
+    let current;
     try {
-      const current = publication.readTarget(issue.id);
+      current = publication.readTarget(issue.id);
       requireThat(
         current.report === initial.report && current.location === initial.location,
         'The shared issue changed while it was being claimed. Refresh the shared queue before starting.'
@@ -228,9 +229,17 @@ export function createSharedIssueQueue(service, options = {}) {
       release(issue.id, claim);
       throw error;
     }
-    const context = { claim, base: initial.report, baseLocation: initial.location };
+    const context = {
+      claim,
+      base: initial.report,
+      baseLocation: initial.location,
+      ...archiveBatch(storageAction, current),
+    };
     save({ id: issue.id, ...context, storageAction, flowBlock }, { status: 'claimed' });
     return context;
+  }
+  function archiveBatch(action, target) {
+    return config.direct && action === 'archive' ? { batchHead: target.head } : {};
   }
   function initialReportMatches(issue, initial, allowDraft) {
     return (
@@ -283,6 +292,7 @@ export function createSharedIssueQueue(service, options = {}) {
         report: record.report,
         reason: record.reason,
         releaseClaim: archiveClaim(record),
+        batchHead: record.batchHead,
       });
       if (result.status === 'landed') return publishConfirmed(record, result);
       return save(record, { status: 'review', url: result.url, error: null });

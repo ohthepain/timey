@@ -644,7 +644,10 @@ matches and read the current body each time. Mutation freshness checks remain
 independent of this display cache. A selected report missing locally waits for
 its first shared copy. `shared-issue-queue.mjs` reuses the archive preflight's
 target snapshot for initial claim validation, then fetches again after claiming
-and before publication.
+to validate the report. A direct archive prepares its publication from that
+verified commit and requires the remote branch to retain the same hash. The
+candidate must be a direct child of the verified commit. A changed remote head
+requires a fresh read and revalidation before retrying.
 `shared-issue-transport.mjs` owns a private, reusable SSH connection for each
 shared queue. Claims, publication reads and background refresh share that
 connection. Custom SSH commands and non-SSH remotes retain their existing

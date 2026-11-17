@@ -436,15 +436,16 @@ export function createSharedIssuePublication({
     });
   }
 
-  function publish({ issueId, base, report, reason, location = 'open', releaseClaim }, refresh = false) {
+  function publish({ issueId, base, report, reason, location = 'open', releaseClaim, batchHead }, refresh = false) {
     const candidate = requestedReport(report, location);
     const expected =
       typeof base === 'object' && base !== null
         ? { report: base.report, location: base.location ?? (base.report === null ? null : 'open') }
         : { report: base, location: base === null ? null : 'open' };
     requestedBase(issueId, candidate, expected, releaseClaim);
+    validateBatchHead(batchHead, releaseClaim);
     return withPublicationLock(issueId, (path) => {
-      const live = readTarget(issueId);
+      const live = publicationTarget(issueId, batchHead, refresh);
       let record = publicationRecord(issueId, candidate, expected, reason, live, path);
       if (record.status === 'landed') {
         if (record.direct) writeJson(path, record);
@@ -457,6 +458,17 @@ export function createSharedIssuePublication({
       writeJson(path, result);
       return result;
     });
+  }
+
+  function validateBatchHead(head, claim) {
+    if (head === undefined) return;
+    requireThat(Boolean(claim) && objectIdPattern.test(head), 'A batch needs an archive claim and valid target head.');
+  }
+
+  function publicationTarget(issueId, head, refresh) {
+    if (refresh || head === undefined) return readTarget(issueId);
+    assertRemote();
+    return { head, ...readReport(head, issueId), numbers: readPath(head, numbersPath) };
   }
 
   function publicationRecord(issueId, candidate, expected, reason, live, path) {
@@ -546,24 +558,28 @@ export function createSharedIssuePublication({
 
   function attemptDirectPush(record) {
     try {
-      const receipt = (pushDirect ?? pushWithApp)(record.commit, targetRef, record.releaseClaim);
+      const receipt = (pushDirect ?? pushWithApp)(record.commit, targetRef, record.releaseClaim, archiveParent(record));
       return { receipt, error: Error('Git did not confirm the direct queue push. Retry publication.') };
     } catch (error) {
       return { error };
     }
   }
 
+  function archiveParent(record) {
+    return record.releaseClaim ? git('rev-parse', `${record.commit}^`) : undefined;
+  }
+
   function parsePushReceipt(output) {
     return output.trim() ? JSON.parse(output) : undefined;
   }
 
-  function pushWithApp(commit, destination, releaseClaim) {
+  function pushWithApp(commit, destination, releaseClaim, expectedHead) {
     try {
       const output = command(
         process.execPath,
         [fileURLToPath(new URL('./shared-issue-app-push.mjs', import.meta.url))],
         {
-          input: JSON.stringify({ repository, targetRef: destination, commit, releaseClaim }),
+          input: JSON.stringify({ repository, targetRef: destination, commit, releaseClaim, expectedHead }),
         }
       );
       return parsePushReceipt(output);
