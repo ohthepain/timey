@@ -8,7 +8,7 @@ import { basename, join } from 'node:path';
 import { factory } from '../factory-ledger.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { readImplementationOrder } from './implementation-order.mjs';
-import { sharedIssueQueueEnabled } from './shared-issue-config.mjs';
+import { queueReportPaths, sharedIssueQueueEnabled } from './shared-issue-config.mjs';
 import { queueIssueNumbers } from './issue-numbers.mjs';
 import { listStoredIssues } from './issue-report-storage.mjs';
 import { readIssueFolders } from './issue-folders.mjs';
@@ -101,7 +101,7 @@ export function readQueue(project, { location = 'open', issueId } = {}) {
       'status',
       '--porcelain',
       '--untracked-files=all',
-      ...(sharedIssueQueueEnabled(root) ? ['--', '.', ':(exclude).issues/**'] : [])
+      ...(sharedIssueQueueEnabled(root) ? ['--', '.', ...queueReportPaths(true)] : [])
     ),
   };
 }

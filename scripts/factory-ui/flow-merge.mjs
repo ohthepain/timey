@@ -13,6 +13,7 @@ import {
 } from './flow-delivery.mjs';
 import { permissionFailure, repairableBlocker } from './strategy-repair.mjs';
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
+import { queueReportPaths } from './shared-issue-config.mjs';
 
 const headOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD');
 const treeOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
@@ -98,7 +99,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
   const verification = state.checked.verification;
   verifiedFlowCandidate(ctx, workspace, { ...options, verification });
   requireThat(
-    !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', '.issues/'),
+    !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
     'Shared issue reports require their separate human-reviewed queue PR.'
   );
   if (state.workflow.policy === 'human-first' && previousApproval(ctx)?.token !== confirmation.token) {
