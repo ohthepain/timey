@@ -346,6 +346,21 @@
         </div>
       </form>
     </dialog>
+    <dialog id="starting-branch-dialog" class="modal" aria-labelledby="starting-branch-heading">
+      <form method="dialog">
+        <h2 id="starting-branch-heading">Change starting branch</h2>
+        <p id="starting-branch-target"></p>
+        <p>
+          Timey saves local edits in a commit and replays the issue commits on the selected branch. Previous runs stay
+          in history.
+        </p>
+        <p id="starting-branch-error" role="alert" hidden></p>
+        <div class="block-actions">
+          <button class="small-button" value="cancel">Cancel</button>
+          <button class="primary-button" id="move-starting-branch" type="button">Move issue work</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="destination-dialog" class="modal" aria-labelledby="destination-heading">
       <form method="dialog">
         <h2 id="destination-heading">Destination branch</h2>

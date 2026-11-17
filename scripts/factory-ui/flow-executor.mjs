@@ -42,7 +42,7 @@ import {
   resumeWorkDependencies,
   workVerificationScript,
 } from './flow-verification.mjs';
-import { startingBranchUpstream, updateIssueBranch } from './flow-update-branch.mjs';
+import { moveIssueBase, startingBranchUpstream, updateIssueBranch } from './flow-update-branch.mjs';
 import { runRetro } from './flow-retro.mjs';
 
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
@@ -202,7 +202,7 @@ async function workspaceFor(service, ctx, prepare = true) {
     attempts: [],
     retriedRuns: [],
   };
-  const saved = record.work || record.chatCheckout || ctx.flow.workspace;
+  const saved = record.work || ctx.flow.workspace || record.chatCheckout;
   requireThat(prepare || saved?.checkout, 'The issue needs a saved checkout before accepting its result.');
   const workspace = saved?.checkout
     ? { checkout: saved.checkout, branch: saved.branch, base: saved.base }
@@ -305,6 +305,17 @@ function evidenceDirectory(service, ctx) {
   requireThat(/^[A-Za-z0-9_-]{1,120}$/.test(ctx.attempt.id), 'Use a valid block attempt identity.');
   mkdirSync(folder, { recursive: true });
   return folder;
+}
+
+export async function moveFlowStartingPoint(service, ctx, point) {
+  assertIdle(operationService(service, ctx.issue.id), ctx.issue.id);
+  const workspace = await workspaceFor(service, ctx, false);
+  guardBlock(service, ctx, 'implement', workspace.base);
+  const log = join(evidenceDirectory(service, ctx), 'command.log');
+  await moveIssueBase(workspace, startingPoint(ctx.flow)?.ref, point.commit, (command, args) =>
+    executeCommand({ command, args, cwd: workspace.checkout, log, signal: ctx.signal, onProgress() {} })
+  );
+  return { ...workspace, base: point.commit };
 }
 
 function blockInput(ctx, extra = {}) {
@@ -880,7 +891,7 @@ async function runCommand(service, ctx, options) {
     return commandResult(service, ctx, result, result.summary);
   }
   if (kind === 'cleanup') {
-    const saved = work || record?.chatCheckout || ctx.flow.workspace;
+    const saved = work || ctx.flow.workspace || record?.chatCheckout;
     const workspace = saved && { ...saved };
     if (workspace && !workspace.config) {
       try {
@@ -954,7 +965,7 @@ async function runCommand(service, ctx, options) {
     return commandResult(service, ctx, result, 'The protected acceptance and closure operation finished.');
   }
   if (kind === 'delete-worktree') {
-    const workspace = record?.work || record?.chatCheckout || ctx.flow.workspace;
+    const workspace = record?.work || ctx.flow.workspace || record?.chatCheckout;
     requireThat(workspace?.checkout, 'No managed checkout is recorded for this issue.');
     const cleanupService = worktreeCleanupService(service, ctx.issue.id, workspace);
     const remove = options.deleteWorktree || deleteIssueWorktree;

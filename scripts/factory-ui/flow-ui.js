@@ -393,6 +393,7 @@
       status(activeBlock()) === 'stopping';
     updatePlaybackAvailability(busy);
     $('close-publish').disabled = busy;
+    $('move-starting-branch').disabled = busy;
     const startingBranch = $('starting-branch');
     if (startingBranch)
       startingBranch.disabled = busy || !state.view?.startingPointEditable || !state.view.branches?.length;
@@ -795,13 +796,7 @@
       options.unshift(
         `<option value="${escape(selectedRef)}" selected>${escape(pinnedCommit ? `${selectedLabel} · ${pinnedCommit.slice(0, 8)}` : 'Choose a branch')}${point && !selectedBranch ? ' (unavailable)' : ''}</option>`
       );
-    const startingNote =
-      state.view.branchCatalogError ||
-      (!branches.length
-        ? 'No Git branches are available.'
-        : state.view.startingPointEditable
-          ? 'Changes the starting branch for this issue.'
-          : 'Starting point is fixed after work begins.');
+    const startingNote = startingBranchNote(state.view, branches);
     const layers = graphLayers(blocks);
     const destination = destinationNode();
     const baseNode = `<div class="graph-terminal base" data-node="__base"><span class="terminal-label">Starting point</span><label class="starting-branch-label" for="starting-branch">Starting branch</label><select id="starting-branch" aria-describedby="starting-branch-note" title="Change the starting branch for this issue">${options.join('')}</select>${pinnedCommit ? `<span class="terminal-note starting-commit" title="${escape(pinnedCommit)}">Base ${escape(pinnedCommit.slice(0, 12))}</span>` : ''}${flow.workspace?.branch ? `<span class="terminal-note">${escape(flow.workspace.branch)}</span>` : ''}<span class="terminal-note" id="starting-branch-note">${escape(startingNote)}</span></div>`;
@@ -818,6 +813,16 @@
       state.graphScrollIntent = null;
       if (intent) scrollToBlock(intent);
     });
+  }
+
+  function startingBranchNote(view, branches) {
+    if (view.branchCatalogError) return view.branchCatalogError;
+    if (!branches.length) return 'No Git branches are available.';
+    if (view.destination?.locked) return 'The issue already has a pull request.';
+    if (!view.startingPointEditable) return 'Available for idle, unpublished issues with an available worktree.';
+    return view.environment?.worktreeExists
+      ? 'Choose a branch to move the saved issue work onto it.'
+      : 'Choose a branch for this issue.';
   }
 
   function drawConnections() {
@@ -2135,10 +2140,12 @@
       return;
     }
     if (field.id === 'starting-branch') {
-      void (async () => {
-        await action('starting-point', { ref: field.value });
-        await load(true);
-      })();
+      const ref = field.value;
+      field.blur();
+      if (state.view.environment?.worktreeExists) {
+        field.value = field.querySelector('option[selected]')?.value ?? '';
+        openStartingBranchMove(ref);
+      } else void action('starting-point', { ref }).then(() => load(true));
       return;
     }
     if (field.dataset.edit) {
@@ -2194,6 +2201,26 @@
     if (await action('rename-issue', { title, previousTitle: event.currentTarget.dataset.title })) closeRename();
   });
   $('retry-branches').addEventListener('click', loadDestinationBranches);
+  const startingBranchDialog = $('starting-branch-dialog');
+  function openStartingBranchMove(ref) {
+    const branch = state.view.branches.find((option) => option.ref === ref);
+    startingBranchDialog.dataset.ref = ref;
+    startingBranchDialog.dataset.issue = state.issueId;
+    $('starting-branch-target').textContent = 'Move this issue to ' + (branch?.name ?? ref) + '?';
+    $('starting-branch-error').hidden = true;
+    startingBranchDialog.showModal();
+  }
+  $('move-starting-branch').addEventListener('click', async () => {
+    const { ref, issue } = startingBranchDialog.dataset;
+    if (issue !== state.issueId) return startingBranchDialog.close();
+    $('starting-branch-error').hidden = true;
+    const result = await action('starting-point', { ref, confirmed: true }, { errorId: 'starting-branch-error' });
+    if (result) {
+      startingBranchDialog.close();
+      toast('Moved the issue to the selected starting branch.');
+    }
+    await load(true);
+  });
   $('destination-dialog')
     .querySelector('form')
     .addEventListener('submit', async (event) => {

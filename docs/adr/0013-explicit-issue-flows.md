@@ -19,7 +19,14 @@ A starting point records the full Git ref, display name and exact base commit.
 New issues start from the configured delivery branch. Destination follows the
 starting branch on the configured remote until explicitly pinned. An existing
 PR establishes the locked Destination. External base changes require explicit
-acceptance before Publish or Merge. Update Branch fetches the upstream of Starting point and
+acceptance before Publish or Merge. For an idle, unpublished issue, choose a new
+**Starting branch** to move its existing worktree. Timey saves local edits in a
+commit and prepares the issue commits on the selected branch before switching
+the worktree. If the replay conflicts, the original checkout retains the saved
+work. Request stays current and prior runs remain in history. An explicitly
+chosen Destination remains selected.
+
+Update Branch fetches the upstream of Starting point and
 keeps the checkout's original base. The **Starting branch ahead** menu can run **Update
 Branch** immediately with a progress indicator, or add an **Update Branch**
 block that must succeed before **Work** can run. With Play active, **Work**

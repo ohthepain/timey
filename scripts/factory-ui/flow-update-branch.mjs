@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { formatArgs, formattingFiles } from '../format-files.mjs';
 import { git, requireThat } from './common.mjs';
@@ -157,6 +158,85 @@ async function saveLocalChanges(checkout, invoke) {
   } catch (error) {
     reportSaveFailure(error);
   }
+}
+
+export async function moveIssueBase(workspace, previousRef, target, invoke) {
+  const { checkout, branch: issueBranch } = workspace;
+  requireIdleCheckout(workspace);
+  const current = head(checkout);
+  const boundary = replayBoundary(workspace, previousRef, current);
+  requireThat(
+    !git(checkout, 'rev-list', '--merges', current, '^' + boundary, '^' + target),
+    'The issue has merge commits outside the selected branch. Move its changes manually before changing the starting branch.'
+  );
+  await saveLocalChanges(checkout, invoke);
+  requireIdleCheckout(workspace);
+  requireThat(!status(checkout), 'Files changed while saving local work. Review the issue worktree and retry.');
+  const saved = head(checkout);
+  const prepared = await prepareIssueBase(checkout, saved, boundary, target, invoke);
+  requireIdleCheckout(workspace);
+  requireThat(
+    head(checkout) === saved && !status(checkout),
+    'The issue checkout changed during the move. Review it before retrying.'
+  );
+  if (prepared !== saved) await invoke('git', ['checkout', '--no-overwrite-ignore', '-B', issueBranch, prepared]);
+}
+
+function replayBoundary({ checkout, base }, previousRef, current) {
+  requireThat(containsTarget(checkout, base, current), 'The issue branch no longer contains its saved base.');
+  const previous = existingStartingRef(checkout, previousRef) ?? base;
+  const fork = mergeBase(checkout, previous, current) ?? base;
+  return containsTarget(checkout, base, fork) ? fork : base;
+}
+
+function existingStartingRef(checkout, ref) {
+  if (ref && git(checkout, 'for-each-ref', '--format=%(refname)', '--', ref) === ref) return ref;
+}
+
+function mergeBase(checkout, left, right) {
+  try {
+    return git(checkout, 'merge-base', left, right);
+  } catch (error) {
+    if (error.status !== 1) throw error;
+  }
+}
+
+async function prepareIssueBase(checkout, saved, boundary, target, invoke) {
+  if (containsTarget(checkout, target, saved) && containsTarget(checkout, boundary, target)) return saved;
+  if (saved === boundary) return target;
+  return replayIssueCommits(checkout, saved, boundary, target, invoke);
+}
+
+async function replayIssueCommits(checkout, saved, boundary, target, invoke) {
+  const scratch = mkdtempSync(join(tmpdir(), 'timey-move-branch-'));
+  const replay = join(scratch, 'replay');
+  try {
+    await invoke('git', ['worktree', 'add', '--detach', replay, saved]);
+    await invoke('git', [
+      '-C',
+      replay,
+      'rebase',
+      '--no-autostash',
+      '--no-update-refs',
+      '--no-rebase-merges',
+      '--onto',
+      target,
+      boundary,
+    ]).catch((error) => reportReplayFailure(replay, error));
+    return head(replay);
+  } finally {
+    if (existsSync(replay)) git(checkout, 'worktree', 'remove', '--force', replay);
+    rmdirSync(scratch);
+  }
+}
+
+function reportReplayFailure(replay, error) {
+  const files = conflicts(replay);
+  if (files.length)
+    error.message =
+      'The saved issue changes conflict with the selected branch. The original worktree retains them. Files: ' +
+      files.join(', ');
+  throw error;
 }
 
 export async function updateIssueBranch(workspace, upstream, invoke, repair, signal) {
