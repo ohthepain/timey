@@ -87,7 +87,6 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
     const ref = claimRef(issueId);
     return locked(issueId, (path) => {
       requireThat(!own(issueId), 'This checkout already has a claim record. Reconcile it before starting again.');
-      requireThat(!remoteOid(ref), 'Another run already claims this issue.');
       const identity = { issueId, attemptId: randomUUID(), runner: hostname(), remote };
       const tree = execute(['mktree'], '').trim();
       const oid = execute([
@@ -136,23 +135,21 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
     const ref = claimRef(issueId);
     return locked(issueId, (path) => {
       requireThat(own(issueId)?.oid === oid && oidPattern.test(oid), 'The saved issue claim does not match this run.');
-      if (remoteOid(ref) === oid) {
-        try {
-          execute([
-            'push',
-            '--no-follow-tags',
-            '--recurse-submodules=no',
-            `--force-with-lease=${ref}:${oid}`,
-            '--',
-            remote,
-            `:${ref}`,
-          ]);
-        } catch {
-          requireThat(
-            remoteOid(ref) !== oid,
-            'Could not release the remote claim. Its record was retained for recovery.'
-          );
-        }
+      try {
+        execute([
+          'push',
+          '--no-follow-tags',
+          '--recurse-submodules=no',
+          `--force-with-lease=${ref}:${oid}`,
+          '--',
+          remote,
+          `:${ref}`,
+        ]);
+      } catch {
+        requireThat(
+          remoteOid(ref) !== oid,
+          'Could not release the remote claim. Its record was retained for recovery.'
+        );
       }
       rmSync(path);
       return true;

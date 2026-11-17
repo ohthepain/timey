@@ -136,6 +136,7 @@ export function createSharedIssuePublication({
     'Configure a GitHub repository.'
   );
   const targetRef = `refs/heads/${target}`;
+  const snapshotRef = 'refs/worktree/timey/shared-issue-publication-target';
   assertPublicationTarget(direct, separateBranch, target);
   const directory = join(root, '.issues/shared-publication');
   const environment = cleanEnvironment();
@@ -213,9 +214,8 @@ export function createSharedIssuePublication({
   function readTarget(issueId) {
     issuePath(issueId);
     assertRemote();
-    const head = remoteHead(targetRef);
-    requireThat(head, 'The shared issue target branch could not be found.');
-    git('fetch', '--no-tags', '--no-write-fetch-head', remote, head);
+    git('fetch', '--no-tags', '--no-write-fetch-head', '--refmap=', remote, `+${targetRef}:${snapshotRef}`);
+    const head = git('rev-parse', '--verify', snapshotRef);
     return { head, ...readReport(head, issueId), numbers: readPath(head, numbersPath) };
   }
 

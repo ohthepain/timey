@@ -18,6 +18,10 @@ Use one canonical remote branch per issue, proposed as `refs/heads/claims/<full-
 
 The remote must create the branch only if it is absent. A local branch or a remote lookup followed by an ordinary push is insufficient. The runner starts only after confirming its own claim and rechecking that the latest shared report is still eligible. A conflicting claim, unavailable remote, or unresolved creation result leaves the runner idle. Display the remote claim alongside the report so the queue can show active ownership immediately.
 
+Claim creation and release use Git leases to check the expected remote claim
+in the push itself. Factory reads the claim separately if the push result is
+uncertain.
+
 ## Publish and release
 
 Publish report changes when an issue is created or closed, when Classic Progress ends, or when an explicit handoff needs a shared checkpoint. Save intermediate edits locally. Publish through the queue branch's configured rules and preserve concurrent changes to other reports. If the same report changed remotely, reconcile it before publishing.
@@ -35,6 +39,8 @@ repository contents write permission. Factory recalculates display numbers if
 another report lands first and stops if the same report changed. It stores the
 candidate before pushing and confirms that exact commit is in the queue history
 before releasing the claim. Code PRs still exclude shared reports and numbers.
+Each report check fetches the queue branch directly into a private ref without
+updating the checked-out branch or remote tracking branches.
 
 In GitHub, add an active ruleset targeting exactly `issue-queue`. Enable
 **Restrict updates** and give Timey Software Factory an **Always allow** bypass
