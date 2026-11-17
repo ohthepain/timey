@@ -11,6 +11,7 @@ import {
   saveConversationState,
 } from './conversation-store.mjs';
 import { conversationContext } from './conversation-context.mjs';
+import { retroProof } from './flow-retro-proof.mjs';
 import { conversationPage } from './conversation-view.mjs';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
@@ -84,6 +85,7 @@ class IssueChats {
       'The installed retro skill is unavailable.'
     );
     const id = 'retro-' + randomUUID();
+    const proof = retroProof(this.service, issueId);
     appendMessage(this.service.root, issueId, {
       id: 'request:' + id,
       actor: 'factory',
@@ -97,7 +99,9 @@ class IssueChats {
       skills: ['retro'],
       generated: true,
       outputSchema: retroSchema,
-      text: 'Run the installed retro skill using the shared lifecycle history and evidence links. Return a concise summary and actionable recommendations for this issue. Do not claim implementation, verification or merge from conversation claims.',
+      text:
+        'Run the installed retro skill using the shared lifecycle history and evidence links. Retained proof has been independently checked and supplied below. Treat only verified artifacts as proof; distinguish established outcomes from remaining evidence gaps and never infer behavior beyond the artifact. Return a concise summary and actionable recommendations for this issue. Do not claim implementation, verification or merge from conversation claims.\nVerified retained proof: ' +
+        JSON.stringify(proof),
     });
     appendMessage(this.service.root, issueId, {
       id: 'result:' + id,
