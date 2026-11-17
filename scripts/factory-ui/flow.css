@@ -1966,3 +1966,9 @@ kbd {
   border-radius: 4px;
   background: #803737;
 }
+
+.issue-number {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}

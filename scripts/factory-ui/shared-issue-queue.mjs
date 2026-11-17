@@ -20,7 +20,7 @@ import {
 import { createSharedIssueClaims } from './shared-issue-claims.mjs';
 import { sharedIssueQueueConfig } from './shared-issue-config.mjs';
 import { createSharedIssuePublication } from './shared-issue-publication.mjs';
-import { copySharedIssueFile, syncSharedIssueFiles } from './shared-issue-sync.mjs';
+import { copySharedIssueFile, fetchSharedIssueTarget, syncSharedIssueFiles } from './shared-issue-sync.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
 
 function withSharedProgress(report, status) {
@@ -45,6 +45,8 @@ export function createSharedIssueQueue(service, options = {}) {
   let remoteClaims = new Map();
   let lastRefresh = 0;
   let syncWarning = null;
+  let backgroundRefresh;
+  let refreshGeneration = 0;
 
   function receiptPath(id) {
     requireThat(/^\d[\w-]*$/.test(id), 'Select a valid issue.');
@@ -111,36 +113,64 @@ export function createSharedIssueQueue(service, options = {}) {
       queueMicrotask(() => service.flows?.resumeClosure(record.id));
     return saved;
   }
-  function reconcile(record) {
+  function reconcile(record, revision) {
     if (record.status !== 'review' || active(record.id)) return;
-    const result = publication.inspect(record.id);
+    const result = publication.inspect(record.id, revision);
     if (result?.status === 'landed') publishConfirmed(record, result);
   }
   function refresh(force = false) {
     if (!force && Date.now() - lastRefresh < 30_000) return syncWarning;
     lastRefresh = Date.now();
+    refreshGeneration++;
     try {
-      remoteClaims = claims.list();
-      for (const file of readdirSync(directory)) {
-        if (!/^\d.*\.json$/.test(file)) continue;
-        const record = receipt(file.slice(0, -5));
-        try {
-          reconcile(record);
-        } catch {
-          save(record, {
-            status: 'failed',
-            error: 'Could not reconcile the report PR or release its claim. Review it before retrying.',
-          });
-        }
-      }
-      const conflicts = syncSharedIssueFiles(root, config, syncState, active);
-      syncWarning = conflicts.length
-        ? 'Shared queue changes need reconciliation for ' + conflicts.join(', ') + '.'
-        : null;
+      applyRefresh(claims.list());
     } catch {
-      syncWarning = 'Could not refresh the shared queue. The last observed queue is shown.';
+      refreshFailed();
     }
     return syncWarning;
+  }
+
+  function refreshInBackground(wait = false) {
+    if (!backgroundRefresh && Date.now() - lastRefresh >= 30_000) backgroundRefresh = startRefresh();
+    return wait ? Promise.resolve(backgroundRefresh).then(() => syncWarning) : syncWarning;
+  }
+
+  async function startRefresh() {
+    const generation = ++refreshGeneration;
+    lastRefresh = Date.now();
+    try {
+      const [found, revision] = await Promise.all([claims.listAsync(), fetchSharedIssueTarget(root, config)]);
+      if (refreshGeneration === generation) applyRefresh(found, revision);
+    } catch {
+      if (refreshGeneration === generation) refreshFailed();
+    } finally {
+      backgroundRefresh = null;
+    }
+  }
+
+  function refreshFailed() {
+    syncWarning = 'Could not refresh the shared queue. The last observed queue is shown.';
+  }
+
+  function applyRefresh(found, revision) {
+    remoteClaims = found;
+    for (const file of readdirSync(directory).filter((name) => /^\d.*\.json$/.test(name)))
+      reconcileReceipt(receipt(file.slice(0, -5)), revision);
+    const conflicts = syncSharedIssueFiles(root, config, syncState, active, revision);
+    syncWarning = conflicts.length
+      ? 'Shared queue changes need reconciliation for ' + conflicts.join(', ') + '.'
+      : null;
+  }
+
+  function reconcileReceipt(record, revision) {
+    try {
+      reconcile(record, revision);
+    } catch {
+      save(record, {
+        status: 'failed',
+        error: 'Could not reconcile the report PR or release its claim. Review it before retrying.',
+      });
+    }
   }
   function baseline(id, location = 'open') {
     const key = (location === 'closed' ? 'closed/' : '') + id + '.md';
@@ -176,6 +206,15 @@ export function createSharedIssueQueue(service, options = {}) {
     const context = { claim, base: initial.report, baseLocation: initial.location };
     save({ id: issue.id, ...context, storageAction, flowBlock }, { status: 'claimed' });
     return context;
+  }
+  function acquireForApproval(issue) {
+    const proposal = receipt(issue.id);
+    if (proposal?.base === null && proposal.location === 'open') {
+      reconcileReceipt(proposal);
+      requireThat(proposal.status !== 'review', 'Merge the proposal’s queue PR before approving this issue.');
+      requireThat(proposal.status === 'published', 'Refresh the proposal’s queue PR before approving this issue.');
+    }
+    return acquire(issue, true);
   }
   function flowBlockReceipt(id, blockId) {
     const pending = receipt(id);
@@ -419,12 +458,14 @@ export function createSharedIssueQueue(service, options = {}) {
   return {
     branch: config.separateBranch,
     acquire,
+    acquireForApproval,
     acquireFlowBlock,
     releaseFlowBlock,
     capture,
     checkpoint,
     finish,
     refresh,
+    refreshInBackground,
     retry,
     recover,
     handoff,

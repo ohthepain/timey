@@ -251,10 +251,10 @@ class IssueFlows {
   refreshSharedQueue() {
     if (!this.service.sharedIssues) return undefined;
     this.service.ownServer();
-    return this.service.sharedIssues.refresh();
+    return this.service.sharedIssues.refreshInBackground(true);
   }
   async view(id) {
-    const sharedQueueWarning = this.refreshSharedQueue();
+    const sharedQueueWarning = await this.refreshSharedQueue();
     const issues = this.issues();
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
     let branches = [];
@@ -1784,7 +1784,7 @@ class IssueFlows {
     requireThat(issue.state === 'needs-approval' && !issue.closed, 'This issue is no longer awaiting approval.');
     requireThat(!issueHasActiveWork(this.service, issue.id), 'Wait for this issue’s active operation to finish.');
     if (input.action === 'approve-issue') {
-      const shared = this.service.sharedIssues?.acquire(issue, true);
+      const shared = this.service.sharedIssues?.acquireForApproval(issue);
       updateStoredIssueMetadata(this.service.root, issue, { state: 'backlog', updated: new Date().toISOString() });
       if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue approved', shared);
       return this.view(issue.id);

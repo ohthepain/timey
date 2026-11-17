@@ -310,9 +310,13 @@ export function createSharedIssuePublication({
       .filter(Boolean);
   }
 
-  function inspect(issueId) {
+  function inspect(issueId, head) {
     const record = readPending(issueId);
-    return record ? inspectTarget(record, readTarget(issueId)) : null;
+    if (!record) return null;
+    const live = head
+      ? { head, ...readReport(head, issueId), numbers: readPath(head, numbersPath) }
+      : readTarget(issueId);
+    return inspectTarget(record, live);
   }
 
   function inspectTarget(record, live) {

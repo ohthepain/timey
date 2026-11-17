@@ -43,7 +43,8 @@ explicit destination. Older issues with a PR use its GitHub base. Destination
 locks when the issue has a PR. If GitHub reports a changed base, accept that base
 in Destination before running Publish or Merge.
 
-Use the pencil next to the issue heading to rename it. Play publishes when the
+The issue number appears in smaller text to the left of the title in the center
+column. Use the pencil next to the title to rename the issue. Play publishes when the
 candidate and destination checks pass. When running Publish directly,
 review the title, source and destination branches, verified commit, and exact PR
 description. The description contains Goal, Requested proof, and Original wording

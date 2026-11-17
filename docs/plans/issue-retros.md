@@ -62,3 +62,8 @@ worktrees, and runtime records stay on their runner.
 Shared closure and deletion use the queue's reviewed report updates. Cleanup
 waits for the reviewed closure so the runner can retain its worktree while the
 report is pending.
+
+In a shared queue, merge the proposal’s queue PR before selecting **Approve**.
+Flow checks that the PR landed as part of approval, even if the last queue
+refresh still showed it as open. Approval opens a separate queue PR to record
+the decision and leaves the issue idle. Work can start once that update lands.

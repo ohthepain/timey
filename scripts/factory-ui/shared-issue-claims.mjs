@@ -1,10 +1,12 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
+import { promisify } from 'node:util';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { cleanEnvironment, git, requireThat } from './common.mjs';
 
+const executeAsync = promisify(execFile);
 const namespace = 'refs/heads/claims/';
 const issuePattern = /^[a-zA-Z0-9_-]{1,100}$/;
 const oidPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
@@ -158,13 +160,35 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
   }
 
   function list() {
-    const claims = new Map();
-    for (const [oid, ref] of refs(namespace + '*')) {
-      if (!ref?.startsWith(namespace) || !oidPattern.test(oid)) continue;
-      const issueId = ref.slice(namespace.length);
-      if (issuePattern.test(issueId)) claims.set(issueId, { issueId, oid });
-    }
-    return claims;
+    return parseClaims(refs(namespace + '*'));
+  }
+
+  async function listAsync() {
+    const { stdout } = await executeAsync('git', ['ls-remote', '--heads', '--', remote, namespace + '*'], {
+      cwd: root,
+      env: { ...cleanEnvironment(), GIT_TERMINAL_PROMPT: '0' },
+      timeout: 30000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    return parseClaims(
+      stdout
+        .trim()
+        .split('\n')
+        .map((line) => line.split('\t'))
+    );
+  }
+
+  function parseClaims(entries) {
+    return new Map(
+      entries.filter(validClaim).map(([oid, ref]) => {
+        const issueId = ref.slice(namespace.length);
+        return [issueId, { issueId, oid }];
+      })
+    );
+  }
+
+  function validClaim([oid, ref]) {
+    return ref?.startsWith(namespace) && oidPattern.test(oid) && issuePattern.test(ref.slice(namespace.length));
   }
 
   function readTargetReport(issueId) {
@@ -179,5 +203,5 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
     return execute(['show', `${revision}:${path}`]);
   }
 
-  return { acquire, own, verifyOwn, recover: verifyOwn, release, list, readTargetReport };
+  return { acquire, own, verifyOwn, recover: verifyOwn, release, list, listAsync, readTargetReport };
 }

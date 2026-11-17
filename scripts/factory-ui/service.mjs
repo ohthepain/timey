@@ -153,7 +153,7 @@ export class FactoryUI {
     if (this.sharedIssues) {
       try {
         this.ownServer();
-        sharedQueueWarning = this.sharedIssues.refresh();
+        sharedQueueWarning = this.sharedIssues.refreshInBackground();
       } catch (error) {
         sharedQueueWarning = error.message;
       }

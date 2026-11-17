@@ -193,6 +193,50 @@ test('shared archive and restore keep a local copy through failed publication an
   assert.equal(JSON.parse(git(remote, 'show', 'dev:.issues/issue-numbers.json')).issues[issueId], 1);
 });
 
+test('Flow can approve a Retro item as soon as its proposal PR lands', async (t) => {
+  const { remote, first } = fixture(t, false, true);
+  const reviews = [];
+  const runner = queue(first, (record) => {
+    reviews.push(record);
+    return { number: reviews.length, url: `https://example.test/queue/${reviews.length}` };
+  });
+  runner.service.sharedIssues = runner.queue;
+  const flows = createIssueFlows(runner.service, {
+    executor: { run: () => assert.fail('Approval started work.'), close() {} },
+  });
+  runner.service.flows = flows;
+  t.after(() => flows.close());
+  await flows.fileRetroItems([
+    {
+      requestId: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+      title: 'Keep the proof',
+      description: 'Save the test result from each run.',
+      reason: 'Reviewers can check it later.',
+      verification: 'Check the saved result.',
+    },
+  ]);
+  const [proposal] = reviews;
+  const { issueId } = proposal;
+  const approve = () =>
+    flows.action({ action: 'approve-issue', issueId, revision: flows.read(flows.selected(issueId)).revision });
+  await assert.rejects(approve(), /Merge the proposal’s queue PR before approving/);
+  assert.equal(flows.selected(issueId).state, 'needs-approval');
+  assert.equal(runner.queue.view(issueId).claimed, false);
+  assert.equal(reviews.length, 1);
+
+  git(remote, 'update-ref', 'refs/heads/issue-queue', proposal.commit);
+  assert.equal(runner.queue.view(issueId).checkpoint.status, 'review');
+  const approved = await approve();
+  assert.equal(approved.issue.state, 'backlog');
+  assert.equal(approved.issues.find(({ id }) => id === issueId).folder, 'Retro items');
+  assert.equal(approved.sharedQueue.checkpoint.url, 'https://example.test/queue/2');
+  assert.equal(approved.sharedQueue.checkpoint.status, 'review');
+  assert.match(git(remote, 'show', `issue-queue:.issues/${issueId}.md`), /state: needs-approval/);
+  assert.match(git(remote, 'show', `${reviews[1].commit}:.issues/${issueId}.md`), /state: backlog/);
+  assert.throws(() => runner.queue.acquire(flows.selected(issueId)), /pending issue update/);
+  assert.equal(flows.active.has(issueId), false);
+});
+
 test('two Flow clones share the separate branch without advancing code', async (t) => {
   const { remote, first, second } = fixture(t, false, true);
   const head = git(remote, 'rev-parse', 'dev');

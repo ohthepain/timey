@@ -1399,7 +1399,9 @@
             'Issue'
         ) + ' ·'
       : '';
-    $('issue-number').textContent = issue?.issueNumber ? `#${issue.issueNumber}` : issue ? 'Issue flow' : 'Issue flow';
+    const issueNumber = $('issue-number');
+    issueNumber.hidden = issue?.issueNumber == null;
+    issueNumber.textContent = issueNumber.hidden ? '' : `#${issue.issueNumber}`;
     $('issue-title').textContent = issue?.title || '';
     if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
     renderFlowPicker();
@@ -1428,10 +1430,14 @@
     const queue = state.view?.sharedQueue;
     const checkpoint = queue?.checkpoint;
     const warning = state.index.sharedQueueWarning;
+    const unpublishedProposal = state.view?.issue?.state === 'needs-approval' && !queue?.published;
+    const awaitingMerge = unpublishedProposal
+      ? 'Merge the proposal’s queue PR before approving this issue.'
+      : 'Issue update awaits merge of the queue PR.';
     const message =
-      warning ||
       checkpoint?.error ||
-      (checkpoint?.status === 'review' ? 'Issue update awaits merge of the queue PR.' : '') ||
+      (checkpoint?.status === 'review' ? awaitingMerge : '') ||
+      warning ||
       (queue?.claimed && !queue.local ? 'Another runner owns this issue.' : '');
     const review = $('shared-queue-review');
     const url = safeUrl(checkpoint?.url);
