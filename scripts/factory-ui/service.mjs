@@ -776,6 +776,7 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.sharedIssues?.close();
     this.flows?.close();
     this.store.flush();
     this.discussions.close();

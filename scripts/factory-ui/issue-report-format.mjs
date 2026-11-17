@@ -3,9 +3,10 @@ import { fileURLToPath } from 'node:url';
 
 const toolingRoot = fileURLToPath(new URL('../../', import.meta.url));
 const formatter = fileURLToPath(new URL('../../node_modules/.bin/vp', import.meta.url));
+const config = fileURLToPath(new URL('../../.oxfmtrc.json', import.meta.url));
 
 export function formatIssueReport(content) {
-  return execFileSync(formatter, ['fmt', '--stdin-filepath=issue-report.md'], {
+  return execFileSync(formatter, ['fmt', '--config', config, '--stdin-filepath=issue-report.md'], {
     cwd: toolingRoot,
     input: content,
     encoding: 'utf8',

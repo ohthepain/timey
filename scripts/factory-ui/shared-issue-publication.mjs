@@ -127,6 +127,7 @@ export function createSharedIssuePublication({
   pushDirect,
   openPullRequest,
   inspectPullRequest,
+  transport,
 }) {
   requireThat(typeof remote === 'string' && /^[a-zA-Z0-9][\w.-]*$/.test(remote), 'Configure a shared issue remote.');
   requireThat(typeof target === 'string' && /^[\w/.-]+$/.test(target), 'Configure a shared issue target branch.');
@@ -153,7 +154,11 @@ export function createSharedIssuePublication({
         cwd: root,
         encoding: 'utf8',
         input,
-        env: { ...environment, ...(program === 'gh' && queueToken ? { GH_TOKEN: queueToken } : {}), ...env },
+        env: {
+          ...environment,
+          ...(program === 'gh' && queueToken ? { GH_TOKEN: queueToken } : {}),
+          ...env,
+        },
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 30000,
         maxBuffer: 8 * 1024 * 1024,
@@ -163,7 +168,7 @@ export function createSharedIssuePublication({
     }
   }
 
-  const git = (...args) => command('git', args).trim();
+  const git = (...args) => command('git', args, { env: transport?.environment() }).trim();
   git('check-ref-format', targetRef);
 
   function assertRemote() {

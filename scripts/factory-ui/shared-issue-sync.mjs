@@ -12,7 +12,7 @@ const fetchArgs = ({ remote, target }) => ['fetch', '--no-tags', remote, `+refs/
 export async function fetchSharedIssueTarget(root, config) {
   await execute('git', fetchArgs(config), {
     cwd: root,
-    env: { ...cleanEnvironment(), GIT_TERMINAL_PROMPT: '0' },
+    env: { ...cleanEnvironment(), ...config.transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
     timeout: 8000,
   });
   return runGit(root, ['rev-parse', '--verify', targetRef]).trim();
@@ -21,10 +21,10 @@ export async function fetchSharedIssueTarget(root, config) {
 const registry = 'issue-numbers.json';
 const report = /^(?:closed\/)?(\d[\w-]*)\.md$/;
 
-function runGit(root, args) {
+function runGit(root, args, transport) {
   const result = spawnSync('git', args, {
     cwd: root,
-    env: { ...cleanEnvironment(), GIT_TERMINAL_PROMPT: '0' },
+    env: { ...cleanEnvironment(), ...transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
     encoding: 'utf8',
     timeout: 8000,
     maxBuffer: 16 * 1024 * 1024,
@@ -77,7 +77,7 @@ function reportGroups(names) {
 }
 
 function refreshTarget(root, config) {
-  runGit(root, fetchArgs(config));
+  runGit(root, fetchArgs(config), config.transport);
   return targetRef;
 }
 

@@ -645,6 +645,14 @@ independent of this display cache. A selected report missing locally waits for
 its first shared copy. `shared-issue-queue.mjs` reuses the archive preflight's
 target snapshot for initial claim validation, then fetches again after claiming
 and before publication.
+`shared-issue-transport.mjs` owns a private, reusable SSH connection for each
+shared queue. Claims, publication reads and background refresh share that
+connection. Custom SSH commands and non-SSH remotes retain their existing
+transport. Server shutdown closes the owned connection and removes its private
+socket directory.
+`.oxfmtrc.json` owns formatter options for Vite and issue reports.
+`issue-report-format.mjs` passes that file explicitly to the formatter, so report
+writes do not load the application's Vite plugins.
 `issue-folder-drag-ui.js` handles issue drag events in the Issues sidebar.
 The sidebar uses the existing revision-checked `folder` action to save moves,
 including assignments to configured project folders. `flow-browser-issue-folders.mjs`

@@ -16,7 +16,7 @@ function claimRef(issueId) {
   return namespace + issueId;
 }
 
-export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev' }) {
+export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev', transport }) {
   requireThat(typeof remote === 'string' && /^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(remote), 'Invalid queue remote.');
   const targetRef = `refs/heads/${target}`;
   git(root, 'check-ref-format', targetRef);
@@ -26,7 +26,7 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
   function execute(args, input) {
     return execFileSync('git', ['-C', root, ...args], {
       encoding: 'utf8',
-      env: { ...cleanEnvironment(), GIT_TERMINAL_PROMPT: '0' },
+      env: { ...cleanEnvironment(), ...transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
       stdio: 'pipe',
       timeout: 30000,
       maxBuffer: 8 * 1024 * 1024,
@@ -163,7 +163,7 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
   async function listAsync() {
     const { stdout } = await executeAsync('git', ['ls-remote', '--heads', '--', remote, namespace + '*'], {
       cwd: root,
-      env: { ...cleanEnvironment(), GIT_TERMINAL_PROMPT: '0' },
+      env: { ...cleanEnvironment(), ...transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
       timeout: 30000,
       maxBuffer: 8 * 1024 * 1024,
     });

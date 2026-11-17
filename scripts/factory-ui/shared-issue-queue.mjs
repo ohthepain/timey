@@ -17,6 +17,7 @@ import {
   moveStoredIssue,
   storedIssuePath,
 } from './issue-report-storage.mjs';
+import { createSharedIssueTransport } from './shared-issue-transport.mjs';
 import { createSharedIssueClaims } from './shared-issue-claims.mjs';
 import { sharedIssueQueueConfig } from './shared-issue-config.mjs';
 import { createSharedIssuePublication } from './shared-issue-publication.mjs';
@@ -35,8 +36,10 @@ function withSharedProgress(report, status) {
 export function createSharedIssueQueue(service, options = {}) {
   if (service.reviewMode === 'preview') return null;
   const root = service.root;
-  const config = sharedIssueQueueConfig(root);
-  if (!config) return null;
+  const queueConfig = sharedIssueQueueConfig(root);
+  if (!queueConfig) return null;
+  const transport = createSharedIssueTransport(root, queueConfig.remote);
+  const config = { ...queueConfig, transport };
   const claims = createSharedIssueClaims({ root, ...config });
   const publication = createSharedIssuePublication({ root, ...config, ...options });
   const directory = join(root, '.issues/shared-queue');
@@ -494,6 +497,10 @@ export function createSharedIssueQueue(service, options = {}) {
     };
   }
   return {
+    close() {
+      refreshGeneration++;
+      transport.close();
+    },
     branch: config.separateBranch,
     acquire,
     acquireForApproval,
