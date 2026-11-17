@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -214,6 +214,49 @@ test('shared archive and restore keep a local copy through failed publication an
   assert.equal(readFileSync(join(first, closedPath), 'utf8'), contents);
   assert.equal(readFileSync(join(second, closedPath), 'utf8'), contents);
   assert.equal(JSON.parse(git(remote, 'show', 'dev:.issues/issue-numbers.json')).issues[issueId], 1);
+});
+
+test('archiving fetches the shared report once before claiming and rechecks it afterward', (t) => {
+  const { first, contents } = fixture(t, true);
+  const trace = join(first, 'archive-git.trace');
+  const previous = process.env.GIT_TRACE;
+  process.env.GIT_TRACE = trace;
+  try {
+    const { queue: owner } = queue(first, () => ({ number: 1, url: 'https://example.test/queue/1' }));
+    assert.equal(owner.moveStorage(issueId, 'archive', contents).status, 'review');
+    assert.equal(readFileSync(join(first, `.issues/archive/${issueId}.md`), 'utf8'), contents);
+  } finally {
+    if (previous === undefined) delete process.env.GIT_TRACE;
+    else process.env.GIT_TRACE = previous;
+  }
+  const fetches = readFileSync(trace, 'utf8')
+    .split('\n')
+    .filter((line) => /built-in: git fetch /.test(line));
+  assert.equal(fetches.length, 3, 'Archive needs its pre-claim, post-claim and publication fetches.');
+});
+
+test('archive rejects a report changed during claiming and releases the claim', (t) => {
+  const { remote, first, second, relative, contents } = fixture(t, true);
+  writeFileSync(join(second, relative), contents + '\nChanged by another runner.\n');
+  git(second, 'add', '-f', relative);
+  git(second, 'commit', '-qm', 'Change the closed report');
+  const changed = git(second, 'rev-parse', 'HEAD');
+  git(remote, 'fetch', '-q', second, 'HEAD');
+  const hook = join(remote, 'hooks/post-receive');
+  writeFileSync(
+    hook,
+    '#!/bin/sh\nwhile read old new ref; do\ncase "$ref" in\nrefs/heads/claims/*) git update-ref refs/heads/dev ' +
+      changed +
+      ';;\nesac\ndone\n'
+  );
+  chmodSync(hook, 0o755);
+  const { queue: owner } = queue(first, () => assert.fail('A changed report must not be published.'));
+  assert.throws(() => owner.moveStorage(issueId, 'archive', contents), /changed while it was being claimed/);
+  assert.equal(owner.view(issueId).claimed, false);
+  assert.equal(git(remote, 'for-each-ref', 'refs/heads/claims'), '');
+  assert.equal(git(remote, 'rev-parse', 'dev'), changed);
+  assert.equal(readFileSync(join(first, relative), 'utf8'), contents);
+  assert.equal(existsSync(join(first, `.issues/archive/${issueId}.md`)), false);
 });
 
 test('Flow can approve a Retro item as soon as its proposal PR lands', async (t) => {

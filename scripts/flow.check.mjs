@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, renameSync, rmSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  utimesSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
@@ -165,6 +176,93 @@ function fixture(t) {
 function executor(run) {
   return { run, close() {} };
 }
+
+test('repeated report reads retain current metadata, bodies, numbers and storage locations', (t) => {
+  const { root, id, service } = fixture(t);
+  const flows = createIssueFlows(service);
+  t.after(() => flows.close());
+  const path = join(root, '.issues', id + '.md');
+  const original = readFileSync(path, 'utf8').replace('state: backlog', 'state: backlog\nreview:\n  approved: false');
+  writeFileSync(path, original);
+  const saved = statSync(path);
+  const first = flows.selected(id);
+  first.review.approved = true;
+  assert.equal(flows.selected(id).review.approved, false);
+  const changed = original.replace('Preserve request wording', 'Modified request wording');
+  assert.equal(changed.length, original.length);
+  writeFileSync(path, changed);
+  utimesSync(path, saved.atime, saved.mtime);
+  assert.equal(flows.selected(id).title, 'Modified request wording');
+  writeFileSync(path, changed.replace('Stored value.', 'Newest value.'));
+  assert.match(flows.selected(id).content, /Newest value\./);
+  writeFileSync(join(root, '.issues/issue-numbers.json'), JSON.stringify({ issues: { [id]: 27 } }));
+  assert.equal(flows.selected(id).issueNumber, 27);
+  mkdirSync(join(root, '.issues/closed'));
+  const closed = join(root, '.issues/closed', id + '.md');
+  renameSync(path, closed);
+  assert.equal(flows.issues()[0].location, 'closed');
+  mkdirSync(join(root, '.issues/archive'));
+  renameSync(closed, join(root, '.issues/archive', id + '.md'));
+  assert.deepEqual(flows.issues(), []);
+  assert.equal(flows.selected(id).location, 'archive');
+  rmSync(join(root, '.issues/archive', id + '.md'));
+  assert.throws(() => flows.selected(id), /no longer exists/);
+});
+
+test('flow views show saved reports while shared queue refresh is pending and observe later updates', async (t) => {
+  const { root, id, service } = fixture(t);
+  const refresh = Promise.withResolvers();
+  let warning = 'The last observed queue is shown.';
+  service.sharedIssues = {
+    refreshInBackground(wait) {
+      return wait ? refresh.promise : warning;
+    },
+    view() {},
+  };
+  const flows = createIssueFlows(service, { observer: { observe: async () => ({}) } });
+  t.after(() => flows.close());
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const first = await Promise.race([
+    flows.view(id),
+    delay(1000, null, { signal: controller.signal }).then(() => assert.fail('Saved view waited for the network')),
+  ]);
+  assert.equal(first.issue.title, 'Preserve request wording');
+  assert.equal(first.sharedQueueWarning, warning);
+  const path = join(root, '.issues', id + '.md');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('Preserve request wording', 'Updated by remote refresh'));
+  warning = null;
+  refresh.resolve();
+  const second = await flows.view(id);
+  assert.equal(second.issue.title, 'Updated by remote refresh');
+  assert.equal(second.sharedQueueWarning, null);
+});
+
+test('flow views wait for the first shared copy of a selected report', async (t) => {
+  const { root, id, service } = fixture(t);
+  const path = join(root, '.issues', id + '.md');
+  const content = readFileSync(path, 'utf8');
+  rmSync(path);
+  const refresh = Promise.withResolvers();
+  const requested = Promise.withResolvers();
+  service.sharedIssues = {
+    refreshInBackground() {
+      requested.resolve();
+      return refresh.promise;
+    },
+    view() {},
+  };
+  const flows = createIssueFlows(service, { observer: { observe: async () => ({}) } });
+  t.after(() => flows.close());
+  const view = flows.view(id);
+  await requested.promise;
+  writeFileSync(path, content);
+  refresh.resolve(null);
+  const result = await view;
+  assert.equal(result.issue.title, 'Preserve request wording');
+  assert.equal(result.issues.find((issue) => issue.id === id)?.title, 'Preserve request wording');
+  assert.equal(result.sharedQueueWarning, null);
+});
 
 test('issue Play runs Update Branch without confirmation and Pause lets the active block finish', async (t) => {
   const { id, service } = fixture(t);

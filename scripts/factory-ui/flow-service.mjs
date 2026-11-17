@@ -233,6 +233,7 @@ class IssueFlows {
     this.flowBuilds = new Set();
     this.captures = new Map();
     this.closureTasks = new Map();
+    this.reportHeaders = new Map();
     this.groups = new FlowGrouping(this);
     this.folderSelection = new FlowFolderSelection(this, options.recommendFolderIssues);
     this.overnight = new FlowOvernight(this);
@@ -241,6 +242,7 @@ class IssueFlows {
     const numbersPath = join(this.service.root, '.issues/issue-numbers.json');
     const numbers = existsSync(numbersPath) ? JSON.parse(readFileSync(numbersPath, 'utf8')).issues : {};
     const issues = [];
+    const reportHeaders = selectedId ? this.reportHeaders : new Map();
     const closedState = closedIssueState(this.service.root);
     const locations = selectedId ? ['open', 'closed', 'archive'] : ['open', 'closed'];
     for (const location of locations) {
@@ -249,13 +251,15 @@ class IssueFlows {
         const content = readFileSync(path, 'utf8');
         const header = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
         requireThat(header, `The issue report ${basename(path)} has no valid metadata.`);
-        const metadata = parse(header);
+        const cached = this.reportHeaders.get(path);
+        const metadata = cached?.header === header ? cached.metadata : parse(header);
         requireThat(
           metadata && typeof metadata.title === 'string',
           `The issue report ${basename(path)} needs a title.`
         );
+        reportHeaders.set(path, { header, metadata });
         issues.push({
-          ...metadata,
+          ...structuredClone(metadata),
           id: basename(path, '.md'),
           content,
           location,
@@ -264,6 +268,7 @@ class IssueFlows {
         });
       }
     }
+    this.reportHeaders = reportHeaders;
     return issues;
   }
   selected(id) {
@@ -289,10 +294,12 @@ class IssueFlows {
       ...new Set([...readIssueFolderSettings(this.service.root).map(({ name }) => name), ...this.legacyFolders()]),
     ];
   }
-  refreshSharedQueue() {
+  refreshSharedQueue(id) {
+    if (id) requireIssueId(id);
     if (!this.service.sharedIssues) return undefined;
     this.service.ownServer();
-    return this.service.sharedIssues.refreshInBackground(true);
+    const needsInitialReport = id && !this.issues(id).length;
+    return this.service.sharedIssues.refreshInBackground(Boolean(needsInitialReport));
   }
   indexIssue(issue, flow, issues) {
     const activeBlock = flow.blocks.find((block) =>
@@ -318,7 +325,7 @@ class IssueFlows {
     };
   }
   async view(id) {
-    const sharedQueueWarning = await this.refreshSharedQueue();
+    const sharedQueueWarning = await this.refreshSharedQueue(id);
     const issues = this.issues();
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
     let branches = [];

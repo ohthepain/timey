@@ -176,19 +176,26 @@ export function createSharedIssueQueue(service, options = {}) {
     const key = (location === 'closed' ? 'closed/' : '') + id + '.md';
     return existsSync(syncState) ? readJson(syncState)[key]?.hash : undefined;
   }
-  function acquire(issue, allowDraft = false, restoring = false, storageAction, flowBlock) {
-    const pending = receipt(issue.id);
+  function requireClaimAvailable(id) {
+    const pending = receipt(id);
     requireThat(
       !pending || pending.status === 'published',
       'Publish or reconcile the pending issue update before starting.'
     );
-    const initial = publication.readTarget(issue.id);
+  }
+  function acquire(issue, allowDraft = false, restoring = false, storageAction, flowBlock) {
+    return acquireTarget(issue, () => publication.readTarget(issue.id), {
+      allowDraft,
+      restoring,
+      storageAction,
+      flowBlock,
+    });
+  }
+  function acquireTarget(issue, readInitial, { allowDraft, restoring, storageAction, flowBlock }) {
+    requireClaimAvailable(issue.id);
+    const initial = readInitial();
     requireThat(
-      restoring
-        ? initial.report === null
-        : initial.report !== null &&
-            (initial.report === issue.content ||
-              (allowDraft && baseline(issue.id, initial.location) === digest(initial.report))),
+      restoring ? initial.report === null : initialReportMatches(issue, initial, allowDraft),
       'The shared issue changed or is unpublished. Refresh the shared queue before starting.'
     );
     const claim = claims.acquire(issue.id);
@@ -206,6 +213,13 @@ export function createSharedIssueQueue(service, options = {}) {
     const context = { claim, base: initial.report, baseLocation: initial.location };
     save({ id: issue.id, ...context, storageAction, flowBlock }, { status: 'claimed' });
     return context;
+  }
+  function initialReportMatches(issue, initial, allowDraft) {
+    return (
+      initial.report !== null &&
+      (initial.report === issue.content ||
+        (allowDraft && baseline(issue.id, initial.location) === digest(initial.report)))
+    );
   }
   function acquireForApproval(issue) {
     const proposal = receipt(issue.id);
@@ -353,7 +367,11 @@ export function createSharedIssueQueue(service, options = {}) {
     const live = publication.readTarget(id);
     if (action === 'archive' && live.report === null) return null;
     requireThat(action === 'restore' || live.location === 'closed', 'Close the shared issue before archiving it.');
-    const context = acquire({ id, content }, false, action === 'restore', action);
+    const context = acquireTarget({ id, content }, () => live, {
+      allowDraft: false,
+      restoring: action === 'restore',
+      storageAction: action,
+    });
     return saveStorageCheckpoint(id, action, content, context);
   }
   function saveStorageCheckpoint(id, action, content, context) {

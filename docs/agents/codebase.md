@@ -638,6 +638,13 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+Read-only flow views show saved reports while the shared queue refreshes in the
+background. Report reads reuse parsed metadata only when the exact frontmatter
+matches and read the current body each time. Mutation freshness checks remain
+independent of this display cache. A selected report missing locally waits for
+its first shared copy. `shared-issue-queue.mjs` reuses the archive preflight's
+target snapshot for initial claim validation, then fetches again after claiming
+and before publication.
 `issue-folder-drag-ui.js` handles issue drag events in the Issues sidebar.
 The sidebar uses the existing revision-checked `folder` action to save moves,
 including assignments to configured project folders. `flow-browser-issue-folders.mjs`
