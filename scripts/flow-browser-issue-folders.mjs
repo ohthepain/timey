@@ -19,9 +19,35 @@ export async function flowIssueFoldersBrowserChecks(page, issueId, folder) {
   page.on('request', track);
   try {
     assert.equal(await sidebar.locator('summary').getByText('Open', { exact: true }).count(), 0);
-    const heading = await page.locator('.sidebar > .sidebar-heading').boundingBox();
+    const heading = await page.locator('#sidebar-file-tree > details > summary').first().boundingBox();
     const folderHeading = await group(folder).locator('[data-issue-folder-drop]').boundingBox();
     assert.equal(folderHeading.x, heading.x);
+    const appearance = await page.evaluate((folder) => {
+      const system = document.querySelector('#sidebar-file-tree .sidebar-folder-name');
+      const issue = [...document.querySelectorAll('#issue-list [data-folder]')].find(
+        (row) => row.dataset.folder === folder
+      );
+      const read = (element) => {
+        const style = getComputedStyle(element);
+        const triangle = getComputedStyle(element.parentElement.querySelector('.folder-disclosure'), '::before');
+        return {
+          color: style.color,
+          font: style.fontFamily,
+          size: style.fontSize,
+          lineHeight: style.lineHeight,
+          height: element.parentElement.getBoundingClientRect().height,
+          triangle: triangle.backgroundColor,
+          shape: triangle.clipPath,
+        };
+      };
+      return {
+        system: read(system),
+        issue: read(issue),
+        italic: getComputedStyle(issue.querySelector('.issue-folder-name')).fontStyle,
+      };
+    }, folder);
+    assert.deepEqual(appearance.issue, appearance.system);
+    assert.equal(appearance.italic, 'italic');
     await group(folder).locator(`[data-issue="${issueId}"]`).waitFor();
     assert.equal(await member().count(), 1);
     assert.equal(await member().getAttribute('draggable'), 'true');

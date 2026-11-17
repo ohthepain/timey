@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -125,6 +126,12 @@ const executor = {
 };
 service.flows = createIssueFlows(service, {
   executor,
+  trashDirectory(path) {
+    assert.ok(path.startsWith(realpathSync(project) + '/user/'));
+    const trash = join(output, 'Trash');
+    mkdirSync(trash, { recursive: true });
+    renameSync(path, join(trash, 'folder-' + randomUUID()));
+  },
   recommendFolderIssues(_strategy, issues) {
     return issues.map(({ id }) => ({ id, reason: 'The fixture requests share save behavior.' }));
   },
@@ -314,7 +321,16 @@ try {
       assert.equal(await sidebar.getByText(label, { exact: true }).count(), 0);
     assert.equal(await sidebar.getByRole('button', { name: 'Add Folder…', exact: true }).count(), 0);
     assert.equal(await sidebar.getByRole('button', { name: 'New File', exact: true }).count(), 0);
-    await tree.locator('summary').getByText('flow', { exact: true }).first().click();
+    await tree.getByRole('button', { name: 'flow', exact: true }).first().click();
+    await page.getByRole('heading', { name: 'flow', exact: true }).waitFor();
+    assert.equal(await page.locator('#issue-folder-content').isVisible(), false);
+    assert.equal(await page.locator('#graph-scroll').isVisible(), false);
+    assert.equal(await page.locator('#folder-workspace').getByRole('button').count(), 1);
+    page.once('dialog', (dialog) => void dialog.dismiss());
+    await page.getByRole('button', { name: 'Delete folder', exact: true }).click();
+    await page.waitForFunction(() => !document.getElementById('delete-sidebar-folder').disabled);
+    assert.ok(existsSync(join(root, 'factory/system/flow')));
+    await tree.getByRole('button', { name: 'Expand flow', exact: true }).first().click();
     await tree.getByRole('button', { name: 'defaults.md', exact: true }).click();
     await page.getByRole('dialog', { name: 'defaults.md' }).waitFor();
     assert.ok((await page.locator('#sidebar-file-text').getAttribute('readonly')) !== null);
@@ -324,7 +340,7 @@ try {
     await page.locator('#sidebar-file-submit').click();
     await page.locator('#sidebar-file-dialog').waitFor({ state: 'hidden' });
     writeFileSync(join(project, 'user/Notes/checklist.md'), '# Checklist');
-    await tree.locator('summary').getByText('Notes', { exact: true }).click();
+    await tree.getByRole('button', { name: 'Expand Notes', exact: true }).click();
     await tree.getByRole('button', { name: 'checklist.md' }).click();
     await page.getByRole('dialog', { name: 'checklist.md', exact: true }).waitFor();
     assert.equal(await page.locator('#sidebar-file-text').inputValue(), '# Checklist');
@@ -332,6 +348,14 @@ try {
     await page.locator('#sidebar-file-submit').click();
     await page.locator('#sidebar-file-dialog').waitFor({ state: 'hidden' });
     assert.equal(readFileSync(join(project, 'user/Notes/checklist.md'), 'utf8'), '# Updated checklist');
+    await tree.getByRole('button', { name: 'Notes', exact: true }).click();
+    await page.getByRole('heading', { name: 'Notes', exact: true }).waitFor();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: 'Delete folder', exact: true }).click();
+    await page.getByText('Moved folder to Trash.', { exact: true }).waitFor();
+    assert.equal(existsSync(join(project, 'user/Notes')), false);
+    const trashed = readdirSync(join(output, 'Trash'));
+    assert.equal(readFileSync(join(output, 'Trash', trashed[0], 'checklist.md'), 'utf8'), '# Updated checklist');
     const external = join(output, 'Outside project');
     mkdirSync(external);
     writeFileSync(join(external, 'folder.md'), '# Outside folder');

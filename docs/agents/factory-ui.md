@@ -163,6 +163,14 @@ in place. Files under `user/` are editable. Use **Install project skill** on
 `user/skills/<name>/SKILL.md` to make the skill visible to Codex. Custom flow
 definitions live in `user/flow/definitions/`.
 
+Folder rows share their triangle, type, color, and spacing. Issue folder names
+are italic. Click a folder name to open its landing page. Its triangle expands
+the contents. File folder landing pages show the name and **Delete folder**.
+Deleting confirms a move of the real directory and its contents to macOS Trash.
+Installed folders use the same action and identify their role in Factory in the
+confirmation. Move assigned issues out of a folder and its subfolders before
+deleting it.
+
 Enable issue actions for a directory under `user/` to create its `folder.md`.
 The directory then offers **View assigned issues** and **New issue** alongside
 its files. Use **Move existing issue folders** to convert virtual folders and

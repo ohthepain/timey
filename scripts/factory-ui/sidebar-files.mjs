@@ -15,6 +15,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { digest, requireThat, writeJson } from './common.mjs';
+import { requireAvailableDirectory } from './folder-trash.mjs';
 import { systemFlowDirectory, uiDirectory } from './ui-source.mjs';
 import {
   createIssueFolderSettings,
@@ -104,13 +105,15 @@ export class SidebarFiles {
   }
 
   index() {
-    return this.roots().map(({ id, name, section, writable, base }) => ({
-      id,
-      name,
-      section,
-      writable,
-      missing: !info(base)?.isDirectory(),
-    }));
+    return this.roots()
+      .filter(({ base }) => info(base)?.isDirectory())
+      .map(({ id, name, section, writable, base }) => ({
+        id,
+        name,
+        section,
+        writable,
+        missing: !info(base)?.isDirectory(),
+      }));
   }
 
   locate({ root, path }, type) {
@@ -132,15 +135,25 @@ export class SidebarFiles {
           .filter((item) => validName(item.name) && (item.isDirectory() || (item.isFile() && markdown.test(item.name))))
           .map((item) => ({ name: item.name, directory: item.isDirectory() }))
       : [];
-    if (entry.id === 'user' && !input.path)
-      for (const name of ['flow', 'skills'])
-        if (!rows.some((row) => row.name === name)) rows.push({ name, directory: true });
     rows.sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
     const issueFolder =
       entry.id === 'user' &&
       input.path &&
       readIssueFolderSettings(this.project, { includeCopies: true }).find(({ name }) => name === input.path);
     return { rows, issueFolder: issueFolder || null };
+  }
+
+  deletionTarget(input) {
+    const { entry, path } = this.locate(input, 'directory');
+    const directory = info(path);
+    requireThat(directory?.isDirectory(), 'This folder no longer exists on disk.');
+    const identity = [directory.dev, directory.ino, directory.mtimeMs];
+    return {
+      path,
+      name: input.path?.split('/').at(-1) || entry.name,
+      basis: digest(JSON.stringify([input.root, input.path || '', identity])),
+      installed: entry.id.startsWith('system-'),
+    };
   }
 
   file(input) {
@@ -269,6 +282,7 @@ export class SidebarFiles {
       directory ? 'directory' : 'file'
     );
     requireThat(target.entry.writable && target.parts.length, 'Choose a file or folder inside user/.');
+    requireAvailableDirectory(target.path);
     if (directory) {
       mkdirSync(target.path, { recursive: true });
       return { created: true };

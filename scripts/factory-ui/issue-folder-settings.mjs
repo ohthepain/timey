@@ -1,8 +1,18 @@
-import { mkdirSync, lstatSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { parse, parseDocument } from 'yaml';
 import { requireThat } from './common.mjs';
+import { requireAvailableDirectory } from './folder-trash.mjs';
 
 const settingsName = 'folder.md';
 const inboxId = '759bf44b-f95a-417b-99e3-b4a1dd31555c';
@@ -63,6 +73,7 @@ export function readIssueFolderSettings(project, { includeCopies = false } = {})
 
 export function createIssueFolderSettings(project, name) {
   const parts = ['user', ...segments(name)];
+  requireAvailableDirectory(join(realpathSync(project), ...parts));
   let directory = project;
   for (const part of parts) {
     directory = join(directory, part);
@@ -110,6 +121,7 @@ export function requireIssueFolder(project, name) {
   requireThat(typeof name === 'string' && name.trim(), 'Choose a folder for the issue.');
   const folder = readIssueFolderSettings(project).find((entry) => entry.name === name);
   requireThat(folder, 'Choose an existing issue folder.');
+  requireAvailableDirectory(join(realpathSync(project), 'user', folder.name));
   return folder;
 }
 

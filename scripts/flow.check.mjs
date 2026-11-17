@@ -1005,6 +1005,46 @@ test('issue creation and moves require an existing folder', async (t) => {
   assert.equal((await flows.view(id)).flow.folder, 'Inbox');
 });
 
+test('folder deletion preserves assigned issues and blocks new assignments during Trash', async (t) => {
+  const { root, id, service } = fixture(t);
+  const begun = Promise.withResolvers();
+  const finish = Promise.withResolvers();
+  const destination = join(root, 'Trashed folder');
+  const flows = createIssueFlows(service, {
+    executor: executor(async () => ({})),
+    async trashDirectory(path) {
+      begun.resolve();
+      await finish.promise;
+      renameSync(path, destination);
+    },
+  });
+  const inbox = flows.previewFolderDeletion({ root: 'user', path: 'Inbox' });
+  assert.equal(inbox.canDelete, false);
+  await assert.rejects(flows.deleteFolder({ root: 'user', path: 'Inbox', basis: inbox.basis }), /assigned issues/);
+  assert.equal(flows.previewFolderDeletion({ root: 'system-flow', path: '' }).installed, true);
+  await flows.action({ action: 'create-folder', name: 'Empty folder' });
+  const selection = { root: 'user', path: 'Empty folder' };
+  const preview = flows.previewFolderDeletion(selection);
+  writeFileSync(join(root, 'user/Empty folder/notes.md'), '# Keep these notes');
+  await assert.rejects(flows.deleteFolder({ ...selection, basis: preview.basis }), /folder changed/);
+  const current = flows.previewFolderDeletion(selection);
+  const deletion = flows.deleteFolder({ ...selection, basis: current.basis });
+  await begun.promise;
+  try {
+    const view = await flows.view(id);
+    await assert.rejects(
+      flows.action({ action: 'folder', issueId: id, revision: view.flow.revision, folder: 'Empty folder' }),
+      /being moved to Trash/
+    );
+  } finally {
+    finish.resolve();
+  }
+  assert.deepEqual(await deletion, { trashed: true });
+  assert.equal(readFileSync(join(destination, 'notes.md'), 'utf8'), '# Keep these notes');
+  assert.equal(existsSync(join(root, 'user/Empty folder')), false);
+  assert.equal((await flows.view(id)).flow.folder, 'Inbox');
+});
+
 test('folder migration assigns older open, closed and archived reports to Inbox', async (t) => {
   const { root, id, service } = fixture(t);
   const content = readFileSync(join(root, '.issues', id + '.md'), 'utf8');

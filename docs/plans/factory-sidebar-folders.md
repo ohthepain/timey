@@ -70,6 +70,13 @@ Users can create project subfolders with a plus icon on each writable folder
 row and edit existing project Markdown in Factory. Built-in Markdown opens for reading and can be copied to
 the project for editing.
 
+System and issue folder rows use the same disclosure triangle, font, color,
+and spacing. Issue folder names are italic. Names open a landing page and
+triangles expand the contents. A file folder's landing page contains its name
+and **Delete folder**. After confirmation, deletion moves the actual directory
+and its contents to macOS Trash. A directory with assigned issues, including
+issues in its subfolders, must be emptied of those assignments first.
+
 Add outside folders for browsing in place. Show Markdown in its real subfolders
 and offer **Open in editor**. Enable issue features only inside the selected
 project. Outside `folder.md` files open as ordinary Markdown.

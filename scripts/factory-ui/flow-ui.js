@@ -8,6 +8,15 @@
     view: null,
     issueId: initialSelection.get('issue'),
     folder: initialSelection.get('issue') ? null : initialSelection.get('folder'),
+    fileFolder: initialSelection.get('fileRoot')
+      ? {
+          root: initialSelection.get('fileRoot'),
+          path: initialSelection.get('filePath') || '',
+          name:
+            initialSelection.get('filePath')?.split('/').at(-1) ||
+            initialSelection.get('fileRoot').replace('system-', ''),
+        }
+      : null,
     blockId: null,
     deleteBlockId: null,
     graphScrollIntent: null,
@@ -463,7 +472,7 @@
   }
 
   function selectIssue(id) {
-    if (!state.folder && state.issueId === id && state.view) return;
+    if (!state.folder && !state.fileFolder && state.issueId === id && state.view) return;
     selectWorkspace({ issue: id });
   }
 
@@ -474,12 +483,20 @@
 
   window.addEventListener('factory-open-issue-folder', (event) => selectFolder(event.detail));
 
+  window.addEventListener('factory-open-file-folder', (event) => selectWorkspace({ fileFolder: event.detail }));
+  window.addEventListener('factory-file-folder-ready', (event) => {
+    if (state.fileFolder?.root !== event.detail.root || state.fileFolder.path !== event.detail.path) return;
+    state.fileFolder = event.detail;
+    renderFolderWorkspace();
+  });
+
   function sidebarCollapsedFolders() {
     return state.search ? state.collapsedSearchFolders : state.collapsedFolders;
   }
 
-  function selectWorkspace({ issue = null, folder = null }) {
+  function selectWorkspace({ issue = null, folder = null, fileFolder = null }) {
     state.folder = folder;
+    state.fileFolder = fileFolder;
     folderSelection = emptyFolderSelection();
     $('folder-scan-form').reset();
     state.issueId = issue;
@@ -489,11 +506,17 @@
     state.view = null;
     state.error = '';
     const url = new URL(location.href);
-    for (const [key, value] of Object.entries({ issue, folder })) {
+    for (const [key, value] of Object.entries({
+      issue,
+      folder,
+      fileRoot: fileFolder?.root,
+      filePath: fileFolder?.path,
+    })) {
       if (value) url.searchParams.set(key, value);
       else url.searchParams.delete(key);
     }
     history.replaceState(null, '', url);
+    window.dispatchEvent(new CustomEvent('factory-workspace-changed'));
     render();
     void load(true);
   }
@@ -517,7 +540,7 @@
         const active = children.find((issue) => issue.activeBlock);
         const name = escape(folder);
         const selected = state.folder === folder;
-        return `<section class="issue-folder"><div class="sidebar-heading" data-issue-folder-drop="${name}"><button class="icon-button folder-disclosure" type="button" data-toggle-folder="${name}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${name}" aria-expanded="${!collapsed}"></button><button class="folder-toggle" data-folder="${name}"${selected ? ' aria-current="page"' : ''}>${active ? activeSpinner(active.activeBlock) : '<span aria-hidden="true">▱</span>'}<span>${name}</span><span class="folder-count">${children.length}</span></button><button class="icon-button" data-create-folder-issue="${name}" aria-label="Create issue in ${name}" title="Create issue in ${name}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
+        return `<section class="issue-folder"><div class="sidebar-folder-row" data-issue-folder-drop="${name}"><button class="icon-button folder-disclosure" type="button" data-toggle-folder="${name}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${name}" aria-expanded="${!collapsed}"></button><button class="folder-toggle" data-folder="${name}"${selected ? ' aria-current="page"' : ''}>${active ? activeSpinner(active.activeBlock) : ''}<span class="issue-folder-name">${name}</span><span class="folder-count">${children.length}</span></button><button class="icon-button sidebar-folder-create" data-create-folder-issue="${name}" aria-label="Create issue in ${name}" title="Create issue in ${name}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('')}</div></section>`;
       })
       .join('');
     const closed = issues.filter((issue) => issue.status === 'closed');
@@ -564,6 +587,29 @@
     dragging: (id) => {
       state.draggedIssueId = id;
     },
+  });
+
+  $('delete-sidebar-folder').addEventListener('click', async () => {
+    if (state.pending) return;
+    const selected = state.fileFolder || { root: 'user', path: state.folder };
+    state.pending = true;
+    $('delete-sidebar-folder').disabled = true;
+    try {
+      const preview = await json('/api/folder-delete-preview?' + new URLSearchParams(selected));
+      if (!preview.canDelete) return toast(preview.reason);
+      const installed = preview.installed ? '\nThese installed files are used by Factory.' : '';
+      if (!confirm(`Move “${preview.name}” and all its contents to Trash?${installed}`)) return;
+      await post('folder-delete', { ...selected, basis: preview.basis });
+      window.dispatchEvent(new CustomEvent('factory-folder-deleted', { detail: selected }));
+      selectWorkspace({});
+      toast('Moved folder to Trash.');
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      state.pending = false;
+      $('delete-sidebar-folder').disabled = false;
+      void load(true);
+    }
   });
 
   async function loadArchive() {
@@ -672,13 +718,16 @@
 
   function renderFolderWorkspace() {
     const workspace = $('folder-workspace');
-    workspace.hidden = !state.folder;
-    workspace.closest('.workspace').classList.toggle('folder-open', Boolean(state.folder));
-    workspace.closest('.workspace').querySelector('.inspector').hidden = Boolean(state.folder);
-    $('graph-scroll').hidden = Boolean(state.folder);
-    $('flow-view-title').textContent = state.folder ? 'Issue folder' : 'Issue flow';
+    const selected = Boolean(state.folder || state.fileFolder);
+    workspace.hidden = !selected;
+    workspace.closest('.workspace').classList.toggle('folder-open', selected);
+    workspace.closest('.workspace').querySelector('.inspector').hidden = selected;
+    $('graph-scroll').hidden = selected;
+    $('flow-view-title').textContent = selected ? 'Folder' : 'Issue flow';
+    $('issue-folder-content').hidden = !state.folder;
+    if (!selected) return;
+    $('folder-workspace-title').textContent = state.folder || state.fileFolder.name;
     if (!state.folder) return;
-    $('folder-workspace-title').textContent = state.folder;
     const { issues, folders } = state.index;
     const members = issues.filter((issue) => issue.folder === state.folder && issue.status !== 'closed');
     const reasons = new Map(folderSelection.selection?.candidates.map(({ id, reason }) => [id, reason]));

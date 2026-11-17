@@ -153,6 +153,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/folder-delete': () => flows(service).deleteFolder(value),
     '/api/sidebar-files-action': () => new SidebarFiles(service.root).change(value),
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
     '/api/ui-sources': () => {
@@ -343,6 +344,7 @@ async function read(service, request, response, owner) {
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
+    '/api/folder-delete-preview': () => flows(service).previewFolderDeletion(Object.fromEntries(url.searchParams)),
     '/api/sidebar-files': () => new SidebarFiles(service.root).index(),
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),

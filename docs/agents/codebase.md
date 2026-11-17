@@ -667,6 +667,10 @@ checks folder visibility and drag moves through the real browser and HTTP routes
 `issue-folder-settings.mjs` validates required creation and move destinations.
 Both Flow and Classic capture save the selected folder ID on each new report.
 The issue read path places older reports without membership in Inbox.
+Folder landing pages share the workspace in `flow-ui.js`. `SidebarFiles`
+validates deletion paths and directory identity. `flow-service.mjs` checks
+folder membership before deletion. `folder-trash.mjs` uses macOS Trash and
+prevents assignments or file writes into a directory while it is being moved.
 `flow-folder-selection.mjs` evaluates folder selections and checks reviewed moves
 against current issue records. `flow-grouping.mjs` owns master issue grouping.
 `flow-overnight.mjs` runs the approved folder selection to the Merge confirmation

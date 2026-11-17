@@ -10,6 +10,19 @@
   const nodes = new Map();
   let current;
 
+  function markSelectedFolder() {
+    const selected = new URL(location.href).searchParams;
+    for (const label of tree.querySelectorAll('[data-file-root]')) {
+      if (
+        label.dataset.fileRoot === selected.get('fileRoot') &&
+        label.dataset.filePath === (selected.get('filePath') || '')
+      )
+        label.setAttribute('aria-current', 'page');
+      else label.removeAttribute('aria-current');
+    }
+  }
+  window.addEventListener('factory-workspace-changed', markSelectedFolder);
+
   async function request(resource, data) {
     const query = data && resource !== 'files-action' ? '?' + new URLSearchParams(data) : '';
     const response = await fetch(
@@ -90,7 +103,35 @@
     const details = node('details');
     details.classList.add('sidebar-file-directory');
     const summary = node('summary');
-    summary.append(node('span', name));
+    summary.classList.add('sidebar-folder-row');
+    const disclosure = action(
+      '',
+      () => {
+        details.open = !details.open;
+      },
+      'icon-button folder-disclosure'
+    );
+    const label = action(
+      name,
+      () => {
+        window.dispatchEvent(new CustomEvent('factory-open-file-folder', { detail: { ...base, name } }));
+      },
+      'sidebar-folder-name'
+    );
+    label.dataset.fileRoot = base.root;
+    label.dataset.filePath = base.path;
+    for (const button of [disclosure, label]) {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    }
+    summary.append(disclosure, label);
+    const updateDisclosure = () => {
+      disclosure.setAttribute('aria-label', (details.open ? 'Collapse ' : 'Expand ') + name);
+      disclosure.setAttribute('aria-expanded', String(details.open));
+    };
+    updateDisclosure();
     if (root.writable) {
       const create = action('＋', () => show({ kind: 'directory', name: 'New folder', base }), 'icon-button');
       const label = `New folder in ${base.path ? childPath(root.name, base.path) : root.name}`;
@@ -109,6 +150,7 @@
     const entry = { body, details, root, base };
     nodes.set(id(base), entry);
     details.addEventListener('toggle', () => {
+      updateDisclosure();
       if (details.open) void loadDirectory(entry);
     });
     return details;
@@ -179,6 +221,7 @@
       }
       if (!rows.length) fragment.append(node('p', 'No Markdown files.', 'sidebar-empty'));
       body.replaceChildren(fragment);
+      markSelectedFolder();
     } catch (failure) {
       if (details.isConnected) body.replaceChildren(node('p', failure.message, 'sidebar-empty'));
     }
@@ -193,10 +236,35 @@
       if (root.id === openRoot) details.open = true;
       fragment.append(details);
     }
+    const selected = new URL(location.href).searchParams;
+    const chosen = roots.find((root) => root.id === selected.get('fileRoot'));
+    if (chosen) {
+      const path = selected.get('filePath') || '';
+      window.dispatchEvent(
+        new CustomEvent('factory-file-folder-ready', {
+          detail: { root: chosen.id, path, name: path.split('/').at(-1) || chosen.name },
+        })
+      );
+    }
     tree.replaceChildren(fragment);
+    markSelectedFolder();
   }
 
+  window.addEventListener('factory-folder-deleted', async (event) => {
+    const selected = event.detail;
+    for (const [key, entry] of nodes) {
+      if (entry.base.root !== selected.root) continue;
+      if (!selected.path || entry.base.path === selected.path || entry.base.path.startsWith(selected.path + '/')) {
+        entry.details.remove();
+        nodes.delete(key);
+      }
+    }
+    await refresh();
+    for (const entry of nodes.values()) if (entry.details.isConnected && entry.details.open) await loadDirectory(entry);
+  });
+
   window.addEventListener('factory-issue-folders-migrated', async () => {
+    await refresh('user');
     const user = nodes.get(id({ root: 'user', path: '' }));
     if (!user) return;
     user.details.open = true;
@@ -205,6 +273,7 @@
 
   window.addEventListener('factory-issue-folder-created', async (event) => {
     try {
+      await refresh('user');
       const parts = event.detail.split('/');
       for (let count = 0; count <= parts.length; count++) {
         const entry = nodes.get(id({ root: 'user', path: parts.slice(0, count).join('/') }));

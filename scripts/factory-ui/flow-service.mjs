@@ -30,6 +30,8 @@ import { digest, git, requireThat, writeJson } from './common.mjs';
 import { closedIssueState, readQueue } from './data.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import { SidebarFiles } from './sidebar-files.mjs';
+import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
 import {
   createIssueFolderSettings,
@@ -223,6 +225,7 @@ class IssueFlows {
     this.store = new FlowStore(service.root);
     this.catalog = new BlockCatalog(service.root);
     this.deliveryOptions = options.deliveryOptions || {};
+    this.trashDirectory = options.trashDirectory || trashDirectory;
     this.observer = options.observer || createFlowObserver(service);
     this.executor = options.executor || createFlowExecutor(service, this.deliveryOptions);
     this.active = new Map();
@@ -1832,6 +1835,42 @@ class IssueFlows {
     this.pause(flow.issueId, 'Block stopped.');
     active.controller.abort();
     return { stopping: true };
+  }
+  previewFolderDeletion(input) {
+    const target = new SidebarFiles(this.service.root).deletionTarget(input);
+    const settings = readIssueFolderSettings(this.service.root);
+    const catalog = this.catalog.read().entries;
+    const reports = [
+      ...this.issues(),
+      ...listStoredIssues(this.service.root, 'archive').map((path) => this.selected(basename(path, '.md'))),
+    ];
+    const members = reports.filter((issue) => {
+      const folder = this.read(issue, catalog, settings).folder;
+      const directory = join(realpathSync(this.service.root), 'user', folder);
+      return directory === target.path || directory.startsWith(target.path + sep);
+    });
+    return {
+      name: target.name,
+      installed: target.installed,
+      basis: target.basis,
+      canDelete: members.length === 0,
+      reason: members.length
+        ? `Move the ${members.length} assigned issues to another folder before deleting this folder.`
+        : '',
+    };
+  }
+  async deleteFolder(input) {
+    this.service.ownServer();
+    const target = new SidebarFiles(this.service.root).deletionTarget(input);
+    return whileTrashingDirectory(target.path, async () => {
+      const preview = this.previewFolderDeletion(input);
+      requireThat(preview.canDelete, preview.reason);
+      requireThat(preview.basis === input.basis, 'The folder changed. Open Delete folder again.');
+      await this.trashDirectory(target.path);
+      const files = new SidebarFiles(this.service.root);
+      if (files.pins().some(({ id }) => id === input.root)) files.change({ action: 'remove', root: input.root });
+      return { trashed: true };
+    });
   }
   async migrateFolders() {
     const issues = ['open', 'closed', 'archive'].flatMap((location) =>

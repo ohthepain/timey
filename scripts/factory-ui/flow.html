@@ -221,50 +221,55 @@
           </select>
         </div>
         <section id="folder-workspace" class="folder-workspace" aria-labelledby="folder-workspace-title" hidden>
-          <h1 id="folder-workspace-title"></h1>
-          <div class="folder-controls">
-            <label for="folder-selection-strategy">Selection strategy</label>
-            <select id="folder-selection-strategy">
-              <option value="same-blast-radius">Same blast radius</option>
-              <option value="different-blast-radii">Different blast radii</option>
-            </select>
-            <button class="small-button" type="button" data-folder-command="recommend">Recommend issues</button>
+          <div class="folder-landing-heading">
+            <h1 id="folder-workspace-title"></h1>
+            <button type="button" class="small-button" id="delete-sidebar-folder">Delete folder</button>
           </div>
-          <h2>Issues in this folder</h2>
-          <p class="muted" id="folder-selection-summary" aria-live="polite"></p>
-          <ul id="folder-member-list" class="folder-issues" aria-label="Issues in this folder"></ul>
-          <div class="folder-controls">
-            <button class="small-button" type="button" data-folder-command="group">Propose master issue</button>
-            <button class="small-button" type="button" data-folder-command="plan-night">Work All Night</button>
+          <div id="issue-folder-content">
+            <div class="folder-controls">
+              <label for="folder-selection-strategy">Selection strategy</label>
+              <select id="folder-selection-strategy">
+                <option value="same-blast-radius">Same blast radius</option>
+                <option value="different-blast-radii">Different blast radii</option>
+              </select>
+              <button class="small-button" type="button" data-folder-command="recommend">Recommend issues</button>
+            </div>
+            <h2>Issues in this folder</h2>
+            <p class="muted" id="folder-selection-summary" aria-live="polite"></p>
+            <ul id="folder-member-list" class="folder-issues" aria-label="Issues in this folder"></ul>
+            <div class="folder-controls">
+              <button class="small-button" type="button" data-folder-command="group">Propose master issue</button>
+              <button class="small-button" type="button" data-folder-command="plan-night">Work All Night</button>
+            </div>
+            <form id="folder-group-form" class="folder-preview" hidden>
+              <h2>Combined request</h2>
+              <label for="folder-master-wording">Review and edit the master issue request</label>
+              <textarea id="folder-master-wording" rows="8" maxlength="24000" required></textarea>
+              <div class="folder-controls">
+                <button class="primary-button" type="submit">Create master issue</button>
+                <button class="small-button" type="button" data-folder-command="cancel-group">Cancel</button>
+              </div>
+            </form>
+            <section id="folder-night-preview" class="folder-preview" aria-label="Overnight plan" hidden></section>
+            <section id="folder-night-report" class="folder-preview" aria-label="Overnight report" hidden></section>
+            <form id="folder-scan-form" class="folder-preview">
+              <h2>Find issues to add</h2>
+              <div class="folder-controls">
+                <label for="folder-scan-source">Search</label>
+                <select id="folder-scan-source" name="source"></select>
+                <label class="folder-check"><input type="checkbox" name="autoApprove" /> Auto-approve this scan</label>
+                <button class="small-button" type="submit">Find issues</button>
+              </div>
+            </form>
+            <form id="folder-scan-review" class="folder-preview" hidden>
+              <h2>Review suggested moves</h2>
+              <ul id="folder-scan-list" class="folder-issues" aria-label="Suggested moves"></ul>
+              <div class="folder-controls">
+                <button class="primary-button" type="submit">Move selected issues</button>
+                <button class="small-button" type="button" data-folder-command="cancel-scan">Cancel</button>
+              </div>
+            </form>
           </div>
-          <form id="folder-group-form" class="folder-preview" hidden>
-            <h2>Combined request</h2>
-            <label for="folder-master-wording">Review and edit the master issue request</label>
-            <textarea id="folder-master-wording" rows="8" maxlength="24000" required></textarea>
-            <div class="folder-controls">
-              <button class="primary-button" type="submit">Create master issue</button>
-              <button class="small-button" type="button" data-folder-command="cancel-group">Cancel</button>
-            </div>
-          </form>
-          <section id="folder-night-preview" class="folder-preview" aria-label="Overnight plan" hidden></section>
-          <section id="folder-night-report" class="folder-preview" aria-label="Overnight report" hidden></section>
-          <form id="folder-scan-form" class="folder-preview">
-            <h2>Find issues to add</h2>
-            <div class="folder-controls">
-              <label for="folder-scan-source">Search</label>
-              <select id="folder-scan-source" name="source"></select>
-              <label class="folder-check"><input type="checkbox" name="autoApprove" /> Auto-approve this scan</label>
-              <button class="small-button" type="submit">Find issues</button>
-            </div>
-          </form>
-          <form id="folder-scan-review" class="folder-preview" hidden>
-            <h2>Review suggested moves</h2>
-            <ul id="folder-scan-list" class="folder-issues" aria-label="Suggested moves"></ul>
-            <div class="folder-controls">
-              <button class="primary-button" type="submit">Move selected issues</button>
-              <button class="small-button" type="button" data-folder-command="cancel-scan">Cancel</button>
-            </div>
-          </form>
         </section>
         <section
           id="graph-scroll"
