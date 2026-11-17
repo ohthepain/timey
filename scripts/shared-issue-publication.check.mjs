@@ -185,6 +185,50 @@ test('an amended checkpoint requires human approval of the merged revision', (t)
   assert.equal(publication.inspect(issueId).mergeCommit, amended);
 });
 
+test('a queue without required reviews accepts only the exact checkpoint after merge', (t) => {
+  const { root, remote } = fixture(t);
+  let details;
+  const publication = createSharedIssuePublication({
+    root,
+    ...config,
+    requireReview: false,
+    openPullRequest: () => ({ number: 1 }),
+    inspectPullRequest: () => details,
+  });
+  const pending = publication.publish({ issueId, base: null, report: '# Queue report\n', reason: 'created' });
+  git(remote, 'update-ref', 'refs/heads/dev', pending.commit);
+  const repo = { full_name: config.repository };
+  details = {
+    pr: {
+      number: pending.number,
+      merged: true,
+      merge_commit_sha: pending.commit,
+      head: { sha: pending.commit, ref: pending.branch, repo },
+      base: { ref: config.target, repo },
+    },
+    files: [{ filename: reportPath }, { filename: '.issues/issue-numbers.json' }],
+    reviews: [],
+  };
+  const exactHead = details.pr.head.sha;
+  details.pr.head.sha = git(root, 'rev-parse', 'HEAD');
+  assert.throws(() => publication.confirmMerged(issueId), /head changed/);
+  details.pr.head.sha = exactHead;
+  details.files.push({ filename: 'app.txt' });
+  assert.throws(() => publication.confirmMerged(issueId), /unexpected files/);
+  details.files.pop();
+  const reviewer = join(root, '..', 'reviewer');
+  git(root, 'clone', '-b', 'dev', remote, reviewer);
+  writeFileSync(join(reviewer, reportPath), '# Changed merge content\n');
+  git(reviewer, 'add', reportPath);
+  git(reviewer, '-c', 'user.name=Reviewer', '-c', 'user.email=reviewer@example.test', 'commit', '-m', 'Change report');
+  git(reviewer, 'push', 'origin', 'dev');
+  details.pr.merge_commit_sha = git(reviewer, 'rev-parse', 'HEAD');
+  assert.throws(() => publication.confirmMerged(issueId), /differs from the saved queue checkpoint/);
+  git(remote, 'update-ref', 'refs/heads/dev', pending.commit);
+  details.pr.merge_commit_sha = pending.commit;
+  assert.equal(publication.confirmMerged(issueId).status, 'landed');
+});
+
 test('reviewed moves and archive removals preserve the canonical report and reserved number', (t) => {
   const { root, remote } = fixture(t);
   const closedPath = `.issues/closed/${issueId}.md`;

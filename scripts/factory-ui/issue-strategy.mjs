@@ -997,7 +997,7 @@ function assertSharedReportsOutsideCodePR(service, work, target, head) {
   if (!service.sharedIssues) return;
   requireThat(
     !git(work.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
-    'Shared issue report changes require a human-reviewed queue PR.'
+    'Shared issue report changes require a separate queue PR.'
   );
 }
 

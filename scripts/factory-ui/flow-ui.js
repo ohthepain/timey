@@ -1431,7 +1431,7 @@
     const message =
       warning ||
       checkpoint?.error ||
-      (checkpoint?.status === 'review' ? 'Issue update awaits queue review.' : '') ||
+      (checkpoint?.status === 'review' ? 'Issue update awaits merge of the queue PR.' : '') ||
       (queue?.claimed && !queue.local ? 'Another runner owns this issue.' : '');
     const review = $('shared-queue-review');
     const url = safeUrl(checkpoint?.url);
@@ -2306,7 +2306,9 @@
     const result = await action(choice, { title: issue.title });
     if (!result) return;
     if (result.publication) {
-      toast(result.publication.status === 'review' ? 'Deletion awaits shared queue review.' : result.publication.error);
+      toast(
+        result.publication.status === 'review' ? 'Deletion awaits merge of the queue PR.' : result.publication.error
+      );
       return;
     }
     if (choice === 'delete-pending-issue') selectIssue(null);
@@ -2338,7 +2340,7 @@
       closureModal.close();
       toast(
         result.publication?.status === 'review'
-          ? 'Saved locally. The shared report is awaiting human review.'
+          ? 'Saved locally. The queue PR is awaiting merge.'
           : result.publication?.status === 'failed'
             ? 'Saved locally. Shared report publication needs attention.'
             : 'Issue closed.'

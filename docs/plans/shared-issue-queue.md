@@ -28,15 +28,23 @@ For a normal release, stop the old runner and confirm that the required report c
 
 ## Human review
 
-Every shared report update goes through a human-reviewed queue-only PR. Protect the queue branch so runners cannot push to it directly. The factory also blocks shared report and issue-number changes in its code PRs, including Full Send.
+Every shared report update goes through a queue-only PR. Protect the queue branch so runners cannot push to it directly. The factory also blocks shared report and issue-number changes in its code PRs, including Full Send.
 
-A remote claim takes effect immediately and tells other runners who owns the run. The shared report changes only when the reviewed PR lands. A runner that has stopped while its report awaits review still holds its claim.
+Shared mode requires a human review by default. On a dedicated queue branch,
+`"sharedIssueQueueReviewRequired": false` lets an authorized operator merge the
+queue PR without a separate approval. Factory confirms the saved PR head,
+allowed file changes, merged report contents and issue number before releasing
+any claim. If the PR needs changes, refresh it from Factory. To roll this mode
+out, update Factory first, then set the queue branch's PR rule to zero required
+approvals. Keep the PR rule and the blocks on force pushes and deletions.
+
+A remote claim takes effect immediately and tells other runners who owns the run. The shared report changes only when the queue PR lands. A runner that has stopped while its report awaits merge still holds its claim.
 
 ## Verification
 
 Use two independent clones against one test remote. Race them for one issue and verify that only the confirmed owner starts. Cover an interrupted claim response, a stale report, a failed checkpoint, an interrupted release, and a delayed release after a new claim. Verify that a fresh Factory clone loads published reports and display numbers, that files created under `.issues/issue-work/` remain ignored and never appear in the queue tree, that concurrent report edits are preserved or surfaced for resolution, and that published changes contain only the permitted queue files. Exercise normal issue delivery and closure with the configured branch rules.
 
-Verify that queue-only PRs require human review and that Full Send cannot publish report changes through a code PR. Verify that pending review keeps the claim held and that the claim is visible before any report PR lands.
+Verify that queue-only PRs follow the configured review policy and that Full Send cannot publish report changes through a code PR. Verify that a pending PR keeps the claim held and that the claim is visible before any report PR lands.
 
 ## Migration
 
@@ -53,10 +61,10 @@ Verify that queue-only PRs require human review and that Full Send cannot publis
    `.issues/closed/`. It does not update a ref, the checkout or its index.
    Compare the inventory and blob IDs with the source revision.
 3. Publish the seed as `issue-queue` and verify its remote commit. Configure a
-   rule for that branch that requires human approval for queue PRs. Use a
-   queue PR author that cannot bypass review. The code branches retain their
-   own review and CI rules. If there is only one human reviewer, give the
-   Factory server a separate non-bypass bot credential through
+   rule for that branch that requires queue PRs. Match the rule's approval
+   count to Factory's review policy. The code branches retain their own review
+   and CI rules. If human approval is required and there is only one reviewer,
+   give the Factory server a separate non-bypass bot credential through
    `TIMEY_QUEUE_GITHUB_TOKEN`. Otherwise the publisher uses the saved GitHub
    CLI login.
 4. In a clean code checkout that contains the branch split, remove only the
@@ -83,9 +91,9 @@ controls. Creating an issue publishes a queue PR. Each code operation acquires
 the issue claim until the operation finishes. A disconnected operation retains
 its claim for reconciliation. Flow records and worktrees remain local, so use
 one runner for a flow while it has unpublished code. Close publishes its own
-checkpoint and releases the claim only after the reviewed update lands. A
+checkpoint and releases the claim only after the queue PR lands. A
 report draft can also be published from the queue status controls.
 
 The queue periodically reads the queue branch and remote claims. **Refresh shared queue** checks immediately without changing the checked-out branch or advancing its code. Use **Publish report update** to share a deliberate local report edit. Local edits that conflict with newer reports are preserved and reported. If two new reports propose the same display number, merge one PR, then use **Refresh queue PR** in Flow or **Refresh report PR against target** in Classic on the other to allocate from the updated registry and request review of the revised PR.
 
-If publication fails, use the issue's retry control after reviewing the failure. If a reviewer manually amended the pending PR to resolve a conflict, use **Confirm reviewed report merge** after it lands. Timey verifies the actual human-approved merge on the queue branch before releasing the claim. For an interrupted runner without a checkpoint, verify that its previous process and Git operation have stopped before using **Reconcile interrupted claim** on the owning checkout. A dead process can leave a per-issue lock in `.issues/shared-issue-claims/` or `.issues/shared-publication/`. Inspect its saved operation and remove only the confirmed dead lock before retrying. Review and merge the recovery report before releasing an active claim. Local workspaces are preserved when proposing closure and can be cleaned up separately after review.
+If publication fails, use the issue's retry control after reviewing the failure. Use **Confirm report merge** to reconcile a queue PR after it lands. With required reviews, Factory checks approval of the final revision. Without required reviews, it checks that the merged report matches the saved checkpoint. For an interrupted runner without a checkpoint, verify that its previous process and Git operation have stopped before using **Reconcile interrupted claim** on the owning checkout. A dead process can leave a per-issue lock in `.issues/shared-issue-claims/` or `.issues/shared-publication/`. Inspect its saved operation and remove only the confirmed dead lock before retrying. Review and merge the recovery report before releasing an active claim. Local workspaces are preserved when proposing closure and can be cleaned up separately after review.

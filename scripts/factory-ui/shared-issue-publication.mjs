@@ -64,11 +64,34 @@ function reviewedPath(file, allowed, destination) {
   );
 }
 
+function assertHumanApproval(pr, reviews) {
+  const latest = new Map(
+    reviews
+      .filter(
+        (review) =>
+          review.user?.type === 'User' && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)
+      )
+      .map((review) => [review.user.id, review])
+  );
+  requireThat(
+    [...latest.values()].some((review) => review.state === 'APPROVED' && review.commit_id === pr.head.sha),
+    'The final queue update PR revision has no human approval.'
+  );
+}
+
+function assertLandedCheckpoint(record, proposed, merged, issueNumber) {
+  requireThat(
+    sameReport(proposed, merged) && issueNumber === record.issueNumber,
+    'The merged report or display number differs from the saved queue checkpoint.'
+  );
+}
+
 export function createSharedIssuePublication({
   root,
   remote,
   target,
   repository,
+  requireReview = true,
   openPullRequest,
   inspectPullRequest,
 }) {
@@ -230,7 +253,7 @@ export function createSharedIssuePublication({
             head: record.branch,
             base: target,
             title: `Update issue report ${record.issueId}`,
-            body: `Queue checkpoint for ${record.issueId}. This report update requires human review before merging.`,
+            body: `Queue checkpoint for ${record.issueId}.`,
           }),
         })
       );
@@ -303,6 +326,17 @@ export function createSharedIssuePublication({
     return { ...record, status: landed ? 'landed' : 'pending' };
   }
 
+  function pullRequestDetails(record) {
+    if (inspectPullRequest) return inspectPullRequest(record);
+    const path = `repos/${repository}/pulls/${record.number}`;
+    const list = (kind) => JSON.parse(command('gh', ['api', '--paginate', '--slurp', `${path}/${kind}`])).flat();
+    return {
+      pr: JSON.parse(command('gh', ['api', path])),
+      files: list('files'),
+      reviews: requireReview ? list('reviews') : [],
+    };
+  }
+
   function confirmMerged(issueId) {
     if (openPullRequest && !inspectPullRequest) {
       const record = inspect(issueId);
@@ -313,13 +347,7 @@ export function createSharedIssuePublication({
       const record = readPending(issueId);
       requireThat(Number.isSafeInteger(record?.number) && record.number > 0, 'No queue update PR is recorded.');
       const live = readTarget(issueId);
-      const path = `repos/${repository}/pulls/${record.number}`;
-      const details = inspectPullRequest?.(record) ?? {
-        pr: JSON.parse(command('gh', ['api', path])),
-        files: JSON.parse(command('gh', ['api', '--paginate', '--slurp', `${path}/files`])).flat(),
-        reviews: JSON.parse(command('gh', ['api', '--paginate', '--slurp', `${path}/reviews`])).flat(),
-      };
-      const { pr, files, reviews } = details;
+      const { pr, files, reviews } = pullRequestDetails(record);
       requireThat(
         pr.number === record.number &&
           pr.merged === true &&
@@ -330,16 +358,8 @@ export function createSharedIssuePublication({
           pr.base.repo.full_name.toLowerCase() === repository.toLowerCase(),
         'The recorded queue update PR has not been verified as merged into the target.'
       );
-      const latestReviews = new Map();
-      for (const review of reviews) {
-        if (review.user?.type === 'User' && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) {
-          latestReviews.set(review.user.id, review);
-        }
-      }
-      requireThat(
-        [...latestReviews.values()].some((review) => review.state === 'APPROVED' && review.commit_id === pr.head.sha),
-        'The final queue update PR revision has no human approval.'
-      );
+      if (requireReview) assertHumanApproval(pr, reviews);
+      else requireThat(pr.head.sha === record.commit, 'The queue update PR head changed before merge.');
       const proposed = readReport(record.commit, issueId);
       verifyReviewedFiles(record, proposed.location, files);
       git('merge-base', '--is-ancestor', pr.merge_commit_sha, live.head);
@@ -349,6 +369,7 @@ export function createSharedIssuePublication({
         proposed.location === merged.location && Number.isSafeInteger(issueNumber),
         'The merged report location or display number differs from the approved queue operation.'
       );
+      if (!requireReview) assertLandedCheckpoint(record, proposed, merged, issueNumber);
       const confirmed = { ...record, status: 'landed', issueNumber, mergeCommit: pr.merge_commit_sha };
       writeJson(recordPath, confirmed);
       return confirmed;

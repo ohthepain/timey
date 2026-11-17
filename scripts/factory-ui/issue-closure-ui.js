@@ -161,7 +161,7 @@
     return { open, decision };
   };
 
-  const sharedExplanation = 'The factory prepares a report PR for human review. Local work is preserved.';
+  const sharedExplanation = 'The factory prepares a queue PR for the report. Local work is preserved.';
 
   function reasonOption(choice) {
     const selected = choice.id === 'fixed' ? ' selected' : '';

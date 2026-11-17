@@ -100,7 +100,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
   verifiedFlowCandidate(ctx, workspace, { ...options, verification });
   requireThat(
     !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
-    'Shared issue reports require their separate human-reviewed queue PR.'
+    'Shared issue reports require a separate queue PR.'
   );
   if (state.workflow.policy === 'human-first' && previousApproval(ctx)?.token !== confirmation.token) {
     return {

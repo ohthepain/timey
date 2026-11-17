@@ -2,5 +2,6 @@
   "clarification": "combined",
   "factoryModel": "gpt-6-luna",
   "sharedIssueQueue": true,
-  "sharedIssueQueueBranch": "issue-queue"
+  "sharedIssueQueueBranch": "issue-queue",
+  "sharedIssueQueueReviewRequired": false
 }

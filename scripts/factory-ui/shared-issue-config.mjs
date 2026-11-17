@@ -30,7 +30,19 @@ export function sharedIssueQueueConfig(root) {
   const config = readJson(path);
   validateDeliveryConfig(config);
   const branch = sharedIssueQueueBranch(root, config.target);
-  return { ...config, target: branch ?? config.target, separateBranch: branch };
+  return {
+    ...config,
+    target: branch ?? config.target,
+    separateBranch: branch,
+    requireReview: reviewRequired(root, branch),
+  };
+}
+
+function reviewRequired(root, branch) {
+  const { sharedIssueQueueReviewRequired: required = true } = readJson(join(root, 'factory.config.json'));
+  requireThat(typeof required === 'boolean', 'Set sharedIssueQueueReviewRequired to true or false.');
+  requireThat(required || branch, 'A queue without required reviews needs a dedicated queue branch.');
+  return required;
 }
 
 function validateDeliveryConfig(config) {

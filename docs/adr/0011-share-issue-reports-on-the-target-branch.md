@@ -11,7 +11,7 @@ candidate at Merge, even when the only change was a report.
 
 Keep code delivery, verification and branch protection tied to the issue's
 code destination. Keep open and closed reports and the display-number registry
-on the queue branch. Runners publish queue checkpoints through human-reviewed
+on the queue branch. Runners publish queue checkpoints through queue-only
 PRs and use exclusive remote claims to coordinate work. Local flow state,
 workspaces and evidence stay with the runner.
 

@@ -3461,7 +3461,7 @@
             pending: false,
             message:
               result.publication?.status === 'review'
-                ? 'Saved locally. The shared report is awaiting human review.'
+                ? 'Saved locally. The queue PR is awaiting merge.'
                 : result.publication?.status === 'failed'
                   ? 'Saved locally. Shared report publication needs attention.'
                   : accepted
@@ -3948,7 +3948,7 @@
         const link = url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Review report PR</a>` : '';
         const status =
           checkpoint?.status === 'review'
-            ? `<p>Report update awaiting human review.${link}</p><button data-shared-queue-retry="${esc(issue.id)}">Refresh report PR against target</button>`
+            ? `<p>Report update awaiting merge.${link}</p><button data-shared-queue-retry="${esc(issue.id)}">Refresh report PR against target</button>`
             : ['failed', 'preparing'].includes(checkpoint?.status)
               ? `<p role="alert">${esc(checkpoint.error || 'Report publication was interrupted.')}${link}</p><button data-shared-queue-retry="${esc(issue.id)}">Retry report publication</button>`
               : '';
@@ -3957,7 +3957,7 @@
             ? `<button data-shared-queue-recover="${esc(issue.id)}">Reconcile interrupted claim</button>`
             : '';
         const confirm = ['review', 'failed', 'preparing'].includes(checkpoint?.status)
-          ? `<button data-shared-queue-confirm="${esc(issue.id)}">Confirm reviewed report merge</button>`
+          ? `<button data-shared-queue-confirm="${esc(issue.id)}">Confirm report merge</button>`
           : '';
         const draft = shared.canPublishDraft
           ? `<button data-shared-queue-publish-draft="${esc(issue.id)}">Publish report update</button>`
