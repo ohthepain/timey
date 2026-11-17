@@ -33,6 +33,72 @@ function fixture(t) {
   return { directory, root, remote };
 }
 
+test('direct queue publication survives a competing number allocation and a lost push response', (t) => {
+  const { root, remote, directory } = fixture(t);
+  const target = 'issue-queue';
+  const ref = `refs/heads/${target}`;
+  const otherId = '20261111T165430737-ca3555165563420c';
+  git(root, 'push', 'origin', `HEAD:${ref}`);
+  const other = join(directory, 'other');
+  git(directory, 'clone', '-b', 'dev', remote, other);
+  git(other, 'config', 'user.name', 'Other runner');
+  git(other, 'config', 'user.email', 'other@example.test');
+  const direct = { ...config, target, separateBranch: target, direct: true };
+  const competitor = createSharedIssuePublication({
+    root: other,
+    ...direct,
+    pushDirect: (commit, destination) => git(other, 'push', 'origin', `${commit}:${destination}`),
+  });
+  const dev = git(root, 'rev-parse', 'HEAD');
+  let pushes = 0;
+  const publication = createSharedIssuePublication({
+    root,
+    ...direct,
+    openPullRequest: () => assert.fail('Direct publication opened a pull request.'),
+    pushDirect(commit, destination) {
+      assert.equal(destination, ref);
+      if (++pushes === 1) competitor.publish({ issueId: otherId, base: null, report: 'Other report\n' });
+      git(root, 'push', 'origin', `${commit}:${destination}`);
+      throw Error('The response was lost after Git received the push.');
+    },
+  });
+  const request = { issueId, base: null, report: 'First report\n' };
+  const landed = publication.publish(request);
+  assert.equal(landed.status, 'landed');
+  assert.equal(landed.mergeCommit, landed.commit);
+  assert.equal(publication.publish(request).commit, landed.commit);
+  assert.equal(pushes, 2);
+  const queue = publication.readTarget(issueId);
+  assert.equal(queue.report, request.report);
+  const numbers = JSON.parse(queue.numbers).issues;
+  assert.equal(new Set([numbers[issueId], numbers[otherId]]).size, 2);
+  assert.equal(publication.readTarget(otherId).report, 'Other report\n');
+  assert.equal(git(root, 'rev-parse', 'HEAD'), dev);
+  assert.equal(git(root, 'ls-remote', 'origin', 'refs/heads/dev'), `${dev}\trefs/heads/dev`);
+  assert.equal(git(root, 'ls-remote', 'origin', 'refs/heads/queue-updates/*'), '');
+});
+
+test('direct publishing refuses to replace a report changed by another runner', (t) => {
+  const { root } = fixture(t);
+  const target = 'issue-queue';
+  const ref = `refs/heads/${target}`;
+  git(root, 'push', 'origin', `HEAD:${ref}`);
+  const publication = createSharedIssuePublication({
+    root,
+    ...config,
+    target,
+    separateBranch: target,
+    direct: true,
+    pushDirect: (commit, destination) => git(root, 'push', 'origin', `${commit}:${destination}`),
+  });
+  publication.publish({ issueId, base: null, report: 'Another runner wrote this.\n' });
+  assert.throws(
+    () => publication.publish({ issueId, base: null, report: 'I prepared a stale update.\n' }),
+    /shared report changed/
+  );
+  assert.equal(publication.readTarget(issueId).report, 'Another runner wrote this.\n');
+});
+
 test('queue checkpoint only updates report and number files in a review branch', (t) => {
   const { directory, root, remote } = fixture(t);
   const dev = git(root, 'rev-parse', 'HEAD');

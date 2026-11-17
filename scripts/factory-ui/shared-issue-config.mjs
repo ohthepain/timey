@@ -34,8 +34,16 @@ export function sharedIssueQueueConfig(root) {
     ...config,
     target: branch ?? config.target,
     separateBranch: branch,
+    direct: directPublication(root, branch),
     requireReview: reviewRequired(root, branch),
   };
+}
+
+function directPublication(root, branch) {
+  const { sharedIssueQueueDirect: direct = false } = readJson(join(root, 'factory.config.json'));
+  requireThat(typeof direct === 'boolean', 'Set sharedIssueQueueDirect to true or false.');
+  requireThat(!direct || branch, 'Direct publishing requires a dedicated queue branch.');
+  return direct;
 }
 
 function reviewRequired(root, branch) {

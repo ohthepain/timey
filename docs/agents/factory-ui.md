@@ -1737,4 +1737,4 @@ and Continue control rather than repeating capture.
 
 ## Shared issue queue
 
-In [shared queue mode](../plans/shared-issue-queue.md), the issue strategy claims an issue on the remote before starting and keeps the claim until its human-reviewed report PR lands. Use the issue page to open the report PR, retry publication, or reconcile an interrupted claim. Legacy assignment launches are unavailable in this mode.
+In [shared queue mode](../plans/shared-issue-queue.md), the issue strategy claims an issue on the remote before starting and keeps the claim until Factory confirms the report checkpoint on the queue branch. Timey publishes new checkpoints directly using its GitHub App. Use the issue page to retry publication or reconcile an interrupted claim. Queue pull requests already in progress retain their existing merge and confirmation controls. Legacy assignment launches are unavailable in this mode.

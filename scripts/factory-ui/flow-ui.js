@@ -1450,7 +1450,12 @@
         ? 'publish-draft'
         : '';
     button.hidden = !route;
-    button.textContent = route === 'retry' ? 'Refresh queue PR' : 'Publish report update';
+    button.textContent =
+      route === 'retry'
+        ? checkpoint?.status === 'review'
+          ? 'Refresh queue PR'
+          : 'Retry report publication'
+        : 'Publish report update';
     button.onclick = async () => {
       button.disabled = true;
       try {
