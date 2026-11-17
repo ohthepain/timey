@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
@@ -495,6 +495,65 @@ test('new issues start at the destination branch while explicit starting points 
   git('update-ref', '-d', 'refs/remotes/origin/dev');
   const local = await restarted.action({ ...input, requestId: '00000000-0000-4000-8000-000000000122' });
   assert.equal(startingPoint(local.flow).ref, 'refs/heads/dev');
+});
+
+test('changing a started issue branch moves its work and retains its prior attempt', async (t) => {
+  const { root, git, id, service } = fixture(t);
+  writeFileSync(join(root, '.issues/triage-labels.md'), 'Configured for the test guard.');
+  service.guard = () => {};
+  const initial = git('rev-parse', 'HEAD');
+  git('switch', '-c', 'correct');
+  writeFileSync(join(root, 'correct.txt'), 'Correct starting branch\n');
+  git('add', 'correct.txt');
+  git('commit', '-m', 'Correct branch work');
+  const correct = git('rev-parse', 'HEAD');
+  git('switch', 'dev');
+  writeFileSync(join(root, 'wrong.txt'), 'Wrong starting branch\n');
+  git('add', 'wrong.txt');
+  git('commit', '-m', 'Wrong branch work');
+  const base = git('rev-parse', 'HEAD');
+  git('switch', '-c', 'conflict', initial);
+  writeFileSync(join(root, 'source.txt'), 'conflicting change\n');
+  git('commit', '-am', 'Conflicting branch work');
+  const checkout = join(realpathSync(root), '.issues/issue-work', id);
+  git('worktree', 'add', '-b', 'codex/test-issue', checkout, base);
+  const issueGit = (...args) => git('-C', checkout, ...args);
+  writeFileSync(join(checkout, 'source.txt'), 'issue change\n');
+  writeFileSync(join(checkout, 'extra.txt'), 'uncommitted new file\n');
+  const flows = createIssueFlows(service, { executor: executor(async () => ({ summary: 'done' })) });
+  t.after(() => flows.close());
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  flow.startingPoint = { ref: 'refs/heads/dev', name: 'dev', commit: base };
+  flow.workspace = { checkout, branch: 'codex/test-issue', base };
+  flow.destination = { branch: 'dev' };
+  const work = flow.blocks.find((block) => block.kind === 'work');
+  work.attempts.push({ id: 'prior-attempt', status: 'completed' });
+  flows.store.save(flow, flow.revision);
+  const choose = (name) =>
+    flows.action({
+      action: 'starting-point',
+      issueId: id,
+      revision: flows.read(issue).revision,
+      ref: 'refs/heads/' + name,
+      confirmed: true,
+    });
+  assert.equal((await flows.view(id)).startingPointEditable, true);
+  await assert.rejects(choose('conflict'), /original worktree retains them/);
+  assert.equal(flows.read(issue).workspace.base, base);
+  assert.equal(issueGit('show', 'HEAD:extra.txt'), 'uncommitted new file');
+  assert.equal(issueGit('merge-base', base, 'HEAD'), base);
+  const moved = await choose('correct');
+  assert.equal(moved.flow.startingPoint.commit, correct);
+  assert.equal(moved.flow.workspace.base, correct);
+  assert.equal(deliveryTarget(moved.flow).branch, 'dev');
+  assert.equal(issueGit('branch', '--show-current'), 'codex/test-issue');
+  assert.equal(issueGit('merge-base', correct, 'HEAD'), correct);
+  assert.equal(issueGit('status', '--porcelain'), '');
+  assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'issue change\n');
+  assert.equal(readFileSync(join(checkout, 'extra.txt'), 'utf8'), 'uncommitted new file\n');
+  assert.equal(existsSync(join(checkout, 'wrong.txt')), false);
+  assert.ok(moved.flow.blocks.find((block) => block.id === work.id).attempts[0].invalidatedAt);
 });
 
 test('request data and block order persist with revision conflicts rejected', async (t) => {

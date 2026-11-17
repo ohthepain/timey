@@ -252,8 +252,8 @@ parallel workers belong to the explicitly selected Arena or Swarm block.
 
 **Flow starting point**:
 The chosen Git branch ref and exact commit used to create an issue's checkout.
-It defaults to the delivery target branch. Each issue retains its selected ref
-and commit.
+It defaults to the delivery target branch. An idle, unpublished issue can change
+its starting point by moving its saved work onto the new base.
 
 **Flow candidate identity**:
 The base commit, source tree, current commit and uncommitted state captured for a

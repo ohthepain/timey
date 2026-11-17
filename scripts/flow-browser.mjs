@@ -1584,6 +1584,35 @@ try {
       }
     }
   );
+  await check('Starting branch confirmation moves saved work through the real UI', async () => {
+    issueId = '20261117-starting-branch-fixture';
+    writeFileSync(
+      join(project, '.issues', issueId + '.md'),
+      `---\nid: ${issueId}\ntitle: Correct the starting branch\nstate: backlog\n---\n\nMove the saved edits.\n`
+    );
+    const issue = service.flows.selected(issueId);
+    const flow = service.flows.read(issue);
+    const base = git(project, 'rev-parse', 'refs/heads/dev');
+    const checkout = join(realpathSync(project), '.issues/issue-work', issueId);
+    const branch = 'codex/browser-branch-move';
+    git(project, 'worktree', 'add', '-b', branch, checkout, base);
+    writeFileSync(join(checkout, 'saved-edit.txt'), 'Keep this local edit.\n');
+    flow.workspace = { branch, base, checkout };
+    flow.startingPoint = { ref: 'refs/heads/dev', name: 'dev', commit: base };
+    service.flows.store.save(flow, flow.revision);
+    await page.goto('/?issue=' + issueId);
+    const selector = page.getByRole('combobox', { name: 'Starting branch', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Change starting branch' });
+    await selector.selectOption('refs/remotes/origin/recent');
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.equal(await selector.inputValue(), 'refs/heads/dev');
+    await selector.selectOption('refs/remotes/origin/recent');
+    await dialog.getByRole('button', { name: 'Move issue work', exact: true }).click();
+    await page.getByText('Moved the issue to the selected starting branch.', { exact: true }).waitFor();
+    assert.equal((await view()).flow.workspace.base, recentBranchCommit);
+    assert.equal(git(checkout, 'show', 'HEAD:saved-edit.txt'), 'Keep this local edit.');
+    await screenshot('starting-branch-moved');
+  });
   passed = true;
 } catch (error) {
   failure = error.stack;

@@ -26,7 +26,7 @@ import { queueIssueNumbers } from './issue-numbers.mjs';
 import { appendMessage, conversationMessages } from './conversation-store.mjs';
 import { createDiscussionRuntime } from './discussion-codex.mjs';
 import { redactValue } from './activity.mjs';
-import { digest, requireThat, writeJson } from './common.mjs';
+import { digest, git, requireThat, writeJson } from './common.mjs';
 import { closedIssueState, readQueue } from './data.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
@@ -69,7 +69,7 @@ import {
 } from './flow-definitions.mjs';
 import { buildFlowStructure } from './flow-builder.mjs';
 import { createFlowObserver, flowTarget, flowWorkspace } from './flow-observer.mjs';
-import { createFlowExecutor, manualFlowClosureArtifact } from './flow-executor.mjs';
+import { createFlowExecutor, manualFlowClosureArtifact, moveFlowStartingPoint } from './flow-executor.mjs';
 import {
   flowDeliveryProvider,
   flowPRLink,
@@ -396,7 +396,7 @@ class IssueFlows {
             : undefined,
       },
       flowDefinitions,
-      startingPointEditable: !branchCatalogError && this.startingPointEditable(issue, flow),
+      startingPointEditable: !branchCatalogError && this.startingPointEditable(issue, flow, environment.pr),
       environment,
       artifacts: this.artifacts(flow),
       conversation: conversationMessages(this.service.root, id).slice(-100),
@@ -720,6 +720,10 @@ class IssueFlows {
     }
   }
   requireAvailableAction(issue, flow, action) {
+    requireThat(
+      ['pause', 'open-worktree'].includes(action) || !this.active.get(issue.id)?.movingStartingPoint,
+      'Wait for the starting branch move to finish.'
+    );
     if (issue.state === 'needs-approval')
       requireThat(
         ['open-block', 'rename-issue', 'comment', 'retro-setting'].includes(action),
@@ -1374,13 +1378,23 @@ class IssueFlows {
       details,
     };
   }
-  startingPointEditable(issue, flow) {
+  startingPointEditable(issue, flow, observedPR) {
+    const workspace = flowWorkspace(this.service, flow);
     if (
       issue.closed ||
-      flowWorkspace(this.service, flow) ||
-      deliveryTarget(flow).base ||
+      issue.state === 'needs-approval' ||
+      this.flowBuilds.has(issue.id) ||
+      this.closureTasks.has(issue.id) ||
       this.active.has(issue.id) ||
-      [...flow.blocks, ...(flow.retiredBlocks ?? [])].some((block) => block.kind !== 'request' && block.attempts.length)
+      observedPR ||
+      flow.destination?.pr ||
+      workspace?.pr ||
+      this.service.lifecycleRuns?.[issue.id]?.work ||
+      (workspace ? !existsSync(workspace.checkout ?? '') : Boolean(deliveryTarget(flow).base)) ||
+      [...flow.blocks, ...(flow.retiredBlocks ?? [])].some(
+        (block) =>
+          block.attempts.some(unresolvedAttempt) || (!workspace && block.kind !== 'request' && block.attempts.length)
+      )
     )
       return false;
     if (issueHasActiveWork(this.service, issue.id) || this.service.issueChats?.active?.has(issue.id)) return false;
@@ -1402,17 +1416,60 @@ class IssueFlows {
   async setStartingPoint(issue, flow, input) {
     requireThat(
       this.startingPointEditable(issue, flow),
-      'The starting point is locked after an issue has started work.'
+      'Change the starting branch of an idle, unpublished issue with an available worktree.'
     );
     const point = branchStartingPoint(await this.codeBranches(), input.ref);
     flow = this.read(issue);
     requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
     requireThat(
       this.startingPointEditable(issue, flow),
-      'The starting point is locked after an issue has started work.'
+      'Change the starting branch of an idle, unpublished issue with an available worktree.'
     );
+    const workspace = flowWorkspace(this.service, flow);
+    if (workspace && (point.ref !== flow.startingPoint?.ref || point.commit !== flow.startingPoint.commit)) {
+      requireThat(input.confirmed === true, 'Confirm moving the saved issue work to the selected branch.');
+      requireThat(
+        ![workspace.branch, flow.target.remote + '/' + workspace.branch].includes(point.name),
+        'Choose a branch other than this issue’s own branch.'
+      );
+      return this.moveStartingPoint(issue, flow, workspace, point);
+    }
     flow.startingPoint = point;
     this.store.save(flow, flow.revision);
+    return this.view(issue.id);
+  }
+  async moveStartingPoint(issue, flow, workspace, point) {
+    if (git(this.service.root, 'remote').split('\n').includes(flow.target.remote)) {
+      const provider = this.deliveryProvider(flow, workspace);
+      const [published, pr] = await Promise.all([
+        flowRemoteBranches(provider),
+        lookupFlowPR(provider, workspace.branch),
+      ]);
+      requireThat(!published.has(workspace.branch) && !pr, 'The issue branch is already published.');
+    }
+    requireThat(
+      this.read(issue).revision === flow.revision && this.startingPointEditable(this.selected(issue.id), flow),
+      'The issue changed. Refresh before moving the starting branch.'
+    );
+    const controller = new AbortController();
+    const operation = 'move-starting-point';
+    const attempt = { id: randomUUID() };
+    const queue = this.service.sharedIssues;
+    const claim = queue?.acquireFlowBlock(issue, operation, false);
+    this.pauseAutoplay(issue.id, 'Moving the issue to a new starting branch.');
+    this.active.set(issue.id, { controller, blockId: operation, attemptId: attempt.id, movingStartingPoint: true });
+    try {
+      flow.workspace = {
+        ...workspace,
+        ...(await moveFlowStartingPoint(this.service, { issue, flow, attempt, signal: controller.signal }, point)),
+      };
+      flow.startingPoint = point;
+      invalidateBlocks(flow, new Set(flow.blocks.filter((block) => block.kind !== 'request').map((block) => block.id)));
+      this.store.save(flow, flow.revision);
+    } finally {
+      this.active.delete(issue.id);
+      if (claim) queue.releaseFlowBlock(claim);
+    }
     return this.view(issue.id);
   }
   async start(issue, flow, input, catalog, publication = null) {
