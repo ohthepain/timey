@@ -162,7 +162,11 @@ Once the issue is closed, **Archive** replaces **Close**. The menu can archive t
 saved report, reveal it in Finder, or reopen the issue for investigation.
 
 Use **×** in the inspector’s top-right corner to remove a block after
-confirmation. The original Request remains part of the flow.
+confirmation. You can also click a block in the center column and press
+**Delete** or **Backspace** to use the same confirmation and removal rules.
+Escape, clicking elsewhere, moving focus outside the graph, or completing deletion
+clears the shortcut selection. Automatically selected blocks are not eligible.
+The original Request remains part of the flow.
 
 The artifact inspector shows evidence produced by the selected block. The latest
 run appears first. Invalidated results remain visible with their old inputs. Existing evidence from older runs appears in collapsed sections

@@ -7,6 +7,8 @@ publication, and guarded closure in disposable projects. `pnpm run test:flow:bro
 drives the real flow page and HTTP routes with an injected executor. Its results,
 logs, screenshots, and fixture stay under `.issues/evidence/flow-browser-*`. These
 checks establish UI and protocol behavior, not live model or GitHub execution.
+Use `pnpm run test:flow:browser --block-deletion` for the isolated click-selection,
+confirmation, keyboard safety and persisted block-removal scenario.
 The aggregate factory and browser scripts include these checks. For an installed
 Chrome when the Playwright Chromium cache is unavailable, run
 `TIMEY_BROWSER_CHANNEL=chrome pnpm run test:browser`.

@@ -9,6 +9,7 @@
     issueId: initialSelection.get('issue'),
     folder: initialSelection.get('issue') ? null : initialSelection.get('folder'),
     blockId: null,
+    deleteBlockId: null,
     graphScrollIntent: null,
     sidebarWidth: null,
     inspectorWidth: null,
@@ -261,6 +262,7 @@
     if (result.flow && result.issue && result.issue.id === state.issueId) {
       state.view = result;
       if (!result.flow.blocks.some((block) => block.id === state.blockId)) {
+        state.deleteBlockId = null;
         const attempted = result.flow.blocks
           .filter((block) => latest(block))
           .sort((a, b) =>
@@ -482,6 +484,7 @@
     $('folder-scan-form').reset();
     state.issueId = issue;
     state.blockId = null;
+    state.deleteBlockId = null;
     state.graphScrollIntent = null;
     state.view = null;
     state.error = '';
@@ -2191,6 +2194,7 @@
       blockId: block.id,
       ...(name === 'move' ? { direction: button.dataset.direction } : {}),
     });
+    if (result && name === 'remove') state.deleteBlockId = null;
     if (result) await load(true);
   }
 
@@ -2434,6 +2438,14 @@
     if (button.hasAttribute('data-group-play') && state.view?.autoplay?.mode === 'paused') $('issue-playback').click();
   });
 
+  document.addEventListener(
+    'click',
+    () => {
+      state.deleteBlockId = null;
+    },
+    true
+  );
+
   document.addEventListener('click', (event) => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
@@ -2450,6 +2462,7 @@
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
     if (button.dataset.block) {
       state.blockId = button.dataset.block;
+      if ($('graph').contains(button)) state.deleteBlockId = state.blockId;
       state.graphScrollIntent = { nodeId: state.blockId, mode: 'reveal' };
       $('inspector-body').scrollTop = 0;
       renderGraph();
@@ -2937,7 +2950,30 @@
     await load(true);
   });
 
+  document.addEventListener('focusin', (event) => {
+    if (!$('graph').contains(event.target)) state.deleteBlockId = null;
+  });
+
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') state.deleteBlockId = null;
+    if (
+      ['Delete', 'Backspace'].includes(event.key) &&
+      !event.repeat &&
+      !event.isComposing &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      !event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') &&
+      !document.querySelector('dialog[open]') &&
+      state.deleteBlockId &&
+      state.deleteBlockId === state.blockId &&
+      !$('delete-block').disabled
+    ) {
+      event.preventDefault();
+      void blockAction($('delete-block'));
+      return;
+    }
     if (
       event.key.toLowerCase() !== 'n' ||
       event.metaKey ||

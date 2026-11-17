@@ -22,6 +22,7 @@ import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { git } from './factory-ui/common.mjs';
 import { flowIssueFoldersBrowserChecks } from './flow-browser-issue-folders.mjs';
+import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -74,6 +75,7 @@ const fingerprint = () =>
   );
 const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
 const results = [];
+const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const logs = {
   console: [],
   pageErrors: [],
@@ -170,6 +172,7 @@ let workId;
 let passed = false;
 let failure;
 async function check(name, run) {
+  if (process.argv.includes('--block-deletion') && name !== blockDeletionCheck) return;
   try {
     await run();
     results.push({ name, passed: true });
@@ -1643,6 +1646,15 @@ try {
     await clickAction(remove);
     await page.locator(`[data-block="${added.id}"]`).waitFor({ state: 'detached' });
     assert.ok(!(await view()).flow.blocks.some((item) => item.id === added.id));
+  });
+  await check(blockDeletionCheck, async () => {
+    const deletionIssueId = '20261117-block-deletion-fixture';
+    writeFileSync(
+      join(project, '.issues', deletionIssueId + '.md'),
+      `---\nid: ${deletionIssueId}\ntitle: Delete selected flow blocks\nstate: backlog\n---\n\nRemove a block after an explicit click.\n`
+    );
+    await flowBlockDeletionBrowserChecks(page, service, deletionIssueId);
+    if (issueId) await page.goto('/?issue=' + issueId);
   });
   await check('Block timers reset for each attempt and stop at the last saved time after disconnect', async () => {
     const issue = service.flows.selected(issueId);
