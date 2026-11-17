@@ -110,11 +110,26 @@ export function createSharedIssueQueue(service, options = {}) {
     if (result.number) publication.confirmMerged(record.id);
     completeLocation(record);
     const own = claims.own(record.id);
-    if (own && record.claim?.oid === own.oid) release(record.id, own);
+    if (own && record.claim?.oid === own.oid) finishPublishedClaim(record, result, own);
     const saved = save(record, { status: 'published', url: result.url, error: null });
     if (record.location === 'closed' && service.flows?.closurePending(record.id))
       queueMicrotask(() => service.flows?.resumeClosure(record.id));
     return saved;
+  }
+  function finishPublishedClaim(record, result, claim) {
+    const receipt = result.atomicRelease;
+    if (confirmedAtomicRelease(receipt, result, claim)) {
+      claims.forgetReleased(claim);
+      if (remoteClaims.get(record.id)?.oid === claim.oid) remoteClaims.delete(record.id);
+    } else release(record.id, claim);
+  }
+  function confirmedAtomicRelease(receipt, result, claim) {
+    if (!receipt) return false;
+    return [
+      receipt.commit === result.mergeCommit,
+      receipt.releasedClaim?.issueId === claim.issueId,
+      receipt.releasedClaim?.oid === claim.oid,
+    ].every(Boolean);
   }
   function reconcile(record, revision) {
     if (record.status !== 'review' || active(record.id)) return;
@@ -255,6 +270,9 @@ export function createSharedIssueQueue(service, options = {}) {
     release(claim.issueId, claim);
     save(pending, { status: 'published' });
   }
+  function archiveClaim(record) {
+    return config.direct && record.storageAction === 'archive' ? record.claim : undefined;
+  }
   function publish(record, reprepare = false) {
     try {
       const publishReport = reprepare ? publication.reprepare : publication.publish;
@@ -264,6 +282,7 @@ export function createSharedIssueQueue(service, options = {}) {
         location: record.location === undefined ? 'open' : record.location,
         report: record.report,
         reason: record.reason,
+        releaseClaim: archiveClaim(record),
       });
       if (result.status === 'landed') return publishConfirmed(record, result);
       return save(record, { status: 'review', url: result.url, error: null });

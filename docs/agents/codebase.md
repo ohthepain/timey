@@ -653,6 +653,10 @@ socket directory.
 `.oxfmtrc.json` owns formatter options for Vite and issue reports.
 `issue-report-format.mjs` passes that file explicitly to the formatter, so report
 writes do not load the application's Vite plugins.
+Direct archives publish report removal and the exact owned claim's deletion in
+one atomic Git push. Publication retains a commit-bound acknowledgment and still
+confirms the resulting commit before clearing local claim metadata. Missing or
+interrupted acknowledgments use the existing remote release and recovery path.
 `issue-folder-drag-ui.js` handles issue drag events in the Issues sidebar.
 The sidebar uses the existing revision-checked `folder` action to save moves,
 including assignments to configured project folders. `flow-browser-issue-folders.mjs`

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { cleanEnvironment, readJson, requireThat, writeJson } from './common.mjs';
 import { ensureIssueNumbers } from './issue-numbers.mjs';
 import { parse } from 'yaml';
+import { z } from 'zod';
 
 const numbersPath = '.issues/issue-numbers.json';
 const issueIdPattern = /^\d{8}T\d{6}(?:\d{3})?Z?-[a-f0-9]{4,32}$/;
@@ -435,13 +436,13 @@ export function createSharedIssuePublication({
     });
   }
 
-  function publish({ issueId, base, report, reason, location = 'open' }, refresh = false) {
+  function publish({ issueId, base, report, reason, location = 'open', releaseClaim }, refresh = false) {
     const candidate = requestedReport(report, location);
     const expected =
       typeof base === 'object' && base !== null
         ? { report: base.report, location: base.location ?? (base.report === null ? null : 'open') }
         : { report: base, location: base === null ? null : 'open' };
-    requestedReport(expected.report, expected.location, 'base');
+    requestedBase(issueId, candidate, expected, releaseClaim);
     return withPublicationLock(issueId, (path) => {
       const live = readTarget(issueId);
       let record = publicationRecord(issueId, candidate, expected, reason, live, path);
@@ -449,7 +450,7 @@ export function createSharedIssuePublication({
         if (record.direct) writeJson(path, record);
         return record;
       }
-      if (record.direct) return publishDirect(record, candidate, expected, live, path);
+      if (record.direct) return publishDirect(record, candidate, expected, live, path, releaseClaim);
       record = pushCheckpoint(record, expected, path, refresh);
       const result = { ...record, ...ensurePullRequest(record), status: 'pending' };
       delete result.previousCommit;
@@ -493,18 +494,20 @@ export function createSharedIssuePublication({
     return record;
   }
 
-  function publishDirect(record, candidate, expected, live, path) {
+  function publishDirect(record, candidate, expected, live, path, releaseClaim) {
+    record = { ...record, releaseClaim };
     for (let attempt = 0; attempt < 3; attempt++) {
       requireThat(sameReport(live, expected), 'The shared report changed. Reconcile it before publishing.');
       record = prepareDirectRetry(record, candidate, live, path);
-      const pushError = attemptDirectPush(record.commit);
+      const pushed = attemptDirectPush(record);
       const next = readTarget(record.issueId);
       const landed = inspectTarget(record, next);
       if (landed.status === 'landed') {
-        writeJson(path, landed);
-        return landed;
+        const confirmed = { ...landed, atomicRelease: releaseReceipt(record, pushed.receipt) };
+        writeJson(path, confirmed);
+        return confirmed;
       }
-      if (next.head === live.head) throw pushError;
+      if (next.head === live.head) throw pushed.error;
       live = next;
     }
     throw Error('The shared queue kept changing. Retry publication.');
@@ -513,24 +516,57 @@ export function createSharedIssuePublication({
   function prepareDirectRetry(record, candidate, live, path) {
     if (git('rev-parse', `${record.commit}^`) === live.head) return record;
     const updated = { ...record, ...prepare(record.issueId, candidate, live) };
+    delete updated.atomicRelease;
     writeJson(path, updated);
     return updated;
   }
 
-  function attemptDirectPush(commit) {
-    try {
-      (pushDirect ?? pushWithApp)(commit, targetRef);
-    } catch (error) {
-      return error;
-    }
-    return Error('Git did not confirm the direct queue push. Retry publication.');
+  function requestedBase(issueId, candidate, expected, claim) {
+    requestedReport(expected.report, expected.location, 'base');
+    validateArchiveRelease(issueId, candidate, expected, claim);
   }
 
-  function pushWithApp(commit) {
+  function validateArchiveRelease(issueId, candidate, expected, claim) {
+    if (!claim) return;
+    const archive = [direct, candidate.location === null, expected.location === 'closed'].every(Boolean);
+    requireThat(archive, 'Atomic claim release is only available for a direct archive.');
+    requireThat(claim.issueId === issueId && objectIdPattern.test(claim.oid), 'Invalid archive claim.');
+  }
+
+  function releaseReceipt(record, receipt) {
+    if (!record.releaseClaim) return undefined;
+    const result = z
+      .object({
+        commit: z.literal(record.commit),
+        releasedClaim: z.object({ issueId: z.literal(record.issueId), oid: z.literal(record.releaseClaim.oid) }),
+      })
+      .safeParse(receipt);
+    return result.success ? result.data : undefined;
+  }
+
+  function attemptDirectPush(record) {
     try {
-      command(process.execPath, [fileURLToPath(new URL('./shared-issue-app-push.mjs', import.meta.url))], {
-        input: JSON.stringify({ repository, targetRef, commit }),
-      });
+      const receipt = (pushDirect ?? pushWithApp)(record.commit, targetRef, record.releaseClaim);
+      return { receipt, error: Error('Git did not confirm the direct queue push. Retry publication.') };
+    } catch (error) {
+      return { error };
+    }
+  }
+
+  function parsePushReceipt(output) {
+    return output.trim() ? JSON.parse(output) : undefined;
+  }
+
+  function pushWithApp(commit, destination, releaseClaim) {
+    try {
+      const output = command(
+        process.execPath,
+        [fileURLToPath(new URL('./shared-issue-app-push.mjs', import.meta.url))],
+        {
+          input: JSON.stringify({ repository, targetRef: destination, commit, releaseClaim }),
+        }
+      );
+      return parsePushReceipt(output);
     } catch (error) {
       if (error.cause?.status === 2) throw Error('Could not authenticate as the Timey Software Factory GitHub App.');
       throw Error(

@@ -156,6 +156,14 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
     });
   }
 
+  function forgetReleased(claim) {
+    return locked(claim.issueId, (path) => {
+      requireThat(own(claim.issueId)?.oid === claim.oid, 'The saved issue claim does not match the atomic release.');
+      rmSync(path);
+      return true;
+    });
+  }
+
   function list() {
     return parseClaims(refs(namespace + '*'));
   }
@@ -200,5 +208,5 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
     return execute(['show', `${revision}:${path}`]);
   }
 
-  return { acquire, own, verifyOwn, recover: verifyOwn, release, list, listAsync, readTargetReport };
+  return { acquire, own, verifyOwn, recover: verifyOwn, release, forgetReleased, list, listAsync, readTargetReport };
 }

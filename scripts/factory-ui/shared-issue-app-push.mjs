@@ -4,13 +4,27 @@ import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
 
 // This process bridges the synchronous queue publisher and async App authentication.
-const { repository, targetRef, commit } = JSON.parse(readFileSync(0, 'utf8'));
+const { repository, targetRef, commit, releaseClaim } = JSON.parse(readFileSync(0, 'utf8'));
 requireThat(typeof repository === 'string' && /^[\w.-]+\/[\w.-]+$/.test(repository), 'Invalid repository.');
 requireThat(typeof commit === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(commit), 'Invalid commit.');
 requireThat(
   typeof targetRef === 'string' && /^refs\/heads\/[a-zA-Z0-9][\w./-]*$/.test(targetRef),
   'Invalid queue ref.'
 );
+function archiveClaimRef(claim) {
+  if (!claim) return null;
+  requireThat(
+    typeof claim.issueId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(claim.issueId),
+    'Invalid archive claim ID.'
+  );
+  requireThat(
+    typeof claim.oid === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(claim.oid),
+    'Invalid archive claim OID.'
+  );
+  return 'refs/heads/claims/' + claim.issueId;
+}
+const claimRef = archiveClaimRef(releaseClaim);
+requireThat(!claimRef || targetRef !== claimRef, 'Queue target must differ from the claim ref.');
 const url = `https://github.com/${repository}.git`;
 const remote = 'timey-queue-app';
 const env = cleanEnvironment();
@@ -56,11 +70,17 @@ try {
       '--no-verify',
       '--no-follow-tags',
       '--recurse-submodules=no',
+      ...(claimRef ? ['--atomic', `--force-with-lease=${claimRef}:${releaseClaim.oid}`] : []),
       remote,
       `${commit}:${targetRef}`,
+      ...(claimRef ? [`:${claimRef}`] : []),
     ],
     { TIMEY_QUEUE_GIT_AUTHORIZATION: `Authorization: Basic ${authorization}` }
   );
+  if (releaseClaim)
+    process.stdout.write(
+      JSON.stringify({ commit, releasedClaim: { issueId: releaseClaim.issueId, oid: releaseClaim.oid } })
+    );
 } catch {
   // Git errors may contain authentication details. Report only the failed stage.
   process.exitCode = 3;
