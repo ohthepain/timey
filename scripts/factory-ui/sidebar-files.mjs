@@ -180,7 +180,6 @@ export class SidebarFiles {
       case 'open':
         return this.open(input);
       case 'directory':
-      case 'create':
       case 'save':
       case 'copy':
         return this.write(input);
@@ -277,8 +276,8 @@ export class SidebarFiles {
     requireThat(markdown.test(target.path), 'Use a .md file name.');
     const text = copy ? this.file(input).text : input.text;
     requireThat(typeof text === 'string' && Buffer.byteLength(text) <= maxWrite, 'Keep edited Markdown under 128 KB.');
-    mkdirSync(dirname(target.path), { recursive: true });
-    if (input.action !== 'save') {
+    if (copy) {
+      mkdirSync(dirname(target.path), { recursive: true });
       writeFileSync(target.path, text, { flag: 'wx' });
       return { created: true };
     }

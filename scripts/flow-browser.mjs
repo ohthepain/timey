@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { execFileSync } from 'node:child_process';
@@ -309,16 +309,21 @@ try {
   });
   await check('The sidebar browses system Markdown and saves project Markdown on disk', async () => {
     const tree = page.locator('#sidebar-file-tree');
+    const sidebar = page.locator('.sidebar');
+    for (const label of ['Files', 'System', 'Open'])
+      assert.equal(await sidebar.getByText(label, { exact: true }).count(), 0);
+    assert.equal(await sidebar.getByRole('button', { name: 'Add Folder…', exact: true }).count(), 0);
+    assert.equal(await sidebar.getByRole('button', { name: 'New File', exact: true }).count(), 0);
     await tree.locator('summary').getByText('flow', { exact: true }).first().click();
     await tree.getByRole('button', { name: 'defaults.md', exact: true }).click();
     await page.getByRole('dialog', { name: 'defaults.md' }).waitFor();
     assert.ok((await page.locator('#sidebar-file-text').getAttribute('readonly')) !== null);
     await page.locator('#sidebar-file-close').click();
-    await tree.locator('summary').getByText('user', { exact: true }).click();
-    await tree.getByRole('button', { name: 'New File', exact: true }).click();
-    await page.locator('#sidebar-file-path').fill('Notes/checklist.md');
-    await page.locator('#sidebar-file-text').fill('# Checklist');
+    await tree.getByRole('button', { name: 'New folder in user', exact: true }).click();
+    await page.locator('#sidebar-file-path').fill('Notes');
     await page.locator('#sidebar-file-submit').click();
+    await page.locator('#sidebar-file-dialog').waitFor({ state: 'hidden' });
+    writeFileSync(join(project, 'user/Notes/checklist.md'), '# Checklist');
     await tree.locator('summary').getByText('Notes', { exact: true }).click();
     await tree.getByRole('button', { name: 'checklist.md' }).click();
     await page.getByRole('dialog', { name: 'checklist.md', exact: true }).waitFor();
@@ -330,9 +335,11 @@ try {
     const external = join(output, 'Outside project');
     mkdirSync(external);
     writeFileSync(join(external, 'folder.md'), '# Outside folder');
-    await page.getByRole('button', { name: 'Add Folder…', exact: true }).click();
-    await page.locator('#sidebar-file-path').fill(external);
-    await page.locator('#sidebar-file-submit').click();
+    await sidebar.evaluate((element, url) => {
+      const transfer = new DataTransfer();
+      transfer.setData('text/uri-list', url);
+      element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    }, pathToFileURL(external).href);
     await tree.getByRole('button', { name: 'folder.md', exact: true }).click();
     await page.getByRole('dialog', { name: 'folder.md', exact: true }).waitFor();
     assert.equal(await page.locator('#sidebar-file-text').inputValue(), '# Outside folder');

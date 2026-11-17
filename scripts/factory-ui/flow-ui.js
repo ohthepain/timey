@@ -529,7 +529,7 @@
       `<details id="${id}" class="issue-folder" data-collection${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
     $('issue-list').innerHTML =
-      collection('open-issues', 'Open', groups || empty) +
+      `<div id="open-issues">${groups || empty}</div>` +
       collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
       collection(
         'archived-issues',
@@ -553,7 +553,6 @@
     const result = await action('folder', { issueId, revision: issue.flowRevision, folder }, { global: true });
     if (!result) return;
     if (folder) sidebarCollapsedFolders().delete(folder);
-    state.collapsedCollections.delete('open-issues');
     applyView(result);
     toast(`Moved issue to ${folder}.`);
   }

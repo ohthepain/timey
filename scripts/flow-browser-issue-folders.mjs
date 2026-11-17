@@ -18,6 +18,10 @@ export async function flowIssueFoldersBrowserChecks(page, issueId, folder) {
   };
   page.on('request', track);
   try {
+    assert.equal(await sidebar.locator('summary').getByText('Open', { exact: true }).count(), 0);
+    const heading = await page.locator('.sidebar > .sidebar-heading').boundingBox();
+    const folderHeading = await group(folder).locator('[data-issue-folder-drop]').boundingBox();
+    assert.equal(folderHeading.x, heading.x);
     await group(folder).locator(`[data-issue="${issueId}"]`).waitFor();
     assert.equal(await member().count(), 1);
     assert.equal(await member().getAttribute('draggable'), 'true');

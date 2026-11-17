@@ -156,8 +156,9 @@ Unmatched assignment kinds stay visible under Other work.
 
 ### Files and issue folders
 
-The Files tree shows the installation's flow and skill Markdown and the
-project's `user/` directory. Use **Add Folder** to browse another directory
+The sidebar shows the installation's flow and skill folders and the
+project's `user/` directory. Use the plus icon on a writable folder row to
+create a subfolder. Drop an outside folder onto the sidebar to browse it
 in place. Files under `user/` are editable. Use **Install project skill** on
 `user/skills/<name>/SKILL.md` to make the skill visible to Codex. Custom flow
 definitions live in `user/flow/definitions/`.
@@ -165,9 +166,9 @@ definitions live in `user/flow/definitions/`.
 Enable issue actions for a directory under `user/` to create its `folder.md`.
 The directory then offers **View assigned issues** and **New issue** alongside
 its files. Use **Move existing issue folders** to convert virtual folders and
-store assignments on the issue reports. The **Issues** tree shows **Open**,
-**Closed**, and **Archived**. Expand **Open** to see its issue folders,
-including folders configured under `user/`. Each folder shows its
+store assignments on the issue reports. **Issues** lists open issue folders
+directly, including folders configured under `user/`, followed by the
+**Closed** and **Archived** collections. Each folder shows its
 assigned issues and count. Expand or collapse it with the arrow, select its name
 to open its actions, or use its plus button to create an issue there. Drag an
 open issue onto a folder heading to move it. Every issue belongs to a folder.

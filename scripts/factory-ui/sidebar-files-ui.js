@@ -61,16 +61,15 @@
     path.value = value || '';
     text.value = file?.text || '';
     text.readOnly = Boolean(file && !file.writable);
-    byId('path-label').hidden = !['add', 'directory', 'create', 'copy'].includes(kind);
+    byId('path-label').hidden = !['add', 'directory', 'copy'].includes(kind);
     byId('path-label').firstChild.textContent = kind === 'add' ? 'Folder path' : 'Name or relative path';
-    byId('text-label').hidden = !file && kind !== 'create';
+    byId('text-label').hidden = !file;
     byId('browse').hidden = kind !== 'add';
     byId('open').hidden = kind !== 'save';
     byId('install').hidden = kind !== 'save' || base?.root !== 'user' || !/^skills\/[\w-]+\/SKILL\.md$/.test(base.path);
     byId('copy').hidden = kind !== 'save' || !base?.root.startsWith('system-');
     byId('submit').hidden = Boolean(file && !file.writable);
-    byId('submit').textContent =
-      { add: 'Add Folder', directory: 'Create Folder', create: 'Create File', copy: 'Copy File' }[kind] || 'Save';
+    byId('submit').textContent = { add: 'Add Folder', directory: 'Create Folder', copy: 'Copy File' }[kind] || 'Save';
     error('');
     if (!dialog.open) dialog.showModal();
     if (!byId('path-label').hidden) path.focus();
@@ -90,7 +89,20 @@
   function renderFolder(root, base, name) {
     const details = node('details');
     details.classList.add('sidebar-file-directory');
-    const summary = node('summary', name);
+    const summary = node('summary');
+    summary.append(node('span', name));
+    if (root.writable) {
+      const create = action('＋', () => show({ kind: 'directory', name: 'New folder', base }), 'icon-button');
+      const label = `New folder in ${base.path ? childPath(root.name, base.path) : root.name}`;
+      create.setAttribute('aria-label', label);
+      create.title = label;
+      create.classList.add('sidebar-folder-create');
+      create.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      summary.append(create);
+    }
     const body = node('div');
     body.classList.add('sidebar-file-children');
     details.append(summary, body);
@@ -121,10 +133,6 @@
       }
       return operations;
     }
-    operations.append(
-      action('New Folder', () => show({ kind: 'directory', name: 'New folder', base })),
-      action('New File', () => show({ kind: 'create', name: 'New Markdown file', base }))
-    );
     if (issueFolder && !issueFolder.duplicate) operations.append(...issueFolderActions(issueFolder.name));
     else if (base.path) {
       operations.append(
@@ -179,14 +187,7 @@
   async function refresh(openRoot) {
     const roots = await request('files');
     const fragment = document.createDocumentFragment();
-    const sections = new Set();
     for (const root of roots) {
-      if (root.section && !sections.has(root.section)) {
-        sections.add(root.section);
-        const label = node('p', root.section);
-        label.classList.add('sidebar-file-section');
-        fragment.append(label);
-      }
       const base = { root: root.id, path: '' };
       const details = nodes.get(id(base))?.details || renderFolder(root, base, root.name);
       if (root.id === openRoot) details.open = true;
@@ -216,9 +217,6 @@
     }
   });
 
-  document
-    .getElementById('add-sidebar-folder')
-    .addEventListener('click', () => show({ kind: 'add', name: 'Add folder' }));
   byId('close').addEventListener('click', () => dialog.close());
   byId('browse').addEventListener('click', async () => {
     byId('browse').disabled = true;
@@ -261,16 +259,17 @@
     const { kind, base, file } = current;
     const input = { action: kind, ...base };
     if (kind === 'add') input.path = path.value.trim();
-    if (['directory', 'create'].includes(kind)) input.path = childPath(base.path, path.value.trim());
+    if (kind === 'directory') input.path = childPath(base.path, path.value.trim());
     if (kind === 'copy') input.destination = path.value.trim();
     if (kind === 'save') input.revision = file.revision;
-    if (['save', 'create'].includes(kind)) input.text = text.value;
+    if (kind === 'save') input.text = text.value;
     byId('submit').disabled = true;
     try {
       const result = await change(input);
       if (kind === 'add') await refresh(result.id);
       else if (kind !== 'save') {
         const entry = nodes.get(id(kind === 'copy' ? { root: 'user', path: '' } : base));
+        if (entry && kind === 'directory') entry.details.open = true;
         if (entry?.details.open) await loadDirectory(entry);
       }
       dialog.close();

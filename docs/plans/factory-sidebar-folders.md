@@ -36,7 +36,7 @@ Show one **Issues** entry for the selected project's `.issues` storage, with
 `user/Releases/` displays assigned issues from the queue alongside files such as
 `checklist.md`.
 
-List issue folders under **Issues → Open** with expandable members and counts.
+List open issue folders directly under **Issues** with expandable members and counts.
 Selecting the folder opens its existing issue actions. Drag issues between
 folder headings to change assignments. Every issue belongs to a folder. The Files tree
 continues to browse the folders' Markdown.
@@ -66,8 +66,8 @@ folder restores its issue view. People choose existing issue actions explicitly.
 
 ## File access
 
-In the first version, users can create project folders and create or edit project
-Markdown in Factory. Built-in Markdown opens for reading and can be copied to
+Users can create project subfolders with a plus icon on each writable folder
+row and edit existing project Markdown in Factory. Built-in Markdown opens for reading and can be copied to
 the project for editing.
 
 Add outside folders for browsing in place. Show Markdown in its real subfolders
@@ -108,7 +108,7 @@ data. The current installation needs no customer-facing migration preview.
 
 Run Factory from its installation against a separate project. Check the system
 and user trees, file edits, explicit flow overrides, and project skill discovery.
-Exercise directory drop and **Add Folder** in the supported browser. Verify that
+Exercise directory drop and the folder creation plus icons in the supported browser. Verify that
 external `folder.md` files open as documents. Rename, copy, remove and restore an
 issue folder and confirm assignments follow its identity. Check report migration,
 closure, archive, restore, and shared membership in separate queue checkouts.
