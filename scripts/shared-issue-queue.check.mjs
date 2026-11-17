@@ -37,7 +37,8 @@ function fixture(t, closed = false, separate = false) {
     JSON.stringify({ sharedIssueQueue: true, ...(separate && { sharedIssueQueueBranch: 'issue-queue' }) }) + '\n'
   );
   writeFileSync(join(first, '.gitignore'), readFileSync(new URL('../.gitignore', import.meta.url)));
-  git(first, 'add', relative, 'factory.config.json', '.gitignore', ...(closed || separate ? [registry] : []));
+  git(first, 'add', 'factory.config.json', '.gitignore');
+  git(first, 'add', '-f', relative, ...(closed || separate ? [registry] : []));
   git(first, '-c', 'user.name=Tester', '-c', 'user.email=tester@example.com', 'commit', '-qm', 'Seed queue');
   if (separate) {
     const prepared = JSON.parse(
