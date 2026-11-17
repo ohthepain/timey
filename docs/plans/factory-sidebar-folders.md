@@ -36,6 +36,11 @@ Show one **Issues** entry for the selected project's `.issues` storage, with
 `user/Releases/` displays assigned issues from the queue alongside files such as
 `checklist.md`.
 
+List issue folders under **Issues → Open** with expandable members and counts.
+Selecting the folder opens its existing issue actions. Drag issues between
+folder headings or onto **Unfiled** to change assignments. The Files tree
+continues to browse the folders' Markdown.
+
 Show real folders in one tree. A project folder with a `folder.md` settings file
 can show its Markdown, assigned issues, and issue actions in the same sidebar
 entry. Call it an **Issue folder**. Reports stay in the queue. For example,

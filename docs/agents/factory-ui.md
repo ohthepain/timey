@@ -166,7 +166,13 @@ Enable issue actions for a directory under `user/` to create its `folder.md`.
 The directory then offers **View assigned issues** and **New issue** alongside
 its files. Use **Move existing issue folders** to convert virtual folders and
 store assignments on the issue reports. The **Issues** tree shows **Open**,
-**Closed**, and **Archived**. See the
+**Closed**, and **Archived**. Expand **Open** to see **Unfiled** and all issue
+folders, including folders configured under `user/`. Each folder shows its
+assigned issues and count. Expand or collapse it with the arrow, select its name
+to open its actions, or use its plus button to create an issue there. Drag an
+open issue onto a folder heading to move it, or onto **Unfiled** to remove its
+assignment. The destination expands after the move. Issue move restrictions
+and active-work checks still apply. See the
 [sidebar folder design](../plans/factory-sidebar-folders.md) for the planned
 report storage migration.
 

@@ -14,6 +14,7 @@
     inspectorWidth: null,
     tab: 'details',
     search: '',
+    draggedIssueId: null,
     collapsedFolders: new Set(),
     collapsedCollections: new Set(['closed-issues', 'archived-issues']),
     archivedIssues: null,
@@ -495,6 +496,7 @@
   }
 
   function renderSidebar() {
+    if (state.draggedIssueId) return;
     void updateProjectActions();
     const issues = (state.index.issues || []).filter((issue) =>
       `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
@@ -503,14 +505,12 @@
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
     const row = (issue) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span></button>`;
-    const realFolders = new Set(state.index.issueFolders || []);
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span></button>`;
     const openRows = issues
-      .filter((issue) => issue.status !== 'closed' && (!issue.folder || realFolders.has(issue.folder)))
+      .filter((issue) => issue.status !== 'closed' && !issue.folder)
       .map(row)
       .join('');
     const groups = folders
-      .filter((folder) => !realFolders.has(folder))
       .map((folder) => {
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
         if (state.search && children.length === 0) return '';
@@ -518,11 +518,11 @@
         const active = children.find((issue) => issue.activeBlock);
         const name = escape(folder);
         const selected = state.folder === folder;
-        return `<section class="issue-folder"><div class="sidebar-heading"><button class="icon-button folder-disclosure" type="button" data-toggle-folder="${name}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${name}" aria-expanded="${!collapsed}"></button><button class="folder-toggle" data-folder="${name}"${selected ? ' aria-current="page"' : ''}>${active ? activeSpinner(active.activeBlock) : '<span aria-hidden="true">▱</span>'}<span>${name}</span><span class="folder-count">${children.length}</span></button><button class="icon-button" data-create-folder-issue="${name}" aria-label="Create issue in ${name}" title="Create issue in ${name}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
+        return `<section class="issue-folder"><div class="sidebar-heading" data-issue-folder-drop="${name}"><button class="icon-button folder-disclosure" type="button" data-toggle-folder="${name}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${name}" aria-expanded="${!collapsed}"></button><button class="folder-toggle" data-folder="${name}"${selected ? ' aria-current="page"' : ''}>${active ? activeSpinner(active.activeBlock) : '<span aria-hidden="true">▱</span>'}<span>${name}</span><span class="folder-count">${children.length}</span></button><button class="icon-button" data-create-folder-issue="${name}" aria-label="Create issue in ${name}" title="Create issue in ${name}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
       })
       .join('');
     const closed = issues.filter((issue) => issue.status === 'closed');
-    $('migrate-issue-folders').hidden = !((state.index.legacyFolders || []).length || groups);
+    $('migrate-issue-folders').hidden = !(state.index.legacyFolders || []).length;
     const archive = (state.archivedIssues || []).filter((issue) =>
       `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
     );
@@ -530,7 +530,14 @@
       `<details id="${id}" class="issue-folder" data-collection${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
     $('issue-list').innerHTML =
-      collection('open-issues', 'Open', openRows + groups || empty) +
+      collection(
+        'open-issues',
+        'Open',
+        '<div data-issue-folder-drop="" class="unfiled-issues"><span class="unfiled-label">Unfiled</span>' +
+          (openRows || '<p class="sidebar-empty">No unfiled issues.</p>') +
+          '</div>' +
+          groups
+      ) +
       collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
       collection(
         'archived-issues',
@@ -540,6 +547,33 @@
           : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
       );
   }
+
+  function canMoveSidebarIssue(id, folder) {
+    const issue = state.index.issues.find((row) => row.id === id);
+    if (state.pending || !issue || issue.status === 'closed' || issue.activeBlock) return false;
+    if (folder === undefined) return true;
+    return issue.folder !== folder && (!folder || !issue.folderLocked);
+  }
+
+  async function moveSidebarIssue(issueId, folder) {
+    const issue = state.index.issues.find((row) => row.id === issueId);
+    if (!canMoveSidebarIssue(issueId, folder)) return;
+    const result = await action('folder', { issueId, revision: issue.flowRevision, folder }, { global: true });
+    if (!result) return;
+    if (folder) sidebarCollapsedFolders().delete(folder);
+    state.collapsedCollections.delete('open-issues');
+    applyView(result);
+    toast(folder ? `Moved issue to ${folder}.` : 'Moved issue to Unfiled.');
+  }
+
+  window.createIssueFolderDrag({
+    list: $('issue-list'),
+    canMove: canMoveSidebarIssue,
+    move: moveSidebarIssue,
+    dragging: (id) => {
+      state.draggedIssueId = id;
+    },
+  });
 
   async function loadArchive() {
     try {

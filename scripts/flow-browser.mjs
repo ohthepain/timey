@@ -21,6 +21,7 @@ import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-bl
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { git } from './factory-ui/common.mjs';
+import { flowIssueFoldersBrowserChecks } from './flow-browser-issue-folders.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -54,6 +55,7 @@ const assets = [
   'flow.html',
   'flow.css',
   'flow-ui.js',
+  'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'issue-closure-ui.js',
   'server-control-ui.js',
@@ -359,8 +361,8 @@ try {
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Browser folder');
     await page.locator('#folder-form button[type="submit"]').click();
-    await page.locator('[data-create-folder-issue="Browser folder"]').waitFor();
-    await page.locator('[data-create-folder-issue="Browser folder"]').click();
+    await page.locator('#issue-list [data-create-folder-issue="Browser folder"]').waitFor();
+    await page.locator('#issue-list [data-create-folder-issue="Browser folder"]').click();
     await page.locator('#capture-description').fill(description);
     await page.locator('#capture-type').selectOption('investigation');
     const data = await clickAction(page.locator('#capture-submit'));
@@ -383,9 +385,15 @@ try {
     assert.equal(requestData(data.flow).fields, null);
     assert.equal(logs.execution.length, 0);
   });
+  await check('Issue folders show members and accept drags between folders and Unfiled', async () => {
+    await flowIssueFoldersBrowserChecks(page, issueId, 'Browser folder');
+    await screenshot('issue-folder-drag');
+    await page.goto('/?issue=' + issueId);
+    await page.locator('#request-form').waitFor();
+  });
   await check('The folder workspace reviews moves and creates a master without starting work', async () => {
     const openFolder = async () => {
-      await page.locator('#sidebar-file-tree button[data-folder="Browser folder"]').click();
+      await page.locator('#issue-list button[data-folder="Browser folder"]').click();
       await page.getByRole('heading', { name: 'Browser folder', exact: true }).waitFor();
       assert.equal(new URL(page.url()).searchParams.get('folder'), 'Browser folder');
       assert.equal(await page.locator('#graph-scroll').isVisible(), false);
@@ -396,9 +404,9 @@ try {
       return clickAction(page.getByRole('button', { name: 'Find issues', exact: true }));
     };
     const sidebarIssue = (id) => page.locator(`#issue-list [data-issue="${id}"]`);
-    const disclosure = page.locator('#sidebar-file-tree summary').getByText('Browser folder', { exact: true });
+    const disclosure = page.locator('#issue-list [data-toggle-folder="Browser folder"]');
     await disclosure.click();
-    assert.equal(await page.locator('#sidebar-file-tree button[data-folder="Browser folder"]').isVisible(), false);
+    assert.equal(await sidebarIssue(issueId).isVisible(), false);
     assert.equal(new URL(page.url()).searchParams.get('issue'), issueId);
     await disclosure.click();
     await openFolder();
@@ -406,7 +414,7 @@ try {
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Scan source');
     await clickAction(page.locator('#folder-form button[type="submit"]'));
-    await page.locator('[data-create-folder-issue="Scan source"]').click();
+    await page.locator('#issue-list [data-create-folder-issue="Scan source"]').click();
     await page.locator('#capture-description').fill('Keep the save button visible after reload.');
     const second = await clickAction(page.locator('#capture-submit'));
     await clickAction(page.getByLabel('Prevent moves into folders'));

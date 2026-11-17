@@ -638,6 +638,10 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+`issue-folder-drag-ui.js` handles issue drag events in the Issues sidebar.
+The sidebar uses the existing revision-checked `folder` action to save moves,
+including assignments to configured project folders. `flow-browser-issue-folders.mjs`
+checks folder visibility and drag moves through the real browser and HTTP routes.
 `flow-folder-selection.mjs` evaluates folder selections and checks reviewed moves
 against current issue records. `flow-grouping.mjs` owns master issue grouping.
 `flow-overnight.mjs` runs the approved folder selection to the Merge confirmation

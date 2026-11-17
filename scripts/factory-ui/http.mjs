@@ -435,6 +435,7 @@ function readResource(service, request, response, owner) {
   }
   const scripts = {
     '/flow-ui.js': 'flow-ui.js',
+    '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
     '/sidebar-files-ui.js': 'sidebar-files-ui.js',
     '/view-inspection.js': 'view-inspection.js',
     '/flow.css': 'flow.css',

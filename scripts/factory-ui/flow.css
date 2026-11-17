@@ -2144,3 +2144,22 @@ kbd {
   width: 100%;
   resize: vertical;
 }
+
+.issue-row[draggable='true'] {
+  cursor: grab;
+}
+.issue-folder-drop-active {
+  background: #2b3d32;
+  outline: 1px solid var(--green);
+  border-radius: 5px;
+}
+.unfiled-issues {
+  min-height: 35px;
+  padding: 4px 0;
+}
+.unfiled-label {
+  display: block;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}

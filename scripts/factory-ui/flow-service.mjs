@@ -310,6 +310,7 @@ class IssueFlows {
       type: requestData(flow).fields?.type ?? flow.routeType,
       masterId: this.groups.masterId(issue.id, issues),
       folder: flow.folder,
+      flowRevision: flow.revision,
       folderLocked: Boolean(flow.folderLocked),
       folderEligible: this.folderSelection.eligible(issue, flow),
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
