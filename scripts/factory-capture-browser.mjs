@@ -80,10 +80,12 @@ try {
     await page.getByRole('button',{name:'Create issue',exact:true}).click();
     check(await page.getByLabel('Description',{exact:true}).evaluate(e=>e===document.activeElement),'Initial focus');
     await page.getByLabel('Description',{exact:true}).fill('Never saved');
+    await page.locator('#capture-folder').selectOption('Inbox');
     await page.keyboard.press('Escape');
     check(await page.locator('#create-issue-dialog').evaluate(e=>!e.open),'Escape closes dialog');
     await page.getByRole('button',{name:'Create issue',exact:true}).click();
     await page.getByLabel('Description',{exact:true}).fill('retry capture');
+    await page.locator('#capture-folder').selectOption('Inbox');
     await page.getByRole('button',{name:'Create issues',exact:true}).click();
     await page.locator('#capture-error').filter({hasText:'Disposable provider failure'}).waitFor();
     check(await page.getByLabel('Description',{exact:true}).inputValue()==='retry capture','Draft retained after failure');
@@ -105,6 +107,7 @@ try {
     const before=await page.evaluate(()=>window.scrollY);
     await page.locator('#create-issue').evaluate(e=>e.click());
     await page.getByLabel('Description',{exact:true}).fill('slow two outcomes\\ncopy ID');
+    await page.locator('#capture-folder').selectOption('Inbox');
     await page.waitForTimeout(4300);
     check(await page.getByLabel('Description',{exact:true}).inputValue()==='slow two outcomes\\ncopy ID','Polling retains draft');
     await page.getByRole('button',{name:'Create issues',exact:true}).click();
@@ -126,6 +129,7 @@ try {
     await page.setViewportSize({width:390,height:844});
     await page.getByRole('button',{name:'Create issue',exact:true}).click();
     await page.getByLabel('Description',{exact:true}).fill('<script>data only</script>');
+    await page.locator('#capture-folder').selectOption('Inbox');
     await page.screenshot({path:${JSON.stringify(join(output, 'narrow.png'))}});
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
   `
@@ -136,6 +140,7 @@ try {
     await page.setViewportSize({width:1280,height:900});
     await page.getByRole('button',{name:'Create issue',exact:true}).click();
     await page.getByLabel('Description',{exact:true}).fill('Recover a lost response');
+    await page.locator('#capture-folder').selectOption('Inbox');
     await page.route('**/api/issue-capture', async route=>{ await route.fetch(); await route.abort(); });
     await page.getByRole('button',{name:'Create issues',exact:true}).click();
     await page.locator('#capture-error').filter({hasText:'Retry Save'}).waitFor();

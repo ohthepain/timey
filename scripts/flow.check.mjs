@@ -681,6 +681,7 @@ test('new issues start at the destination branch while explicit starting points 
   git('update-ref', 'refs/heads/recent', older);
   const input = {
     action: 'capture',
+    folder: 'Inbox',
     requestId: '00000000-0000-4000-8000-000000000121',
     type: 'feature',
     description: 'Start the next issue on the delivery branch',
@@ -925,7 +926,7 @@ test('a changed Request type applies its default Markdown flow and preserves ear
   assert.equal((await flows.view()).issues.length, 2);
 });
 
-test('folder scans move only current eligible recommendations and a move lock still allows removal', async (t) => {
+test('folder scans move only eligible recommendations and locked issues keep their folder', async (t) => {
   const { service, id } = fixture(t);
   const suggested = [];
   const flows = (service.flows = createIssueFlows(service, {
@@ -972,10 +973,58 @@ test('folder scans move only current eligible recommendations and a move lock st
     flows.action({ action: 'folder', issueId: id, revision: view.flow.revision, folder: 'Later' }),
     /protected/
   );
-  await flows.action({ action: 'folder-remove', folder: scan.folder, issueIds: [id] });
+  await assert.rejects(
+    flows.action({ action: 'folder-remove', folder: scan.folder, issueIds: [id] }),
+    /needs a folder/
+  );
   view = await flows.view(id);
-  assert.equal(view.flow.folder, null);
+  assert.equal(view.flow.folder, scan.folder);
   assert.equal(view.flow.folderLocked, true);
+});
+
+test('issue creation and moves require an existing folder', async (t) => {
+  const { id, service } = fixture(t);
+  const flows = createIssueFlows(service, { executor: executor(async () => ({})) });
+  const view = await flows.view(id);
+  assert.equal(view.flow.folder, 'Inbox');
+  const capture = {
+    action: 'capture',
+    requestId: '00000000-0000-4000-8000-000000000122',
+    description: 'Keep every issue in a folder',
+  };
+  for (const folder of [undefined, null, '', 'Missing folder']) {
+    await assert.rejects(flows.action({ ...capture, folder }), /[Cc]hoose.*folder/);
+    await assert.rejects(
+      flows.action({ action: 'folder', issueId: id, revision: view.flow.revision, folder }),
+      /folder/
+    );
+  }
+  const created = await flows.action({ ...capture, folder: 'Inbox' });
+  assert.ok(flows.selected(created.issue.id).folder_id);
+  assert.equal(created.flow.folder, 'Inbox');
+  assert.equal((await flows.view(id)).flow.folder, 'Inbox');
+});
+
+test('folder migration assigns older open, closed and archived reports to Inbox', async (t) => {
+  const { root, id, service } = fixture(t);
+  const content = readFileSync(join(root, '.issues', id + '.md'), 'utf8');
+  for (const location of ['closed', 'archive']) {
+    mkdirSync(join(root, '.issues', location));
+    writeFileSync(
+      join(root, '.issues', location, id + '-' + location + '.md'),
+      content.replace('id: ' + id, 'id: ' + id + '-' + location).replace('state: backlog', 'state: closed')
+    );
+  }
+  const flows = createIssueFlows(service, { executor: executor(async () => ({})) });
+  const migrated = await flows.action({ action: 'migrate-folders' });
+  assert.equal(migrated.migratedIssues, 3);
+  const folderId = flows.selected(id).folder_id;
+  assert.ok(folderId);
+  for (const suffix of ['', '-closed', '-archive']) {
+    assert.equal(flows.selected(id + suffix).folder_id, folderId);
+    assert.equal((await flows.view(id + suffix)).flow.folder, 'Inbox');
+  }
+  assert.equal((await flows.action({ action: 'migrate-folders' })).migratedIssues, 0);
 });
 
 test('moving an existing issue folder preserves report membership by ID', async (t) => {
@@ -995,11 +1044,11 @@ test('moving an existing issue folder preserves report membership by ID', async 
   assert.equal((await flows.view(id)).flow.folder, 'Shipping');
   assert.equal(flows.selected(id).folder_id, assignment);
   renameSync(join(root, 'user/Shipping'), join(root, 'Detached'));
-  assert.equal((await flows.view(id)).flow.folder, null);
+  assert.equal((await flows.view(id)).flow.folder, 'Releases');
   renameSync(join(root, 'Detached'), join(root, 'user/Shipping'));
   assert.equal((await flows.view(id)).flow.folder, 'Shipping');
   cpSync(join(root, 'user/Shipping'), join(root, 'user/Copy'), { recursive: true });
-  assert.equal((await flows.view(id)).flow.folder, null);
+  assert.equal((await flows.view(id)).flow.folder, 'Releases');
   const copy = giveIssueFolderCopyNewId(root, 'Copy');
   assert.notEqual(copy.id, assignment);
   assert.equal((await flows.view(id)).flow.folder, 'Shipping');
@@ -1036,6 +1085,7 @@ blocks:
   async function capture(type, suffix) {
     return flows.action({
       action: 'capture',
+      folder: 'Inbox',
       requestId: '00000000-0000-4000-8000-00000000000' + suffix,
       type,
       description: 'Check saving',

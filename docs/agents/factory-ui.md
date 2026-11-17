@@ -166,12 +166,14 @@ Enable issue actions for a directory under `user/` to create its `folder.md`.
 The directory then offers **View assigned issues** and **New issue** alongside
 its files. Use **Move existing issue folders** to convert virtual folders and
 store assignments on the issue reports. The **Issues** tree shows **Open**,
-**Closed**, and **Archived**. Expand **Open** to see **Unfiled** and all issue
-folders, including folders configured under `user/`. Each folder shows its
+**Closed**, and **Archived**. Expand **Open** to see its issue folders,
+including folders configured under `user/`. Each folder shows its
 assigned issues and count. Expand or collapse it with the arrow, select its name
 to open its actions, or use its plus button to create an issue there. Drag an
-open issue onto a folder heading to move it, or onto **Unfiled** to remove its
-assignment. The destination expands after the move. Issue move restrictions
+open issue onto a folder heading to move it. Every issue belongs to a folder.
+The New issue dialog requires a folder and selects the current folder when
+opened from its plus button. Older reports without an assignment belong to
+**Inbox**. The destination expands after the move. Issue move restrictions
 and active-work checks still apply. See the
 [sidebar folder design](../plans/factory-sidebar-folders.md) for the planned
 report storage migration.
@@ -190,7 +192,7 @@ and other views are unchanged.
 The issue sidebar also groups reports into user-named folders. Folder assignments
 are stored in the ignored `.issues/issue-folders.json` file, separate from report
 content and lifecycle state. Drag a sidebar issue handle onto a folder to move it;
-drop it on Unfiled to remove the assignment. Select a folder to reorder its issues
+drop it on another folder to change the assignment. Select a folder to reorder its issues
 with Implementation order. The ordering is shared with the queue's implementation
 order, and hidden issues keep their positions during a folder-scoped reorder.
 

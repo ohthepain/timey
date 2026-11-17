@@ -26,7 +26,7 @@ export default async function issueFoldersBrowserChecks(page) {
 
   function assertFolderPlacement(result) {
     if (result.a.folderId !== 'folder-1') throw Error('The remaining issue left its folder.');
-    if (result.b.folderId != null) throw Error('The issue did not return to Unfiled.');
+    if (result.b.folderId !== 'folder-2') throw Error('The issue did not move to its destination folder.');
   }
 
   function assertIssueOrder(result, reordered) {
@@ -72,8 +72,11 @@ export default async function issueFoldersBrowserChecks(page) {
   const reordered = await page
     .locator('.issue-sidebar-item[data-issue-row]')
     .evaluateAll((rows) => rows.map((row) => row.dataset.issueRow));
-  await dropIssue('b', '[data-issue-folder-drop="unfiled"]');
-  await page.waitForFunction(() => data.issues.find((issue) => issue.id === 'b').folderId == null);
+  await page.getByRole('button', { name: /New folder/ }).click();
+  await page.getByLabel('Folder name', { exact: true }).fill('Next sprint');
+  await page.getByRole('button', { name: 'Save folder', exact: true }).click();
+  await dropIssue('b', '[data-issue-folder-drop="folder-2"]');
+  await page.waitForFunction(() => data.issues.find((issue) => issue.id === 'b').folderId === 'folder-2');
   const result = await page.evaluate(() => ({
     a: data.issues.find((issue) => issue.id === 'a'),
     b: data.issues.find((issue) => issue.id === 'b'),
@@ -88,7 +91,7 @@ export default async function issueFoldersBrowserChecks(page) {
   return {
     passed: true,
     observed: {
-      folderPlacement: { a: result.a.folderId, b: result.b.folderId ?? 'unfiled' },
+      folderPlacement: { a: result.a.folderId, b: result.b.folderId },
       implementationOrder: { before: original.order, after: result.order },
       issueState: { a: result.a.state, b: result.b.state },
       contentAndLifecycleUnchanged: issueUnchanged,
@@ -97,7 +100,7 @@ export default async function issueFoldersBrowserChecks(page) {
       'created a user folder in the left issue sidebar',
       'dragged two issues into the folder without editing reports',
       'reordered issues within the selected folder',
-      'dragged an issue back to Unfiled',
+      'dragged an issue between folders',
       'preserved issue content and lifecycle states',
     ],
   };

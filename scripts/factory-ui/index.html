@@ -2521,9 +2521,7 @@
         return queueSortUI.sort(
           data.issues.filter((issue) => {
             const stage = data.lifecycle.find((item) => item.state === issue.state);
-            const folderMatches =
-              queueFilters.folderId === 'all' ||
-              (issue.folderId || null) === (queueFilters.folderId === 'unfiled' ? null : queueFilters.folderId);
+            const folderMatches = queueFilters.folderId === 'all' || issue.folderId === queueFilters.folderId;
             return (!stage || roleSelected(stage)) && matchesQueueSearch(issue) && folderMatches;
           }),
           queueFilters
@@ -2637,7 +2635,7 @@
         const heading = selectedId ? 'Issues' : 'Issue queue';
         const folderButton = (id, label, count, drop = false) =>
           `<button type="button" class="issue-sidebar-folder" data-issue-folder-select="${esc(id)}"${drop ? ` data-issue-folder-drop="${esc(id)}"` : ''} aria-current="${String(queueFilters.folderId === id)}"><span>${esc(label)}</span><small>${count}</small></button>`;
-        const folderMarkup = `<nav class="issue-sidebar-folders" aria-label="Issue folders">${folderButton('all', 'All issues', data.issues.length)}${folderButton('unfiled', 'Unfiled', data.issues.filter((issue) => !issue.folderId).length, true)}${(data.issueFolders || []).map((folder) => folderButton(folder.id, folder.name, data.issues.filter((issue) => issue.folderId === folder.id).length, true)).join('')}<button type="button" class="issue-sidebar-folder" data-create-issue-folder>+ New folder</button><form data-issue-folder-form hidden><label>Folder name<input data-issue-folder-name maxlength="60" required></label><button type="submit">Save folder</button></form></nav>`;
+        const folderMarkup = `<nav class="issue-sidebar-folders" aria-label="Issue folders">${folderButton('all', 'All issues', data.issues.length)}${(data.issueFolders || []).map((folder) => folderButton(folder.id, folder.name, data.issues.filter((issue) => issue.folderId === folder.id).length, true)).join('')}<button type="button" class="issue-sidebar-folder" data-create-issue-folder>+ New folder</button><form data-issue-folder-form hidden><label>Folder name<input data-issue-folder-name maxlength="60" required></label><button type="submit">Save folder</button></form></nav>`;
         return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div>${folderMarkup}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
           issues.length
             ? `<nav aria-label="Issues">${issues
@@ -2707,7 +2705,7 @@
             folder.classList.remove('drop-target');
             const source = event.dataTransfer?.getData('text/plain') || draggedId;
             if (!source) return;
-            const folderId = folder.dataset.issueFolderDrop === 'unfiled' ? null : folder.dataset.issueFolderDrop;
+            const folderId = folder.dataset.issueFolderDrop;
             if ((data.issues.find((issue) => issue.id === source)?.folderId || null) === folderId) return;
             clearDragFeedback();
             void act(() => request('issue-folder-assign', { issueId: source, folderId, basis: data.issueFolderBasis }));

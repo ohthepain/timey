@@ -145,7 +145,7 @@ number.
 
 **Issue folder**:
 A project folder configured to show assigned issues and issue actions alongside
-its files. The issue reports live in the queue.
+its files. Every issue belongs to a folder, and its report lives in the queue.
 _Avoid_: Issue group
 
 **Selection strategy**:

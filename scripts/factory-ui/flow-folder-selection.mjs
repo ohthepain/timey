@@ -204,8 +204,8 @@ export class FlowFolderSelection {
     return result;
   }
 
-  remove(folder, issueIds) {
-    return this.move(this.pick(this.entries(folder), issueIds), null);
+  remove() {
+    throw Error('Every issue needs a folder. Move selected issues to another folder.');
   }
 
   move(rows, folder) {

@@ -1,3 +1,4 @@
+import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
@@ -57,6 +58,7 @@ export function captureFixture(t, options = {}) {
     '---\nid: 20261025-existing\ntitle: Existing issue\nstate: backlog\ngrill_later: false\nautonomy: ask\n---\nPreserve original bytes.\n'
   );
   factory(root).init();
+  createIssueFolderSettings(root, 'Inbox');
   const service = new FactoryUI(root, {
     capture: { assess: async (description) => ({ issues: [proposal(description)] }), ...options },
   });

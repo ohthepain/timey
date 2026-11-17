@@ -50,18 +50,16 @@ export async function flowIssueFoldersBrowserChecks(page, issueId, folder) {
     assert.equal(new URL(page.url()).searchParams.get('folder'), folder);
     await page.getByRole('list', { name: 'Issues in this folder', exact: true }).getByRole('link').waitFor();
 
-    await member().dragTo(sidebar.locator('.unfiled-issues'));
-    await sidebar.locator(`.unfiled-issues [data-issue="${issueId}"]`).waitFor();
-    assert.equal(await group(folder).locator('.folder-count').textContent(), '0');
-    await member().dragTo(group(folder).locator('[data-issue-folder-drop]'));
-    await group(folder).locator(`[data-issue="${issueId}"]`).waitFor();
+    assert.equal(await sidebar.getByText('Unfiled', { exact: true }).count(), 0);
+    assert.equal(await sidebar.locator('[data-issue-folder-drop=""]').count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Remove from folder', exact: true }).count(), 0);
 
     await page.reload();
     await group(folder).locator(`[data-issue="${issueId}"]`).waitFor();
-    assert.equal(drops.length, 4);
+    assert.equal(drops.length, 2);
     assert.deepEqual(
       drops.map(({ folder }) => folder),
-      [target, folder, null, folder]
+      [target, folder]
     );
   } finally {
     page.off('request', track);

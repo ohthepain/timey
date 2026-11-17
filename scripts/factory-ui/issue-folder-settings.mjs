@@ -5,6 +5,7 @@ import { parse, parseDocument } from 'yaml';
 import { requireThat } from './common.mjs';
 
 const settingsName = 'folder.md';
+const inboxId = '759bf44b-f95a-417b-99e3-b4a1dd31555c';
 const folderId = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/;
 const stat = (path) => lstatSync(path, { throwIfNoEntry: false });
 
@@ -77,7 +78,7 @@ export function createIssueFolderSettings(project, name) {
     );
     return configured;
   }
-  const id = randomUUID();
+  const id = name === 'Inbox' ? inboxId : randomUUID();
   writeFileSync(join(directory, settingsName), '---\nid: ' + id + '\n---\n', { flag: 'wx' });
   return { id };
 }
@@ -103,4 +104,20 @@ export function giveIssueFolderCopyNewId(project, name) {
     if (stat(temp)) unlinkSync(temp);
   }
   return { id };
+}
+
+export function requireIssueFolder(project, name) {
+  requireThat(typeof name === 'string' && name.trim(), 'Choose a folder for the issue.');
+  const folder = readIssueFolderSettings(project).find((entry) => entry.name === name);
+  requireThat(folder, 'Choose an existing issue folder.');
+  return folder;
+}
+
+export function ensureInboxFolder(project) {
+  return (
+    readIssueFolderSettings(project).find((folder) => folder.id === inboxId || folder.name === 'Inbox') || {
+      name: 'Inbox',
+      ...createIssueFolderSettings(project, 'Inbox'),
+    }
+  );
 }

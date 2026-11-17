@@ -664,6 +664,9 @@ interrupted acknowledgments use the existing remote release and recovery path.
 The sidebar uses the existing revision-checked `folder` action to save moves,
 including assignments to configured project folders. `flow-browser-issue-folders.mjs`
 checks folder visibility and drag moves through the real browser and HTTP routes.
+`issue-folder-settings.mjs` validates required creation and move destinations.
+Both Flow and Classic capture save the selected folder ID on each new report.
+The issue read path places older reports without membership in Inbox.
 `flow-folder-selection.mjs` evaluates folder selections and checks reviewed moves
 against current issue records. `flow-grouping.mjs` owns master issue grouping.
 `flow-overnight.mjs` runs the approved folder selection to the Merge confirmation

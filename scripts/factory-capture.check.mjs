@@ -11,7 +11,7 @@ import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { captureRoute } from './factory-ui/capture-routing.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 
-const input = (description = 'Rename heading to Issues') => ({ requestId: randomUUID(), description });
+const input = (description = 'Rename heading to Issues') => ({ requestId: randomUUID(), description, folder: 'Inbox' });
 const reports = (root) => readdirSync(join(root, '.issues')).filter((f) => /^\d.*\.md$/.test(f));
 const bytes = (root, file) => readFileSync(join(root, '.issues', file), 'utf8');
 function report(root, id) {
@@ -28,6 +28,21 @@ function forbidWork(service) {
       throw Error('Unexpected ledger work: ' + name);
     };
 }
+
+test('capture requires a folder before assessing or saving a report', async (t) => {
+  const { root, service } = captureFixture(t);
+  let calls = 0;
+  service.captures = createCaptures(service, {
+    assess: async () => {
+      calls++;
+      return { issues: [] };
+    },
+  });
+  for (const folder of [undefined, null, '', 'Missing folder'])
+    await assert.rejects(service.captures.save({ ...input(), folder }));
+  assert.equal(calls, 0);
+  assert.equal(reports(root).length, 1);
+});
 
 test('capture preserves exact original text, existing reports, metadata, distinct outcomes and individual skips without work', async (t) => {
   const { root, service } = captureFixture(t);

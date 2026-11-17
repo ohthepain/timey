@@ -1,3 +1,4 @@
+import { requireIssueFolder } from './issue-folder-settings.mjs';
 import { storedIssuePath } from './issue-report-storage.mjs';
 import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
 import { readModelSettings, saveIssueModelSettings } from './model-settings.mjs';
@@ -17,6 +18,7 @@ import { digest, requireThat, writeJson } from './common.mjs';
 const requestSchema = z
   .object({
     requestId: z.uuid(),
+    folder: z.string().trim().min(1).max(80),
     description: z.string().min(1).max(24000),
     grill: z.boolean().default(false),
     go: z.boolean().default(false),
@@ -64,6 +66,7 @@ export function createCaptures(service, options = {}) {
     const input = requestSchema.parse(value);
     requireThat(input.description.trim(), 'Description is required.');
     guard();
+    requireIssueFolder(service.root, input.folder);
     validateModel(service.root, input.model);
     const pending = tasks.get(input.requestId);
     if (pending) {
@@ -187,6 +190,7 @@ function allocate(queue, input, assessment, basis, random) {
       updated: at,
       grill_later: false,
       autonomy: 'ask',
+      folder_id: requireIssueFolder(queue.root, input.folder).id,
       category: proposal.category,
       capture_intent: { grill: input.grill, go: input.go, strategy: input.strategy },
       lifecycle_history: route.skipped.map((s) => ({
@@ -258,17 +262,11 @@ function captureQueue(root) {
 }
 
 function captureHash(input) {
-  if (input.go || input.strategy === 'full-send') return digest(captureIdentity(input));
-  return legacyCaptureHash(input);
+  return digest(captureIdentity(input));
 }
 
 function captureIdentity(input) {
-  return JSON.stringify([input.description, input.grill, input.go, input.strategy, input.model || null]);
-}
-
-function legacyCaptureHash(input) {
-  if (input.model) return digest(JSON.stringify([input.description, input.grill, input.model]));
-  return digest(input.grill ? JSON.stringify([input.description, true]) : input.description);
+  return JSON.stringify([input.description, input.folder, input.grill, input.go, input.strategy, input.model || null]);
 }
 
 function validateModel(root, model) {

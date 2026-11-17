@@ -509,10 +509,6 @@
     ];
     const row = (issue) =>
       `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span></button>`;
-    const openRows = issues
-      .filter((issue) => issue.status !== 'closed' && !issue.folder)
-      .map(row)
-      .join('');
     const groups = folders
       .map((folder) => {
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
@@ -533,14 +529,7 @@
       `<details id="${id}" class="issue-folder" data-collection${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
     $('issue-list').innerHTML =
-      collection(
-        'open-issues',
-        'Open',
-        '<div data-issue-folder-drop="" class="unfiled-issues"><span class="unfiled-label">Unfiled</span>' +
-          (openRows || '<p class="sidebar-empty">No unfiled issues.</p>') +
-          '</div>' +
-          groups
-      ) +
+      collection('open-issues', 'Open', groups || empty) +
       collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
       collection(
         'archived-issues',
@@ -555,7 +544,7 @@
     const issue = state.index.issues.find((row) => row.id === id);
     if (state.pending || !issue || issue.status === 'closed' || issue.activeBlock) return false;
     if (folder === undefined) return true;
-    return issue.folder !== folder && (!folder || !issue.folderLocked);
+    return Boolean(folder) && issue.folder !== folder && !issue.folderLocked;
   }
 
   async function moveSidebarIssue(issueId, folder) {
@@ -566,7 +555,7 @@
     if (folder) sidebarCollapsedFolders().delete(folder);
     state.collapsedCollections.delete('open-issues');
     applyView(result);
-    toast(folder ? `Moved issue to ${folder}.` : 'Moved issue to Unfiled.');
+    toast(`Moved issue to ${folder}.`);
   }
 
   window.createIssueFolderDrag({
@@ -677,7 +666,6 @@
     const mayRun = selected.every((issue) => !issue.masterId && !issue.activeBlock && issue.state !== 'needs-approval');
     enable('group', count >= 2 && mayGroup);
     enable('plan-night', count > 0 && mayRun && !overnightActive(folderRun()) && !state.newActionsPaused);
-    enable('remove', count > 0);
     $('folder-scan-review').querySelector('button[type="submit"]').disabled = !document.querySelector(
       '#folder-scan-list input:checked'
     );
@@ -842,16 +830,6 @@
     await folderMoveComplete(result);
   }
 
-  async function removeFolderIssues() {
-    const result = await folderAction('folder-remove', {
-      folder: state.folder,
-      issueIds: [...folderSelection.issueIds],
-    });
-    if (!result) return;
-    updateFolderSelection([]);
-    await folderMoveComplete(result);
-  }
-
   async function previewFolderNight() {
     folderSelection.overnight = await folderAction('folder-night-plan', {
       folder: state.folder,
@@ -880,7 +858,6 @@
   const folderCommands = {
     recommend: recommendFolderIssues,
     group: previewFolderGroup,
-    remove: removeFolderIssues,
     'plan-night': previewFolderNight,
     'start-night': startFolderNight,
     'stop-night': stopFolderNight,
@@ -1483,7 +1460,7 @@
     const open = state.view.issue.status !== 'closed';
     const disabled = open ? '' : ' disabled';
     const settings = `<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
-    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder"><option value="">No folder</option>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder" required>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
   }
 
   function skillOptions(block, selected) {
@@ -1933,10 +1910,17 @@
     path.textContent = path.dataset.directory + '/' + ($('export-flow-id').value || 'flow-name') + '.md';
   }
 
-  function openCapture() {
+  function openCapture(folder) {
+    const selected = typeof folder === 'string' ? folder : state.folder || state.view?.flow?.folder || '';
+    const options = state.index.folders || [];
+    $('capture-folder').innerHTML =
+      '<option value="" disabled>Choose a folder</option>' +
+      options.map((name) => `<option value="${escape(name)}">${escape(name)}</option>`).join('');
+    $('capture-folder').value = options.includes(selected) ? selected : '';
     $('capture-error').hidden = true;
     $('capture-dialog').showModal();
-    $('capture-description').focus();
+    if (!$('capture-folder').value) $('capture-folder').focus();
+    else $('capture-description').focus();
   }
 
   function openPalette() {
@@ -2459,6 +2443,7 @@
       return void action('accept-pr-base', { branch: button.dataset.acceptBase });
     }
     if (button.dataset.cleanupRetry) return void action('retry-closure', { resourceId: button.dataset.cleanupRetry });
+    if (button.dataset.createFolderIssue) return openCapture(button.dataset.createFolderIssue);
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
     if (button.dataset.block) {
       state.blockId = button.dataset.block;
@@ -2611,7 +2596,7 @@
     if (event.target.id === 'issue-folder-form') {
       event.preventDefault();
       const key = draftKey();
-      void action('folder', { folder: new FormData(event.target).get('folder') || null }).then((result) => {
+      void action('folder', { folder: new FormData(event.target).get('folder') }).then((result) => {
         if (!result) return;
         const saved = state.drafts.get(key) || {};
         delete saved.folder;
@@ -2891,7 +2876,7 @@
   $('capture-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const description = $('capture-description').value.trim();
-    if (!description || state.pending) return;
+    if (!description || !$('capture-folder').value || state.pending) return;
     state.captureId ||= crypto.randomUUID();
     $('capture-error').hidden = true;
     const result = await action(
@@ -2900,7 +2885,7 @@
         requestId: state.captureId,
         description,
         type: $('capture-type').value,
-        folder: window.captureFolder(),
+        folder: $('capture-folder').value,
         needsApproval: $('capture-needs-approval').checked,
         runRetro: $('capture-retro').checked,
       },

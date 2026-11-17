@@ -2153,13 +2153,3 @@ kbd {
   outline: 1px solid var(--green);
   border-radius: 5px;
 }
-.unfiled-issues {
-  min-height: 35px;
-  padding: 4px 0;
-}
-.unfiled-label {
-  display: block;
-  padding: 4px 8px;
-  font-size: 11px;
-  color: var(--muted);
-}

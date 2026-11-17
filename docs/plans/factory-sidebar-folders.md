@@ -38,7 +38,7 @@ Show one **Issues** entry for the selected project's `.issues` storage, with
 
 List issue folders under **Issues → Open** with expandable members and counts.
 Selecting the folder opens its existing issue actions. Drag issues between
-folder headings or onto **Unfiled** to change assignments. The Files tree
+folder headings to change assignments. Every issue belongs to a folder. The Files tree
 continues to browse the folders' Markdown.
 
 Show real folders in one tree. A project folder with a `folder.md` settings file
@@ -48,6 +48,11 @@ entry. Call it an **Issue folder**. Reports stay in the queue. For example,
 [ADR 0016](../adr/0016-use-real-folders-for-issue-organization.md).
 
 ## Settings and membership
+
+Creation requires an existing folder. A move always names another folder.
+Older reports without a saved assignment belong to **Inbox** until migration
+saves that assignment on their report. The Inbox directory has its own
+`folder.md`. Migration also covers retained Closed and Archived reports.
 
 Keep `folder.md` with the project files. Store each folder assignment with its
 issue report. Shared queues use the existing report publication path so users

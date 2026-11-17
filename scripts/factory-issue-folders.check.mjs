@@ -15,7 +15,8 @@ test('issue folders persist separately from report content and reject stale orga
   writeFileSync(reportPath, report);
   const issues = [{ id: '20261116-test', title: 'Keep this title', state: 'qa', content: report }];
   const empty = readIssueFolders(root, issues);
-  assert.deepEqual(empty.folders, []);
+  assert.equal(empty.folders[0].name, 'Inbox');
+  assert.equal(issues[0].folderId, empty.folders[0].id);
   const created = createIssueFolder(root, issues, { name: 'Sprint', basis: empty.basis });
   assert.equal(created.folder.name, 'Sprint');
   const assigned = assignIssueFolder(root, issues, {
@@ -31,14 +32,17 @@ test('issue folders persist separately from report content and reject stale orga
     () => assignIssueFolder(root, issues, { issueId: issues[0].id, folderId: null, basis: created.basis }),
     /folders changed/
   );
-  const unfiled = assignIssueFolder(root, issues, {
-    issueId: issues[0].id,
-    folderId: null,
-    basis: assigned.basis,
-  });
-  assert.deepEqual(unfiled.assignments, {});
+  assert.throws(
+    () =>
+      assignIssueFolder(root, issues, {
+        issueId: issues[0].id,
+        folderId: null,
+        basis: assigned.basis,
+      }),
+    /Choose a current issue folder/
+  );
   assert.deepEqual(JSON.parse(readFileSync(join(issueDirectory, 'issue-folders.json'), 'utf8')).folders, [
     created.folder,
   ]);
-  assert.throws(() => createIssueFolder(root, issues, { name: ' sprint ', basis: unfiled.basis }), /already exists/);
+  assert.throws(() => createIssueFolder(root, issues, { name: ' sprint ', basis: assigned.basis }), /already exists/);
 });

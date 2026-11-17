@@ -147,8 +147,7 @@
     );
     open.dataset.folder = name;
     const capture = action('New issue', () => {
-      document.getElementById('capture-dialog').dataset.folder = name;
-      window.openFlowCapture();
+      window.openFlowCapture(name);
     });
     capture.dataset.createFolderIssue = name;
     return [open, capture];

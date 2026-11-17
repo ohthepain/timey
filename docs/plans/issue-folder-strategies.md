@@ -4,7 +4,8 @@ Design agreed on November 17, 2026.
 
 Selecting an issue folder opens it in the center column of the Flow workspace.
 The folder shows its issues and the available ways to work on them. A person can
-remove an issue from the folder without deleting its report.
+move an issue to another folder without deleting its report. Every issue must
+belong to a folder.
 
 ## Strategies recommend a selection
 
@@ -50,7 +51,7 @@ default. In review, deselect any candidates before moving the rest. **Auto-appro
 this scan** authorizes the eligible moves from that scan alone.
 
 **Prevent moves into folders** applies to manual moves and moves from a scan.
-An issue with the restriction keeps its current folder and can move to Unfiled.
+An issue with the restriction keeps its current folder.
 
 ## Work All Night
 

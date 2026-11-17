@@ -31,7 +31,12 @@ import { closedIssueState, readQueue } from './data.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
-import { createIssueFolderSettings, readIssueFolderSettings } from './issue-folder-settings.mjs';
+import {
+  createIssueFolderSettings,
+  ensureInboxFolder,
+  readIssueFolderSettings,
+  requireIssueFolder,
+} from './issue-folder-settings.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
 import { closureBlocks, setRetroBlock } from './flow-closure.mjs';
@@ -109,9 +114,7 @@ const completedBlock = (block) =>
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
 
 function capturedFolderMetadata(root, folder) {
-  if (!folder) return {};
-  const settings = readIssueFolderSettings(root).find(({ name }) => name === folder);
-  return settings ? { folder_id: settings.id } : { folder };
+  return { folder_id: requireIssueFolder(root, folder).id };
 }
 
 function selectedFlowRow(issues, id) {
@@ -183,10 +186,6 @@ export function createIssueFlows(service, options = {}) {
   return new IssueFlows(service, options);
 }
 
-function requireCaptureFolder(folder, folders) {
-  requireThat(!folder || folders.includes(folder), 'Choose an existing folder.');
-}
-
 function captureIdentity({ description, type, needsApproval, runRetro }, folder, grouping) {
   const fields = folder ? [description, type, folder] : [description, type];
   if (needsApproval || runRetro) fields.push({ needsApproval: !!needsApproval, runRetro: !!runRetro });
@@ -237,6 +236,7 @@ class IssueFlows {
     this.groups = new FlowGrouping(this);
     this.folderSelection = new FlowFolderSelection(this, options.recommendFolderIssues);
     this.overnight = new FlowOvernight(this);
+    this.inboxFolder = ensureInboxFolder(service.root);
   }
   issues(selectedId) {
     const numbersPath = join(this.service.root, '.issues/issue-numbers.json');
@@ -279,8 +279,10 @@ class IssueFlows {
   }
   read(issue, catalog = this.catalog.read().entries, folderSettings = readIssueFolderSettings(this.service.root)) {
     const flow = this.store.read(issue, flowTarget(this.service.root), catalog);
+    const fallback = folderSettings.find(({ id }) => id === this.inboxFolder.id)?.name || this.inboxFolder.name;
     if (Object.hasOwn(issue, 'folder_id'))
-      flow.folder = folderSettings.find(({ id }) => id === issue.folder_id)?.name || null;
+      flow.folder = folderSettings.find(({ id }) => id === issue.folder_id)?.name || flow.folder || fallback;
+    flow.folder ||= fallback;
     if (typeof issue.run_retro === 'boolean') requestBlock(flow).data.runRetro = issue.run_retro;
     if (!flow.closing) setRetroBlock(flow, catalog);
     return flow;
@@ -997,14 +999,11 @@ class IssueFlows {
   }
   moveIssueToFolder(issue, flow, name) {
     requireThat(!issue.closed && !issueHasActiveWork(this.service, issue.id), 'Choose an idle, open issue.');
-    const folder = readIssueFolderSettings(this.service.root).find((item) => item.name === name);
-    if (flow.folder === name && (folder ? issue.folder_id === folder.id : name !== null || !issue.folder_id)) return;
-    if (folder || Object.hasOwn(issue, 'folder_id')) {
-      requireThat(name === null || folder, 'Enable issue actions for the destination folder first.');
-      const shared = this.service.sharedIssues?.acquireForApproval(issue);
-      updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder?.id ?? null });
-      if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment changed', shared);
-    }
+    const folder = requireIssueFolder(this.service.root, name);
+    if (flow.folder === name && issue.folder_id === folder.id) return;
+    const shared = this.service.sharedIssues?.acquireForApproval(issue);
+    updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder.id });
+    if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment changed', shared);
     flow.folder = name;
     this.store.save(flow, flow.revision);
   }
@@ -1835,11 +1834,13 @@ class IssueFlows {
     return { stopping: true };
   }
   async migrateFolders() {
-    const issues = this.issues();
+    const issues = ['open', 'closed', 'archive'].flatMap((location) =>
+      listStoredIssues(this.service.root, location).map((path) => this.selected(basename(path, '.md')))
+    );
     const catalog = this.catalog.read().entries;
     const settings = readIssueFolderSettings(this.service.root);
     const legacy = issues
-      .filter((issue) => !Object.hasOwn(issue, 'folder_id'))
+      .filter((issue) => !settings.some(({ id }) => id === issue.folder_id))
       .map((issue) => ({ issue, flow: this.read(issue, catalog, settings) }))
       .filter(({ flow }) => Boolean(flow.folder));
     const names = new Set([...this.legacyFolders(), ...legacy.map(({ flow }) => flow.folder)]);
@@ -1849,7 +1850,7 @@ class IssueFlows {
     );
     const ids = new Map([...names].map((name) => [name, createIssueFolderSettings(this.service.root, name).id]));
     for (const { issue, flow } of legacy) {
-      const shared = this.service.sharedIssues?.acquire(issue, true);
+      const shared = issue.location !== 'archive' && this.service.sharedIssues?.acquire(issue, true);
       updateStoredIssueMetadata(this.service.root, issue, { folder_id: ids.get(flow.folder) });
       if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment migrated', shared);
     }
@@ -1867,8 +1868,7 @@ class IssueFlows {
     validateCaptureId(input.requestId);
     validateCaptureDescription(input.description);
     validateCaptureType(input.type);
-    const folder = folderName(input.folder ?? null);
-    requireCaptureFolder(folder, [...this.folders(), ...this.issues().map((issue) => issue.folder)]);
+    const folder = requireIssueFolder(this.service.root, input.folder).name;
     requireThat(
       [input.needsApproval, input.runRetro].every((value) => value === undefined || typeof value === 'boolean'),
       'Choose valid issue settings.'

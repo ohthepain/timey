@@ -348,6 +348,7 @@ async function read(service, request, response, owner) {
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
+    '/api/issue-folder-options': () => flows(service).folders(),
     '/api/flow': () => flows(service).view(issue(selectedIssue)),
     '/api/flow-files': () => flows(service).files(issue(selectedIssue)),
     '/api/flow-file': () => flows(service).file(issue(selectedIssue), url.searchParams.get('path')),

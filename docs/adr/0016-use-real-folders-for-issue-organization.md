@@ -13,5 +13,9 @@ Keep a stable folder ID in the settings file and store each assignment with
 its issue report. Renaming the directory preserves assignments. Committing the
 settings and sharing the issue reports lets teammates see the same membership.
 
+Every issue belongs to a folder. Creation requires an existing folder and moves
+retain a destination folder. Older reports without a saved membership belong
+to Inbox.
+
 See the [sidebar folder design](../plans/factory-sidebar-folders.md) for folder
 behavior and migration.

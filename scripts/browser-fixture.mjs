@@ -158,6 +158,8 @@ export function browserFixture(root) {
         response.statusCode = 204;
         return response.end();
       }
+      if (url.pathname === '/api/issue-folder-options')
+        return response.end(JSON.stringify(['Inbox', ...data.issueFolders.map((folder) => folder.name)]));
       if (url.pathname === '/api/queue') return response.end(JSON.stringify(data));
       if (url.pathname === '/api/issue') {
         const issueId = url.searchParams.get('issue');

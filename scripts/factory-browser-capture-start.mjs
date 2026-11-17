@@ -56,6 +56,7 @@ export default async function captureStartChecks(page) {
     await page.waitForFunction(() => !refreshing);
     await page.getByRole('button', { name: 'Create issue', exact: true }).click();
     await page.getByLabel('Description', { exact: true }).fill(description);
+    await page.locator('#capture-folder').selectOption('Inbox');
   }
 
   async function verifyDefaultCapture(page, captures, starts) {

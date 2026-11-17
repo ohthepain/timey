@@ -288,6 +288,25 @@ try {
     assert.equal(await page.locator('#new-issue').count(), 1);
     await screenshot('empty-desktop');
   });
+  await check('Creating an issue requires choosing a folder', async () => {
+    const before = logs.requests.filter(({ path, method }) => path === '/api/flow-action' && method === 'POST').length;
+    await page.locator('#new-issue').click();
+    const folder = page.locator('#capture-folder');
+    assert.equal(await folder.inputValue(), '');
+    assert.notEqual(await folder.getAttribute('required'), null);
+    await page.locator('#capture-description').fill('Every issue belongs to a folder.');
+    await page.locator('#capture-submit').click();
+    assert.equal(await folder.evaluate((select) => select.validity.valueMissing), true);
+    assert.equal(
+      logs.requests.filter(({ path, method }) => path === '/api/flow-action' && method === 'POST').length,
+      before
+    );
+    await folder.selectOption('Inbox');
+    assert.equal(await folder.evaluate((select) => select.validity.valid), true);
+    await page.locator('#capture-description').fill('');
+    await page.getByRole('button', { name: 'Close new issue', exact: true }).click();
+    assert.equal(await page.locator('#issue-list').getByText('Unfiled', { exact: true }).count(), 0);
+  });
   await check('The sidebar browses system Markdown and saves project Markdown on disk', async () => {
     const tree = page.locator('#sidebar-file-tree');
     await tree.locator('summary').getByText('flow', { exact: true }).first().click();
@@ -366,6 +385,7 @@ try {
     await page.locator('#folder-form button[type="submit"]').click();
     await page.locator('#issue-list [data-create-folder-issue="Browser folder"]').waitFor();
     await page.locator('#issue-list [data-create-folder-issue="Browser folder"]').click();
+    assert.equal(await page.locator('#capture-folder').inputValue(), 'Browser folder');
     await page.locator('#capture-description').fill(description);
     await page.locator('#capture-type').selectOption('investigation');
     const data = await clickAction(page.locator('#capture-submit'));
@@ -388,7 +408,7 @@ try {
     assert.equal(requestData(data.flow).fields, null);
     assert.equal(logs.execution.length, 0);
   });
-  await check('Issue folders show members and accept drags between folders and Unfiled', async () => {
+  await check('Issue folders retain every issue and accept drags between folders', async () => {
     await flowIssueFoldersBrowserChecks(page, issueId, 'Browser folder');
     await screenshot('issue-folder-drag');
     await page.goto('/?issue=' + issueId);
@@ -461,14 +481,8 @@ try {
 
     await openFolder();
     await members.getByRole('checkbox', { name: /Select.*Keep the save button visible/ }).check();
-    await clickAction(page.getByRole('button', { name: 'Remove from folder', exact: true }));
-    await members.getByRole('link', { name: /Keep the save button visible/ }).waitFor({ state: 'detached' });
-    await page.locator(`#open-issues [data-issue="${second.issue.id}"]`).waitFor();
-    await sidebarIssue(master.issue.id).click();
-    await clickAction(page.locator(`[data-detach-sub-issue="${issueId}"]`));
-    await sidebarIssue(issueId).click();
-    await page.locator('#request-form').waitFor();
-    assert.equal(logs.execution.length, 0);
+    assert.equal(await page.getByRole('button', { name: 'Remove from folder', exact: true }).count(), 0);
+    await members.getByRole('link', { name: /Keep the save button visible/ }).waitFor();
   });
   await check('Inspect and edit a tab source without starting work or losing an issue draft', async () => {
     const path = join(project, 'user/flow/overrides/block-inspector.md');
@@ -623,6 +637,7 @@ try {
   let closedId;
   await check('Closed issues open with Destination flush with the bottom, including short flows', async () => {
     const closed = await service.flows.capture({
+      folder: 'Inbox',
       requestId: randomUUID(),
       description: 'Retained closed layout fixture',
       type: 'investigation',
