@@ -370,6 +370,10 @@ Factory outcomes; `conversation-view.mjs` combines these with actual conversatio
 records. `conversation-context.mjs` supplies the same full timeline to model and
 skill turns. `issue-chat-runtime.mjs` resumes the owning thread, using read-only
 access for discussion and the issue checkout for editable requests.
+`flow-retro-proof.mjs` supplies Retro only timeline-linked artifacts with recorded
+SHA-256 digests. It verifies checkout containment and digest before adding a
+bounded redacted excerpt; missing, changed and out-of-checkout artifacts carry
+status only. Each artifact keeps its originating event and attempt reference.
 `issue-prompt-queue.mjs` owns durable prompt identities, revisions and attempt
 receipts. `issue-prompt-scheduler.mjs` coordinates FIFO dispatch, pause, stop,
 steer, uncertain receipt recovery and operation leases. `issue-operation.mjs`
