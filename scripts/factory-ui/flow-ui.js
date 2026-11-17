@@ -2,17 +2,22 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
+  const initialSelection = new URL(location.href).searchParams;
   const state = {
     index: { issues: [], folders: [], catalog: [] },
     view: null,
-    issueId: new URL(location.href).searchParams.get('issue'),
+    issueId: initialSelection.get('issue'),
+    folder: initialSelection.get('issue') ? null : initialSelection.get('folder'),
     blockId: null,
     graphScrollIntent: null,
     sidebarWidth: null,
     inspectorWidth: null,
     tab: 'details',
     search: '',
-    folders: new Set(),
+    collapsedFolders: new Set(),
+    collapsedCollections: new Set(['closed-issues', 'archived-issues']),
+    archivedIssues: null,
+    collapsedSearchFolders: new Set(),
     drafts: new Map(),
     repoFiles: new Map(),
     loading: false,
@@ -53,6 +58,10 @@
     },
   };
   const runningStatuses = new Set(['running', 'starting', 'stopping', 'in-progress']);
+  function emptyFolderSelection() {
+    return { issueIds: new Set(), selection: null, scan: null, group: null, overnight: null };
+  }
+  let folderSelection = emptyFolderSelection();
   let projectSettings = null;
   let inspectedFile = null;
   let inspectorRender;
@@ -368,6 +377,9 @@
   }
 
   function setBusy(busy) {
+    $('folder-workspace').inert = busy;
+    $('issue-grouping').inert = busy;
+    const attached = Boolean(state.view?.grouping?.master);
     document
       .querySelectorAll(
         '[data-action], [data-add-kind], #capture-submit, #export-flow-submit, #folder-form button[type="submit"]'
@@ -376,14 +388,18 @@
         const runsBlock = ['start', 'continue'].includes(button.dataset.action);
         button.disabled =
           busy ||
+          (attached && Boolean(button.dataset.action) && !['comment', 'folder'].includes(button.dataset.action)) ||
           (runsBlock && operationPaused(activeBlock())) ||
           (button.id === 'delete-block' && Boolean(blockDeletionReason(activeBlock())));
       });
     document
       .querySelectorAll('#inspector-body input, #inspector-body select, #inspector-body textarea')
       .forEach((field) => {
-        const closureSetting = ['retro-setting', 'auto-close-setting'].includes(field.id);
-        field.disabled = busy || (closureSetting && state.view?.issue?.status === 'closed');
+        const closureSetting = ['retro-setting', 'auto-close-setting', 'issue-folder-locked'].includes(field.id);
+        field.disabled =
+          busy ||
+          (attached && Boolean(field.closest('#request-form, #block-form'))) ||
+          (closureSetting && state.view?.issue?.status === 'closed');
       });
     const runBlock = $('run-block');
     runBlock.disabled =
@@ -407,9 +423,11 @@
     const closed = issue?.status === 'closed';
     const pending = issue?.state === 'needs-approval';
     $('worktree-hint').hidden = pending;
-    $('issue-approval-menu').hidden = !pending;
-    $('issue-approval-menu').disabled = busy;
-    $('close-with-reason').hidden = !issue || closed || pending;
+    for (const id of ['approve-issue', 'delete-pending-issue']) {
+      $(id).hidden = !pending;
+      $(id).disabled = busy;
+    }
+    $('close-with-reason').hidden = !issue || closed || pending || Boolean(state.view?.grouping?.master);
     $('close-with-reason').disabled = busy;
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
@@ -431,7 +449,7 @@
     const paused = playback?.mode === 'paused';
     const closed = state.view?.issue?.status === 'closed';
     const pending = state.view?.issue?.state === 'needs-approval';
-    button.hidden = closed;
+    button.hidden = closed || Boolean(state.view?.grouping?.master);
     $('closed-issue-indicator').hidden = !closed;
     button.disabled = busy || !playback || pending || (paused && (state.newActionsPaused || closed));
     button.title = !playback
@@ -442,15 +460,35 @@
   }
 
   function selectIssue(id) {
-    if (state.issueId === id && state.view) return;
-    state.issueId = id;
+    if (!state.folder && state.issueId === id && state.view) return;
+    selectWorkspace({ issue: id });
+  }
+
+  function selectFolder(folder) {
+    if (state.folder === folder) return;
+    selectWorkspace({ folder });
+  }
+
+  window.addEventListener('factory-open-issue-folder', (event) => selectFolder(event.detail));
+
+  function sidebarCollapsedFolders() {
+    return state.search ? state.collapsedSearchFolders : state.collapsedFolders;
+  }
+
+  function selectWorkspace({ issue = null, folder = null }) {
+    state.folder = folder;
+    folderSelection = emptyFolderSelection();
+    $('folder-scan-form').reset();
+    state.issueId = issue;
     state.blockId = null;
     state.graphScrollIntent = null;
     state.view = null;
     state.error = '';
     const url = new URL(location.href);
-    if (id) url.searchParams.set('issue', id);
-    else url.searchParams.delete('issue');
+    for (const [key, value] of Object.entries({ issue, folder })) {
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+    }
     history.replaceState(null, '', url);
     render();
     void load(true);
@@ -466,32 +504,353 @@
     ];
     const row = (issue) =>
       `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span></button>`;
-    const ungrouped = issues
-      .filter((issue) => !issue.folder && issue.status !== 'closed')
+    const realFolders = new Set(state.index.issueFolders || []);
+    const openRows = issues
+      .filter((issue) => issue.status !== 'closed' && (!issue.folder || realFolders.has(issue.folder)))
       .map(row)
       .join('');
     const groups = folders
+      .filter((folder) => !realFolders.has(folder))
       .map((folder) => {
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
         if (state.search && children.length === 0) return '';
-        const collapsed = state.folders.has(folder) && !state.search;
+        const collapsed = sidebarCollapsedFolders().has(folder);
         const active = children.find((issue) => issue.activeBlock);
-        return `<section class="issue-folder"><div class="sidebar-heading"><button class="folder-toggle" data-folder="${escape(folder)}" aria-expanded="${!collapsed}">${active ? activeSpinner(active.activeBlock) : `<span class="folder-chevron" aria-hidden="true">${collapsed ? '›' : '⌄'}</span><span aria-hidden="true">▱</span>`}<span>${escape(folder)}</span><span class="folder-count">${children.length}</span></button><button class="icon-button" data-create-folder-issue="${escape(folder)}" aria-label="Create issue in ${escape(folder)}" title="Create issue in ${escape(folder)}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
+        const name = escape(folder);
+        const selected = state.folder === folder;
+        return `<section class="issue-folder"><div class="sidebar-heading"><button class="icon-button folder-disclosure" type="button" data-toggle-folder="${name}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${name}" aria-expanded="${!collapsed}"></button><button class="folder-toggle" data-folder="${name}"${selected ? ' aria-current="page"' : ''}>${active ? activeSpinner(active.activeBlock) : '<span aria-hidden="true">▱</span>'}<span>${name}</span><span class="folder-count">${children.length}</span></button><button class="icon-button" data-create-folder-issue="${name}" aria-label="Create issue in ${name}" title="Create issue in ${name}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('') || '<p class="sidebar-empty">No issues yet.</p>'}</div></section>`;
       })
       .join('');
-    const list = $('issue-list');
-    const closedOpen = list.querySelector('#closed-issues')?.open;
-    list.innerHTML =
-      ungrouped +
-        groups +
-        (issues.some((issue) => issue.status === 'closed')
-          ? `<details id="closed-issues" class="issue-folder"${state.search || closedOpen ? ' open' : ''}><summary class="folder-toggle">Closed issues <span class="folder-count">${issues.filter((issue) => issue.status === 'closed').length}</span></summary><div class="folder-items">${issues
-              .filter((issue) => issue.status === 'closed')
-              .map(row)
-              .join('')}</div></details>`
-          : '') ||
-      `<p class="sidebar-empty">${state.search ? 'No matching issues.' : 'Your issues will appear here.'}</p>`;
+    const closed = issues.filter((issue) => issue.status === 'closed');
+    $('migrate-issue-folders').hidden = !((state.index.legacyFolders || []).length || groups);
+    const archive = (state.archivedIssues || []).filter((issue) =>
+      `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
+    );
+    const collection = (id, name, content) =>
+      `<details id="${id}" class="issue-folder" data-collection${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
+    const empty = '<p class="sidebar-empty">No matching issues.</p>';
+    $('issue-list').innerHTML =
+      collection('open-issues', 'Open', openRows + groups || empty) +
+      collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
+      collection(
+        'archived-issues',
+        'Archived',
+        state.archivedIssues
+          ? archive.map(row).join('') || empty
+          : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
+      );
   }
+
+  async function loadArchive() {
+    try {
+      const { issues } = await json('/api/issue-storage?location=archive');
+      state.archivedIssues = issues.map((issue) => ({ ...issue, status: 'closed' }));
+      renderSidebar();
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+
+  $('issue-list').addEventListener('click', (event) => {
+    const collection = event.target.closest('summary')?.parentElement;
+    if (!collection?.hasAttribute('data-collection')) return;
+    if (collection.open) state.collapsedCollections.add(collection.id);
+    else {
+      state.collapsedCollections.delete(collection.id);
+      if (collection.id === 'archived-issues') void loadArchive();
+    }
+  });
+
+  function issueLabel(issue) {
+    return `${issue.issueNumber == null ? '' : `#${issue.issueNumber} `}${issue.title ?? issue.id}`;
+  }
+
+  function issueLink(issue) {
+    return `<a href="?issue=${encodeURIComponent(issue.id)}" data-open-folder-issue="${escape(issue.id)}">${escape(issueLabel(issue))}</a>`;
+  }
+
+  const folderMarkup = new WeakMap();
+
+  function updateFolderMarkup(element, html) {
+    if (folderMarkup.get(element) === html) return;
+    const field = element.contains(document.activeElement) ? document.activeElement : null;
+    element.innerHTML = html;
+    folderMarkup.set(element, html);
+    if (field?.id) $(field.id)?.focus({ preventScroll: true });
+  }
+
+  function folderIssueRow(issue, reason, field) {
+    const check = `<input type="checkbox" name="${field}" value="${escape(issue.id)}" id="${field}-${escape(issue.id)}"${field === 'member' ? (folderSelection.issueIds.has(issue.id) ? ' checked' : '') : ' checked'} aria-label="Select ${escape(issueLabel(issue))}" />`;
+    return `<li>${check}<div>${issueLink(issue)}${reason ? `<p>${escape(reason)}</p>` : ''}</div></li>`;
+  }
+
+  function folderIssueStatus(issue, reason) {
+    return [reason, issue.masterId ? 'Sub-issue' : '', issue.folderLocked ? 'Folder moves restricted' : '']
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  function folderRun() {
+    const runs = state.index.folderRuns || {};
+    return Object.hasOwn(runs, state.folder) ? runs[state.folder] : null;
+  }
+
+  function overnightActive(run) {
+    return ['running', 'stopping'].includes(run?.status);
+  }
+
+  function renderFolderRun() {
+    const preview = $('folder-night-preview');
+    const plan = folderSelection.overnight;
+    preview.hidden = !plan;
+    updateFolderMarkup(
+      preview,
+      plan
+        ? `<h2>Work All Night plan</h2><p>${escape(plan.finishLine)}</p><ul>${plan.issues.map((issue) => `<li>${issueLink(issue)}</li>`).join('')}</ul><div class="folder-controls"><button class="primary-button" type="button" data-folder-command="start-night"${state.newActionsPaused ? ' disabled' : ''}>Start overnight run</button><button class="small-button" type="button" data-folder-command="cancel-night">Cancel</button></div>`
+        : ''
+    );
+    const report = $('folder-night-report');
+    const run = folderRun();
+    report.hidden = !run;
+    updateFolderMarkup(
+      report,
+      run
+        ? `<h2>Overnight report</h2><p>${escape(words(run.status))} · ${escape(run.finishLine)}</p><ul class="folder-run-results">${run.issues.map(overnightIssue).join('')}</ul>${run.status === 'running' ? '<button class="small-button" type="button" data-folder-command="stop-night">Stop overnight run</button>' : ''}`
+        : ''
+    );
+  }
+
+  function overnightIssue(issue) {
+    const { status, summary, failedCheck, nextAction, pr, url } = issue;
+    return `<li>${issueLink(issue)} · ${escape(words(status))}
+      ${summary ? `<p>${escape(summary)}</p>` : ''}
+      ${failedCheck ? `<p>Failed check: ${escape(failedCheck)}</p>` : ''}
+      ${nextAction ? `<p>${escape(nextAction)}</p>` : ''}
+      ${url ? prLink({ url, number: pr }) : ''}</li>`;
+  }
+
+  function renderFolderButtons() {
+    const selected = state.index.issues.filter((issue) => folderSelection.issueIds.has(issue.id));
+    const count = selected.length;
+    $('folder-selection-summary').textContent = count ? `${count} selected` : '';
+    const enable = (command, allowed) => {
+      document.querySelector(`[data-folder-command="${command}"]`).disabled = !allowed;
+    };
+    const mayGroup = selected.every((issue) => issue.folderEligible && !issue.masterId);
+    const mayRun = selected.every((issue) => !issue.masterId && !issue.activeBlock && issue.state !== 'needs-approval');
+    enable('group', count >= 2 && mayGroup);
+    enable('plan-night', count > 0 && mayRun && !overnightActive(folderRun()) && !state.newActionsPaused);
+    enable('remove', count > 0);
+    $('folder-scan-review').querySelector('button[type="submit"]').disabled = !document.querySelector(
+      '#folder-scan-list input:checked'
+    );
+  }
+
+  function renderFolderWorkspace() {
+    const workspace = $('folder-workspace');
+    workspace.hidden = !state.folder;
+    workspace.closest('.workspace').classList.toggle('folder-open', Boolean(state.folder));
+    workspace.closest('.workspace').querySelector('.inspector').hidden = Boolean(state.folder);
+    $('graph-scroll').hidden = Boolean(state.folder);
+    $('flow-view-title').textContent = state.folder ? 'Issue folder' : 'Issue flow';
+    if (!state.folder) return;
+    $('folder-workspace-title').textContent = state.folder;
+    const { issues, folders } = state.index;
+    const members = issues.filter((issue) => issue.folder === state.folder && issue.status !== 'closed');
+    const reasons = new Map(folderSelection.selection?.candidates.map(({ id, reason }) => [id, reason]));
+    updateFolderMarkup(
+      $('folder-member-list'),
+      members
+        .map((issue) => folderIssueRow(issue, folderIssueStatus(issue, reasons.get(issue.id)), 'member'))
+        .join('') || '<li class="muted">No issues in this folder.</li>'
+    );
+    const source = $('folder-scan-source');
+    const lastSource = source.value;
+    updateFolderMarkup(
+      source,
+      '<option value="">All open issues</option>' +
+        folders
+          .filter((folder) => folder !== state.folder)
+          .map((folder) => `<option value="${escape(folder)}">${escape(folder)}</option>`)
+          .join('')
+    );
+    source.value = [...source.options].some((option) => option.value === lastSource) ? lastSource : '';
+    const scan = folderSelection.scan;
+    $('folder-scan-review').hidden = !scan;
+    updateFolderMarkup(
+      $('folder-scan-list'),
+      (scan?.candidates || [])
+        .map(({ id, reason }) => folderIssueRow(issues.find((issue) => issue.id === id) || { id }, reason, 'candidate'))
+        .join('')
+    );
+    $('folder-group-form').hidden = !folderSelection.group;
+    renderFolderRun();
+    renderFolderButtons();
+  }
+
+  function renderIssueGrouping() {
+    const panel = $('issue-grouping');
+    const grouping = state.view?.grouping;
+    const { master, children, reasoning, formerMasters } = grouping || {};
+    panel.hidden = !master && !children?.length && !formerMasters?.length;
+    const groupReasons = new Map(reasoning?.map(({ id, reason }) => [id, reason]));
+    const html = [];
+    if (master) {
+      const label = state.view.issue.status === 'closed' ? 'Fixed by' : 'Work belongs to';
+      html.push(`<p>${label} ${issueLink(master)}</p>`);
+    }
+    for (const formerMaster of formerMasters || [])
+      html.push(`<p>Earlier work and evidence in ${issueLink(formerMaster)}</p>`);
+    if (children?.length) {
+      html.push(
+        `<h2>Sub-issues</h2><ul class="folder-run-results">${children
+          .map((child) => renderSubIssue(child, groupReasons.get(child.id)))
+          .join('')}</ul>`
+      );
+    }
+    updateFolderMarkup(panel, html.join(''));
+  }
+
+  function renderSubIssue(child, reason) {
+    const { requestedProof, proof, nextAction, canDetach } = child;
+    return `<li>${issueLink(child)}${reason ? `<p>${escape(reason)}</p>` : ''}${requestedProof ? `<p>Requested proof: ${escape(requestedProof)}</p>` : ''}${proof ? `<p>${proof.status === 'passed' ? 'Passed' : 'Unmet'}: ${escape(proof.observation)}</p>` : ''}${nextAction ? `<p>${escape(nextAction)}</p>` : ''}<div class="folder-controls">${proof?.status === 'failed' ? '<button class="small-button" type="button" data-group-play>Continue on the master</button>' : ''}${canDetach ? `<button class="small-button" type="button" data-detach-sub-issue="${escape(child.id)}">${proof?.status === 'failed' ? 'Detach and fix separately' : 'Detach'}</button>` : ''}</div></li>`;
+  }
+
+  async function folderAction(name, fields = {}) {
+    const selection = folderSelection;
+    const result = await action(name, fields, { global: true });
+    return selection === folderSelection ? result : null;
+  }
+
+  function updateFolderSelection(ids) {
+    folderSelection.issueIds = new Set(ids);
+    folderSelection.group = null;
+    folderSelection.overnight = null;
+    renderFolderWorkspace();
+  }
+
+  async function recommendFolderIssues() {
+    const selection = await folderAction('folder-selection', {
+      folder: state.folder,
+      strategy: $('folder-selection-strategy').value,
+    });
+    if (!selection) return;
+    folderSelection.selection = selection;
+    updateFolderSelection(selection.candidates.map(({ id }) => id));
+    if (!selection.candidates.length) toast('No issues fit this selection strategy.');
+  }
+
+  async function previewFolderGroup() {
+    const preview = await folderAction('folder-group-preview', {
+      folder: state.folder,
+      issueIds: [...folderSelection.issueIds],
+      selectionId: folderSelection.selection?.id,
+    });
+    if (!preview) return;
+    folderSelection.group = { ...preview, requestId: crypto.randomUUID() };
+    $('folder-master-wording').value = preview.wording;
+    renderFolderWorkspace();
+    $('folder-master-wording').focus();
+  }
+
+  async function createFolderMaster(event) {
+    event.preventDefault();
+    const preview = folderSelection.group;
+    if (!preview) return;
+    const result = await folderAction('folder-group-create', {
+      previewId: preview.id,
+      wording: $('folder-master-wording').value,
+      requestId: preview.requestId,
+    });
+    if (result) selectIssue(result.issue.id);
+  }
+
+  async function scanForFolderIssues(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const fields = new FormData(form);
+    const autoApprove = fields.has('autoApprove');
+    form.elements.autoApprove.checked = false;
+    const result = await folderAction('folder-scan', {
+      folder: state.folder,
+      strategy: $('folder-selection-strategy').value,
+      sourceFolder: fields.get('source') || null,
+      autoApprove,
+    });
+    if (!result) return;
+    folderSelection.scan = !autoApprove && result.candidates.length ? result : null;
+    folderMarkup.delete($('folder-scan-list'));
+    renderFolderWorkspace();
+    if (autoApprove) await folderMoveComplete(result);
+    else if (!folderSelection.scan) toast('No matching issues to move.');
+  }
+
+  async function folderMoveComplete(result) {
+    const moved = result.moved || 0;
+    toast(moved === 1 ? 'Moved one issue.' : `Moved ${moved} issues.`);
+    await load(true);
+  }
+
+  async function moveReviewedIssues(event) {
+    event.preventDefault();
+    const scan = folderSelection.scan;
+    if (!scan) return;
+    const result = await folderAction('folder-move', {
+      folder: state.folder,
+      scanId: scan.id,
+      issueIds: new FormData(event.currentTarget).getAll('candidate'),
+    });
+    if (!result) return;
+    closeFolderPreview('scan');
+    await folderMoveComplete(result);
+  }
+
+  async function removeFolderIssues() {
+    const result = await folderAction('folder-remove', {
+      folder: state.folder,
+      issueIds: [...folderSelection.issueIds],
+    });
+    if (!result) return;
+    updateFolderSelection([]);
+    await folderMoveComplete(result);
+  }
+
+  async function previewFolderNight() {
+    folderSelection.overnight = await folderAction('folder-night-plan', {
+      folder: state.folder,
+      issueIds: [...folderSelection.issueIds],
+    });
+    renderFolderWorkspace();
+  }
+
+  async function startFolderNight() {
+    if (!folderSelection.overnight) return;
+    const result = await folderAction('folder-night-start', { planId: folderSelection.overnight.id });
+    if (!result) return;
+    closeFolderPreview('overnight');
+    await load(true);
+  }
+
+  async function stopFolderNight() {
+    if (await folderAction('folder-night-stop', { folder: state.folder })) await load(true);
+  }
+
+  function closeFolderPreview(key) {
+    folderSelection[key] = null;
+    renderFolderWorkspace();
+  }
+
+  const folderCommands = {
+    recommend: recommendFolderIssues,
+    group: previewFolderGroup,
+    remove: removeFolderIssues,
+    'plan-night': previewFolderNight,
+    'start-night': startFolderNight,
+    'stop-night': stopFolderNight,
+    'cancel-night': () => closeFolderPreview('overnight'),
+    'cancel-group': () => closeFolderPreview('group'),
+    'cancel-scan': () => closeFolderPreview('scan'),
+  };
 
   function activeSpinner(block) {
     const color = blockStyle(block.definition ?? block.kind).color;
@@ -1087,7 +1446,7 @@
     const open = state.view.issue.status !== 'closed';
     const disabled = open ? '' : ' disabled';
     const settings = `<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
-    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder"><option value="">No folder</option>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form></section>`;
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder"><option value="">No folder</option>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
   }
 
   function skillOptions(block, selected) {
@@ -1307,6 +1666,7 @@
     runButton.hidden =
       !block ||
       block.readOnly ||
+      Boolean(state.view.grouping?.master) ||
       Boolean(state.view.flow.request) ||
       state.view.issue.state === 'needs-approval' ||
       (!running && ['retro', 'cleanup'].includes(block.kind)) ||
@@ -1394,6 +1754,7 @@
 
   function render() {
     renderSidebar();
+    renderFolderWorkspace();
     const issue = state.view?.issue;
     $('issue-heading').hidden = !issue;
     $('issue-type-label').textContent = issue
@@ -1424,6 +1785,7 @@
         ? 'Saved flow'
         : 'Changes are saved locally';
     renderEnvironment();
+    renderIssueGrouping();
     renderGraph();
     checkOpenPublication();
     renderInspector();
@@ -2001,6 +2363,43 @@
   }
   resizeColumns();
 
+  function followFolderLink(event) {
+    const link = event.target.closest('[data-open-folder-issue]');
+    if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+    event.preventDefault();
+    selectIssue(link.dataset.openFolderIssue);
+    return true;
+  }
+
+  $('issue-list').addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button || button.disabled) return;
+    if (button.dataset.folder) return selectFolder(button.dataset.folder);
+    if (!button.dataset.toggleFolder) return;
+    const folder = button.dataset.toggleFolder;
+    const collapsedFolders = sidebarCollapsedFolders();
+    const expanded = collapsedFolders.delete(folder);
+    if (!expanded) collapsedFolders.add(folder);
+    button.setAttribute('aria-expanded', String(expanded));
+    button.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${folder}`);
+    button.closest('.issue-folder').querySelector('.folder-items').hidden = !expanded;
+  });
+
+  $('folder-workspace').addEventListener('click', (event) => {
+    if (followFolderLink(event)) return;
+    const button = event.target.closest('[data-folder-command]');
+    if (button && !button.disabled) void folderCommands[button.dataset.folderCommand]();
+  });
+
+  $('issue-grouping').addEventListener('click', (event) => {
+    if (followFolderLink(event)) return;
+    const button = event.target.closest('button');
+    if (!button || button.disabled) return;
+    if (button.dataset.detachSubIssue)
+      return void action('folder-detach', { subIssueId: button.dataset.detachSubIssue });
+    if (button.hasAttribute('data-group-play') && state.view?.autoplay?.mode === 'paused') $('issue-playback').click();
+  });
+
   document.addEventListener('click', (event) => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
@@ -2015,13 +2414,6 @@
     }
     if (button.dataset.cleanupRetry) return void action('retry-closure', { resourceId: button.dataset.cleanupRetry });
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
-    if (button.dataset.folder) {
-      const folder = button.dataset.folder;
-      if (state.folders.has(folder)) state.folders.delete(folder);
-      else state.folders.add(folder);
-      renderSidebar();
-      return;
-    }
     if (button.dataset.block) {
       state.blockId = button.dataset.block;
       state.graphScrollIntent = { nodeId: state.blockId, mode: 'reveal' };
@@ -2182,6 +2574,24 @@
     }
   });
 
+  $('folder-member-list').addEventListener('change', (event) => {
+    const { value, checked } = event.target;
+    const ids = new Set(folderSelection.issueIds);
+    if (checked) ids.add(value);
+    else ids.delete(value);
+    updateFolderSelection(ids);
+  });
+  $('folder-scan-list').addEventListener('change', renderFolderButtons);
+  $('folder-scan-form').addEventListener('submit', (event) => void scanForFolderIssues(event));
+  $('folder-scan-review').addEventListener('submit', (event) => void moveReviewedIssues(event));
+  $('folder-group-form').addEventListener('submit', (event) => void createFolderMaster(event));
+  document.addEventListener('change', async (event) => {
+    const field = event.target;
+    if (field.id !== 'issue-folder-locked') return;
+    const locked = field.checked;
+    if (!(await action('folder-lock', { locked })) && field.isConnected) field.checked = !locked;
+  });
+
   window.openFlowCapture = openCapture;
   $('new-issue').addEventListener('click', openCapture);
   $('rename-issue').addEventListener('click', () => {
@@ -2335,21 +2745,22 @@
   $('skip-retro').addEventListener('click', () => {
     if (confirm('Continue to Cleanup without a completed retro?')) void action('skip-retro');
   });
-  $('issue-approval-menu').addEventListener('change', async (event) => {
-    const menu = event.target;
-    const choice = menu.value;
-    menu.value = '';
-    const { issue } = state.view;
-    if (choice === 'delete-pending-issue' && !confirm(`Permanently delete “${issue.title}”?`)) return;
-    const result = await action(choice, { title: issue.title });
+  $('approve-issue').addEventListener('click', async () => {
+    if (await action('approve-issue')) void load(true);
+  });
+  $('delete-pending-issue').addEventListener('click', async () => {
+    const issue = state.view?.issue;
+    if (issue?.state !== 'needs-approval') return;
+    const result = await action('delete-pending-issue', { title: issue.title });
     if (!result) return;
     if (result.publication) {
       toast(
         result.publication.status === 'review' ? 'Deletion awaits merge of the queue PR.' : result.publication.error
       );
+    } else if (state.issueId === issue.id) {
+      selectIssue(null);
       return;
     }
-    if (choice === 'delete-pending-issue') selectIssue(null);
     void load(true);
   });
   $('issue-closure-form').addEventListener('submit', async (event) => {
@@ -2406,6 +2817,10 @@
   document.addEventListener('factory-actions-paused', ({ detail }) => {
     state.newActionsPaused = detail;
     updatePlaybackAvailability(state.pending);
+    if (state.folder) {
+      renderFolderRun();
+      renderFolderButtons();
+    }
   });
   $('refresh').addEventListener('click', () => {
     void load(true, true);
@@ -2417,6 +2832,7 @@
   });
   $('issue-search').addEventListener('input', (event) => {
     state.search = event.target.value;
+    state.collapsedSearchFolders.clear();
     renderSidebar();
   });
   $('new-folder').addEventListener('click', () => {
@@ -2466,6 +2882,13 @@
     }
   });
 
+  $('migrate-issue-folders').addEventListener('click', async () => {
+    const result = await action('migrate-folders', {}, { global: true });
+    if (!result) return;
+    window.dispatchEvent(new CustomEvent('factory-issue-folders-migrated'));
+    toast('Moved existing issue folders.');
+  });
+
   $('folder-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const name = $('folder-name').value.trim();
@@ -2473,9 +2896,10 @@
     $('folder-error').hidden = true;
     const result = await action('create-folder', { name }, { global: true, errorId: 'folder-error' });
     if (!result) return;
+    window.dispatchEvent(new CustomEvent('factory-issue-folder-created', { detail: name }));
     $('folder-name').value = '';
     $('folder-dialog').close();
-    toast('Folder created. Move an issue into it from its request block.');
+    toast('Folder created.');
     await load(true);
   });
 

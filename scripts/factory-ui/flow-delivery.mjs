@@ -12,6 +12,7 @@ import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { flowVerificationInput } from './flow-verification.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
+import { requireGroupProof } from './flow-group-proof.mjs';
 
 export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
   requireThat(
@@ -458,6 +459,7 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   requireThat(type, 'Missing issue type. Refresh Request before closing.');
   if (type === 'investigation') return investigationClosureArtifact(ctx, workspace);
   const candidate = verifiedFlowCandidate(ctx, workspace, options);
+  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block);
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   const pr = await provider.findByBranch(workspace.branch, provider.config.target);
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
@@ -483,9 +485,11 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   return {
     revision: candidate.head,
     checkout: workspace.checkout,
+    ...(groupEvidence.length && { groupProof: true }),
     evidence: [
       ...candidate.evidence,
       ...workProof.attempts.flatMap(({ file }) => (file ? [file] : [])),
+      ...groupEvidence,
       { path, sha256: digest(readFileSync(path)) },
     ],
   };
@@ -545,5 +549,11 @@ function investigationClosureArtifact(ctx, workspace) {
     'The completed investigation output is missing from its retained evidence. Run its block again.'
   );
   ctx.signal.throwIfAborted();
-  return { revision: head, checkout: workspace.checkout, evidence };
+  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, tree, ctx.block);
+  return {
+    revision: head,
+    checkout: workspace.checkout,
+    ...(groupEvidence.length && { groupProof: true }),
+    evidence: [...evidence, ...groupEvidence],
+  };
 }

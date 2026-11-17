@@ -17,12 +17,12 @@ the closure sequence.
   Approval is required before work starts on those follow-ups.
 - Automatically generated issues default to **Needs approval**. Create issue
   offers **Needs approval** as an unchecked option for manual capture.
-- An issue awaiting approval shows **Needs approval** in place of
-  **Worktree** and **Close**. The menu offers **Approve** and **Delete**.
+- An issue awaiting approval shows **Approve** and **Delete** in place of
+  **Worktree** and **Close**.
   **Approve** restores the normal controls, keeps the issue in its current
   folder, and leaves it idle.
-  **Delete** asks for confirmation that names the issue, then permanently
-  removes it.
+  **Delete** removes the proposal with one click. The issue does not enter Closed
+  issues or Archive.
 - Issue creation and implementation can happen on different machines. Saved
   issue conversations can start before an issue worktree exists.
 - Closing a reopened issue runs a fresh Retro if **Run a retro** is still on.
@@ -59,11 +59,11 @@ In shared queue mode, the report can travel with the queue. Local transcripts,
 worktrees, and runtime records stay on their runner.
 [Shared queue design](shared-issue-queue.md)
 
-Shared closure and deletion use the queue's reviewed report updates. Cleanup
-waits for the reviewed closure so the runner can retain its worktree while the
-report is pending.
+Shared closure and deletion follow the queue's configured publication route.
+Cleanup waits for closure to reach the shared queue so the runner can retain its
+worktree while the report is pending.
 
-In a shared queue, merge the proposal’s queue PR before selecting **Approve**.
+When the shared queue uses PRs, merge the proposal’s queue PR before selecting **Approve**.
 Flow checks that the PR landed as part of approval, even if the last queue
 refresh still showed it as open. Approval opens a separate queue PR to record
 the decision and leaves the issue idle. Work can start once that update lands.

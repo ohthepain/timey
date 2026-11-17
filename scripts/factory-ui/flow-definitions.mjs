@@ -5,12 +5,13 @@ import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { digest, requireThat } from './common.mjs';
 import { withoutTarget } from './flow-block-data.mjs';
-import { uiDirectory } from './ui-source.mjs';
+import { systemFlowDirectory } from './ui-source.mjs';
 
 export const issueTypes = ['bug', 'feature', 'investigation'];
-const bundled = join(uiDirectory(), 'views', 'flow');
-const customDirectory = 'factory/ui/flows';
-const extensionDirectory = 'factory/ui/extensions/flow';
+const bundled = systemFlowDirectory();
+const customDirectory = 'user/flow/definitions';
+const priorCustomDirectory = 'factory/ui/flows';
+const extensionDirectory = 'user/flow/extensions';
 const maximumMarkdownBytes = 128000;
 const flowId = z.string().regex(/^[a-z][a-z0-9-]{0,79}$/);
 const blockId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
@@ -174,7 +175,10 @@ export function readFlowDefinitions(root, catalog) {
   const entries = [];
   const errors = [];
   const sources = new Map();
-  const folders = [join(bundled, 'definitions'), ...(root ? [join(root, customDirectory)] : [])];
+  const folders = [
+    join(bundled, 'definitions'),
+    ...(root ? [join(root, customDirectory), join(root, priorCustomDirectory)] : []),
+  ];
   const seen = new Set();
   for (const folder of folders) {
     for (const file of definitionFiles(folder)) {
@@ -239,7 +243,9 @@ export function suggestFlowExport(linked, current, occupiedIds) {
 export function exportFlowDefinition(root, input, flow, catalog) {
   const id = flowId.parse(input.flowId);
   requireThat(
-    !lstatSync(join(bundled, 'definitions', id + '.md'), { throwIfNoEntry: false }),
+    ![join(bundled, 'definitions'), join(root, priorCustomDirectory)].some((base) =>
+      lstatSync(join(base, id + '.md'), { throwIfNoEntry: false })
+    ),
     'That flow ID is already in use.'
   );
   const { names, blocks } = exportedNodes(flow);

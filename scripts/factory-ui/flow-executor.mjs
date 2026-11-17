@@ -44,6 +44,7 @@ import {
 } from './flow-verification.mjs';
 import { moveIssueBase, startingBranchUpstream, updateIssueBranch } from './flow-update-branch.mjs';
 import { runRetro } from './flow-retro.mjs';
+import { groupProofRequest, withGroupProof } from './flow-group-proof.mjs';
 
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
 const commandBlocks = new Set([
@@ -324,6 +325,7 @@ function blockInput(ctx, extra = {}) {
       block: ctx.block.label || ctx.block.kind,
       details: (ctx.attempt.details ?? []).map(({ key, value }) => ({ key, value: value ?? null })),
       notes: (ctx.block.comments || []).slice(-20).map((comment) => comment.text),
+      ...(ctx.issue.issue_group && { subIssues: groupProofRequest(ctx.issue) }),
       ...extra,
     },
     null,
@@ -582,6 +584,7 @@ function assertSharedBlockClaim(service, { block, issue }) {
 }
 
 async function runModel(service, ctx, owned, options) {
+  ctx = withGroupProof(ctx);
   requireThat(
     ctx.block.kind !== 'prototype' || ctx.block.prompt?.trim(),
     'Describe the prototype to create or run before starting this block.'

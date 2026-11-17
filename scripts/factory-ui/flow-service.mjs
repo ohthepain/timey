@@ -30,6 +30,9 @@ import { digest, git, requireThat, writeJson } from './common.mjs';
 import { closedIssueState, readQueue } from './data.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import { FlowGrouping } from './flow-grouping.mjs';
+import { createIssueFolderSettings, readIssueFolderSettings } from './issue-folder-settings.mjs';
+import { groupChildren } from './issue-group.mjs';
 import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
 import { closureBlocks, setRetroBlock } from './flow-closure.mjs';
 import {
@@ -82,16 +85,34 @@ import { openWorkFolder } from './open-issue-work-folder.mjs';
 import { readShownFile } from './shown-file.mjs';
 import { deleteIssueWorktree, issueHasActiveWork, worktreeCleanupService } from './issue-cleanup.mjs';
 import { branchStartingPoint, captureStartingPoint, flowBranches } from './flow-branches.mjs';
+import { FlowFolderSelection } from './flow-folder-selection.mjs';
+import { FlowOvernight } from './flow-overnight.mjs';
 
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
 const retroFolder = 'Retro items';
 const closureActions = new Set(['retro-setting', 'auto-close-setting', 'retry-closure', 'skip-retro', 'cleanup-again']);
+const folderSelectionActions = new Set(['folder-selection', 'folder-scan', 'folder-move', 'folder-remove']);
+const folderGroupActions = new Set(['folder-group-preview', 'folder-group-create', 'folder-detach']);
+const folderNightActions = new Set(['folder-night-plan', 'folder-night-start', 'folder-night-stop']);
+const folderActions = new Set([
+  'create-folder',
+  'migrate-folders',
+  ...folderSelectionActions,
+  ...folderGroupActions,
+  ...folderNightActions,
+]);
 const unresolvedAttempt = (attempt) =>
   !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status);
 const completedBlock = (block) =>
   latestCurrentAttempt(block)?.status === 'completed' ||
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
+
+function capturedFolderMetadata(root, folder) {
+  if (!folder) return {};
+  const settings = readIssueFolderSettings(root).find(({ name }) => name === folder);
+  return settings ? { folder_id: settings.id } : { folder };
+}
 
 function selectedFlowRow(issues, id) {
   return issues.find((item) => item.id === id) ?? { status: 'closed' };
@@ -166,10 +187,20 @@ function requireCaptureFolder(folder, folders) {
   requireThat(!folder || folders.includes(folder), 'Choose an existing folder.');
 }
 
-function captureIdentity({ description, type, needsApproval, runRetro }, folder) {
+function captureIdentity({ description, type, needsApproval, runRetro }, folder, grouping) {
   const fields = folder ? [description, type, folder] : [description, type];
   if (needsApproval || runRetro) fields.push({ needsApproval: !!needsApproval, runRetro: !!runRetro });
+  if (grouping) fields.push(grouping);
   return digest(JSON.stringify(fields));
+}
+
+function captureGroupMetadata(grouping) {
+  if (!grouping) return {};
+  const { children, reasoning, humanChecks } = grouping;
+  return {
+    issue_group: { children, reasoning },
+    ...(humanChecks?.length && { human_checks: humanChecks }),
+  };
 }
 
 function validateCaptureId(requestId) {
@@ -202,6 +233,9 @@ class IssueFlows {
     this.flowBuilds = new Set();
     this.captures = new Map();
     this.closureTasks = new Map();
+    this.groups = new FlowGrouping(this);
+    this.folderSelection = new FlowFolderSelection(this, options.recommendFolderIssues);
+    this.overnight = new FlowOvernight(this);
   }
   issues(selectedId) {
     const numbersPath = join(this.service.root, '.issues/issue-numbers.json');
@@ -238,20 +272,49 @@ class IssueFlows {
     requireThat(issue, 'This issue no longer exists. Choose a saved issue.');
     return issue;
   }
-  read(issue, catalog = this.catalog.read().entries) {
+  read(issue, catalog = this.catalog.read().entries, folderSettings = readIssueFolderSettings(this.service.root)) {
     const flow = this.store.read(issue, flowTarget(this.service.root), catalog);
+    if (Object.hasOwn(issue, 'folder_id'))
+      flow.folder = folderSettings.find(({ id }) => id === issue.folder_id)?.name || null;
     if (typeof issue.run_retro === 'boolean') requestBlock(flow).data.runRetro = issue.run_retro;
     if (!flow.closing) setRetroBlock(flow, catalog);
     return flow;
   }
-  folders() {
+  legacyFolders() {
     const path = join(this.store.directory, 'folders.json');
     return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : [];
+  }
+  folders() {
+    return [
+      ...new Set([...readIssueFolderSettings(this.service.root).map(({ name }) => name), ...this.legacyFolders()]),
+    ];
   }
   refreshSharedQueue() {
     if (!this.service.sharedIssues) return undefined;
     this.service.ownServer();
     return this.service.sharedIssues.refreshInBackground(true);
+  }
+  indexIssue(issue, flow, issues) {
+    const activeBlock = flow.blocks.find((block) =>
+      ['running', 'stopping', 'in-progress'].includes(block.attempts.at(-1)?.status)
+    );
+    const active =
+      this.active.has(issue.id) ||
+      this.service.lifecycleTasks?.has(issue.id) ||
+      this.service.issueChats?.active?.has(issue.id);
+    return {
+      id: issue.id,
+      title: issue.title,
+      issueNumber: issue.issueNumber,
+      state: issue.state,
+      type: requestData(flow).fields?.type ?? flow.routeType,
+      masterId: this.groups.masterId(issue.id, issues),
+      folder: flow.folder,
+      folderLocked: Boolean(flow.folderLocked),
+      folderEligible: this.folderSelection.eligible(issue, flow),
+      activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
+      status: flowStatus(flow, issue, active),
+    };
   }
   async view(id) {
     const sharedQueueWarning = await this.refreshSharedQueue();
@@ -264,44 +327,20 @@ class IssueFlows {
     } catch (error) {
       branchCatalogError = error.message;
     }
+    const folderSettings = readIssueFolderSettings(this.service.root);
+    const index = issues.map((issue) => this.indexIssue(issue, this.read(issue, catalog, folderSettings), issues));
     const data = {
       project: basename(this.service.root),
       sharedQueueWarning,
       branches,
       ...(branchCatalogError ? { branchCatalogError } : {}),
-      folders: [...new Set([...this.folders(), ...issues.map((issue) => issue.folder).filter(Boolean)])],
+      folders: [...new Set([...this.folders(), ...index.map((issue) => issue.folder).filter(Boolean)])],
+      issueFolders: folderSettings.map(({ name }) => name),
+      legacyFolders: this.legacyFolders(),
+      folderRuns: this.overnight.reports(),
       catalog,
       catalogErrors,
-      issues: issues.map((issue) => {
-        const flow = this.read(issue, catalog);
-        return {
-          id: issue.id,
-          title: issue.title,
-          issueNumber: issue.issueNumber,
-          state: issue.state,
-          type: requestData(flow).fields?.type ?? flow.routeType,
-          folder: flow.folder,
-          activeBlock: flow.blocks.find((block) =>
-            ['running', 'stopping', 'in-progress'].includes(block.attempts.at(-1)?.status)
-          )
-            ? {
-                id: flow.blocks.find((block) =>
-                  ['running', 'stopping', 'in-progress'].includes(block.attempts.at(-1)?.status)
-                ).id,
-                kind: flow.blocks.find((block) =>
-                  ['running', 'stopping', 'in-progress'].includes(block.attempts.at(-1)?.status)
-                ).kind,
-              }
-            : null,
-          status: flowStatus(
-            flow,
-            issue,
-            this.active.has(issue.id) ||
-              this.service.lifecycleTasks?.has(issue.id) ||
-              this.service.issueChats?.active?.has(issue.id)
-          ),
-        };
-      }),
+      issues: index,
     };
     if (!id) return data;
     const issue = this.selected(id);
@@ -378,6 +417,7 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
+      grouping: this.groups.view(issue, flow, issues),
       sharedQueue: this.service.sharedIssues?.view(id),
       closureBusy: this.closureBusy(id),
       autoplay: this.autoplay.get(id) ?? { mode: 'paused' },
@@ -472,11 +512,16 @@ class IssueFlows {
   }
   closeWithReason(input, artifact) {
     const issue = this.selected(input.issueId);
+    this.groups.requireIndependent(issue.id);
     const catalog = this.catalog.read().entries;
     const flow = this.read(issue, catalog);
     requireThat(!issue.closed && issue.state !== 'needs-approval', 'Choose an open issue that is ready for closure.');
     requireThat(flow.revision === input.flowRevision, 'The flow changed. Review Close again.');
     requireThat(!flowOwnsIssue(this.service, issue.id), 'Wait for the running block or stop it before closing.');
+    if (groupChildren(issue).length && (input.resolution ?? 'fixed') === 'fixed') {
+      requireThat(!input.automatic, 'Review and accept the sub-issue proof before closing the master.');
+      requireThat(artifact?.groupProof === true, 'Check the current candidate and proof for each sub-issue.');
+    }
     const branches = (input.cleanup?.selectedResources || []).filter((item) =>
       ['local-branch', 'remote-branch'].includes(item.kind)
     );
@@ -501,11 +546,13 @@ class IssueFlows {
         input.resolution,
         null,
         artifact,
-        { deferCleanup: true, automatic: input.automatic === true }
+        { deferCleanup: true, automatic: input.automatic === true, flowGroupClosure: true }
       );
     } catch (error) {
-      delete flow.closing;
-      this.store.save(flow, this.read(issue).revision);
+      if (!this.selected(issue.id).closed) {
+        delete flow.closing;
+        this.store.save(flow, this.read(issue).revision);
+      }
       throw error;
     }
     this.pause(issue.id, 'Issue closed');
@@ -552,7 +599,16 @@ class IssueFlows {
     const flow = this.read(issue, catalog);
     const closing = flow.closing;
     if (!issue.closed || !closing || closing.complete || this.active.has(id)) return;
-    if (this.service.sharedIssues && issue.location === 'open') return;
+    if (this.service.sharedIssues && issue.location === 'open') {
+      if (!retry || !groupChildren(issue).length) return;
+      const publication = this.service.sharedIssues.publishGroupClosure(issue, 'Issue closed');
+      requireThat(
+        publication?.status === 'published',
+        'Publish the master’s pending closure, then retry closing the group.'
+      );
+      return this.advanceClosure(id, false, resourceId);
+    }
+    this.groups.finish(issue);
     const { close, retro, cleanup } = closureBlocks(flow, catalog);
     const latestForClosure = (block) => block?.attempts.findLast((attempt) => attempt.closureId === closing.id);
     if (!latestForClosure(close)) {
@@ -629,10 +685,7 @@ class IssueFlows {
   }
   async fileRetroItems(recommendations) {
     if (!recommendations.length) return;
-    if (!this.folders().includes(retroFolder)) {
-      mkdirSync(this.store.directory, { recursive: true });
-      writeJson(join(this.store.directory, 'folders.json'), [...this.folders(), retroFolder]);
-    }
+    createIssueFolderSettings(this.service.root, retroFolder);
     for (const item of recommendations) {
       const title = item.title
         .trim()
@@ -720,13 +773,15 @@ class IssueFlows {
     }
   }
   requireAvailableAction(issue, flow, action) {
+    if (!['open-block', 'open-worktree', 'pause', 'stop', 'folder', 'folder-lock', 'comment'].includes(action))
+      this.groups.requireIndependent(issue.id);
     requireThat(
       ['pause', 'open-worktree'].includes(action) || !this.active.get(issue.id)?.movingStartingPoint,
       'Wait for the starting branch move to finish.'
     );
     if (issue.state === 'needs-approval')
       requireThat(
-        ['open-block', 'rename-issue', 'comment', 'retro-setting'].includes(action),
+        ['open-block', 'rename-issue', 'comment', 'retro-setting', 'folder', 'folder-lock'].includes(action),
         'Approve this issue before starting work.'
       );
     if (flow.closing && !flow.closing.complete)
@@ -760,6 +815,10 @@ class IssueFlows {
     if (input.action === 'auto-close-setting') {
       requireThat(!issue.closed && !this.closureTasks.has(issue.id), 'This issue has already started closing.');
       requireThat(typeof input.enabled === 'boolean', 'Choose whether to close automatically.');
+      requireThat(
+        !input.enabled || !groupChildren(issue).length,
+        'Accept the master’s sub-issue proof before closing it.'
+      );
       flow.autoClose = input.enabled;
       this.store.save(flow, flow.revision);
       return this.view(issue.id);
@@ -810,10 +869,11 @@ class IssueFlows {
   async dispatch(input) {
     this.service.ownServer();
     if (input.action === 'capture') return this.capture(input);
-    if (input.action === 'create-folder') return this.createFolder(input);
+    if (folderActions.has(input.action)) return this.dispatchFolder(input);
     const issue = this.selected(input.issueId);
     const { entries: catalog } = this.catalog.read();
     let flow = this.read(issue, catalog);
+    this.overnight.requireManualAction(issue.id, input.action);
     if (['approve-issue', 'delete-pending-issue'].includes(input.action)) {
       requireThat(input.revision === flow.revision, 'This issue changed. Refresh before deciding.');
       return this.decidePendingIssue(issue, flow, input);
@@ -845,6 +905,7 @@ class IssueFlows {
     }
     if (!['comment', 'open-block'].includes(input.action))
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
+    if (input.action === 'folder' || input.action === 'folder-lock') return this.editFolder(issue, flow, input);
     if (closureActions.has(input.action)) return this.dispatchClosure(input, issue, flow, catalog);
     if (['open-block-extension', 'reveal-definition'].includes(input.action))
       return this.openDefinitionFile(issue, flow, input, catalog);
@@ -898,6 +959,46 @@ class IssueFlows {
       return this.view(issue.id);
     }
     return this.dispatchBlockAction(issue, flow, input, catalog);
+  }
+  dispatchFolder(input) {
+    if (input.action === 'migrate-folders') return this.migrateFolders();
+    if (folderSelectionActions.has(input.action)) return this.folderSelection.action(input);
+    if (folderNightActions.has(input.action)) return this.overnight.action(input);
+    if (folderGroupActions.has(input.action)) {
+      const reasoning =
+        input.action === 'folder-group-preview'
+          ? this.folderSelection.selectionReason(input.selectionId, input.folder, input.issueIds)
+          : [];
+      return this.groups.action(input, reasoning);
+    }
+    return this.createFolder(input);
+  }
+  editFolder(issue, flow, input) {
+    if (input.action === 'folder-lock') {
+      requireThat(!issue.closed && typeof input.locked === 'boolean', 'Choose a move setting for an open issue.');
+      flow.folderLocked = input.locked;
+      this.store.save(flow, flow.revision);
+      return this.view(issue.id);
+    }
+    if (input.folder && input.folder !== flow.folder) {
+      requireThat(!flow.folderLocked, 'This issue is protected from moves into folders.');
+      this.folderSelection.requireFolder(input.folder);
+    }
+    this.moveIssueToFolder(issue, flow, folderName(input.folder));
+    return this.view(issue.id);
+  }
+  moveIssueToFolder(issue, flow, name) {
+    requireThat(!issue.closed && !issueHasActiveWork(this.service, issue.id), 'Choose an idle, open issue.');
+    const folder = readIssueFolderSettings(this.service.root).find((item) => item.name === name);
+    if (flow.folder === name && (folder ? issue.folder_id === folder.id : name !== null || !issue.folder_id)) return;
+    if (folder || Object.hasOwn(issue, 'folder_id')) {
+      requireThat(name === null || folder, 'Enable issue actions for the destination folder first.');
+      const shared = this.service.sharedIssues?.acquireForApproval(issue);
+      updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder?.id ?? null });
+      if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment changed', shared);
+    }
+    flow.folder = name;
+    this.store.save(flow, flow.revision);
   }
   async dispatchBlockAction(issue, flow, input, catalog) {
     if (input.blockId?.startsWith('target-') && !flow.blocks.some((block) => block.id === input.blockId)) {
@@ -1472,7 +1573,8 @@ class IssueFlows {
     }
     return this.view(issue.id);
   }
-  async start(issue, flow, input, catalog, publication = null) {
+  async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
+    this.groups.requireIndependent(issue.id);
     requireThat(
       !this.active.has(issue.id),
       'One block already owns this issue conversation. Stop it before starting another.'
@@ -1548,7 +1650,11 @@ class IssueFlows {
       block.id,
       attempt.id,
       controller,
-      { ...input, automaticPublication: block.kind === 'publish' && publication === 'play' },
+      {
+        ...input,
+        automaticPublication: block.kind === 'publish' && publication === 'play',
+        prepareMerge: block.kind === 'merge' && this.overnight.owns(issue.id, overnightRunId),
+      },
       definition
     );
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
@@ -1720,16 +1826,36 @@ class IssueFlows {
     active.controller.abort();
     return { stopping: true };
   }
+  async migrateFolders() {
+    const issues = this.issues();
+    const catalog = this.catalog.read().entries;
+    const settings = readIssueFolderSettings(this.service.root);
+    const legacy = issues
+      .filter((issue) => !Object.hasOwn(issue, 'folder_id'))
+      .map((issue) => ({ issue, flow: this.read(issue, catalog, settings) }))
+      .filter(({ flow }) => Boolean(flow.folder));
+    const names = new Set([...this.legacyFolders(), ...legacy.map(({ flow }) => flow.folder)]);
+    requireThat(
+      legacy.every(({ issue }) => !issueHasActiveWork(this.service, issue.id)),
+      'Wait for active issues in the existing folders to finish.'
+    );
+    const ids = new Map([...names].map((name) => [name, createIssueFolderSettings(this.service.root, name).id]));
+    for (const { issue, flow } of legacy) {
+      const shared = this.service.sharedIssues?.acquire(issue, true);
+      updateStoredIssueMetadata(this.service.root, issue, { folder_id: ids.get(flow.folder) });
+      if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment migrated', shared);
+    }
+    const path = join(this.store.directory, 'folders.json');
+    if (existsSync(path)) unlinkSync(path);
+    return { migratedFolders: [...ids.keys()], migratedIssues: legacy.length, ...(await this.view()) };
+  }
   createFolder(input) {
     const name = folderName(input.name);
     requireThat(name, 'Enter a folder name.');
-    const folders = this.folders();
-    if (!folders.includes(name)) folders.push(name);
-    mkdirSync(this.store.directory, { recursive: true });
-    writeJson(join(this.store.directory, 'folders.json'), folders);
+    createIssueFolderSettings(this.service.root, name);
     return this.view();
   }
-  async capture(input) {
+  async capture(input, grouping = null) {
     validateCaptureId(input.requestId);
     validateCaptureDescription(input.description);
     validateCaptureType(input.type);
@@ -1739,13 +1865,13 @@ class IssueFlows {
       [input.needsApproval, input.runRetro].every((value) => value === undefined || typeof value === 'boolean'),
       'Choose valid issue settings.'
     );
-    const identity = captureIdentity(input, folder);
+    const identity = captureIdentity(input, folder, grouping);
     const pending = this.captures.get(input.requestId);
     if (pending) {
       requireThat(identity === pending.identity, 'This request identity already contains different wording.');
       return pending.task;
     }
-    const task = this.captureIssue(input, identity, folder);
+    const task = this.captureIssue(input, identity, folder, grouping);
     this.captures.set(input.requestId, { identity, task });
     try {
       return await task;
@@ -1753,7 +1879,7 @@ class IssueFlows {
       this.captures.delete(input.requestId);
     }
   }
-  async captureIssue(input, identity, folder) {
+  async captureIssue(input, identity, folder, grouping) {
     const directory = join(this.store.directory, 'captures');
     const receiptPath = join(directory, input.requestId + '.json');
     const publish = (id) =>
@@ -1774,8 +1900,10 @@ class IssueFlows {
       }
       const path = storedIssuePath(this.service.root, receipt.id);
       if (!existsSync(path)) {
-        mkdirSync(dirname(path), { recursive: true });
-        writeFileSync(path, receipt.content, { flag: 'wx', mode: 0o600 });
+        this.groups.writeCapture(grouping, () => {
+          mkdirSync(dirname(path), { recursive: true });
+          writeFileSync(path, receipt.content, { flag: 'wx', mode: 0o600 });
+        });
       }
       if (!existsSync(this.store.path(receipt.id))) {
         const issue = { ...receipt.metadata, content: receipt.content };
@@ -1809,7 +1937,8 @@ class IssueFlows {
       request_type: input.type || inferType(input.description),
       category: (input.type || inferType(input.description)) === 'bug' ? 'bug' : 'enhancement',
       ...(input.runRetro && { run_retro: true }),
-      ...(folder && { folder }),
+      ...capturedFolderMetadata(this.service.root, folder),
+      ...captureGroupMetadata(grouping),
     };
     const content = formatIssueReport(
       '---\n' +
@@ -1827,10 +1956,12 @@ class IssueFlows {
     flow.folder = folder;
     mkdirSync(directory, { recursive: true });
     const receipt = { id, identity, content, metadata, startingPoint, folder };
-    writeJson(receiptPath, { ...receipt, flow, complete: false });
     const path = storedIssuePath(this.service.root, id);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, content, { flag: 'wx', mode: 0o600 });
+    this.groups.writeCapture(grouping, () => {
+      writeJson(receiptPath, { ...receipt, flow, complete: false });
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, content, { flag: 'wx', mode: 0o600 });
+    });
     this.store.save(flow, 0);
     queueIssueNumbers(this.service.root, [id]);
     writeJson(receiptPath, { ...receipt, flow, complete: true });
@@ -1965,6 +2096,7 @@ class IssueFlows {
     return this.view(issue.id);
   }
   close() {
+    this.overnight.close();
     this.autoplay.clear();
     for (const active of this.active.values()) active.controller.abort();
     this.executor.close();

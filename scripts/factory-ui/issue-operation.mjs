@@ -1,9 +1,11 @@
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import { requireIndependentIssue } from './issue-group.mjs';
 import { requireThat } from './common.mjs';
 
 const leased = new WeakMap();
 
 export async function factoryBoundary(service, issueId) {
+  requireIndependentIssue(service.root, issueId);
   requireThat(
     !flowOwnsIssue(service, issueId),
     'A flow block owns this issue. Stop it before starting a classic operation.'
@@ -13,11 +15,13 @@ export async function factoryBoundary(service, issueId) {
 }
 
 export async function factoryOperation(service, issueId, operation, perform) {
+  requireIndependentIssue(service.root, issueId);
   requireThat(
     !flowOwnsIssue(service, issueId),
     'A flow block owns this issue. Stop it before starting a classic operation.'
   );
   const run = async () => {
+    requireIndependentIssue(service.root, issueId);
     const issues = leased.get(service) || new Set();
     leased.set(service, issues);
     issues.add(issueId);

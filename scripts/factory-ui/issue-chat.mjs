@@ -1,4 +1,5 @@
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import { requireIndependentIssue } from './issue-group.mjs';
 import { existsSync } from 'node:fs';
 import { interruptCodexTurn } from './codex.mjs';
 import { startIssueStrategy, strategyBasis } from './issue-strategy.mjs';
@@ -144,6 +145,7 @@ class IssueChats {
   }
   async send(input) {
     validateMessage(input);
+    if (input.mode !== 'comment') requireIndependentIssue(this.service.root, input.issueId);
     requireThat(
       !flowOwnsIssue(this.service, input.issueId),
       'A flow block owns this issue. Stop it before sending a classic chat prompt.'

@@ -9,11 +9,12 @@
     <script src="/server-control-ui.js" defer></script>
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
+    <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
   </head>
   <body>
     <div id="app" class="workspace">
-      <aside class="sidebar" aria-label="Issues">
+      <aside class="sidebar" aria-label="Factory sidebar">
         <div class="project-header">
           <a class="brand" href="/flow" aria-label="Factory home"
             ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
@@ -59,10 +60,21 @@
           ><span aria-hidden="true">⌕</span
           ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
         /></label>
+        <section class="sidebar-files" aria-label="Files">
+          <div class="sidebar-heading">
+            <span>Files</span>
+            <button type="button" class="small-button" id="add-sidebar-folder">Add Folder…</button>
+          </div>
+          <div id="sidebar-file-tree"></div>
+          <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
+        </section>
         <div class="sidebar-heading">
           <span>Issues</span
           ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
         </div>
+        <button type="button" class="small-button" id="migrate-issue-folders" hidden>
+          Move existing issue folders
+        </button>
         <nav id="issue-list" class="issue-list" aria-label="Issue list">
           <p class="sidebar-empty">Loading issues…</p>
         </nav>
@@ -83,7 +95,7 @@
       <main class="flow-main">
         <header class="flow-heading">
           <div class="breadcrumb">
-            <span>Workspace</span><span class="breadcrumb-divider">/</span><span>Issue flow</span>
+            <span>Workspace</span><span class="breadcrumb-divider">/</span><span id="flow-view-title">Issue flow</span>
           </div>
           <div class="flow-heading-actions">
             <button class="small-button view-inspect-toggle" id="view-inspect" type="button" aria-pressed="false">
@@ -191,11 +203,18 @@
               >
             </div>
           </details>
-          <select class="environment-chip" id="issue-approval-menu" aria-label="Needs approval" hidden>
-            <option value="" disabled selected>Needs approval</option>
-            <option value="approve-issue">Approve</option>
-            <option value="delete-pending-issue">Delete</option>
-          </select>
+          <button class="environment-chip issue-approve-control" id="approve-issue" type="button" hidden>
+            Approve
+          </button>
+          <button
+            class="environment-chip issue-delete-control"
+            id="delete-pending-issue"
+            type="button"
+            title="Permanently delete this unapproved issue"
+            hidden
+          >
+            Delete
+          </button>
           <select class="environment-chip" id="issue-archive-menu" aria-label="Archive" hidden>
             <option value="" disabled selected>Archive</option>
             <option value="archive">Archive issue</option>
@@ -204,6 +223,53 @@
             <option value="cleanup">Run Cleanup</option>
           </select>
         </div>
+        <section id="folder-workspace" class="folder-workspace" aria-labelledby="folder-workspace-title" hidden>
+          <h1 id="folder-workspace-title"></h1>
+          <div class="folder-controls">
+            <label for="folder-selection-strategy">Selection strategy</label>
+            <select id="folder-selection-strategy">
+              <option value="same-blast-radius">Same blast radius</option>
+              <option value="different-blast-radii">Different blast radii</option>
+            </select>
+            <button class="small-button" type="button" data-folder-command="recommend">Recommend issues</button>
+          </div>
+          <h2>Issues in this folder</h2>
+          <p class="muted" id="folder-selection-summary" aria-live="polite"></p>
+          <ul id="folder-member-list" class="folder-issues" aria-label="Issues in this folder"></ul>
+          <div class="folder-controls">
+            <button class="small-button" type="button" data-folder-command="group">Propose master issue</button>
+            <button class="small-button" type="button" data-folder-command="plan-night">Work All Night</button>
+            <button class="small-button" type="button" data-folder-command="remove">Remove from folder</button>
+          </div>
+          <form id="folder-group-form" class="folder-preview" hidden>
+            <h2>Combined request</h2>
+            <label for="folder-master-wording">Review and edit the master issue request</label>
+            <textarea id="folder-master-wording" rows="8" maxlength="24000" required></textarea>
+            <div class="folder-controls">
+              <button class="primary-button" type="submit">Create master issue</button>
+              <button class="small-button" type="button" data-folder-command="cancel-group">Cancel</button>
+            </div>
+          </form>
+          <section id="folder-night-preview" class="folder-preview" aria-label="Overnight plan" hidden></section>
+          <section id="folder-night-report" class="folder-preview" aria-label="Overnight report" hidden></section>
+          <form id="folder-scan-form" class="folder-preview">
+            <h2>Find issues to add</h2>
+            <div class="folder-controls">
+              <label for="folder-scan-source">Search</label>
+              <select id="folder-scan-source" name="source"></select>
+              <label class="folder-check"><input type="checkbox" name="autoApprove" /> Auto-approve this scan</label>
+              <button class="small-button" type="submit">Find issues</button>
+            </div>
+          </form>
+          <form id="folder-scan-review" class="folder-preview" hidden>
+            <h2>Review suggested moves</h2>
+            <ul id="folder-scan-list" class="folder-issues" aria-label="Suggested moves"></ul>
+            <div class="folder-controls">
+              <button class="primary-button" type="submit">Move selected issues</button>
+              <button class="small-button" type="button" data-folder-command="cancel-scan">Cancel</button>
+            </div>
+          </form>
+        </section>
         <section
           id="graph-scroll"
           class="graph-scroll"
@@ -278,6 +344,7 @@
             <span data-ui-label>Artifacts</span> <span id="artifact-count"></span>
           </button>
         </div>
+        <section id="issue-grouping" class="issue-grouping" aria-label="Grouped issues" hidden></section>
         <div class="inspector-body" id="inspector-body" role="tabpanel" aria-labelledby="tab-details">
           <div class="inspector-empty">
             <span aria-hidden="true">↖</span>
@@ -482,6 +549,22 @@
         <div class="modal-footer">
           <button type="button" class="small-button" data-close-dialog="view-source-dialog">Close</button>
           <button type="submit" class="primary-button" id="view-source-save">Save and reload</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="sidebar-file-dialog" class="modal" aria-labelledby="sidebar-file-title">
+      <form id="sidebar-file-form">
+        <h2 id="sidebar-file-title"></h2>
+        <label id="sidebar-file-path-label">Path<input id="sidebar-file-path" type="text" autocomplete="off" /></label>
+        <label id="sidebar-file-text-label">Markdown<textarea id="sidebar-file-text" rows="16"></textarea></label>
+        <p id="sidebar-file-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button type="button" id="sidebar-file-browse" class="small-button" hidden>Choose Folder…</button>
+          <button type="button" id="sidebar-file-open" class="small-button" hidden>Open in editor</button>
+          <button type="button" id="sidebar-file-install" class="small-button" hidden>Install project skill</button>
+          <button type="button" id="sidebar-file-copy" class="small-button" hidden>Copy to user/</button>
+          <button type="button" id="sidebar-file-close" class="small-button">Close</button>
+          <button type="submit" id="sidebar-file-submit" class="primary-button">Save</button>
         </div>
       </form>
     </dialog>

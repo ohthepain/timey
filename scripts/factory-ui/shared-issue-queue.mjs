@@ -277,6 +277,26 @@ export function createSharedIssueQueue(service, options = {}) {
     if (receipt(id)) return;
     return checkpoint(id, reason);
   }
+  function acquireGroupClosure(issue, reason) {
+    const operation = `group-close:${reason}`;
+    const pending = flowBlockReceipt(issue.id, operation);
+    if (!pending) return acquire(issue, true, false, undefined, operation);
+    return {
+      claim: acquireFlowBlock(issue, operation, true),
+      base: pending.base,
+      baseLocation: pending.baseLocation,
+    };
+  }
+  function publishGroupClosure(issue, reason, context) {
+    const pending = receipt(issue.id);
+    if (context || pending?.flowBlock === `group-close:${reason}`) {
+      const binding = context ?? acquireGroupClosure(issue, reason);
+      return publicState(checkpoint(issue.id, reason, binding, undefined, 'closed'));
+    }
+    if (pending?.reason === reason && pending.location === 'closed' && ['failed', 'preparing'].includes(pending.status))
+      return publicState(publish(pending, true));
+    return publicState(pending);
+  }
   function finish(id, context, run, record) {
     const previous = localReport(id);
     const pr = record.work?.readiness?.url;
@@ -459,10 +479,12 @@ export function createSharedIssueQueue(service, options = {}) {
     branch: config.separateBranch,
     acquire,
     acquireForApproval,
+    acquireGroupClosure,
     acquireFlowBlock,
     releaseFlowBlock,
     capture,
     checkpoint,
+    publishGroupClosure,
     finish,
     refresh,
     refreshInBackground,

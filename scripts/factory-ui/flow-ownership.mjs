@@ -7,7 +7,8 @@ export function flowOwnsIssue(service, issueId) {
   if (
     service.flows?.active.has(issueId) ||
     service.flows?.flowBuilds?.has(issueId) ||
-    service.flows?.closureTasks?.has(issueId)
+    service.flows?.closureTasks?.has(issueId) ||
+    service.flows?.overnight?.owns(issueId)
   )
     return true;
   if (typeof issueId !== 'string' || !/^[\w-]{1,100}$/.test(issueId)) return false;

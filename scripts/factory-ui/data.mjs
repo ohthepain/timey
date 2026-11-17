@@ -39,10 +39,11 @@ function references(content, heading, ids) {
   const section = content.match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'))?.[1] || '';
   return ids.filter((id) => section.includes(id));
 }
+export const issueDependencies = (content, ids) => references(content, 'Blocked by', ids);
 function relationships(report, ids) {
   return {
     parent: references(report.content, 'Parent', ids),
-    depends: references(report.content, 'Blocked by', ids),
+    depends: issueDependencies(report.content, ids),
     related: references(report.content, 'Related(?: issues)?', ids),
   };
 }

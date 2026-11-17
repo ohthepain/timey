@@ -1,4 +1,5 @@
 import { listStoredIssues, storedIssuePath } from './factory-ui/issue-report-storage.mjs';
+import { requireIndependentIssue } from './factory-ui/issue-group.mjs';
 import { sharedIssueQueueEnabled } from './factory-ui/shared-issue-config.mjs';
 import { hasAssignmentScope } from './factory-assignment-scope.mjs';
 import { verificationStart } from './issue-verification-start.mjs';
@@ -469,6 +470,7 @@ export function factory(project) {
         assert(closed, 'Lifecycle has no closed-role mapping.');
         for (const id of action.issues) {
           const report = current.find((entry) => entry.metadata.id === id).metadata;
+          requireIndependentIssue(root, id);
           validateDispatchableReport(report, action, closed);
         }
         action.status = 'reserved';

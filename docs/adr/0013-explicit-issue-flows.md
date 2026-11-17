@@ -153,7 +153,7 @@ Cleanup runs last. If Retro fails, Cleanup waits for a retry or an explicit
 choice to continue. Closing as **Fixed** still requires retained evidence and
 all acceptance checks. Auto-close requires explicit consent for the delivery
 and starts only after Factory confirms its own Merge. Pending issues replace
-Worktree and Close with **Needs approval**.
+Worktree and Close with **Approve** and **Delete**.
 
 See [Close and Cleanup](../plans/flow-close-cleanup.md) and
 [Issue retros](../plans/issue-retros.md).

@@ -146,6 +146,29 @@ test('a stopped runner holds its claim until a human publishes the report', (t) 
   assert.equal(git(remote, 'ls-tree', 'dev', '.issues/issue-work/'), '');
 });
 
+test('an interrupted group closure resumes its claim and publishes to Closed', (t) => {
+  const { remote, first } = fixture(t);
+  const reason = 'Sub-issue fixed by master issue';
+  const { queue: firstRun } = queue(first, () => assert.fail('The first runner was interrupted before publication.'));
+  const issue = { id: issueId, content: original };
+  assert.equal(firstRun.refresh(true), null);
+  const claim = firstRun.acquireGroupClosure(issue, reason).claim;
+  const reviews = [];
+  const { queue: restarted } = queue(first, (record) => {
+    reviews.push(record);
+    return { number: 1, url: 'https://example.test/queue/1' };
+  });
+  assert.equal(restarted.acquireGroupClosure(issue, reason).claim.oid, claim.oid);
+  const closed = `---\nid: ${issueId}\ntitle: Shared report\nstate: closed\nclosure:\n  reason: fixed-by\n---\n\n# Shared report\n`;
+  writeFileSync(join(first, reportPath), closed);
+  assert.equal(restarted.publishGroupClosure({ ...issue, content: closed }, reason).status, 'review');
+  git(remote, 'update-ref', 'refs/heads/dev', reviews[0].commit);
+  assert.equal(restarted.refresh(true), null);
+  assert.equal(restarted.view(issueId).checkpoint.status, 'published');
+  assert.equal(existsSync(join(first, reportPath)), false);
+  assert.match(readFileSync(join(first, `.issues/closed/${issueId}.md`), 'utf8'), /reason: fixed-by/);
+});
+
 test('shared archive and restore keep a local copy through failed publication and review', (t) => {
   const { remote, first, second, relative: closedPath, contents } = fixture(t, true);
   const archivePath = `.issues/archive/${issueId}.md`;

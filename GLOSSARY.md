@@ -144,9 +144,21 @@ the report ID, never reused after deletion, and distinct from a GitHub pull requ
 number.
 
 **Issue folder**:
-A user-named local grouping of issues, stored separately from issue reports and
-lifecycle state. Moving an issue between folders changes its organization only;
-implementation order remains separately saved.
+A project folder configured to show assigned issues and issue actions alongside
+its files. The issue reports live in the queue.
+_Avoid_: Issue group
+
+**Selection strategy**:
+A rule for recommending which issues to select and explaining why they fit
+together.
+
+**Master issue**:
+An issue that combines requests from selected issues and owns the work needed to
+fulfill them.
+
+**Sub-issue**:
+An original issue whose work belongs to a master issue. It keeps its own identity
+and report and cannot start work independently while attached.
 
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
@@ -197,6 +209,10 @@ intent. Publication, merge, successful checks and strategy completion do not imp
 **Issue closure**:
 The recorded decision to end work on an issue, either with an accepted fix or a
 stated reason for closing without a fix. It is independent of historical lifecycle stages.
+
+**Fixed by**:
+The closure reason for a sub-issue whose fix the user accepted by closing its
+master issue as Fixed.
 
 **Issue cleanup**:
 Removal of a closed issue's worktree and any selected local or remote issue

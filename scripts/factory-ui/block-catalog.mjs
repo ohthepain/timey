@@ -2,12 +2,11 @@ import { copyFileSync, constants, lstatSync, mkdirSync, readFileSync, readdirSyn
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
 import { digest } from './common.mjs';
-import { uiDirectory } from './ui-source.mjs';
+import { systemFlowDirectory } from './ui-source.mjs';
 
-const blockPath = 'flow/blocks';
-export const userBlocks = 'factory/ui/overrides/' + blockPath;
-export const blockExtensions = 'factory/ui/extensions/' + blockPath;
-const bundledBlocks = join(uiDirectory(), 'views', blockPath);
+export const userBlocks = 'user/flow/overrides/blocks';
+export const blockExtensions = 'user/flow/extensions/blocks';
+const bundledBlocks = join(systemFlowDirectory(), 'blocks');
 const markdown = new MarkdownIt({ html: false });
 const colors = new Set(['neutral', 'yellow', 'orange', 'green', 'blue']);
 const fields = new Set(['label', 'color', 'order', 'defaultSkill']);

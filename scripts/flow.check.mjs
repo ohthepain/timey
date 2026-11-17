@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
 import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-block-data.mjs';
+import { giveIssueFolderCopyNewId } from './factory-ui/issue-folder-settings.mjs';
 import { FlowStore, newFlow, editFlow } from './factory-ui/flow-store.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowObserver } from './factory-ui/flow-observer.mjs';
@@ -76,13 +77,13 @@ test('Markdown block defaults apply to new blocks and user definitions keep the 
   assert.match(work.content.html, /<li>Keep the command output\.<\/li>/);
   assert.doesNotMatch(work.content.html, /Legacy note/);
   assert.equal(work.content.extension, extension);
-  assert.equal(work.content.extensionPath, 'factory/ui/extensions/flow/blocks/work.md');
+  assert.equal(work.content.extensionPath, 'user/flow/extensions/blocks/work.md');
   const workOverride = readFileSync(workPath, 'utf8');
   const checksumForDeclaration = (declaration) => {
     writeFileSync(workPath, workOverride + '\n# User extensions\n\n`' + declaration + '`\n');
     return catalog.read().entries.find((entry) => entry.id === 'work').checksum;
   };
-  assert.equal(checksumForDeclaration('factory/ui/extensions/flow/blocks/work.md'), checksumForDeclaration('work.md'));
+  assert.equal(checksumForDeclaration('user/flow/extensions/blocks/work.md'), checksumForDeclaration('work.md'));
   assert.doesNotMatch(work.content.html, /Skill list/);
   assert.equal(
     extended.entries.some((entry) => entry.id === 'work_user'),
@@ -204,6 +205,125 @@ test('issue Play runs Update Branch without confirmation and Pause lets the acti
   assert.equal((await view()).autoplay.mode, 'paused');
   await action('play');
   assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Flow complete' });
+});
+
+test('Work All Night keeps dependency failures separate and retains the exact handoff', async (t) => {
+  const { id, root, service } = fixture(t);
+  const dependent = '20261113-dependent';
+  const child = '20261113-dependent-child';
+  const independent = '20261113-independent';
+  for (const next of [dependent, child, independent]) {
+    const dependency = next === child ? `\n## Blocked by\n\n- ${id}\n` : '';
+    const grouping = next === dependent ? `issue_group:\n  children:\n    - id: ${child}\n` : '';
+    writeFileSync(
+      join(root, '.issues', next + '.md'),
+      `---\nid: ${next}\ntitle: Repair ${next}\nstate: backlog\ncreated: 2026-11-13T12:00:00Z\n${grouping}---\n\n## Original request\n\nFix an issue.\n${dependency}`
+    );
+  }
+  const started = [];
+  const flows = createIssueFlows(service, {
+    clarify: async () => ({ artifacts: { values: { type: 'bug', goal: 'Repair Save' } } }),
+    executor: executor(async ({ issue, block, input }) => {
+      started.push([issue.id, block.kind]);
+      if (issue.id === id) return { status: 'blocked', summary: 'Save regression check failed.' };
+      if (block.kind === 'publish') assert.equal(input.automaticPublication, true);
+      if (block.kind === 'merge') {
+        assert.equal(input.prepareMerge, true);
+        return {
+          status: 'blocked',
+          summary: 'PR checks passed.',
+          result: { mergeConfirmation: { pr: 5 }, verification: { head: 'verified' } },
+        };
+      }
+      return { summary: 'Done' };
+    }),
+  });
+  t.after(() => flows.close());
+  const folder = 'Save repairs';
+  const issueIds = [id, dependent, independent];
+  for (const issueId of issueIds) {
+    const flow = flows.read(flows.selected(issueId));
+    flow.folder = folder;
+    flows.store.save(flow, flow.revision);
+  }
+  const plan = await flows.action({ action: 'folder-night-plan', folder, issueIds });
+  assert.deepEqual(
+    plan.issues.map((issue) => issue.id),
+    issueIds
+  );
+  await flows.action({ action: 'folder-night-start', planId: plan.id });
+  let report;
+  for (let retries = 0; retries < 100; retries += 1) {
+    report = flows.overnight.reports()[folder];
+    if (report.status === 'finished') break;
+    await delay(20);
+  }
+  assert.equal(report.status, 'finished');
+  assert.deepEqual(
+    report.issues.map(({ status }) => status),
+    ['paused', 'paused', 'ready']
+  );
+  assert.equal(report.issues[0].failedCheck, 'Work');
+  assert.match(report.issues[0].summary, /regression check failed/);
+  assert.match(report.issues[1].summary, /Blocked by/);
+  assert.equal(report.issues[2].pr, 5);
+  assert.deepEqual(started, [
+    [id, 'work'],
+    [independent, 'work'],
+    [independent, 'publish'],
+    [independent, 'merge'],
+  ]);
+  const restarted = createIssueFlows(service, { executor: executor(() => assert.fail('Replayed saved work')) });
+  t.after(() => restarted.close());
+  assert.deepEqual(restarted.overnight.reports()[folder], report);
+});
+
+test('stopping Work All Night cancels the owned block and leaves queued issues untouched', async (t) => {
+  const { id, root, service } = fixture(t);
+  const queued = '20261113-queued';
+  writeFileSync(
+    join(root, '.issues', queued + '.md'),
+    `---\nid: ${queued}\ntitle: Queued issue\nstate: backlog\ncreated: 2026-11-13T12:00:00Z\n---\n\n## Original request\n\nFix an issue.\n`
+  );
+  const started = Promise.withResolvers();
+  const stopped = Promise.withResolvers();
+  const flows = createIssueFlows(service, {
+    clarify: async () => ({ artifacts: { values: { type: 'bug', goal: 'Repair Save' } } }),
+    executor: executor(async ({ issue, signal }) => {
+      assert.equal(issue.id, id);
+      started.resolve();
+      return new Promise((resolve) => {
+        signal.addEventListener('abort', () => {
+          stopped.resolve();
+          resolve({ status: 'stopped', summary: 'Partial work retained.' });
+        });
+      });
+    }),
+  });
+  t.after(() => flows.close());
+  const folder = 'Save repairs';
+  for (const issueId of [id, queued]) {
+    const flow = flows.read(flows.selected(issueId));
+    flow.folder = folder;
+    flows.store.save(flow, flow.revision);
+  }
+  const plan = await flows.action({ action: 'folder-night-plan', folder, issueIds: [id, queued] });
+  await flows.action({ action: 'folder-night-start', planId: plan.id });
+  await started.promise;
+  await flows.action({ action: 'folder-night-stop', folder });
+  await stopped.promise;
+  let report;
+  for (let retries = 0; retries < 100; retries += 1) {
+    report = flows.overnight.reports()[folder];
+    if (report.status === 'stopped') break;
+    await delay(20);
+  }
+  assert.equal(report.status, 'stopped');
+  assert.deepEqual(
+    report.issues.map(({ status }) => status),
+    ['stopped', 'stopped']
+  );
+  assert.ok(flows.read(flows.selected(queued)).blocks.every((block) => !block.attempts.length));
 });
 
 test('issue Play pauses on failure and Stop, retries once, and does not recover after restart', async (t) => {
@@ -707,14 +827,94 @@ test('a changed Request type applies its default Markdown flow and preserves ear
   assert.equal((await flows.view()).issues.length, 2);
 });
 
+test('folder scans move only current eligible recommendations and a move lock still allows removal', async (t) => {
+  const { service, id } = fixture(t);
+  const suggested = [];
+  const flows = (service.flows = createIssueFlows(service, {
+    executor: executor(async () => assert.fail('A folder operation cannot start issue work')),
+    recommendFolderIssues: async (strategy, candidates) => {
+      suggested.push({ strategy, ids: candidates.map((candidate) => candidate.id) });
+      return candidates.map(({ id }) => ({ id, reason: 'Both reports concern saved values.' }));
+    },
+  }));
+  await flows.action({ action: 'create-folder', name: 'Save fixes' });
+  await flows.action({ action: 'create-folder', name: 'Later' });
+  const scan = {
+    action: 'folder-scan',
+    folder: 'Save fixes',
+    strategy: 'same-blast-radius',
+    sourceFolder: null,
+  };
+  const preview = await flows.action(scan);
+  assert.deepEqual(
+    preview.candidates.map((candidate) => candidate.id),
+    [id]
+  );
+
+  const lock = { action: 'folder-lock', issueId: id };
+  let view = await flows.action({ ...lock, revision: 0, locked: true });
+  assert.equal(view.flow.folderLocked, true);
+  await assert.rejects(
+    flows.action({ action: 'folder-move', folder: scan.folder, scanId: preview.id, issueIds: [id] }),
+    /no longer eligible/
+  );
+  await assert.rejects(
+    flows.action({ action: 'folder', issueId: id, revision: view.flow.revision, folder: scan.folder }),
+    /protected/
+  );
+  assert.deepEqual((await flows.action({ ...scan, autoApprove: true })).candidates, []);
+  assert.equal(suggested.length, 1);
+
+  await flows.action({ ...lock, revision: view.flow.revision, locked: false });
+  assert.equal((await flows.action({ ...scan, autoApprove: true })).moved, 1);
+  view = await flows.view(id);
+  assert.equal(view.flow.folder, scan.folder);
+  view = await flows.action({ ...lock, revision: view.flow.revision, locked: true });
+  await assert.rejects(
+    flows.action({ action: 'folder', issueId: id, revision: view.flow.revision, folder: 'Later' }),
+    /protected/
+  );
+  await flows.action({ action: 'folder-remove', folder: scan.folder, issueIds: [id] });
+  view = await flows.view(id);
+  assert.equal(view.flow.folder, null);
+  assert.equal(view.flow.folderLocked, true);
+});
+
+test('moving an existing issue folder preserves report membership by ID', async (t) => {
+  const { root, id, service } = fixture(t);
+  const flows = createIssueFlows(service, { executor: executor(async () => ({})) });
+  const issue = flows.selected(id);
+  const legacy = flows.read(issue);
+  legacy.folder = 'Releases';
+  flows.store.save(legacy, legacy.revision);
+  writeFileSync(join(flows.store.directory, 'folders.json'), JSON.stringify(['Releases']));
+  const migration = await flows.action({ action: 'migrate-folders' });
+  assert.equal(migration.migratedIssues, 1);
+  assert.equal((await flows.view(id)).flow.folder, 'Releases');
+  const assignment = flows.selected(id).folder_id;
+  assert.match(readFileSync(join(root, 'user/Releases/folder.md'), 'utf8'), new RegExp(assignment));
+  renameSync(join(root, 'user/Releases'), join(root, 'user/Shipping'));
+  assert.equal((await flows.view(id)).flow.folder, 'Shipping');
+  assert.equal(flows.selected(id).folder_id, assignment);
+  renameSync(join(root, 'user/Shipping'), join(root, 'Detached'));
+  assert.equal((await flows.view(id)).flow.folder, null);
+  renameSync(join(root, 'Detached'), join(root, 'user/Shipping'));
+  assert.equal((await flows.view(id)).flow.folder, 'Shipping');
+  cpSync(join(root, 'user/Shipping'), join(root, 'user/Copy'), { recursive: true });
+  assert.equal((await flows.view(id)).flow.folder, null);
+  const copy = giveIssueFolderCopyNewId(root, 'Copy');
+  assert.notEqual(copy.id, assignment);
+  assert.equal((await flows.view(id)).flow.folder, 'Shipping');
+});
+
 test('project defaults append, builders run once, and Markdown changes apply only on request', async (t) => {
   const { root, service } = fixture(t);
-  const extensionDir = join(root, 'factory/ui/extensions/flow');
+  const extensionDir = join(root, 'user/flow/extensions');
   mkdirSync(join(extensionDir, 'definitions'), { recursive: true });
   const promptPath = join(extensionDir, 'definitions/delivery.md');
   writeFileSync(promptPath, 'Start with the **review** block.\n');
-  const customDir = join(root, 'factory/ui/flows');
-  mkdirSync(customDir);
+  const customDir = join(root, 'user/flow/definitions');
+  mkdirSync(customDir, { recursive: true });
   writeFileSync(
     join(customDir, 'quick.md'),
     `---
@@ -795,7 +995,7 @@ blocks:
 
 test('extension frontmatter replaces the block list before the builder reads both prompts', async (t) => {
   const { root, id, service } = fixture(t);
-  const directory = join(root, 'factory/ui/flows');
+  const directory = join(root, 'user/flow/definitions');
   mkdirSync(directory, { recursive: true });
   mkdirSync(join(root, 'team'));
   writeFileSync(
@@ -839,7 +1039,10 @@ Team instructions.
     },
   });
   const updated = await flows.action({ action: 'select-flow', issueId: id, revision: 0, flowId: 'review' });
-  assert.deepEqual(updated.flowDefinitions.exportSuggestion, { flowId: 'team-review', directory: 'factory/ui/flows' });
+  assert.deepEqual(updated.flowDefinitions.exportSuggestion, {
+    flowId: 'team-review',
+    directory: 'user/flow/definitions',
+  });
   assert.deepEqual(
     updated.flow.blocks.map(({ kind }) => kind),
     ['request', 'design']
@@ -909,7 +1112,7 @@ test('export links the exact current structure without rebuilding or changing pr
   assert.equal(exported.flow.definition.id, 'with-advice');
   assert.equal(exported.flowDefinitions.exportSuggestion.flowId, 'with-advice-2');
   assert.equal(exported.flowDefinitions.updated, false);
-  const body = readFileSync(join(root, 'factory/ui/flows/with-advice.md'), 'utf8');
+  const body = readFileSync(join(root, 'user/flow/definitions/with-advice.md'), 'utf8');
   assert.match(body, /block: advice/);
   assert.doesNotMatch(body, /progress|skill:|Build prompt/);
   assert.equal(exported.flow.blocks.find((block) => block.kind === 'work').attempts[0].status, 'completed');
@@ -943,7 +1146,7 @@ test('export links the exact current structure without rebuilding or changing pr
     /Could not link the export/
   );
   flows.store.save = save;
-  assert.equal(existsSync(join(root, 'factory/ui/flows/unlinked.md')), false);
+  assert.equal(existsSync(join(root, 'user/flow/definitions/unlinked.md')), false);
   assert.equal((await flows.view(id)).flow.definition.id, 'delivery');
 });
 

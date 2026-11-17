@@ -766,6 +766,26 @@ test('Merge verifies an unchanged PR once and requires approval of its exact com
   assert.equal(f.calls.filter((item) => item.method === 'guard').at(-1).args[2], 'merge');
 });
 
+test('overnight prepare verifies the PR and stops before automatic merge', async (t) => {
+  const f = mergeFixture(t);
+  await f.run('understand');
+  const result = await f.run('merge', {
+    definition: { mergeWorkflow: { ...humanFirstMerge.definition.mergeWorkflow, policy: 'automatic' } },
+    input: { prepareMerge: true, confirmed: true },
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.result.mergeConfirmation.pr, 9);
+  assert.equal(result.result.verification.head, result.result.mergeConfirmation.head);
+  assert.deepEqual(
+    f.observations.map(({ operation }) => operation),
+    ['verify', 'ready']
+  );
+  assert.equal(
+    f.calls.some((item) => item.method === 'guard' && item.args[2] === 'merge'),
+    false
+  );
+});
+
 test('Merge verifies and pushes each new candidate, then expires approval if the target moves again', async (t) => {
   let waits = 0;
   const f = mergeFixture(t, {

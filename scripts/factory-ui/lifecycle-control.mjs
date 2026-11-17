@@ -8,9 +8,11 @@ import { loadLifecycles, saveLifecycle } from './lifecycle-store.mjs';
 import { runLifecycle } from './lifecycle-loop.mjs';
 import { blockedHumanInput } from './lifecycle-human.mjs';
 import { respondLifecycle } from './lifecycle-input.mjs';
+import { requireIndependentIssue } from './issue-group.mjs';
 
 export function startLifecycle(service, input) {
   service.ownServer();
+  requireIndependentIssue(service.root, input.issueId);
   const queue = readQueue(service.root);
   progressIssue(queue, input.issueId, input.state);
   requireThat(

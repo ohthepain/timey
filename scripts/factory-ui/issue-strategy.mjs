@@ -1,4 +1,5 @@
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import { requireIndependentIssue } from './issue-group.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { factoryBoundary, factoryOperation } from './issue-operation.mjs';
 import { conversationContext } from './conversation-context.mjs';
@@ -580,6 +581,7 @@ function selected(service, input) {
 }
 export function startIssueStrategy(service, input) {
   service.ownServer();
+  requireIndependentIssue(service.root, input.issueId);
   const { queue, issue } = selected(service, input);
   const record = strategyRecord(service, issue);
   const old = record.work || record.chatCheckout;

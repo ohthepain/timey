@@ -102,7 +102,10 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
     'Shared issue reports require a separate queue PR.'
   );
-  if (state.workflow.policy === 'human-first' && previousApproval(ctx)?.token !== confirmation.token) {
+  if (
+    state.prepareOnly ||
+    (state.workflow.policy === 'human-first' && previousApproval(ctx)?.token !== confirmation.token)
+  ) {
     return {
       status: 'blocked',
       summary: 'PR #' + pr.number + ' passed its checks. Approve merging it into ' + pr.base.ref + '.',
@@ -206,6 +209,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
   const state = {
     folder,
     workflow,
+    prepareOnly: ctx.input?.prepareMerge === true,
     repairs: 0,
     evidence: [],
   };

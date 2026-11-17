@@ -35,6 +35,7 @@ import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs'
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { openIssueWorkFolder } from './open-issue-work-folder.mjs';
 import { createIssueFlows } from './flow-service.mjs';
+import { SidebarFiles } from './sidebar-files.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './project-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
@@ -46,10 +47,12 @@ import {
   startIssueCleanupRetry,
 } from './issue-cleanup.mjs';
 async function body(request) {
+  const limit = request.url === '/api/sidebar-files-action' ? 800000 : 65536;
+  request.setEncoding('utf8');
   let text = '';
   for await (const chunk of request) {
     text += chunk;
-    requireThat(Buffer.byteLength(text) < 65536, 'Request too large.');
+    requireThat(Buffer.byteLength(text) < limit, 'Request too large.');
   }
   return JSON.parse(text || '{}');
 }
@@ -123,7 +126,12 @@ function requireClassicIdle(service, path, value) {
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
   requireClassicIdle(service, path, value);
-  if (!(path === '/api/flow-action' && ['stop', 'pause', 'cancel-confirmation'].includes(value.action)))
+  if (
+    !(
+      path === '/api/flow-action' &&
+      ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop'].includes(value.action)
+    )
+  )
     service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
@@ -145,6 +153,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/sidebar-files-action': () => new SidebarFiles(service.root).change(value),
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
     '/api/ui-sources': () => {
       service.ownServer();
@@ -334,6 +343,9 @@ async function read(service, request, response, owner) {
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
+    '/api/sidebar-files': () => new SidebarFiles(service.root).index(),
+    '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
+    '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
     '/api/flow': () => flows(service).view(issue(selectedIssue)),
@@ -423,6 +435,7 @@ function readResource(service, request, response, owner) {
   }
   const scripts = {
     '/flow-ui.js': 'flow-ui.js',
+    '/sidebar-files-ui.js': 'sidebar-files-ui.js',
     '/view-inspection.js': 'view-inspection.js',
     '/flow.css': 'flow.css',
     '/native-chat-ui.js': 'native-chat-ui.js',

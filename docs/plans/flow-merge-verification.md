@@ -4,7 +4,7 @@ Delivery behavior for the [explicit issue flow](../adr/0013-explicit-issue-flows
 
 ## The default route
 
-The standard delivery flow goes from **Request** through **Work**, **Publish PR**, **Merge**, and **Close**. **Verify** remains available as a standalone block for an explicit checkpoint. [Standard delivery definition](../../scripts/factory-ui/views/flow/definitions/delivery.md)
+The standard delivery flow goes from **Request** through **Work**, **Publish PR**, **Merge**, and **Close**. **Verify** remains available as a standalone block for an explicit checkpoint. [Standard delivery definition](../../factory/system/flow/definitions/delivery.md)
 
 - **Work** runs its own checks and repairs failures within the approved issue scope.
 - **Publish PR** reuses valid independent Verify evidence for the exact issue commit. If the evidence is missing or stale, Publish PR runs the independent checks and records the result before pushing.
@@ -23,6 +23,6 @@ Merge can resolve straightforward conflicts and repair verification failures wit
 
 ## Markdown definitions
 
-The delivery flow Markdown defines the default block order. The **Merge** block Markdown declares the loop and stop conditions as settings the runner executes. The runner enforces the saved Destination, exact-commit verification, GitHub protection, and the applicable approval. [Merge block definition](../../scripts/factory-ui/views/flow/blocks/merge.md)
+The delivery flow Markdown defines the default block order. The **Merge** block Markdown declares the loop and stop conditions as settings the runner executes. The runner enforces the saved Destination, exact-commit verification, GitHub protection, and the applicable approval. [Merge block definition](../../factory/system/flow/blocks/merge.md)
 
 GitHub's merge request pins the PR commit. The runner rechecks the target just before the request. GitHub's target branch protection applies during the request.

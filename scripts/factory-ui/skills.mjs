@@ -42,8 +42,8 @@ export function publicSkills(skills) {
 function sourceFor(path, cwd) {
   const personal = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills') + sep;
   if (path.startsWith(personal)) return 'Personal';
-  if (relative(join(cwd, '.agents', 'skills'), path).startsWith('..')) return 'Codex';
-  return 'Project';
+  const projectSkills = [join(cwd, '.agents', 'skills'), join(cwd, 'user', 'skills')];
+  return projectSkills.some((directory) => !relative(directory, path).startsWith('..')) ? 'Project' : 'Codex';
 }
 
 function sourceLabel(value, path, cwd) {

@@ -151,3 +151,8 @@ prerequisite. Closure starts no AI turn or new verification. See the
 [direct closure design](../plans/direct-issue-closure.md).
 Project-specific reasons live in the Closed reasons table in
 `.issues/triage-labels.md`; `fixed` retains its acceptance meaning.
+
+When the user accepts a master issue as Fixed, Flow closes the attached
+sub-issues with the **Fixed by** reason. Each sub-issue uses the existing Closed
+state and links to the master. See
+[acceptance through a master issue](../adr/0014-accept-sub-issues-through-the-master.md).

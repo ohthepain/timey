@@ -633,8 +633,11 @@ an owned, drained listener. Its disposable server checks live in
 The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
-explicit attempts, invalidation, route rebuilding, folders, capture and artifact
-listing. `flow-block-data.mjs` resolves block addresses, declared inputs and
+explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+`flow-folder-selection.mjs` evaluates folder selections and checks reviewed moves
+against current issue records. `flow-grouping.mjs` owns master issue grouping.
+`flow-overnight.mjs` runs the approved folder selection to the Merge confirmation
+and retains the run report. `flow-block-data.mjs` resolves block addresses, declared inputs and
 retained outputs. `flow-request.mjs` derives the Request fields through a
 temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
 Codex conversations and uses the protected operation adapters for delivery. `flow-observer.mjs` reads local Git state and separately cached PR facts.
@@ -656,7 +659,7 @@ Work operation.
 
 The block document's `# Skill list` section defines suggested skills. Its
 `# User extensions` section gives the project-relative path to the optional file under
-`factory/ui/extensions/flow/blocks/`, which the catalog appends as display content.
+`user/flow/extensions/blocks/`, which the catalog appends as display content.
 
 `factory-ui/flow-definitions.mjs` loads Markdown flow definitions and project
 defaults, computes the definition checksum, and writes exported definitions.

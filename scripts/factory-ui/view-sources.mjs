@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { uiDirectory } from './ui-source.mjs';
+import { systemFlowDirectory } from './ui-source.mjs';
 import { BlockCatalog, userBlocks } from './block-catalog.mjs';
 
 const views = [
@@ -12,13 +12,13 @@ const views = [
     sections: ['details-tab', 'conversation-tab', 'artifacts-tab'],
   },
 ];
-const overrideRoot = 'factory/ui/overrides';
+const overrideRoot = 'user/flow/overrides';
 const digest = (text) => createHash('sha256').update(text).digest('hex');
 const revisionOf = (text) => digest(JSON.stringify(text));
 
 function viewFiles(view) {
-  const path = join(uiDirectory(), 'views', view.id + '.md');
-  const overridePath = `${overrideRoot}/${view.id}.md`;
+  const path = join(systemFlowDirectory(), view.id.slice('flow/'.length) + '.md');
+  const overridePath = join(overrideRoot, view.id.slice('flow/'.length) + '.md');
   return { bundled: { path, text: readFileSync(path, 'utf8') }, overridePath };
 }
 

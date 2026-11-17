@@ -35,6 +35,22 @@ issue. New issues snapshot the configured delivery branch's current commit. The
 selector locks when work starts or a checkout exists. Selecting a branch leaves
 the project's checkout in place.
 
+Select a folder name to see its issues and actions in the center column. The
+triangle beside the name shows or hides the sidebar rows. It points down when
+expanded and right when collapsed. Choose a
+selection strategy to see suggested issues and the reasons for selecting them.
+Adjust the selection before grouping issues or starting overnight work. **Find
+issues to add** can scan another folder or the open queue. Review the proposed
+moves or choose automatic approval for that scan. To keep an issue out of future
+folder moves, enable **Prevent moves into folders** on its Request block.
+
+**Group into one** previews a master issue with the selected requests. Creating
+it leaves the original issues linked and assigns their work to the master.
+**Work All Night** starts the reviewed list and prepares verified PRs for you to
+merge. The folder shows the run report and the next action for issues that paused.
+See the [folder design](../plans/issue-folder-strategies.md) for the master issue's
+acceptance and detachment rules.
+
 Destination follows the starting branch by default. Open its picker to list
 branches on the configured GitHub remote. Selecting a branch pins it. Choose
 **Follow starting branch** to restore the default. A local starting branch matches
@@ -137,6 +153,22 @@ refresh. Earlier visible stages are not marked complete merely because the issue
 currently sits later in the lifecycle. Saved timestamps and report notes provide
 history where it exists; missing historical transitions are not reconstructed.
 Unmatched assignment kinds stay visible under Other work.
+
+### Files and issue folders
+
+The Files tree shows the installation's flow and skill Markdown and the
+project's `user/` directory. Use **Add Folder** to browse another directory
+in place. Files under `user/` are editable. Use **Install project skill** on
+`user/skills/<name>/SKILL.md` to make the skill visible to Codex. Custom flow
+definitions live in `user/flow/definitions/`.
+
+Enable issue actions for a directory under `user/` to create its `folder.md`.
+The directory then offers **View assigned issues** and **New issue** alongside
+its files. Use **Move existing issue folders** to convert virtual folders and
+store assignments on the issue reports. The **Issues** tree shows **Open**,
+**Closed**, and **Archived**. See the
+[sidebar folder design](../plans/factory-sidebar-folders.md) for the planned
+report storage migration.
 
 ## Queue sorting
 
@@ -1281,8 +1313,8 @@ closure to reach the shared queue.
 
 Create issue offers **Run a retro** and **Needs approval**. Both start unchecked.
 Retro files follow-ups in **Retro items** as **Needs approval**. **Approve**
-keeps the item in its folder and restores normal controls. **Delete** asks for
-confirmation before removing the item. [Issue retros](../plans/issue-retros.md)
+keeps the item in its folder and restores normal controls. **Delete** removes
+the proposal with one click. [Issue retros](../plans/issue-retros.md)
 
 When an open issue has a saved strategy PR and checkout, **Verify this commit again**
 appears beside **Close with reason…**. It reruns the required local checks against
