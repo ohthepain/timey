@@ -146,6 +146,11 @@
             <span class="muted" id="playback-status" aria-live="polite"></span>
           </div>
         </section>
+        <div id="shared-queue-status" class="environment" hidden>
+          <span id="shared-queue-message" role="status"></span>
+          <a id="shared-queue-review" target="_blank" rel="noopener" hidden>Review queue PR</a>
+          <button id="shared-queue-action" class="small-button" type="button" hidden></button>
+        </div>
         <div id="environment" class="environment" hidden>
           <div id="environment-status" class="environment-status"></div>
           <select class="environment-chip warning" id="target-update-menu" aria-label="Target branch is ahead" hidden>

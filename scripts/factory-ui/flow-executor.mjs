@@ -562,6 +562,14 @@ function retainCandidateIdentity(definition, retained, workspace, head) {
   return candidate;
 }
 
+function assertSharedBlockClaim(service, { block, issue }) {
+  if (!service.sharedIssues || block.kind === 'retro') return;
+  requireThat(
+    service.sharedIssues.view(issue.id).local,
+    'Acquire this shared issue through its protected claim operation before running a block.'
+  );
+}
+
 async function runModel(service, ctx, owned, options) {
   requireThat(
     ctx.block.kind !== 'prototype' || ctx.block.prompt?.trim(),
@@ -571,10 +579,7 @@ async function runModel(service, ctx, owned, options) {
     ctx.block.kind !== 'edit' || ctx.block.edits?.some((edit) => edit.enabled),
     'Enable at least one edit before starting this block.'
   );
-  requireThat(
-    !service.sharedIssues || service.sharedIssues.view(ctx.issue.id).local,
-    'Acquire this shared issue through its protected claim operation before running a block.'
-  );
+  assertSharedBlockClaim(service, ctx);
   const workspace = await workspaceFor(service, ctx);
   const sandbox = readOnlyBlocks.has(ctx.block.kind) ? 'read-only' : 'workspace-write';
   if (sandbox === 'workspace-write') guardBlock(service, ctx, 'implement', workspace.base);

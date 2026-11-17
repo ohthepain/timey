@@ -248,18 +248,25 @@ class IssueFlows {
     const path = join(this.store.directory, 'folders.json');
     return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : [];
   }
+  refreshSharedQueue() {
+    if (!this.service.sharedIssues) return undefined;
+    this.service.ownServer();
+    return this.service.sharedIssues.refresh();
+  }
   async view(id) {
+    const sharedQueueWarning = this.refreshSharedQueue();
     const issues = this.issues();
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
     let branches = [];
     let branchCatalogError;
     try {
-      branches = await flowBranches(this.service.root);
+      branches = await this.codeBranches();
     } catch (error) {
       branchCatalogError = error.message;
     }
     const data = {
       project: basename(this.service.root),
+      sharedQueueWarning,
       branches,
       ...(branchCatalogError ? { branchCatalogError } : {}),
       folders: [...new Set([...this.folders(), ...issues.map((issue) => issue.folder).filter(Boolean)])],
@@ -371,6 +378,7 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
+      sharedQueue: this.service.sharedIssues?.view(id),
       closureBusy: this.closureBusy(id),
       autoplay: this.autoplay.get(id) ?? { mode: 'paused' },
       destination: {
@@ -1036,6 +1044,8 @@ class IssueFlows {
     const block = makeBlock('update-branch', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
     const controller = new AbortController();
+    const queue = this.service.sharedIssues;
+    const claim = queue?.acquireFlowBlock(issue, block.id, false);
     this.pauseAutoplay(issue.id, 'Updating the branch manually.');
     this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
     let outcome;
@@ -1043,6 +1053,7 @@ class IssueFlows {
       outcome = await this.executor.run({ issue, flow, block, attempt, signal: controller.signal });
     } finally {
       this.active.delete(issue.id);
+      if (claim) queue.releaseFlowBlock(claim);
     }
     return { ...(await this.view(issue.id)), branchUpdateSummary: outcome.summary };
   }
@@ -1232,6 +1243,12 @@ class IssueFlows {
   lockedDestination(pr) {
     return { branch: pr.branch, pr: pr.number, url: pr.url, title: pr.title };
   }
+  async codeBranches() {
+    const queue = this.service.sharedIssues?.branch;
+    return (await flowBranches(this.service.root)).filter(
+      ({ ref }) => ref.replace(/^refs\/(?:heads\/|remotes\/[^/]+\/)/, '') !== queue
+    );
+  }
   deliveryProvider(flow, workspace = flowWorkspace(this.service, flow)) {
     const checkout = workspace?.checkout && existsSync(workspace.checkout) ? workspace.checkout : this.service.root;
     return flowDeliveryProvider(this.service, { flow }, { checkout }, this.deliveryOptions);
@@ -1239,7 +1256,11 @@ class IssueFlows {
   async destinationBranches(flow) {
     try {
       const branches = await flowRemoteBranches(this.deliveryProvider(flow));
-      return { branches: [...branches.keys()].sort((a, b) => a.localeCompare(b)) };
+      return {
+        branches: [...branches.keys()]
+          .filter((branch) => branch !== this.service.sharedIssues?.branch)
+          .sort((a, b) => a.localeCompare(b)),
+      };
     } catch {
       return { branchesUnavailable: true };
     }
@@ -1383,7 +1404,7 @@ class IssueFlows {
       this.startingPointEditable(issue, flow),
       'The starting point is locked after an issue has started work.'
     );
-    const point = branchStartingPoint(await flowBranches(this.service.root), input.ref);
+    const point = branchStartingPoint(await this.codeBranches(), input.ref);
     flow = this.read(issue);
     requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
     requireThat(
@@ -1451,7 +1472,8 @@ class IssueFlows {
     block.suggested = false;
     block.attempts.push(attempt);
     const controller = new AbortController();
-    this.active.set(issue.id, { blockId: block.id, attemptId: attempt.id, controller });
+    const owned = { blockId: block.id, attemptId: attempt.id, controller };
+    this.active.set(issue.id, owned);
     try {
       flow = this.store.save(flow, flow.revision);
     } catch (error) {
@@ -1463,7 +1485,7 @@ class IssueFlows {
       if (waiting.blockId === block.id && input.confirmed === true) this.autoplay.set(issue.id, { mode: 'playing' });
       else this.pause(issue.id, 'A different block was started.');
     }
-    const task = this.execute(
+    owned.task = this.execute(
       issue,
       flow,
       block.id,
@@ -1472,7 +1494,6 @@ class IssueFlows {
       { ...input, automaticPublication: block.kind === 'publish' && publication === 'play' },
       definition
     );
-    this.active.get(issue.id).task = task;
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
   changeAttempt(issue, blockId, attemptId, change = () => {}) {
@@ -1497,7 +1518,11 @@ class IssueFlows {
     }, 5000);
     checkpoint.unref();
     let outcome;
+    let claim;
+    const queue = this.service.sharedIssues;
     try {
+      if (!['request', 'retro', 'cleanup', 'close'].includes(block.kind))
+        claim = queue?.acquireFlowBlock(issue, blockId, input.action === 'continue');
       const result =
         block.kind === 'request'
           ? await this.clarify(this.service.root, definition, attempt, controller.signal)
@@ -1600,6 +1625,17 @@ class IssueFlows {
       });
     } finally {
       clearInterval(checkpoint);
+      if (claim && outcome && !unresolvedAttempt(outcome)) {
+        try {
+          queue.releaseFlowBlock(claim);
+        } catch (error) {
+          this.changeAttempt(issue, blockId, attemptId, (current) => {
+            current.status = 'uncertain';
+            current.summary = error.message;
+            outcome = current;
+          });
+        }
+      }
       if (this.active.get(issue.id)?.attemptId === attemptId) this.active.delete(issue.id);
       if (['retro', 'cleanup'].includes(block.kind) && outcome?.status === 'completed') {
         await this.closureTasks.get(issue.id);
@@ -1663,6 +1699,8 @@ class IssueFlows {
   async captureIssue(input, identity, folder) {
     const directory = join(this.store.directory, 'captures');
     const receiptPath = join(directory, input.requestId + '.json');
+    const publish = (id) =>
+      this.service.sharedIssues?.capture(id, input.needsApproval ? 'Proposed issue created' : 'Issue created');
     if (existsSync(receiptPath)) {
       const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
       requireThat(receipt.identity === identity, 'This request identity already contains different wording.');
@@ -1674,6 +1712,7 @@ class IssueFlows {
           !existsSync(storedIssuePath(this.service.root, receipt.id, 'archive'))
         )
           return { deleted: true, issueId: receipt.id };
+        if (existsSync(storedIssuePath(this.service.root, receipt.id))) publish(receipt.id);
         return this.view(receipt.id);
       }
       const path = storedIssuePath(this.service.root, receipt.id);
@@ -1689,6 +1728,7 @@ class IssueFlows {
       }
       queueIssueNumbers(this.service.root, [receipt.id]);
       writeJson(receiptPath, { ...receipt, complete: true });
+      publish(receipt.id);
       return this.view(receipt.id);
     }
     const startingPoint = await captureStartingPoint(this.service.root, flowTarget(this.service.root));
@@ -1737,8 +1777,7 @@ class IssueFlows {
     this.store.save(flow, 0);
     queueIssueNumbers(this.service.root, [id]);
     writeJson(receiptPath, { ...receipt, flow, complete: true });
-    if (this.service.sharedIssues && input.needsApproval)
-      this.service.sharedIssues.checkpoint(id, 'Proposed issue created');
+    publish(id);
     return this.view(id);
   }
   decidePendingIssue(issue, flow, input) {

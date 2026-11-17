@@ -21,6 +21,7 @@ import { createSharedIssueClaims } from './shared-issue-claims.mjs';
 import { sharedIssueQueueConfig } from './shared-issue-config.mjs';
 import { createSharedIssuePublication } from './shared-issue-publication.mjs';
 import { copySharedIssueFile, syncSharedIssueFiles } from './shared-issue-sync.mjs';
+import { flowOwnsIssue } from './flow-ownership.mjs';
 
 function withSharedProgress(report, status) {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/;
@@ -90,8 +91,9 @@ export function createSharedIssueQueue(service, options = {}) {
   }
   function active(id) {
     return (
+      flowOwnsIssue(service, id) ||
       service.lifecycleTasks.has(id) ||
-      service.issueChats.tasks.has(id) ||
+      service.issueChats.tasks?.has(id) ||
       service.store.runs.some((run) => run.issueId === id && service.store.connected.has(run.id))
     );
   }
@@ -144,7 +146,7 @@ export function createSharedIssueQueue(service, options = {}) {
     const key = (location === 'closed' ? 'closed/' : '') + id + '.md';
     return existsSync(syncState) ? readJson(syncState)[key]?.hash : undefined;
   }
-  function acquire(issue, allowDraft = false, restoring = false, storageAction) {
+  function acquire(issue, allowDraft = false, restoring = false, storageAction, flowBlock) {
     const pending = receipt(issue.id);
     requireThat(
       !pending || pending.status === 'published',
@@ -172,8 +174,30 @@ export function createSharedIssueQueue(service, options = {}) {
       throw error;
     }
     const context = { claim, base: initial.report, baseLocation: initial.location };
-    save({ id: issue.id, ...context, storageAction }, { status: 'claimed' });
+    save({ id: issue.id, ...context, storageAction, flowBlock }, { status: 'claimed' });
     return context;
+  }
+  function flowBlockReceipt(id, blockId) {
+    const pending = receipt(id);
+    if (pending && pending.status === 'claimed' && pending.flowBlock === blockId) return pending;
+  }
+  function acquireFlowBlock(issue, blockId, continuing) {
+    const pending = continuing ? flowBlockReceipt(issue.id, blockId) : undefined;
+    if (!pending) return acquire(issue, false, false, undefined, blockId).claim;
+    const claim = claims.verifyOwn(issue.id);
+    requireThat(claim, 'Reconcile the interrupted shared issue claim.');
+    requireThat(claim.oid === pending.claim.oid, 'The interrupted shared issue claim changed.');
+    return claim;
+  }
+  function releaseFlowBlock(claim) {
+    const pending = receipt(claim.issueId);
+    requireThat(pending, 'The saved flow block claim is missing.');
+    requireThat(
+      pending.status === 'claimed' && pending.flowBlock && pending.claim.oid === claim.oid,
+      'The saved flow block claim changed.'
+    );
+    release(claim.issueId, claim);
+    save(pending, { status: 'published' });
   }
   function publish(record, reprepare = false) {
     try {
@@ -209,6 +233,10 @@ export function createSharedIssueQueue(service, options = {}) {
       throw Error('A different shared queue update is already pending.');
     }
     return publish(save({ id, reason, report, ...context, location, storageAction }, { status: 'preparing' }));
+  }
+  function capture(id, reason) {
+    if (receipt(id)) return;
+    return checkpoint(id, reason);
   }
   function finish(id, context, run, record) {
     const previous = localReport(id);
@@ -389,7 +417,11 @@ export function createSharedIssueQueue(service, options = {}) {
     };
   }
   return {
+    branch: config.separateBranch,
     acquire,
+    acquireFlowBlock,
+    releaseFlowBlock,
+    capture,
     checkpoint,
     finish,
     refresh,

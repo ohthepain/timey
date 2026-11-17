@@ -1,4 +1,6 @@
 {
   "clarification": "combined",
-  "factoryModel": "gpt-6-luna"
+  "factoryModel": "gpt-6-luna",
+  "sharedIssueQueue": true,
+  "sharedIssueQueueBranch": "issue-queue"
 }

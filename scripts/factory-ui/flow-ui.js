@@ -1410,6 +1410,7 @@
       ? `${words(issue.status || 'new')}${closureLabel(issue)} · ${blocks.length} blocks${completed ? ` · ${completed} completed` : ''}${running ? ` · ${running.label} running` : ''}`
       : '';
     renderPlayback(blocks);
+    renderSharedQueue();
     $('flow-footer-label').textContent = running
       ? `${running.label} is running`
       : state.view
@@ -1421,6 +1422,43 @@
     renderInspector();
     renderErrors();
     setBusy(state.pending);
+  }
+
+  function renderSharedQueue() {
+    const queue = state.view?.sharedQueue;
+    const checkpoint = queue?.checkpoint;
+    const warning = state.index.sharedQueueWarning;
+    const message =
+      warning ||
+      checkpoint?.error ||
+      (checkpoint?.status === 'review' ? 'Issue update awaits queue review.' : '') ||
+      (queue?.claimed && !queue.local ? 'Another runner owns this issue.' : '');
+    const review = $('shared-queue-review');
+    const url = safeUrl(checkpoint?.url);
+    review.hidden = checkpoint?.status !== 'review' || !url;
+    if (url) review.href = url;
+    const button = $('shared-queue-action');
+    const route = ['failed', 'preparing', 'review'].includes(checkpoint?.status)
+      ? 'retry'
+      : queue?.canPublishDraft
+        ? 'publish-draft'
+        : '';
+    button.hidden = !route;
+    button.textContent = route === 'retry' ? 'Refresh queue PR' : 'Publish report update';
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        const result = await post('shared-queue-' + route, { issueId: state.issueId });
+        if (result?.error) showError(result.error);
+        await load(true);
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    };
+    $('shared-queue-status').hidden = !message && button.hidden && review.hidden;
+    $('shared-queue-message').textContent = message;
   }
 
   function closureLabel(issue) {

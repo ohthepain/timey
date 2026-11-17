@@ -34,13 +34,8 @@ coverage/
 /playwright/.cache/
 .vitest/
 
-# Shared issue reports and their display numbers are reviewed on the target.
+# Issue reports and their display numbers are synced from the queue branch.
 /.issues/*
 !/.issues/triage-labels.md
-!/.issues/[0-9]*.md
-!/.issues/issue-numbers.json
-!/.issues/closed/
-/.issues/closed/*
-!/.issues/closed/[0-9]*.md
 !/.issues/preferences.json
 

@@ -1,4 +1,5 @@
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import { queueReportPaths } from './shared-issue-config.mjs';
 import { factoryBoundary, factoryOperation } from './issue-operation.mjs';
 import { conversationContext } from './conversation-context.mjs';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
@@ -995,7 +996,7 @@ async function mergeReadyCandidate(service, context, provider, readiness) {
 function assertSharedReportsOutsideCodePR(service, work, target, head) {
   if (!service.sharedIssues) return;
   requireThat(
-    !git(work.checkout, 'diff', '--name-only', target, head, '--', '.issues/'),
+    !git(work.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
     'Shared issue report changes require a human-reviewed queue PR.'
   );
 }

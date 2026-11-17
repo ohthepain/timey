@@ -11,8 +11,13 @@ import { digest, git, requireThat, writeJson } from './common.mjs';
 import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { flowVerificationInput } from './flow-verification.mjs';
+import { queueReportPaths } from './shared-issue-config.mjs';
 
 export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
+  requireThat(
+    !service.sharedIssues?.branch || service.sharedIssues.branch !== deliveryTarget(ctx.flow).branch,
+    'Choose a code destination outside the shared issue queue.'
+  );
   const path = join(service.root, '.issues/issue-delivery-config.json');
   requireThat(
     existsSync(path),
@@ -236,6 +241,12 @@ export async function prepareFlowPublication(service, ctx, workspace, options = 
     throw Error('Couldn’t check branches. Retry Publish when GitHub is available.');
   });
   if (!branches.has(target)) return blocked('Branch unavailable. Choose another destination before publishing.');
+  if (service.sharedIssues) {
+    const tracking = `refs/remotes/${remote}/${target}`;
+    const base = git(workspace.checkout, 'merge-base', tracking, candidate.head);
+    if (git(workspace.checkout, 'diff', '--name-only', base, candidate.head, '--', ...queueReportPaths()))
+      return blocked('Shared issue report changes require a separate queue PR.');
+  }
   const { goal, requestedProof } = requestData(ctx.flow).fields ?? {};
   const wording = requestData(ctx.flow).wording;
   const title = ctx.issue.title;
