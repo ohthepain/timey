@@ -75,7 +75,8 @@ acceptance and detachment rules.
 
 Destination uses the issue's resolved target branch by default. Starting point
 remains a separate choice. Open the destination picker to list
-branches on the configured GitHub remote. Selecting a branch pins it. Choose
+branches on the configured GitHub remote, labeled with the configured remote
+name (for example, `origin/main`). Selecting a branch pins it. Choose
 **Follow starting branch** to restore the default. A local starting branch matches
 the configured remote by name. A starting branch from another remote requires an
 explicit destination. Older issues with a PR use its GitHub base. Destination

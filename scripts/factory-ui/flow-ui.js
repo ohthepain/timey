@@ -1346,7 +1346,7 @@
       ...(unavailable && !destination.follows
         ? [new Option(destination.branch + ' (unavailable)', destination.branch)]
         : []),
-      ...branches.map((branch) => new Option(branch, branch))
+      ...branches.map((branch) => new Option(`${state.view.flow.target.remote}/${branch}`, branch))
     );
     $('destination-branch').value = destination.follows ? '' : destination.branch;
     if (unavailable && !destination.follows) $('destination-branch').selectedOptions[0].disabled = true;
