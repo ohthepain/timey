@@ -48,6 +48,12 @@ Each issue retains its existing eligibility checks, shared-queue claim and
 publication behavior, and result. This is one guarded batch request, not a new
 all-or-nothing transaction across independently published issue reports.
 
+Bulk archive/restore yields to the server between reports, so it can handle
+other requests during a long selection. Each report's existing Git operation is
+still synchronous. Running storage batches are counted for restart readiness,
+including when the initiating chat has stopped, so a reload waits for retained
+storage work to finish.
+
 Check that moving an issue between folders preserves its ID, display number, and content. Verify that routine queue reads and prompts skip closed and archived report bodies, while the Closed issues view can open each report. Test archive and restore without a model connection, including interrupted moves, destination conflicts, and repeated requests. Verify that a pending shared archive preserves a local copy and that the archive folder stays ignored in a fresh checkout.
 
 Run `pnpm factory issue-storage-migrate` once on the local queue before the initial import. It moves existing closed reports into the Closed issues view. Leave shared mode disabled until the reviewed import is ready.

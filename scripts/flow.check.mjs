@@ -1665,7 +1665,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   await submit(await flows.view(id), 'retry-closure');
   await waitUntil(() => retroRuns === 2);
   assert.equal(flows.closureBusy(id), true);
-  const archive = moveIssueStorage(service, { action: 'archive', issueIds: [id] });
+  const archive = await moveIssueStorage(service, { action: 'archive', issueIds: [id] });
   assert.equal(archive.results[0].status, 'archived');
   assert.equal((await flows.view(id)).issue.location, 'archive');
   assert.equal(
@@ -1707,7 +1707,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   assert.equal(git('branch', '--list', branch), '');
 
   const previousClosure = read().closing.id;
-  const restore = moveIssueStorage(service, { action: 'restore', issueIds: [id] });
+  const restore = await moveIssueStorage(service, { action: 'restore', issueIds: [id] });
   assert.equal(restore.results[0].status, 'restored');
   const closedQueue = readQueue(root, { issueId: id, location: 'closed' });
   const closedIssue = closedQueue.issues[0];

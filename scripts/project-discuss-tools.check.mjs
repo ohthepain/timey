@@ -209,3 +209,28 @@ test('unknown numbers fail before any archive; active items retain per-issue fai
     f.tools.invoke('issue_archive', { action: 'archive', issueNumbers: [21], issueIds: [activeId] })
   );
 });
+
+test('archive batch lets the server handle other events before the whole selection finishes', async (t) => {
+  const f = fixture(t);
+  numberedReports(f, [31, 32, 33]);
+  let moved = 0;
+  let finished = false;
+  f.service.sharedIssues = {
+    moveStorage() {
+      moved++;
+      return { status: 'published' };
+    },
+  };
+  const operation = f.tools
+    .invoke('issue_archive', { action: 'archive', issueNumbers: [31, 32, 33] })
+    .then((result) => {
+      finished = true;
+      return result;
+    });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(finished, false, 'The server must get an event-loop turn before a bulk archive completes');
+  assert.ok(moved > 0 && moved < 3);
+  assert.equal(f.service.issueStorageTasks.size, 1, 'Restart must still see the running archive');
+  await operation;
+  assert.equal(f.service.issueStorageTasks.size, 0);
+});

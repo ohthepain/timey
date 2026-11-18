@@ -155,15 +155,16 @@ test('bulk archive and restore use local files and export omits archived reports
     issueCleanupTasks: new Map(),
     store: { runs: [], connected: new Set() },
   };
-  const move = (action, issueIds) => moveIssueStorage(service, { action, issueIds }).results.map((item) => item.status);
-  assert.deepEqual(move('archive', [id, other, id]), ['archived', 'archived']);
+  const move = async (action, issueIds) =>
+    (await moveIssueStorage(service, { action, issueIds })).results.map((item) => item.status);
+  assert.deepEqual(await move('archive', [id, other, id]), ['archived', 'archived']);
   assert.equal(readSavedReport(root, id, 'archive').content, report('finished') + '\n## Archived notes\n');
   assert.equal(listIssueStorage(service, 'closed').issues.length, 0);
   assert.deepEqual(
     listIssueStorage(service, 'archive').issues.map((item) => item.issueNumber),
     [1, 2]
   );
-  assert.deepEqual(move('restore', [other]), ['restored']);
+  assert.deepEqual(await move('restore', [other]), ['restored']);
   const result = exportIssueReports(root, join(root, 'export'));
   assert.equal(result.closed, 1);
   assert.equal(result.displayNumbers, 2);

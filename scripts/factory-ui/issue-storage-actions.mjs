@@ -108,7 +108,7 @@ function moveOne(service, action, id) {
   return finishLocalMove(service.root, action, id, content);
 }
 
-export function moveIssueStorage(service, input) {
+export async function moveIssueStorage(service, input) {
   service.ownServer();
   requireThat(['archive', 'restore'].includes(input.action), 'Choose Archive or Restore to closed.');
   const byNumber = input.issueNumbers !== undefined;
@@ -129,12 +129,21 @@ export function moveIssueStorage(service, input) {
     requireThat(id, `Issue #${value} does not exist. No issues were archived.`);
     return id;
   });
-  const results = ids.map((id) => {
-    try {
-      return { ...moveOne(service, input.action, id), ...(byNumber ? { issueNumber: numbers[id] } : {}) };
-    } catch (error) {
-      return { id, ...(byNumber ? { issueNumber: numbers[id] } : {}), status: 'failed', error: error.message };
+  const task = Symbol('issue-storage');
+  service.issueStorageTasks ||= new Set();
+  service.issueStorageTasks.add(task);
+  const results = [];
+  try {
+    for (const id of ids) {
+      try {
+        results.push({ ...moveOne(service, input.action, id), ...(byNumber ? { issueNumber: numbers[id] } : {}) });
+      } catch (error) {
+        results.push({ id, ...(byNumber ? { issueNumber: numbers[id] } : {}), status: 'failed', error: error.message });
+      }
+      await new Promise((resolve) => setImmediate(resolve));
     }
-  });
-  return { results };
+    return { results };
+  } finally {
+    service.issueStorageTasks.delete(task);
+  }
 }

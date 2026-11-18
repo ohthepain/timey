@@ -690,3 +690,24 @@ test('editable conversation permission answers reach their owning connection', a
     service.close();
   }
 });
+
+test('restart waits for a storage batch even after its chat response has stopped', async (t) => {
+  const service = new FactoryUI(project(t));
+  service.issueStorageTasks = new Set(['archive-batch']);
+  let restarts = 0;
+  const control = serverControl(service, () => {
+    restarts++;
+  });
+  try {
+    assert.equal(control.status().actions, 1);
+    control.request();
+    await delay(350);
+    assert.equal(restarts, 0);
+    service.issueStorageTasks.clear();
+    await delay(350);
+    assert.equal(restarts, 1);
+  } finally {
+    control.close();
+    service.close();
+  }
+});

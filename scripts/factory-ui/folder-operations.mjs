@@ -148,7 +148,9 @@ export class FolderOperations {
         const [row] = this.selected({ ...preview, issueIds: [entry.id] });
         requireThat(identity(row) === entry.basis, 'This issue changed after preview. Review it again.');
         if (preview.view === 'closed') {
-          results.push(...moveIssueStorage(this.flows.service, { action: 'archive', issueIds: [entry.id] }).results);
+          results.push(
+            ...(await moveIssueStorage(this.flows.service, { action: 'archive', issueIds: [entry.id] })).results
+          );
         } else {
           const { issue, flow } = row;
           requireThat(!this.flows.groups.masterId(issue.id), 'Work belongs to a master issue.');

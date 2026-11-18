@@ -57,6 +57,7 @@ export function serverControl(service, restart) {
         (service.flows?.followups?.busy.size || 0) +
         projectHomeActions(service) +
         (service.projectDiscuss?.active.size || 0) +
+        (service.issueStorageTasks?.size || 0) +
         cleanupActions(service),
       operations: conversation.operations,
       uncertain: conversation.uncertain,

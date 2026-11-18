@@ -476,7 +476,7 @@ test('archive preserves open investigation state and history; restore preserves 
   const done = await settled(f, started.session.id);
   const before = f.flows.selected(done.issueId);
   assert.equal(
-    moveIssueStorage(f.service, { action: 'archive', issueIds: [done.issueId] }).results[0].status,
+    (await moveIssueStorage(f.service, { action: 'archive', issueIds: [done.issueId] })).results[0].status,
     'archived'
   );
   const archived = f.flows.selected(done.issueId);
@@ -486,7 +486,7 @@ test('archive preserves open investigation state and history; restore preserves 
   assert.equal(f.investigations.issueView(done.issueId).runs.length, 1);
   await assert.rejects(f.investigations.action({ ...start(), issueId: done.issueId }), /Restore or approve/);
   assert.equal(
-    moveIssueStorage(f.service, { action: 'restore', issueIds: [done.issueId] }).results[0].status,
+    (await moveIssueStorage(f.service, { action: 'restore', issueIds: [done.issueId] })).results[0].status,
     'restored'
   );
   assert.equal(f.flows.selected(done.issueId).location, 'open');
