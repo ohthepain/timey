@@ -218,8 +218,16 @@ class ProjectDiscussProvider {
     }
   }
   async stop(session) {
-    if (session.threadId) return interruptCodexTurn(this.connection, session.threadId);
-    return { interrupted: false };
+    const turn = this.connection.turns.get(session.threadId);
+    if (!turn) return { interrupted: false };
+    if (this.stopping?.turn === turn) return this.stopping.task;
+    const task = interruptCodexTurn(this.connection, session.threadId);
+    this.stopping = { turn, task };
+    try {
+      return await task;
+    } finally {
+      if (this.stopping?.task === task) this.stopping = null;
+    }
   }
   async steer(session, message) {
     const active = this.active;

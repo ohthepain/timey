@@ -150,7 +150,7 @@ not permission to archive them during development or automated verification.
 
 ## Implementation verification
 
-The implementation passes 15 focused project-conversation/provider/tool checks,
+The implementation passes 16 focused project-conversation/provider/tool checks,
 76 existing chat/server-control/Home checks, and the focused Discuss and existing
 Home browser scenarios. The native Codex smoke check called the real registered
 project tool in a disposable folder and returned its fixture-only project name.

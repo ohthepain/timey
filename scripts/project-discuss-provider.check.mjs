@@ -180,3 +180,11 @@ test('Codex experimental support is opt-in for project tools', () => {
   assert.equal(new CodexConnection().experimentalApi, false);
   assert.equal(new CodexConnection({ experimentalApi: true }).experimentalApi, true);
 });
+
+test('concurrent Stop signals interrupt the exact native turn only once', async (t) => {
+  const f = fixture(t);
+  f.session.threadId = 'thread';
+  f.connection.turns.set('thread', { started: Promise.resolve({ turn: { id: 'turn' } }) });
+  await Promise.all([f.provider.stop(f.session), f.provider.stop(f.session)]);
+  assert.equal(f.calls.filter(({ method }) => method === 'turn/interrupt').length, 1);
+});
