@@ -23,7 +23,7 @@ class MidiService extends EventEmitter {
   private lastClockTime: number = 0;
   private clockCount: number = 0;
   private clockTimeout: any = null;
-  private noteListenerTarget: Input | Input['channels'][number] | null = null;
+  private releaseNoteListener: (() => void) | null = null;
   private settingsUnsubscribe: (() => void) | null = null;
   private readonly handleConnected = () => this.refreshDevices();
   private readonly handleDisconnected = () => this.refreshDevices();
@@ -200,11 +200,11 @@ class MidiService extends EventEmitter {
       }
 
       channel.addListener('noteon', this.handleNoteOnMessage);
-      this.noteListenerTarget = channel;
+      this.releaseNoteListener = () => channel.removeListener('noteon', this.handleNoteOnMessage);
     } else {
       console.log(`listenToInput : all channels`);
       input.addListener('noteon', this.handleNoteOnMessage);
-      this.noteListenerTarget = input;
+      this.releaseNoteListener = () => input.removeListener('noteon', this.handleNoteOnMessage);
     }
   }
 
@@ -218,8 +218,8 @@ class MidiService extends EventEmitter {
     input.removeListener('start', this.handleMidiStart);
     input.removeListener('stop', this.handleMidiStop);
     input.removeListener('continue', this.handleMidiContinue);
-    this.noteListenerTarget?.removeListener('noteon', this.handleNoteOnMessage);
-    this.noteListenerTarget = null;
+    this.releaseNoteListener?.();
+    this.releaseNoteListener = null;
     this.midiInputDevice = null;
   }
 

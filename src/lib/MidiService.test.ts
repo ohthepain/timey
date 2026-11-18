@@ -29,9 +29,11 @@ it('owns input listeners across selection changes and service lifetime', async (
   const inputs = vi
     .spyOn(WebMidi, 'inputs', 'get')
     .mockReturnValue([inputA as unknown as Input, inputB as unknown as Input]);
-  const getInputById = vi.spyOn(WebMidi, 'getInputById').mockImplementation((id) => {
-    return ({ A: inputA, B: inputB }[id] as unknown as Input | undefined) ?? null;
-  });
+  const inputById: Record<string, Input> = {
+    A: inputA as unknown as Input,
+    B: inputB as unknown as Input,
+  };
+  const getInputById = vi.spyOn(WebMidi, 'getInputById').mockImplementation((id) => inputById[id]);
 
   afterEach(() => {
     enabled.mockRestore();
