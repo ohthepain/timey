@@ -2066,8 +2066,10 @@
     waitingButton.hidden = !waiting;
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
     waitingButton.dataset.block = waiting?.id || '';
-    $('playback-status').textContent =
-      state.view?.flow?.closing?.error || (waiting ? '' : playback?.reason || (playing ? 'Playing' : 'Paused'));
+    $('playback-status').textContent = waiting ? 'Waiting for confirmation' : playing ? 'Playing' : 'Paused';
+    const result = state.view?.flow?.closing?.error || playback?.reason || '';
+    $('issue-results').hidden = !state.view?.issue || !result;
+    $('issue-results-message').textContent = result;
   }
 
   function render() {

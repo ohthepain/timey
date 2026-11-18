@@ -25,6 +25,8 @@ logs, screenshots, and fixture stay under `.issues/evidence/flow-browser-*`. The
 checks establish UI and protocol behavior, not live model or GitHub execution.
 Use `pnpm run test:flow:browser --block-deletion` for the isolated click-selection,
 confirmation, keyboard safety and persisted block-removal scenario.
+Use `pnpm run test:flow:browser --issue-results` to check result placement below
+the issue banner, independent playback status, and hiding empty results.
 Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
 repair, search, grouping eligibility, and selected Open or Closed bulk actions.
 The fixture injects AI responses and execution, and uses disposable reports.

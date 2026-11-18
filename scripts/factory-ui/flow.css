@@ -576,6 +576,24 @@ kbd {
   text-align: right;
   font-size: 11px;
 }
+.issue-results {
+  margin: 0 30px 19px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.issue-results h2 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.issue-results p {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
 .environment {
   display: flex;
   gap: 9px;

@@ -90,6 +90,7 @@ const folderSettingsCheck = 'Folder settings inherit, repair, search and act on 
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
+const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const logs = {
   console: [],
   pageErrors: [],
@@ -203,6 +204,7 @@ function checkExcluded(name) {
     ['--investigation-followups', followupsCheck],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
+    ['--issue-results', issueResultsCheck],
   ];
   return selections.some(([flag, selected]) => process.argv.includes(flag) && name !== selected);
 }
@@ -1719,6 +1721,33 @@ try {
     await clickAction(remove);
     await page.locator(`[data-block="${added.id}"]`).waitFor({ state: 'detached' });
     assert.ok(!(await view()).flow.blocks.some((item) => item.id === added.id));
+  });
+  await check(issueResultsCheck, async () => {
+    const resultsIssueId = '20261118-results-fixture';
+    writeFileSync(
+      join(project, '.issues', resultsIssueId + '.md'),
+      `---\nid: ${resultsIssueId}\ntitle: Keep results and status visible\nstate: backlog\n---\n\nShow results below the banner.\n`
+    );
+    await page.goto('/?issue=' + resultsIssueId);
+    await page.locator('#issue-title').filter({ hasText: 'Keep results and status visible' }).waitFor();
+    assert.equal(await page.locator('#issue-results').isVisible(), false);
+    const message =
+      'Commit the verified working-tree snapshot before publishing. If its content is unchanged, its verification remains valid.';
+    service.flows.pause(resultsIssueId, message);
+    await page.reload();
+    await page.locator('#issue-results-message').filter({ hasText: message }).waitFor();
+    assert.equal(await page.locator('#issue-heading + #issue-results').count(), 1);
+    assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
+    const banner = await page.locator('#issue-heading').boundingBox();
+    const results = await page.locator('#issue-results').boundingBox();
+    assert.ok(results.y >= banner.y + banner.height);
+    await screenshot('issue-results');
+    service.flows.pause(resultsIssueId);
+    await page.reload();
+    await page.locator('#issue-title').filter({ hasText: 'Keep results and status visible' }).waitFor();
+    assert.equal(await page.locator('#issue-results').isVisible(), false);
+    assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
+    if (issueId) await page.goto('/?issue=' + issueId);
   });
   await check(blockDeletionCheck, async () => {
     const deletionIssueId = '20261117-block-deletion-fixture';
