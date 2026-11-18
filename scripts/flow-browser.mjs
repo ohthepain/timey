@@ -209,6 +209,7 @@ function checkExcluded(name) {
   const selections = [
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
+    ['--project-discuss-refresh', discussCheck],
     ['--investigation-followups', followupsCheck],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],

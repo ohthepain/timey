@@ -16,6 +16,28 @@
       return '';
     }
   }
+  function expandedMessageIds(log) {
+    return new Set(
+      [...log.querySelectorAll('.discuss-message[data-discuss-message] details.discuss-tool-activity[open]')].map(
+        (details) => details.closest('[data-discuss-message]').dataset.discussMessage
+      )
+    );
+  }
+  function restoreMessages(log, expandedActivity, previousScrollTop, wasAtBottom) {
+    for (const messageId of expandedActivity)
+      log
+        .querySelector(`[data-discuss-message="${CSS.escape(messageId)}"] .discuss-tool-activity`)
+        ?.setAttribute('open', '');
+    log.scrollTop = wasAtBottom ? log.scrollHeight : previousScrollTop;
+  }
+  function replaceMessages(log, html) {
+    if (log.innerHTML === html) return;
+    const previousScrollTop = log.scrollTop;
+    const wasAtBottom = log.scrollHeight - log.clientHeight - log.scrollTop <= 40;
+    const expandedActivity = expandedMessageIds(log);
+    log.innerHTML = html;
+    restoreMessages(log, expandedActivity, previousScrollTop, wasAtBottom);
+  }
   function inline(value) {
     return escape(value)
       .replace(/\[([^\]]+)\]\(([^\s)]+)\)/g, (_, label, href) => {
@@ -289,9 +311,7 @@
       const html =
         (current?.messages || []).map(messageHtml).join('') ||
         '<div class="discuss-empty"><h2>What would you like to work on?</h2><p>Ask about the codebase, choose a skill with /, or request a project action.</p></div>';
-      if (log.innerHTML !== html) {
-        log.innerHTML = html;
-      }
+      replaceMessages(log, html);
       byId('discuss-queue').innerHTML = (current?.queue || [])
         .filter((entry) => !['completed', 'removed', 'failed', 'interrupted'].includes(entry.status))
         .map(

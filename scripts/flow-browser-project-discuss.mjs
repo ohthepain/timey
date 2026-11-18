@@ -69,6 +69,46 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   const first = service.projectDiscuss.view().selected;
   assert.equal(first.messages.length, 2);
   assert.equal(first.messages[0].settings.model, 'model-a');
+  const activity = page.locator('.discuss-message.assistant .discuss-tool-activity');
+  await activity.locator('summary').click();
+  await page.setViewportSize({ width: 1440, height: 600 });
+  await page.evaluate(() => {
+    const log = document.querySelector('#discuss-messages');
+    if (log.scrollHeight <= log.clientHeight) throw Error('Fixture did not create a scrollable chat.');
+    log.scrollTop = log.scrollHeight;
+  });
+  service.projectDiscuss.change(first.id, (session) => {
+    const assistant = session.messages.find((message) => message.role === 'assistant');
+    assistant.events.push({ text: 'Routine refresh update' });
+  });
+  const latestActivity = page.locator('.discuss-tool-activity pre').last();
+  await poll(
+    () => latestActivity.textContent(),
+    (value) => value?.startsWith('Routine refresh update'),
+    'Routine refresh did not update tool activity.'
+  );
+  assert.equal(await activity.getAttribute('open'), '');
+  assert.equal(
+    await latestActivity.evaluate((node) => {
+      const content = node.getBoundingClientRect();
+      const viewport = document.querySelector('#discuss-messages').getBoundingClientRect();
+      return content.bottom > viewport.top && content.top < viewport.bottom;
+    }),
+    true,
+    'Latest tool activity is outside the visible chat area.'
+  );
+  assert.equal(
+    await page.locator('#discuss-messages').evaluate((log) => log.scrollHeight - log.clientHeight - log.scrollTop <= 2),
+    true,
+    'Routine refresh moved the chat away from the bottom.'
+  );
+  if (process.argv.includes('--project-discuss-refresh')) {
+    await screenshot('project-discuss-refresh');
+    await page.setViewportSize({ width: 1440, height: 960 });
+    return;
+  }
+  await activity.locator('summary').click();
+  await page.setViewportSize({ width: 1440, height: 960 });
   await page.locator('#discuss-draft').focus();
   await page.locator('#discuss-draft').press('Tab');
   assert.equal(await page.locator('#discuss-draft').inputValue(), 'Explain the project structure');
