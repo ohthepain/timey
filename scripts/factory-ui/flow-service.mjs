@@ -1377,7 +1377,6 @@ class IssueFlows {
     );
     const block = makeBlock('update-branch', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
-    if (input.investigation) attempt.investigation = structuredClone(input.investigation);
     const controller = new AbortController();
     const queue = this.service.sharedIssues;
     const claim = queue?.acquireFlowBlock(issue, block.id, false);
