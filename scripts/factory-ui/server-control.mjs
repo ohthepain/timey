@@ -56,6 +56,8 @@ export function serverControl(service, restart) {
         (service.flows?.captures?.size || 0) +
         (service.flows?.followups?.busy.size || 0) +
         projectHomeActions(service) +
+        (service.projectRemoteBranchCleanup?.activeCount || 0) +
+        (service.projectLocalBranchCleanup?.activeCount || 0) +
         (service.projectDiscuss?.active.size || 0) +
         (service.issueStorageTasks?.size || 0) +
         cleanupActions(service),

@@ -42,6 +42,10 @@ import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs'
 import { defaultIssueFolder } from './issue-folder-settings.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './project-settings.mjs';
 import { ProjectHome } from './project-home.mjs';
+import { ProjectWorktreeCleanup } from './project-worktree-cleanup.mjs';
+import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs';
+import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
+import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
 import { ProjectDiscuss } from './project-discuss.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
@@ -169,6 +173,10 @@ async function mutation(service, path, value, owner) {
   const routes = {
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
     '/api/project-home-action': () => projectHome(service).action(value),
+    '/api/project-worktree-cleanup': () => worktreeCleanup(service).apply(value),
+    '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).apply(value),
+    '/api/project-local-branch-cleanup': () => localBranchCleanup(service).apply(value),
+    '/api/project-archive-deletion': () => archiveDeletion(service).apply(value),
     '/api/folder-settings': () => changeFolderSettings(service, value),
     '/api/folder-strategies': () => {
       service.ownServer();
@@ -376,6 +384,10 @@ async function read(service, request, response, owner) {
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/project-home': () => projectHome(service).view(),
+    '/api/project-worktree-cleanup': () => worktreeCleanup(service).preview(url.searchParams.get('ref')),
+    '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).preview(),
+    '/api/project-local-branch-cleanup': () => localBranchCleanup(service).preview(url.searchParams.get('ref')),
+    '/api/project-archive-deletion': () => archiveDeletion(service).preview(),
     '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
     '/api/project-discuss-skills': async () => ({ skills: await projectDiscuss(service).skills() }),
     '/api/investigation': () =>
@@ -499,6 +511,7 @@ function readResource(service, request, response, owner) {
     '/project-discuss.css': 'project-discuss.css',
     '/flow-ui.js': 'flow-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
+    '/project-admin-ui.js': 'project-admin-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',
     '/project-home.css': 'project-home.css',
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
@@ -543,6 +556,26 @@ function projectHome(service) {
     readOnly,
   });
   return service.projectHome;
+}
+
+function worktreeCleanup(service) {
+  service.projectWorktreeCleanup ||= new ProjectWorktreeCleanup(service);
+  return service.projectWorktreeCleanup;
+}
+
+function remoteBranchCleanup(service) {
+  service.projectRemoteBranchCleanup ||= new ProjectRemoteBranchCleanup(service, service.remoteBranchCleanupOptions);
+  return service.projectRemoteBranchCleanup;
+}
+
+function localBranchCleanup(service) {
+  service.projectLocalBranchCleanup ||= new ProjectLocalBranchCleanup(service, service.localBranchCleanupOptions);
+  return service.projectLocalBranchCleanup;
+}
+
+function archiveDeletion(service) {
+  service.projectArchiveDeletion ||= new ProjectArchiveDeletion(service, localBranchCleanup(service));
+  return service.projectArchiveDeletion;
 }
 
 function projectDiscuss(service) {

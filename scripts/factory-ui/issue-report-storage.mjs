@@ -175,6 +175,24 @@ export function deletePendingIssueReport(root, issue) {
   }
 }
 
+export function deleteArchivedIssueReport(root, id, expectedContent) {
+  const path = storedIssuePath(root, id, 'archive');
+  const lock = join(root, '.issues/factory.lock');
+  mkdirSync(lock);
+  try {
+    requireThat(reportFile(path), 'The archived issue report is missing.');
+    requireThat(
+      !['open', 'closed'].some((location) => stat(storedIssuePath(root, id, location))),
+      'An open or closed copy of the issue exists.'
+    );
+    requireThat(!git(root, 'ls-files', '--cached', '--', path), 'The archived report is tracked by Git.');
+    assertExpectedReport(path, id, expectedContent);
+    unlinkSync(path);
+  } finally {
+    rmdirSync(lock);
+  }
+}
+
 export function configuredClosedState(root) {
   const table = readFileSync(join(root, '.issues/triage-labels.md'), 'utf8');
   const rows = table.split('\n').map((row) => row.split('|').map((cell) => cell.replaceAll('`', '').trim()));

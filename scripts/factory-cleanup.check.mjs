@@ -19,6 +19,10 @@ import {
 import { git } from './factory-ui/common.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { serverControl } from './factory-ui/server-control.mjs';
+import { ProjectWorktreeCleanup } from './factory-ui/project-worktree-cleanup.mjs';
+import { ProjectLocalBranchCleanup } from './factory-ui/project-local-branch-cleanup.mjs';
+import { ProjectArchiveDeletion } from './factory-ui/project-archive-deletion.mjs';
+import { writeProgress } from './factory-progress.mjs';
 
 function fixture(t) {
   const { queue } = deliveryFixture(t);
@@ -35,6 +39,192 @@ function markClosed(root, issueId) {
   writeFileSync(report, content);
   moveStoredIssue(root, issueId, 'open', 'closed');
 }
+
+test('archive deletion binds reviewed reports and optionally removes only their approved local branches', async (t) => {
+  const { queue, service } = fixture(t);
+  const { root } = queue;
+  git(root, 'update-ref', 'refs/remotes/origin/dev', 'HEAD');
+  git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/dev');
+  const archive = join(root, '.issues/archive');
+  mkdirSync(archive);
+  const ids = ['20261025-paired', '20261025-report-only', '20261025-restored', '20261025-edited'];
+  for (const id of ids) {
+    writeFileSync(join(archive, id + '.md'), `---\nid: ${id}\ntitle: ${id}\nstate: verify\n---\nArchived issue.\n`);
+    git(root, 'branch', `codex/issue-${id}`);
+  }
+  const deletion = new ProjectArchiveDeletion(service, new ProjectLocalBranchCleanup(service));
+  const preview = await deletion.preview();
+  const branch = (id) => `codex/issue-${id}`;
+  assert.equal(preview.target, 'origin/dev');
+  assert.equal(preview.rows.length, ids.length);
+  assert.ok(preview.rows.every((row) => existsSync(join(archive, row.id + '.md'))));
+  assert.ok(preview.rows.every((row) => row.branches.some(({ name, reason }) => name === branch(row.id) && !reason)));
+  await assert.rejects(
+    deletion.apply({ id: preview.id, selected: [{ id: ids[0], branches: [branch(ids[1])] }] }),
+    /eligible branches/
+  );
+
+  moveStoredIssue(root, ids[2], 'archive', 'open');
+  const edited = join(archive, ids[3] + '.md');
+  writeFileSync(edited, readFileSync(edited, 'utf8') + 'Edited after preview.\n');
+  const { results } = await deletion.apply({
+    id: preview.id,
+    selected: ids.map((id, index) => ({
+      id,
+      branches: index === 1 ? [] : [branch(id)],
+    })),
+  });
+  assert.deepEqual(
+    new Map(results.map(({ id, status }) => [id, status])),
+    new Map(ids.map((id, i) => [id, i < 2 ? 'deleted' : 'kept']))
+  );
+  assert.equal(results.find(({ id }) => id === ids[0]).branches[0].status, 'deleted');
+  assert.equal(git(root, 'branch', '--list', branch(ids[0])), '');
+  assert.equal(
+    git(root, 'branch', '--format=%(refname:short)', '--list', ...ids.slice(1).map(branch)).split('\n').length,
+    3
+  );
+  assert.equal(existsSync(join(archive, ids[0] + '.md')), false);
+  assert.equal(existsSync(join(archive, ids[1] + '.md')), false);
+  assert.equal(existsSync(join(root, '.issues', ids[2] + '.md')), true);
+  assert.equal(existsSync(edited), true);
+});
+
+test('local branch cleanup allows archived references and rechecks active references and tips', async (t) => {
+  const { queue, service, issue } = fixture(t);
+  const { root } = queue;
+  const repository = 'fixture/timey';
+  writeFileSync(
+    join(root, '.issues/issue-delivery-config.json'),
+    JSON.stringify({ provider: 'github', repository, target: 'dev' })
+  );
+  const retained = [
+    'github-protected',
+    'github-default',
+    'shared-with-active',
+    'closed-branch',
+    'active-checkout',
+    'prunable-checkout',
+    'bisecting-branch',
+    'unmerged',
+  ];
+  const deleted = ['clean-one', 'clean-two', 'used-in-archive'];
+  const changed = ['new-checkout', 'restored-issue-branch', 'new-tip', 'new-protection'];
+  const candidates = [...deleted, ...changed];
+  for (const branch of [...retained, ...candidates, 'dev']) git(root, 'branch', branch);
+  const active = join(root, 'active checkout');
+  const prunable = join(root, 'prunable checkout');
+  git(root, 'worktree', 'add', active, 'active-checkout');
+  git(root, 'worktree', 'add', prunable, 'prunable-checkout');
+  rmSync(prunable, { recursive: true });
+  const detached = join(root, 'detached checkout');
+  git(root, 'worktree', 'add', '--detach', detached, 'unmerged');
+  const detachedAdmin = git(detached, 'rev-parse', '--absolute-git-dir');
+  writeFileSync(join(detachedAdmin, 'BISECT_START'), 'bisecting-branch\n');
+  git(detached, 'commit', '--allow-empty', '-m', 'Not merged');
+  const unmergedHead = git(detached, 'rev-parse', 'HEAD');
+  git(root, 'update-ref', 'refs/heads/unmerged', unmergedHead);
+  const archive = join(root, '.issues/archive');
+  mkdirSync(archive);
+  writeFileSync(
+    join(archive, '20261025-archive.md'),
+    '---\nid: 20261025-archive\nstate: verify\n---\nThis issue used `used-in-archive` and `shared-with-active`.\n'
+  );
+  writeProgress(root, { issueId: '20261025-archive', work: { branch: 'used-in-archive' } });
+  writeFileSync(
+    join(archive, '20261025-restore.md'),
+    '---\nid: 20261025-restore\nstate: verify\n---\nUse `restored-issue-branch`.\n'
+  );
+  writeFileSync(
+    join(root, '.issues/20261025-active.md'),
+    '---\nid: 20261025-active\nstate: verify\n---\nUse `shared-with-active`.\n'
+  );
+  markClosed(root, issue.id);
+  writeProgress(root, { issueId: issue.id, work: { branch: 'closed-branch' } });
+  const protectedNames = ['github-protected'];
+  const cleanup = new ProjectLocalBranchCleanup(service, {
+    provider: () => ({
+      gh: async (args) =>
+        args.includes(`repos/${repository}`)
+          ? JSON.stringify({ full_name: repository, node_id: 'fixture', default_branch: 'github-default' })
+          : JSON.stringify([protectedNames.map((name) => ({ name, protected: true }))]),
+    }),
+  });
+  const before = git(root, 'branch', '--list');
+  const preview = await cleanup.preview();
+  assert.equal(preview.target, 'dev');
+  assert.equal(git(root, 'branch', '--list'), before);
+  const rows = new Map(preview.entries.map((entry) => [entry.name, entry.reason]));
+  for (const branch of retained) assert.ok(rows.get(branch), `Keep ${branch}`);
+  for (const branch of candidates) assert.equal(rows.get(branch), null, `Offer ${branch}`);
+  await assert.rejects(cleanup.apply({ id: preview.id, selected: ['github-protected'] }), /cannot be deleted/);
+
+  git(root, 'worktree', 'add', join(root, 'new checkout'), 'new-checkout');
+  moveStoredIssue(root, '20261025-restore', 'archive', 'open');
+  git(root, 'update-ref', 'refs/heads/new-tip', unmergedHead);
+  protectedNames.push('new-protection');
+  const { results } = await cleanup.apply({ id: preview.id, selected: candidates });
+  assert.deepEqual(
+    new Map(results.map(({ name, status }) => [name, status])),
+    new Map(candidates.map((name) => [name, deleted.includes(name) ? 'deleted' : 'kept']))
+  );
+  assert.equal(git(root, 'branch', '--list', ...deleted), '');
+  assert.equal(existsSync(join(archive, '20261025-archive.md')), true);
+  assert.equal(
+    git(root, 'branch', '--format=%(refname:short)', '--list', ...retained, ...changed).split('\n').length,
+    retained.length + changed.length
+  );
+  await assert.rejects(cleanup.apply({ id: preview.id, selected: candidates }), /fresh local branch preview/);
+});
+
+test('project cleanup applies a reviewed batch and preserves worktrees and branches that changed', (t) => {
+  const { queue, service, issue } = fixture(t);
+  const root = realpathSync(queue.root);
+  git(root, 'branch', 'cleanup-base');
+  function missing(name, { unmerged, existing } = {}) {
+    const path = join(root, `checkout ${name}`);
+    git(root, 'worktree', 'add', '-b', name, path, 'cleanup-base');
+    if (unmerged) git(path, 'commit', '--allow-empty', '-m', 'Keep this commit');
+    if (existing) rmSync(join(path, '.git'));
+    else rmSync(path, { recursive: true });
+    return path;
+  }
+  const merged = missing('cleanup-merged');
+  const unmerged = missing('cleanup-unmerged', { unmerged: true });
+  const approvedUnmerged = missing('cleanup-approved-unmerged', { unmerged: true });
+  const changed = missing('cleanup-changed');
+  const claimed = missing('cleanup-claimed');
+  const restored = missing('cleanup-restored');
+  const existing = missing('cleanup-existing', { existing: true });
+  const open = missing(`codex/issue-${issue.issueNumber}`);
+  const cleanup = new ProjectWorktreeCleanup(service);
+  const preview = cleanup.preview('refs/heads/cleanup-base');
+  const byPath = new Map(preview.entries.map((entry) => [entry.path, entry]));
+  assert.match(byPath.get(existing).reason, /still exists/);
+  assert.match(byPath.get(open).reason, /open issue/);
+  assert.equal(byPath.get(merged).merged, true);
+  assert.equal(byPath.get(unmerged).merged, false);
+  git(root, 'update-ref', 'refs/heads/cleanup-changed', 'refs/heads/cleanup-unmerged');
+  mkdirSync(restored);
+  writeFileSync(join(restored, 'preserve.txt'), 'This directory came back after preview.');
+  writeProgress(root, { issueId: issue.id, work: { branch: 'cleanup-claimed', checkout: claimed } });
+  const selection = [merged, unmerged, approvedUnmerged, changed, claimed, restored].map((path) => ({
+    id: byPath.get(path).id,
+    deleteBranch: path !== unmerged,
+  }));
+  const { results } = cleanup.apply({ id: preview.id, selected: selection });
+  const statuses = new Map(results.map(({ path, status }) => [path, status]));
+  for (const path of [merged, unmerged, approvedUnmerged]) assert.equal(statuses.get(path), 'removed');
+  for (const path of [changed, claimed, restored]) assert.equal(statuses.get(path), 'skipped');
+  assert.equal(git(root, 'branch', '--list', 'cleanup-merged', 'cleanup-approved-unmerged'), '');
+  assert.match(git(root, 'branch', '--list', 'cleanup-unmerged'), /cleanup-unmerged/);
+  assert.equal(existsSync(existing), true);
+  assert.equal(existsSync(join(restored, 'preserve.txt')), true);
+  const worktrees = git(root, 'worktree', 'list', '--porcelain');
+  assert.ok([changed, claimed, restored, open, existing].every((path) => worktrees.includes(path)));
+  assert.ok([merged, unmerged, approvedUnmerged].every((path) => !worktrees.includes(path)));
+  assert.throws(() => cleanup.apply({ id: preview.id, selected: selection }), /new preview/);
+});
 
 test('Delete worktree removes the issue checkout and local branch while the issue is open', async (t) => {
   const { queue, service, issue } = fixture(t);

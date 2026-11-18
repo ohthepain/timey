@@ -187,6 +187,48 @@ in place. Files under `user/` are editable. Use **Install project skill** on
 `user/skills/<name>/SKILL.md` to make the skill visible to Codex. Custom flow
 definitions live in `user/flow/definitions/`.
 
+On the project page, open **Admin → Prune worktrees** to review stale Git
+worktree records and their local branches. The button opens a preview. Check the
+comparison branch and the selected entries before applying the batch. A branch
+whose tip is outside that history requires explicit selection. Entries used by
+open issues or whose checkout directories still exist are kept. The results
+show what was removed, skipped, or failed.
+
+**Admin → Preview remote branches** lists branches from the configured GitHub
+delivery repository. A branch qualifies when its exact tip is already in the
+delivery branch's history. Squash-merged branches may still have a different tip.
+Factory keeps protected branches, branches used by open pull requests on either
+side, the default and delivery branches, the shared issue queue, and the standard
+`main`, `master`, and `dev` branches. Select the branches you want to remove,
+review their names, and confirm the batch. Factory rechecks the live GitHub
+state and submits only the still eligible branches, with their reviewed commit
+IDs. Refresh the preview if GitHub does not confirm the outcome.
+
+**Admin → Preview local branches** starts from local Git branches. The
+comparison defaults to the configured delivery branch when available. You can
+choose another local or remote-tracking branch; the comparison uses the locally
+known commit. Factory keeps branches named by worktrees, including missing
+checkouts, and branches referenced by open or unarchived closed issues. A
+reference from an archived issue alone does not prevent cleanup. Factory
+also keeps project and comparison branches, and checks protection for the configured
+GitHub repository. Select eligible
+branches, review their names, then confirm. Factory rechecks the reviewed tips
+and references before deleting local refs.
+
+**Admin → Preview archived issues** lists archived reports for permanent
+deletion. Select one or more reports and optionally select eligible local
+branches under each one. Branch selection starts off. Review the exact reports
+and branches before confirming. Factory keeps reports that were restored or
+changed after preview, and keeps branches that fail the local cleanup checks.
+The results show report and branch outcomes separately. This deletes the local
+archive copy and selected branches; separate issue cleanup owns worktrees and
+conversation data. The issue's display number remains reserved.
+
+To use `$prune-worktrees` from Codex in another Factory project, copy the
+bundled `System / skills / prune-worktrees` folder into the project's
+`user/skills/`, then use **Install project skill** on its `SKILL.md`. The skill
+uses the live project's Admin preview and confirmation.
+
 Folder rows share their triangle, type, color, and spacing. Issue folder names
 are italic. Click a folder name to open its landing page. Its triangle expands
 the contents. A folder without `folder.md` shows its name, **System folder**, and

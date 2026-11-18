@@ -1,6 +1,9 @@
 .workspace[data-home-view='open'] {
   grid-template-columns: var(--sidebar-width, 242px) minmax(0, 1fr);
 }
+.project-home[data-project-tab='admin']:not([hidden]) ~ .flow-footer {
+  display: none;
+}
 .project-home-menu {
   display: flex;
   gap: 3px;

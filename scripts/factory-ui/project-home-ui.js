@@ -9,7 +9,10 @@
   const busy = (session) => ['running', 'starting', 'stopping'].includes(session?.status);
   window.createProjectHomeUI = ({ request, post, navigateHome, changed }) => {
     const discuss = window.createProjectDiscussUI({ request, post });
-    let projectTab = new URL(location.href).searchParams.get('projectTab') === 'discuss' ? 'discuss' : 'home';
+    window.createProjectAdminUI({ request, post });
+    const tabs = document.querySelectorAll('[role="tab"][data-project-tab]');
+    const requestedTab = new URL(location.href).searchParams.get('projectTab');
+    let projectTab = ['discuss', 'admin'].includes(requestedTab) ? requestedTab : 'home';
     const state = {
       visible: false,
       data: null,
@@ -24,18 +27,17 @@
     function selectProjectTab(tab) {
       projectTab = tab;
       const url = new URL(location.href);
-      if (tab === 'discuss') url.searchParams.set('projectTab', tab);
+      if (tab !== 'home') url.searchParams.set('projectTab', tab);
       else url.searchParams.delete('projectTab');
       history.replaceState(null, '', url);
       $('project-home').dataset.projectTab = tab;
       document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', tab === 'discuss');
       $('project-home-content').hidden = tab !== 'home';
-      for (const button of document.querySelectorAll('[data-project-tab]'))
-        button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
+      $('project-admin').hidden = tab !== 'admin';
+      for (const button of tabs) button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
       discuss.setVisible(state.visible && tab === 'discuss');
     }
-    for (const button of document.querySelectorAll('[data-project-tab]'))
-      button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
+    for (const button of tabs) button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
     selectProjectTab(projectTab);
 
     function investigationSessions() {

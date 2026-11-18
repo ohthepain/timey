@@ -753,6 +753,20 @@ retained outputs. `flow-request.mjs` derives the Request fields through a
 temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
 Codex conversations and uses the protected operation adapters for delivery. `flow-observer.mjs` reads local Git state and separately cached PR facts.
 `flow-branches.mjs` lists local refs and snapshots the chosen commit for a new checkout.
+`project-worktree-cleanup.mjs` owns the Admin and `$prune-worktrees` preview and
+batch removal, including open issue checks and the reviewed branch revisions.
+`project-remote-branch-cleanup.mjs` owns the Admin remote branch preview and
+confirmation. It reads GitHub branch and pull request facts, checks ancestry
+against the configured delivery revision, and submits an atomic GitHub ref
+deletion conditioned on each reviewed tip. The GitHub read checks for open pull
+requests and protection run before the mutation and are not part of its ref
+transaction.
+`project-local-branch-cleanup.mjs` owns the Admin preview and conditional local
+ref deletion. It uses `project-branch-resources.mjs` to inspect Git worktrees and
+Factory issue references in open and unarchived closed reports.
+`project-archive-deletion.mjs` owns the Admin archive deletion preview and batch.
+It binds deletion to the archived report contents and uses the same local branch
+cleanup for explicitly selected branches associated with the deleted reports.
 `flow-delivery.mjs` reads live destination branches, prepares the publication
 preview, and validates or refreshes independent verification evidence.
 `flow-update-branch.mjs` owns the local branch update used by the Branch button

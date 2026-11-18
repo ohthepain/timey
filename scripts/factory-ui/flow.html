@@ -16,6 +16,7 @@
     <script src="/issue-folder-drag-ui.js" defer></script>
     <script src="/folder-settings-ui.js" defer></script>
     <script src="/investigation-followups-ui.js" defer></script>
+    <script src="/project-admin-ui.js" defer></script>
     <script src="/project-home-ui.js" defer></script>
     <script src="/investigation-issue-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
@@ -414,6 +415,16 @@
             >
               Discuss
             </button>
+            <button
+              id="project-tab-admin"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-admin"
+              data-project-tab="admin"
+            >
+              Admin
+            </button>
           </div>
           <div
             id="project-home-content"
@@ -470,6 +481,123 @@
             aria-labelledby="project-tab-discuss"
             hidden
           ></section>
+          <section
+            id="project-admin"
+            class="project-home-content"
+            role="tabpanel"
+            aria-labelledby="project-tab-admin"
+            hidden
+          >
+            <div class="home-operations">
+              <article class="home-operation">
+                <h2>Prune worktrees</h2>
+                <p>Review missing Git worktrees and clean up their records and local branches in bulk.</p>
+                <button id="admin-prune-worktrees" class="primary-button" type="button">Prune worktrees</button>
+              </article>
+              <article class="home-operation">
+                <h2>Clean up remote branches</h2>
+                <p>Review remote branches already merged into the delivery branch.</p>
+                <button id="admin-remote-open" class="small-button" type="button">Preview remote branches</button>
+              </article>
+              <article class="home-operation">
+                <h2>Clean up local branches</h2>
+                <p>Review merged local branches unused by worktrees or issues outside the archive.</p>
+                <button id="admin-local-open" class="small-button" type="button">Preview local branches</button>
+              </article>
+              <article class="home-operation">
+                <h2>Delete archived issues</h2>
+                <p>Review archived reports and optionally delete their merged local branches.</p>
+                <button id="admin-archive-open" class="small-button" type="button">Preview archived issues</button>
+              </article>
+            </div>
+            <dialog id="admin-prune-dialog" class="home-dialog" aria-labelledby="admin-prune-title">
+              <header>
+                <h2 id="admin-prune-title" class="home-dialog-title">Prune worktrees</h2>
+                <button id="admin-prune-close" class="small-button" type="button">Close</button>
+              </header>
+              <form id="admin-prune-form">
+                <label>Comparison branch<select id="admin-prune-ref" class="home-field-control"></select></label>
+                <p id="admin-prune-status" class="muted" role="status"></p>
+                <section id="admin-prune-list" aria-label="Worktree cleanup entries"></section>
+                <p id="admin-prune-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-prune-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-prune-apply" class="primary-button" type="submit" disabled>Remove selected</button>
+                </footer>
+              </form>
+            </dialog>
+            <dialog id="admin-branches-dialog" class="home-dialog" aria-labelledby="admin-branches-title">
+              <header>
+                <h2 id="admin-branches-title" class="home-dialog-title">Clean up remote branches</h2>
+                <button id="admin-branches-close" class="small-button" type="button">Close</button>
+              </header>
+              <section>
+                <p id="admin-branches-status" role="status"></p>
+                <div id="admin-branches-preview" hidden>
+                  <label id="admin-branches-comparison" hidden
+                    >Comparison branch
+                    <select id="admin-branches-target" class="home-field-control"></select>
+                  </label>
+                  <label class="home-activate"
+                    ><input id="admin-branches-all" type="checkbox" /> Select all eligible branches</label
+                  >
+                  <div id="admin-branches-eligible"></div>
+                  <details id="admin-branches-kept">
+                    <summary id="admin-branches-kept-title"></summary>
+                    <ul id="admin-branches-kept-list"></ul>
+                  </details>
+                </div>
+                <div id="admin-branches-review" hidden>
+                  <h3>Confirm branch deletion</h3>
+                  <ul id="admin-branches-selected"></ul>
+                </div>
+                <ul id="admin-branches-results" hidden></ul>
+                <p id="admin-branches-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-branches-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-branches-back" class="small-button" type="button" hidden>Back</button>
+                  <button id="admin-branches-review-button" class="primary-button" type="button" disabled>
+                    Review deletion
+                  </button>
+                  <button id="admin-branches-apply" class="primary-button" type="button" hidden>
+                    Delete remote branches
+                  </button>
+                </footer>
+              </section>
+            </dialog>
+            <dialog id="admin-archive-dialog" class="home-dialog" aria-labelledby="admin-archive-title">
+              <header>
+                <h2 id="admin-archive-title" class="home-dialog-title">Delete archived issues</h2>
+                <button id="admin-archive-close" class="small-button" type="button">Close</button>
+              </header>
+              <section>
+                <p id="admin-archive-status" role="status"></p>
+                <section id="admin-archive-preview" aria-label="Archived issues" hidden>
+                  <label class="home-activate"
+                    ><input id="admin-archive-all" type="checkbox" /> Select all eligible issues</label
+                  >
+                  <div id="admin-archive-list"></div>
+                </section>
+                <section id="admin-archive-review" hidden>
+                  <h3>Confirm archive deletion</h3>
+                  <p>Delete these archived reports permanently? Selected local branches are listed under each issue.</p>
+                  <ul id="admin-archive-selected"></ul>
+                </section>
+                <ul id="admin-archive-results" hidden></ul>
+                <p id="admin-archive-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-archive-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-archive-back" class="small-button" type="button" hidden>Back</button>
+                  <button id="admin-archive-review-button" class="primary-button" type="button" disabled>
+                    Review deletion
+                  </button>
+                  <button id="admin-archive-apply" class="primary-button" type="button" hidden>
+                    Delete selected reports
+                  </button>
+                </footer>
+              </section>
+            </dialog>
+          </section>
         </section>
         <section
           id="graph-scroll"

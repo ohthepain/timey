@@ -703,6 +703,8 @@
     }
   }
 
+  window.addEventListener('factory-archive-updated', loadArchive);
+
   $('issue-list').addEventListener('click', (event) => {
     const collection = event.target.closest('summary')?.parentElement;
     if (!collection?.hasAttribute('data-collection')) return;
