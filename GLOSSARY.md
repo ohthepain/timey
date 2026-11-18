@@ -247,6 +247,17 @@ A review of what happened on an issue and what could improve future work.
 The project's landing page for activity summaries and operations that improve its
 codebase and working processes.
 
+**Project conversation**:
+A retained conversation about the project as a whole, available through Discuss.
+Its scope can span the project's code, issue controls, and working processes.
+Issue handling remains independent of the project conversation.
+_Avoid_: Coordinator conversation, issue conversation
+
+**Clarification skill**:
+The person's selected grilling skill for resolving ambiguity in a project
+conversation.
+_Avoid_: Looping skill
+
 **Investigation**:
 A bounded inquiry into a project's codebase or working processes, recorded as an
 issue with its goals, conversation, findings, and resulting follow-up issues.

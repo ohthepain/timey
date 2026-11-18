@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { requireThat } from './common.mjs';
 import { uiDirectory } from './ui-source.mjs';
 import { ViewSources } from './view-sources.mjs';
@@ -41,6 +42,7 @@ import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs'
 import { defaultIssueFolder } from './issue-folder-settings.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './project-settings.mjs';
 import { ProjectHome } from './project-home.mjs';
+import { ProjectDiscuss } from './project-discuss.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   deleteIssueWorktree,
@@ -51,7 +53,12 @@ import {
   startIssueCleanupRetry,
 } from './issue-cleanup.mjs';
 async function body(request) {
-  const limit = request.url === '/api/sidebar-files-action' ? 800000 : 65536;
+  const limit =
+    request.url === '/api/project-discuss-action'
+      ? 12000000
+      : request.url === '/api/sidebar-files-action'
+        ? 800000
+        : 65536;
   request.setEncoding('utf8');
   let text = '';
   for await (const chunk of request) {
@@ -128,6 +135,7 @@ function requireClassicIdle(service, path, value) {
 }
 
 const pauseSafeActions = {
+  '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
   '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop'],
   '/api/project-home-action': ['investigation-stop', 'automate-stop'],
 };
@@ -159,6 +167,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/project-discuss-action': () => projectDiscuss(service).action(value),
     '/api/project-home-action': () => projectHome(service).action(value),
     '/api/folder-settings': () => changeFolderSettings(service, value),
     '/api/folder-strategies': () => {
@@ -367,6 +376,8 @@ async function read(service, request, response, owner) {
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/project-home': () => projectHome(service).view(),
+    '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
+    '/api/project-discuss-skills': async () => ({ skills: await projectDiscuss(service).skills() }),
     '/api/investigation': () =>
       projectHome(service).investigations.issueView(new URL(request.url, 'http://localhost').searchParams.get('issue')),
     '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
@@ -460,11 +471,32 @@ async function temporaryAction(action) {
 }
 
 function readResource(service, request, response, owner) {
+  if (request.url === '/discuss-markdown.js') {
+    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    return response.end(readFileSync(createRequire(import.meta.url).resolve('markdown-it/dist/markdown-it.min.js')));
+  }
+  if (request.url.startsWith('/api/project-discuss-attachment?')) {
+    const url = new URL(request.url, 'http://localhost');
+    const file = projectDiscuss(service).attachment(
+      url.searchParams.get('conversation'),
+      url.searchParams.get('attachment')
+    );
+    const image = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.mime);
+    response.setHeader('Content-Type', image ? file.mime : 'application/octet-stream');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader(
+      'Content-Disposition',
+      `${image ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`
+    );
+    return response.end(readFileSync(file.path));
+  }
   if (request.url === '/favicon.ico') {
     response.statusCode = 204;
     return response.end();
   }
   const scripts = {
+    '/project-discuss-ui.js': 'project-discuss-ui.js',
+    '/project-discuss.css': 'project-discuss.css',
     '/flow-ui.js': 'flow-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',
@@ -511,6 +543,15 @@ function projectHome(service) {
     readOnly,
   });
   return service.projectHome;
+}
+
+function projectDiscuss(service) {
+  service.projectDiscuss ||= new ProjectDiscuss(service, {
+    ...service.projectDiscussOptions,
+    home: () => projectHome(service),
+    flows: () => flows(service),
+  });
+  return service.projectDiscuss;
 }
 
 function viewSources(service) {

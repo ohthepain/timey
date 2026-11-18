@@ -212,7 +212,7 @@
   }
 
   function blockHumanInput(block) {
-    return state.view?.humanInput?.blockId === block?.id ? state.view.humanInput : null;
+    return block && state.view?.humanInput?.blockId === block.id ? state.view.humanInput : null;
   }
 
   function statusIcon(value) {

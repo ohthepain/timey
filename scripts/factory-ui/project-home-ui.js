@@ -8,6 +8,8 @@
     );
   const busy = (session) => ['running', 'starting', 'stopping'].includes(session?.status);
   window.createProjectHomeUI = ({ request, post, navigateHome, changed }) => {
+    const discuss = window.createProjectDiscussUI({ request, post });
+    let projectTab = new URL(location.href).searchParams.get('projectTab') === 'discuss' ? 'discuss' : 'home';
     const state = {
       visible: false,
       data: null,
@@ -18,6 +20,22 @@
       draftBasis: null,
       submissions: new Map(),
     };
+
+    function selectProjectTab(tab) {
+      projectTab = tab;
+      const url = new URL(location.href);
+      if (tab === 'discuss') url.searchParams.set('projectTab', tab);
+      else url.searchParams.delete('projectTab');
+      history.replaceState(null, '', url);
+      $('project-home').dataset.projectTab = tab;
+      $('project-home-content').hidden = tab !== 'home';
+      for (const button of document.querySelectorAll('[data-project-tab]'))
+        button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
+      discuss.setVisible(state.visible && tab === 'discuss');
+    }
+    for (const button of document.querySelectorAll('[data-project-tab]'))
+      button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
+    selectProjectTab(projectTab);
 
     function investigationSessions() {
       return state.data?.investigations || [];
@@ -291,8 +309,9 @@
     }
     function projectNavigation(button) {
       const route = button.dataset.projectHome;
-      if (route === 'home') {
+      if (route === 'home' || route === 'discuss') {
         navigateHome();
+        selectProjectTab(route);
         void refresh();
         return;
       }
@@ -376,6 +395,7 @@
         const wasVisible = state.visible;
         state.visible = value;
         $('project-home').hidden = !value;
+        discuss.setVisible(value && projectTab === 'discuss');
         if (value && !wasVisible) void refresh();
       },
       refresh,

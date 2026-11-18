@@ -2,6 +2,18 @@
 
 ## Commands and evidence
 
+`pnpm run test:project-discuss` checks saved project conversations, immutable
+message settings and attachment copies, explicit queue/Stop/Retry behavior,
+native tool and permission ownership, skill invocation policy, and guarded
+Home/issue dispatch in disposable projects. `pnpm run test:project-discuss:browser`
+drives Home/Discuss navigation, retained drafts, Markdown, model/effort and skill
+selection, Tab acceptance, attachment copies, queued edits and Stop. Dictation
+uses an injected speech recognizer in this scenario. Real dictation requires
+browser speech-recognition support and microphone permission; audio is not saved
+by Timey. Native provider availability is a separate smoke check.
+The production closed issues are reserved for the user's own archive test and
+must not be used by these checks.
+
 `pnpm run test:project-home` checks project investigation capture, selected-branch
 execution, automatic follow-up approval and retry, historical closure statistics,
 project-scoped Automate me history, retained conversations, and reviewed skill

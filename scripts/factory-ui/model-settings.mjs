@@ -18,8 +18,8 @@ function readLocalSettings(root) {
   return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { issues: {} };
 }
 
-export function readModelSettings(root) {
-  initializeFolderSettings(root);
+export function readModelSettings(root, { initialize = true } = {}) {
+  if (initialize) initializeFolderSettings(root);
   const { values, errors } = resolveFolderSettings(root, null);
   const fields = folderSettingsFields(root, { branchChoices: false });
   return {

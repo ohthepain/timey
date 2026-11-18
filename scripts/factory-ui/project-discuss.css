@@ -1,0 +1,342 @@
+.project-workspace-tabs {
+  display: flex;
+  gap: 5px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.project-workspace-tabs button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 9px 18px;
+  cursor: pointer;
+}
+.project-workspace-tabs [aria-selected='true'] {
+  background: #343434;
+  color: #eee;
+}
+.project-home-content {
+  display: grid;
+  gap: 32px;
+}
+.project-home[data-project-tab='discuss'] {
+  padding: 24px clamp(16px, 3vw, 40px);
+  gap: 18px;
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.project-discuss {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 15px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+.discuss-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+}
+.discuss-header h1 {
+  font-size: 23px;
+  margin: 0 0 5px;
+}
+.discuss-conversations,
+.discuss-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+.discuss-settings label,
+.discuss-conversations label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.discuss-settings select,
+.discuss-conversations select {
+  background: #252525;
+  color: #ddd;
+  border: 1px solid #424242;
+  border-radius: 5px;
+  padding: 7px;
+  max-width: 260px;
+}
+.discuss-messages {
+  flex: 1;
+  overflow: auto;
+  min-height: 100px;
+  padding: 0 12px 12px 0;
+  overscroll-behavior: contain;
+}
+.discuss-empty {
+  padding: 45px 20px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.7;
+}
+.discuss-empty h2 {
+  font-size: 22px;
+  color: #ddd;
+  font-weight: 500;
+}
+.discuss-message {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.discuss-message.user {
+  background: #232525;
+  border-radius: 9px;
+  padding: 18px;
+  margin: 12px 0;
+}
+.discuss-message-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.discuss-message-body {
+  font-size: 14px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.discuss-message-body p,
+.discuss-message-body ul {
+  margin: 10px 0;
+}
+.discuss-message-body a,
+.discuss-attachment a {
+  color: #a9c0e0;
+}
+.discuss-message-body code {
+  background: #121313;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.discuss-code {
+  position: relative;
+  margin: 15px 0;
+}
+.discuss-code pre {
+  background: #121313;
+  padding: 42px 16px 15px;
+  border-radius: 7px;
+  overflow: auto;
+  font-size: 12px;
+}
+.discuss-code > button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.discuss-message-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+.discuss-composer {
+  border: 1px solid #4b4b4b;
+  border-radius: 11px;
+  padding: 14px;
+  background: #222424;
+  position: relative;
+}
+.discuss-draft-wrap {
+  position: relative;
+}
+#discuss-draft {
+  display: block;
+  position: relative;
+  width: 100%;
+  resize: vertical;
+  min-height: 82px;
+  max-height: 240px;
+  background: transparent;
+  color: #eee;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 5px;
+}
+.discuss-suggestion {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  right: 5px;
+  color: #777;
+  pointer-events: none;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.discuss-draft-wrap:has(.discuss-suggestion:not([hidden])) textarea::placeholder {
+  color: transparent;
+}
+.discuss-composer-actions,
+.discuss-composer-actions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+.discuss-composer-actions {
+  justify-content: space-between;
+  gap: 10px;
+}
+.discuss-attach {
+  cursor: pointer;
+}
+.discuss-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.discuss-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.discuss-attachment img {
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+}
+.discuss-attachment button {
+  background: transparent;
+  color: #ccc;
+  border: 0;
+  cursor: pointer;
+}
+.discuss-tool-activity {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.discuss-tool-activity pre,
+.discuss-approval pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  background: #191919;
+}
+.discuss-queue {
+  max-height: 150px;
+  overflow: auto;
+}
+.discuss-queued {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+.discuss-queued > span {
+  flex: 1;
+  min-width: 140px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.discuss-approval {
+  padding: 15px;
+  border: 1px solid #79663d;
+  border-radius: 7px;
+  background: #29261e;
+}
+.discuss-approval h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.discuss-approval label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.discuss-approval button {
+  margin-right: 7px;
+}
+.discuss-composer .skill-selector {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  max-height: 280px;
+  overflow: auto;
+  z-index: 10;
+  border: 1px solid #444;
+  background: #222;
+  border-radius: 8px;
+}
+.discuss-composer .skill-option {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  gap: 10px;
+  padding: 11px;
+  background: transparent;
+  color: #ddd;
+  border: 0;
+  cursor: pointer;
+}
+.discuss-composer .skill-option[aria-selected='true'] {
+  background: #3b3b3b;
+}
+.discuss-composer .skill-option-details {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+.discuss-composer .skill-option-details span,
+.discuss-composer .skill-option small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.discuss-composer .skill-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.discuss-composer .skill-chip {
+  background: #333c45;
+  color: #ddd;
+  border: 1px solid #526477;
+  border-radius: 5px;
+  padding: 5px 8px;
+  display: flex;
+  gap: 6px;
+}
+@media (max-width: 700px) {
+  .discuss-header {
+    align-items: start;
+    flex-direction: column;
+  }
+  .discuss-settings {
+    gap: 7px;
+  }
+  .discuss-settings select {
+    max-width: 180px;
+  }
+  .discuss-message-heading {
+    flex-direction: column;
+  }
+}

@@ -29,6 +29,7 @@ import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.
 import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
+import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -67,6 +68,9 @@ const assets = [
   'folder-settings-ui.js',
   'investigation-followups-ui.js',
   'project-home-ui.js',
+  'project-discuss-ui.js',
+  'project-discuss.css',
+  'issue-chat-ui.js',
   'investigation-issue-ui.js',
   'project-home.css',
   'issue-closure-ui.js',
@@ -91,6 +95,7 @@ const folderSettingsCheck = 'Folder settings inherit, repair, search and act on 
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
+const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const logs = {
@@ -203,6 +208,7 @@ let failure;
 function checkExcluded(name) {
   const selections = [
     ['--project-home', homeCheck],
+    ['--project-discuss', discussCheck],
     ['--investigation-followups', followupsCheck],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
@@ -320,6 +326,7 @@ try {
   page.on('response', (response) =>
     logs.responses.push({ path: new URL(response.url()).pathname, status: response.status() })
   );
+  await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );

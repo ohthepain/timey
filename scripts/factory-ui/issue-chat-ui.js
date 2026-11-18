@@ -6,8 +6,10 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
   const chips = document.createElement('div');
   chips.className = 'skill-chips';
   chips.hidden = true;
-  form.insertBefore(selector, draft);
-  form.insertBefore(chips, draft);
+  let anchor = draft;
+  while (anchor.parentElement !== form) anchor = anchor.parentElement;
+  form.insertBefore(selector, anchor);
+  form.insertBefore(chips, anchor);
   let options = [],
     selected = [],
     loaded = null,
@@ -43,6 +45,7 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
         if (!event.isTrusted) return;
         selected = selected.filter((item) => item.name !== skill.name);
         render();
+        draft.dispatchEvent(new Event('input', { bubbles: true }));
         draft.focus();
       });
       chips.append(chip);
@@ -96,6 +99,7 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
     render();
     close();
     draft.focus();
+    draft.dispatchEvent(new Event('input', { bubbles: true }));
   }
   async function querySkills(value, slashStart) {
     const request = ++generation;
@@ -151,7 +155,7 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
       event.preventDefault();
       active = (active + count - 1) % count;
       show();
-    } else if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && count) {
+    } else if (['Enter', 'Tab'].includes(event.key) && !event.shiftKey && !event.isComposing && count) {
       event.preventDefault();
       choose(matches()[active]);
     } else if (event.key === 'Escape') {
@@ -160,6 +164,11 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
     }
   });
   return {
+    isOpen: () => !selector.hidden,
+    refresh: () => {
+      loaded = null;
+      options = [];
+    },
     skills: () => selected.map((skill) => skill.name),
     reset: () => {
       selected = [];

@@ -8,10 +8,16 @@ import { newChatModelSettings } from './model-settings.mjs';
 
 // One local RPC connection. It never starts a thread or turn on construction.
 export class CodexConnection {
-  constructor({ command = 'codex', args = ['app-server', '--listen', 'stdio://'], onEvent = () => {} } = {}) {
+  constructor({
+    command = 'codex',
+    args = ['app-server', '--listen', 'stdio://'],
+    onEvent = () => {},
+    experimentalApi = false,
+  } = {}) {
     this.command = command;
     this.args = args;
     this.onEvent = onEvent;
+    this.experimentalApi = experimentalApi;
     this.pending = new Map();
     this.requests = new Map();
     this.turns = new Map();
@@ -40,7 +46,7 @@ export class CodexConnection {
     this.child.stderr.on('data', () => {}); // Do not forward local configuration or credential diagnostics to the browser.
     const initialized = await this.call('initialize', {
       clientInfo: { name: 'timey_factory_ui', title: 'Timey factory', version: '1.0.0' },
-      capabilities: { experimentalApi: false },
+      capabilities: { experimentalApi: this.experimentalApi },
     });
     this.send({ method: 'initialized' });
     this.phase('connected', 'initialize');

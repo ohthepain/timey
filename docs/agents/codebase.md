@@ -672,6 +672,17 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+The project landing area has Home and Discuss tabs. `project-discuss.mjs` owns
+independent project conversation persistence, per-message settings, queued prompts,
+attachment snapshots and explicit Stop/Resume/Retry/Steer. It never enters the issue
+scheduler. `project-discuss-provider.mjs` connects those conversations to native
+Codex turns in the current project folder, handles permissions and conditional
+clarification, and registers the guarded tools in `project-discuss-tools.mjs`.
+These tools call the existing Home and issue controls and return direct results;
+issue activity is not streamed back into Discuss. `project-discuss-ui.js` and
+`project-discuss.css` own the composer, history, settings, attachments, dictation,
+and suggested prompts. The shared skill composer lives in `issue-chat-ui.js`.
+`skills.mjs` retains invocation policy and also discovers `user/skills` wrappers.
 `flow-followups.mjs` owns reviewed follow-ups from completed Understand results.
 `investigation-proposals.mjs` prepares proposals in a read-only discussion;
 `investigation-followups-ui.js` owns selection and editing. Retained findings bind

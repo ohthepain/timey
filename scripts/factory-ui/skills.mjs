@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
-import { join, relative, sep } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { parse } from 'yaml';
 import { digest, requireThat } from './common.mjs';
 
 const maxSelections = 8;
@@ -8,7 +9,7 @@ const maxSelections = 8;
 export async function listAvailableSkills(connection, cwd) {
   await connection.ready();
   const result = await connection.call('skills/list', { cwds: [cwd], forceReload: true });
-  return (result.data || [])
+  const found = (result.data || [])
     .flatMap((entry) => (entry.skills || []).map((skill) => ({ skill, entry })))
     .filter(({ skill }) => skill.enabled && typeof skill.name === 'string' && typeof skill.path === 'string')
     .map(({ skill, entry }) => ({
@@ -17,7 +18,43 @@ export async function listAvailableSkills(connection, cwd) {
       description: String(skill.shortDescription || skill.description || 'Codex skill').slice(0, 180),
       source: sourceLabel(skill.source || entry.source, skill.path, cwd),
       sha256: digest(readFileSync(skill.path)),
+      ...skillPolicy(skill.path),
     }));
+  const local = join(cwd, 'user/skills');
+  if (existsSync(local))
+    for (const directory of readdirSync(local, { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
+      const path = join(local, directory.name, 'SKILL.md');
+      if (!existsSync(path) || found.some((entry) => entry.path === path)) continue;
+      const content = readFileSync(path, 'utf8');
+      const metadata = skillMetadata(content);
+      if (typeof metadata.name !== 'string' || !metadata.name) continue;
+      if (found.some((entry) => entry.name === metadata.name)) continue;
+      found.push({
+        name: metadata.name,
+        path,
+        description: String(metadata.description || 'Project skill').slice(0, 180),
+        source: 'Project',
+        sha256: digest(content),
+        ...skillPolicy(path),
+      });
+    }
+  return found;
+}
+
+function skillMetadata(content) {
+  const yaml = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
+  return yaml ? parse(yaml) || {} : {};
+}
+
+function skillPolicy(path) {
+  const metadata = skillMetadata(readFileSync(path, 'utf8'));
+  const configPath = join(dirname(path), 'agents/openai.yaml');
+  const config = existsSync(configPath) ? parse(readFileSync(configPath, 'utf8')) : null;
+  return {
+    displayName: config?.interface?.display_name || metadata.name,
+    allowImplicitInvocation:
+      metadata['disable-model-invocation'] !== true && config?.policy?.allow_implicit_invocation !== false,
+  };
 }
 
 export function selectedSkills(skills, names) {
@@ -36,7 +73,14 @@ export function skillInputs(skills) {
 }
 
 export function publicSkills(skills) {
-  return skills.map(({ name, description, source }) => ({ name, description, source, icon: '✦' }));
+  return skills.map(({ name, description, source, displayName, allowImplicitInvocation }) => ({
+    name,
+    description,
+    source,
+    displayName,
+    allowImplicitInvocation,
+    icon: '✦',
+  }));
 }
 
 function sourceFor(path, cwd) {

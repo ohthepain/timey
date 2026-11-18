@@ -5,6 +5,10 @@ implementation on 2026-11-18.
 
 ## Confirmed decisions
 
+The planned Home and Discuss tabs and project conversation capabilities are being
+defined in [Project Home and Discuss](project-discuss.md). That design retains the
+current Home content; its new behavior awaits final shared understanding.
+
 - Project home is the landing page for the currently selected project. The
   existing issue workspace remains accessible.
 - Activity statistics include issues created and closed in the last week.
