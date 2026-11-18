@@ -13,6 +13,7 @@
     <script src="/folder-settings-ui.js" defer></script>
     <script src="/investigation-followups-ui.js" defer></script>
     <script src="/project-home-ui.js" defer></script>
+    <script src="/investigation-issue-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
@@ -335,6 +336,48 @@
               </div>
             </form>
           </div>
+        </section>
+        <section id="investigation-page" class="project-home investigation-page" hidden aria-label="Investigation">
+          <p class="muted">
+            Investigations inspect committed snapshots without creating a Git worktree. Temporary files are cleaned
+            automatically.
+          </p>
+          <form id="investigation-settings-form">
+            <label class="folder-check"><input id="investigation-reusable" type="checkbox" /> Reusable</label>
+            <p class="muted">Keep this investigation available for repeated runs.</p>
+            <label class="field">Branch<select id="investigation-branch" required></select></label>
+            <label class="field"
+              >Investigation prompt<textarea id="investigation-prompt" rows="4" required></textarea>
+            </label>
+            <label class="field"
+              >Additional instructions<textarea id="investigation-instructions" rows="2"></textarea>
+            </label>
+            <button class="small-button" type="submit">Save investigation settings</button>
+          </form>
+          <div class="investigation-run-controls">
+            <label class="field"
+              >Follow-up destination for this run (optional)<select id="investigation-destination"></select
+            ></label>
+            <button class="primary-button" id="investigation-run">Run investigation</button>
+            <button class="small-button" id="investigation-stop" hidden>Stop</button>
+            <button class="small-button" id="investigation-retry" hidden>Retry</button>
+            <button class="small-button" id="investigation-archive">Archive</button>
+          </div>
+          <p id="investigation-status" role="status"></p>
+          <p id="investigation-error" class="home-error" role="alert"></p>
+          <details id="investigation-runs">
+            <summary id="investigation-runs-label" role="button">Runs (0)</summary>
+            <div id="investigation-run-list" class="home-run-list"></div>
+          </details>
+          <section id="investigation-result-panel" aria-label="Run results"></section>
+          <details>
+            <summary>Discuss goals or ask about the codebase</summary>
+            <div id="investigation-discussions"></div>
+            <form id="investigation-discussion-form">
+              <label class="field">Your message<textarea id="investigation-message" rows="3" required></textarea></label
+              ><button class="small-button" type="submit">Send message</button>
+            </form>
+          </details>
         </section>
         <section id="project-home" class="project-home" aria-label="Project home" hidden>
           <div class="home-intro">
@@ -730,31 +773,13 @@
             rows="2"
             placeholder="What matters most? What should the investigation consider?"
           ></textarea></label
-        ><label
-          >Save follow-up issues in<select class="home-field-control" id="home-investigation-folder"></select
-        ></label>
-        <details id="home-investigation-discussion">
-          <summary>Discuss goals or ask about the codebase</summary>
-          <div id="home-investigation-messages" class="home-messages" aria-live="polite"></div>
-          <label class="home-discussion-label"
-            >Your message<textarea
-              class="home-field-control"
-              id="home-investigation-message"
-              rows="3"
-              placeholder="Help me refine this investigation…"
-            ></textarea></label
-          ><button type="button" class="small-button" id="home-investigation-send" data-home-command="discuss">
-            Send message
-          </button>
-        </details>
-        <div id="home-investigation-status" class="home-run-status" role="status"></div>
+        ><label>Issue folder<select class="home-field-control" id="home-investigation-folder"></select></label>
+        <label class="folder-check"><input type="checkbox" id="home-investigation-reusable" /> Reusable</label>
+        <p class="muted">Keep this investigation available for repeated runs.</p>
+        <p class="muted">Investigations inspect temporary snapshots without creating a Git worktree.</p>
         <p id="home-investigation-error" class="home-error" role="alert"></p>
-        <pre id="home-investigation-result" class="home-result" hidden></pre>
-        <a id="home-investigation-issue" hidden>Open investigation issue ↗</a>
         <footer>
-          <button type="button" class="small-button" data-home-command="investigation-stop" hidden>Stop</button
-          ><button type="button" class="small-button" data-home-command="investigation-retry" hidden>Retry</button
-          ><button type="submit" class="primary-button" id="home-investigation-run">Run investigation</button>
+          <button type="submit" class="primary-button" id="home-investigation-run">Create investigation</button>
         </footer>
       </form>
     </dialog>

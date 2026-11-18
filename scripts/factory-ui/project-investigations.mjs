@@ -12,7 +12,10 @@ import { defaultIssueFolder, requireIssueFolder, resolveFolderSettings } from '.
 import { FlowFollowups } from './flow-followups.mjs';
 import { proposeProjectFollowups } from './project-home-proposals.mjs';
 import { projectIssueRecords } from './project-home-stats.mjs';
-import { moveInvestigationBranch } from './project-home-branch.mjs';
+import { updateStoredIssueMetadata } from './issue-report-storage.mjs';
+import { resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
+import { investigationIssueView, investigationConfiguration } from './investigation-history.mjs';
+import { isInvestigation } from './investigation-records.mjs';
 
 export const investigationFocuses = [
   'Whole codebase',
@@ -69,6 +72,7 @@ export class ProjectInvestigations {
   constructor(service, flows, options = {}) {
     this.service = service;
     this.flows = flows;
+    if (flows) flows.investigations = this;
     this.options = options;
     this.readOnly = options.readOnly === true;
     this.directory = join(service.root, '.issues/factory-ui/project-home/investigations');
@@ -95,7 +99,28 @@ export class ProjectInvestigations {
     );
   }
   view() {
-    return [...this.sessions.values()].toReversed().map((session) => structuredClone(session));
+    if (!this.flows) return [...this.sessions.values()].toReversed().map((session) => structuredClone(session));
+    return this.flows
+      .issues()
+      .filter((issue) => issue.location === 'open' && isInvestigation(issue, this.flows.read(issue)))
+      .map((issue) => {
+        const saved = [...this.sessions.values()].findLast((session) => session.issueId === issue.id);
+        return {
+          id: issue.id,
+          issueId: issue.id,
+          focus: issue.title,
+          status: saved?.status || 'draft',
+          updatedAt: issue.updated,
+        };
+      });
+  }
+  issueView(issueId) {
+    return investigationIssueView(this, issueId);
+  }
+  busyIssue(issueId) {
+    return (
+      [...this.active.keys()].some((id) => this.sessions.get(id)?.issueId === issueId) || this.flows.active.has(issueId)
+    );
   }
   save(session) {
     session.updatedAt = new Date().toISOString();
@@ -156,6 +181,12 @@ export class ProjectInvestigations {
     }
   }
   async dispatch(input) {
+    if (input.action === 'investigation-create') return this.create(input);
+    if (input.action === 'investigation-save') return this.configure(input);
+    requireThat(
+      input.issueId || input.id || this.sessions.has(input.requestId),
+      'Create the investigation first, then run it from its issue page.'
+    );
     requireThat(
       ['investigation-discuss', 'investigation-run', 'investigation-retry', 'investigation-stop'].includes(
         input.action
@@ -164,8 +195,17 @@ export class ProjectInvestigations {
     );
     if (input.action === 'investigation-stop') return this.stop(this.selected(input.id));
     let session = input.id ? this.selected(input.id) : this.sessions.get(identity(input.requestId));
+    const submitted = session?.requests?.[input.requestId];
+    if (submitted) {
+      requireThat(
+        submitted === digest(JSON.stringify(input)),
+        'This operation identity already contains different wording.'
+      );
+      return { session: structuredClone(session) };
+    }
     if (session && this.active.has(session.id)) return { session: structuredClone(session) };
-    const operation = await this.operation(input, session);
+    const configuration = this.runInput(input);
+    const operation = await this.operation(configuration, session);
     if (this.replayed(session, operation)) return { session: structuredClone(session) };
     if (!session) {
       session = {
@@ -174,11 +214,79 @@ export class ProjectInvestigations {
         createdAt: new Date().toISOString(),
         messages: [],
         receipts: {},
+        ...(input.issueId && { issueId: input.issueId }),
       };
       this.sessions.set(session.id, session);
     }
+    if (session.issueId) {
+      requireThat(
+        this.flows.selected(session.issueId).location === 'open',
+        'Restore the investigation before running it.'
+      );
+      requireThat(!this.busyIssue(session.issueId), 'This investigation is already running.');
+    }
+    session.requests ||= {};
+    if (input.requestId) session.requests[input.requestId] = digest(JSON.stringify(input));
     this.beginOperation(session, operation);
     return { session: structuredClone(session) };
+  }
+  runInput(input) {
+    if (!input.issueId) return input;
+    const view = this.issueView(input.issueId);
+    requireThat(!view.archived && !view.needsApproval, 'Restore or approve this investigation before running it.');
+    requireThat(!this.busyIssue(input.issueId), 'This investigation is already running.');
+    requireThat(
+      input.action === 'investigation-discuss' || view.reusable || !view.runs.some((run) => run.status === 'completed'),
+      'Enable Reusable before starting another completed investigation.'
+    );
+    return { ...view.configuration, ...input, folder: input.folder || defaultIssueFolder(this.service.root).name };
+  }
+  async create(input) {
+    const config = await this.configuration(input);
+    requireThat(
+      input.reusable === undefined || typeof input.reusable === 'boolean',
+      'Choose a valid Reusable setting.'
+    );
+    const result = await this.flows.capture({
+      requestId: input.requestId,
+      description: this.brief(config),
+      type: 'investigation',
+      folder: input.issueFolder || defaultIssueFolder(this.service.root).name,
+      startingRef: config.branch,
+      reusable: input.reusable === true,
+    });
+    requireThat(!result.deleted, 'This investigation was deleted. Create another investigation.');
+    return { issueId: result.issue.id };
+  }
+  async configure(input) {
+    const issue = this.flows.selected(input.issueId);
+    const flow = this.flows.read(issue);
+    requireThat(isInvestigation(issue, flow) && issue.location === 'open', 'Choose an open investigation.');
+    requireThat(!this.busyIssue(issue.id), 'Wait for this investigation to finish before editing it.');
+    requireThat(
+      input.revision === flow.revision && typeof input.reusable === 'boolean',
+      'This investigation changed. Refresh before saving.'
+    );
+    const config = await this.configuration({ ...investigationConfiguration(this, issue, flow), ...input });
+    requireThat(
+      this.flows.read(this.flows.selected(issue.id)).revision === flow.revision,
+      'This investigation changed. Refresh before saving.'
+    );
+    const shared = this.service.sharedIssues?.acquireForApproval(issue);
+    updateStoredIssueMetadata(this.service.root, issue, {
+      request_type: 'investigation',
+      reusable: input.reusable,
+      updated: new Date().toISOString(),
+    });
+    flow.investigation = {
+      focus: config.focus,
+      prompt: config.prompt,
+      instructions: config.instructions,
+      branch: config.branch,
+    };
+    this.flows.store.save(flow, flow.revision);
+    if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Investigation settings updated', shared);
+    return this.issueView(issue.id);
   }
   async operation(input, session) {
     const retry = input.action === 'investigation-retry';
@@ -279,20 +387,28 @@ export class ProjectInvestigations {
     requireThat(!this.flows.active.has(issue.id), 'Wait for the issue’s active block before continuing here.');
     const pendingBlock = flow.blocks.find((block) => block.attempts.some(unresolved));
     requireThat(!pendingBlock, 'The original provider attempt needs reconciliation in the issue before Retry.');
-    if (flow.startingPoint?.ref !== session.branch || flow.startingPoint?.commit !== session.startingPoint.commit) {
-      await moveInvestigationBranch(this.service, this.flows, issue, flow, session.startingPoint);
-      signal.throwIfAborted();
-      issue = this.flows.selected(session.issueId);
-      flow = this.flows.read(issue);
-    }
+    signal.throwIfAborted();
+    if (flow.workspace) flow.legacyInvestigationWorkspace ??= flow.workspace;
+    flow.workspace = null;
+    flow.startingPoint = session.startingPoint;
+    const fresh = {
+      ...flow,
+      settings: { ...flow.settings, branch: session.startingPoint.name },
+      executionSettings: undefined,
+      destination: undefined,
+    };
+    const settings = resolveIssueExecutionSettings(this.service.root, issue, fresh, { started: false });
+    requireThat(!settings.errors.length, 'Fix investigation or folder settings before running.');
+    session.settings = settings.values;
+    flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
     const catalog = this.flows.catalog.read().entries;
     let block = flow.blocks.find(({ kind }) => kind === 'understand');
     if (!block) {
       block = makeBlock('understand', [requestBlock(flow).id], false, catalog);
       flow.blocks.push(block);
     }
-    block.skill = '';
-    block.skillExplicit = true;
+    block.skill = null;
+    block.skillExplicit = false;
     block.suggested = false;
     block.prompt = this.modelPrompt(session);
     const request = requestBlock(flow);
@@ -305,7 +421,6 @@ export class ProjectInvestigations {
         'Whole-project investigation at ' + session.startingPoint.name + ' (' + session.startingPoint.commit + ').',
       constraints: 'Read-only project source. ' + session.instructions,
     };
-    flow.settings = { ...flow.settings, model: session.settings.model, effort: session.settings.effort, skill: 'none' };
     flow.projectInvestigation = { sessionId: session.id, automaticFollowups: true, folder: session.folder };
     this.flows.store.save(flow, flow.revision);
     session.blockId = block.id;
@@ -320,6 +435,26 @@ export class ProjectInvestigations {
         : 'Run the agreed whole-project investigation. Identify concrete codebase or working-process improvements with supporting evidence, bounded scope, and a verification method. Omit unsupported speculation and already-addressed work. Do not implement changes or create issues yourself; Factory creates approval-needed follow-ups from retained findings.',
       this.brief(session),
       '## Retained investigation conversation\n' + discussion,
+      '## Previous discussion (historical context)\n' +
+        JSON.stringify(
+          [...this.sessions.values()]
+            .filter((entry) => entry.issueId === session.issueId && entry.id !== session.id)
+            .flatMap((entry) => entry.messages)
+            .slice(-30)
+            .map(({ role, text }) => ({ role, text: text.slice(0, 2000), truncated: text.length > 2000 }))
+        ),
+      '## Earlier runs (historical context; recheck all findings against this revision)\n' +
+        JSON.stringify(
+          this.issueView(session.issueId)
+            .runs.slice(0, 5)
+            .map(({ id, summary, issues, output }) => ({
+              id,
+              summary,
+              issues,
+              findings: output.slice(0, 12000),
+              truncated: output.length > 12000,
+            }))
+        ),
     ].join('\n\n');
   }
   async perform(session, signal, retry) {
@@ -364,6 +499,15 @@ export class ProjectInvestigations {
       issueId: session.issueId,
       blockId: block.id,
       revision: flow.revision,
+      investigationOperation: session.id,
+      investigation: {
+        mode: session.mode,
+        prompt: session.prompt,
+        instructions: session.instructions,
+        settings: session.settings,
+        startingPoint: session.startingPoint,
+        folder: session.folder,
+      },
     });
     session.attemptId = accepted.attemptId;
     this.save(session);
@@ -406,6 +550,7 @@ export class ProjectInvestigations {
     const followups = new FlowFollowups(this.flows, (context) =>
       propose({
         ...context,
+        settings: session.settings,
         existingIssues: projectIssueRecords(this.service.root).map(({ id, title, state }) => ({ id, title, state })),
       })
     );
@@ -421,6 +566,14 @@ export class ProjectInvestigations {
     );
     this.save(session);
     const titles = new Set(projectIssueRecords(this.service.root).map(({ title }) => normalizedTitle(title)));
+    session.trackedIssues = projectIssueRecords(this.service.root)
+      .filter(
+        (issue) =>
+          issue.source_issue === session.issueId &&
+          issue.source_attempt !== source.attemptId &&
+          issue.location === 'open'
+      )
+      .map(({ id }) => id);
     const items = preview.proposals.filter((proposal) => {
       const title = normalizedTitle(proposal.title);
       if (proposal.result || !titles.has(title)) {

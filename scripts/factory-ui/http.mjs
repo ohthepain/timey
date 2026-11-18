@@ -367,6 +367,8 @@ async function read(service, request, response, owner) {
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/project-home': () => projectHome(service).view(),
+    '/api/investigation': () =>
+      projectHome(service).investigations.issueView(new URL(request.url, 'http://localhost').searchParams.get('issue')),
     '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
     '/api/issue-folder-options': () => flows(service).folders(),
     '/api/issue-folder-default': () => {
@@ -465,6 +467,7 @@ function readResource(service, request, response, owner) {
   const scripts = {
     '/flow-ui.js': 'flow-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
+    '/investigation-issue-ui.js': 'investigation-issue-ui.js',
     '/project-home.css': 'project-home.css',
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
     '/sidebar-files-ui.js': 'sidebar-files-ui.js',

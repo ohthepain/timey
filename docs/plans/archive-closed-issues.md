@@ -1,5 +1,10 @@
 # Separate closed issues from the active queue
 
+Investigations use the [direct archive lifecycle](project-home.md#investigation-lifecycle-and-repeated-runs):
+open investigations can move directly to Archive without closure, and Restore
+returns them open with their history and Reusable setting preserved. The closed
+report requirements below continue to apply to other issue types.
+
 Agreed design.
 
 ## Issue locations

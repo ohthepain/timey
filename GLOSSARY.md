@@ -231,8 +231,8 @@ Removal of a closed issue's worktree and any selected local or remote issue
 branches. Incomplete cleanup can be retried while the issue stays closed.
 
 **Issue archive**:
-A locally retained collection of closed issue reports. Archiving removes an issue
-from the Closed issues view and preserves its identity and closure.
+A retained collection of issues outside the active views. Archiving preserves
+identity and history. Investigations can be archived without being closed.
 
 **Retro**:
 A review of what happened on an issue and what could improve future work.
@@ -244,6 +244,14 @@ codebase and working processes.
 **Investigation**:
 A bounded inquiry into a project's codebase or working processes, recorded as an
 issue with its goals, conversation, findings, and resulting follow-up issues.
+
+**Reusable investigation**:
+An investigation that remains available for additional runs after a completed
+inquiry, with each run retaining its own findings and resulting issues.
+
+**Investigation run**:
+One execution of an investigation against a chosen revision, retaining the
+instructions, settings, findings, evidence, and related issues for that execution.
 
 **Retro item**:
 A follow-up issue proposed by a retro that retains its originating issue for

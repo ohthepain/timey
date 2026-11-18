@@ -10,6 +10,7 @@ import {
   storedIssuePath,
 } from './issue-report-storage.mjs';
 import { readSavedReport } from './report-document.mjs';
+import { investigationReport } from './investigation-records.mjs';
 
 function displayNumbers(root) {
   const path = join(root, '.issues/issue-numbers.json');
@@ -68,15 +69,37 @@ function finishLocalMove(root, action, id, content) {
   return { id, status: action === 'archive' ? 'archived' : 'restored' };
 }
 
+function investigationMove(service, action, id) {
+  const open = storedIssuePath(service.root, id, 'open');
+  const direct =
+    action === 'archive' &&
+    existsSync(open) &&
+    investigationReport(service.root, id, readSavedReport(service.root, id, 'open').content);
+  const archived = storedIssuePath(service.root, id, 'archive');
+  const restoreOpen =
+    action === 'restore' &&
+    (existsSync(archived)
+      ? investigationReport(service.root, id, readSavedReport(service.root, id, 'archive').content)
+      : existsSync(open) && investigationReport(service.root, id, readSavedReport(service.root, id, 'open').content));
+  return { direct, restoreOpen };
+}
+
 function moveOne(service, action, id) {
   requireThat(!isActive(service, id), 'Wait for the current issue operation to finish.');
-  const [from, to] = action === 'archive' ? ['closed', 'archive'] : ['archive', 'closed'];
+  const { direct, restoreOpen } = investigationMove(service, action, id);
+  if (direct || restoreOpen)
+    requireThat(
+      !service.flows?.active.has(id) && !service.flows?.investigations?.busyIssue(id),
+      'Wait for this investigation to finish before archiving or restoring it.'
+    );
+  const [from, to] =
+    action === 'archive' ? [direct ? 'open' : 'closed', 'archive'] : ['archive', restoreOpen ? 'open' : 'closed'];
   const path = storedIssuePath(service.root, id, from);
   if (!existsSync(path) && existsSync(storedIssuePath(service.root, id, to)))
     return finishLocalMove(service.root, action, id);
   const { content } = readSavedReport(service.root, id, from);
   requireThat(
-    reportHeader(content).state === configuredClosedState(service.root),
+    direct || restoreOpen || reportHeader(content).state === configuredClosedState(service.root),
     'Close the report before moving it to or from the archive.'
   );
   const result = service.sharedIssues?.moveStorage(id, action, content);

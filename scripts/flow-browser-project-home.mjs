@@ -64,38 +64,58 @@ async function investigate(page, service, calls, screenshot) {
   const dialog = page.locator('#home-investigation-dialog');
   await dialog.waitFor({ state: 'visible' });
   assert.equal(await dialog.locator('#home-investigation-branch').inputValue(), 'refs/heads/dev');
-  assert.equal(await dialog.locator('select').count(), 3, 'Focus, branch, and follow-up destination; no folder scope.');
   await dialog.locator('#home-investigation-branch').selectOption('refs/heads/recent');
   await dialog.locator('#home-investigation-focus').selectOption('Architecture');
   await dialog.locator('#home-investigation-prompt').fill('Investigate validation across the project.');
   await dialog.locator('#home-investigation-instructions').fill('Prioritize clear boundaries.');
-  await dialog.locator('summary').click();
-  await dialog.locator('#home-investigation-message').fill('Which boundary should we examine?');
-  await dialog.getByRole('button', { name: 'Send message', exact: true }).click();
-  await dialog.locator('#home-investigation-messages').getByText(findings, { exact: true }).waitFor();
-  assert.equal(service.projectHome.investigations.view()[0].status, 'draft');
-  assert.equal(service.flows.issues().filter(({ title }) => title === proposal.title).length, 0);
-  await screenshot('project-investigation-discussion');
-  await dialog.getByRole('button', { name: 'Run investigation', exact: true }).click();
-  await dialog.locator('#home-investigation-status').getByText('completed', { exact: true }).waitFor();
-  const session = service.projectHome.investigations.view()[0];
-  assert.equal(session.branch, 'refs/heads/recent');
+  await dialog.locator('#home-investigation-reusable').check();
+  assert.equal(await dialog.getByRole('button', { name: 'Run investigation', exact: true }).count(), 0);
+  await dialog.getByRole('button', { name: 'Create investigation', exact: true }).click();
+  const investigation = page.locator('#investigation-page');
+  await investigation.waitFor({ state: 'visible' });
+  await page.locator('#investigation-prompt').waitFor();
+  assert.equal(calls.investigations, 0, 'Creation starts no model work.');
+  assert.equal(await page.locator('#close-with-reason').isVisible(), false);
+  assert.equal(await page.locator('#worktree-menu').isVisible(), false);
+  await investigation.getByRole('button', { name: 'Run investigation', exact: true }).click();
+  await page.locator('#investigation-status').getByText('Latest investigation completed.', { exact: true }).waitFor();
+  assert.equal(calls.investigations, 1);
+  const issueId = new URL(page.url()).searchParams.get('issue');
+  const owner = service.projectHome.investigations;
+  const first = owner.issueView(issueId);
+  assert.equal(first.runs.length, 1);
+  assert.equal(first.runs[0].issues[0].state, 'needs-approval');
+  assert.equal(first.runs[0].revision, service.flows.read(service.flows.selected(issueId)).startingPoint.commit);
+  await screenshot('investigation-first-result');
+  await investigation.getByRole('button', { name: 'Run again', exact: true }).click();
+  await page.locator('#investigation-status').getByText('Latest investigation completed.', { exact: true }).waitFor();
+  await page.locator('#investigation-runs-label').getByText('Runs (2)', { exact: true }).waitFor();
   assert.equal(calls.investigations, 2);
-  const child = service.flows.issues().find(({ source_issue }) => source_issue === session.issueId);
-  assert.equal(child.state, 'needs-approval');
-  assert.equal(child.source_attempt, session.attemptId);
-  assert.match(
-    service.flows.read(service.flows.selected(session.issueId)).blocks.find(({ kind }) => kind === 'understand').prompt,
-    /Prioritize clear boundaries/
+  assert.equal(
+    service.flows.issues().filter(({ source_issue }) => source_issue === issueId).length,
+    1,
+    'Repeats do not duplicate issues.'
   );
-  await screenshot('project-investigation-completed');
-  await dialog.getByRole('button', { name: 'Close investigation', exact: true }).click();
+  await page.locator('#investigation-runs-label').click();
+  await page.locator('[data-investigation-run]').last().click();
+  await page.locator('#investigation-result-panel').getByText('Created this run', { exact: false }).waitFor();
+  await screenshot('investigation-run-history');
   await page.reload();
-  await page.locator('[data-home-session="investigation"]').first().waitFor();
+  await investigation.waitFor({ state: 'visible' });
+  await page.locator('#investigation-runs-label').getByText('Runs (2)', { exact: true }).waitFor();
   assert.equal(calls.investigations, 2, 'Reload starts no investigation.');
-  await page.locator('[data-home-session="investigation"]').first().click();
-  await dialog.locator('#home-investigation-issue').click();
-  await page.locator('#issue-heading:not([hidden])').waitFor();
+  await page.locator('#investigation-archive').click();
+  await page.locator('#investigation-status').getByText('Archived', { exact: true }).waitFor();
+  assert.equal(owner.issueView(issueId).runs.length, 2);
+  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  await page.locator('#investigation-status').getByText('Latest investigation completed.', { exact: true }).waitFor();
+  assert.equal(owner.issueView(issueId).reusable, true);
+  assert.equal(await page.locator('#issue-playback').isVisible(), false);
+  await page.locator('#investigation-reusable').uncheck();
+  await page.getByRole('button', { name: 'Save investigation settings', exact: true }).click();
+  await page.locator('#issue-subtitle').getByText('One-time', { exact: true }).waitFor();
+  assert.equal(await page.locator('#investigation-run').isDisabled(), true);
+  assert.equal(await page.locator('#close-with-reason').isVisible(), false);
   await page.getByRole('button', { name: 'Home', exact: true }).click();
   await page.locator('#project-home:not([hidden])').waitFor();
 }

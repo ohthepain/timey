@@ -25,7 +25,10 @@ function fixture(t, behavior = {}) {
   git(root, 'config', 'user.name', 'Fixture');
   git(root, 'config', 'user.email', 'fixture@example.test');
   mkdirSync(join(root, '.issues/closed'), { recursive: true });
-  writeFileSync(join(root, '.issues/closed', id + '.md'), content);
+  const report = behavior.investigation
+    ? content.replace('state: closed', 'state: backlog\nrequest_type: investigation\nreusable: true')
+    : content;
+  writeFileSync(join(root, behavior.investigation ? '.issues' : '.issues/closed', id + '.md'), report);
   writeFileSync(join(root, '.issues/issue-numbers.json'), JSON.stringify({ version: 1, next: 2, issues: { [id]: 1 } }));
   writeFileSync(
     join(root, 'factory.config.json'),
@@ -49,6 +52,10 @@ function fixture(t, behavior = {}) {
   const queue = createSharedIssueQueue(service, {
     pushDirect(commit, destination, claim, expectedHead) {
       pushes.push({ commit, destination, claim, expectedHead });
+      if (!claim) {
+        git(root, 'push', 'origin', `${commit}:${destination}`);
+        return { commit };
+      }
       behavior.before?.({ root, remote, commit, claim, pushes });
       git(
         root,
@@ -65,7 +72,7 @@ function fixture(t, behavior = {}) {
     },
   });
   t.after(() => queue.close());
-  return { root, remote, queue, pushes };
+  return { root, remote, queue, pushes, report };
 }
 
 test('direct archive atomically publishes and forgets only its local claim', (t) => {
@@ -321,4 +328,15 @@ test('an explicit archive retry fetches fresh state instead of reusing its saved
   writeFileSync(join(root, '.issues/archive', id + '.md'), content);
   const fetches = tracedFetches(() => assert.equal(queue.retry(id).status, 'published'));
   assert.equal(fetches, 1);
+});
+
+test('a direct investigation archive removes its open report atomically without closure', (t) => {
+  const { root, remote, queue, report } = fixture(t, { investigation: true });
+  assert.equal(queue.moveStorage(id, 'archive', report).status, 'published');
+  assert.equal(existsSync(join(root, '.issues', id + '.md')), false);
+  assert.equal(readFileSync(join(root, '.issues/archive', id + '.md'), 'utf8'), report);
+  assert.equal(git(remote, 'for-each-ref', claimRef), '');
+  assert.equal(git(remote, 'ls-tree', target, '.issues/closed/'), '');
+  assert.equal(queue.moveStorage(id, 'restore', report).status, 'published');
+  assert.equal(readFileSync(join(root, '.issues', id + '.md'), 'utf8'), report);
 });

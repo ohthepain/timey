@@ -11,6 +11,13 @@ Run, findings, draft edits, Apply, reload, and narrow layout with injected model
 The factory and Flow aggregate checks include these scenarios. Live provider
 availability remains a separate check.
 
+The investigation checks also cover create-only navigation, one-time and reusable
+runs, immutable run history, per-run destinations, fresh defaults and branch tips,
+source-preserving temporary snapshots, success/failure/Stop cleanup, and direct
+archive/restore. Shared-queue checks retain report freshness, protected claim
+release and ordinary closed-issue behavior. Chrome drives the shared investigation
+page, historical result selection and Archive/Restore using injected responses.
+
 `pnpm run test:flow` checks flow records, cancellation, exact candidate evidence,
 publication, and guarded closure in disposable projects. `pnpm run test:flow:browser`
 drives the real flow page and HTTP routes with an injected executor. Its results,

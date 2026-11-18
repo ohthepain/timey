@@ -14,7 +14,7 @@ const unpublishedId = '20261111T165431736-ca3555165563420b';
 const reportPath = `.issues/${issueId}.md`;
 const original = '---\ntitle: Shared report\nstate: in-progress\n---\n\n# Shared report\n';
 
-function fixture(t, closed = false, separate = false) {
+function fixture(t, closed = false, separate = false, investigation = false) {
   const base = mkdtempSync(join(tmpdir(), 'shared-issue-queue-'));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const remote = join(base, 'origin.git');
@@ -26,11 +26,15 @@ function fixture(t, closed = false, separate = false) {
   git(first, 'config', 'user.email', 'runner@example.test');
   mkdirSync(join(first, '.issues'));
   const relative = closed ? `.issues/closed/${issueId}.md` : reportPath;
-  const contents = closed ? `---\nid: ${issueId}\nstate: closed\n---\n\n# Shared report\n` : original;
+  const contents = investigation
+    ? `---\nid: ${issueId}\ntitle: Reusable investigation\nrequest_type: investigation\nreusable: true\nstate: backlog\n---\n\n# Investigation\n`
+    : closed
+      ? `---\nid: ${issueId}\nstate: closed\n---\n\n# Shared report\n`
+      : original;
   if (closed) mkdirSync(join(first, '.issues/closed'));
   writeFileSync(join(first, relative), contents);
   const registry = '.issues/issue-numbers.json';
-  if (closed || separate)
+  if (closed || separate || investigation)
     writeFileSync(join(first, registry), JSON.stringify({ version: 1, next: 2, issues: { [issueId]: 1 } }) + '\n');
   writeFileSync(
     join(first, 'factory.config.json'),
@@ -38,7 +42,7 @@ function fixture(t, closed = false, separate = false) {
   );
   writeFileSync(join(first, '.gitignore'), readFileSync(new URL('../.gitignore', import.meta.url)));
   git(first, 'add', 'factory.config.json', '.gitignore');
-  git(first, 'add', '-f', relative, ...(closed || separate ? [registry] : []));
+  git(first, 'add', '-f', relative, ...(closed || separate || investigation ? [registry] : []));
   git(first, '-c', 'user.name=Tester', '-c', 'user.email=tester@example.com', 'commit', '-qm', 'Seed queue');
   if (separate) {
     const prepared = JSON.parse(
@@ -387,4 +391,35 @@ test('two Flow clones share the separate branch without advancing code', async (
   assert.equal(git(first, 'rev-parse', 'HEAD'), head);
   assert.equal(git(second, 'rev-parse', 'HEAD'), head);
   assert.equal(git(remote, 'ls-tree', 'dev', reportPath), '');
+});
+
+test('an open investigation archives directly and restores open without inventing closure', (t) => {
+  const { remote, first, second, contents } = fixture(t, false, false, true);
+  const reviews = [];
+  const { queue: owner } = queue(first, (record) => {
+    reviews.push(record);
+    return { number: reviews.length, url: 'https://example.test/review' };
+  });
+  const { queue: observer } = queue(second, () => assert.fail('Observer never publishes.'));
+  t.after(() => {
+    owner.close();
+    observer.close();
+  });
+  owner.refresh(true);
+  observer.refresh(true);
+  const archivedResult = owner.moveStorage(issueId, 'archive', contents);
+  assert.equal(archivedResult.status, 'review', JSON.stringify(archivedResult));
+  assert.equal(readFileSync(join(first, reportPath), 'utf8'), contents);
+  git(remote, 'update-ref', 'refs/heads/dev', reviews[0].commit);
+  owner.refresh(true);
+  observer.refresh(true);
+  assert.equal(existsSync(join(first, reportPath)), false);
+  assert.equal(readFileSync(join(first, '.issues/archive', issueId + '.md'), 'utf8'), contents);
+  assert.equal(owner.moveStorage(issueId, 'restore', contents).status, 'review');
+  git(remote, 'update-ref', 'refs/heads/dev', reviews[1].commit);
+  owner.refresh(true);
+  observer.refresh(true);
+  assert.equal(readFileSync(join(first, reportPath), 'utf8'), contents);
+  assert.equal(readFileSync(join(second, reportPath), 'utf8'), contents);
+  assert.equal(existsSync(join(first, '.issues/closed', issueId + '.md')), false);
 });

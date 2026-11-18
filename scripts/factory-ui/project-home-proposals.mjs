@@ -47,7 +47,7 @@ export async function proposeProjectFollowups(root, context, signal, create = cr
       JSON.stringify(redactValue(context)),
       schema,
       [],
-      newChatModelSettings(root)
+      context.settings ? { model: context.settings.model, effort: context.settings.effort } : newChatModelSettings(root)
     );
     signal.throwIfAborted();
     const result = JSON.parse(output);

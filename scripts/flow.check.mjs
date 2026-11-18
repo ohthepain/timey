@@ -1783,7 +1783,7 @@ test('Retro reads linked threads in the available provider and reports missing h
   assert.equal(flow.workspace, null);
 });
 
-test('new investigations propose understanding and acceptance without code delivery blocks', (t) => {
+test('new investigations propose understanding without code delivery or closure blocks', (t) => {
   fixture(t);
   const flow = newFlow(
     { id: '20261113-investigation', title: 'Understand the cache', request_type: 'investigation', content: '' },
@@ -1791,7 +1791,7 @@ test('new investigations propose understanding and acceptance without code deliv
   );
   assert.deepEqual(
     flow.blocks.map((block) => block.kind),
-    ['request', 'understand', 'close']
+    ['request', 'understand']
   );
 });
 

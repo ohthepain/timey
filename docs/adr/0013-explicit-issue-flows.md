@@ -102,6 +102,9 @@ freshness and failures. An externally merged PR is an observation, not acceptanc
 Factory suggests Update Branch when the cached upstream of Starting point
 contains commits missing from the issue branch. Git fetches remain explicit operations or external Git-tool work.
 
+The center column shows playback results and closure errors in a Results section
+directly below the issue banner, hidden when empty. Playback status remains visible
+in the banner independently of those results.
 The issue timeline groups notes and results from its blocks. Model blocks use
 their own Codex conversations so each receives its declared inputs independently.
 Explicit continuation can reuse a block conversation with the same inputs and
@@ -242,3 +245,12 @@ Cancelling the confirmation or manually starting a different block pauses the
 issue. The inspector keeps Run, Retry, Recover, Approve merge, or Stop beside the block name
 across tabs. Retry can reuse the block's conversation when its inputs,
 definition, and skill still match.
+
+## Investigation lifecycle revision
+
+The approved [investigation lifecycle](../plans/project-home.md#investigation-lifecycle-and-repeated-runs)
+supersedes closure and persistent-worktree behavior for investigation issues.
+Their single issue page owns creation-independent execution and run history.
+They archive directly, without a Close block or button, and execute in temporary
+committed snapshots. Reusable enables additional completed runs under the same
+issue identity. Other issue delivery and closure semantics are unchanged.

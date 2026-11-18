@@ -1394,6 +1394,38 @@ kbd {
 .followup-proposal:disabled {
   opacity: 0.6;
 }
+.workspace[data-investigation='open'] {
+  grid-template-columns: var(--sidebar-width, 242px) minmax(0, 1fr);
+}
+.workspace[data-investigation='open'] .issue-playback,
+.workspace[data-investigation='open'] .inspector,
+.workspace[data-investigation='open'] #environment,
+.workspace[data-investigation='open'] #graph-scroll,
+.workspace[data-investigation='open'] #issue-flow-picker,
+.workspace[data-investigation='open'] #rebuild-flow {
+  display: none;
+}
+.investigation-page {
+  overflow: auto;
+}
+.investigation-run-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin-block: 20px;
+}
+.investigation-run-controls .field {
+  flex: 1 1 240px;
+}
+#investigation-result-panel {
+  margin-block: 24px;
+}
+#investigation-result-panel .home-result {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+}
 #publish-preview {
   margin-block: 1rem;
   overflow-wrap: anywhere;

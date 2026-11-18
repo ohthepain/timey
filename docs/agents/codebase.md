@@ -24,10 +24,15 @@ it stores folder assignments independently from report content and lifecycle met
 The default Flow page opens **Project home** when no issue or folder is selected.
 `scripts/factory-ui/project-home.mjs` composes project statistics, investigations,
 and Automate me behind the authenticated project-home routes in `http.mjs`.
-`project-home-ui.js` owns the home page and operation dialogs. Investigations use
-the existing issue capture and Understand execution, with automatic approval-needed
-follow-ups only for this project operation. `project-home-branch.mjs` changes a
-read-only investigation's clean managed checkout without implementation authority.
+`project-home-ui.js` owns the home page, create-only investigation dialog, and
+Automate me dialog. `project-investigations.mjs` owns issue-bound runs and automatic
+approval-needed follow-ups. `investigation-issue-ui.js` owns the common issue page;
+`investigation-history.mjs` projects retained runs and linked current issue states.
+`investigation-snapshot.mjs` creates temporary detached copies and removes them
+after the executor retains results; it creates no source-project worktrees or
+branches. `investigation-records.mjs` supplies shared classification for Flow and
+archive/publication. Investigations archive directly and restore open, with
+ordinary issue closure and archive rules retained for other types.
 `project-home-stats.mjs` reads open, closed, and archived reports; shared closure
 history is preserved by `scripts/factory-completion.mjs`.
 

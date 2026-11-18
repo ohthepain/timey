@@ -23,6 +23,9 @@ import { sharedIssueQueueConfig } from './shared-issue-config.mjs';
 import { createSharedIssuePublication } from './shared-issue-publication.mjs';
 import { copySharedIssueFile, fetchSharedIssueTarget, syncSharedIssueFiles } from './shared-issue-sync.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import { investigationReport } from './investigation-records.mjs';
+
+const archiveSource = (record) => record.baseLocation || 'closed';
 
 function withSharedProgress(report, status) {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/;
@@ -72,9 +75,10 @@ export function createSharedIssueQueue(service, options = {}) {
     return existsSync(path) && lstatSync(path).isFile() && readFileSync(path, 'utf8') === content;
   }
   function completeArchive(record) {
-    const closed = storedIssuePath(root, record.id, 'closed');
+    const location = archiveSource(record);
+    const closed = storedIssuePath(root, record.id, location);
     const hasClosed = existsSync(closed);
-    requireThat(!hasClosed || sameReport(record.id, 'closed', record.base), 'The local closed report changed.');
+    requireThat(!hasClosed || sameReport(record.id, location, record.base), 'The local report changed.');
     formatArchivedIssue(root, record.id, record.base);
     if (hasClosed) unlinkSync(closed);
   }
@@ -398,7 +402,10 @@ export function createSharedIssueQueue(service, options = {}) {
           : retry(id);
     const live = publication.readTarget(id);
     if (action === 'archive' && live.report === null) return null;
-    requireThat(action === 'restore' || live.location === 'closed', 'Close the shared issue before archiving it.');
+    requireThat(
+      action === 'restore' || live.location === 'closed' || investigationReport(root, id, content),
+      'Close the shared issue before archiving it.'
+    );
     const context = acquireTarget({ id, content }, () => live, {
       allowDraft: false,
       restoring: action === 'restore',
@@ -410,16 +417,17 @@ export function createSharedIssueQueue(service, options = {}) {
     if (action === 'archive') {
       const archive = storedIssuePath(root, id, 'archive');
       mkdirSync(join(root, '.issues/archive'), { recursive: true });
-      if (!existsSync(archive)) copyFileSync(storedIssuePath(root, id, 'closed'), archive, constants.COPYFILE_EXCL);
+      if (!existsSync(archive))
+        copyFileSync(storedIssuePath(root, id, archiveSource(context)), archive, constants.COPYFILE_EXCL);
       requireThat(sameReport(id, 'archive', content), 'An archive copy already exists with different content.');
     }
     return publicState(
       checkpoint(
         id,
-        action === 'archive' ? 'Archive closed report' : 'Restore closed report',
+        action === 'archive' ? 'Archive issue report' : 'Restore issue report',
         context,
         action === 'archive' ? null : content,
-        action === 'archive' ? null : 'closed',
+        action === 'archive' ? null : investigationReport(root, id, content) ? 'open' : 'closed',
         action
       )
     );
@@ -460,7 +468,7 @@ export function createSharedIssueQueue(service, options = {}) {
         'The shared report changed before recovery.'
       );
       if (action === 'delete-proposal') return checkpointProposalDeletion(id, { ...saved, claim });
-      const source = action === 'archive' ? 'closed' : 'archive';
+      const source = action === 'archive' ? archiveSource(saved) : 'archive';
       return saveStorageCheckpoint(id, action, localReport(id, source), {
         claim,
         base: saved.base,

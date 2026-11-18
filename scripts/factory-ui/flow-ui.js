@@ -321,6 +321,7 @@
     navigateHome: () => selectWorkspace({}),
     changed: () => load(true),
   });
+  const investigationUI = window.createInvestigationIssueUI({ request: json, post, changed: () => load(true) });
 
   function investigationActions(block) {
     if (block?.kind !== 'understand' || status(block) !== 'completed') return '';
@@ -2117,6 +2118,29 @@
     renderInspector();
     renderErrors();
     setBusy(state.pending);
+    renderInvestigationPage();
+  }
+
+  function renderInvestigationPage() {
+    const investigation = state.view?.flow?.routeType === 'investigation';
+    investigationUI.show(investigation ? state.issueId : null);
+    $('app').dataset.investigation = investigation ? 'open' : 'closed';
+    if (investigation) {
+      $('issue-type-label').textContent = 'Investigation ·';
+      $('issue-subtitle').textContent = state.view.issue.reusable ? 'Reusable' : 'One-time';
+      for (const id of [
+        'graph-scroll',
+        'environment',
+        'issue-playback',
+        'issue-flow-picker',
+        'rebuild-flow',
+        'issue-grouping',
+      ]) {
+        if ($(id)) $(id).hidden = true;
+      }
+      document.querySelector('.inspector').hidden = true;
+      $('flow-view-title').textContent = 'Investigation';
+    }
   }
 
   function renderSharedQueue() {

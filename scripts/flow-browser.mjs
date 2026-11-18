@@ -66,6 +66,7 @@ const assets = [
   'folder-settings-ui.js',
   'investigation-followups-ui.js',
   'project-home-ui.js',
+  'investigation-issue-ui.js',
   'project-home.css',
   'issue-closure-ui.js',
   'server-control-ui.js',
@@ -1515,7 +1516,10 @@ try {
     await noNewActions.uncheck();
     await block('request');
     await page.getByRole('button', { name: 'Play issue' }).click();
-    await page.locator('#playback-status').filter({ hasText: 'Flow complete' }).waitFor();
+    await page.locator('#issue-results-message').filter({ hasText: 'Flow complete' }).waitFor();
+    assert.equal(await page.locator('#issue-results').isVisible(), true);
+    assert.equal(await page.locator('#issue-heading + #issue-results').count(), 1);
+    assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
     assert.equal(await page.locator('[data-block="request"][aria-pressed="true"]').count(), 1);
     assert.equal(await page.locator('#waiting-block').isVisible(), false);
     await page.reload();

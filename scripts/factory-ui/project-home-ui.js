@@ -33,7 +33,6 @@
         state.data = await request('/api/project-home');
         $('home-error').textContent = '';
         renderHome();
-        updateSelected('investigation', investigationSessions());
         updateSelected('automate', automateSessions());
       } catch (error) {
         $('home-error').textContent = error.message;
@@ -107,10 +106,7 @@
       };
       state.investigation = current;
       configureInvestigation(current);
-      $('home-investigation-message').value = '';
-      $('home-investigation-discussion').open = Boolean(current.messages.length);
       $('home-investigation-error').textContent = '';
-      renderInvestigation();
       $('home-investigation-dialog').showModal();
     }
     function configureInvestigation(current) {
@@ -131,6 +127,7 @@
       );
       $('home-investigation-prompt').value = current.prompt ?? state.data.prompts[current.focus];
       $('home-investigation-instructions').value = current.instructions;
+      $('home-investigation-reusable').checked = false;
     }
 
     function renderMessages(id, messages) {
@@ -160,24 +157,6 @@
       ].includes(session.status);
       operationStatus(kind, session);
     }
-    function investigationResult(result) {
-      if (!result) return '';
-      if (typeof result === 'string') return result;
-      return result.summary || JSON.stringify(result, null, 2);
-    }
-    function renderInvestigation() {
-      const session = state.investigation;
-      setRunButtons('investigation', session);
-      renderMessages('home-investigation-messages', session.messages);
-      const disabled = busy(session) || state.pending;
-      $('home-investigation-run').disabled = disabled;
-      $('home-investigation-send').disabled = disabled;
-      $('home-investigation-result').hidden = !session.result;
-      $('home-investigation-result').textContent = investigationResult(session.result);
-      $('home-investigation-issue').hidden = !session.issueId;
-      $('home-investigation-issue').href = '/?issue=' + encodeURIComponent(session.issueId);
-    }
-
     async function openAutomate(session) {
       await refresh();
       state.automate = session || {
@@ -251,7 +230,8 @@
         branch: $('home-investigation-branch').value,
         prompt: $('home-investigation-prompt').value,
         instructions: $('home-investigation-instructions').value,
-        folder: $('home-investigation-folder').value,
+        issueFolder: $('home-investigation-folder').value,
+        reusable: $('home-investigation-reusable').checked,
       };
     }
 
@@ -267,7 +247,7 @@
     }
 
     function renderSelected(kind) {
-      ({ investigation: renderInvestigation, automate: renderAutomate })[kind]();
+      if (kind === 'automate') renderAutomate();
     }
 
     function stableSubmission(action, input) {
@@ -298,15 +278,7 @@
       }
     }
 
-    async function discuss() {
-      const message = $('home-investigation-message').value.trim();
-      if (!message) return;
-      if (await send('investigation', 'investigation-discuss', { ...investigationInput(), message }))
-        $('home-investigation-message').value = '';
-    }
-
     async function command(name) {
-      if (name === 'discuss') return discuss();
       const kind = name.startsWith('automate') ? 'automate' : 'investigation';
       const isDraft = ['automate-apply', 'automate-preview'].includes(name);
       return send(kind, name, isDraft ? automateDraftInput() : { id: state[kind].id });
@@ -328,7 +300,11 @@
     }
     function savedNavigation(button) {
       const kind = button.dataset.homeSession;
-      const sessions = kind === 'investigation' ? investigationSessions() : automateSessions();
+      if (kind === 'investigation') {
+        location.href = '/?issue=' + encodeURIComponent(button.dataset.sessionId);
+        return;
+      }
+      const sessions = automateSessions();
       openDialog(
         kind,
         sessions.find(({ id }) => id === button.dataset.sessionId)
@@ -348,12 +324,26 @@
       void command(button.dataset.homeCommand);
     }
 
+    async function createInvestigation() {
+      if (state.pending) return;
+      state.pending = true;
+      $('home-investigation-run').disabled = true;
+      try {
+        const result = await post('project-home-action', { action: 'investigation-create', ...investigationInput() });
+        location.href = '/?issue=' + encodeURIComponent(result.issueId);
+      } catch (error) {
+        $('home-investigation-error').textContent = error.message;
+      } finally {
+        state.pending = false;
+        $('home-investigation-run').disabled = false;
+      }
+    }
     $('home-investigation-focus').addEventListener('change', () => {
       $('home-investigation-prompt').value = state.data.prompts[$('home-investigation-focus').value];
     });
     $('home-investigation-form').addEventListener('submit', (event) => {
       event.preventDefault();
-      void send('investigation', 'investigation-run', investigationInput());
+      void createInvestigation();
     });
     $('home-automate-form').addEventListener('submit', (event) => {
       event.preventDefault();

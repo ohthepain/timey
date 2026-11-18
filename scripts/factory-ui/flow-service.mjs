@@ -34,6 +34,7 @@ import { SidebarFiles } from './sidebar-files.mjs';
 import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
 import { FlowFollowups } from './flow-followups.mjs';
+import { isInvestigation } from './investigation-records.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { folderSettingsFields, validateSettingValue } from './folder-settings-schema.mjs';
@@ -199,7 +200,7 @@ export function createIssueFlows(service, options = {}) {
 }
 
 function captureIdentity(
-  { description, type, needsApproval, runRetro, sourceIssue, sourceAttempt, startingRef },
+  { description, type, needsApproval, runRetro, sourceIssue, sourceAttempt, startingRef, reusable },
   folder,
   grouping
 ) {
@@ -209,6 +210,7 @@ function captureIdentity(
   if (sourceIssue) fields.push({ sourceIssue });
   if (sourceAttempt) fields.push({ sourceAttempt });
   if (startingRef !== undefined) fields.push({ startingRef });
+  if (reusable !== undefined) fields.push({ reusable });
   return digest(JSON.stringify(fields));
 }
 
@@ -219,6 +221,9 @@ function captureGroupMetadata(grouping) {
     issue_group: { children, reasoning },
     ...(humanChecks?.length && { human_checks: humanChecks }),
   };
+}
+function captureInvestigationMetadata(input) {
+  return input.reusable === undefined ? {} : { reusable: input.reusable };
 }
 
 function validateCaptureId(requestId) {
@@ -353,9 +358,23 @@ class IssueFlows {
     flow.resolvedBranch = settings.values.branch;
     if (typeof issue.run_retro === 'boolean') requestBlock(flow).data.runRetro = issue.run_retro;
     if (!flow.closing) setRetroBlock(flow, catalog);
+    if (isInvestigation(issue, flow)) {
+      const removed = flow.blocks.filter((block) =>
+        ['close', 'retro', 'cleanup', 'delete-worktree'].includes(block.kind)
+      );
+      flow.retiredBlocks = [...(flow.retiredBlocks || []), ...removed.filter((block) => block.attempts.length)];
+      flow.blocks = flow.blocks.filter((block) => !removed.includes(block));
+    }
     return flow;
   }
   issueSettings(issue, flow) {
+    if (isInvestigation(issue, flow) && !this.active.has(issue.id))
+      return resolveIssueExecutionSettings(
+        this.service.root,
+        issue,
+        { ...flow, executionSettings: undefined, destination: undefined },
+        { started: false }
+      );
     return resolveIssueExecutionSettings(this.service.root, issue, flow, {
       started: executionStarted(this.service, flow),
     });
@@ -538,6 +557,7 @@ class IssueFlows {
         title: issue.title,
         issueNumber: issue.issueNumber,
         state: issue.state,
+        reusable: issue.reusable === true,
         location: issue.location,
         status: selectedRow.status,
         closure: issue.closure,
@@ -1019,6 +1039,11 @@ class IssueFlows {
     const issue = this.selected(input.issueId);
     const { entries: catalog } = this.catalog.read();
     let flow = this.read(issue, catalog);
+    if (isInvestigation(issue, flow))
+      requireThat(
+        !closureActions.has(input.action) && input.action !== 'retro-setting',
+        'Investigations are archived directly; they have no Close or Retro step.'
+      );
     this.overnight.requireManualAction(issue.id, input.action);
     if (['approve-issue', 'delete-pending-issue'].includes(input.action)) {
       requireThat(input.revision === flow.revision, 'This issue changed. Refresh before deciding.');
@@ -1123,7 +1148,10 @@ class IssueFlows {
   }
   editIssueSettings(issue, flow, input) {
     requireThat(
-      !issue.closed && !executionStarted(this.service, flow) && !this.active.has(issue.id),
+      !issue.closed &&
+        (isInvestigation(issue, flow) || !executionStarted(this.service, flow)) &&
+        !this.active.has(issue.id) &&
+        !this.investigations?.busyIssue(issue.id),
       'Issue settings are fixed after execution starts.'
     );
     requireThat(
@@ -1314,6 +1342,7 @@ class IssueFlows {
     );
     const block = makeBlock('update-branch', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
+    if (input.investigation) attempt.investigation = structuredClone(input.investigation);
     const controller = new AbortController();
     const queue = this.service.sharedIssues;
     const claim = queue?.acquireFlowBlock(issue, block.id, false);
@@ -1740,6 +1769,17 @@ class IssueFlows {
     return this.view(issue.id);
   }
   async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
+    if (isInvestigation(issue, flow)) {
+      requireThat(
+        input.investigationOperation && this.investigations?.active.has(input.investigationOperation),
+        'Run this investigation from its issue page.'
+      );
+      const selected = flow.blocks.find(({ id }) => id === input.blockId);
+      requireThat(
+        selected?.kind === 'understand',
+        'Investigations run Understand without code delivery or closure steps.'
+      );
+    }
     this.groups.requireIndependent(issue.id);
     requireThat(
       !this.active.has(issue.id),
@@ -2080,6 +2120,10 @@ class IssueFlows {
     validateCaptureId(input.requestId);
     validateCaptureDescription(input.description);
     validateCaptureType(input.type);
+    requireThat(
+      input.reusable === undefined || (input.type === 'investigation' && typeof input.reusable === 'boolean'),
+      'Reusable applies to investigation issues.'
+    );
     validateCaptureSource(input, this);
     if (input.startingRef !== undefined) branchStartingPoint(await this.codeBranches(), input.startingRef);
     const folder = requireIssueFolder(
@@ -2168,6 +2212,7 @@ class IssueFlows {
       grill_later: false,
       autonomy: 'ask',
       request_type: input.type || inferType(input.description),
+      ...captureInvestigationMetadata(input),
       category: (input.type || inferType(input.description)) === 'bug' ? 'bug' : 'enhancement',
       ...(input.runRetro && { run_retro: true }),
       ...(input.sourceIssue && { source_issue: this.selected(input.sourceIssue).id }),

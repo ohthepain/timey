@@ -119,7 +119,8 @@
   gap: 8px;
   max-width: 1080px;
 }
-[data-home-session] {
+[data-home-session],
+[data-investigation-run] {
   text-align: left;
   background: #1b1b1b;
   border: 1px solid var(--line);
@@ -130,13 +131,15 @@
   align-items: center;
   gap: 16px;
 }
-[data-home-session]:hover {
+[data-home-session]:hover,
+[data-investigation-run]:hover {
   border-color: #626262;
 }
 [data-home-session] strong {
   font-weight: 500;
 }
-[data-home-session] small {
+[data-home-session] small,
+[data-investigation-run] small {
   display: block;
   color: var(--muted);
   margin-top: 6px;

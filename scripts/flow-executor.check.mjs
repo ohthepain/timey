@@ -395,6 +395,63 @@ test('read-only request and understanding need no legacy lifecycle configuration
   assert.equal(f.calls.filter((call) => call.method === 'turn').length, 2);
 });
 
+test('investigations inspect committed snapshots, retain proof, and remove temporary files without Git worktrees', async (t) => {
+  const f = fixture(t);
+  f.flow.routeType = 'investigation';
+  const refs = f.git('show-ref');
+  const worktrees = f.git('worktree', 'list', '--porcelain');
+  const source = f
+    .git('ls-files')
+    .split('\n')
+    .find((name) => name && !name.startsWith('.'));
+  const original = readFileSync(join(f.root, source), 'utf8');
+  writeFileSync(join(f.root, source), 'uncommitted source');
+  f.connection.turn = async (_id, cwd) => {
+    assert.equal(readFileSync(join(cwd, source), 'utf8'), original);
+    assert.equal(f.git('worktree', 'list', '--porcelain'), worktrees);
+    writeFileSync(join(cwd, 'diagnostic.txt'), 'Diagnostic proof');
+    return (
+      'Observed findings.\n```flow-result\n' +
+      JSON.stringify({ files: { log: 'diagnostic.txt' }, values: {} }) +
+      '\n```'
+    );
+  };
+  const result = await f.run('understand', {
+    definition: {
+      usable: true,
+      prompt: 'Investigate only.',
+      artifacts: [
+        { key: 'response', kind: 'file', label: 'Block response' },
+        { key: 'log', kind: 'file', label: 'Diagnostic log' },
+      ],
+    },
+  });
+  const snapshot = f.calls.find(({ method }) => method === 'start').cwd;
+  assert.equal(existsSync(snapshot), false);
+  assert.equal(readFileSync(result.artifacts.files.log.path, 'utf8'), 'Diagnostic proof');
+  assert.equal(readFileSync(join(f.root, source), 'utf8'), 'uncommitted source');
+  assert.equal(f.git('show-ref'), refs);
+  assert.equal(f.git('worktree', 'list', '--porcelain'), worktrees);
+  assert.equal(f.flow.workspace, null);
+  assert.equal(result.workspace, undefined);
+});
+
+test('failed investigation removes its temporary snapshot and retains its response evidence', async (t) => {
+  const f = fixture(t);
+  f.flow.routeType = 'investigation';
+  f.connection.turn = async () => {
+    throw Object.assign(Error('Diagnostic failed'), { terminalStatus: 'failed', partialText: 'Partial finding' });
+  };
+  await assert.rejects(f.run('understand'), /Diagnostic failed/);
+  const snapshot = f.calls.find(({ method }) => method === 'start').cwd;
+  assert.equal(existsSync(snapshot), false);
+  assert.equal(f.flow.workspace, null);
+  assert.match(
+    readFileSync(join(f.root, '.issues/factory-ui/flow-evidence/attempt-1/output.txt'), 'utf8'),
+    /Partial finding/
+  );
+});
+
 test('read-only Understand is told that Factory retains its response without a writable proof file', async (t) => {
   const f = fixture(t);
   const result = await f.run('understand');
@@ -1158,4 +1215,42 @@ test('retained blocked and completed legacy claims require reconciliation before
     await assert.rejects(f.run('verify'), /legacy assignment still owns/);
     assert.equal(f.calls.length, 0);
   }
+});
+
+test('Stop removes an investigation snapshot after the provider acknowledges interruption', async (t) => {
+  const f = fixture(t);
+  f.flow.routeType = 'investigation';
+  const controller = new AbortController();
+  const started = Promise.withResolvers();
+  const turn = Promise.withResolvers();
+  f.connection.turn = async () => {
+    started.resolve();
+    return turn.promise;
+  };
+  f.connection.interrupt = async () => {
+    turn.reject(Object.assign(Error('Stopped diagnostic'), { terminalStatus: 'interrupted' }));
+  };
+  const running = f.run('understand', { signal: controller.signal });
+  await started.promise;
+  controller.abort();
+  await assert.rejects(running, /Stopped diagnostic|stopped/);
+  const snapshot = f.calls.find(({ method }) => method === 'start').cwd;
+  assert.equal(existsSync(snapshot), false);
+  assert.equal(f.flow.workspace, null);
+});
+
+test('investigation skills use the project catalog and preserve the investigation instructions and model settings', async (t) => {
+  const f = fixture(t);
+  f.flow.routeType = 'investigation';
+  f.flow.executionSettings = { values: { skill: 'sample', model: 'gpt-6.1-sol', effort: 'high' } };
+  await f.run('understand', { skillExplicit: false, prompt: 'Inspect validation and retain historical findings.' });
+  const catalog = f.calls.find(({ method }) => method === 'skills/list');
+  assert.deepEqual(catalog.params.cwds, [f.root]);
+  const turn = f.calls.find(({ method }) => method === 'turn');
+  assert.equal(turn.skills.length, 1);
+  assert.equal(turn.settings.effort, 'high');
+  assert.match(
+    f.calls.find(({ method }) => method === 'start').instructions,
+    /Inspect validation and retain historical findings/
+  );
 });

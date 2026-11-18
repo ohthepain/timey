@@ -8,6 +8,7 @@ import { cleanEnvironment, readJson, requireThat, writeJson } from './common.mjs
 import { ensureIssueNumbers } from './issue-numbers.mjs';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { investigationReport } from './investigation-records.mjs';
 
 const numbersPath = '.issues/issue-numbers.json';
 const issueIdPattern = /^\d{8}T\d{6}(?:\d{3})?Z?-[a-f0-9]{4,32}$/;
@@ -100,11 +101,12 @@ function validatePublicationCommits(record) {
   });
 }
 
-function assertReportRemoval(candidate, live) {
+function assertReportRemoval(candidate, live, investigation) {
   if (candidate.location !== null) return;
   requireThat(
-    live.location === 'closed' || (live.location === 'open' && reportState(live.report) === 'needs-approval'),
-    'Only a shared closed report or an issue awaiting approval can be removed.'
+    live.location === 'closed' ||
+      (live.location === 'open' && (investigation || reportState(live.report) === 'needs-approval')),
+    'Only a shared closed report, an investigation, or an issue awaiting approval can be removed.'
   );
 }
 
@@ -492,7 +494,11 @@ export function createSharedIssuePublication({
     const number = numberFor(live.numbers, issueId);
     if (sameReport(live, candidate) && Number.isSafeInteger(number))
       return { issueId, status: 'landed', issueNumber: number };
-    assertReportRemoval(candidate, live);
+    assertReportRemoval(
+      candidate,
+      live,
+      candidate.location === null && investigationReport(root, issueId, live.report || '')
+    );
     const record = {
       ...prepare(issueId, candidate, live),
       issueId,
@@ -540,7 +546,12 @@ export function createSharedIssuePublication({
 
   function validateArchiveRelease(issueId, candidate, expected, claim) {
     if (!claim) return;
-    const archive = [direct, candidate.location === null, expected.location === 'closed'].every(Boolean);
+    const archive = [
+      direct,
+      candidate.location === null,
+      expected.location === 'closed' ||
+        (expected.location === 'open' && investigationReport(root, issueId, expected.report)),
+    ].every(Boolean);
     requireThat(archive, 'Atomic claim release is only available for a direct archive.');
     requireThat(claim.issueId === issueId && objectIdPattern.test(claim.oid), 'Invalid archive claim.');
   }

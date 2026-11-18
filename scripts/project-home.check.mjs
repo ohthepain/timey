@@ -10,6 +10,8 @@ import { ProjectHome } from './factory-ui/project-home.mjs';
 import { projectHomeStats } from './factory-ui/project-home-stats.mjs';
 import { digest } from './factory-ui/common.mjs';
 import { conversationMessages } from './factory-ui/conversation-store.mjs';
+import { moveIssueStorage } from './factory-ui/issue-storage-actions.mjs';
+import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 
 function fixture(t, options = {}) {
   const { root, git } = gitFixture(t, 'project-home-');
@@ -37,7 +39,8 @@ function fixture(t, options = {}) {
     lifecycleRuns: {},
     lifecycleTasks: new Map(),
     store: { runs: [], connected: new Set() },
-    issueChats: { active: new Map(), release() {} },
+    issueChats: { active: new Map(), tasks: new Map(), release() {} },
+    issueCleanupTasks: new Map(),
     ownServer() {},
   };
   const flows = createIssueFlows(service, {
@@ -45,17 +48,6 @@ function fixture(t, options = {}) {
     executor: {
       async run(ctx) {
         calls.push(ctx);
-        const checkout = join(root, '.issues/issue-work', ctx.issue.id);
-        const workspace = {
-          checkout,
-          branch: 'codex/investigation-' + ctx.issue.id,
-          base: ctx.flow.startingPoint.commit,
-        };
-        if (!existsSync(checkout)) {
-          mkdirSync(join(checkout, '..'), { recursive: true });
-          git('worktree', 'add', '-b', workspace.branch, checkout, workspace.base);
-        }
-        ctx.onWorkspace(workspace);
         if (options.execute) return options.execute(ctx);
         const body =
           'Observed source.txt:1. Concrete finding: missing validation. Improve validation and verify with a rejected invalid input.';
@@ -80,6 +72,7 @@ function fixture(t, options = {}) {
     reason: 'Observed source.txt:1 accepts invalid inputs.',
     verification: 'An invalid input produces a useful rejection.',
   };
+  service.flows = flows;
   let investigations = new ProjectInvestigations(service, flows, {
     propose: options.propose || (async () => [proposal]),
   });
@@ -93,6 +86,10 @@ function fixture(t, options = {}) {
     flows,
     calls,
     service,
+    async start(input) {
+      const created = await investigations.action({ ...input, action: 'investigation-create', reusable: true });
+      return investigations.action({ ...input, issueId: created.issueId });
+    },
     get investigations() {
       return investigations;
     },
@@ -119,7 +116,7 @@ test('project investigations create one issue, honor selected branch, retain fin
   const f = fixture(t);
   assert.equal(f.investigations.view().length, 0);
   const input = start();
-  const first = await f.investigations.action(input);
+  const first = await f.start(input);
   assert.equal(first.session.status, 'running');
   const session = await settled(f, first.session.id);
   assert.equal(session.status, 'completed', session.error);
@@ -127,16 +124,7 @@ test('project investigations create one issue, honor selected branch, retain fin
   assert.equal(f.calls[0].flow.startingPoint.ref, input.branch);
   assert.equal(f.calls[0].flow.startingPoint.commit, f.git('rev-parse', input.branch));
   assert.match(f.calls[0].block.prompt, /Run the agreed whole-project investigation/);
-  assert.equal(
-    readFileSync(
-      join(
-        f.calls[0].flow.workspace?.checkout || f.flows.read(f.flows.selected(session.issueId)).workspace.checkout,
-        'source.txt'
-      ),
-      'utf8'
-    ),
-    'selected branch source'
-  );
+  assert.equal(f.flows.read(f.flows.selected(session.issueId)).workspace, null);
   assert.equal(readFileSync(join(f.root, 'source.txt'), 'utf8'), 'project source');
   assert.ok(conversationMessages(f.root, session.issueId).some(({ kind }) => kind === 'project-investigation'));
   const [followup] = f.flows.issues().filter(({ id }) => id !== session.issueId);
@@ -144,7 +132,7 @@ test('project investigations create one issue, honor selected branch, retain fin
   assert.equal(followup.source_issue, session.issueId);
   assert.equal(followup.source_attempt, session.attemptId);
   assert.match(followup.content, /SHA-256/);
-  const duplicate = await f.investigations.action(input);
+  const duplicate = await f.start(input);
   assert.equal(duplicate.session.id, session.id);
   assert.equal(f.calls.length, 1);
   f.restart();
@@ -154,7 +142,7 @@ test('project investigations create one issue, honor selected branch, retain fin
 
 test('discussion saves the investigation but creates no follow-up until explicit Run', async (t) => {
   const f = fixture(t);
-  const discussed = await f.investigations.action({
+  const discussed = await f.start({
     ...start('investigation-discuss'),
     message: 'What should we investigate first?',
   });
@@ -185,7 +173,7 @@ test('partial follow-up creation retries only uncreated proposals, without rerun
     if (input.needsApproval && fail) throw Error('Synthetic publication failure');
     return capture(input);
   };
-  const started = await f.investigations.action(start());
+  const started = await f.start(start());
   const failed = await settled(f, started.session.id);
   assert.equal(failed.status, 'failed');
   assert.equal(f.calls.length, 1);
@@ -205,7 +193,7 @@ test('Stop preserves the issue and partial attempt and creates no follow-ups', a
         ctx.signal.addEventListener('abort', () => reject(Error('Stopped fixture')), { once: true });
       }),
   });
-  const started = await f.investigations.action(start());
+  const started = await f.start(start());
   for (let count = 0; count < 100 && !f.calls.length; count++) await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(f.calls.length, 1);
   await f.investigations.action({ action: 'investigation-stop', id: started.session.id });
@@ -235,7 +223,7 @@ test('whole-project defaults use project settings and archived existing issues a
   );
   const input = start();
   delete input.branch;
-  const started = await f.investigations.action(input);
+  const started = await f.start(input);
   const result = await settled(f, started.session.id);
   assert.equal(result.status, 'completed', result.error);
   assert.equal(result.branch, 'refs/heads/investigation-target');
@@ -271,7 +259,7 @@ test('statistics include archived creations and unique historical closures even 
 test('concurrent replay of one explicit run cannot launch duplicate blocks', async (t) => {
   const f = fixture(t);
   const input = start();
-  const results = await Promise.all([f.investigations.action(input), f.investigations.action(input)]);
+  const results = await Promise.all([f.start(input), f.start(input)]);
   assert.equal(results[0].session.id, results[1].session.id);
   const done = await settled(f, results[0].session.id);
   assert.equal(done.status, 'completed', done.error);
@@ -279,37 +267,32 @@ test('concurrent replay of one explicit run cannot launch duplicate blocks', asy
   assert.equal(f.flows.issues().length, 2);
 });
 
-test('changing branches preserves source edits and stops instead of resetting a modified investigation checkout', async (t) => {
+test('changing investigation branches preserves a legacy workspace and its human edits', async (t) => {
   const f = fixture(t);
-  const discussed = await f.investigations.action({
-    ...start('investigation-discuss'),
-    message: 'Explain this branch first.',
-  });
-  const draft = await settled(f, discussed.session.id);
-  const flow = f.flows.read(f.flows.selected(draft.issueId));
-  const source = join(flow.workspace.checkout, 'source.txt');
-  writeFileSync(source, 'unsaved human edit');
-  const run = await f.investigations.action({
-    action: 'investigation-run',
-    id: draft.id,
-    requestId: randomUUID(),
-    branch: 'refs/heads/dev',
-  });
-  const failed = await settled(f, run.session.id);
-  assert.equal(failed.status, 'failed');
-  assert.match(failed.error, /source edits or commits/);
-  assert.equal(readFileSync(source, 'utf8'), 'unsaved human edit');
-  assert.equal(f.calls.length, 1);
-  assert.equal(f.flows.issues().length, 1);
+  const created = await f.investigations.action({ ...start(), action: 'investigation-create' });
+  const flow = f.flows.read(f.flows.selected(created.issueId));
+  const checkout = join(f.root, '.issues/legacy-investigation');
+  mkdirSync(checkout);
+  writeFileSync(join(checkout, 'source.txt'), 'unsaved human edit');
+  flow.workspace = { checkout, branch: 'legacy', base: f.git('rev-parse', 'HEAD') };
+  f.flows.store.save(flow, flow.revision);
+  const run = await f.investigations.action({ ...start(), issueId: created.issueId, branch: 'refs/heads/dev' });
+  const done = await settled(f, run.session.id);
+  assert.equal(done.status, 'completed', done.error);
+  assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'unsaved human edit');
+  assert.equal(f.flows.read(f.flows.selected(created.issueId)).workspace, null);
 });
 
 test('invalid branches and empty discussions create no issue and no model work', async (t) => {
   const f = fixture(t);
   await assert.rejects(
-    f.investigations.action({ ...start(), branch: 'refs/heads/missing' }),
+    f.start({ ...start(), branch: 'refs/heads/missing' }),
     /selected starting branch is unavailable/
   );
-  await assert.rejects(f.investigations.action({ ...start('investigation-discuss'), message: '' }), /Enter a question/);
+  await assert.rejects(
+    f.investigations.action({ ...start('investigation-discuss'), message: '' }),
+    /Create the investigation first/
+  );
   assert.equal(f.flows.issues().length, 0);
   assert.equal(f.calls.length, 0);
 });
@@ -337,7 +320,7 @@ test('Stop during follow-up capture finishes that capture but starts no later is
     }
     return result;
   };
-  const started = await f.investigations.action(start());
+  const started = await f.start(start());
   for (let count = 0; count < 200 && !captured; count++) await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(captured, true);
   await f.investigations.action({ action: 'investigation-stop', id: started.session.id });
@@ -363,7 +346,7 @@ test('Retry reconciles an uncertain original Understand attempt instead of start
     },
     propose: async () => [],
   });
-  const started = await f.investigations.action(start());
+  const started = await f.start(start());
   const failed = await settled(f, started.session.id);
   assert.equal(failed.status, 'failed');
   f.restart();
@@ -386,14 +369,15 @@ test('failed automatic capture cannot silently switch to a newer Understand resu
     if (input.needsApproval && fail) throw Error('Synthetic capture failure');
     return capture(input);
   };
-  const started = await f.investigations.action(start());
+  const started = await f.start(start());
   const failed = await settled(f, started.session.id);
   assert.equal(failed.status, 'failed');
   const originalAttemptId = failed.attemptId;
   const originalResult = failed.result;
   let flow = f.flows.read(f.flows.selected(failed.issueId));
-  await f.flows.action({ action: 'start', issueId: failed.issueId, blockId: failed.blockId, revision: flow.revision });
-  await f.flows.active.get(failed.issueId)?.task;
+  const block = flow.blocks.find(({ id }) => id === failed.blockId);
+  block.attempts.push({ ...block.attempts.at(-1), id: randomUUID(), output: 'A changed investigation result' });
+  f.flows.store.save(flow, flow.revision);
   fail = false;
   const retry = await f.investigations.action({ action: 'investigation-retry', id: failed.id });
   const stale = await settled(f, retry.session.id);
@@ -402,7 +386,7 @@ test('failed automatic capture cannot silently switch to a newer Understand resu
   assert.equal(stale.attemptId, originalAttemptId);
   assert.equal(stale.result, originalResult);
   assert.equal(f.flows.issues().length, 1);
-  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls.length, 1);
 });
 
 test('preview reads saved running investigations without creating files, reconciling, or claiming the live server', async (t) => {
@@ -441,7 +425,7 @@ test('project branch selection is independent of the issue filing folder branch 
   const inbox = join(f.root, 'user/Inbox/folder.md');
   const content = readFileSync(inbox, 'utf8');
   writeFileSync(inbox, content.replace(/branch: .*/, 'branch: unavailable-folder-branch'));
-  const started = await f.investigations.action(start());
+  const started = await f.start(start());
   const finished = await settled(f, started.session.id);
   assert.equal(finished.status, 'completed', finished.error);
   assert.equal(f.calls[0].flow.startingPoint.ref, 'refs/heads/investigation-target');
@@ -453,4 +437,127 @@ test('project branch selection is independent of the issue filing folder branch 
     }),
     /starting target branch is unavailable/
   );
+});
+
+test('creation is idle, non-reusable completion cannot rerun, and Reusable enables another saved run', async (t) => {
+  const f = fixture(t);
+  const created = await f.investigations.action({ ...start(), action: 'investigation-create' });
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.investigations.issueView(created.issueId).runs.length, 0);
+  assert.ok(!f.flows.read(f.flows.selected(created.issueId)).blocks.some(({ kind }) => kind === 'close'));
+  const submission = { ...start(), issueId: created.issueId };
+  const first = await f.investigations.action(submission);
+  const done = await settled(f, first.session.id);
+  assert.equal(done.status, 'completed', done.error);
+  assert.equal((await f.investigations.action(submission)).session.id, first.session.id);
+  await assert.rejects(f.investigations.action({ ...start(), issueId: created.issueId }), /Enable Reusable/);
+  const before = f.investigations.issueView(created.issueId);
+  await f.investigations.action({
+    ...start(),
+    action: 'investigation-save',
+    issueId: created.issueId,
+    revision: before.revision,
+    reusable: true,
+  });
+  const second = await f.investigations.action({ ...start(), issueId: created.issueId });
+  const repeat = await settled(f, second.session.id);
+  assert.equal(repeat.status, 'completed', repeat.error);
+  const history = f.investigations.issueView(created.issueId);
+  assert.equal(history.runs.length, 2);
+  assert.equal(history.runs[0].issues[0].relation, 'tracked');
+  assert.equal(history.runs[1].issues[0].relation, 'created');
+  assert.equal(f.flows.issues().length, 2);
+  assert.ok(history.runs.every(({ settings, revision }) => settings && revision));
+});
+
+test('archive preserves open investigation state and history; restore preserves Reusable and child issues', async (t) => {
+  const f = fixture(t);
+  const started = await f.start(start());
+  const done = await settled(f, started.session.id);
+  const before = f.flows.selected(done.issueId);
+  assert.equal(
+    moveIssueStorage(f.service, { action: 'archive', issueIds: [done.issueId] }).results[0].status,
+    'archived'
+  );
+  const archived = f.flows.selected(done.issueId);
+  assert.equal(archived.state, before.state);
+  assert.equal(archived.closure, undefined);
+  assert.equal(archived.location, 'archive');
+  assert.equal(f.investigations.issueView(done.issueId).runs.length, 1);
+  await assert.rejects(f.investigations.action({ ...start(), issueId: done.issueId }), /Restore or approve/);
+  assert.equal(
+    moveIssueStorage(f.service, { action: 'restore', issueIds: [done.issueId] }).results[0].status,
+    'restored'
+  );
+  assert.equal(f.flows.selected(done.issueId).location, 'open');
+  assert.equal(f.flows.selected(done.issueId).reusable, true);
+  assert.equal(f.flows.issues().find(({ source_issue }) => source_issue === done.issueId).state, 'needs-approval');
+});
+
+test('follow-up destination is per run and independent of the investigation filing folder', async (t) => {
+  let n = 0;
+  const f = fixture(t, {
+    propose: async () => [
+      {
+        title: 'Finding ' + ++n,
+        type: 'bug',
+        description: 'Fix the observed behavior.',
+        reason: 'Observed source.txt:1',
+        verification: 'Verify behavior.',
+      },
+    ],
+  });
+  createIssueFolderSettings(f.root, 'Saved');
+  createIssueFolderSettings(f.root, 'Findings');
+  const created = await f.investigations.action({
+    ...start(),
+    action: 'investigation-create',
+    issueFolder: 'Saved',
+    reusable: true,
+  });
+  for (const folder of ['Findings', undefined]) {
+    const started = await f.investigations.action({ ...start(), issueId: created.issueId, folder });
+    const done = await settled(f, started.session.id);
+    assert.equal(done.status, 'completed', done.error);
+  }
+  assert.equal(f.flows.read(f.flows.selected(created.issueId)).folder, 'Saved');
+  const children = f.flows.issues().filter(({ source_issue }) => source_issue === created.issueId);
+  assert.equal(f.flows.read(children.find(({ title }) => title === 'Finding 1')).folder, 'Findings');
+  assert.equal(f.flows.read(children.find(({ title }) => title === 'Finding 2')).folder, 'Inbox');
+});
+
+test('each new run resolves current defaults and branch tip while preserving earlier run settings and explicit overrides', async (t) => {
+  const f = fixture(t, { propose: async () => [] });
+  const created = await f.investigations.action({ ...start(), action: 'investigation-create', reusable: true });
+  const first = await f.investigations.action({ ...start(), issueId: created.issueId });
+  const original = await settled(f, first.session.id);
+  const firstRevision = original.startingPoint.commit;
+  const firstSettings = structuredClone(original.settings);
+  writeFileSync(join(f.root, 'folder.md'), '---\nbranch: dev\nmodel: gpt-6.1-sol\neffort: high\n---\n');
+  const branch = f.git('branch', '--show-current');
+  f.git('checkout', '-q', 'investigation-target');
+  writeFileSync(join(f.root, 'source.txt'), 'new committed source');
+  f.git('add', 'source.txt');
+  f.git('commit', '-qm', 'New investigation revision');
+  f.git('checkout', '-q', branch);
+  const second = await f.investigations.action({ ...start(), issueId: created.issueId });
+  const latest = await settled(f, second.session.id);
+  assert.equal(latest.status, 'completed', latest.error);
+  assert.notEqual(latest.startingPoint.commit, firstRevision);
+  assert.equal(latest.settings.effort, 'high');
+  let view = await f.flows.view(created.issueId);
+  assert.equal(view.issueSettings.frozen, false);
+  await f.flows.action({
+    action: 'issue-settings',
+    issueId: created.issueId,
+    revision: view.flow.revision,
+    changes: { effort: 'low' },
+  });
+  const third = await f.investigations.action({ ...start(), issueId: created.issueId });
+  const override = await settled(f, third.session.id);
+  assert.equal(override.status, 'completed', override.error);
+  assert.equal(override.settings.effort, 'low');
+  const saved = f.investigations.issueView(created.issueId).runs.find(({ id }) => id === original.attemptId);
+  assert.deepEqual(saved.settings, firstSettings);
+  assert.equal(saved.revision, firstRevision);
 });
