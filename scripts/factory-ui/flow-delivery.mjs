@@ -299,6 +299,25 @@ async function preparePublicationAttempt(service, ctx, workspace, options) {
   return prepared;
 }
 
+function retainPublicationFailure(error, { ctx, candidate, preview, folder, evidence }) {
+  if (!Number.isInteger(error.githubStatus)) return;
+  const path = join(folder, 'github-response.json');
+  writeJson(path, {
+    attemptId: ctx.attempt.id,
+    status: error.githubStatus,
+    response: error.githubResponse,
+    head: candidate.head,
+    target: preview.target,
+    at: new Date().toISOString(),
+  });
+  evidence.push({
+    key: 'githubResponse',
+    path,
+    label: 'Sanitized GitHub publication response',
+    sha256: digest(readFileSync(path)),
+  });
+}
+
 export async function publishFlowPR(service, ctx, workspace, folder, options) {
   const { preview, candidate, provider, pr, remote } = await preparePublicationAttempt(
     service,
@@ -349,6 +368,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
       summary: preview.status === 'current' ? 'PR is up to date.' : 'Published the issue PR.',
     };
   } catch (error) {
+    retainPublicationFailure(error, { ctx, candidate, preview, folder, evidence });
     if (!completed.length) {
       error.evidence = [...evidence, ...(error.evidence ?? [])];
       throw error;
@@ -356,7 +376,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
     const current = (await lookupFlowPR(provider, workspace.branch, pr?.number).catch(() => null)) || pr;
     return {
       status: 'blocked',
-      summary: `Needs retry. ${completed.join(' ')} ${error.message}`,
+      summary: `${error.githubStatus === 422 ? 'Publication blocked.' : 'Needs retry.'} ${completed.join(' ')} ${error.message}`,
       result: current
         ? { ...result(current), head: current.head?.sha, completed }
         : { head: candidate.head, completed },

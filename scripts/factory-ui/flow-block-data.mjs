@@ -82,6 +82,8 @@ function artifactValue(block, key) {
 
 const startBranch = (flow) => startingPoint(flow)?.name ?? deliveryTarget(flow)?.branch;
 const issueFlowSources = new Map([
+  ['issue.title', (_flow, issue) => issue.title],
+  ['issue.content', (_flow, issue) => issue.content],
   ['Starting point.branch', startBranch],
   ['Starting point.startingPoint', startingPoint],
   ['Destination.delivery', deliveryTarget],
@@ -120,7 +122,7 @@ export function blockDetails(flow, issue, block, definitions) {
         derived: true,
       };
     const fixed = issueFlowSources.get(source);
-    if (fixed) return { key, label, type, options, input: true, fixed: true, value: fixed(flow) };
+    if (fixed) return { key, label, type, options, input: true, fixed: true, value: fixed(flow, issue) };
     const separator = source.lastIndexOf('.');
 
     const name = separator < 0 || source === 'editable' ? '' : source.slice(0, separator);

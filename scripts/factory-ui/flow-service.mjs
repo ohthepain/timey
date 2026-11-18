@@ -197,10 +197,11 @@ export function createIssueFlows(service, options = {}) {
   return new IssueFlows(service, options);
 }
 
-function captureIdentity({ description, type, needsApproval, runRetro }, folder, grouping) {
+function captureIdentity({ description, type, needsApproval, runRetro, sourceIssue }, folder, grouping) {
   const fields = folder ? [description, type, folder] : [description, type];
   if (needsApproval || runRetro) fields.push({ needsApproval: !!needsApproval, runRetro: !!runRetro });
   if (grouping) fields.push(grouping);
+  if (sourceIssue) fields.push({ sourceIssue });
   return digest(JSON.stringify(fields));
 }
 
@@ -744,7 +745,7 @@ class IssueFlows {
       return;
     }
     if (retroAttempt?.status === 'completed' && !closing.skipRetro && !closing.filedRetro) {
-      await this.fileRetroItems(retroAttempt.result?.recommendations ?? []);
+      await this.fileRetroItems(retroAttempt.result?.recommendations ?? [], issue.id);
       const current = this.read(issue, catalog);
       current.closing.filedRetro = true;
       this.store.save(current, current.revision);
@@ -791,7 +792,7 @@ class IssueFlows {
       .finally(() => this.closureTasks.delete(id));
     this.closureTasks.set(id, task);
   }
-  async fileRetroItems(recommendations) {
+  async fileRetroItems(recommendations, sourceIssue) {
     if (!recommendations.length) return;
     createIssueFolderSettings(this.service.root, retroFolder);
     for (const item of recommendations) {
@@ -799,10 +800,22 @@ class IssueFlows {
         .trim()
         .replace(/[\r\n]+/g, ' ')
         .slice(0, 160);
-      const description = [title, item.description, '## Why', item.reason, '## Verification', item.verification].join(
-        '\n\n'
-      );
-      await this.capture({ requestId: item.requestId, description, folder: retroFolder, needsApproval: true });
+      const description = [
+        title,
+        item.description,
+        '## Why',
+        item.reason,
+        '## Verification',
+        item.verification,
+        ...(sourceIssue ? ['## Source issue', sourceIssue] : []),
+      ].join('\n\n');
+      await this.capture({
+        requestId: item.requestId,
+        description,
+        folder: retroFolder,
+        needsApproval: true,
+        sourceIssue,
+      });
     }
   }
   pause(issueId, reason) {
@@ -2126,6 +2139,7 @@ class IssueFlows {
       request_type: input.type || inferType(input.description),
       category: (input.type || inferType(input.description)) === 'bug' ? 'bug' : 'enhancement',
       ...(input.runRetro && { run_retro: true }),
+      ...(input.sourceIssue && { source_issue: this.selected(input.sourceIssue).id }),
       ...capturedFolderMetadata(this.service.root, folder),
       ...captureGroupMetadata(grouping),
     };

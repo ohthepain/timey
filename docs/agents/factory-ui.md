@@ -15,6 +15,10 @@ starts no work. Retry a blocked flow step explicitly after setup. Read-only bloc
 remain available while the lifecycle file is missing.
 
 The default page is the [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
+Understand uses a read-only checkout. Factory retains the final response as its
+Block response artifact; the agent does not need filesystem write access to save
+that response. Missing historical evidence remains a reported gap. Retro follow-ups
+retain the source issue and receive a sanitized snapshot of its saved attempts.
 It shows issue folders, a downward block graph, and a block inspector. Issue names
 include their numbers and wrap. The **Worktree** menu appears in the branch status
 row. Its tooltip says whether a worktree has yet to be created or was deleted.

@@ -15,9 +15,15 @@ import {
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { gitFixture } from './git-fixture.mjs';
-import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-block-data.mjs';
+import {
+  blockDetails,
+  definitionMap,
+  deliveryTarget,
+  requestData,
+  startingPoint,
+} from './factory-ui/flow-block-data.mjs';
 import { giveIssueFolderCopyNewId } from './factory-ui/issue-folder-settings.mjs';
-import { FlowStore, newFlow, editFlow } from './factory-ui/flow-store.mjs';
+import { FlowStore, newFlow, editFlow, makeBlock } from './factory-ui/flow-store.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowObserver } from './factory-ui/flow-observer.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/project-settings.mjs';
@@ -176,6 +182,47 @@ function fixture(t) {
 function executor(run) {
   return { run, close() {} };
 }
+
+test('Understand receives its declared issue title and report instead of empty manual inputs', (t) => {
+  const { root, id, service } = fixture(t);
+  const flows = createIssueFlows(service);
+  t.after(() => flows.close());
+  const issue = flows.selected(id);
+  const catalog = new BlockCatalog(root).read().entries;
+  const flow = flows.read(issue, catalog);
+  const block = makeBlock('understand', ['request'], false, catalog);
+  flow.blocks.push(block);
+  const details = blockDetails(flow, issue, block, definitionMap(catalog));
+  for (const [key, value] of [
+    ['title', issue.title],
+    ['report', issue.content],
+  ]) {
+    const detail = details.find((entry) => entry.key === key);
+    assert.equal(detail.value, value);
+    assert.equal(detail.fixed, true);
+  }
+});
+
+test('Retro follow-ups retain their source issue so an investigation can read original attempt evidence', async (t) => {
+  const { id, service } = fixture(t);
+  const flows = createIssueFlows(service);
+  t.after(() => flows.close());
+  await flows.fileRetroItems(
+    [
+      {
+        requestId: randomUUID(),
+        title: 'Investigate publication failure',
+        description: 'Review the failed publication attempts.',
+        reason: 'GitHub rejected publication.',
+        verification: 'Retain the original attempt evidence.',
+      },
+    ],
+    id
+  );
+  const followup = flows.issues().find((issue) => issue.title === 'Investigate publication failure');
+  assert.equal(followup.source_issue, id);
+  assert.match(followup.content, new RegExp(id));
+});
 
 test('repeated report reads retain current metadata, bodies, numbers and storage locations', (t) => {
   const { root, id, service } = fixture(t);
@@ -1607,7 +1654,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     true
   );
   await submit(await flows.view(remove.id), 'delete-pending-issue', { title: remove.title });
-  await flows.fileRetroItems(proposals);
+  await flows.fileRetroItems(proposals, id);
   assert.equal(
     flows.issues().some((item) => item.id === remove.id),
     false

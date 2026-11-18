@@ -4,8 +4,9 @@ const exec = promisify(execFile);
 import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
 import { assertChecks, inspectReadiness, inspectRequiredPRChecks, latestChecks } from './strategy-readiness.mjs';
-import { infrastructureFailure, repairableBlocker } from './strategy-repair.mjs';
+import { repairableBlocker } from './strategy-repair.mjs';
 import { findIssueBranchPR, findStrategyPR, publishStrategyPR } from './strategy-publication.mjs';
+import { safeGitHubFailure } from './github-request-failure.mjs';
 
 export class StrategyProvider {
   constructor(root, config, credentialRoot = root) {
@@ -262,12 +263,5 @@ function githubFailure(error, session) {
       'GitHub rejected the merge because its candidate or target changed. Fetch and merge the current target, then verify the repaired candidate.'
     );
   if (!session) return error;
-  return safeGitHubFailure(error, status);
-}
-
-function safeGitHubFailure(error, status) {
-  const safe = Error('Factory GitHub App request failed' + (status ? ` (HTTP ${status})` : '') + '.');
-  safe.githubStatus = Number(status) || null;
-  safe.transient = infrastructureFailure(error);
-  return safe;
+  return safeGitHubFailure(error, status, session);
 }

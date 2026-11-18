@@ -377,6 +377,10 @@ access for discussion and the issue checkout for editable requests.
 SHA-256 digests. It verifies checkout containment and digest before adding a
 bounded redacted excerpt; missing, changed and out-of-checkout artifacts carry
 status only. Each artifact keeps its originating event and attempt reference.
+`flow-source-evidence.mjs` supplies Retro follow-ups with their explicit source
+issue's saved report and ordered attempts from coordinator storage. It retains a
+sanitized input snapshot and verifies GitHub response artifact digests before
+including them. Workers do not need the source queue copied into their checkout.
 `issue-prompt-queue.mjs` owns durable prompt identities, revisions and attempt
 receipts. `issue-prompt-scheduler.mjs` coordinates FIFO dispatch, pause, stop,
 steer, uncertain receipt recovery and operation leases. `issue-operation.mjs`
@@ -598,6 +602,9 @@ the owning assignment; `strategy-review.mjs` implements optional bounded Sol rev
 and submits an exact-head merge. Flow Merge and Full Send follow GitHub's
 readiness decision. Full Stop handoff evaluates its configured review bypass
 and independent strict CI ruleset.
+`github-request-failure.mjs` preserves bounded, sanitized GitHub validation fields
+without raw process output or credentials. Flow publication retains those fields
+with its exact proposed head and target, including failures after a branch push.
 `strategy-inclusion.mjs` inspects the original base against the fetched target,
 records exact branch/checkout/commit evidence, and blocks unreviewed earlier work
 before owner turns and PR publication while preserving the original base. Its PR

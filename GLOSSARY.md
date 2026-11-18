@@ -238,7 +238,8 @@ from the Closed issues view and preserves its identity and closure.
 A review of what happened on an issue and what could improve future work.
 
 **Retro item**:
-A follow-up issue proposed by a retro.
+A follow-up issue proposed by a retro that retains its originating issue for
+evidence and context.
 
 **Needs approval**:
 The state of an issue that awaits an explicit decision before work can start.

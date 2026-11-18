@@ -14,6 +14,10 @@ the closure sequence.
 - If Retro fails, the issue stays Closed and Cleanup waits. The user can retry
   Retro or explicitly continue to Cleanup.
 - Retro creates follow-ups immediately in the **Retro items** issue folder.
+  Each follow-up retains its source issue ID. Subsequent blocks receive a sanitized
+  snapshot of that issue's report and timestamped attempts from the coordinator,
+  including verified retained GitHub response artifacts. They do not need the
+  source queue copied into their checkout.
   Approval is required before work starts on those follow-ups.
 - Automatically generated issues default to **Needs approval**. Create issue
   offers **Needs approval** as an unchecked option for manual capture.

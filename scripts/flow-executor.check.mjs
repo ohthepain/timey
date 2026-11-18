@@ -395,6 +395,69 @@ test('read-only request and understanding need no legacy lifecycle configuration
   assert.equal(f.calls.filter((call) => call.method === 'turn').length, 2);
 });
 
+test('read-only Understand is told that Factory retains its response without a writable proof file', async (t) => {
+  const f = fixture(t);
+  const result = await f.run('understand');
+  const start = f.calls.find(({ method }) => method === 'start');
+  assert.equal(start.sandbox, 'read-only');
+  assert.match(start.instructions, /Factory automatically saves your final response/);
+  assert.match(start.instructions, /do not need to create a proof file/i);
+  assert.match(
+    f.calls.find(({ method }) => method === 'turn').prompt,
+    /Factory automatically saves your final response/
+  );
+  assert.equal(existsSync(result.artifacts.files.response.path), true);
+});
+
+test('Understand receives retained source publication attempts from the coordinator instead of its empty checkout', async (t) => {
+  const f = fixture(t);
+  f.issue.source_issue = 'original-issue';
+  mkdirSync(join(f.root, '.issues/closed'), { recursive: true });
+  writeFileSync(
+    join(f.root, '.issues/closed/original-issue.md'),
+    '---\nid: original-issue\ntitle: Publication problem\nstate: closed\n---\nOriginal request.\n'
+  );
+  mkdirSync(join(f.root, '.issues/flows/original-issue'), { recursive: true });
+  const responsePath = join(f.root, '.issues/factory-ui/flow-evidence/original-attempt/github-response.json');
+  mkdirSync(join(f.root, '.issues/factory-ui/flow-evidence/original-attempt'), { recursive: true });
+  const responseBody = JSON.stringify({ status: 422, response: { message: 'Validation Failed' } });
+  writeFileSync(responsePath, responseBody);
+  writeFileSync(
+    join(f.root, '.issues/flows/original-issue/flow.json'),
+    JSON.stringify({
+      blocks: [
+        {
+          kind: 'publish',
+          attempts: [
+            {
+              id: 'original-attempt',
+              startedAt: '2026-11-17T14:00:20.609Z',
+              status: 'blocked',
+              summary: 'GitHub request failed (HTTP 422).',
+              details: [{ key: 'candidateCommit', value: 'candidate-revision' }],
+              result: { head: 'pushed-revision' },
+              evidence: [{ key: 'githubResponse', path: responsePath, sha256: digest(responseBody) }],
+            },
+          ],
+        },
+      ],
+    })
+  );
+  const result = await f.run('understand');
+  const input = JSON.parse(f.calls.find(({ method }) => method === 'turn').prompt);
+  assert.equal(input.sourceIssue.issueId, 'original-issue');
+  assert.equal(input.sourceIssue.attempts[0].id, 'original-attempt');
+  assert.equal(input.sourceIssue.attempts[0].result.head, 'pushed-revision');
+  assert.equal(input.sourceIssue.attempts[0].githubResponse.status, 422);
+  const proof = result.evidence.find(({ key }) => key === 'sourceIssue');
+  assert.equal(JSON.parse(readFileSync(proof.path, 'utf8')).attempts[0].details[0].value, 'candidate-revision');
+  assert.equal(existsSync(join(result.workspace.checkout, '.issues/closed/original-issue.md')), false);
+  writeFileSync(responsePath, 'Changed after retention');
+  await f.run('understand');
+  const changed = JSON.parse(f.calls.findLast(({ method }) => method === 'turn').prompt);
+  assert.match(changed.sourceIssue.attempts[0].githubResponse.unavailable, /changed or lacks a digest/);
+});
+
 test('legacy work and queued prompts prevent model or checkout startup', async (t) => {
   const f = fixture(t);
   f.service.lifecycleTasks.set(f.issue.id, Promise.resolve());

@@ -370,6 +370,25 @@ test('publication authorized by Play creates the PR without a preview confirmati
   );
 });
 
+test('failed publication retains its sanitized GitHub validation response with the proposed head and target', async (t) => {
+  const f = fixture(t);
+  f.ctx.input = { automaticPublication: true };
+  f.provider.publish = async () => {
+    throw Object.assign(Error('GitHub validation failed.'), {
+      githubStatus: 422,
+      githubResponse: { message: 'Validation Failed', errors: [{ message: 'No commits between dev and issue.' }] },
+    });
+  };
+  const result = await publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options);
+  assert.equal(result.status, 'blocked');
+  const proof = result.evidence.find(({ key }) => key === 'githubResponse');
+  const response = JSON.parse(readFileSync(proof.path, 'utf8'));
+  assert.equal(response.status, 422);
+  assert.equal(response.head, f.input.revision);
+  assert.equal(response.target, 'dev');
+  assert.match(response.response.errors[0].message, /No commits between/);
+});
+
 test('publication refuses a stale preview, missing App identity and the target branch before push', async (t) => {
   const f = fixture(t);
   f.provider.findByBranch = async () => null;
