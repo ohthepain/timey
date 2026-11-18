@@ -681,7 +681,10 @@ clarification, and registers the guarded tools in `project-discuss-tools.mjs`.
 These tools call the existing Home and issue controls and return direct results.
 The `issue_edit` tool changes only original request wording and issue type; a
 wording change reruns Request clarification, while a type change applies that
-type's default flow. Issue activity is not streamed back into Discuss.
+type's default flow. To start an issue's saved route from Discuss, query it with
+`issues_list` and call `issue_control` with `action: play`. `action: start` is
+for an explicitly selected runnable block and cannot start Request directly.
+Issue activity is not streamed back into Discuss.
 `project-discuss-ui.js` and
 `project-discuss.css` own the composer, single-visible-conversation history,
 horizontal conversation tabs, message alignment and hover actions, settings,
