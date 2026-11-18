@@ -62,7 +62,8 @@ export class ProjectDiscuss {
     return readdirSync(this.directory, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && idPattern.test(entry.name) && existsSync(this.file(entry.name)))
       .map((entry) => this.read(entry.name))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      .filter((session) => !session.closedAt)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
   choices() {
     return (this.options.modelSettings || readModelSettings)(this.service.root, { initialize: false });
@@ -164,7 +165,8 @@ export class ProjectDiscuss {
   }
   view(id) {
     const sessions = this.records();
-    const selected = id ? this.read(id) : sessions[0];
+    const requested = id ? this.read(id) : null;
+    const selected = requested && !requested.closedAt ? requested : sessions[0];
     return {
       conversations: sessions.map(({ id, title, status, updatedAt }) => ({ id, title, status, updatedAt })),
       selected: selected ? this.publicSession(selected) : null,
@@ -228,7 +230,13 @@ export class ProjectDiscuss {
     }
     const id = checkedId(input.conversationId);
     let session = this.read(id);
-    if (operation === 'settings')
+    if (operation === 'close') {
+      requireThat(!session.closedAt, 'This project conversation is already closed.');
+      this.change(id, (s) => {
+        s.closedAt = stamp();
+      });
+      return this.view(input.returnTo ? checkedId(input.returnTo) : undefined);
+    } else if (operation === 'settings')
       this.change(id, (s) => {
         s.settings = this.settings(input.settings, s.settings);
       });
