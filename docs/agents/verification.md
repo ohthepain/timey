@@ -12,8 +12,13 @@ confirmation, keyboard safety and persisted block-removal scenario.
 Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
 repair, search, grouping eligibility, and selected Open or Closed bulk actions.
 The fixture injects AI responses and execution, and uses disposable reports.
-The aggregate factory and browser scripts include these checks. For an installed
-Chrome when the Playwright Chromium cache is unavailable, run
+The aggregate factory and browser scripts include these checks.
+For the isolated investigation follow-up review, run
+`node scripts/flow-browser.mjs --investigation-followups`.
+`node --test scripts/flow-followups.check.mjs` checks reviewed creation, lineage,
+restart/replay, partial failures, and changed findings with disposable reports.
+These checks inject proposal responses and create no issues in the live queue.
+For an installed Chrome when the Playwright Chromium cache is unavailable, run
 `TIMEY_BROWSER_CHANNEL=chrome pnpm run test:browser`.
 
 For default [draft PR handoff](issue-delivery.md#default-draft-pr-handoff), attempt

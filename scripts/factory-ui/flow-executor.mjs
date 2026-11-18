@@ -649,7 +649,7 @@ async function runModel(service, ctx, owned, options) {
   const binding = ctx.continuing && !last?.invalidatedAt && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
   service.issueChats?.release(ctx.issue.id);
   const folder = evidenceDirectory(service, ctx);
-  const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder);
+  const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
   if (source) ctx = { ...ctx, sourceEvidence: source.value };
   const outputPath = join(folder, options.repair ? 'repair-' + options.repair.round + '.txt' : 'output.txt');
   let liveText = '';

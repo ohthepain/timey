@@ -25,6 +25,8 @@ import { git } from './factory-ui/common.mjs';
 import { flowIssueFoldersBrowserChecks } from './flow-browser-issue-folders.mjs';
 import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mjs';
 import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.mjs';
+import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
+import { investigationProposals } from './investigation-followups-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -61,6 +63,7 @@ const assets = [
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
+  'investigation-followups-ui.js',
   'issue-closure-ui.js',
   'server-control-ui.js',
   'view-inspection.js',
@@ -81,6 +84,7 @@ const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprin
 const results = [];
 const folderSettingsCheck = 'Folder settings inherit, repair, search and act on selected open or closed issues';
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
+const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
 const logs = {
   console: [],
   pageErrors: [],
@@ -131,6 +135,7 @@ const executor = {
 };
 service.flows = createIssueFlows(service, {
   executor,
+  proposeInvestigationFollowups: async () => investigationProposals,
   trashDirectory(path) {
     assert.ok(path.startsWith(realpathSync(project) + '/user/'));
     const trash = join(output, 'Trash');
@@ -188,6 +193,7 @@ let workId;
 let passed = false;
 let failure;
 async function check(name, run) {
+  if (process.argv.includes('--investigation-followups') && name !== followupsCheck) return;
   if (process.argv.includes('--block-deletion') && name !== blockDeletionCheck) return;
   if (process.argv.includes('--folder-settings') && name !== folderSettingsCheck) return;
   try {
@@ -299,6 +305,7 @@ try {
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );
+  await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
   await check('Opening the workspace starts no work and loads no skills', async () => {
     await page.goto('/');
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();

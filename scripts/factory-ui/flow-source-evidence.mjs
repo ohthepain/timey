@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, realpathSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
-import { digest } from './common.mjs';
+import { digest, requireThat } from './common.mjs';
 import { redactValue } from './activity.mjs';
 import { requireIssueId } from './flow-store.mjs';
 import { readSavedReport } from './report-document.mjs';
@@ -41,7 +41,7 @@ function sourceAttempt(root, block, attempt) {
   };
 }
 
-export function retainSourceIssueEvidence(root, id, folder) {
+export function retainSourceIssueEvidence(root, id, folder, attemptId) {
   if (!id) return null;
   let value;
   try {
@@ -52,9 +52,12 @@ export function retainSourceIssueEvidence(root, id, folder) {
     const flow = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
     const attempts = [...(flow.blocks || []), ...(flow.retiredBlocks || [])]
       .flatMap((block) => (block.attempts || []).map((attempt) => sourceAttempt(root, block, attempt)))
+      .filter((attempt) => !attemptId || attempt.id === attemptId)
       .sort((a, b) => (a.startedAt || '').localeCompare(b.startedAt || ''));
+    requireThat(!attemptId || attempts.length > 0, 'The recorded source attempt is unavailable on this runner.');
     value = {
       issueId: id,
+      ...(attemptId && { attemptId }),
       report: report?.content,
       attempts,
       coverage:

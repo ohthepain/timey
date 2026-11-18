@@ -10,6 +10,7 @@
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/issue-folder-drag-ui.js" defer></script>
     <script src="/folder-settings-ui.js" defer></script>
+    <script src="/investigation-followups-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
@@ -411,6 +412,24 @@
         </div>
       </aside>
     </div>
+    <dialog
+      id="investigation-followups-dialog"
+      class="modal publish-modal"
+      aria-labelledby="investigation-followups-title"
+    >
+      <div class="modal-heading">
+        <h2 id="investigation-followups-title">Act on investigation findings</h2>
+        <button class="icon-button" type="button" data-followups-close aria-label="Close follow-up review">×</button>
+      </div>
+      <p class="muted">
+        Review, edit and select concrete work. New issues need approval; the investigation stays open.
+      </p>
+      <div data-followups-body></div>
+      <p class="muted" data-followups-message role="status"></p>
+      <div class="modal-footer">
+        <button class="primary-button" type="button" data-followups-create disabled>Create selected issues</button>
+      </div>
+    </dialog>
     <dialog id="capture-dialog" class="modal capture-modal">
       <form id="capture-form">
         <div class="modal-heading">

@@ -1384,6 +1384,16 @@ kbd {
 .publish-modal {
   width: min(660px, calc(100vw - 32px));
 }
+.followup-proposal {
+  border: 1px solid #484848;
+  border-radius: 6px;
+  margin-block: 18px;
+  padding: 14px;
+  min-width: 0;
+}
+.followup-proposal:disabled {
+  opacity: 0.6;
+}
 #publish-preview {
   margin-block: 1rem;
   overflow-wrap: anywhere;

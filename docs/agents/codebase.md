@@ -377,10 +377,12 @@ access for discussion and the issue checkout for editable requests.
 SHA-256 digests. It verifies checkout containment and digest before adding a
 bounded redacted excerpt; missing, changed and out-of-checkout artifacts carry
 status only. Each artifact keeps its originating event and attempt reference.
-`flow-source-evidence.mjs` supplies Retro follow-ups with their explicit source
+`flow-source-evidence.mjs` supplies follow-ups with their explicit source
 issue's saved report and ordered attempts from coordinator storage. It retains a
 sanitized input snapshot and verifies GitHub response artifact digests before
-including them. Workers do not need the source queue copied into their checkout.
+including them. Investigation follow-ups select their recorded `source_attempt`;
+Retro follow-ups retain the complete available attempt history. Workers do not
+need the source queue copied into their checkout.
 `issue-prompt-queue.mjs` owns durable prompt identities, revisions and attempt
 receipts. `issue-prompt-scheduler.mjs` coordinates FIFO dispatch, pause, stop,
 steer, uncertain receipt recovery and operation leases. `issue-operation.mjs`
@@ -648,6 +650,11 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+`flow-followups.mjs` owns reviewed follow-ups from completed Understand results.
+`investigation-proposals.mjs` prepares proposals in a read-only discussion;
+`investigation-followups-ui.js` owns selection and editing. Retained findings bind
+each review to its source attempt, and stable capture identities prevent duplicate
+creation after restart or partial publication. This is independent of Retro.
 Read-only flow views show saved reports while the shared queue refreshes in the
 background. Report reads reuse parsed metadata only when the exact frontmatter
 matches and read the current body each time. Mutation freshness checks remain

@@ -309,6 +309,17 @@
     });
   }
 
+  window.createInvestigationFollowupsUI({
+    request: post,
+    folders: () => state.index.issueFolders || [],
+    changed: () => load(true),
+  });
+
+  function investigationActions(block) {
+    if (block?.kind !== 'understand' || status(block) !== 'completed') return '';
+    return `<section class="detail-section"><div class="section-label">Findings</div><p class="detail-copy">Turn these findings into concrete work.</p><button class="small-button" data-investigation-followups="${escape(block.id)}" data-source-issue="${escape(state.issueId)}"${state.newActionsPaused ? ' disabled' : ''}>Create follow-up issues</button></section>`;
+  }
+
   function applyView(result) {
     state.index = { ...state.index, ...result };
     if (result.flow && result.issue && result.issue.id === state.issueId) {
@@ -1874,7 +1885,9 @@
       sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button></div></section>`,
       notes: comments(block),
     };
-    return definitionActions(block) + Object.values(sections).join('') + contentSection(block);
+    return (
+      investigationActions(block) + definitionActions(block) + Object.values(sections).join('') + contentSection(block)
+    );
   }
 
   function renderConversation(block) {
@@ -1910,7 +1923,11 @@
       })
       .reverse()
       .join('');
-    return (current || '<p class="inline-empty">No artifacts from the latest run.</p>') + previous;
+    return (
+      investigationActions(block) +
+      (current || '<p class="inline-empty">No artifacts from the latest run.</p>') +
+      previous
+    );
   }
 
   function preserveDisclosures(container, replace) {

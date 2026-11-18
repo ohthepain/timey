@@ -462,6 +462,7 @@ function readResource(service, request, response, owner) {
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
     '/sidebar-files-ui.js': 'sidebar-files-ui.js',
     '/folder-settings-ui.js': 'folder-settings-ui.js',
+    '/investigation-followups-ui.js': 'investigation-followups-ui.js',
     '/view-inspection.js': 'view-inspection.js',
     '/flow.css': 'flow.css',
     '/native-chat-ui.js': 'native-chat-ui.js',

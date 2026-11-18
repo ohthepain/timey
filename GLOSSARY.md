@@ -241,6 +241,11 @@ A review of what happened on an issue and what could improve future work.
 A follow-up issue proposed by a retro that retains its originating issue for
 evidence and context.
 
+**Investigation follow-up**:
+An issue that turns a finding from a completed investigation into a concrete next
+action. It retains the source finding and evidence, independently of a retro or
+acceptance of the investigation.
+
 **Needs approval**:
 The state of an issue that awaits an explicit decision before work can start.
 

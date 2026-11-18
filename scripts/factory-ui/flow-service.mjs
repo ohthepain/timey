@@ -33,6 +33,7 @@ import { flowOwnsIssue } from './flow-ownership.mjs';
 import { SidebarFiles } from './sidebar-files.mjs';
 import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
+import { FlowFollowups } from './flow-followups.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { folderSettingsFields, validateSettingValue } from './folder-settings-schema.mjs';
@@ -197,11 +198,12 @@ export function createIssueFlows(service, options = {}) {
   return new IssueFlows(service, options);
 }
 
-function captureIdentity({ description, type, needsApproval, runRetro, sourceIssue }, folder, grouping) {
+function captureIdentity({ description, type, needsApproval, runRetro, sourceIssue, sourceAttempt }, folder, grouping) {
   const fields = folder ? [description, type, folder] : [description, type];
   if (needsApproval || runRetro) fields.push({ needsApproval: !!needsApproval, runRetro: !!runRetro });
   if (grouping) fields.push(grouping);
   if (sourceIssue) fields.push({ sourceIssue });
+  if (sourceAttempt) fields.push({ sourceAttempt });
   return digest(JSON.stringify(fields));
 }
 
@@ -229,6 +231,21 @@ function validateCaptureType(type) {
   requireThat(!type || ['bug', 'feature', 'investigation'].includes(type), 'Choose a valid request type.');
 }
 
+function validateCaptureSource(input, flows) {
+  if (input.sourceAttempt === undefined) return;
+  requireThat(
+    typeof input.sourceAttempt === 'string' && input.sourceAttempt.length <= 200 && input.sourceIssue,
+    'Choose a source issue and attempt.'
+  );
+  const flow = flows.read(flows.selected(input.sourceIssue));
+  requireThat(
+    [...flow.blocks, ...(flow.retiredBlocks || [])].some((block) =>
+      block.attempts.some(({ id }) => id === input.sourceAttempt)
+    ),
+    'The source attempt is unavailable.'
+  );
+}
+
 class IssueFlows {
   constructor(service, options) {
     this.service = service;
@@ -247,6 +264,7 @@ class IssueFlows {
     this.closureTasks = new Map();
     this.reportHeaders = new Map();
     this.groups = new FlowGrouping(this);
+    this.followups = new FlowFollowups(this, options.proposeInvestigationFollowups);
     this.folderSelection = new FlowFolderSelection(this, options.recommendFolderIssues);
     this.overnight = new FlowOvernight(this);
     this.folderOperations = new FolderOperations(this, options.searchFolderIssues);
@@ -990,6 +1008,8 @@ class IssueFlows {
   async dispatch(input) {
     this.service.ownServer();
     if (input.action === 'capture') return this.capture(input);
+    if (['investigation-followups-preview', 'investigation-followups-create'].includes(input.action))
+      return this.followups.action(input);
     if (folderActions.has(input.action)) return this.dispatchFolder(input);
     const issue = this.selected(input.issueId);
     const { entries: catalog } = this.catalog.read();
@@ -2055,6 +2075,7 @@ class IssueFlows {
     validateCaptureId(input.requestId);
     validateCaptureDescription(input.description);
     validateCaptureType(input.type);
+    validateCaptureSource(input, this);
     const folder = requireIssueFolder(
       this.service.root,
       input.folder || defaultIssueFolder(this.service.root).name
@@ -2140,6 +2161,7 @@ class IssueFlows {
       category: (input.type || inferType(input.description)) === 'bug' ? 'bug' : 'enhancement',
       ...(input.runRetro && { run_retro: true }),
       ...(input.sourceIssue && { source_issue: this.selected(input.sourceIssue).id }),
+      ...(input.sourceAttempt && { source_attempt: input.sourceAttempt }),
       ...capturedFolderMetadata(this.service.root, folder),
       ...captureGroupMetadata(grouping),
     };
@@ -2199,9 +2221,10 @@ class IssueFlows {
       validateCaptureId(captureId);
       const receiptPath = join(this.store.directory, 'captures', captureId + '.json');
       if (existsSync(receiptPath)) {
-        const { identity, id: savedId } = JSON.parse(readFileSync(receiptPath, 'utf8'));
+        const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+        const { identity, id: savedId } = receipt;
         requireThat(savedId === id, 'The issue capture receipt belongs to another issue.');
-        writeJson(receiptPath, { identity, id, deleted: true });
+        writeJson(receiptPath, { identity, id, title: receipt.metadata?.title ?? receipt.title, deleted: true });
       }
     }
     rmSync(dirname(path), { recursive: true, force: true });

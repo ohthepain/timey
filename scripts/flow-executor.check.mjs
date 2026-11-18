@@ -453,9 +453,15 @@ test('Understand receives retained source publication attempts from the coordina
   assert.equal(JSON.parse(readFileSync(proof.path, 'utf8')).attempts[0].details[0].value, 'candidate-revision');
   assert.equal(existsSync(join(result.workspace.checkout, '.issues/closed/original-issue.md')), false);
   writeFileSync(responsePath, 'Changed after retention');
+  f.issue.source_attempt = 'original-attempt';
   await f.run('understand');
   const changed = JSON.parse(f.calls.findLast(({ method }) => method === 'turn').prompt);
   assert.match(changed.sourceIssue.attempts[0].githubResponse.unavailable, /changed or lacks a digest/);
+  assert.equal(changed.sourceIssue.attemptId, 'original-attempt');
+  f.issue.source_attempt = 'not-a-source-attempt';
+  await f.run('understand');
+  const selected = JSON.parse(f.calls.findLast(({ method }) => method === 'turn').prompt);
+  assert.match(selected.sourceIssue.unavailable, /recorded source attempt is unavailable/);
 });
 
 test('legacy work and queued prompts prevent model or checkout startup', async (t) => {
