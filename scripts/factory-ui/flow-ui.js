@@ -2313,7 +2313,7 @@
     if (!state.view) return;
     $('block-palette').innerHTML =
       (state.index.catalog || [])
-        .filter((kind) => !['request', 'retro', 'cleanup'].includes(kind.kind))
+        .filter((kind) => !['request', 'cleanup'].includes(kind.kind))
         .map((kind) => {
           const style = blockStyle(kind.id);
           return `<button class="palette-item" style="--block-color:${style.color}" data-add-kind="${escape(kind.id)}"${state.pending ? ' disabled' : ''}><strong><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(kind.label)}</strong><small>${escape(kind.description || style.description)}</small></button>`;

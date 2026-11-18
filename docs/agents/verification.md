@@ -7,7 +7,7 @@ message settings and attachment copies, explicit queue/Stop/Retry behavior,
 native tool and permission ownership, skill invocation policy, and guarded
 Home/issue dispatch in disposable projects. `pnpm run test:project-discuss:browser`
 drives Home/Discuss navigation, retained drafts, Markdown, model/effort and skill
-selection, Tab acceptance, attachment copies, queued edits and Stop. Dictation
+selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop. Dictation
 uses an injected speech recognizer in this scenario. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.

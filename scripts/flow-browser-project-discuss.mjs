@@ -110,6 +110,12 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'Second response did not finish.'
   );
   await page.locator('#discuss-new').click();
+  const attachedConversation = await poll(
+    () => new URL(page.url()).searchParams.get('conversation'),
+    (id) => id && id !== first.id,
+    'New discussion must select its own conversation.'
+  );
+  const attachedSession = () => service.projectDiscuss.view(attachedConversation).selected;
   await page.locator('#discuss-model').selectOption('model-b');
   await page.locator('#discuss-effort').selectOption('low');
   await page.locator('#discuss-clarification').selectOption('grill-with-docs');
@@ -129,39 +135,40 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(calls[2].settings.model, 'model-b');
   assert.equal(calls[2].settings.effort, 'low');
   assert.equal(calls[2].settings.clarificationSkill, 'grill-with-docs');
-  const download = await page.request.get(service.projectDiscuss.view().selected.messages[0].attachments[0].url);
-  assert.equal(await download.text(), 'Retained attachment');
+  const attachment = page.locator('#discuss-messages').getByRole('link', { name: 'attachment.txt', exact: true });
+  const [download] = await Promise.all([page.waitForEvent('download'), attachment.click()]);
+  assert.equal(download.suggestedFilename(), 'attachment.txt');
+  assert.equal(readFileSync(await download.path(), 'utf8'), 'Retained attachment');
   await poll(
-    () => service.projectDiscuss.view().selected.status,
+    () => attachedSession().status,
     (value) => value === 'idle',
     'Attached response did not finish.'
   );
   await page.locator('#discuss-draft').fill('Hold response');
-  await page.locator('#discuss-send').click();
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await page.locator('#discuss-messages').getByText('Hold response', { exact: true }).waitFor();
   await page.locator('#discuss-messages').getByText('Live partial response', { exact: true }).waitFor();
   await page.locator('#discuss-draft').fill('Queued question');
-  await page.locator('#discuss-send').click();
+  await page.locator('#discuss-draft').press('Enter');
   await page.locator('#discuss-queue [data-discuss-queue-edit]').waitFor();
   await page.locator('#discuss-queue [data-discuss-queue-edit]').click();
   await page.locator('#discuss-draft').fill('Edited queued question');
-  await page.locator('#discuss-send').click();
+  await page.locator('#discuss-draft').press('Enter');
   await poll(
-    () => service.projectDiscuss.view().selected.queue[0]?.text,
+    () => attachedSession().queue[0]?.text,
     (value) => value === 'Edited queued question',
     'Queued edit was not retained.'
   );
-  await page.locator('#discuss-stop').click();
+  await page.getByRole('button', { name: 'Stop response', exact: true }).click();
   await page.locator('#discuss-resume').waitFor();
   assert.equal(calls.length, 4);
   await page.locator('#discuss-queue [data-discuss-queue-remove]').click();
   await poll(
-    () => service.projectDiscuss.view().selected.queue.length,
+    () => attachedSession().queue.length,
     (value) => value === 0,
     'Queued remove was not retained.'
   );
-  const held = service.projectDiscuss
-    .view()
-    .selected.messages.find((m) => m.role === 'user' && m.text === 'Hold response');
+  const held = attachedSession().messages.find((m) => m.role === 'user' && m.text === 'Hold response');
   await page.locator(`[data-discuss-edit="${held.id}"]`).click();
   assert.equal(await page.locator('#discuss-draft').inputValue(), 'Hold response');
   assert.equal(calls.length, 4);
