@@ -209,14 +209,20 @@ async function populateCaptureFolders(context) {
   const select = context.dialog.querySelector('#capture-folder');
   select.disabled = true;
   try {
-    const response = await fetch('/api/issue-folder-options', { cache: 'no-store' });
+    const [response, defaultResponse] = await Promise.all([
+      fetch('/api/issue-folder-options', { cache: 'no-store' }),
+      fetch('/api/issue-folder-default', { cache: 'no-store' }),
+    ]);
     const folders = await response.json();
     if (!response.ok || !Array.isArray(folders)) throw Error(folders.error || 'Could not load issue folders.');
-    const previous = select.value || select.dataset.draft || '';
+    const defaultFolder = await defaultResponse.json();
+    if (!defaultResponse.ok) throw Error(defaultFolder.error || 'Could not load the default issue folder.');
+    const previous = select.value || select.dataset.draft || defaultFolder.folder || '';
     select.replaceChildren(new Option('Choose a folder', ''));
     for (const name of folders) select.add(new Option(name, name));
     select.value = previous;
     select.disabled = false;
+    if (!select.value && defaultFolder.error) context.error.textContent = defaultFolder.error;
   } catch (error) {
     context.error.textContent = error.message;
   }

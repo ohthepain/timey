@@ -20,6 +20,7 @@ import { systemFlowDirectory, uiDirectory } from './ui-source.mjs';
 import {
   createIssueFolderSettings,
   giveIssueFolderCopyNewId,
+  readFolderSettings,
   readIssueFolderSettings,
 } from './issue-folder-settings.mjs';
 
@@ -30,6 +31,11 @@ const maxWrite = 128000;
 const ignored = new Set(['node_modules', '.git', '.issues', '.aws', '.ssh']);
 
 const info = (path) => lstatSync(path, { throwIfNoEntry: false });
+
+function projectFolderName(project, directory) {
+  const path = relative(project, directory).split(sep).join('/');
+  return path.startsWith('user/') ? path.slice(5) : '/' + path;
+}
 
 function components(path = '') {
   requireThat(typeof path === 'string', 'Choose a sidebar path.');
@@ -99,9 +105,22 @@ export class SidebarFiles {
         name: basename(base),
         section: 'Added folders',
         base,
-        writable: false,
+        writable: this.projectOwned(base),
       })),
     ];
+  }
+
+  projectOwned(directory) {
+    const path = relative(this.project, directory);
+    return Boolean(
+      path &&
+      !path.startsWith('..') &&
+      !isAbsolute(path) &&
+      !path.split(sep).some((part) => ignored.has(part)) &&
+      !directory.startsWith(systemFlowDirectory() + sep) &&
+      directory !== systemFlowDirectory() &&
+      readFolderSettings(this.project, directory).canConfigure
+    );
   }
 
   index() {
@@ -136,22 +155,29 @@ export class SidebarFiles {
           .map((item) => ({ name: item.name, directory: item.isDirectory() }))
       : [];
     rows.sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
-    const issueFolder =
-      entry.id === 'user' &&
-      input.path &&
-      readIssueFolderSettings(this.project, { includeCopies: true }).find(({ name }) => name === input.path);
+    const issueFolder = readIssueFolderSettings(this.project, { includeCopies: true, includeBroken: true }).find(
+      ({ directory }) => directory === path
+    );
     return { rows, issueFolder: issueFolder || null };
   }
 
   deletionTarget(input) {
-    const { entry, path } = this.locate(input, 'directory');
+    const folder =
+      input.folder &&
+      readIssueFolderSettings(this.project, { includeCopies: true, includeBroken: true }).find(
+        ({ name }) => name === input.folder
+      );
+    requireThat(!input.folder || folder, 'Choose an existing issue folder.');
+    const { entry, path } = folder
+      ? { entry: { id: 'project-folder', name: folder.label }, path: folder.directory }
+      : this.locate(input, 'directory');
     const directory = info(path);
     requireThat(directory?.isDirectory(), 'This folder no longer exists on disk.');
     const identity = [directory.dev, directory.ino, directory.mtimeMs];
     return {
       path,
-      name: input.path?.split('/').at(-1) || entry.name,
-      basis: digest(JSON.stringify([input.root, input.path || '', identity])),
+      name: folder?.label || input.path?.split('/').at(-1) || entry.name,
+      basis: digest(JSON.stringify([path, identity])),
       installed: entry.id.startsWith('system-'),
     };
   }
@@ -181,17 +207,17 @@ export class SidebarFiles {
         return { removed: true };
       }
       case 'enable-issues':
-        requireThat(input.root === 'user', 'Choose a folder inside user/.');
-        return createIssueFolderSettings(this.project, input.path);
+        return this.configure(input);
       case 'new-folder-id':
-        requireThat(input.root === 'user', 'Choose a folder inside user/.');
-        return giveIssueFolderCopyNewId(this.project, input.path);
+        return this.configure(input, true);
       case 'install-skill':
         return this.installSkill(input);
       case 'choose':
         return this.choose();
       case 'open':
         return this.open(input);
+      case 'open-directory':
+        return this.openDirectory(input);
       case 'directory':
       case 'save':
       case 'copy':
@@ -199,6 +225,13 @@ export class SidebarFiles {
       default:
         throw Error('Choose a folder or file action.');
     }
+  }
+
+  configure(input, copy = false) {
+    const { entry, path } = this.locate(input, 'directory');
+    requireThat(entry.writable && this.projectOwned(path), 'Choose a project-owned folder.');
+    const name = projectFolderName(this.project, path);
+    return copy ? giveIssueFolderCopyNewId(this.project, name) : createIssueFolderSettings(this.project, name);
   }
 
   pin(chosen) {
@@ -274,6 +307,14 @@ export class SidebarFiles {
     return { opened: true };
   }
 
+  async openDirectory(input) {
+    const { path } = this.locate(input, 'directory');
+    requireThat(info(path)?.isDirectory(), 'This folder no longer exists.');
+    requireThat(process.platform === 'darwin', 'Open this folder in your file manager.');
+    await run('/usr/bin/open', [path], { timeout: 5000 });
+    return { opened: true };
+  }
+
   write(input) {
     const copy = input.action === 'copy';
     const directory = input.action === 'directory';
@@ -281,10 +322,15 @@ export class SidebarFiles {
       copy ? { root: 'user', path: input.destination } : input,
       directory ? 'directory' : 'file'
     );
-    requireThat(target.entry.writable && target.parts.length, 'Choose a file or folder inside user/.');
+    requireThat(
+      target.entry.writable && target.parts.length,
+      'Choose a file or folder inside a project-owned sidebar folder.'
+    );
     requireAvailableDirectory(target.path);
     if (directory) {
       mkdirSync(target.path, { recursive: true });
+      if (info(join(dirname(target.path), 'folder.md'))?.isFile())
+        createIssueFolderSettings(this.project, projectFolderName(this.project, target.path));
       return { created: true };
     }
     requireThat(markdown.test(target.path), 'Use a .md file name.');

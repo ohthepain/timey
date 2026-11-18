@@ -70,12 +70,52 @@
   };
   const runningStatuses = new Set(['running', 'starting', 'stopping', 'in-progress']);
   function emptyFolderSelection() {
-    return { issueIds: new Set(), selection: null, scan: null, group: null, overnight: null };
+    return {
+      issueIds: new Set(),
+      selection: null,
+      scan: null,
+      group: null,
+      overnight: null,
+      view: 'open',
+      query: '',
+      matches: null,
+      bulk: null,
+      bulkResults: null,
+    };
   }
   let folderSelection = emptyFolderSelection();
   let projectSettings = null;
   let inspectedFile = null;
   let inspectorRender;
+  let folderConfig = null;
+  let strategyFolder = null;
+  const folderSettingsUI = window.createFolderSettingsUI({
+    container: $('folder-settings-panel'),
+    omitFields: ['selection_strategy'],
+    request: json,
+    notify: toast,
+    changed: (data) => {
+      folderConfig = data;
+      strategyFolder = null;
+      if (state.fileFolder && data.folder?.name && data.kind !== 'plain') state.folder = data.folder.name;
+      renderFolderWorkspace();
+      void loadFolderStrategies();
+      void load(true);
+    },
+  });
+  const projectFolderSettingsUI = window.createFolderSettingsUI({
+    container: $('project-folder-settings'),
+    request: json,
+    notify: toast,
+    prefix: 'project-setting',
+    changed: () => {
+      void load(true);
+    },
+  });
+
+  function folderLocation() {
+    return state.fileFolder ? { root: state.fileFolder.root, path: state.fileFolder.path } : { folder: state.folder };
+  }
 
   function renderProjectSettings(settings) {
     projectSettings = settings;
@@ -88,6 +128,9 @@
 
   async function openProjectSettings() {
     projectSettings = null;
+    projectFolderSettingsUI.setLocation({ project: true });
+    if (projectFolderSettingsUI.value())
+      void projectFolderSettingsUI.refresh().catch((failure) => showError(failure.message));
     $('project-settings-error').hidden = true;
     $('project-settings-content').textContent = 'Loading project settings…';
     $('initialize-lifecycle').hidden = true;
@@ -498,7 +541,12 @@
     state.folder = folder;
     state.fileFolder = fileFolder;
     folderSelection = emptyFolderSelection();
+    folderConfig = null;
+    strategyFolder = null;
+    folderSettingsUI.setLocation(null);
     $('folder-scan-form').reset();
+    $('folder-search-form').reset();
+    $('folder-issue-view').value = 'open';
     state.issueId = issue;
     state.blockId = null;
     state.deleteBlockId = null;
@@ -591,7 +639,7 @@
 
   $('delete-sidebar-folder').addEventListener('click', async () => {
     if (state.pending) return;
-    const selected = state.fileFolder || { root: 'user', path: state.folder };
+    const selected = folderLocation();
     state.pending = true;
     $('delete-sidebar-folder').disabled = true;
     try {
@@ -707,12 +755,180 @@
     const enable = (command, allowed) => {
       document.querySelector(`[data-folder-command="${command}"]`).disabled = !allowed;
     };
-    const mayGroup = selected.every((issue) => issue.folderEligible && !issue.masterId);
-    const mayRun = selected.every((issue) => !issue.masterId && !issue.activeBlock && issue.state !== 'needs-approval');
+    const mayGroup =
+      folderSelection.view === 'open' &&
+      selected.every((issue) => (issue.groupEligible ?? issue.folderEligible) && !issue.masterId);
+    const mayRun =
+      folderSelection.view === 'open' &&
+      selected.every((issue) => !issue.masterId && !issue.activeBlock && issue.state !== 'needs-approval');
     enable('group', count >= 2 && mayGroup);
     enable('plan-night', count > 0 && mayRun && !overnightActive(folderRun()) && !state.newActionsPaused);
+    const visible = folderMembers();
+    const selectedVisible = visible.filter((issue) => folderSelection.issueIds.has(issue.id)).length;
+    const all = visible.length > 0 && selectedVisible === visible.length;
+    const checkbox = $('folder-select-all');
+    checkbox.checked = all;
+    checkbox.indeterminate = selectedVisible > 0 && !all;
+    checkbox.disabled = !visible.length;
+    const bulk = document.querySelector('[data-folder-command="bulk"]');
+    const verb = folderSelection.view === 'closed' ? 'Archive' : 'Start';
+    bulk.textContent = all || !selectedVisible ? `${verb} all` : `${verb} selected (${selectedVisible})`;
+    bulk.disabled = !selectedVisible || state.pending || (folderSelection.view === 'open' && state.newActionsPaused);
+    document.querySelector('[data-folder-command="recommend"]').disabled = folderSelection.view !== 'open';
+    $('folder-scan-form').hidden = folderSelection.view !== 'open';
     $('folder-scan-review').querySelector('button[type="submit"]').disabled = !document.querySelector(
       '#folder-scan-list input:checked'
+    );
+  }
+
+  function folderMembers() {
+    const closed = folderSelection.view === 'closed';
+    const query = folderSelection.query.toLowerCase();
+    return state.index.issues.filter(
+      (issue) =>
+        issue.folder === state.folder &&
+        (issue.status === 'closed') === closed &&
+        (folderSelection.matches
+          ? folderSelection.matches.has(issue.id)
+          : `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(query))
+    );
+  }
+
+  function renderFolderBulk() {
+    const preview = folderSelection.bulk;
+    const verb = folderSelection.view === 'closed' ? 'Archive' : 'Start';
+    $('folder-bulk-preview').hidden = !preview;
+    updateFolderMarkup(
+      $('folder-bulk-preview'),
+      preview
+        ? `<h2>Review ${verb.toLowerCase()}</h2><ul>${(preview.issues || []).map((issue) => `<li>${issueLink(issue)}${issue.reason ? `<p>${escape(issue.reason)}</p>` : ''}</li>`).join('')}</ul><div class="folder-controls"><button type="button" class="primary-button" data-folder-command="run-bulk">${verb} selected issues</button><button type="button" class="small-button" data-folder-command="cancel-bulk">Cancel</button></div>`
+        : ''
+    );
+    const results = folderSelection.bulkResults;
+    $('folder-bulk-results').hidden = !results;
+    updateFolderMarkup(
+      $('folder-bulk-results'),
+      results
+        ? `<h2>Action results</h2><ul>${results
+            .map((result) => {
+              const issue = state.index.issues.find(({ id }) => id === result.id) || { id: result.id };
+              return `<li>${issueLink(issue)} · ${escape(result.status)}${result.error ? `<p>${escape(result.error)}</p>` : ''}</li>`;
+            })
+            .join('')}</ul>`
+        : ''
+    );
+  }
+
+  async function previewFolderBulk() {
+    const preview = await folderAction('folder-bulk-preview', {
+      folder: state.folder,
+      view: folderSelection.view,
+      issueIds: folderMembers()
+        .filter((issue) => folderSelection.issueIds.has(issue.id))
+        .map(({ id }) => id),
+    });
+    if (!preview) return;
+    folderSelection.bulk = preview;
+    folderSelection.bulkResults = null;
+    renderFolderWorkspace();
+  }
+
+  async function runFolderBulk() {
+    if (!folderSelection.bulk) return;
+    const result = await folderAction('folder-bulk-run', { previewId: folderSelection.bulk.id });
+    if (!result) return;
+    folderSelection.bulkResults = result.results;
+    folderSelection.bulk = null;
+    folderSelection.issueIds.clear();
+    await load(true);
+    renderFolderWorkspace();
+  }
+
+  async function searchFolderAI() {
+    const query = $('folder-search-query').value.trim();
+    if (!query) return;
+    const selection = folderSelection;
+    $('folder-search-status').hidden = false;
+    $('folder-search-status').textContent = 'Searching all issues in this view…';
+    const result = await folderAction('folder-ai-search', { folder: state.folder, view: selection.view, query });
+    if (!result || selection !== folderSelection) return;
+    selection.matches = new Map((result.matches || []).map(({ id, reason }) => [id, reason]));
+    selection.query = '';
+    $('folder-search-status').textContent = `${selection.matches.size} matching issues. Selection unchanged.`;
+    renderFolderWorkspace();
+  }
+
+  async function loadFolderStrategies() {
+    const folder = state.folder;
+    if (!folder || folderConfig?.kind === 'broken' || strategyFolder === folder) return;
+    strategyFolder = folder;
+    try {
+      const result = await json('/api/folder-strategies?' + new URLSearchParams({ folder }));
+      if (state.folder !== folder) return;
+      const select = $('folder-selection-strategy');
+      select.innerHTML = result.strategies
+        .map(({ id, name }) => `<option value="${escape(id)}">${escape(name)}</option>`)
+        .join('');
+      select.value = result.selected;
+    } catch (error) {
+      strategyFolder = null;
+      showError(error.message);
+    }
+  }
+
+  async function changeFolderStrategy(copy) {
+    if (!state.folder || state.pending) return;
+    try {
+      const result = await post('folder-strategies', {
+        folder: state.folder,
+        action: copy ? 'copy' : 'select',
+        strategy: $('folder-selection-strategy').value,
+        revision: folderConfig?.revision,
+      });
+      strategyFolder = null;
+      if (result.strategies) {
+        $('folder-selection-strategy').innerHTML = result.strategies
+          .map(({ id, name }) => `<option value="${escape(id)}">${escape(name)}</option>`)
+          .join('');
+        $('folder-selection-strategy').value = result.selected;
+      }
+      await folderSettingsUI.refresh();
+      toast(copy ? 'Selection strategy copied to your user folder.' : 'Selection strategy saved.');
+    } catch (error) {
+      showError(error.message);
+    }
+  }
+
+  function renderIssueSettings() {
+    const view = state.view;
+    if (!view) return;
+    const settings = view.issueSettings;
+    if (!settings) {
+      $('issue-settings').hidden = true;
+      return;
+    }
+    $('issue-settings').hidden = false;
+    const fields = settings.fields || [];
+    const values = settings.values || {};
+    $('issue-settings-form').querySelector('button[type="submit"]').disabled = Boolean(settings.frozen);
+    $('issue-settings').title = settings.frozen ? 'Settings are retained for the started run.' : '';
+    updateFolderMarkup(
+      $('issue-settings-fields'),
+      fields
+        .filter(({ key }) => ['branch', 'skill', 'model', 'effort'].includes(key))
+        .map((field) =>
+          window.factorySettingField(
+            field,
+            {
+              raw: settings.overrides?.[field.key] || 'default',
+              value: values[field.key],
+              source: settings.sources?.[field.key],
+            },
+            'issue-setting',
+            settings.frozen
+          )
+        )
+        .join('')
     );
   }
 
@@ -726,11 +942,15 @@
     $('flow-view-title').textContent = selected ? 'Folder' : 'Issue flow';
     $('issue-folder-content').hidden = !state.folder;
     if (!selected) return;
-    $('folder-workspace-title').textContent = state.folder || state.fileFolder.name;
-    if (!state.folder) return;
+    $('folder-workspace-title').textContent = folderConfig?.folder?.label || state.fileFolder?.name || state.folder;
+    folderSettingsUI.setLocation(folderLocation());
+    $('issue-folder-content').hidden = !state.folder || folderConfig?.kind === 'plain';
+    if (!state.folder || folderConfig?.kind === 'plain') return;
     const { issues, folders } = state.index;
-    const members = issues.filter((issue) => issue.folder === state.folder && issue.status !== 'closed');
-    const reasons = new Map(folderSelection.selection?.candidates.map(({ id, reason }) => [id, reason]));
+    const members = folderMembers();
+    const reasons = new Map(
+      folderSelection.matches || folderSelection.selection?.candidates.map(({ id, reason }) => [id, reason])
+    );
     updateFolderMarkup(
       $('folder-member-list'),
       members
@@ -757,6 +977,7 @@
         .join('')
     );
     $('folder-group-form').hidden = !folderSelection.group;
+    renderFolderBulk();
     renderFolderRun();
     renderFolderButtons();
   }
@@ -799,6 +1020,7 @@
     folderSelection.issueIds = new Set(ids);
     folderSelection.group = null;
     folderSelection.overnight = null;
+    folderSelection.bulk = null;
     renderFolderWorkspace();
   }
 
@@ -912,6 +1134,9 @@
     'cancel-night': () => closeFolderPreview('overnight'),
     'cancel-group': () => closeFolderPreview('group'),
     'cancel-scan': () => closeFolderPreview('scan'),
+    bulk: previewFolderBulk,
+    'run-bulk': runFolderBulk,
+    'cancel-bulk': () => closeFolderPreview('bulk'),
   };
 
   function activeSpinner(block) {
@@ -1035,6 +1260,12 @@
 
   const destinationChecks = new Map();
 
+  function destinationFollowLabel() {
+    if (state.view.issueSettings?.frozen) return 'Uses saved run target';
+    if (state.view.issueSettings?.overrides?.branch) return 'Uses issue target override';
+    return state.view.flow.resolvedBranch ? 'Follows folder default' : 'Follows starting branch';
+  }
+
   function destinationNode() {
     const { branch, follows, locked, pr, proposedBranch } = state.view.destination || {};
     const check = destinationChecks.get(state.issueId);
@@ -1047,7 +1278,7 @@
           ? `<span class="terminal-branch">${display}</span>`
           : `<button type="button" class="small-button" data-destination-open aria-label="Choose destination branch">${display}</button>`
       }
-      <span class="terminal-note">${locked ? 'Locked to the PR' : follows ? 'Follows starting branch' : ''} ${prLink(pr)}</span>
+      <span class="terminal-note">${locked ? 'Locked to the PR' : follows ? destinationFollowLabel() : ''} ${prLink(pr)}</span>
       ${!locked && unavailable ? '<span class="terminal-note">Branch unavailable</span>' : ''}
       ${!locked && check?.branchesUnavailable ? '<span class="terminal-note">Couldn’t check branches</span>' : ''}
       ${
@@ -1078,7 +1309,7 @@
     $('save-destination').hidden = !branches;
     if (!branches) return;
     $('destination-branch').replaceChildren(
-      new Option('Follow starting branch', ''),
+      new Option(state.view.flow.resolvedBranch ? 'Use issue target setting' : 'Follow starting branch', ''),
       ...(unavailable && !destination.follows
         ? [new Option(destination.branch + ' (unavailable)', destination.branch)]
         : []),
@@ -1174,7 +1405,7 @@
       status: `<span class="block-topline"><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(words(block.kind))}<span class="block-status${isRunning(block) && !attempt?.inputRequestedAt ? ' running' : ''}">${timing || escape(statusText(currentStatus, attempt))}</span></span>`,
       title: `<span class="block-label">${escape(block.label || words(block.kind))}</span>`,
       description: `<span class="block-description">${escape(description)}</span>`,
-      footer: `<span class="block-bottomline"><span>${escape(block.skill || (block.suggested ? 'Suggested next step' : 'Choose a skill'))}</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
+      footer: `<span class="block-bottomline"><span>${escape(block.effectiveSkill || block.skill || (block.suggested ? 'Suggested next step' : 'Choose a skill'))}</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
     };
     return (
       '<span class="block-port top"></span>' + Object.values(parts).join('') + '<span class="block-port bottom"></span>'
@@ -1529,7 +1760,7 @@
       mode === 'skill'
         ? `<label class="field"><span>Allowed skill</span><select name="skill" data-field="skill"${locked}>${skillOptions(block, values.skill)}</select></label>`
         : formField('prompt', 'Prompt text', values.prompt, blockStyle(block.definition ?? block.kind).description, 4);
-    return `<details class="system-prompt" data-preserve="system-prompt"><summary>System prompt <span class="muted-inline">${mode === 'skill' ? 'Skill' : 'Text'}</span></summary>${skills.length ? `<label class="field"><span>Use</span><select name="prompt-mode" data-field="prompt-mode"${locked}><option value="text"${mode === 'text' ? ' selected' : ''}>Text</option><option value="skill"${mode === 'skill' ? ' selected' : ''}>Allowed skill</option></select></label>` : ''}${field}${skills.length ? '<small>Only skills listed in this block type’s Markdown are available.</small>' : ''}</details>`;
+    return `<details class="system-prompt" data-preserve="system-prompt"><summary>System prompt <span class="muted-inline">${mode === 'skill' ? 'Skill' : 'Text'}</span></summary>${skills.length ? `<label class="field"><span>Use</span><select name="prompt-mode" data-field="prompt-mode"${locked}><option value="text"${mode === 'text' ? ' selected' : ''}>Text</option><option value="skill"${mode === 'skill' ? ' selected' : ''}>Allowed skill</option></select></label>` : ''}${field}${block.effectiveSkill && block.effectiveSkill !== block.skill ? `<small>Uses inherited issue skill: ${escape(block.effectiveSkill)}</small>` : ''}${skills.length ? '<small>Only skills listed in this block type’s Markdown are available.</small>' : ''}</details>`;
   }
 
   function evidenceLinks(attempt) {
@@ -1833,6 +2064,7 @@
     $('issue-title').textContent = issue?.title || '';
     if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
     renderFlowPicker();
+    renderIssueSettings();
     const blocks = state.view?.flow?.blocks || [];
     const running = blocks.find((block) => isRunning(block));
     const completed = blocks.filter((block) => ['completed', 'succeeded', 'success'].includes(status(block))).length;
@@ -1959,13 +2191,21 @@
   }
 
   function openCapture(folder) {
-    const selected = typeof folder === 'string' ? folder : state.folder || state.view?.flow?.folder || '';
+    const selected =
+      typeof folder === 'string'
+        ? folder
+        : state.folder ||
+          (typeof state.index.defaultFolder === 'string'
+            ? state.index.defaultFolder
+            : state.index.defaultFolder?.name) ||
+          '';
     const options = state.index.folders || [];
     $('capture-folder').innerHTML =
       '<option value="" disabled>Choose a folder</option>' +
       options.map((name) => `<option value="${escape(name)}">${escape(name)}</option>`).join('');
     $('capture-folder').value = options.includes(selected) ? selected : '';
-    $('capture-error').hidden = true;
+    $('capture-error').textContent = !selected ? state.index.defaultFolderError || '' : '';
+    $('capture-error').hidden = !$('capture-error').textContent;
     $('capture-dialog').showModal();
     if (!$('capture-folder').value) $('capture-folder').focus();
     else $('capture-description').focus();
@@ -2012,6 +2252,11 @@
     renderInspector();
   }
 
+  function blockSkillChanges(values, promptMode) {
+    if (!Object.hasOwn(draft(), 'skill') && !Object.hasOwn(draft(), 'prompt-mode')) return {};
+    return { skill: promptMode === 'skill' ? values.get('skill') || null : null };
+  }
+
   async function saveBlock(event) {
     event.preventDefault();
     const block = activeBlock();
@@ -2021,9 +2266,9 @@
     const promptMode = values.get('prompt-mode') || 'text';
     const changes = {
       label: String(values.get('label') || ''),
-      skill: promptMode === 'skill' ? values.get('skill') || null : null,
       prompt: promptMode === 'text' ? String(values.get('prompt') || '') : '',
       lane: Number(values.get('lane') || 0),
+      ...blockSkillChanges(values, promptMode),
     };
     changes.inputs = {};
     changes.links = {};
@@ -2458,7 +2703,8 @@
   $('folder-workspace').addEventListener('click', (event) => {
     if (followFolderLink(event)) return;
     const button = event.target.closest('[data-folder-command]');
-    if (button && !button.disabled) void folderCommands[button.dataset.folderCommand]();
+    if (button && !button.disabled && folderCommands[button.dataset.folderCommand])
+      void folderCommands[button.dataset.folderCommand]();
   });
 
   $('issue-grouping').addEventListener('click', (event) => {
@@ -2651,6 +2897,59 @@
         state.drafts.set(key, saved);
         return load(true);
       });
+    }
+  });
+
+  $('open-sidebar-folder').addEventListener('click', async () => {
+    try {
+      await post('folder-settings', { ...folderLocation(), action: 'open' });
+    } catch (error) {
+      showError(error.message);
+    }
+  });
+  $('folder-issue-view').addEventListener('change', (event) => {
+    folderSelection = { ...emptyFolderSelection(), view: event.target.value };
+    $('folder-search-form').reset();
+    $('folder-search-status').hidden = true;
+    renderFolderWorkspace();
+  });
+  $('folder-select-all').addEventListener('change', (event) => {
+    const ids = new Set(folderSelection.issueIds);
+    for (const issue of folderMembers()) {
+      if (event.target.checked) ids.add(issue.id);
+      else ids.delete(issue.id);
+    }
+    updateFolderSelection(ids);
+  });
+  $('folder-search-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    folderSelection.query = $('folder-search-query').value.trim();
+    folderSelection.matches = null;
+    folderSelection.bulk = null;
+    $('folder-search-status').hidden = true;
+    renderFolderWorkspace();
+  });
+  $('folder-search-query').addEventListener('input', (event) => {
+    if (event.target.value) return;
+    folderSelection.query = '';
+    folderSelection.matches = null;
+    $('folder-search-status').hidden = true;
+    renderFolderWorkspace();
+  });
+  $('folder-ai-search').addEventListener('click', () => void searchFolderAI());
+  $('folder-selection-strategy').addEventListener('change', () => void changeFolderStrategy(false));
+  $('copy-folder-strategy').addEventListener('click', () => void changeFolderStrategy(true));
+  $('issue-settings-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const result = await action(
+      'issue-settings',
+      { changes: Object.fromEntries(new FormData(event.target)) },
+      { errorId: 'issue-settings-error' }
+    );
+    if (result) {
+      $('issue-settings-error').hidden = true;
+      toast('Issue settings saved.');
+      await load(true);
     }
   });
 
@@ -2904,6 +3203,8 @@
   });
   $('refresh').addEventListener('click', () => {
     void load(true, true);
+    if (state.folder || state.fileFolder)
+      void folderSettingsUI.refresh().catch((failure) => showError(failure.message));
   });
   $('dismiss-error').addEventListener('click', () => {
     state.error = '';

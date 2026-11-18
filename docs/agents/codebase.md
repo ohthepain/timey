@@ -304,8 +304,11 @@ terminal turns, preserving pending input, newer activity and unknown state.
 `factory-ui/codex.mjs` selects native automatic approval review for workspace-write
 chats while keeping the sandbox. `approval-activity.mjs` projects public automatic
 approval results into live output; it never grants access or reports test success.
-`factory-ui/model-settings.mjs` owns the validated local defaults and per-issue
-overrides used for newly started Codex threads; `codex.mjs` applies them only to
+`factory-ui/model-settings.mjs` exposes schema-validated tracked project defaults
+and per-issue overrides used for newly started Codex threads. It delegates inherited
+values to the folder settings owner and preserves legacy explicit issue preferences.
+`issue-execution-settings.mjs` resolves issue overrides and saved execution snapshots;
+`codex.mjs` applies the chosen model only to
 `thread/start`, so resumed threads keep their original settings. The issues-page
 gear and per-issue selectors live in `factory-ui/index.html`. Focused behavior is
 covered by `factory-model-settings.check.mjs` and
@@ -664,7 +667,12 @@ interrupted acknowledgments use the existing remote release and recovery path.
 The sidebar uses the existing revision-checked `folder` action to save moves,
 including assignments to configured project folders. `flow-browser-issue-folders.mjs`
 checks folder visibility and drag moves through the real browser and HTTP routes.
-`issue-folder-settings.mjs` validates required creation and move destinations.
+`issue-folder-settings.mjs` owns stable folder identity, settings discovery,
+revision-checked YAML edits, project-default migration, and parent inheritance.
+`folder-settings-schema.mjs` derives supported fields and choices from the installed
+`factory/system/folder.md` reference. Root `folder.md` supplies tracked project
+defaults. `folder-settings-routes.mjs` binds settings operations to validated sidebar
+locations. `folder-settings-ui.js` renders the shared settings form and repair UI.
 Both Flow and Classic capture save the selected folder ID on each new report.
 The issue read path places older reports without membership in Inbox.
 Folder landing pages share the workspace in `flow-ui.js`. `SidebarFiles`
@@ -673,6 +681,9 @@ folder membership before deletion. `folder-trash.mjs` uses macOS Trash and
 prevents assignments or file writes into a directory while it is being moved.
 `flow-folder-selection.mjs` evaluates folder selections and checks reviewed moves
 against current issue records. `flow-grouping.mjs` owns master issue grouping.
+`folder-strategies.mjs` owns strategy prompt reads, explicit copies to user Markdown,
+and folder strategy selection. `folder-operations.mjs` runs scoped AI searches and
+preview-bound per-issue Start and Archive actions, retaining individual outcomes.
 `flow-overnight.mjs` runs the approved folder selection to the Merge confirmation
 and retains the run report. `flow-block-data.mjs` resolves block addresses, declared inputs and
 retained outputs. `flow-request.mjs` derives the Request fields through a

@@ -24,6 +24,7 @@ export function makeBlock(kind, after = [], suggested = false, catalog = bundled
     ...(entry.id !== entry.kind ? { definition: entry.id } : {}),
     label: entry.label,
     skill: entry.defaultSkill,
+    skillExplicit: false,
     prompt: '',
     iterations: 1,
     lane: 0,
@@ -258,6 +259,7 @@ export function editFlow(flow, input, catalog) {
               catalog.find((entry) => entry.id === blockDefinitionId(block))?.skills?.includes(values.skill)),
           'Choose a valid installed skill.'
         );
+      if ('skill' in values) block.skillExplicit = true;
       if ('prompt' in values)
         requireThat(
           typeof values.prompt === 'string' && values.prompt.length <= 12000,

@@ -156,7 +156,7 @@
     return details;
   }
 
-  function directoryActions(entry, issueFolder) {
+  function directoryActions(entry) {
     const { root, base } = entry;
     const operations = node('div');
     operations.classList.add('sidebar-file-actions');
@@ -175,32 +175,7 @@
       }
       return operations;
     }
-    if (issueFolder && !issueFolder.duplicate) operations.append(...issueFolderActions(issueFolder.name));
-    else if (base.path) {
-      operations.append(
-        action(issueFolder?.duplicate ? 'Give copy a new ID' : 'Enable issue actions', async () => {
-          try {
-            await change({ action: issueFolder?.duplicate ? 'new-folder-id' : 'enable-issues', ...base });
-            await loadDirectory(entry);
-          } catch (failure) {
-            status(failure.message);
-          }
-        })
-      );
-    }
     return operations;
-  }
-
-  function issueFolderActions(name) {
-    const open = action('View assigned issues', () =>
-      window.dispatchEvent(new CustomEvent('factory-open-issue-folder', { detail: name }))
-    );
-    open.dataset.folder = name;
-    const capture = action('New issue', () => {
-      window.openFlowCapture(name);
-    });
-    capture.dataset.createFolderIssue = name;
-    return [open, capture];
   }
 
   async function loadDirectory({ body, root, base, details }) {
@@ -208,7 +183,8 @@
       const { rows, issueFolder } = await request('directory', base);
       if (!details.isConnected || !details.open) return;
       const fragment = document.createDocumentFragment();
-      const actions = directoryActions({ root, base, body, details }, issueFolder);
+      details.querySelector('summary .sidebar-folder-name').classList.toggle('issue-folder-name', Boolean(issueFolder));
+      const actions = directoryActions({ root, base, body, details });
       if (actions.childElementCount) fragment.append(actions);
       for (const row of rows) {
         const target = { root: root.id, path: childPath(base.path, row.name) };
@@ -274,7 +250,7 @@
   window.addEventListener('factory-issue-folder-created', async (event) => {
     try {
       await refresh('user');
-      const parts = event.detail.split('/');
+      const parts = typeof event.detail === 'string' ? event.detail.split('/') : [];
       for (let count = 0; count <= parts.length; count++) {
         const entry = nodes.get(id({ root: 'user', path: parts.slice(0, count).join('/') }));
         if (!entry) break;

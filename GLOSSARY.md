@@ -148,6 +148,18 @@ A project folder configured to show assigned issues and issue actions alongside
 its files. Every issue belongs to a folder, and its report lives in the queue.
 _Avoid_: Issue group
 
+**System folder**:
+A browsable folder without issue settings. The term describes its issue behavior,
+while installed content describes who owns its files.
+
+**Default issue folder**:
+The single issue folder used for a new issue when the person has not chosen a
+folder. Each project has its own default issue folder.
+
+**Inherited setting**:
+A setting whose value comes from a parent folder, or from the project when no
+parent folder supplies a value.
+
 **Selection strategy**:
 A rule for recommending which issues to select and explaining why they fit
 together.

@@ -36,6 +36,9 @@ import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settin
 import { openIssueWorkFolder } from './open-issue-work-folder.mjs';
 import { createIssueFlows } from './flow-service.mjs';
 import { SidebarFiles } from './sidebar-files.mjs';
+import { folderSettingsView, changeFolderSettings } from './folder-settings-routes.mjs';
+import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs';
+import { defaultIssueFolder } from './issue-folder-settings.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './project-settings.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
@@ -153,6 +156,11 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/folder-settings': () => changeFolderSettings(service, value),
+    '/api/folder-strategies': () => {
+      service.ownServer();
+      return changeFolderStrategy(service.root, value);
+    },
     '/api/folder-delete': () => flows(service).deleteFolder(value),
     '/api/sidebar-files-action': () => new SidebarFiles(service.root).change(value),
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
@@ -344,6 +352,11 @@ async function read(service, request, response, owner) {
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
   const routes = {
+    '/api/folder-settings': () => {
+      flows(service);
+      return folderSettingsView(service.root, Object.fromEntries(url.searchParams));
+    },
+    '/api/folder-strategies': () => folderStrategies(service.root, url.searchParams.get('folder')),
     '/api/folder-delete-preview': () => flows(service).previewFolderDeletion(Object.fromEntries(url.searchParams)),
     '/api/sidebar-files': () => new SidebarFiles(service.root).index(),
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
@@ -351,6 +364,14 @@ async function read(service, request, response, owner) {
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
     '/api/issue-folder-options': () => flows(service).folders(),
+    '/api/issue-folder-default': () => {
+      flows(service);
+      try {
+        return { folder: defaultIssueFolder(service.root).name };
+      } catch (error) {
+        return { folder: null, error: error.message };
+      }
+    },
     '/api/flow': () => flows(service).view(issue(selectedIssue)),
     '/api/flow-files': () => flows(service).files(issue(selectedIssue)),
     '/api/flow-file': () => flows(service).file(issue(selectedIssue), url.searchParams.get('path')),
@@ -440,6 +461,7 @@ function readResource(service, request, response, owner) {
     '/flow-ui.js': 'flow-ui.js',
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
     '/sidebar-files-ui.js': 'sidebar-files-ui.js',
+    '/folder-settings-ui.js': 'folder-settings-ui.js',
     '/view-inspection.js': 'view-inspection.js',
     '/flow.css': 'flow.css',
     '/native-chat-ui.js': 'native-chat-ui.js',

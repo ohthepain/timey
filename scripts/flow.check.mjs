@@ -982,7 +982,7 @@ test('folder scans move only eligible recommendations and locked issues keep the
   assert.equal(view.flow.folderLocked, true);
 });
 
-test('issue creation and moves require an existing folder', async (t) => {
+test('issue creation uses the default folder and explicit creation or moves require an existing folder', async (t) => {
   const { id, service } = fixture(t);
   const flows = createIssueFlows(service, { executor: executor(async () => ({})) });
   const view = await flows.view(id);
@@ -993,7 +993,8 @@ test('issue creation and moves require an existing folder', async (t) => {
     description: 'Keep every issue in a folder',
   };
   for (const folder of [undefined, null, '', 'Missing folder']) {
-    await assert.rejects(flows.action({ ...capture, folder }), /[Cc]hoose.*folder/);
+    if (folder === 'Missing folder') await assert.rejects(flows.action({ ...capture, folder }), /[Cc]hoose.*folder/);
+    else assert.equal((await flows.action({ ...capture, folder })).flow.folder, 'Inbox');
     await assert.rejects(
       flows.action({ action: 'folder', issueId: id, revision: view.flow.revision, folder }),
       /folder/

@@ -2218,3 +2218,80 @@ kbd {
   justify-content: space-between;
   gap: 16px;
 }
+
+.folder-landing-actions,
+.folder-settings-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.folder-settings-heading {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.folder-settings-heading h2 {
+  margin: 0;
+}
+.folder-settings-panel {
+  margin: 0 0 20px;
+}
+.folder-settings-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+.folder-setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.folder-setting-field input,
+.folder-setting-field select,
+#folder-search-query {
+  min-width: 0;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  background: #202020;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 7px 9px;
+}
+.folder-setting-field small {
+  overflow-wrap: anywhere;
+}
+.folder-settings-wand {
+  flex: 0 0 auto;
+}
+.folder-settings-wand.invalid {
+  color: #ff8b8b;
+  border: 1px solid #bc5c5c;
+  background: #472828;
+}
+.folder-settings-errors {
+  color: #ff8b8b;
+  padding-left: 20px;
+  margin: 0 0 14px;
+}
+#folder-search-query {
+  flex: 1 1 180px;
+  width: auto;
+}
+.folder-issue-toolbar {
+  margin-top: 16px;
+}
+.issue-settings {
+  margin: 8px 0;
+}
+.issue-settings > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.issue-settings form {
+  padding: 12px 0;
+}
+#folder-bulk-results li,
+#folder-bulk-preview li {
+  padding: 4px 0;
+}

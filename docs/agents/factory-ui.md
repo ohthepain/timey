@@ -1,7 +1,8 @@
 # Local factory UI
 
-The gear beside **Flow** opens **Project settings**. It displays the human-input
-rules from the project adapter and the contents of `.issues/triage-labels.md`.
+The gear beside **Flow** opens **Project settings**. It edits tracked execution
+defaults in root `folder.md` and displays the human-input rules from the project
+adapter and the contents of `.issues/triage-labels.md`.
 There is no policy preset selector. The lifecycle file defines saved states,
 transitions, priorities, and closure reasons; it does not define the adapter's
 human-input policy.
@@ -51,7 +52,8 @@ merge. The folder shows the run report and the next action for issues that pause
 See the [folder design](../plans/issue-folder-strategies.md) for the master issue's
 acceptance and detachment rules.
 
-Destination follows the starting branch by default. Open its picker to list
+Destination uses the issue's resolved target branch by default. Starting point
+remains a separate choice. Open the destination picker to list
 branches on the configured GitHub remote. Selecting a branch pins it. Choose
 **Follow starting branch** to restore the default. A local starting branch matches
 the configured remote by name. A starting branch from another remote requires an
@@ -165,27 +167,56 @@ definitions live in `user/flow/definitions/`.
 
 Folder rows share their triangle, type, color, and spacing. Issue folder names
 are italic. Click a folder name to open its landing page. Its triangle expands
-the contents. File folder landing pages show the name and **Delete folder**.
+the contents. A folder without `folder.md` shows its name, **System folder**, and
+**Create folder.md** when it belongs to the project. Installed and external
+directories remain browsing-only. Finder and Delete use adjacent icon buttons.
 Deleting confirms a move of the real directory and its contents to macOS Trash.
 Installed folders use the same action and identify their role in Factory in the
 confirmation. Move assigned issues out of a folder and its subfolders before
-deleting it.
+deleting it. Choose a replacement before deleting the default issue folder.
 
-Enable issue actions for a directory under `user/` to create its `folder.md`.
-The directory then offers **View assigned issues** and **New issue** alongside
-its files. Use **Move existing issue folders** to convert virtual folders and
+Create `folder.md` in a project-owned sidebar directory to enable issue actions.
+A subfolder created inside an issue folder receives its own settings file.
+Use **Move existing issue folders** to convert virtual folders and
 store assignments on the issue reports. **Issues** lists open issue folders
-directly, including folders configured under `user/`, followed by the
+directly, including configured project folders, followed by the
 **Closed** and **Archived** collections. Each folder shows its
 assigned issues and count. Expand or collapse it with the arrow, select its name
 to open its actions, or use its plus button to create an issue there. Drag an
 open issue onto a folder heading to move it. Every issue belongs to a folder.
-The New issue dialog requires a folder and selects the current folder when
-opened from its plus button. Older reports without an assignment belong to
+The New issue dialog uses the project's default issue folder. A folder's plus
+button explicitly chooses that folder. Older reports without an assignment belong to
 **Inbox**. The destination expands after the move. Issue move restrictions
 and active-work checks still apply. See the
 [sidebar folder design](../plans/factory-sidebar-folders.md) for the planned
 report storage migration.
+
+### Folder settings
+
+Root `folder.md` stores version-controlled project defaults. Each issue folder's
+`folder.md` can override any inherited field listed in the installed
+`factory/system/folder.md` reference. Missing fields and `default` follow actual
+parent folders, then the project, then Factory's built-in fallback. The page shows
+the resolved value and its source. The reference is excluded from folder discovery.
+
+**Is default folder** appears first and never inherits. Exactly one issue folder
+is the default for creation without an explicit destination. Zero or multiple
+defaults show an error. The magic wand lists missing fields and preserves all
+existing fields, comments, and Markdown when adding them. A red wand explains
+invalid settings and previews proposed corrections. Unsafe syntax opens for editing.
+
+The issue list switches between **Open** and **Closed**. The top checkbox selects
+the displayed results. Text Search matches displayed issues; AI Search sends the
+natural-language query and all folder issues in the chosen view through a prompt,
+independent of checkbox selection or earlier text filtering. It returns explanations
+without changing issue records or selection.
+
+**Start all** and **Archive all** preview checked issues and report each outcome.
+Subset selections use **Start selected** or **Archive selected**. Starting uses each
+issue's Play flow and preserves its eligibility checks and confirmation stops.
+Grouping requires each selected issue's PR target to match the folder's resolved
+default target. Copying a selection strategy creates an editable file beneath
+`user/selection-strategies/` and selects that copy without changing the built-in.
 
 ## Queue sorting
 
@@ -230,18 +261,19 @@ Final acceptance is projected from recorded finished work, not a stage name alon
 
 ## Model and effort preferences
 
-The issue queue's gear opens project-local defaults for model and reasoning
-effort. Defaults start at GPT-6 Luna and medium. The model selector offers Luna,
+The issue queue's gear edits tracked project defaults in root `folder.md` for
+model and reasoning effort. Built-in defaults start at GPT-6 Luna and medium. The model selector offers Luna,
 GPT-6.1 Sol, GPT-6.1 Terra and GPT-6 Astra with brief practical descriptions;
 effort choices are low, medium, high and max. The issue page has separate model
-and effort selectors. An unset issue choice follows the current default, while an
-explicit choice remains fixed if defaults change. Preferences are stored in the
-ignored `.issues/model-settings.json` file so changing them does not dirty source
-or interfere with worker dispatch.
+and effort selectors. An unset issue choice follows its folder's inherited setting
+until work starts; explicit choices remain fixed if defaults change. Legacy local
+defaults migrate into the project file. Explicit legacy issue overrides remain in
+`.issues/model-settings.json` and are preserved.
 
 These preferences are read when a new Codex thread starts. Resuming an existing
-thread keeps its original model and effort. `model-settings.mjs` validates and
-stores preferences; `codex.mjs` passes the effective model and reasoning effort
+thread keeps its original model and effort. Started Flow work retains its resolved
+settings snapshot. `model-settings.mjs` validates preferences against the settings
+reference; `codex.mjs` passes the effective model and reasoning effort
 to `thread/start`. New threads retain the existing sandbox and approval policy.
 
 Descriptions follow the current [OpenAI model-selection guidance](https://developers.openai.com/api/docs/guides/model-selection).

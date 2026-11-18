@@ -8,6 +8,8 @@ import { groupProofRows } from './flow-group-proof.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { groupChildren, groupMaster, storedGroups } from './issue-group.mjs';
 import { issueStorageDirectory, moveStoredIssue, updateStoredIssueMetadata } from './issue-report-storage.mjs';
+import { resolveFolderSettings } from './issue-folder-settings.mjs';
+import { deliveryTarget } from './flow-block-data.mjs';
 
 const previewLifetime = 10 * 60 * 1000;
 const subIssueClosure = 'Sub-issue fixed by master issue';
@@ -92,7 +94,7 @@ export class FlowGrouping {
     const lifecycle = this.service.lifecycleRuns?.[issue.id];
     const chatQueue = this.service.issueChats?.scheduler?.view(issue.id);
     return (
-      this.flows.folderSelection.eligible(issue, flow) &&
+      this.flows.groupEligible(issue, flow) &&
       issue.state !== 'needs-approval' &&
       !issue.issue_group &&
       !this.masterId(issue.id, issues) &&
@@ -135,6 +137,8 @@ export class FlowGrouping {
         type: request.fields?.type ?? flow.routeType,
         reportHash: digest(issue.content),
         flowRevision: flow.revision,
+        targetBranch: deliveryTarget(flow).branch,
+        folderSettingsBasis: resolveFolderSettings(this.service.root, folder).basis,
       };
     });
   }

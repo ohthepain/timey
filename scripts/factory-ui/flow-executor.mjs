@@ -18,7 +18,8 @@ import { tmpdir } from 'node:os';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
 import { conversationState, saveConversationState, appendMessage } from './conversation-store.mjs';
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
-import { newChatModelSettings } from './model-settings.mjs';
+import { readModelSettings } from './model-settings.mjs';
+import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import {
   deleteIssueWorktree,
@@ -583,8 +584,25 @@ function assertSharedBlockClaim(service, { block, issue }) {
   );
 }
 
+function executionModels(service, ctx) {
+  if (ctx.flow.executionSettings) {
+    const { model, effort } = ctx.flow.executionSettings.values;
+    return { model, effort };
+  }
+  readModelSettings(service.root);
+  const settings = resolveIssueExecutionSettings(service.root, ctx.issue, ctx.flow, {
+    started: executionStarted(service, ctx.flow),
+  });
+  requireThat(!settings.errors.length, 'Fix project or folder settings before starting this issue.');
+  return { model: settings.values.model, effort: settings.values.effort };
+}
+
 async function runModel(service, ctx, owned, options) {
   ctx = withGroupProof(ctx);
+  ctx = {
+    ...ctx,
+    block: { ...ctx.block, skill: executionBlockSkill(ctx.block, ctx.definition, ctx.flow.executionSettings) },
+  };
   requireThat(
     ctx.block.kind !== 'prototype' || ctx.block.prompt?.trim(),
     'Describe the prototype to create or run before starting this block.'
@@ -662,7 +680,7 @@ async function runModel(service, ctx, owned, options) {
     await listAvailableSkills(connection, workspace.checkout),
     ctx.block.skill ? [ctx.block.skill] : []
   );
-  const settings = newChatModelSettings(service.root, ctx.issue.id);
+  const settings = executionModels(service, ctx);
   let rounds = 1;
   if (ctx.block.kind === 'sol') {
     rounds = ctx.block.iterations;

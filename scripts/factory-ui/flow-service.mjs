@@ -33,11 +33,18 @@ import { flowOwnsIssue } from './flow-ownership.mjs';
 import { SidebarFiles } from './sidebar-files.mjs';
 import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
+import { FolderOperations } from './folder-operations.mjs';
+import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
+import { folderSettingsFields, validateSettingValue } from './folder-settings-schema.mjs';
 import {
   createIssueFolderSettings,
+  defaultIssueFolder,
   ensureInboxFolder,
+  initializeFolderSettings,
+  readFolderSettings,
   readIssueFolderSettings,
   requireIssueFolder,
+  resolveFolderSettings,
 } from './issue-folder-settings.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
@@ -102,12 +109,14 @@ const closureActions = new Set(['retro-setting', 'auto-close-setting', 'retry-cl
 const folderSelectionActions = new Set(['folder-selection', 'folder-scan', 'folder-move', 'folder-remove']);
 const folderGroupActions = new Set(['folder-group-preview', 'folder-group-create', 'folder-detach']);
 const folderNightActions = new Set(['folder-night-plan', 'folder-night-start', 'folder-night-stop']);
+const folderOperationActions = new Set(['folder-ai-search', 'folder-bulk-preview', 'folder-bulk-run']);
 const folderActions = new Set([
   'create-folder',
   'migrate-folders',
   ...folderSelectionActions,
   ...folderGroupActions,
   ...folderNightActions,
+  ...folderOperationActions,
 ]);
 const unresolvedAttempt = (attempt) =>
   !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status);
@@ -239,7 +248,37 @@ class IssueFlows {
     this.groups = new FlowGrouping(this);
     this.folderSelection = new FlowFolderSelection(this, options.recommendFolderIssues);
     this.overnight = new FlowOvernight(this);
+    this.folderOperations = new FolderOperations(this, options.searchFolderIssues);
     this.inboxFolder = ensureInboxFolder(service.root);
+    this.folderMigrationErrors = this.restoreMissingFolderSettings();
+    initializeFolderSettings(service.root);
+  }
+  restoreMissingFolderSettings() {
+    const root = this.service.root;
+    const configured = readIssueFolderSettings(root, { includeCopies: true, includeBroken: true });
+    const names = new Map(this.legacyFolders().map((name) => [name, new Set()]));
+    const reports = ['open', 'closed', 'archive'].flatMap((location) =>
+      listStoredIssues(root, location).map((path) => this.selected(basename(path, '.md')))
+    );
+    for (const issue of reports) {
+      if (configured.some(({ id }) => id && id === issue.folder_id)) continue;
+      const saved = this.store.path(issue.id);
+      const name = (existsSync(saved) && JSON.parse(readFileSync(saved, 'utf8')).folder) || issue.folder;
+      if (!name) continue;
+      if (!names.has(name)) names.set(name, new Set());
+      if (issue.folder_id) names.get(name).add(issue.folder_id);
+    }
+    const errors = [];
+    for (const [name, ids] of names) {
+      if (configured.some((folder) => folder.name === name)) continue;
+      try {
+        requireThat(ids.size <= 1, 'Several issue folder identities use this path. Restore the original folder.md.');
+        createIssueFolderSettings(root, name, { id: [...ids][0] });
+      } catch (error) {
+        errors.push({ folder: name, message: error.message });
+      }
+    }
+    return errors;
   }
   issues(selectedId) {
     const numbersPath = join(this.service.root, '.issues/issue-numbers.json');
@@ -286,9 +325,39 @@ class IssueFlows {
     if (Object.hasOwn(issue, 'folder_id'))
       flow.folder = folderSettings.find(({ id }) => id === issue.folder_id)?.name || flow.folder || fallback;
     flow.folder ||= fallback;
+    const settings = this.issueSettings(issue, flow);
+    flow.resolvedBranch = settings.values.branch;
     if (typeof issue.run_retro === 'boolean') requestBlock(flow).data.runRetro = issue.run_retro;
     if (!flow.closing) setRetroBlock(flow, catalog);
     return flow;
+  }
+  issueSettings(issue, flow) {
+    return resolveIssueExecutionSettings(this.service.root, issue, flow, {
+      started: executionStarted(this.service, flow),
+    });
+  }
+  groupEligible(issue, flow) {
+    try {
+      const folder = resolveFolderSettings(this.service.root, flow.folder);
+      return (
+        !folder.errors.length &&
+        !this.issueSettings(issue, flow).errors.length &&
+        this.folderSelection.eligible(issue, flow) &&
+        deliveryTarget(flow).branch === folder.values.branch
+      );
+    } catch {
+      return false;
+    }
+  }
+  folderSettingsView(folder) {
+    const view = readFolderSettings(this.service.root, folder.directory, { branchChoices: false });
+    return {
+      ...folder,
+      values: Object.fromEntries(Object.entries(view.settings).map(([key, entry]) => [key, entry.value])),
+      sources: Object.fromEntries(Object.entries(view.settings).map(([key, entry]) => [key, entry.source])),
+      errors: view.errors,
+      basis: view.revision,
+    };
   }
   legacyFolders() {
     const path = join(this.store.directory, 'folders.json');
@@ -325,6 +394,8 @@ class IssueFlows {
       flowRevision: flow.revision,
       folderLocked: Boolean(flow.folderLocked),
       folderEligible: this.folderSelection.eligible(issue, flow),
+      groupEligible: this.groupEligible(issue, flow),
+      resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
       status: flowStatus(flow, issue, active),
     };
@@ -340,25 +411,43 @@ class IssueFlows {
     } catch (error) {
       branchCatalogError = error.message;
     }
-    const folderSettings = readIssueFolderSettings(this.service.root);
+    const folderSettings = readIssueFolderSettings(this.service.root, { includeCopies: true, includeBroken: true });
     const index = issues.map((issue) => this.indexIssue(issue, this.read(issue, catalog, folderSettings), issues));
     const data = {
       project: basename(this.service.root),
       sharedQueueWarning,
+      folderMigrationErrors: this.folderMigrationErrors,
       branches,
       ...(branchCatalogError ? { branchCatalogError } : {}),
-      folders: [...new Set([...this.folders(), ...index.map((issue) => issue.folder).filter(Boolean)])],
+      folders: [
+        ...new Set([
+          ...folderSettings.map(({ name }) => name),
+          ...this.legacyFolders(),
+          ...index.map((issue) => issue.folder).filter(Boolean),
+        ]),
+      ],
       issueFolders: folderSettings.map(({ name }) => name),
+      folderSettings: folderSettings.map((folder) => this.folderSettingsView(folder)),
       legacyFolders: this.legacyFolders(),
       folderRuns: this.overnight.reports(),
       catalog,
       catalogErrors,
       issues: index,
     };
+    try {
+      data.defaultFolder = defaultIssueFolder(this.service.root).name;
+    } catch (error) {
+      data.defaultFolderError = error.message;
+    }
     if (!id) return data;
     const issue = this.selected(id);
     const savedFlow = this.read(issue, catalog);
     const flow = this.visibleFlow(savedFlow);
+    const issueSettings = this.issueSettings(issue, savedFlow);
+    for (const block of flow.blocks) {
+      const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
+      if (definition) block.effectiveSkill = executionBlockSkill(block, definition, issueSettings);
+    }
     const flowDefinitions = this.flowDefinitionOptions(flow, catalog);
     const legacyRun = this.service.store?.runs?.findLast(
       (run) => run.issueId === id && this.service.store.connected.has(run.id)
@@ -430,6 +519,12 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
+      issueSettings: {
+        ...issueSettings,
+        fields: folderSettingsFields(this.service.root).filter(({ key }) =>
+          ['branch', 'skill', 'model', 'effort'].includes(key)
+        ),
+      },
       grouping: this.groups.view(issue, flow, issues),
       sharedQueue: this.service.sharedIssues?.view(id),
       closureBusy: this.closureBusy(id),
@@ -954,6 +1049,7 @@ class IssueFlows {
     if (input.action === 'starting-point') return this.setStartingPoint(issue, flow, input);
     if (input.action === 'destination' || input.action === 'accept-pr-base')
       return this.setDestination(issue, flow, input);
+    if (input.action === 'issue-settings') return this.editIssueSettings(issue, flow, input);
     if (input.action === 'rename-issue') {
       const title = typeof input.title === 'string' ? input.title.trim() : '';
       requireThat(
@@ -977,6 +1073,7 @@ class IssueFlows {
     if (input.action === 'migrate-folders') return this.migrateFolders();
     if (folderSelectionActions.has(input.action)) return this.folderSelection.action(input);
     if (folderNightActions.has(input.action)) return this.overnight.action(input);
+    if (folderOperationActions.has(input.action)) return this.folderOperations.action(input);
     if (folderGroupActions.has(input.action)) {
       const reasoning =
         input.action === 'folder-group-preview'
@@ -985,6 +1082,27 @@ class IssueFlows {
       return this.groups.action(input, reasoning);
     }
     return this.createFolder(input);
+  }
+  editIssueSettings(issue, flow, input) {
+    requireThat(
+      !issue.closed && !executionStarted(this.service, flow) && !this.active.has(issue.id),
+      'Issue settings are fixed after execution starts.'
+    );
+    requireThat(
+      input.changes && typeof input.changes === 'object' && !Array.isArray(input.changes),
+      'Supply issue setting changes.'
+    );
+    const next = { ...flow.settings };
+    for (const [key, value] of Object.entries(input.changes)) {
+      requireThat(['branch', 'skill', 'model', 'effort'].includes(key), 'Choose a supported issue setting.');
+      const error = validateSettingValue(this.service.root, key, value);
+      requireThat(!error, error);
+      next[key] = value;
+      if (key === 'branch') flow.destination = value === 'default' ? null : { branch: value };
+    }
+    flow.settings = next;
+    this.store.save(flow, flow.revision);
+    return this.view(issue.id);
   }
   editFolder(issue, flow, input) {
     if (input.action === 'folder-lock') {
@@ -1634,6 +1752,12 @@ class IssueFlows {
       !block.skill || definition.skills?.includes(block.skill),
       'Choose a skill allowed by this block’s Markdown.'
     );
+    if (!flow.executionSettings) {
+      const settings = this.issueSettings(issue, flow);
+      requireThat(!settings.errors.length, 'Fix folder settings before starting this issue.');
+      flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
+      flow.resolvedBranch = settings.values.branch;
+    }
     const attempt = this.makeAttempt(flow, issue, block, catalog);
     if (input.closureId) attempt.closureId = input.closureId;
     if (block.kind === 'cleanup' && flow.closing.cleanupGeneration)
@@ -1838,25 +1962,36 @@ class IssueFlows {
   }
   previewFolderDeletion(input) {
     const target = new SidebarFiles(this.service.root).deletionTarget(input);
-    const settings = readIssueFolderSettings(this.service.root);
+    const settings = readIssueFolderSettings(this.service.root, { includeCopies: true, includeBroken: true });
     const catalog = this.catalog.read().entries;
     const reports = [
       ...this.issues(),
       ...listStoredIssues(this.service.root, 'archive').map((path) => this.selected(basename(path, '.md'))),
     ];
     const members = reports.filter((issue) => {
+      const assigned = settings.filter(({ id }) => id && id === issue.folder_id);
+      if (assigned.some(({ directory }) => directory === target.path || directory.startsWith(target.path + sep)))
+        return true;
       const folder = this.read(issue, catalog, settings).folder;
-      const directory = join(realpathSync(this.service.root), 'user', folder);
-      return directory === target.path || directory.startsWith(target.path + sep);
+      const directory = settings.find(({ name }) => name === folder)?.directory;
+      return directory && (directory === target.path || directory.startsWith(target.path + sep));
     });
+    const defaults = readIssueFolderSettings(this.service.root, { includeCopies: true, includeBroken: true }).filter(
+      (folder) => folder.isDefaultFolder
+    );
+    const containsDefault = defaults.some(
+      ({ directory }) => directory === target.path || directory?.startsWith(target.path + sep)
+    );
     return {
       name: target.name,
       installed: target.installed,
       basis: target.basis,
-      canDelete: members.length === 0,
+      canDelete: !containsDefault && members.length === 0,
       reason: members.length
         ? `Move the ${members.length} assigned issues to another folder before deleting this folder.`
-        : '',
+        : containsDefault
+          ? 'Choose a replacement default folder before deleting this folder.'
+          : '',
     };
   }
   async deleteFolder(input) {
@@ -1907,7 +2042,10 @@ class IssueFlows {
     validateCaptureId(input.requestId);
     validateCaptureDescription(input.description);
     validateCaptureType(input.type);
-    const folder = requireIssueFolder(this.service.root, input.folder).name;
+    const folder = requireIssueFolder(
+      this.service.root,
+      input.folder || defaultIssueFolder(this.service.root).name
+    ).name;
     requireThat(
       [input.needsApproval, input.runRetro].every((value) => value === undefined || typeof value === 'boolean'),
       'Choose valid issue settings.'
@@ -1963,7 +2101,11 @@ class IssueFlows {
       publish(receipt.id);
       return this.view(receipt.id);
     }
-    const startingPoint = await captureStartingPoint(this.service.root, flowTarget(this.service.root));
+    const target = {
+      ...flowTarget(this.service.root),
+      branch: resolveFolderSettings(this.service.root, folder).values.branch,
+    };
+    const startingPoint = await captureStartingPoint(this.service.root, target);
     const at = new Date().toISOString();
     const id = at.replace(/[-:.Z]/g, '') + '-' + randomBytes(8).toString('hex');
     const title =

@@ -8,6 +8,7 @@ export const requestData = (flow) =>
 export function deliveryTarget(flow) {
   const target = flow.target;
   if (flow.destination?.branch) return { ...target, branch: flow.destination.branch };
+  if (flow.resolvedBranch) return { ...target, branch: flow.resolvedBranch };
   const ref = flow.startingPoint?.ref;
   if (!ref) return target;
   const local = 'refs/heads/';

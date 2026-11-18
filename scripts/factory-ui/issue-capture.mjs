@@ -1,4 +1,4 @@
-import { requireIssueFolder } from './issue-folder-settings.mjs';
+import { defaultIssueFolder, initializeFolderSettings, requireIssueFolder } from './issue-folder-settings.mjs';
 import { storedIssuePath } from './issue-report-storage.mjs';
 import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
 import { readModelSettings, saveIssueModelSettings } from './model-settings.mjs';
@@ -18,7 +18,7 @@ import { digest, requireThat, writeJson } from './common.mjs';
 const requestSchema = z
   .object({
     requestId: z.uuid(),
-    folder: z.string().trim().min(1).max(80),
+    folder: z.string().trim().min(1).max(4096).optional(),
     description: z.string().min(1).max(24000),
     grill: z.boolean().default(false),
     go: z.boolean().default(false),
@@ -66,6 +66,12 @@ export function createCaptures(service, options = {}) {
     const input = requestSchema.parse(value);
     requireThat(input.description.trim(), 'Description is required.');
     guard();
+    requireThat(
+      !existsSync(join(service.root, '.issues/factory.lock')),
+      'Queue lock exists. Wait for its owner before creating an issue.'
+    );
+    initializeFolderSettings(service.root);
+    input.folder ||= defaultIssueFolder(service.root).name;
     requireIssueFolder(service.root, input.folder);
     validateModel(service.root, input.model);
     const pending = tasks.get(input.requestId);

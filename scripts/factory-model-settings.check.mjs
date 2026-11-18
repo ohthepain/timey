@@ -34,12 +34,13 @@ test('model settings default to GPT-6 Luna and medium and expose the four reques
   assert.ok(settings.models.every(({ description }) => description.length > 0));
 });
 
-test('global defaults are saved locally without changing tracked factory configuration', (t) => {
+test('project model defaults are saved in root folder.md while preserving factory configuration', (t) => {
   const { root, service } = project(t);
   const configBefore = readFileSync(join(root, 'factory.config.json'), 'utf8');
   saveDefaultModelSettings(service, { model: 'gpt-6.1-sol', effort: 'high' });
   assert.deepEqual(readModelSettings(root).defaults, { model: 'gpt-6.1-sol', effort: 'high' });
   assert.equal(readFileSync(join(root, 'factory.config.json'), 'utf8'), configBefore);
+  assert.match(readFileSync(join(root, 'folder.md'), 'utf8'), /model: ["']?gpt-6\.1-sol/);
   assert.deepEqual(newChatModelSettings(root), { model: 'gpt-6.1-sol', effort: 'high' });
 });
 

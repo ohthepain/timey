@@ -49,6 +49,10 @@ entry. Call it an **Issue folder**. Reports stay in the queue. For example,
 
 ## Settings and membership
 
+The [folder settings design](folder-settings.md) and
+[ADR 0018](../adr/0018-inherit-folder-settings-from-project-defaults.md) define
+inherited settings, the project default issue folder, validation, and repair.
+
 Creation requires an existing folder. A move always names another folder.
 Older reports without a saved assignment belong to **Inbox** until migration
 saves that assignment on their report. The Inbox directory has its own
@@ -58,7 +62,10 @@ Keep `folder.md` with the project files. Store each folder assignment with its
 issue report. Shared queues use the existing report publication path so users
 with the same folder settings and shared queue see the same assignments.
 
-The settings file carries a stable folder ID and an optional description. The
+The settings file carries a stable folder ID, optional description, and inherited
+settings defined by the installed reference. Root `folder.md` supplies tracked
+project defaults. The default-folder flag belongs to a single issue folder and
+never inherits. The
 directory name appears in the sidebar. A rename or move within the project
 preserves assignments. Give a copy a new ID before it can accept assignments.
 If the original folder is missing, retain its assignments so restoring the
@@ -72,10 +79,12 @@ the project for editing.
 
 System and issue folder rows use the same disclosure triangle, font, color,
 and spacing. Issue folder names are italic. Names open a landing page and
-triangles expand the contents. A file folder's landing page contains its name
-and **Delete folder**. After confirmation, deletion moves the actual directory
+triangles expand the contents. A file folder without settings shows its name,
+**System folder**, and **Create folder.md** when project-owned. Finder and Delete
+use adjacent icon buttons. After confirmation, deletion moves the actual directory
 and its contents to macOS Trash. A directory with assigned issues, including
-issues in its subfolders, must be emptied of those assignments first.
+issues in its subfolders, must be emptied of those assignments first. The current
+default issue folder requires a replacement before deletion.
 
 Add outside folders for browsing in place. Show Markdown in its real subfolders
 and offer **Open in editor**. Enable issue features only inside the selected

@@ -20,6 +20,9 @@ behavior, dependencies, and likely integration conflicts.
 ## Create a master issue
 
 Select open issues that have no active run and have not started implementation.
+Each selected issue's resolved PR target must match its folder's resolved default
+target. An explicit issue override equal to that target remains eligible. A
+different target remains visible and can run independently.
 An issue can already have a clarified request. Review and edit the combined
 request before creating the master. The preview links each original issue and
 carries forward its requested proof and any required human checks. Start the

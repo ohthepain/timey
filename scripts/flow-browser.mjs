@@ -24,6 +24,7 @@ import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { git } from './factory-ui/common.mjs';
 import { flowIssueFoldersBrowserChecks } from './flow-browser-issue-folders.mjs';
 import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mjs';
+import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -59,10 +60,12 @@ const assets = [
   'flow-ui.js',
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
+  'folder-settings-ui.js',
   'issue-closure-ui.js',
   'server-control-ui.js',
   'view-inspection.js',
   '../../factory/system/flow/block-inspector.md',
+  '../../factory/system/folder.md',
   '../../factory/system/flow/blocks/work.md',
 ];
 const fingerprint = () =>
@@ -76,6 +79,7 @@ const fingerprint = () =>
   );
 const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
 const results = [];
+const folderSettingsCheck = 'Folder settings inherit, repair, search and act on selected open or closed issues';
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const logs = {
   console: [],
@@ -86,6 +90,7 @@ const logs = {
   cancelledReads: [],
   execution: [],
   modelCalls: [],
+  searchCalls: [],
 };
 const playbackIssueId = '20261116-playback-fixture';
 const playbackWork = Promise.withResolvers();
@@ -131,6 +136,10 @@ service.flows = createIssueFlows(service, {
     const trash = join(output, 'Trash');
     mkdirSync(trash, { recursive: true });
     renameSync(path, join(trash, 'folder-' + randomUUID()));
+  },
+  searchFolderIssues(query, issues) {
+    logs.searchCalls.push({ query, issues });
+    return issues.map(({ id }) => ({ id, reason: 'Relevant issue from the full folder view.' }));
   },
   recommendFolderIssues(_strategy, issues) {
     return issues.map(({ id }) => ({ id, reason: 'The fixture requests share save behavior.' }));
@@ -180,6 +189,7 @@ let passed = false;
 let failure;
 async function check(name, run) {
   if (process.argv.includes('--block-deletion') && name !== blockDeletionCheck) return;
+  if (process.argv.includes('--folder-settings') && name !== folderSettingsCheck) return;
   try {
     await run();
     results.push({ name, passed: true });
@@ -286,6 +296,9 @@ try {
   page.on('response', (response) =>
     logs.responses.push({ path: new URL(response.url()).pathname, status: response.status() })
   );
+  await check(folderSettingsCheck, () =>
+    flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
+  );
   await check('Opening the workspace starts no work and loads no skills', async () => {
     await page.goto('/');
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
@@ -295,22 +308,13 @@ try {
     assert.equal(await page.locator('#new-issue').count(), 1);
     await screenshot('empty-desktop');
   });
-  await check('Creating an issue requires choosing a folder', async () => {
-    const before = logs.requests.filter(({ path, method }) => path === '/api/flow-action' && method === 'POST').length;
+  await check('Creating an issue uses the default folder and permits an explicit destination', async () => {
     await page.locator('#new-issue').click();
     const folder = page.locator('#capture-folder');
-    assert.equal(await folder.inputValue(), '');
+    assert.equal(await folder.inputValue(), 'Inbox');
     assert.notEqual(await folder.getAttribute('required'), null);
-    await page.locator('#capture-description').fill('Every issue belongs to a folder.');
-    await page.locator('#capture-submit').click();
-    assert.equal(await folder.evaluate((select) => select.validity.valueMissing), true);
-    assert.equal(
-      logs.requests.filter(({ path, method }) => path === '/api/flow-action' && method === 'POST').length,
-      before
-    );
-    await folder.selectOption('Inbox');
     assert.equal(await folder.evaluate((select) => select.validity.valid), true);
-    await page.locator('#capture-description').fill('');
+    await folder.selectOption('Inbox');
     await page.getByRole('button', { name: 'Close new issue', exact: true }).click();
     assert.equal(await page.locator('#issue-list').getByText('Unfiled', { exact: true }).count(), 0);
   });
@@ -325,7 +329,7 @@ try {
     await page.getByRole('heading', { name: 'flow', exact: true }).waitFor();
     assert.equal(await page.locator('#issue-folder-content').isVisible(), false);
     assert.equal(await page.locator('#graph-scroll').isVisible(), false);
-    assert.equal(await page.locator('#folder-workspace').getByRole('button').count(), 1);
+    assert.equal(await page.locator('#folder-workspace').getByRole('button').count(), 2);
     page.once('dialog', (dialog) => void dialog.dismiss());
     await page.getByRole('button', { name: 'Delete folder', exact: true }).click();
     await page.waitForFunction(() => !document.getElementById('delete-sidebar-folder').disabled);

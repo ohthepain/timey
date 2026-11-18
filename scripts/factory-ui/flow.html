@@ -9,6 +9,7 @@
     <script src="/server-control-ui.js" defer></script>
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/issue-folder-drag-ui.js" defer></script>
+    <script src="/folder-settings-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
@@ -126,6 +127,14 @@
               <button class="small-button" type="submit">Save</button>
               <button class="small-button" id="cancel-rename" type="button">Cancel</button>
             </form>
+            <details id="issue-settings" class="issue-settings">
+              <summary>Issue settings</summary>
+              <form id="issue-settings-form">
+                <div id="issue-settings-fields" class="folder-settings-fields"></div>
+                <button class="small-button" type="submit">Save issue settings</button>
+                <p id="issue-settings-error" class="inline-error" role="alert" hidden></p>
+              </form>
+            </details>
             <div class="issue-flow-meta">
               <span id="issue-type-label"></span>
               <span id="issue-subtitle"></span>
@@ -223,8 +232,28 @@
         <section id="folder-workspace" class="folder-workspace" aria-labelledby="folder-workspace-title" hidden>
           <div class="folder-landing-heading">
             <h1 id="folder-workspace-title"></h1>
-            <button type="button" class="small-button" id="delete-sidebar-folder">Delete folder</button>
+            <div class="folder-landing-actions">
+              <button
+                type="button"
+                class="icon-button"
+                id="open-sidebar-folder"
+                aria-label="Open folder in Finder"
+                title="Open in Finder"
+              >
+                ↗
+              </button>
+              <button
+                type="button"
+                class="icon-button"
+                id="delete-sidebar-folder"
+                aria-label="Delete folder"
+                title="Move folder to Trash"
+              >
+                ⌫
+              </button>
+            </div>
           </div>
+          <section id="folder-settings-panel" class="folder-settings-panel" aria-label="Folder settings"></section>
           <div id="issue-folder-content">
             <div class="folder-controls">
               <label for="folder-selection-strategy">Selection strategy</label>
@@ -233,8 +262,36 @@
                 <option value="different-blast-radii">Different blast radii</option>
               </select>
               <button class="small-button" type="button" data-folder-command="recommend">Recommend issues</button>
+              <button class="small-button" type="button" id="copy-folder-strategy">Copy selection strategy</button>
             </div>
             <h2>Issues in this folder</h2>
+            <div class="folder-controls folder-issue-toolbar">
+              <label for="folder-issue-view">Show</label>
+              <select id="folder-issue-view">
+                <option value="open">Open issues</option>
+                <option value="closed">Closed issues</option>
+              </select>
+              <label class="folder-check"><input id="folder-select-all" type="checkbox" /> Select all</label>
+              <button class="small-button" type="button" data-folder-command="bulk" disabled>Start all</button>
+            </div>
+            <form id="folder-search-form" class="folder-controls" role="search">
+              <input
+                id="folder-search-query"
+                type="search"
+                aria-label="Search issues in this folder"
+                placeholder="Search this folder…"
+              />
+              <button class="small-button" type="submit">Search</button>
+              <button class="small-button" type="button" id="folder-ai-search">AI Search</button>
+            </form>
+            <p id="folder-search-status" class="muted" role="status" hidden></p>
+            <section
+              id="folder-bulk-preview"
+              class="folder-preview"
+              aria-label="Review selected issues"
+              hidden
+            ></section>
+            <section id="folder-bulk-results" class="folder-preview" aria-label="Bulk action results" hidden></section>
             <p class="muted" id="folder-selection-summary" aria-live="polite"></p>
             <ul id="folder-member-list" class="folder-issues" aria-label="Issues in this folder"></ul>
             <div class="folder-controls">
@@ -524,6 +581,7 @@
           ×
         </button>
       </div>
+      <section id="project-folder-settings" class="folder-settings-panel" aria-label="Project defaults"></section>
       <div id="project-settings-content" class="settings-content" aria-live="polite"></div>
       <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
       <div class="modal-footer">

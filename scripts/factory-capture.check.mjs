@@ -10,6 +10,7 @@ import { createCaptures } from './factory-ui/issue-capture.mjs';
 import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { captureRoute } from './factory-ui/capture-routing.mjs';
 import { readQueue } from './factory-ui/data.mjs';
+import { defaultIssueFolder } from './factory-ui/issue-folder-settings.mjs';
 
 const input = (description = 'Rename heading to Issues') => ({ requestId: randomUUID(), description, folder: 'Inbox' });
 const reports = (root) => readdirSync(join(root, '.issues')).filter((f) => /^\d.*\.md$/.test(f));
@@ -29,19 +30,25 @@ function forbidWork(service) {
     };
 }
 
-test('capture requires a folder before assessing or saving a report', async (t) => {
+test('capture rejects invalid explicit folders and uses the project default when no destination is supplied', async (t) => {
   const { root, service } = captureFixture(t);
   let calls = 0;
   service.captures = createCaptures(service, {
-    assess: async () => {
+    assess: async (description) => {
       calls++;
-      return { issues: [] };
+      return { issues: [proposal(description)] };
     },
   });
-  for (const folder of [undefined, null, '', 'Missing folder'])
+  for (const folder of [null, '', 'Missing folder'])
     await assert.rejects(service.captures.save({ ...input(), folder }));
   assert.equal(calls, 0);
   assert.equal(reports(root).length, 1);
+  const request = input();
+  delete request.folder;
+  const saved = await service.captures.save(request);
+  assert.equal(calls, 1);
+  assert.equal(saved.issues.length, 1);
+  assert.equal(report(root, saved.issues[0].id).meta.folder_id, defaultIssueFolder(root).id);
 });
 
 test('capture preserves exact original text, existing reports, metadata, distinct outcomes and individual skips without work', async (t) => {
@@ -263,7 +270,7 @@ test('queue lock, policy change during assessment and preview reject without new
   const { root, service } = captureFixture(t);
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
-  await assert.rejects(service.captures.save(input()), /Queue lock/);
+  await assert.rejects(service.captures.save(input()), /[Qq]ueue (?:lock|operation)/);
   assert.equal(existsSync(lock), true);
   rmSync(lock, { recursive: true });
   service.captures = createCaptures(service, {
