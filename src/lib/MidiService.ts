@@ -23,6 +23,10 @@ class MidiService extends EventEmitter {
   private lastClockTime: number = 0;
   private clockCount: number = 0;
   private clockTimeout: any = null;
+  private noteListenerTarget: Input | Input['channels'][number] | null = null;
+  private settingsUnsubscribe: (() => void) | null = null;
+  private readonly handleConnected = () => this.refreshDevices();
+  private readonly handleDisconnected = () => this.refreshDevices();
 
   constructor() {
     super();
@@ -38,8 +42,6 @@ class MidiService extends EventEmitter {
   async enable() {
     if (!(await ensureWebMidiEnabled())) return;
     console.log('WebMidi enabled (MidiService)');
-    this.refreshDevices();
-    this.initListeners();
     const bound = bindConfiguredMidiDevices(
       this.midiInputDeviceId,
       this.midiOutputDeviceId,
@@ -48,8 +50,13 @@ class MidiService extends EventEmitter {
     );
     this.midiOutputDevice = bound.midiOutputDevice;
     this.midiOutputChannel = bound.midiOutputChannel;
-    this.midiInputDevice = bound.midiInputDevice ?? null;
     this.midiInputChannel = bound.midiInputChannel;
+    this.refreshDevices();
+    if (this.listenersInitialized) {
+      this.listenToInput();
+      return;
+    }
+    this.initListeners();
   }
 
   isEnabled() {
@@ -69,19 +76,15 @@ class MidiService extends EventEmitter {
       return;
     }
     console.log('initListeners 2');
-    WebMidi.addListener('connected', () => {
-      this.refreshDevices();
-    });
-    WebMidi.addListener('disconnected', () => {
-      this.refreshDevices();
-    });
+    WebMidi.addListener('connected', this.handleConnected);
+    WebMidi.addListener('disconnected', this.handleDisconnected);
 
     this.refreshDevices();
     if (this.midiInputDeviceId) {
       this.listenToInput();
     }
 
-    useMidiSettingsStore.subscribe((state) => {
+    this.settingsUnsubscribe = useMidiSettingsStore.subscribe((state) => {
       if (
         this.midiOutputDeviceId !== state.midiOutputDeviceId ||
         this.midiOutputChannelNum !== state.midiOutputChannelNum
@@ -103,15 +106,12 @@ class MidiService extends EventEmitter {
         this.midiInputChannelNum = state.midiInputChannelNum;
         this.midiInputDeviceId = state.midiInputDeviceId;
         console.log(`MIDI Input device changed: ${this.midiInputDeviceId} channelNum: ${this.midiInputChannelNum}`);
-        if (!this.midiInputDeviceId) {
-          return;
-        }
-
         this.listenToInput();
 
         this.listenersInitialized = true;
       }
     });
+    this.listenersInitialized = true;
   }
 
   getMidiInputs(): Array<{ id: string; label: string }> {
@@ -169,6 +169,7 @@ class MidiService extends EventEmitter {
     const midiInputDeviceId = this.midiInputDeviceId;
     const channelNum = this.midiInputChannelNum;
     console.log(`listenToInput ${this.midiInputDeviceId} channelNum: ${this.midiInputChannelNum}`);
+    this.releaseInputListeners();
     if (!channelNum || !midiInputDeviceId) {
       console.warn('MIDI Input channel number or device ID is undefined');
       return;
@@ -177,38 +178,59 @@ class MidiService extends EventEmitter {
       throw new Error('WebMidi is not enabled');
     }
 
-    this.midiInputDevice = WebMidi.getInputById(midiInputDeviceId);
-    if (!this.midiInputDevice) {
+    const input = WebMidi.getInputById(midiInputDeviceId);
+    if (!input) {
       console.warn(`No MIDI input device found: ${midiInputDeviceId}`);
       return;
     }
-
-    // Remove existing listeners
-    this.midiInputDevice.removeListener('clock');
-    this.midiInputDevice.removeListener('start');
-    this.midiInputDevice.removeListener('stop');
-    this.midiInputDevice.removeListener('continue');
+    this.midiInputDevice = input;
 
     // Add MIDI clock listeners
-    this.midiInputDevice.addListener('clock', this.handleMidiClock);
-    this.midiInputDevice.addListener('start', this.handleMidiStart);
-    this.midiInputDevice.addListener('stop', this.handleMidiStop);
-    this.midiInputDevice.addListener('continue', this.handleMidiContinue);
+    input.addListener('clock', this.handleMidiClock);
+    input.addListener('start', this.handleMidiStart);
+    input.addListener('stop', this.handleMidiStop);
+    input.addListener('continue', this.handleMidiContinue);
 
     if (channelNum) {
       console.log(`listenToInput : channel ${channelNum}`);
-      const channel = this.midiInputDevice.channels[channelNum];
+      const channel = input.channels[channelNum];
       if (!channel) {
         console.warn(`MIDI Input channel not found: ${channelNum}`);
         return;
       }
 
-      channel.removeListener('noteon');
       channel.addListener('noteon', this.handleNoteOnMessage);
+      this.noteListenerTarget = channel;
     } else {
       console.log(`listenToInput : all channels`);
-      this.midiInputDevice.addListener('noteon', this.handleNoteOnMessage);
+      input.addListener('noteon', this.handleNoteOnMessage);
+      this.noteListenerTarget = input;
     }
+  }
+
+  private releaseInputListeners() {
+    if (this.clockTimeout) clearTimeout(this.clockTimeout);
+    this.clockTimeout = null;
+    this.lastClockTime = 0;
+    const input = this.midiInputDevice;
+    if (!input) return;
+    input.removeListener('clock', this.handleMidiClock);
+    input.removeListener('start', this.handleMidiStart);
+    input.removeListener('stop', this.handleMidiStop);
+    input.removeListener('continue', this.handleMidiContinue);
+    this.noteListenerTarget?.removeListener('noteon', this.handleNoteOnMessage);
+    this.noteListenerTarget = null;
+    this.midiInputDevice = null;
+  }
+
+  dispose() {
+    this.releaseInputListeners();
+    this.settingsUnsubscribe?.();
+    this.settingsUnsubscribe = null;
+    WebMidi.removeListener('connected', this.handleConnected);
+    WebMidi.removeListener('disconnected', this.handleDisconnected);
+    if (this.clockTimeout) clearTimeout(this.clockTimeout);
+    this.clockTimeout = null;
   }
 
   private handleMidiClock = () => {
