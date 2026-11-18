@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { parse } from 'yaml';
+import { fileURLToPath } from 'node:url';
 import { digest, requireThat } from './common.mjs';
 
 const maxSelections = 8;
@@ -20,8 +21,12 @@ export async function listAvailableSkills(connection, cwd) {
       sha256: digest(readFileSync(skill.path)),
       ...skillPolicy(skill.path),
     }));
-  const local = join(cwd, 'user/skills');
-  if (existsSync(local))
+  const directories = [
+    { directory: fileURLToPath(new URL('../../factory/system/skills/', import.meta.url)), source: 'Factory' },
+    { directory: join(cwd, 'user/skills'), source: 'Project' },
+  ];
+  for (const { directory: local, source } of directories) {
+    if (!existsSync(local)) continue;
     for (const directory of readdirSync(local, { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
       const path = join(local, directory.name, 'SKILL.md');
       if (!existsSync(path) || found.some((entry) => entry.path === path)) continue;
@@ -33,11 +38,12 @@ export async function listAvailableSkills(connection, cwd) {
         name: metadata.name,
         path,
         description: String(metadata.description || 'Project skill').slice(0, 180),
-        source: 'Project',
+        source,
         sha256: digest(content),
         ...skillPolicy(path),
       });
     }
+  }
   return found;
 }
 

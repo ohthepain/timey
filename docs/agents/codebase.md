@@ -682,7 +682,11 @@ These tools call the existing Home and issue controls and return direct results;
 issue activity is not streamed back into Discuss. `project-discuss-ui.js` and
 `project-discuss.css` own the composer, history, settings, attachments, dictation,
 and suggested prompts. The shared skill composer lives in `issue-chat-ui.js`.
-`skills.mjs` retains invocation policy and also discovers `user/skills` wrappers.
+`skills.mjs` retains invocation policy and discovers installed
+`factory/system/skills` as Factory skills alongside `user/skills` wrappers.
+The factory's `archive` skill submits issue numbers to the existing archive tool
+in one batch. Storage controls resolve numbers from one registry read, deduplicate
+the selection, and retain per-issue outcomes and existing publication safeguards.
 `flow-followups.mjs` owns reviewed follow-ups from completed Understand results.
 `investigation-proposals.mjs` prepares proposals in a read-only discussion;
 `investigation-followups-ui.js` owns selection and editing. Retained findings bind

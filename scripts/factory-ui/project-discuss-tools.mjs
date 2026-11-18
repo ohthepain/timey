@@ -146,8 +146,18 @@ export function createProjectDiscussTools(service, options = {}) {
     },
     issue_archive: {
       description:
-        'Archive selected closed issues or restore selected archived issues through existing storage controls, when explicitly requested. Query the chosen issue list first and pass exact IDs. No issue is closed or accepted by this operation.',
-      schema: z.object({ action: z.enum(['archive', 'restore']), issueIds: z.array(id).min(1).max(500) }).strict(),
+        'Archive a requested list of issue numbers together, or archive/restore selected issue IDs, through existing storage controls. Pass the full requested issueNumbers array in one call; number resolution reads the registry once, without per-issue queries. For all closed issues, query issues_list once and pass its IDs. No issue is closed or accepted by this operation.',
+      schema: z
+        .object({
+          action: z.enum(['archive', 'restore']),
+          issueIds: z.array(id).min(1).max(500).optional(),
+          issueNumbers: z.array(z.number().int().positive().safe()).min(1).max(500).optional(),
+        })
+        .strict()
+        .refine(
+          (input) => (input.issueIds === undefined) !== (input.issueNumbers === undefined),
+          'Choose issue numbers or IDs.'
+        ),
       path: '/api/issue-storage-move',
       run: (input) => moveIssueStorage(service, input),
     },

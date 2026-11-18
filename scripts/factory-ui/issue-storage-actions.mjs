@@ -96,7 +96,7 @@ function moveOne(service, action, id) {
     action === 'archive' ? [direct ? 'open' : 'closed', 'archive'] : ['archive', restoreOpen ? 'open' : 'closed'];
   const path = storedIssuePath(service.root, id, from);
   if (!existsSync(path) && existsSync(storedIssuePath(service.root, id, to)))
-    return finishLocalMove(service.root, action, id);
+    return { ...finishLocalMove(service.root, action, id), ...(action === 'archive' ? { alreadyArchived: true } : {}) };
   const { content } = readSavedReport(service.root, id, from);
   requireThat(
     direct || restoreOpen || reportHeader(content).state === configuredClosedState(service.root),
@@ -111,12 +111,29 @@ function moveOne(service, action, id) {
 export function moveIssueStorage(service, input) {
   service.ownServer();
   requireThat(['archive', 'restore'].includes(input.action), 'Choose Archive or Restore to closed.');
-  requireThat(Array.isArray(input.issueIds) && input.issueIds.length <= 500, 'Select up to 500 issues.');
-  const results = [...new Set(input.issueIds)].map((id) => {
+  const byNumber = input.issueNumbers !== undefined;
+  const selection = byNumber ? input.issueNumbers : input.issueIds;
+  requireThat(Array.isArray(selection) && selection.length <= 500, 'Select up to 500 issues.');
+  requireThat(
+    !byNumber ||
+      (input.issueIds === undefined && selection.every((number) => Number.isSafeInteger(number) && number > 0)),
+    'Supply positive issue numbers or issue IDs, not both.'
+  );
+  requireThat(!byNumber || input.issueIds === undefined, 'Choose issue numbers or IDs, not both.');
+  const numbers = byNumber ? displayNumbers(service.root) : null;
+  const idsByNumber = numbers ? new Map(Object.entries(numbers).map(([id, number]) => [number, id])) : null;
+  const ids = [...new Set(selection)].map((value) => {
+    if (!byNumber) return value;
+    requireThat(Number.isSafeInteger(value) && value > 0, 'Choose positive whole issue numbers.');
+    const id = idsByNumber.get(value);
+    requireThat(id, `Issue #${value} does not exist. No issues were archived.`);
+    return id;
+  });
+  const results = ids.map((id) => {
     try {
-      return moveOne(service, input.action, id);
+      return { ...moveOne(service, input.action, id), ...(byNumber ? { issueNumber: numbers[id] } : {}) };
     } catch (error) {
-      return { id, status: 'failed', error: error.message };
+      return { id, ...(byNumber ? { issueNumber: numbers[id] } : {}), status: 'failed', error: error.message };
     }
   });
   return { results };

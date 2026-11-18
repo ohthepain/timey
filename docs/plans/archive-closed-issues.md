@@ -38,6 +38,16 @@ For a shared closed report, the proposed flow saves the local archive copy first
 
 ## Verification
 
+The factory-provided `archive` skill lives under `factory/system/skills/archive`.
+It accepts a list such as `$archive 11 12 13` and submits one `issue_archive` call
+with `issueNumbers`. Storage controls read the number registry once and remove
+duplicates. Unknown numbers are rejected before any selected report is moved.
+For batches up to the existing 500-item limit, the model need not query reports
+or dispatch separate archive calls. Larger selections use bounded batches.
+Each issue retains its existing eligibility checks, shared-queue claim and
+publication behavior, and result. This is one guarded batch request, not a new
+all-or-nothing transaction across independently published issue reports.
+
 Check that moving an issue between folders preserves its ID, display number, and content. Verify that routine queue reads and prompts skip closed and archived report bodies, while the Closed issues view can open each report. Test archive and restore without a model connection, including interrupted moves, destination conflicts, and repeated requests. Verify that a pending shared archive preserves a local copy and that the archive folder stays ignored in a fresh checkout.
 
 Run `pnpm factory issue-storage-migrate` once on the local queue before the initial import. It moves existing closed reports into the Closed issues view. Leave shared mode disabled until the reviewed import is ready.

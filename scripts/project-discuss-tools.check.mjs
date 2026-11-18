@@ -133,8 +133,79 @@ test('local reusable skills are discoverable and implicit restrictions come from
     },
   };
   const skills = await listAvailableSkills(connection, f.root);
-  assert.equal(skills.length, 1);
-  assert.equal(skills[0].name, 'test');
-  assert.equal(skills[0].displayName, 'Test Display');
-  assert.equal(skills[0].allowImplicitInvocation, false);
+  const selected = skills.find((skill) => skill.name === 'test');
+  assert.equal(selected.source, 'Project');
+  assert.equal(selected.displayName, 'Test Display');
+  assert.equal(selected.allowImplicitInvocation, false);
+});
+
+test('factory archive skill is discoverable separately from user skills', async (t) => {
+  const f = fixture(t);
+  const skills = await listAvailableSkills({ ready: async () => {}, call: async () => ({ data: [] }) }, f.root);
+  const archive = skills.find((skill) => skill.name === 'archive');
+  assert.equal(archive.source, 'Factory');
+  assert.equal(archive.allowImplicitInvocation, true);
+  assert.match(archive.path, /factory\/system\/skills\/archive\/SKILL\.md$/);
+  assert.equal(existsSync(join(f.root, 'user/skills/archive')), false);
+});
+
+function numberedReports(f, numbers) {
+  const registry = {};
+  for (const number of numbers) {
+    const issueId = '20261118-archive-' + number;
+    registry[issueId] = number;
+    writeFileSync(
+      join(f.root, '.issues/closed', issueId + '.md'),
+      `---\nid: ${issueId}\ntitle: Archive ${number}\nstate: closed\n---\n\nRetain report ${number}.\n`
+    );
+  }
+  writeFileSync(
+    join(f.root, '.issues/issue-numbers.json'),
+    JSON.stringify({ version: 1, next: Math.max(...numbers) + 1, issues: registry })
+  );
+  return registry;
+}
+
+test('archive accepts a deduplicated number list in one guarded batch and safely repeats', async (t) => {
+  const f = fixture(t);
+  const registry = numberedReports(f, [11, 12, 13]);
+  const result = await f.tools.invoke('issue_archive', { action: 'archive', issueNumbers: [11, 12, 11, 13] });
+  assert.deepEqual(
+    result.results.map(({ issueNumber, status }) => [issueNumber, status]),
+    [
+      [11, 'archived'],
+      [12, 'archived'],
+      [13, 'archived'],
+    ]
+  );
+  assert.equal(f.calls.filter((call) => call?.path === '/api/issue-storage-move').length, 1);
+  for (const [issueId, number] of Object.entries(registry)) {
+    assert.equal(existsSync(join(f.root, '.issues/closed', issueId + '.md')), false);
+    assert.match(
+      readFileSync(join(f.root, '.issues/archive', issueId + '.md'), 'utf8'),
+      new RegExp('Retain report ' + number)
+    );
+  }
+  const repeat = await f.tools.invoke('issue_archive', { action: 'archive', issueNumbers: [11, 12, 13] });
+  assert.ok(repeat.results.every((item) => item.alreadyArchived));
+  assert.deepEqual(JSON.parse(readFileSync(join(f.root, '.issues/issue-numbers.json'))).issues, registry);
+});
+
+test('unknown numbers fail before any archive; active items retain per-issue failure without losing other results', async (t) => {
+  const f = fixture(t);
+  const registry = numberedReports(f, [21, 22]);
+  await assert.rejects(() => f.tools.invoke('issue_archive', { action: 'archive', issueNumbers: [21, 999] }), /#999/);
+  assert.ok(Object.keys(registry).every((issueId) => existsSync(join(f.root, '.issues/closed', issueId + '.md'))));
+  const activeId = Object.keys(registry).find((issueId) => registry[issueId] === 22);
+  f.service.lifecycleTasks.set(activeId, {});
+  const result = await f.tools.invoke('issue_archive', { action: 'archive', issueNumbers: [21, 22] });
+  assert.deepEqual(
+    result.results.map(({ status }) => status),
+    ['archived', 'failed']
+  );
+  assert.equal(result.results[1].issueNumber, 22);
+  assert.equal(existsSync(join(f.root, '.issues/closed', activeId + '.md')), true);
+  await assert.rejects(() =>
+    f.tools.invoke('issue_archive', { action: 'archive', issueNumbers: [21], issueIds: [activeId] })
+  );
 });
