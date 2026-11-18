@@ -732,6 +732,10 @@ preview, and validates or refreshes independent verification evidence.
 and the Update Branch block, using the starting branch’s upstream.
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision.
+`flow-human-input.mjs` describes required PR review and derives the outstanding
+request from retained attempts, including legacy review blockers. Flow views and
+sidebar rows expose it separately from execution status; the UI offers explicit
+Continue through the existing guarded operation.
 The original factory page remains at `/classic`. See the
 [implementation plan](../plans/number-2/README.md) for current verification.
 

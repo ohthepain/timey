@@ -1,4 +1,4 @@
-import { blockDefinitionId, requestBlock, withoutTarget } from './flow-block-data.mjs';
+import { blockDefinitionId, missingMergePR, requestBlock, withoutTarget } from './flow-block-data.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
 import { bundledFlow } from './flow-definitions.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -109,7 +109,34 @@ function migrateFlow(flow, defaultTarget) {
     }
     linkFlowDefinition(flow, definition);
   }
+  reconcileMergeAttempts(flow);
   return flow;
+}
+
+function reconcileMergeAttempts(flow) {
+  const pr = flow.destination?.pr;
+  const branch = flow.workspace?.branch;
+  if (!pr || !branch) return;
+  const publishedAt = flow.blocks
+    .filter(({ kind }) => kind === 'publish')
+    .flatMap(({ attempts }) => attempts)
+    .filter(({ status, result, endedAt }) => status === 'completed' && result?.pr === pr && endedAt)
+    .map(({ endedAt }) => endedAt)
+    .sort()
+    .at(-1);
+  if (!publishedAt) return;
+  const summary = missingMergePR(branch);
+  for (const attempt of flow.blocks.filter(({ kind }) => kind === 'merge').flatMap(({ attempts }) => attempts)) {
+    if (
+      ['blocked', 'failed'].includes(attempt.status) &&
+      attempt.summary === summary &&
+      attempt.endedAt &&
+      attempt.endedAt <= publishedAt
+    ) {
+      attempt.invalidatedAt ??= publishedAt;
+      attempt.supersededByPR = pr;
+    }
+  }
 }
 
 function migrateUpdateBranch(flow) {
@@ -174,6 +201,7 @@ export class FlowStore {
     const current = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).revision : 0;
     requireThat(current === expectedRevision, 'This flow changed. Refresh before saving this edit.');
     validateGraph(flow.blocks);
+    reconcileMergeAttempts(flow);
     const saved = { ...flow, revision: current + 1, updatedAt: new Date().toISOString() };
     mkdirSync(join(this.directory, flow.issueId), { recursive: true });
     writeJson(path, saved);

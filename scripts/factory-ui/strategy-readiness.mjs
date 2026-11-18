@@ -1,5 +1,6 @@
 import { requireThat } from './common.mjs';
 import { repairableBlocker, strategyDelay } from './strategy-repair.mjs';
+import { requiredPRReview } from './flow-human-input.mjs';
 
 const readinessQuery = `
   query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
@@ -129,7 +130,7 @@ function assertBlockedPR(view, checks, waitForChecks) {
       'review-findings',
       'Address the actual requested review changes on this PR, preserving any human decision that cannot be resolved technically.'
     );
-  requireThat(view.reviewDecision !== 'REVIEW_REQUIRED', 'GitHub is waiting for a required review on this PR.');
+  if (view.reviewDecision === 'REVIEW_REQUIRED') throw requiredPRReview();
   const required = checks.filter((check) => check.isRequired);
   assertPassingChecks(required);
   if (waitForChecks && !required.length) throw pendingReadiness('Waiting for required GitHub checks to appear.');

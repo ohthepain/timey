@@ -17,6 +17,7 @@ export function deliveryTarget(flow) {
   return { ...target, branch: prefix ? ref.slice(prefix.length) : null };
 }
 export const startingPoint = (flow) => flow.startingPoint;
+export const missingMergePR = (branch) => 'No PR exists for ' + branch + '. Publish the issue PR first.';
 
 export function withoutTarget(blocks, target) {
   return blocks

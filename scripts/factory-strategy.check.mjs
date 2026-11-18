@@ -1543,7 +1543,15 @@ test('GitHub readiness distinguishes required checks, required reviews and other
   f.settings.checks = [];
   await assert.rejects(() => f.ready(), /outstanding merge requirements/);
   f.view.reviewDecision = 'REVIEW_REQUIRED';
-  await assert.rejects(() => f.ready(), /waiting for a required review/);
+  await assert.rejects(
+    () => f.ready(),
+    (error) => {
+      assert.match(error.message, /waiting for a required review/);
+      assert.equal(error.humanInput.kind, 'pr-review');
+      assert.match(error.humanInput.message, /eligible reviewer.*Continue/);
+      return true;
+    }
+  );
   f.view.reviewDecision = 'CHANGES_REQUESTED';
   await assert.rejects(
     () => f.ready(),

@@ -19,6 +19,7 @@ import {
   blockDetails,
   definitionMap,
   deliveryTarget,
+  latestCurrentAttempt,
   requestData,
   startingPoint,
 } from './factory-ui/flow-block-data.mjs';
@@ -636,6 +637,42 @@ test('Destination follows the starting branch until pinned, then locks to an exi
   assert.equal(view.destination.branch, 'release');
   assert.equal(view.destination.proposedBranch, undefined);
   assert.equal(view.flow.startingPoint.ref, 'refs/remotes/upstream/recent');
+});
+
+test('A published PR supersedes the earlier missing-PR Merge attempt after reload', (t) => {
+  const { id, root, service } = fixture(t);
+  const flows = createIssueFlows(service);
+  t.after(() => flows.close());
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  const publish = flow.blocks.find(({ kind }) => kind === 'publish');
+  const merge = flow.blocks.find(({ kind }) => kind === 'merge');
+  const missing = {
+    id: 'early-merge',
+    status: 'blocked',
+    startedAt: '2026-11-18T14:00:00.000Z',
+    endedAt: '2026-11-18T14:00:01.000Z',
+    summary: 'No PR exists for codex/fixture. Publish the issue PR first.',
+  };
+  flow.workspace = { checkout: root, branch: 'codex/fixture' };
+  merge.attempts.push(missing);
+  const saved = flows.store.save(flow, flow.revision);
+  assert.deepEqual(latestCurrentAttempt(flows.read(issue).blocks.find(({ kind }) => kind === 'merge')), missing);
+
+  const publishedAt = '2026-11-18T14:01:01.000Z';
+  flow.destination = { branch: 'dev', pr: 87 };
+  publish.attempts.push({ status: 'completed', endedAt: publishedAt, result: { pr: 87 } });
+  // Write the old record format directly to exercise recovery for existing issues.
+  writeFileSync(flows.store.path(id), JSON.stringify({ ...flow, revision: saved.revision }));
+  const reloaded = flows.read(issue);
+  const recoveredMerge = reloaded.blocks.find(({ kind }) => kind === 'merge');
+  assert.equal(latestCurrentAttempt(recoveredMerge), undefined);
+  assert.deepEqual(recoveredMerge.attempts, [{ ...missing, invalidatedAt: publishedAt, supersededByPR: 87 }]);
+
+  const laterFailure = { ...missing, id: 'new-merge', endedAt: '2026-11-18T14:02:01.000Z' };
+  recoveredMerge.attempts.push(laterFailure);
+  flows.store.save(reloaded, reloaded.revision);
+  assert.deepEqual(latestCurrentAttempt(flows.read(issue).blocks.find(({ kind }) => kind === 'merge')), laterFailure);
 });
 
 test('project setup previews and creates only the missing lifecycle without changing reports or policy', (t) => {

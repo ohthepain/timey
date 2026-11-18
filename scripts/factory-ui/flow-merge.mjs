@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { deliveryTarget } from './flow-block-data.mjs';
+import { deliveryTarget, missingMergePR } from './flow-block-data.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import {
   assertPublicationIdle,
@@ -218,7 +218,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
     ...(existsSync(log) ? [{ key: 'log', path: log, label: 'Target fetch and merge output' }] : []),
   ];
   const initial = await lookupFlowPR(provider, workspace.branch, ctx.flow.destination?.pr);
-  requireThat(initial, 'No PR exists for ' + workspace.branch + '. Publish the issue PR first.');
+  requireThat(initial, missingMergePR(workspace.branch));
   let pr = initial;
   try {
     for (;;) {
@@ -258,6 +258,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
   } catch (error) {
     error.evidence = [...evidence(), ...(error.evidence ?? [])];
     error.deliveryVerification = state.checked?.verification;
+    if (error.humanInput) error.humanInput = { ...error.humanInput, url: pr.html_url };
     throw error;
   }
 }

@@ -35,6 +35,7 @@ import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
 import { FlowFollowups } from './flow-followups.mjs';
 import { isInvestigation } from './investigation-records.mjs';
+import { flowHumanInput } from './flow-human-input.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { folderSettingsFields, validateSettingValue } from './folder-settings-schema.mjs';
@@ -440,6 +441,7 @@ class IssueFlows {
       groupEligible: this.groupEligible(issue, flow),
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
+      humanInput: issue.closed ? null : flowHumanInput(flow),
       status: flowStatus(flow, issue, active),
     };
   }
@@ -563,6 +565,7 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
+      humanInput: issue.closed ? null : flowHumanInput(flow),
       issueSettings: {
         ...issueSettings,
         fields: folderSettingsFields(this.service.root).filter(({ key }) =>
@@ -891,7 +894,8 @@ class IssueFlows {
       if (['close', 'retro', 'cleanup'].includes(next.kind)) return this.pause(issueId, 'Close the issue when ready.');
       const status = latestCurrentAttempt(next)?.status;
       const needsRetry = ['failed', 'blocked', 'stopped'].includes(status);
-      if (needsRetry && !retry) return this.pause(issueId, `${next.label} needs a retry.`);
+      if (needsRetry && !retry)
+        return this.pause(issueId, flowHumanInput(flow)?.message || `${next.label} needs a retry.`);
       if (confirmationBlocks.has(next.kind) || latestCurrentAttempt(next)?.result?.mergeConfirmation) {
         this.autoplay.set(issueId, { mode: 'waiting', blockId: next.id });
         return;
@@ -1995,6 +1999,7 @@ class IssueFlows {
         if (error.partialText) current.output += error.partialText;
         current.evidence = error.evidence || current.evidence;
         if (error.deliveryVerification) current.result = { verification: error.deliveryVerification };
+        if (error.humanInput) current.result = { ...current.result, humanInput: error.humanInput };
         if (error.input) current.input = error.input;
         outcome = current;
       });

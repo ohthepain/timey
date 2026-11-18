@@ -594,6 +594,15 @@ kbd {
   white-space: pre-wrap;
   font-size: 12px;
 }
+.issue-results.needs-input {
+  border-color: #79663d;
+  background: #29261e;
+}
+.issue-input-label {
+  display: block;
+  color: #d1ba89;
+  font-size: 10px;
+}
 .environment {
   display: flex;
   gap: 9px;

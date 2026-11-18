@@ -27,6 +27,10 @@ Use `pnpm run test:flow:browser --block-deletion` for the isolated click-selecti
 confirmation, keyboard safety and persisted block-removal scenario.
 Use `pnpm run test:flow:browser --issue-results` to check result placement below
 the issue banner, independent playback status, and hiding empty results.
+Use `pnpm run test:flow:browser --human-input` for required-review instructions,
+PR links, sidebar and block indicators, persisted requests, explicit Continue,
+and the distinction between human input and technical failure. The fixture
+injects review readiness; it performs no live GitHub review or merge.
 Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
 repair, search, grouping eligibility, and selected Open or Closed bulk actions.
 The fixture injects AI responses and execution, and uses disposable reports.

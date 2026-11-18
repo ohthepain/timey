@@ -45,6 +45,12 @@ A request the person has chosen to address later. Deferral leaves the requiremen
 and its effect on dependent work intact.
 _Avoid_: Completed request, waived requirement
 
+**Needs your input**:
+An issue has a specific outstanding human input request that prevents dependent
+work from continuing. The person handles the request and explicitly continues
+the affected block.
+_Avoid_: Failed, needs retry
+
 **Delegated decision**:
 A choice the person explicitly authorizes the agent to make within a defined
 scope. It records the agent's judgment, not an observation or acceptance supplied

@@ -191,7 +191,8 @@
   }
 
   function latest(block) {
-    return block?.attempts?.at(-1) || null;
+    const attempt = block?.attempts?.at(-1);
+    return attempt?.supersededByPR ? null : attempt || null;
   }
 
   function status(block) {
@@ -206,7 +207,12 @@
   }
 
   function statusText(value, attempt) {
+    if (value === 'blocked' && attempt?.result?.humanInput) return 'Needs your input';
     return value === 'blocked' && attempt?.result?.completed?.length ? 'Needs retry' : words(value);
+  }
+
+  function blockHumanInput(block) {
+    return state.view?.humanInput?.blockId === block?.id ? state.view.humanInput : null;
   }
 
   function statusIcon(value) {
@@ -481,6 +487,14 @@
       (runBlock.dataset.action !== 'stop' &&
         (operationPaused(activeBlock()) || state.view?.flow?.blocks.some(isRunning))) ||
       status(activeBlock()) === 'stopping';
+    const inputBlock = state.view?.flow?.blocks.find((block) => block.id === state.view.humanInput?.blockId);
+    $('issue-input-continue').disabled =
+      busy ||
+      state.newActionsPaused ||
+      attached ||
+      !inputBlock ||
+      operationPaused(inputBlock) ||
+      state.view.flow.blocks.some(isRunning);
     updatePlaybackAvailability(busy);
     $('close-publish').disabled = busy;
     $('move-starting-branch').disabled = busy;
@@ -598,7 +612,7 @@
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
     const row = (issue) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span></button>`;
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
     const groups = folders
       .map((folder) => {
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
@@ -1377,6 +1391,7 @@
 
   function blockTiming(block, attempt, currentStatus) {
     if (!attempt) return '';
+    if (blockHumanInput(block)) return 'Needs your input';
     if (attempt.inputRequestedAt || attempt.input) return 'Needs input';
     if (attempt.result?.mergeConfirmation && currentStatus === 'blocked') return 'Needs approval';
     const start = Date.parse(attempt.startedAt);
@@ -1409,6 +1424,7 @@
 
   function blockDescription(block, style) {
     const attempt = latest(block);
+    if (blockHumanInput(block)) return blockHumanInput(block).message;
     if (isRunning(block) && attempt && !block.readOnly && !attempt.inputRequestedAt)
       return attempt.step || 'Preparing this block.';
     return attempt?.summary || block.prompt || blockContent(block)?.description || style.description;
@@ -1883,13 +1899,18 @@
     const values = { ...block, ...changes };
     const attempts = block.attempts || [];
     const last = latest(block);
+    const previousAttempts = last ? attempts.slice(0, -1) : attempts;
+    const published = attempts.at(-1)?.supersededByPR;
+    const progress = last
+      ? attemptCard(last, attempts.length - 1)
+      : `<p class="inline-empty">${published ? `PR #${escape(published)} has been published. Run Merge to check it.` : 'This block has not run yet. Review its inputs before starting.'}</p>`;
     const running = isRunning(block);
     if (['retro', 'cleanup'].includes(block.kind))
       return `<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;
     const locked = state.pending ? ' disabled' : '';
     const sections = {
       settings: `<form id="block-form">${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
-      progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${last ? attemptCard(last, attempts.length - 1) : `<p class="inline-empty">This block has not run yet. Review its inputs before starting.</p>`}${attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${attempts.length - 1} earlier ${attempts.length === 2 ? 'attempt' : 'attempts'}</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`,
+      progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map(attemptCard).join('')}</details>` : ''}</section>`,
       sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button></div></section>`,
       notes: comments(block),
     };
@@ -1996,9 +2017,11 @@
         ? 'Recover'
         : mergeApproval(block)
           ? 'Approve merge'
-          : retrying
-            ? 'Retry'
-            : '▷ Run';
+          : blockHumanInput(block)
+            ? 'Continue'
+            : retrying
+              ? 'Retry'
+              : '▷ Run';
     runButton.classList.toggle('danger-button', running);
   }
 
@@ -2066,10 +2089,24 @@
     waitingButton.hidden = !waiting;
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
     waitingButton.dataset.block = waiting?.id || '';
-    $('playback-status').textContent = waiting ? 'Waiting for confirmation' : playing ? 'Playing' : 'Paused';
-    const result = state.view?.flow?.closing?.error || playback?.reason || '';
+    const input = state.view?.humanInput;
+    $('playback-status').textContent = input
+      ? 'Needs your input'
+      : waiting
+        ? 'Waiting for confirmation'
+        : playing
+          ? 'Playing'
+          : 'Paused';
+    const result = state.view?.flow?.closing?.error || input?.message || playback?.reason || '';
     $('issue-results').hidden = !state.view?.issue || !result;
+    $('issue-results-title').textContent = input ? 'Needs your input' : 'Results';
+    $('issue-results').classList.toggle('needs-input', Boolean(input));
     $('issue-results-message').textContent = result;
+    $('issue-input-actions').hidden = !input;
+    const url = safeUrl(input?.url);
+    $('issue-input-link').hidden = !url;
+    $('issue-input-link').href = url || '';
+    $('issue-input-link').textContent = input?.actionLabel || 'Review PR';
   }
 
   function render() {
@@ -2095,8 +2132,9 @@
     const blocks = state.view?.flow?.blocks || [];
     const running = blocks.find((block) => isRunning(block));
     const completed = blocks.filter((block) => ['completed', 'succeeded', 'success'].includes(status(block))).length;
+    const issueStatus = state.view?.humanInput ? 'Needs your input' : words(issue?.status || 'new');
     $('issue-subtitle').textContent = issue
-      ? `${words(issue.status || 'new')}${closureLabel(issue)} · ${blocks.length} blocks${completed ? ` · ${completed} completed` : ''}${running ? ` · ${running.label} running` : ''}`
+      ? `${issueStatus}${closureLabel(issue)} · ${blocks.length} blocks${completed ? ` · ${completed} completed` : ''}${running ? ` · ${running.label} running` : ''}`
       : '';
     renderPlayback(blocks);
     renderSharedQueue();
@@ -3253,11 +3291,18 @@
   });
   document.addEventListener('factory-actions-paused', ({ detail }) => {
     state.newActionsPaused = detail;
-    updatePlaybackAvailability(state.pending);
+    setBusy(state.pending);
     if (state.folder) {
       renderFolderRun();
       renderFolderButtons();
     }
+  });
+  $('issue-input-continue').addEventListener('click', () => {
+    const block = state.view?.flow.blocks.find((block) => block.id === state.view.humanInput?.blockId);
+    if (!block) return;
+    state.blockId = block.id;
+    render();
+    void startBlock('continue', block);
   });
   $('refresh').addEventListener('click', () => {
     void load(true, true);

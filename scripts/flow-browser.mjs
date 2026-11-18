@@ -21,6 +21,7 @@ import { createFactoryServer } from './factory-ui/http.mjs';
 import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-block-data.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
+import { requiredPRReview } from './factory-ui/flow-human-input.mjs';
 import { git } from './factory-ui/common.mjs';
 import { flowIssueFoldersBrowserChecks } from './flow-browser-issue-folders.mjs';
 import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mjs';
@@ -91,6 +92,7 @@ const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
+const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const logs = {
   console: [],
   pageErrors: [],
@@ -205,6 +207,7 @@ function checkExcluded(name) {
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
     ['--issue-results', issueResultsCheck],
+    ['--human-input', humanInputCheck],
   ];
   return selections.some(([flag, selected]) => process.argv.includes(flag) && name !== selected);
 }
@@ -1747,6 +1750,114 @@ try {
     await page.locator('#issue-title').filter({ hasText: 'Keep results and status visible' }).waitFor();
     assert.equal(await page.locator('#issue-results').isVisible(), false);
     assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
+    if (issueId) await page.goto('/?issue=' + issueId);
+  });
+  await check(humanInputCheck, async () => {
+    const id = '20261118-human-input-fixture';
+    writeFileSync(
+      join(project, '.issues', id + '.md'),
+      `---\nid: ${id}\ntitle: Review before merging\nstate: backlog\n---\n\nMake the required review visible.\n`
+    );
+    const issue = service.flows.selected(id);
+    let flow = service.flows.read(issue);
+    const merge = flow.blocks.find((block) => block.kind === 'merge');
+    for (const block of flow.blocks.slice(0, flow.blocks.indexOf(merge)))
+      block.attempts = [{ id: 'done-' + block.id, status: 'completed', startedAt: '2026-11-18T12:00:00Z' }];
+    merge.attempts = [
+      {
+        id: 'legacy-review',
+        status: 'blocked',
+        startedAt: '2026-11-18T12:00:01Z',
+        summary: 'GitHub is waiting for a required review on this PR.',
+      },
+    ];
+    flow.autoClose = false;
+    flow.destination = { ...flow.destination, pr: 17, url: 'https://github.com/test/fixture/pull/17' };
+    service.flows.store.save(flow, flow.revision);
+    let approved = false;
+    let calls = 0;
+    const run = executor.run;
+    executor.run = async (ctx) => {
+      if (ctx.issue.id !== id) return run(ctx);
+      calls++;
+      assert.equal(ctx.continuing, true);
+      if (!approved)
+        throw Object.assign(requiredPRReview(), {
+          humanInput: { ...requiredPRReview().humanInput, url: flow.destination.url },
+          deliveryVerification: { head: 'retained-proof' },
+        });
+      return { summary: 'GitHub confirms the protected merge.' };
+    };
+    const assertRequest = async () => {
+      await page.locator('#issue-results-title').filter({ hasText: 'Needs your input' }).waitFor();
+      assert.match(await page.locator('#issue-results-message').textContent(), /eligible reviewer.*Continue/);
+      assert.equal(await page.locator('#issue-input-link').getAttribute('href'), flow.destination.url);
+      await page.locator(`[data-issue="${id}"] .issue-input-label`).waitFor();
+      await page
+        .locator(`#graph [data-block="${merge.id}"] .block-status`)
+        .filter({ hasText: 'Needs your input' })
+        .waitFor();
+      await page.locator(`#graph [data-block="${merge.id}"]`).click();
+      assert.equal(await page.locator('#run-block').textContent(), 'Continue');
+    };
+    try {
+      await page.goto('/?issue=' + id);
+      await assertRequest();
+      assert.equal(calls, 0);
+      const noNewActions = page.locator('#flow-actions-switch [data-server-toggle]');
+      await noNewActions.check();
+      await page.waitForFunction(() => document.getElementById('issue-input-continue').disabled);
+      await noNewActions.uncheck();
+      await page.waitForFunction(() => !document.getElementById('issue-input-continue').disabled);
+      assert.equal(calls, 0);
+      await page.locator('#issue-input-continue').click();
+      await poll(
+        async () => service.flows.read(issue),
+        (value) => value.blocks.find((b) => b.id === merge.id).attempts.length === 2 && !service.flows.active.has(id),
+        'Explicit Continue did not record the review request.'
+      );
+      const attempt = service.flows
+        .read(issue)
+        .blocks.find((b) => b.id === merge.id)
+        .attempts.at(-1);
+      assert.equal(attempt.result.humanInput.kind, 'pr-review');
+      assert.equal(attempt.result.verification.head, 'retained-proof');
+      await page.reload();
+      await assertRequest();
+      await screenshot('needs-your-input');
+      approved = true;
+      await page.reload();
+      await assertRequest();
+      assert.equal(calls, 1, 'Approval and reload must not resume Merge');
+      await page.locator('#issue-input-continue').click();
+      await poll(
+        async () => service.flows.read(issue),
+        (value) => value.blocks.find((b) => b.id === merge.id).attempts.at(-1)?.status === 'completed',
+        'Continue did not complete Merge.'
+      );
+      await page.reload();
+      await page.locator('#issue-title').filter({ hasText: 'Review before merging' }).waitFor();
+      assert.equal(await page.locator('#issue-input-actions').isVisible(), false);
+      assert.equal(await page.locator(`[data-issue="${id}"] .issue-input-label`).count(), 0);
+      assert.equal(calls, 2);
+      flow = service.flows.read(issue);
+      flow.blocks
+        .find((b) => b.id === merge.id)
+        .attempts.push({
+          id: 'technical-failure',
+          status: 'blocked',
+          startedAt: '2026-11-18T12:10:00Z',
+          endedAt: '2026-11-18T12:10:01Z',
+          summary: 'Verification failed.',
+        });
+      service.flows.store.save(flow, flow.revision);
+      await page.reload();
+      await page.locator(`#graph [data-block="${merge.id}"]`).click();
+      assert.equal(await page.locator('#run-block').textContent(), 'Retry');
+      assert.equal(await page.locator('#issue-input-actions').isVisible(), false);
+    } finally {
+      executor.run = run;
+    }
     if (issueId) await page.goto('/?issue=' + issueId);
   });
   await check(blockDeletionCheck, async () => {
