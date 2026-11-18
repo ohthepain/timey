@@ -237,6 +237,14 @@ from the Closed issues view and preserves its identity and closure.
 **Retro**:
 A review of what happened on an issue and what could improve future work.
 
+**Project home**:
+The project's landing page for activity summaries and operations that improve its
+codebase and working processes.
+
+**Investigation**:
+A bounded inquiry into a project's codebase or working processes, recorded as an
+issue with its goals, conversation, findings, and resulting follow-up issues.
+
 **Retro item**:
 A follow-up issue proposed by a retro that retains its originating issue for
 evidence and context.

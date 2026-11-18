@@ -97,6 +97,7 @@ export class FactoryUI {
   constructor(project, options = {}) {
     this.reviewMode = options.preview ? 'preview' : 'live';
     this.authoritativeUrl = options.authoritativeUrl || null;
+    this.projectHomeOptions = options.projectHome;
     this.root = git(project, 'rev-parse', '--show-toplevel');
     this.runtimeIdentity = runtimeInfo(this);
     this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
@@ -776,6 +777,7 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.projectHome?.close();
     this.sharedIssues?.close();
     this.flows?.close();
     this.store.flush();

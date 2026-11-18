@@ -315,6 +315,13 @@
     changed: () => load(true),
   });
 
+  const projectHome = window.createProjectHomeUI({
+    request: json,
+    post,
+    navigateHome: () => selectWorkspace({}),
+    changed: () => load(true),
+  });
+
   function investigationActions(block) {
     if (block?.kind !== 'understand' || status(block) !== 'completed') return '';
     return `<section class="detail-section"><div class="section-label">Findings</div><p class="detail-copy">Turn these findings into concrete work.</p><button class="small-button" data-investigation-followups="${escape(block.id)}" data-source-issue="${escape(state.issueId)}"${state.newActionsPaused ? ' disabled' : ''}>Create follow-up issues</button></section>`;
@@ -2098,6 +2105,14 @@
     renderEnvironment();
     renderIssueGrouping();
     renderGraph();
+    const showHome = !state.issueId && !state.folder && !state.fileFolder;
+    projectHome.setVisible(showHome);
+    $('app').dataset.homeView = showHome ? 'open' : 'closed';
+    if (showHome) {
+      $('graph-scroll').hidden = true;
+      document.querySelector('.inspector').hidden = true;
+      $('flow-view-title').textContent = 'Project home';
+    }
     checkOpenPublication();
     renderInspector();
     renderErrors();

@@ -14,7 +14,24 @@ creates only the missing file, preserves reports and existing configuration, and
 starts no work. Retry a blocked flow step explicitly after setup. Read-only blocks
 remain available while the lifecycle file is missing.
 
-The default page is the [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
+The default page opens **Project home**, with rolling seven-day issue statistics,
+saved investigation and Automate me sessions, and controls for both operations.
+The project menu keeps these operations accessible while viewing issues or folders.
+Investigations always cover the project and use a selected branch, defaulting to
+the branch in Project settings. Optional discussion retains goals and codebase
+questions in the Investigation issue; **Run** retains findings and automatically
+creates actionable follow-ups needing approval. The issue-folder selector files
+those follow-ups and does not limit investigation scope.
+
+**Automate me** runs the installed PStack skill through a guided Codex conversation.
+History defaults to four weeks with an editable duration and uses only available
+project conversations. Review the proposed skill and destination before **Apply**.
+Choose project-local or personal storage, with optional activation as the project's
+default for future work. Both operations save progress and provide Stop and Retry.
+Opening or refreshing Project home starts neither operation. See the
+[project home design](../plans/project-home.md).
+
+Selecting an issue opens its [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
 Understand uses a read-only checkout. Factory retains the final response as its
 Block response artifact; the agent does not need filesystem write access to save
 that response. Missing historical evidence remains a reported gap. Retro follow-ups

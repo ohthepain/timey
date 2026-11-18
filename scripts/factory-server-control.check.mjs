@@ -67,6 +67,34 @@ function installedDependencies() {
   }
   return realpathSync(join(directory, 'node_modules'));
 }
+
+test('restart waits for project operations before stopping the server', async (t) => {
+  const service = new FactoryUI(project(t));
+  let activeCount = 1;
+  let restarts = 0;
+  service.projectHome = {
+    get activeCount() {
+      return activeCount;
+    },
+    close() {},
+  };
+  const control = serverControl(service, () => {
+    restarts++;
+  });
+  try {
+    assert.equal(control.status().actions, 1);
+    control.request();
+    await delay(350);
+    assert.equal(restarts, 0);
+    activeCount = 0;
+    await delay(350);
+    assert.equal(restarts, 1);
+  } finally {
+    control.close();
+    service.close();
+  }
+});
+
 test('restart counts actual work once, blocks new work and waits for chats, permissions and locks', async (t) => {
   const root = project(t),
     service = new FactoryUI(root);

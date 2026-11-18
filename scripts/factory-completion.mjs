@@ -103,10 +103,27 @@ function recordInterviewMetadata(doc, result) {
 
 function recordClosureMetadata(doc, result) {
   if (result.closure) {
+    retainClosureHistory(doc, result.closure);
     doc.set('closure', doc.createNode(result.closure));
     if (result.closure.reason !== 'fixed') doc.delete('accepted_result');
   }
-  if (result.user_decision === 'reopen') doc.delete('closure');
+  if (result.user_decision === 'reopen') {
+    retainClosureHistory(doc);
+    doc.delete('closure');
+  }
+}
+
+function retainClosureHistory(doc, closure) {
+  const history = doc.get('closure_history')?.toJSON() || [];
+  requireThat(Array.isArray(history), 'Saved closure history is invalid; preserve it before recording.');
+  const entries = [doc.get('closure')?.toJSON(), closure].filter(hasClosureTime);
+  const unique = new Map(history.map((entry) => [entry.at, entry]));
+  for (const entry of entries) unique.set(entry.at, entry);
+  if (unique.size) doc.set('closure_history', doc.createNode([...unique.values()], { aliasDuplicateObjects: false }));
+}
+
+function hasClosureTime(closure) {
+  return Boolean(closure?.at);
 }
 
 function transitionNote(issue, target, result) {

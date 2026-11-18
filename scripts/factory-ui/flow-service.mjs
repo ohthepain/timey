@@ -198,12 +198,17 @@ export function createIssueFlows(service, options = {}) {
   return new IssueFlows(service, options);
 }
 
-function captureIdentity({ description, type, needsApproval, runRetro, sourceIssue, sourceAttempt }, folder, grouping) {
+function captureIdentity(
+  { description, type, needsApproval, runRetro, sourceIssue, sourceAttempt, startingRef },
+  folder,
+  grouping
+) {
   const fields = folder ? [description, type, folder] : [description, type];
   if (needsApproval || runRetro) fields.push({ needsApproval: !!needsApproval, runRetro: !!runRetro });
   if (grouping) fields.push(grouping);
   if (sourceIssue) fields.push({ sourceIssue });
   if (sourceAttempt) fields.push({ sourceAttempt });
+  if (startingRef !== undefined) fields.push({ startingRef });
   return digest(JSON.stringify(fields));
 }
 
@@ -2076,6 +2081,7 @@ class IssueFlows {
     validateCaptureDescription(input.description);
     validateCaptureType(input.type);
     validateCaptureSource(input, this);
+    if (input.startingRef !== undefined) branchStartingPoint(await this.codeBranches(), input.startingRef);
     const folder = requireIssueFolder(
       this.service.root,
       input.folder || defaultIssueFolder(this.service.root).name
@@ -2097,6 +2103,14 @@ class IssueFlows {
     } finally {
       this.captures.delete(input.requestId);
     }
+  }
+  async startingPointForCapture(input, folder) {
+    if (input.startingRef !== undefined) return branchStartingPoint(await this.codeBranches(), input.startingRef);
+    const target = {
+      ...flowTarget(this.service.root),
+      branch: resolveFolderSettings(this.service.root, folder).values.branch,
+    };
+    return captureStartingPoint(this.service.root, target);
   }
   async captureIssue(input, identity, folder, grouping) {
     const directory = join(this.store.directory, 'captures');
@@ -2135,11 +2149,7 @@ class IssueFlows {
       publish(receipt.id);
       return this.view(receipt.id);
     }
-    const target = {
-      ...flowTarget(this.service.root),
-      branch: resolveFolderSettings(this.service.root, folder).values.branch,
-    };
-    const startingPoint = await captureStartingPoint(this.service.root, target);
+    const startingPoint = await this.startingPointForCapture(input, folder);
     const at = new Date().toISOString();
     const id = at.replace(/[-:.Z]/g, '') + '-' + randomBytes(8).toString('hex');
     const title =

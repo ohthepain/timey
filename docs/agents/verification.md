@@ -2,6 +2,15 @@
 
 ## Commands and evidence
 
+`pnpm run test:project-home` checks project investigation capture, selected-branch
+execution, automatic follow-up approval and retry, historical closure statistics,
+project-scoped Automate me history, retained conversations, and reviewed skill
+application in disposable projects. `pnpm run test:project-home:browser` drives
+the actual home page and dialogs, including custom history duration, discussion,
+Run, findings, draft edits, Apply, reload, and narrow layout with injected models.
+The factory and Flow aggregate checks include these scenarios. Live provider
+availability remains a separate check.
+
 `pnpm run test:flow` checks flow records, cancellation, exact candidate evidence,
 publication, and guarded closure in disposable projects. `pnpm run test:flow:browser`
 drives the real flow page and HTTP routes with an injected executor. Its results,

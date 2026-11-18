@@ -6,11 +6,13 @@
     <meta name="color-scheme" content="dark" />
     <title>Factory · Flow workspace</title>
     <link rel="stylesheet" href="/flow.css" />
+    <link rel="stylesheet" href="/project-home.css" />
     <script src="/server-control-ui.js" defer></script>
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/issue-folder-drag-ui.js" defer></script>
     <script src="/folder-settings-ui.js" defer></script>
     <script src="/investigation-followups-ui.js" defer></script>
+    <script src="/project-home-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
@@ -19,7 +21,7 @@
     <div id="app" class="workspace">
       <aside class="sidebar" aria-label="Factory sidebar">
         <div class="project-header">
-          <a class="brand" href="/flow" aria-label="Factory home"
+          <a class="brand" href="/" aria-label="Project home"
             ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
             ><span class="brand-tag">FLOW</span></a
           >
@@ -40,6 +42,11 @@
             </svg>
           </button>
         </div>
+        <nav class="project-home-menu" aria-label="Project menu">
+          <button type="button" data-project-home="home">Home</button>
+          <button type="button" data-project-home="investigate">Investigate</button>
+          <button type="button" data-project-home="automate">Automate me</button>
+        </nav>
         <div class="project-actions-row">
           <button
             class="project-actions"
@@ -328,6 +335,47 @@
               </div>
             </form>
           </div>
+        </section>
+        <section id="project-home" class="project-home" aria-label="Project home" hidden>
+          <div class="home-intro">
+            <p class="home-eyebrow">PROJECT OVERVIEW</p>
+            <h1 id="home-title">Project home</h1>
+            <p>Understand the codebase. Improve how work gets done.</p>
+          </div>
+          <div class="home-operations">
+            <article class="home-operation">
+              <span class="home-operation-icon" aria-hidden="true">⌕</span>
+              <h2>Investigate</h2>
+              <p>Explore your project, ask questions, and turn evidence into actionable issues.</p>
+              <button class="primary-button" data-project-home="investigate">Start an investigation</button>
+            </article>
+            <article class="home-operation">
+              <span class="home-operation-icon" aria-hidden="true">✦</span>
+              <h2>Automate me</h2>
+              <p>Learn from your project conversations and refine a skill for how you work.</p>
+              <button class="small-button" data-project-home="automate">Run Automate me</button>
+            </article>
+          </div>
+          <section class="home-activity" aria-label="Project activity">
+            <div class="home-section-title">
+              <h2>Last seven days</h2>
+              <span id="home-window" class="muted"></span>
+            </div>
+            <div class="home-stat-grid">
+              <article><strong id="home-created">—</strong><span>Issues created</span></article>
+              <article><strong id="home-closed">—</strong><span>Issues closed</span></article>
+            </div>
+            <p id="home-stats-note" class="muted"></p>
+          </section>
+          <section class="home-history">
+            <h2>Investigations</h2>
+            <div id="home-investigations" class="home-run-list"><p class="muted">Loading saved investigations…</p></div>
+          </section>
+          <section class="home-history">
+            <h2>Automate me sessions</h2>
+            <div id="home-automate-sessions" class="home-run-list"></div>
+          </section>
+          <p id="home-error" class="home-error" role="alert"></p>
         </section>
         <section
           id="graph-scroll"
@@ -653,6 +701,146 @@
       <div class="modal-footer">
         <button type="button" class="small-button" data-close-dialog="view-index">Close</button>
       </div>
+    </dialog>
+    <dialog id="home-investigation-dialog" class="home-dialog">
+      <header>
+        <div>
+          <p class="home-eyebrow">PROJECT OPERATION</p>
+          <h2 class="home-dialog-title">Investigate project</h2>
+        </div>
+        <button class="icon-button" data-home-close="investigation" aria-label="Close investigation">×</button>
+      </header>
+      <form id="home-investigation-form">
+        <div class="home-field-row">
+          <label>Focus<select class="home-field-control" id="home-investigation-focus"></select></label
+          ><label>Branch<select class="home-field-control" id="home-investigation-branch" required></select></label>
+        </div>
+        <p class="muted">Applies to the entire project on the selected branch.</p>
+        <label
+          >Investigation prompt<textarea
+            class="home-field-control"
+            id="home-investigation-prompt"
+            rows="4"
+            required
+          ></textarea></label
+        ><label
+          >Additional instructions<textarea
+            class="home-field-control"
+            id="home-investigation-instructions"
+            rows="2"
+            placeholder="What matters most? What should the investigation consider?"
+          ></textarea></label
+        ><label
+          >Save follow-up issues in<select class="home-field-control" id="home-investigation-folder"></select
+        ></label>
+        <details id="home-investigation-discussion">
+          <summary>Discuss goals or ask about the codebase</summary>
+          <div id="home-investigation-messages" class="home-messages" aria-live="polite"></div>
+          <label class="home-discussion-label"
+            >Your message<textarea
+              class="home-field-control"
+              id="home-investigation-message"
+              rows="3"
+              placeholder="Help me refine this investigation…"
+            ></textarea></label
+          ><button type="button" class="small-button" id="home-investigation-send" data-home-command="discuss">
+            Send message
+          </button>
+        </details>
+        <div id="home-investigation-status" class="home-run-status" role="status"></div>
+        <p id="home-investigation-error" class="home-error" role="alert"></p>
+        <pre id="home-investigation-result" class="home-result" hidden></pre>
+        <a id="home-investigation-issue" hidden>Open investigation issue ↗</a>
+        <footer>
+          <button type="button" class="small-button" data-home-command="investigation-stop" hidden>Stop</button
+          ><button type="button" class="small-button" data-home-command="investigation-retry" hidden>Retry</button
+          ><button type="submit" class="primary-button" id="home-investigation-run">Run investigation</button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog id="home-automate-dialog" class="home-dialog">
+      <header>
+        <div>
+          <p class="home-eyebrow">PSTACK</p>
+          <h2 class="home-dialog-title">Automate me</h2>
+        </div>
+        <button class="icon-button" data-home-close="automate" aria-label="Close Automate me">×</button>
+      </header>
+      <form id="home-automate-form">
+        <p class="muted">Use this project's available conversations to draft or refine your working-style skill.</p>
+        <div class="home-field-row">
+          <label
+            >History duration<input
+              class="home-field-control"
+              id="home-automate-duration"
+              type="number"
+              min="1"
+              max="3650"
+              value="4"
+              required /></label
+          ><label
+            >Unit<select class="home-field-control" id="home-automate-unit">
+              <option value="weeks">Weeks</option>
+              <option value="days">Days</option>
+              <option value="months">Months</option>
+            </select></label
+          ><label
+            >Save skill in<select class="home-field-control" id="home-automate-destination">
+              <option value="project">This project</option>
+              <option value="personal">Personal skills</option>
+            </select></label
+          >
+        </div>
+        <p id="home-automate-coverage" class="muted"></p>
+        <button class="primary-button home-submit" type="submit" id="home-automate-start">Start conversation</button>
+      </form>
+      <div id="home-automate-messages" class="home-messages" aria-live="polite"></div>
+      <form id="home-automate-reply" hidden>
+        <label
+          >Your reply<textarea
+            class="home-field-control"
+            id="home-automate-message"
+            rows="3"
+            required
+          ></textarea></label
+        ><button class="small-button" type="submit">Send reply</button>
+      </form>
+      <section id="home-automate-review" hidden>
+        <h3>Review skill changes</h3>
+        <label
+          >Skill name<input class="home-field-control" id="home-automate-name" pattern="[a-z0-9][a-z0-9-]*-mode"
+        /></label>
+        <p id="home-automate-path" class="home-path"></p>
+        <div class="home-review-columns">
+          <label
+            >Current skill<textarea
+              class="home-field-control"
+              id="home-automate-current"
+              rows="12"
+              readonly
+            ></textarea></label
+          ><label
+            >Proposed skill<textarea class="home-field-control" id="home-automate-content" rows="12"></textarea>
+          </label>
+        </div>
+        <label class="home-activate"
+          ><input type="checkbox" id="home-automate-activate" /> Use this skill as this project's default for future
+          work</label
+        >
+        <div class="home-controls">
+          <button class="small-button" type="button" id="home-automate-preview" data-home-command="automate-preview">
+            Review destination and changes</button
+          ><button class="primary-button" type="button" id="home-automate-apply" data-home-command="automate-apply">
+            Apply reviewed skill
+          </button>
+        </div>
+      </section>
+      <div id="home-automate-status" class="home-run-status" role="status"></div>
+      <p id="home-automate-error" class="home-error" role="alert"></p>
+      <footer>
+        <button class="small-button" type="button" data-home-command="automate-stop" hidden>Stop</button
+        ><button class="small-button" type="button" data-home-command="automate-retry" hidden>Retry</button>
+      </footer>
     </dialog>
   </body>
 </html>

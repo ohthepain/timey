@@ -21,6 +21,23 @@ configuration; this map explains responsibilities and the useful starting points
 Factory UI folder organization is implemented in `scripts/factory-ui/issue-folders.mjs`;
 it stores folder assignments independently from report content and lifecycle metadata.
 
+The default Flow page opens **Project home** when no issue or folder is selected.
+`scripts/factory-ui/project-home.mjs` composes project statistics, investigations,
+and Automate me behind the authenticated project-home routes in `http.mjs`.
+`project-home-ui.js` owns the home page and operation dialogs. Investigations use
+the existing issue capture and Understand execution, with automatic approval-needed
+follow-ups only for this project operation. `project-home-branch.mjs` changes a
+read-only investigation's clean managed checkout without implementation authority.
+`project-home-stats.mjs` reads open, closed, and archived reports; shared closure
+history is preserved by `scripts/factory-completion.mjs`.
+
+`project-automate-me.mjs` owns saved sessions and reviewed skill application.
+`project-automate-history.mjs` gathers timestamped project conversations and
+checks native thread project membership before reading content.
+`project-automate-provider.mjs` adapts the installed PStack skill to a read-only
+Codex interview. Apply owns filesystem writes and optional activation through
+project settings. See the [project home design](../plans/project-home.md).
+
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
 timestamp semantics. Replay uses these same services; test their interaction, not
 just the display. Services use singleton state, so tests must reset ownership and

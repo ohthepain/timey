@@ -27,6 +27,7 @@ import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mj
 import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.mjs';
 import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
+import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -64,6 +65,8 @@ const assets = [
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
   'investigation-followups-ui.js',
+  'project-home-ui.js',
+  'project-home.css',
   'issue-closure-ui.js',
   'server-control-ui.js',
   'view-inspection.js',
@@ -85,6 +88,7 @@ const results = [];
 const folderSettingsCheck = 'Folder settings inherit, repair, search and act on selected open or closed issues';
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
+const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
 const logs = {
   console: [],
   pageErrors: [],
@@ -192,10 +196,18 @@ let addedId;
 let workId;
 let passed = false;
 let failure;
+function checkExcluded(name) {
+  const selections = [
+    ['--project-home', homeCheck],
+    ['--investigation-followups', followupsCheck],
+    ['--block-deletion', blockDeletionCheck],
+    ['--folder-settings', folderSettingsCheck],
+  ];
+  return selections.some(([flag, selected]) => process.argv.includes(flag) && name !== selected);
+}
+
 async function check(name, run) {
-  if (process.argv.includes('--investigation-followups') && name !== followupsCheck) return;
-  if (process.argv.includes('--block-deletion') && name !== blockDeletionCheck) return;
-  if (process.argv.includes('--folder-settings') && name !== folderSettingsCheck) return;
+  if (checkExcluded(name)) return;
   try {
     await run();
     results.push({ name, passed: true });
@@ -1837,6 +1849,7 @@ try {
     assert.equal(git(checkout, 'show', 'HEAD:saved-edit.txt'), 'Keep this local edit.');
     await screenshot('starting-branch-moved');
   });
+  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
   passed = true;
 } catch (error) {
   failure = error.stack;

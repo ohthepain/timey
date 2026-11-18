@@ -55,6 +55,7 @@ export function serverControl(service, restart) {
         (service.flows?.flowBuilds?.size || 0) +
         (service.flows?.captures?.size || 0) +
         (service.flows?.followups?.busy.size || 0) +
+        projectHomeActions(service) +
         cleanupActions(service),
       operations: conversation.operations,
       uncertain: conversation.uncertain,
@@ -379,4 +380,8 @@ function conversationActivity(service) {
 }
 function pendingPermissions(service) {
   return service.permissionRequests?.().size ?? service.codex.requests.size;
+}
+
+function projectHomeActions(service) {
+  return service.projectHome?.activeCount || 0;
 }

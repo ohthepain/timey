@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { parse } from 'yaml';
 import { uiDirectory } from './ui-source.mjs';
@@ -17,13 +18,23 @@ function directoryChoices(directory, predicate) {
     .map(({ name }) => ({ value: name, label: name }));
 }
 
+function personalSkillsDirectory() {
+  return join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'skills');
+}
+
 function dynamicChoices(project, kind) {
   if (kind === 'skill')
     return [
       resolve(uiDirectory(), '../../.agents/skills'),
       join(project, 'user/skills'),
       join(project, '.agents/skills'),
-    ].flatMap((directory) => directoryChoices(directory, (_, path) => info(join(path, 'SKILL.md'))?.isFile()));
+      personalSkillsDirectory(),
+    ].flatMap((directory) =>
+      directoryChoices(
+        directory,
+        (entry, path) => (entry.isDirectory() || entry.isSymbolicLink()) && info(join(path, 'SKILL.md'))?.isFile()
+      )
+    );
   if (kind === 'strategy')
     return directoryChoices(
       join(project, 'user/selection-strategies'),

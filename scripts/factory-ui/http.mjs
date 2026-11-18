@@ -40,6 +40,7 @@ import { folderSettingsView, changeFolderSettings } from './folder-settings-rout
 import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs';
 import { defaultIssueFolder } from './issue-folder-settings.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './project-settings.mjs';
+import { ProjectHome } from './project-home.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   deleteIssueWorktree,
@@ -126,16 +127,18 @@ function requireClassicIdle(service, path, value) {
     );
 }
 
+const pauseSafeActions = {
+  '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop'],
+  '/api/project-home-action': ['investigation-stop', 'automate-stop'],
+};
+function mayFinishWhilePaused(path, value) {
+  return pauseSafeActions[path]?.includes(value.action);
+}
+
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
   requireClassicIdle(service, path, value);
-  if (
-    !(
-      path === '/api/flow-action' &&
-      ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop'].includes(value.action)
-    )
-  )
-    service.serverControl?.allow(path, value);
+  if (!mayFinishWhilePaused(path, value)) service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
     '/api/site-review-decide': () => service.siteReviews.decide(value, owner),
@@ -156,6 +159,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/project-home-action': () => projectHome(service).action(value),
     '/api/folder-settings': () => changeFolderSettings(service, value),
     '/api/folder-strategies': () => {
       service.ownServer();
@@ -362,6 +366,7 @@ async function read(service, request, response, owner) {
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/project-settings': () => readProjectSettings(service.root),
+    '/api/project-home': () => projectHome(service).view(),
     '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
     '/api/issue-folder-options': () => flows(service).folders(),
     '/api/issue-folder-default': () => {
@@ -459,6 +464,8 @@ function readResource(service, request, response, owner) {
   }
   const scripts = {
     '/flow-ui.js': 'flow-ui.js',
+    '/project-home-ui.js': 'project-home-ui.js',
+    '/project-home.css': 'project-home.css',
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
     '/sidebar-files-ui.js': 'sidebar-files-ui.js',
     '/folder-settings-ui.js': 'folder-settings-ui.js',
@@ -491,6 +498,16 @@ function readResource(service, request, response, owner) {
 function flows(service) {
   service.flows ||= createIssueFlows(service);
   return service.flows;
+}
+
+function projectHome(service) {
+  const readOnly = service.reviewMode === 'preview';
+  if (!readOnly) service.ownServer();
+  service.projectHome ||= new ProjectHome(service, readOnly ? null : flows(service), {
+    ...service.projectHomeOptions,
+    readOnly,
+  });
+  return service.projectHome;
 }
 
 function viewSources(service) {

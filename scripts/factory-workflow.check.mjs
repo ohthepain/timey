@@ -69,6 +69,23 @@ const unrelatedChanges = {
     mkdirSync(join(f.queue.root, '.issues/factory-progress.lock'));
   },
 };
+
+test('Reopening preserves a recorded closure for project activity statistics', (t) => {
+  const f = workflowFixture(t, 'delivery');
+  const lifecycle = join(f.queue.root, '.issues/triage-labels.md');
+  writeFileSync(lifecycle, readFileSync(lifecycle, 'utf8') + '| ready-for-repro | clarify | verify |\n');
+  f.service.decideIssue(f.input.issueId, 'final', 'close', f.basis());
+  const queue = readQueue(f.queue.root, { location: 'closed', issueId: f.input.issueId });
+  const closed = queue.issues[0];
+  assert.equal(closed.closure_history.length, 1);
+  assert.equal(closed.closure_history[0].at, closed.closure.at);
+  f.service.decideIssue(closed.id, closed.state, 'reopen', decisionBasis(queue, closed));
+  const reopened = f.issue();
+  assert.equal(reopened.closure, undefined);
+  assert.equal(reopened.closure_history.length, 1);
+  assert.equal(reopened.closure_history[0].at, closed.closure.at);
+});
+
 for (const format of ['delivery', 'stage-history', 'legacy-prose']) {
   for (const [change, mutate] of Object.entries(unrelatedChanges)) {
     test(`${format}: Close accepts its recorded result after unrelated ${change}`, (t) => {
