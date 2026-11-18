@@ -5,6 +5,7 @@
       /[&<>"']/g,
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
+  const capitalize = (value) => String(value ?? '').replace(/^./, (character) => character.toUpperCase());
   const byId = (id) => document.getElementById(id);
   const running = (status) => ['running', 'starting', 'stopping', 'dispatching'].includes(status);
   function safeLink(value) {
@@ -57,12 +58,15 @@
   window.createProjectDiscussUI = ({ request, post }) => {
     const root = byId('project-discuss');
     root.innerHTML = `<div class="discuss-conversations"><div id="discuss-conversation-tabs" role="tablist" aria-label="Project conversations"></div><button id="discuss-new" class="small-button" type="button">New chat</button></div>
-      <div class="discuss-toolbar"><label>Clarification skill<select id="discuss-clarification" aria-label="Clarification skill"></select></label><label>Model<select id="discuss-model" aria-label="Discuss model"></select></label><label>Effort<select id="discuss-effort" aria-label="Discuss effort"></select></label><button id="discuss-refresh-skills" class="small-button" type="button">Refresh skills</button><span class="discuss-toolbar-spacer"></span><label class="discuss-icon-control" title="Attach files"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 8.5 4.1-4.1a2.1 2.1 0 0 1 3 3l-5.7 5.7a3.3 3.3 0 0 1-4.7-4.7l5.5-5.5"/></svg><span class="visually-hidden">Attach files</span><input id="discuss-files" type="file" multiple hidden></label><button id="discuss-mic" class="discuss-icon-control" type="button" aria-label="Start dictation" title="Dictate"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg></button></div>
       <p id="discuss-error" class="inline-error" role="alert" hidden></p><div id="discuss-messages" class="discuss-messages" role="log" aria-label="Project conversation messages"></div>
       <div id="discuss-approvals" class="discuss-approvals"></div><div id="discuss-queue" class="discuss-queue" aria-label="Queued messages"></div>
-      <form id="discuss-form" class="discuss-composer"><p id="discuss-editing" class="muted" hidden></p><div id="discuss-draft-attachments" class="discuss-attachments"></div><div class="discuss-draft-wrap"><textarea id="discuss-draft" aria-label="Message project" rows="3" maxlength="64000" placeholder="Ask about your project, or type / to choose a skill…"></textarea><span id="discuss-suggestion" class="discuss-suggestion" aria-hidden="true"></span></div><div class="discuss-composer-actions"><div><span id="discuss-voice-status" class="muted" role="status"></span></div><div><button id="discuss-cancel-edit" class="small-button" type="button" hidden>Cancel edit</button><button id="discuss-stop" class="small-button" type="button" hidden>Stop</button><button id="discuss-resume" class="small-button" type="button" hidden>Resume</button><button id="discuss-send" class="primary-button" type="submit">Send</button></div></div></form><p id="discuss-status" class="muted" role="status"></p>`;
+      <form id="discuss-form" class="discuss-composer"><p id="discuss-editing" class="muted" hidden></p><div id="discuss-draft-attachments" class="discuss-attachments"></div><div class="discuss-draft-wrap"><textarea id="discuss-draft" aria-label="Message project" rows="3" maxlength="64000" placeholder="Ask about your project, or type / to choose a skill…"></textarea><span id="discuss-suggestion" class="discuss-suggestion" aria-hidden="true"></span></div><div class="discuss-composer-actions"><div><div class="discuss-toolbar"><label><span class="visually-hidden">Clarification skill</span><select id="discuss-clarification" aria-label="Clarification skill"></select></label><label><span class="visually-hidden">Model</span><select id="discuss-model" aria-label="Discuss model"></select></label><label><span class="visually-hidden">Effort</span><select id="discuss-effort" aria-label="Discuss effort"></select></label><button id="discuss-refresh-skills" class="small-button" type="button">Refresh skills</button><label class="discuss-icon-control" title="Attach files"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 8.5 4.1-4.1a2.1 2.1 0 0 1 3 3l-5.7 5.7a3.3 3.3 0 0 1-4.7-4.7l5.5-5.5"/></svg><span class="visually-hidden">Attach files</span><input id="discuss-files" type="file" multiple hidden></label><button id="discuss-mic" class="discuss-icon-control" type="button" aria-label="Start dictation" title="Dictate"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg></button></div><span id="discuss-voice-status" class="muted" role="status"></span></div><div><button id="discuss-cancel-edit" class="small-button" type="button" hidden>Cancel edit</button><button id="discuss-resume" class="small-button" type="button" hidden>Resume</button><button id="discuss-send" class="discuss-send-button" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg></button></div></div></form><p id="discuss-status" class="visually-hidden" role="status"></p>`;
     const draft = byId('discuss-draft');
     const form = byId('discuss-form');
+    const composerObserver = new ResizeObserver(() => {
+      root.style.setProperty('--discuss-composer-height', `${form.getBoundingClientRect().height}px`);
+    });
+    composerObserver.observe(form);
     let draftSave = Promise.resolve();
     let settingsSave = Promise.resolve();
     let actionSave = Promise.resolve();
@@ -252,7 +256,7 @@
     function messageHtml(message) {
       const user = message.role === 'user' || message.role === 'human';
       const model = message.settings?.model;
-      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(message.settings.effort) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
+      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
     }
     function render() {
       const current = session();
@@ -272,7 +276,7 @@
         'discuss-effort',
         (data?.efforts || []).map((entry) => ({
           value: typeof entry === 'string' ? entry : entry.id,
-          label: typeof entry === 'string' ? entry : entry.name,
+          label: capitalize(typeof entry === 'string' ? entry : entry.name),
         })),
         selectedSettings?.effort || data?.defaults?.effort
       );
@@ -282,13 +286,11 @@
         selectedSettings?.clarificationSkill || 'grilling'
       );
       const log = byId('discuss-messages');
-      const follow = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
       const html =
         (current?.messages || []).map(messageHtml).join('') ||
         '<div class="discuss-empty"><h2>What would you like to work on?</h2><p>Ask about the codebase, choose a skill with /, or request a project action.</p></div>';
       if (log.innerHTML !== html) {
         log.innerHTML = html;
-        if (follow) log.scrollTop = log.scrollHeight;
       }
       byId('discuss-queue').innerHTML = (current?.queue || [])
         .filter((entry) => !['completed', 'removed', 'failed', 'interrupted'].includes(entry.status))
@@ -320,22 +322,21 @@
       byId('discuss-new').disabled = pending || creating;
       for (const tab of byId('discuss-conversation-tabs').querySelectorAll('button'))
         tab.disabled = pending || creating;
-      byId('discuss-stop').hidden = !active;
-      byId('discuss-stop').disabled = pending;
       byId('discuss-resume').hidden = !['paused', 'interrupted', 'stopped'].includes(session()?.status);
       byId('discuss-resume').disabled = pending;
-      byId('discuss-send').disabled = pending || creating;
-      byId('discuss-send').textContent = editId ? 'Save queued message' : active ? 'Queue message' : 'Send';
+      const send = byId('discuss-send');
+      send.disabled = pending || creating;
+      send.setAttribute('aria-label', active ? 'Stop response' : 'Send message');
+      send.title = active ? 'Stop response' : 'Send message';
+      send.innerHTML = active
+        ? '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2"/></svg>'
+        : '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg>';
       byId('discuss-cancel-edit').hidden = !editId;
       byId('discuss-editing').hidden = !editId;
       byId('discuss-editing').textContent = editId
         ? 'Editing a queued message. The current response keeps running.'
         : '';
-      byId('discuss-status').textContent = session()
-        ? active
-          ? 'Response running · changes are saved'
-          : session().status || 'Ready'
-        : 'Start a new chat to work with your project.';
+      byId('discuss-status').textContent = active ? 'Response running' : '';
     }
     function renderApprovals(approvals) {
       const holder = byId('discuss-approvals');
@@ -468,7 +469,11 @@
       skillComposer.refresh();
       byId('discuss-status').textContent = 'Skill discovery will refresh when you type /.';
     });
-    byId('discuss-stop').addEventListener('click', () => void action('stop'));
+    byId('discuss-send').addEventListener('click', (event) => {
+      if (!running(session()?.status)) return;
+      event.preventDefault();
+      void action('stop');
+    });
     byId('discuss-resume').addEventListener('click', () => void action('resume'));
     byId('discuss-cancel-edit').addEventListener('click', () => {
       editId = null;

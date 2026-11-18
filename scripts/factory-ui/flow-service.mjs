@@ -949,7 +949,9 @@ class IssueFlows {
     );
     if (issue.state === 'needs-approval')
       requireThat(
-        ['open-block', 'rename-issue', 'comment', 'retro-setting', 'folder', 'folder-lock'].includes(action),
+        ['open-block', 'rename-issue', 'edit-request', 'comment', 'retro-setting', 'folder', 'folder-lock'].includes(
+          action
+        ),
         'Approve this issue before starting work.'
       );
     if (flow.closing && !flow.closing.complete)
@@ -1080,6 +1082,35 @@ class IssueFlows {
     }
     if (!['comment', 'open-block'].includes(input.action))
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
+    if (input.action === 'edit-request') {
+      requireThat(!issue.closed, 'Reopen this issue before editing its request.');
+      const editsWording = input.wording !== undefined;
+      const editsType = input.type !== undefined;
+      requireThat(editsWording || editsType, 'Choose an original prompt or issue type to edit.');
+      if (editsWording) {
+        requireThat(
+          typeof input.wording === 'string' && input.wording.trim() && input.wording.length <= 24000,
+          'Enter Your words in up to 24,000 characters.'
+        );
+        if (input.wording !== requestBlock(flow).data.wording) {
+          await this.refreshRequest(issue, flow, input.wording, catalog);
+          flow = this.read(this.selected(issue.id), catalog);
+        }
+      }
+      if (editsType) {
+        requireThat(issueTypes.includes(input.type), 'Choose a valid issue type.');
+        const request = requestBlock(flow);
+        const fields = request.data.fields || {};
+        const currentType = fields.type ?? flow.routeType;
+        if (currentType !== input.type || fields.type !== input.type) {
+          request.data.fields = { ...fields, type: input.type };
+          if (currentType !== input.type)
+            return this.applyFlowDefinition(issue, flow, catalog, { action: 'rebuild-flow' });
+          this.store.save(flow, flow.revision);
+        }
+      }
+      return this.view(issue.id);
+    }
     if (input.action === 'folder' || input.action === 'folder-lock') return this.editFolder(issue, flow, input);
     if (closureActions.has(input.action)) return this.dispatchClosure(input, issue, flow, catalog);
     if (['open-block-extension', 'reveal-definition'].includes(input.action))

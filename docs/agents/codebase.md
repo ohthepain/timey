@@ -678,13 +678,19 @@ attachment snapshots and explicit Stop/Resume/Retry/Steer. It never enters the i
 scheduler. `project-discuss-provider.mjs` connects those conversations to native
 Codex turns in the current project folder, handles permissions and conditional
 clarification, and registers the guarded tools in `project-discuss-tools.mjs`.
-These tools call the existing Home and issue controls and return direct results;
-issue activity is not streamed back into Discuss. `project-discuss-ui.js` and
+These tools call the existing Home and issue controls and return direct results.
+The `issue_edit` tool changes only original request wording and issue type; a
+wording change reruns Request clarification, while a type change applies that
+type's default flow. Issue activity is not streamed back into Discuss.
+`project-discuss-ui.js` and
 `project-discuss.css` own the composer, single-visible-conversation history,
 horizontal conversation tabs, message alignment and hover actions, settings,
-attachments, dictation, and suggested prompts. The shared skill composer lives
-in `issue-chat-ui.js`. Open conversation tabs stay in creation order; closing a tab
-marks its conversation closed and retains its saved history.
+attachments, dictation, and suggested prompts. The composer overlays the bottom
+of the scrollable history with enough trailing space to keep the final message
+visible. Its settings and attachment controls share a row with Send. Discuss hides
+the shared Flow footer. The shared skill composer lives in `issue-chat-ui.js`.
+Open conversation tabs stay in creation order; closing a tab marks its conversation
+closed and retains its saved history.
 `skills.mjs` retains invocation policy and discovers installed
 `factory/system/skills` as Factory skills alongside `user/skills` wrappers.
 The factory's `archive` skill submits issue numbers to the existing archive tool

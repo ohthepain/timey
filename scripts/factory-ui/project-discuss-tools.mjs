@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { listIssueStorage, moveIssueStorage } from './issue-storage-actions.mjs';
+import { issueTypes } from './flow-definitions.mjs';
 
 const text = z.string().max(16000);
 const id = z
@@ -100,6 +101,9 @@ export function createProjectDiscussTools(service, options = {}) {
             if (issueId) {
               const flow = flows().read(issue);
               record.revision = flow.revision;
+              const request = flow.blocks.find((block) => block.kind === 'request');
+              record.originalPrompt = request?.data.wording || '';
+              record.issueType = request?.data.fields?.type || flow.routeType;
               record.blocks = flow.blocks.map((block) => ({
                 id: block.id,
                 kind: block.kind,
@@ -127,6 +131,34 @@ export function createProjectDiscussTools(service, options = {}) {
       path: '/api/flow-action',
       run: async (input) =>
         receipt(await flows().capture({ ...input, requestId: input.requestId || randomUUID() }), 'created'),
+    },
+    issue_edit: {
+      description:
+        'Edit only an open issue’s original prompt and/or issue type. Query issues_list for the issue ID and current revision first. Changing the original prompt reruns Request clarification; changing type applies that type’s default flow. This never starts issue work.',
+      schema: z
+        .object({
+          action: z.literal('edit-request'),
+          issueId: id,
+          revision: z.number().int().nonnegative(),
+          originalPrompt: text.min(1).max(24000).optional(),
+          issueType: z.enum(issueTypes).optional(),
+        })
+        .strict()
+        .refine((input) => input.originalPrompt !== undefined || input.issueType !== undefined, {
+          message: 'Provide an original prompt or issue type to edit.',
+        }),
+      path: '/api/flow-action',
+      run: async ({ action, issueId, revision, originalPrompt, issueType }) =>
+        receipt(
+          await flows().action({
+            action,
+            issueId,
+            revision,
+            ...(originalPrompt !== undefined ? { wording: originalPrompt } : {}),
+            ...(issueType !== undefined ? { type: issueType } : {}),
+          }),
+          action
+        ),
     },
     issue_control: {
       description:

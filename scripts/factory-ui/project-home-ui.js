@@ -28,6 +28,7 @@
       else url.searchParams.delete('projectTab');
       history.replaceState(null, '', url);
       $('project-home').dataset.projectTab = tab;
+      document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', tab === 'discuss');
       $('project-home-content').hidden = tab !== 'home';
       for (const button of document.querySelectorAll('[data-project-tab]'))
         button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
