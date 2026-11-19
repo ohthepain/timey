@@ -4,13 +4,13 @@
 
 A runner is **disposable**: every run starts on a fresh machine and leaves nothing behind. Five types fill the slot. They differ mostly in who owns the agent loop and who owns the machine:
 
-| Type | Agent loop | Machine | Also fills |
-| --- | --- | --- | --- |
-| CI runner | yours, inside the CI job | CI vendor's, or yours | orchestrator, observability platform |
-| MicroVM API | yours, in the orchestrator or on the runner | provider's | nothing |
-| Bundled agent platform | vendor's | vendor's | part of orchestrator, observability platform |
-| Bring-your-own worker | vendor's | yours | part of orchestrator, observability platform |
-| Own VPS or containers | yours | yours | nothing |
+| Type                   | Agent loop                                  | Machine               | Also fills                                   |
+| ---------------------- | ------------------------------------------- | --------------------- | -------------------------------------------- |
+| CI runner              | yours, inside the CI job                    | CI vendor's, or yours | orchestrator, observability platform         |
+| MicroVM API            | yours, in the orchestrator or on the runner | provider's            | nothing                                      |
+| Bundled agent platform | vendor's                                    | vendor's              | part of orchestrator, observability platform |
+| Bring-your-own worker  | vendor's                                    | yours                 | part of orchestrator, observability platform |
+| Own VPS or containers  | yours                                       | yours                 | nothing                                      |
 
 Runner choice is per run: a cheap CI runner for review runs and a microVM for implementer runs is a normal design.
 
@@ -21,6 +21,7 @@ A fresh VM or pod per CI job, started by the git host's own workflow engine; the
 **Pick it when** the git host is GitHub or GitLab and every trigger is a git host event or a clock: the workflow file is the orchestrator and the run page is the observability platform, so one product fills three slots.
 
 Starting points:
+
 - [GitHub Actions](https://docs.github.com/en/actions/reference/limits): the default for an all-GitHub factory; [pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
 - [Claude Code GitHub Action](https://code.claude.com/docs/en/github-actions): Claude Code as a workflow step.
 - [GitLab hosted runners](https://docs.gitlab.com/ci/runners/hosted_runners/linux/): an ephemeral VM per job.
@@ -41,6 +42,7 @@ A hosted coding agent with its runner included: the vendor provisions a fresh VM
 **Pick it when** the user wants the fewest moving parts and is happy with that vendor's agent. Confirm its triggers cover the user's ticket tracker.
 
 Starting points:
+
 - [Claude Code cloud](https://code.claude.com/docs/en/claude-code-on-the-web), with [scheduled tasks](https://code.claude.com/docs/en/routines) for cron, API and GitHub event triggers.
 - [Claude Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview): API-first; create a run against an environment and stream events.
 - [Codex cloud](https://developers.openai.com/codex/cloud): a container per task.
