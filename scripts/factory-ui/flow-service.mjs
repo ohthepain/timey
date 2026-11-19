@@ -414,7 +414,7 @@ class IssueFlows {
   }
   refreshSharedQueue(id) {
     if (id) requireIssueId(id);
-    if (!this.service.sharedIssues) return undefined;
+    if (!this.service.sharedIssues) return this.service.sharedQueueStartupWarning;
     this.service.ownServer();
     const needsInitialReport = id && !this.issues(id).length;
     return this.service.sharedIssues.refreshInBackground(Boolean(needsInitialReport));

@@ -142,7 +142,13 @@ export class FactoryUI {
       );
     };
     this.guard = humanGuard;
-    this.sharedIssues = createSharedIssueQueue(this, options.sharedIssues);
+    try {
+      this.sharedIssues = createSharedIssueQueue(this, options.sharedIssues);
+    } catch (error) {
+      if (!error.message?.includes('Configure GitHub issue delivery before enabling the shared queue.')) throw error;
+      this.sharedIssues = null;
+      this.sharedQueueStartupWarning = error.message;
+    }
     installWorkerHealth(this);
   }
   get api() {
@@ -151,7 +157,7 @@ export class FactoryUI {
   }
   snapshot(owner = null, { includeCoordinatorDiscussion = true, selectedIssue = null } = {}) {
     if (!this.serverLock) this.store.reload();
-    let sharedQueueWarning;
+    let sharedQueueWarning = this.sharedQueueStartupWarning;
     if (this.sharedIssues) {
       try {
         this.ownServer();
