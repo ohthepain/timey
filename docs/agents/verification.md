@@ -104,7 +104,8 @@ or root CSV files. Existing root CSVs are never test cleanup targets.
 
 `verify` exports source into a disposable local clone, shares installed dependencies
 only when lockfiles match, and deletes the clone afterward. Each command prints
-START, streams output while it runs, and emits a periodic running message during
+START, streams child stdout and stderr into the console while also retaining
+them in the evidence log, and emits a periodic running message during
 silence. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
 Per-command logs are readable before completion; summaries retain the
 original pass/fail and separate audit-channel assessment. Evidence stays under
@@ -571,3 +572,9 @@ of failure lines. Full stdout/stderr remains in per-command logs. The outer
 verification log updates while commands run, and factory activity receives the
 same concise progress. Protocol fixtures inject both legacy and coordinator
 connections and reject accidental access to the installed model provider.
+
+GitHub Actions receives verification stdout/stderr as each child emits it. A
+`RUNNING` line is a process heartbeat, not a completed test. The final failure
+summary and retained evidence logs remain available after the command exits.
+An already-running GitHub job keeps the verifier from its checked-out revision;
+new streaming behavior requires a run containing the updated verifier.

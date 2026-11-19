@@ -158,6 +158,7 @@ async function run(name, command, commandArgs) {
     {
       cwd: snapshot,
       signal: cancellation.signal,
+      streamOutput: true,
       timeoutMs,
       encoding: 'utf8',
       env:

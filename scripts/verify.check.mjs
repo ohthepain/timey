@@ -663,3 +663,48 @@ test('failed checks print assertion details for every failed test in the CI cons
   record('build', ['build'], { stderr: 'Error: Cannot resolve dependency\n  at build.mjs:12:4', status: 1 });
   assert.match(lines.join('\n'), /Cannot resolve dependency\n  at build.mjs:12:4/);
 });
+
+test('verification forwards stdout and stderr before the child finishes and retains its log', async (t) => {
+  const { spawn } = await import('node:child_process');
+  const { root } = gitFixture(t, 'verify-live-output-');
+  const release = join(root, 'release');
+  const log = join(root, 'command.log');
+  const runner = join(root, 'runner.mjs');
+  const modulePath = new URL('./verify-process.mjs', import.meta.url).href;
+  writeFileSync(
+    runner,
+    `
+    import { runVerificationProcess } from ${JSON.stringify(modulePath)};
+    const result = await runVerificationProcess(process.execPath, ['-e', ${JSON.stringify(`
+      const fs = require('node:fs');
+      process.stdout.write('live stdout marker\\n');
+      process.stderr.write('live stderr marker\\n');
+      const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); } }, 10);
+    `)}], { cwd: ${JSON.stringify(root)}, streamOutput: true }, ${JSON.stringify(log)});
+    process.exitCode = result.status ?? 1;
+  `
+  );
+  const child = spawn(process.execPath, [runner], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const closed = new Promise((resolve) => child.once('close', resolve));
+  const output = { stdout: '', stderr: '' };
+  let timer;
+  try {
+    await new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(Error('No live output arrived before child completion')), 3000);
+      for (const channel of ['stdout', 'stderr'])
+        child[channel].on('data', (chunk) => {
+          output[channel] += chunk;
+          if (output.stdout.includes('live stdout marker') && output.stderr.includes('live stderr marker')) resolve();
+        });
+      child.once('error', reject);
+    });
+    assert.equal(child.exitCode, null, 'output must be visible while the command is still running');
+    assert.match(readFileSync(log, 'utf8'), /live stdout marker/);
+    assert.match(readFileSync(log, 'utf8'), /live stderr marker/);
+  } finally {
+    clearTimeout(timer);
+    writeFileSync(release, 'finish');
+    await closed;
+  }
+  assert.equal(child.exitCode, 0);
+});

@@ -4,7 +4,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 // Own the spawned process group; cancellation never discovers PIDs by ordering or name.
 export function runVerificationProcess(command, args, options, log) {
   writeFileSync(log, '');
-  const { signal, timeoutMs, ...spawnOptions } = options;
+  const { signal, timeoutMs, streamOutput = false, ...spawnOptions } = options;
   if (signal?.aborted)
     return Promise.resolve({ status: null, stdout: '', stderr: '', error: 'Verification cancelled.' });
   return new Promise((resolve) => {
@@ -50,6 +50,7 @@ export function runVerificationProcess(command, args, options, log) {
       child[channel].on('data', (chunk) => {
         result[channel] += chunk;
         appendFileSync(log, chunk);
+        if (streamOutput) process[channel].write(chunk);
       });
     child.on('error', (error) => {
       result.error = error.message;
