@@ -154,6 +154,11 @@ A project folder configured to show assigned issues and issue actions alongside
 its files. Every issue belongs to a folder, and its report lives in the queue.
 _Avoid_: Issue group
 
+**Project Issues view**:
+A project-level view of issues across issue folders, with filtering and bulk
+selection. Folder views use the same issue workspace scoped to one folder.
+_Avoid_: Virtual folder
+
 **System folder**:
 A browsable folder without issue settings. The term describes its issue behavior,
 while installed content describes who owns its files.

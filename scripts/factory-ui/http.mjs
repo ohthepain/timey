@@ -8,6 +8,7 @@ import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
 import { changeImplementationOrder } from './implementation-order-route.mjs';
 import { assignIssueFolder, createIssueFolder } from './issue-folders.mjs';
+import { editProjectIssues } from './project-issues-bulk.mjs';
 import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
@@ -288,6 +289,7 @@ async function mutation(service, path, value, owner) {
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
     '/api/issue-priority': () => changePriority(service, value),
+    '/api/project-issues-bulk-edit': () => editProjectIssues(service, value, projectHome(service)),
     '/api/implementation-order': () => changeImplementationOrder(service, value),
     '/api/issue-folder-create': () => {
       service.ownServer();
@@ -328,9 +330,12 @@ export function createFactoryServer(service, options = {}) {
   const server = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
+    const projectIssueEmbed = request.method === 'GET' && request.url.startsWith('/classic?embed=project-issues');
+    const projectIssueRequestEmbed =
+      request.method === 'GET' && request.url.startsWith('/?embed=project-issue-request');
     response.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+      `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors ${projectIssueEmbed || projectIssueRequestEmbed ? "'self'" : "'none'"}; base-uri 'none'; form-action 'self'`
     );
     try {
       requireThat(request.headers.host === `127.0.0.1:${server.address().port}`, 'Use the local factory address.');
@@ -402,7 +407,10 @@ async function read(service, request, response, owner) {
         return { folder: null, error: error.message };
       }
     },
-    '/api/flow': () => flows(service).view(issue(selectedIssue)),
+    '/api/flow': () =>
+      flows(service).view(issue(selectedIssue), {
+        requestOnly: url.searchParams.get('view') === 'request',
+      }),
     '/api/flow-files': () => flows(service).files(issue(selectedIssue)),
     '/api/flow-file': () => flows(service).file(issue(selectedIssue), url.searchParams.get('path')),
     '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),

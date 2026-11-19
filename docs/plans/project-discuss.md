@@ -1,12 +1,18 @@
-# Project Home and Discuss
+# Project Workspace: Home, Issues, Discuss, and Admin
 
 The user confirmed shared understanding of the complete design and authorized
 implementation on 2026-11-18 after the grill-with-docs session.
 
+The Issues tab design was confirmed on 2026-11-19. That design confirmation
+authorizes this documentation update; it does not authorize implementation.
+
 ## Confirmed decisions
 
-- The project landing page has Home and Discuss tabs. Home retains the current
+- The project workspace design has Home, Issues, Discuss, and Admin tabs in that
+  order. The Add menu remains a separate action. Home retains the current
   activity statistics, improvement operations, and saved-session navigation.
+  The Issues tab and its relationship to folder views are defined in the
+  [Project Issues tab design](project-issues.md).
 - Discuss provides project conversations about the project as a whole, distinct
   from the queue-focused Coordinator conversation and individual issue conversations.
 - Discuss can inspect and edit project files and carry out explicitly requested

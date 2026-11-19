@@ -35,7 +35,10 @@ coverage/
 .vitest/
 
 # Issue reports and their display numbers are synced from the queue branch.
-/.issues/*
+/.issues/**
+!/.issues/*.md
 !/.issues/triage-labels.md
 !/.issues/preferences.json
+/.issues/evidence/
+/.issues/issue-work/
 

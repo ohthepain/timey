@@ -5,12 +5,13 @@ implementation on 2026-11-18.
 
 ## Confirmed decisions
 
-The planned Home and Discuss tabs and project conversation capabilities are being
-defined in [Project Home and Discuss](project-discuss.md). That design retains the
-current Home content; its new behavior awaits final shared understanding.
+Home operations and project conversations are documented in the
+[project workspace design](project-discuss.md). The confirmed project-wide Issues
+tab design is in [Project Issues tab](project-issues.md). The Home behavior and
+implementation evidence remain below.
 
-- Project home is the landing page for the currently selected project. The
-  existing issue workspace remains accessible.
+- Project home is the landing page for the currently selected project. The issue
+  workspace is accessible through the Issues tab and real issue folders.
 - Activity statistics include issues created and closed in the last week.
   Improvement operations are more prominent than statistics.
 - Investigations concern a chosen aspect of the codebase or the codebase as a

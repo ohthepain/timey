@@ -15,6 +15,19 @@ export function changePriority(service, input) {
   const next = current.index + (input.direction === 'up' ? -1 : 1);
   const choice = queue.priorities[next];
   requireThat(current.index >= 0 && choice, 'This issue cannot move further in that direction.');
+  return setPriority(service, { issueId: input.issueId, basis: input.basis, priorityId: choice.id });
+}
+
+export function setPriority(service, input) {
+  service.ownServer();
+  const queue = readQueue(service.root);
+  const issue = queue.issues.find((entry) => entry.id === input.issueId);
+  requireThat(issue, 'This issue no longer exists. Refresh the queue.');
+  const current = issue.priorityInfo;
+  requireThat(current.basis === input.basis, 'The priority or project list changed. Refresh before changing it again.');
+  const choice = queue.priorities.find((entry) => entry.id === input.priorityId);
+  requireThat(choice, 'Choose a current priority.');
+  if (current.id === choice.id) return { priority: choice.id };
   const run = {
     id: randomUUID(),
     kind: 'priority-choice',

@@ -281,6 +281,11 @@
   function renderErrors() {
     const waiting = serverControlUI.isWaitingForServer();
     const message = waiting ? 'Waiting for server…' : state.error || state.connectionError;
+    if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
+      $('request-embed-error').hidden = !message;
+      $('request-embed-error-message').textContent = message;
+      return;
+    }
     $('error-banner').hidden = !message;
     $('error-message').textContent = message;
     $('dismiss-error').hidden = waiting;
@@ -338,7 +343,10 @@
     state.index = { ...state.index, ...result };
     if (result.flow && result.issue && result.issue.id === state.issueId) {
       state.view = result;
-      if (!result.flow.blocks.some((block) => block.id === state.blockId)) {
+      if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
+        state.blockId = result.flow.blocks.find((block) => block.kind === 'request')?.id || null;
+        state.tab = 'details';
+      } else if (!result.flow.blocks.some((block) => block.id === state.blockId)) {
         state.deleteBlockId = null;
         const attempted = result.flow.blocks
           .filter((block) => latest(block))
@@ -378,7 +386,11 @@
     const selected = state.issueId;
     state.loading = true;
     try {
-      const result = await json(`/api/flow${selected ? `?issue=${encodeURIComponent(selected)}` : ''}`, {
+      const query = new URLSearchParams();
+      if (selected) query.set('issue', selected);
+      if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') query.set('view', 'request');
+      const params = query.toString();
+      const result = await json(`/api/flow${params ? `?${params}` : ''}`, {
         signal: controller.signal,
       });
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
@@ -1785,7 +1797,15 @@
         ? ''
         : `<label><input type="checkbox" id="full-regression-setting"${values.fullRegression === true ? ' checked' : ''}${disabled}> Run full regression suite</label>`;
     const settings = `${regression}<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
-    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder" required>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder" required>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
+  }
+
+  function requestMergeBranch() {
+    const { branch, follows, locked, pr } = state.view.destination || {};
+    const check = destinationChecks.get(state.issueId);
+    const unavailable = branch && check?.branches && !check.branches.includes(branch);
+    const display = branch ? `⑂ ${escape(branch)}` : 'Choose merge branch';
+    return `<section class="detail-section"><div class="section-label">Merge branch</div><div class="request-merge-branch">${locked ? `<span>${display}</span>` : `<button type="button" class="small-button" data-destination-open data-destination-label="Merge branch" aria-label="Choose merge branch">${display}</button>`}<small>${locked ? 'Locked to the pull request' : follows ? destinationFollowLabel() : ''} ${prLink(pr)}</small>${!locked && unavailable ? '<small>Branch unavailable</small>' : ''}${!locked && check?.branchesUnavailable ? '<small>Couldn’t check branches</small>' : ''}</div></section>`;
   }
 
   function skillOptions(block, selected) {
@@ -2173,6 +2193,7 @@
   }
 
   function renderInvestigationPage() {
+    if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') return;
     const investigation = state.view?.flow?.routeType === 'investigation';
     investigationUI.show(investigation ? state.issueId : null);
     $('app').dataset.investigation = investigation ? 'open' : 'closed';
@@ -2835,6 +2856,7 @@
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.hasAttribute('data-destination-open')) {
+      $('destination-heading').textContent = button.dataset.destinationLabel || 'Destination branch';
       $('destination-message').textContent = 'Checking branches…';
       for (const id of ['retry-branches', 'destination-choices', 'save-destination']) $(id).hidden = true;
       $('destination-dialog').showModal();
@@ -2845,6 +2867,7 @@
     }
     if (button.dataset.cleanupRetry) return void action('retry-closure', { resourceId: button.dataset.cleanupRetry });
     if (button.dataset.createFolderIssue) return openCapture(button.dataset.createFolderIssue);
+    if (button.hasAttribute('data-open-project-issues')) return projectHome.openIssuesTab();
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
     if (button.dataset.block) {
       state.blockId = button.dataset.block;

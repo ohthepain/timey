@@ -24,6 +24,10 @@
     <script src="/view-inspection.js" defer></script>
   </head>
   <body>
+    <script>
+      if (new URLSearchParams(location.search).get('embed') === 'project-issue-request')
+        document.documentElement.dataset.projectIssueRequestEmbed = 'true';
+    </script>
     <div id="app" class="workspace">
       <aside class="sidebar" aria-label="Factory sidebar">
         <div class="project-header">
@@ -82,7 +86,7 @@
           <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
         </section>
         <div class="sidebar-heading">
-          <span>Issues</span
+          <button class="sidebar-issues-link" type="button" data-open-project-issues>Issues</button
           ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
         </div>
         <button type="button" class="small-button" id="migrate-issue-folders" hidden>
@@ -406,6 +410,16 @@
               Home
             </button>
             <button
+              id="project-tab-issues"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-issues"
+              data-project-tab="issues"
+            >
+              Issues
+            </button>
+            <button
               id="project-tab-discuss"
               type="button"
               role="tab"
@@ -474,6 +488,15 @@
             </section>
             <p id="home-error" class="home-error" role="alert"></p>
           </div>
+          <section
+            id="project-issues"
+            class="project-issues"
+            role="tabpanel"
+            aria-labelledby="project-tab-issues"
+            hidden
+          >
+            <iframe title="Project issues" data-src="/classic?embed=project-issues#queue"></iframe>
+          </section>
           <section
             id="project-discuss"
             class="project-discuss"
@@ -675,6 +698,9 @@
         </div>
         <section id="issue-grouping" class="issue-grouping" aria-label="Grouped issues" hidden></section>
         <div class="inspector-body" id="inspector-body" role="tabpanel" aria-labelledby="tab-details">
+          <div class="error-banner request-embed-error" id="request-embed-error" role="alert" hidden>
+            <span id="request-embed-error-message"></span>
+          </div>
           <div class="inspector-empty">
             <span aria-hidden="true">↖</span>
             <p>Select a block to inspect its intent, progress and evidence.</p>

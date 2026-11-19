@@ -445,19 +445,26 @@ class IssueFlows {
       status: flowStatus(flow, issue, active),
     };
   }
-  async view(id) {
+  async view(id, { requestOnly = false } = {}) {
     const sharedQueueWarning = await this.refreshSharedQueue(id);
     const issues = this.issues();
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
     let branches = [];
     let branchCatalogError;
-    try {
-      branches = await this.codeBranches();
-    } catch (error) {
-      branchCatalogError = error.message;
+    if (!requestOnly) {
+      try {
+        branches = await this.codeBranches();
+      } catch (error) {
+        branchCatalogError = error.message;
+      }
     }
-    const folderSettings = readIssueFolderSettings(this.service.root, { includeCopies: true, includeBroken: true });
-    const index = issues.map((issue) => this.indexIssue(issue, this.read(issue, catalog, folderSettings), issues));
+    const folderSettings = readIssueFolderSettings(
+      this.service.root,
+      requestOnly ? {} : { includeCopies: true, includeBroken: true }
+    );
+    const index = requestOnly
+      ? []
+      : issues.map((issue) => this.indexIssue(issue, this.read(issue, catalog, folderSettings), issues));
     const data = {
       project: basename(this.service.root),
       sharedQueueWarning,
@@ -472,17 +479,19 @@ class IssueFlows {
         ]),
       ],
       issueFolders: folderSettings.map(({ name }) => name),
-      folderSettings: folderSettings.map((folder) => this.folderSettingsView(folder)),
+      folderSettings: requestOnly ? [] : folderSettings.map((folder) => this.folderSettingsView(folder)),
       legacyFolders: this.legacyFolders(),
-      folderRuns: this.overnight.reports(),
+      folderRuns: requestOnly ? {} : this.overnight.reports(),
       catalog,
       catalogErrors,
       issues: index,
     };
-    try {
-      data.defaultFolder = defaultIssueFolder(this.service.root).name;
-    } catch (error) {
-      data.defaultFolderError = error.message;
+    if (!requestOnly) {
+      try {
+        data.defaultFolder = defaultIssueFolder(this.service.root).name;
+      } catch (error) {
+        data.defaultFolderError = error.message;
+      }
     }
     if (!id) return data;
     const issue = this.selected(id);
@@ -493,7 +502,7 @@ class IssueFlows {
       const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
       if (definition) block.effectiveSkill = executionBlockSkill(block, definition, issueSettings);
     }
-    const flowDefinitions = this.flowDefinitionOptions(flow, catalog);
+    const flowDefinitions = requestOnly ? null : this.flowDefinitionOptions(flow, catalog);
     const legacyRun = this.service.store?.runs?.findLast(
       (run) => run.issueId === id && this.service.store.connected.has(run.id)
     );
@@ -527,7 +536,11 @@ class IssueFlows {
       }
     }
     suggestTargetUpdate(flow, environment, catalog);
-    const selectedRow = selectedFlowRow(data.issues, id);
+    const issuesWithSelected = issues.some((entry) => entry.id === id) ? issues : [...issues, issue];
+    const selectedRow = requestOnly
+      ? this.indexIssue(issue, savedFlow, issuesWithSelected)
+      : selectedFlowRow(data.issues, id);
+    if (requestOnly) data.issues = [selectedRow];
     if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
       if (environment.pr?.mergedAt) selectedRow.status = 'merged';
       else if (environment.startingBranchBehind > 0) selectedRow.status = 'need-merge-from-dev';

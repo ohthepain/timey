@@ -12,7 +12,7 @@
     window.createProjectAdminUI({ request, post });
     const tabs = document.querySelectorAll('[role="tab"][data-project-tab]');
     const requestedTab = new URL(location.href).searchParams.get('projectTab');
-    let projectTab = ['discuss', 'admin'].includes(requestedTab) ? requestedTab : 'home';
+    let projectTab = ['issues', 'discuss', 'admin'].includes(requestedTab) ? requestedTab : 'home';
     const state = {
       visible: false,
       data: null,
@@ -24,6 +24,12 @@
       submissions: new Map(),
     };
 
+    function loadIssuesFrame() {
+      if (!state.visible || projectTab !== 'issues') return;
+      const frame = document.querySelector('#project-issues iframe');
+      if (frame && !frame.hasAttribute('src')) frame.src = frame.dataset.src;
+    }
+
     function selectProjectTab(tab) {
       projectTab = tab;
       const url = new URL(location.href);
@@ -31,14 +37,40 @@
       else url.searchParams.delete('projectTab');
       history.replaceState(null, '', url);
       $('project-home').dataset.projectTab = tab;
+      document.querySelector('.workspace').dataset.projectHomeTab = tab;
       document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', tab === 'discuss');
       $('project-home-content').hidden = tab !== 'home';
+      $('project-issues').hidden = tab !== 'issues';
       $('project-admin').hidden = tab !== 'admin';
       for (const button of tabs) button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
       discuss.setVisible(state.visible && tab === 'discuss');
+      loadIssuesFrame();
     }
     for (const button of tabs) button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
     selectProjectTab(projectTab);
+
+    function syncIssueDetailWidth() {
+      const frame = document.querySelector('#project-issues iframe');
+      const workspace = document.querySelector('.workspace');
+      if (!frame?.contentDocument || !workspace) return;
+      const configuredWidth = getComputedStyle(workspace).getPropertyValue('--inspector-width').trim();
+      const responsiveWidth = window.innerWidth <= 1180 ? '335px' : window.innerWidth >= 1650 ? '435px' : '390px';
+      frame.contentDocument.documentElement.style.setProperty(
+        '--project-issue-detail-width',
+        localStorage.getItem('factory.project-issues.detail-width') || configuredWidth || responsiveWidth
+      );
+    }
+    const issuesFrame = document.querySelector('#project-issues iframe');
+    issuesFrame?.addEventListener('load', syncIssueDetailWidth);
+    syncIssueDetailWidth();
+    window.addEventListener('resize', syncIssueDetailWidth);
+    const workspace = document.querySelector('.workspace');
+    if (workspace && window.MutationObserver) {
+      new MutationObserver(syncIssueDetailWidth).observe(workspace, {
+        attributes: true,
+        attributeFilter: ['style'],
+      });
+    }
 
     function investigationSessions() {
       return state.data?.investigations || [];
@@ -399,7 +431,12 @@
         state.visible = value;
         $('project-home').hidden = !value;
         discuss.setVisible(value && projectTab === 'discuss');
+        loadIssuesFrame();
         if (value && !wasVisible) void refresh();
+      },
+      openIssuesTab() {
+        navigateHome();
+        selectProjectTab('issues');
       },
       refresh,
     };

@@ -674,8 +674,20 @@ owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutation
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
 `flow-ui.js` offers catalog blocks, including user-added Retro blocks; the distinct
 `closure-retro` block remains managed by the issue's closing settings.
-The project landing area has Home and Discuss tabs. `project-discuss.mjs` owns
-independent project conversation persistence, per-message settings, queued prompts,
+The project landing area has Home, Issues, Discuss and Admin tabs. Issues sits
+between Home and Discuss and embeds the shared issue workspace for project-wide
+and folder views. `project-issues-bulk.mjs` applies selected shared fields with
+per-issue outcomes. Opening an issue embeds the Flow Request inspector;
+`flow-ui.js` owns its Request fields and Merge branch control. One or more
+checkbox selections use the shared bulk editor, including one checked issue.
+The project-wide queue iframe starts when the Issues tab is first opened;
+Request embeds do not start another hidden queue, and investigation routes retain
+the Request inspector inside that embed. Its selected-issue view skips the full
+project index and branch catalog while actions retain their existing checks.
+The [Issues tab
+design](../plans/project-issues.md) records the three-column workspace behavior.
+`project-discuss.mjs` owns independent project conversation persistence,
+per-message settings, queued prompts,
 attachment snapshots and explicit Stop/Resume/Retry/Steer. It never enters the issue
 scheduler. `project-discuss-provider.mjs` connects those conversations to native
 Codex turns in the current project folder, handles permissions and conditional

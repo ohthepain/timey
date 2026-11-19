@@ -77,6 +77,29 @@ p {
   grid-template-columns: var(--sidebar-width, 242px) minmax(380px, 1fr) var(--inspector-width, 390px);
   overflow: hidden;
 }
+html[data-project-issue-request-embed='true'],
+html[data-project-issue-request-embed='true'] body {
+  height: 100%;
+  overflow: hidden;
+}
+html[data-project-issue-request-embed='true'] #app.workspace {
+  height: 100dvh;
+  grid-template-columns: minmax(0, 1fr);
+}
+html[data-project-issue-request-embed='true'] .sidebar,
+html[data-project-issue-request-embed='true'] .flow-main,
+html[data-project-issue-request-embed='true'] .inspector-resizer {
+  display: none;
+}
+html[data-project-issue-request-embed='true'] .inspector {
+  grid-column: 1;
+  border: 0;
+}
+html[data-project-issue-request-embed='true'] .request-embed-error {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
 .sidebar {
   position: relative;
   min-width: 0;
@@ -250,6 +273,19 @@ kbd {
   padding-left: 9px;
   font-size: 11px;
   margin-bottom: 10px;
+}
+.sidebar-issues-link {
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.sidebar-issues-link:hover,
+.sidebar-issues-link:focus-visible {
+  color: #ddd;
+  text-decoration: underline;
 }
 .icon-button {
   display: inline-flex;
@@ -1032,6 +1068,15 @@ kbd {
   font-size: 25px;
   margin-bottom: 13px;
   color: #666;
+}
+.request-merge-branch {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.request-merge-branch small {
+  color: var(--muted);
+  font-size: 10px;
 }
 .section-label {
   color: #8e8e8e;
