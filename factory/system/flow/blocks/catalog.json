@@ -57,7 +57,7 @@
     "label": "Work",
     "color": "green",
     "order": 10,
-    "defaultSkill": null
+    "defaultSkill": "poteto-mode"
   },
   "edit": {
     "label": "Edit",

@@ -1459,11 +1459,67 @@
       status: `<span class="block-topline"><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(words(block.kind))}<span class="block-status${isRunning(block) && !attempt?.inputRequestedAt ? ' running' : ''}">${timing || escape(statusText(currentStatus, attempt))}</span></span>`,
       title: `<span class="block-label">${escape(block.label || words(block.kind))}</span>`,
       description: `<span class="block-description">${escape(description)}</span>`,
-      footer: `<span class="block-bottomline"><span>${escape(block.effectiveSkill || block.skill || (block.suggested ? 'Suggested next step' : 'Choose a skill'))}</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
+      footer: `<span class="block-bottomline"><span data-skill-picker="${escape(block.id)}" title="Choose this block’s skill">${escape(block.effectiveSkill || block.skill || 'Choose a skill')} ▾</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
     };
     return (
       '<span class="block-port top"></span>' + Object.values(parts).join('') + '<span class="block-port bottom"></span>'
     );
+  }
+
+  async function openBlockSkillPicker(blockId) {
+    const block = state.view?.flow.blocks.find((item) => item.id === blockId);
+    if (!block || block.readOnly || isRunning(block)) return;
+    const definition = state.index.catalog.find((item) => item.id === (block.definition ?? block.kind));
+    const issueId = state.issueId;
+    const dialog = document.createElement('dialog');
+    dialog.innerHTML =
+      '<h2>Block skill</h2><label class="field">Skill<select aria-label="Block skill"></select></label><p>Available choices and defaults come from this block type. Extend them in user/flow/block-skills.json or your user configuration.</p><form method="dialog"><button>Close</button></form>';
+    document.body.append(dialog);
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    const picker = window.createSkillSelect(dialog.querySelector('select'), {
+      onChange: async (skill) => {
+        if (state.issueId !== issueId) return dialog.close();
+        if (await action('update', { blockId, changes: { skill: skill === 'none' ? null : skill } })) dialog.close();
+      },
+      onSetup: async (names) => {
+        try {
+          const missing = names.filter((name) => !available.skills.some((skill) => skill.name === name));
+          const result = await post('project-discuss-action', { action: 'create', requestId: crypto.randomUUID() });
+          await post('project-discuss-action', {
+            action: 'send',
+            conversationId: result.selected.id,
+            clientId: crypto.randomUUID(),
+            text:
+              'Install these missing block skills for this project: ' +
+              missing.join(', ') +
+              '. Read user/skills/requirements.json for installation sources. Preserve existing custom skills and verify discovery.',
+            settings: { clarificationSkill: 'none', skills: ['skill-installer'] },
+            attachments: [],
+          });
+          toast('Skill installation requested in Project Discuss.');
+          dialog.close();
+        } catch (error) {
+          showError(error.message);
+        }
+      },
+    });
+    picker.update(
+      [
+        ...(definition?.skills || []).map((name) => ({ kind: 'skill', name, label: name, skill: name })),
+        { kind: 'value', name: 'none', label: 'No skill' },
+      ],
+      block.effectiveSkill || block.skill || 'none'
+    );
+    dialog.querySelector('select').disabled = true;
+    dialog.showModal();
+    let available;
+    try {
+      available = await json('/api/project-discuss-skills');
+      picker.discovered(available.skills);
+      dialog.querySelector('select').disabled = false;
+    } catch (error) {
+      showError(error.message);
+    }
   }
 
   function blockCard(block) {
@@ -2853,6 +2909,8 @@
   );
 
   document.addEventListener('click', (event) => {
+    const skillPicker = event.target.closest('[data-skill-picker]');
+    if (skillPicker) return void openBlockSkillPicker(skillPicker.dataset.skillPicker);
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.hasAttribute('data-destination-open')) {

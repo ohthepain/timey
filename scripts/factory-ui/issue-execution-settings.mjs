@@ -108,6 +108,6 @@ export function executionBlockSkill(block, definition, settings) {
     block.skillExplicit === true || (block.skillExplicit === undefined && block.skill !== definition.defaultSkill);
   if (explicit) return block.skill;
   return ['work', 'tdd', 'edit', 'understand'].includes(block.kind) && settings?.values.skill !== 'none'
-    ? settings?.values.skill || block.skill
-    : block.skill;
+    ? settings?.values.skill || block.skill || definition.defaultSkill
+    : block.skill || definition.defaultSkill;
 }

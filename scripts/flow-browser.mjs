@@ -1,3 +1,4 @@
+import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
 import assert from 'node:assert/strict';
 import {
   copyFileSync,
@@ -227,6 +228,7 @@ function checkExcluded(name) {
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
     ['--investigation-followups', followupsCheck],
+    ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
     ['--issue-results', issueResultsCheck],
@@ -1994,6 +1996,9 @@ try {
       executor.run = run;
     }
     if (issueId) await page.goto('/?issue=' + issueId);
+  });
+  await check('Block skill choices preserve defaults and offer missing-skill setup', async () => {
+    await blockSkillsBrowserChecks({ page, service, project, poll });
   });
   await check(blockDeletionCheck, async () => {
     const deletionIssueId = '20261117-block-deletion-fixture';

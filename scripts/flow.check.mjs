@@ -56,7 +56,7 @@ test('Markdown block defaults apply to new blocks and user definitions keep the 
     beforeExtension.prompt + '\n\nUse the project review steps.'
   );
   rmSync(extensionFile);
-  assert.equal(saved.blocks.find((block) => block.kind === 'work').skill, null);
+  assert.equal(saved.blocks.find((block) => block.kind === 'work').skill, 'poteto-mode');
   assert.deepEqual(catalog.read().entries.find((entry) => entry.id === 'work').skills, [
     'poteto-mode',
     'arena',
@@ -74,7 +74,7 @@ test('Markdown block defaults apply to new blocks and user definitions keep the 
   assert.deepEqual(result.errors, []);
   const created = newFlow(issue, 'dev', result.entries);
   assert.equal(created.blocks.find((block) => block.kind === 'work').skill, 'arena');
-  assert.equal(saved.blocks.find((block) => block.kind === 'work').skill, null);
+  assert.equal(saved.blocks.find((block) => block.kind === 'work').skill, 'poteto-mode');
   const changed = editFlow(saved, { action: 'add', kind: 'project-review' }, result.entries);
   const block = changed.blocks.find((item) => item.definition === 'project-review');
   assert.equal(block.kind, 'work');

@@ -1,3 +1,4 @@
+import { blockSkillSettings, resolveBlockSkills } from './block-skills.mjs';
 import { copyFileSync, constants, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
@@ -222,18 +223,27 @@ export class BlockCatalog {
   #cache = new Map();
   #settings = new Map();
 
-  constructor(project) {
+  constructor(project, options = {}) {
     this.project = project;
+    this.options = options;
   }
 
   read() {
     const errors = [];
+    let skillSettings = { user: {}, project: {} };
+    let skillSettingsError;
+    try {
+      skillSettings = blockSkillSettings(this.project, this.options.userSkillsPath);
+    } catch (error) {
+      skillSettingsError = error.message;
+      errors.push(error.message);
+    }
     const bundled = this.#folder(bundledBlocks, errors);
     const project = this.project ? this.#folder(join(this.project, userBlocks), errors) : { ids: [], entries: {} };
     const entries = [];
     for (const id of new Set([...bundled.ids, ...project.ids])) {
       if (id === 'target') continue;
-      const diagnostics = [];
+      const diagnostics = skillSettingsError ? [skillSettingsError] : [];
       const base = bundled.ids.includes(id) ? this.#content(bundledBlocks, id, diagnostics) : null;
       const override = project.ids.includes(id) ? this.#content(project.directory, id, diagnostics) : null;
       const visible = override?.description ? override : (base ?? override);
@@ -268,7 +278,22 @@ export class BlockCatalog {
         override?.skills === undefined ? base?.skills : undefined,
         ...(id === 'merge' ? [override?.mergeWorkflow === undefined ? base?.mergeWorkflow : undefined] : []),
       ];
+      const baseSkills = override?.skills ?? base?.skills ?? [];
+      const configuredDefault = Object.hasOwn(project.entries[id] || {}, 'defaultSkill')
+        ? project.entries[id].defaultSkill
+        : (bundled.entries[id]?.defaultSkill ?? null);
+      let resolvedSkills = {
+        skills: baseSkills,
+        defaultSkill: baseSkills.includes(configuredDefault) ? configuredDefault : null,
+      };
+      try {
+        resolvedSkills = resolveBlockSkills(id, resolvedSkills, skillSettings);
+      } catch (error) {
+        diagnostics.push(error.message);
+        errors.push(error.message);
+      }
       const effective = [
+        resolvedSkills,
         visible.text,
         override?.path,
         override?.text,
@@ -291,6 +316,7 @@ export class BlockCatalog {
         defaultSkill: null,
         ...bundled.entries[id],
         ...project.entries[id],
+        ...resolvedSkills,
         description,
         details: override?.details ?? base?.details ?? [],
         artifacts: override?.artifacts ?? base?.artifacts ?? [],

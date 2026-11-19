@@ -10,7 +10,10 @@ const requiredSkillSets = readRequiredSkillSets(process.cwd());
 test('setup identifies incomplete collections and requests installation from their sources', () => {
   const result = skillSetup([{ name: 'poteto-mode' }]);
   assert.equal(result.needed, true);
-  assert.deepEqual(result.sets[0].missing, ['setup-pstack', 'grilling']);
+  assert.deepEqual(
+    result.sets[0].missing,
+    requiredSkillSets[0].skills.filter((name) => name !== 'poteto-mode')
+  );
   for (const set of requiredSkillSets) assert.ok(result.prompt.includes(set.source));
   assert.match(result.prompt, /Preserve existing custom skills/);
 });

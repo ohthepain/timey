@@ -1896,3 +1896,32 @@ and Continue control rather than repeating capture.
 ## Shared issue queue
 
 In [shared queue mode](../plans/shared-issue-queue.md), the issue strategy claims an issue on the remote before starting and keeps the claim until Factory confirms the report checkpoint on the queue branch. Timey publishes new checkpoints directly using its GitHub App. Use the issue page to retry publication or reconcile an interrupted claim. Queue pull requests already in progress retain their existing merge and confirmation controls. Legacy assignment launches are unavailable in this mode.
+
+## Block skill choices
+
+Click the skill label at the bottom of a flow block to choose its skill. The
+selector checks installed skills, disables missing choices, and offers Set up
+skills through Project Discuss. No skill is the last choice and records an
+explicit opt-out. Selecting or configuring a skill starts no issue work.
+
+Factory's installed Markdown definitions provide each block type's skill list,
+and `factory/system/flow/blocks/catalog.json` provides its default. Work defaults
+to `poteto-mode`. Existing blocks without an explicit skill choice inherit the
+current default; explicit choices, including No skill, remain unchanged.
+
+Extend block types with personal settings in
+`~/.config/timey/block-skills.json` (or `$XDG_CONFIG_HOME/timey/block-skills.json`)
+and project settings in `user/flow/block-skills.json`. Both files use this shape:
+
+```json
+{
+  "work": { "skills": ["my-work-skill"], "defaultSkill": "my-work-skill" },
+  "design": { "skills": ["team-design"] }
+}
+```
+
+Lists add to the installed choices. Project defaults override personal defaults;
+use `null` for no default. Install custom skills into `user/skills/<name>/SKILL.md`
+and declare any installation URLs in `user/skills/requirements.json`. Refresh the
+workspace after changing configuration. Existing per-project Markdown overrides
+remain available for replacing the base list.

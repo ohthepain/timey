@@ -2,6 +2,11 @@
 
 ## Commands and evidence
 
+`node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
+checks per-block defaults, personal/project extensions and explicit skill choices.
+`node scripts/flow-browser.mjs --block-skills` drives the graph skill picker,
+missing-skill setup option, and saved No skill/skill selections in a disposable project.
+
 `pnpm run test:factory:env` checks project `.env` credential loading, exported
 environment precedence, and idempotent setup that preserves unrelated values and
 rejects invalid PEM input before writing. It uses disposable directories and keys.
