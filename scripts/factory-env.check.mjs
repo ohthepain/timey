@@ -1,0 +1,72 @@
+import { generateKeyPairSync } from 'node:crypto';
+import { setupFactoryEnv } from './factory-setup.mjs';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { githubAppCredentials } from './factory-ui/github-app.mjs';
+
+test('factory credentials load from the owning project .env without being exported', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'factory-env-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(
+    join(root, '.env'),
+    'TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID=123\nTIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID=456\nTIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY="test-key\\nsecond-line"\n'
+  );
+  const credentials = githubAppCredentials(root, 'fixture/repo');
+  assert.ok(credentials);
+  assert.equal(credentials.config.appId, 123);
+  assert.equal(credentials.config.installationId, 456);
+  assert.equal(credentials.config.privateKey, 'test-key\nsecond-line');
+  assert.equal(process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID, undefined);
+});
+
+test('exported credentials override project values without changing process.env', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'factory-env-precedence-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const name = 'TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID';
+  const original = process.env[name];
+  t.after(() => {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
+  });
+  process.env[name] = '999';
+  writeFileSync(
+    join(root, '.env'),
+    'TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID=123\nTIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID=456\nTIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY=test-key\n'
+  );
+  assert.equal(githubAppCredentials(root, 'fixture/repo').config.appId, 999);
+  assert.equal(process.env[name], '999');
+});
+
+test('setup preserves existing .env contents and is idempotent with a multiline PEM', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'factory-setup-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 1024,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  const original = '# Existing settings\nOTHER_SETTING=keep-me\nTIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID=123\n';
+  writeFileSync(join(root, '.env'), original);
+  assert.equal(setupFactoryEnv(root, { appId: '999', installationId: '456', privateKey }).added, 2);
+  const configured = readFileSync(join(root, '.env'), 'utf8');
+  assert.ok(configured.startsWith(original));
+  assert.equal(githubAppCredentials(root, 'fixture/repo').config.privateKey, privateKey);
+  assert.equal(githubAppCredentials(root, 'fixture/repo').config.appId, 123);
+  assert.equal(setupFactoryEnv(root).added, 0);
+  assert.equal(readFileSync(join(root, '.env'), 'utf8'), configured);
+  assert.equal(readFileSync(join(root, '.gitignore'), 'utf8'), '.env\n');
+});
+
+test('invalid setup never writes a partial credential file', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'factory-setup-invalid-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, '.env'), 'UNCHANGED=yes\n');
+  assert.throws(
+    () => setupFactoryEnv(root, { appId: '123', installationId: '456', privateKey: 'invalid' }),
+    /valid GitHub App PEM/
+  );
+  assert.equal(readFileSync(join(root, '.env'), 'utf8'), 'UNCHANGED=yes\n');
+});

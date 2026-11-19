@@ -2,6 +2,10 @@
 
 ## Commands and evidence
 
+`pnpm run test:factory:env` checks project `.env` credential loading, exported
+environment precedence, and idempotent setup that preserves unrelated values and
+rejects invalid PEM input before writing. It uses disposable directories and keys.
+
 `pnpm run test:project-discuss` checks saved project conversations, immutable
 message settings and attachment copies, explicit queue/Stop/Retry behavior,
 native tool and permission ownership, skill invocation policy, and guarded

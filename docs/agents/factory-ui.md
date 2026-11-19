@@ -1835,7 +1835,20 @@ original human plan-approval receipt, with its content hash and issue identity c
 
 ## Factory GitHub App credentials
 
-Server-owned issue strategy operations may use `.issues/github-app.json` in the
+Run `pnpm factory:setup -- --project /absolute/project` to configure GitHub App
+credentials in that project's `.env`. The installer preserves existing values,
+prompts for missing App and installation IDs and a PEM file path, and copies the
+key into `.env` with escaped newlines. It validates the PEM before writing,
+restricts a written `.env` to owner access, and adds `.env` to `.gitignore`.
+It never prints the key. Running it again validates existing credentials without
+rewriting them. Edit `.env` directly when replacing configured values.
+
+Factory reads these three credentials directly from the owning project's `.env`
+without exporting them to worker process environments. Exported environment
+variables take precedence. Normal launches and restarts need no `--env-file`
+flag. Skill `requirements.json` is tracked configuration and never stores secrets.
+
+The existing compatibility path for server-owned issue strategy operations is `.issues/github-app.json` in the
 owning project (this directory is excluded from Git):
 
 ```json
