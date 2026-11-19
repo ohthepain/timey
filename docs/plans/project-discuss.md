@@ -194,3 +194,10 @@ installation request in the selected chat (or creates a chat if needed), using
 No Grilling and no selected skills. It preserves the composer draft and uses
 normal queue and permission controls. Opening Discuss starts no installation.
 Use Refresh skills afterward to update the control.
+
+Factory supplies its own `skill-installer` in
+`factory/system/skills/skill-installer/SKILL.md`. It installs complete skill
+folders into the active project's `user/skills`, with known sources for pstack
+and Matt Pocock's collection. Factory-owned skills take precedence over host
+Codex skills with the same name, so setup does not depend on a personal Codex
+installation or install into its private directory.

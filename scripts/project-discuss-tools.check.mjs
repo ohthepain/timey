@@ -234,3 +234,22 @@ test('archive batch lets the server handle other events before the whole selecti
   await operation;
   assert.equal(f.service.issueStorageTasks.size, 0);
 });
+
+test('factory skill-installer takes precedence over the host Codex installer', async (t) => {
+  const f = fixture(t);
+  const host = join(f.root, 'host-installer.md');
+  writeFileSync(host, '---\nname: skill-installer\ndescription: Host-only installer\n---\nInstall into Codex home.\n');
+  const connection = {
+    ready: async () => {},
+    call: async () => ({ data: [{ skills: [{ name: 'skill-installer', path: host, enabled: true }] }] }),
+  };
+  const skills = await listAvailableSkills(connection, f.root);
+  const matches = skills.filter((skill) => skill.name === 'skill-installer');
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].source, 'Factory');
+  const instructions = readFileSync(matches[0].path, 'utf8');
+  assert.match(instructions, /user\/skills/);
+  assert.match(instructions, /mattpocock\/skills/);
+  assert.match(instructions, /cursor\/plugins/);
+  assert.doesNotMatch(instructions, /\.codex\/skills|CODEX_HOME/);
+});

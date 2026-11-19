@@ -33,7 +33,11 @@ export async function listAvailableSkills(connection, cwd) {
       const content = readFileSync(path, 'utf8');
       const metadata = skillMetadata(content);
       if (typeof metadata.name !== 'string' || !metadata.name) continue;
-      if (found.some((entry) => entry.name === metadata.name)) continue;
+      const duplicate = found.findIndex((entry) => entry.name === metadata.name);
+      if (duplicate !== -1) {
+        if (source !== 'Factory') continue;
+        found.splice(duplicate, 1);
+      }
       found.push({
         name: metadata.name,
         path,
