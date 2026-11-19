@@ -25,6 +25,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     createProvider: () => ({
       async turn(session, message, { signal, event, retain }) {
         calls.push(message);
+        if (message.text === 'Fail response') throw Error('Fixture provider failure');
         retain({ threadId: 'fixture-' + session.id, startup: { status: 'ready' } });
         event({ method: 'item/agentMessage/delta', params: { delta: 'Live partial response' } });
         event({
@@ -208,4 +209,19 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'Discuss overflows narrow viewport'
   );
   await page.setViewportSize({ width: 1440, height: 960 });
+  await page.locator('#discuss-draft').fill('Fail response');
+  await page.locator('#discuss-draft').press('Enter');
+  await poll(
+    () => attachedSession().status,
+    (status) => status === 'paused',
+    'Failed chat did not pause'
+  );
+  await page.locator('#discuss-draft').fill('Continue after failure');
+  await page.locator('#discuss-draft').press('Enter');
+  await poll(
+    () => attachedSession().messages.at(-1)?.status,
+    (status) => status === 'completed',
+    'New message remained queued after failure'
+  );
+  assert.equal(calls.at(-1).text, 'Continue after failure');
 }

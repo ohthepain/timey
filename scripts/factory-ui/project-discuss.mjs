@@ -254,7 +254,14 @@ export class ProjectDiscuss {
         const message = this.envelope(session, { ...input, clientId });
         this.change(id, (s) => {
           if (s.title === 'New conversation') s.title = message.text.slice(0, 80) || 'Attached files';
-          s.queue.push(message);
+          const failed =
+            !s.activeMessageId && s.messages.findLast((entry) => entry.role === 'assistant')?.status === 'failed';
+          if (failed) {
+            s.paused = false;
+            s.queue.unshift(message);
+          } else {
+            s.queue.push(message);
+          }
           s.draft = { text: '', attachments: [] };
         });
       }

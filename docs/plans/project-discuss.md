@@ -74,6 +74,11 @@ These ordinary query results do not import issue conversations or establish
 ongoing updates.
 
 Chat message editing and retries are independent of issue execution.
+A failed response pauses queued work and preserves its error. Sending a new
+message explicitly continues the chat with that message's current settings,
+ahead of the older queue. Reading or refreshing never resumes failed work.
+Explicit Stop and uncertain interrupted turns retain their existing Resume/Retry
+requirements.
 
 ## Message editing and retries
 
