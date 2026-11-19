@@ -1305,20 +1305,24 @@ try {
   });
   await check('The responsive workspace keeps controls usable', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await block(workId);
-    await page.locator('#block-form').scrollIntoViewIfNeeded();
-    assert.equal(await page.locator('#block-form [name="label"]').isVisible(), true);
-    assert.equal(await page.locator('#new-issue').isVisible(), true);
-    assert.ok(
-      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-      'The page overflows its viewport.'
-    );
-    await screenshot('flow-responsive');
-    await page.locator('#new-issue').click();
-    await page.locator('#capture-description').fill('Responsive issue draft');
-    assert.equal(await page.locator('#capture-submit').isVisible(), true);
-    await screenshot('capture-responsive');
-    await page.locator('[aria-label="Close new issue"]').click();
+    try {
+      await block(workId);
+      await page.locator('#block-form').scrollIntoViewIfNeeded();
+      assert.equal(await page.locator('#block-form [name="label"]').isVisible(), true);
+      assert.equal(await page.locator('#new-issue').isVisible(), true);
+      assert.ok(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        'The page overflows its viewport.'
+      );
+      await screenshot('flow-responsive');
+      await page.locator('#new-issue').click();
+      await page.locator('#capture-description').fill('Responsive issue draft');
+      assert.equal(await page.locator('#capture-submit').isVisible(), true);
+      await screenshot('capture-responsive');
+      await page.locator('[aria-label="Close new issue"]').click();
+    } finally {
+      await page.setViewportSize({ width: 1440, height: 960 });
+    }
   });
   await check('Column edge gestures stay local and do not refresh the page', async () => {
     const touchContext = await browser.newContext({
@@ -1395,7 +1399,7 @@ try {
       .and(page.getByRole('combobox', { name: 'Worktree', exact: true }));
     assert.equal(await menu.isDisabled(), true);
     assert.equal(await menu.getAttribute('title'), 'No worktree has been created for this issue.');
-    const checkout = join(project, '.issues', 'issue-checkout');
+    const checkout = join(project, '.issues/issue-work', issueId);
     const branch = 'codex/issue-' + issueId;
     const base = git(project, 'rev-parse', 'HEAD');
     git(project, 'worktree', 'add', '-qb', branch, checkout);
@@ -1757,6 +1761,7 @@ try {
     await page.goto(new URL('/?issue=' + previous, page.url()).href);
   });
   await check('Worktree Delete requires confirmation and shows why the menu is disabled afterward', async () => {
+    const closedIssueId = issueId;
     issueId = worktreeIssueId;
     assert.ok(issueId);
     await page.goto(new URL('/flow?issue=' + issueId, page.url()).href);
@@ -1798,7 +1803,10 @@ try {
     assert.equal(await menu.getAttribute('title'), 'This issue’s worktree has been deleted.');
     assert.throws(() => readFileSync(join(checkout, 'source.txt')), /ENOENT/);
     assert.equal(git(project, 'branch', '--list', branch), '');
-    assert.equal(service.flows.selected(issueId).closure.reason, 'duplicate');
+    assert.equal(service.flows.selected(closedIssueId).closure.reason, 'fixed');
+    issueId = closedId;
+    await page.goto(new URL('/flow?issue=' + issueId, page.url()).href);
+    await page.getByRole('img', { name: 'Issue closed' }).waitFor();
   });
   await check('Closed issues can be reopened or archived from Flow', async () => {
     const archive = page.getByRole('combobox', { name: 'Archive', exact: true });
@@ -1833,12 +1841,12 @@ try {
     assert.equal(await archive.locator('option[value="cleanup"]').textContent(), 'Run Cleanup');
   });
   await check('The inspector delete button confirms before removing a block', async () => {
-    issueId = '20261116-manual-fixed-fixture';
+    issueId = worktreeIssueId;
     const issue = service.flows.selected(issueId);
     const flow = service.flows.read(issue);
     await service.flows.action({ action: 'add', issueId, revision: flow.revision, kind: 'advice' });
     const added = service.flows.read(issue).blocks.find((item) => item.kind === 'advice');
-    await page.goto('/?issue=' + issueId);
+    await page.goto('/flow?issue=' + issueId);
     await block('request');
     const remove = page.getByRole('button', { name: 'Delete block', exact: true });
     assert.equal(await remove.isDisabled(), true);
@@ -2059,6 +2067,8 @@ try {
         assert.equal(await waiting.isVisible(), false);
         assert.equal(page.url(), url);
         await page.reload();
+        await toggle.waitFor();
+        if (await toggle.isChecked()) await toggle.uncheck();
 
         const release = Promise.withResolvers();
         await page.route('**/api/health', async (route) => {
@@ -2072,7 +2082,7 @@ try {
           assert.equal(response.status(), 200);
           await route.abort();
         });
-        await toggle.click();
+        await toggle.check();
         await waiting.waitFor();
         assert.equal(page.url(), url);
         assert.equal(clicks, 1);
@@ -2086,7 +2096,7 @@ try {
         assert.equal(await waiting.isVisible(), false);
         assert.equal(clicks, 1);
         await page.unroute('**/api/server-pause');
-        await toggle.click();
+        await toggle.uncheck();
         await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
       }
     }
