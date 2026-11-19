@@ -24,6 +24,7 @@ import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-bl
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { requiredPRReview } from './factory-ui/flow-human-input.mjs';
+import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
 import { git } from './factory-ui/common.mjs';
 import { flowIssueFoldersBrowserChecks } from './flow-browser-issue-folders.mjs';
 import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mjs';
@@ -204,6 +205,7 @@ const { chromium } = playwrightRequire('playwright');
 let browser;
 let page;
 let issueId;
+let worktreeIssueId;
 let addedId;
 let workId;
 let passed = false;
@@ -519,6 +521,7 @@ try {
     await page.locator('#capture-type').selectOption('feature');
     const data = await clickAction(page.locator('#capture-submit'));
     issueId = data.issue.id;
+    worktreeIssueId = issueId;
     assert.equal(data.flow.folder, 'Browser folder');
     const createdIssue = page.locator('#open-issues [data-issue="' + issueId + '"]');
     await createdIssue.waitFor();
@@ -1393,7 +1396,7 @@ try {
     assert.equal(await menu.isDisabled(), true);
     assert.equal(await menu.getAttribute('title'), 'No worktree has been created for this issue.');
     const checkout = join(project, '.issues', 'issue-checkout');
-    const branch = 'fixture-issue-worktree';
+    const branch = 'codex/issue-' + issueId;
     const base = git(project, 'rev-parse', 'HEAD');
     git(project, 'worktree', 'add', '-qb', branch, checkout);
     const remote = join(output, 'remote.git');
@@ -1407,7 +1410,7 @@ try {
       {
         ...flow,
         destination: { branch: 'older' },
-        workspace: { checkout, branch, base },
+        workspace: { checkout: realpathSync(checkout), branch, base },
       },
       flow.revision
     );
@@ -1516,8 +1519,10 @@ try {
     saved.destination = { branch: 'older', pr: 17, url, title: 'Update the folder controls' };
     saved = service.flows.store.save(saved, saved.revision);
     await page.reload();
+    await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
     const menu = page.locator('#issue-pr-menu');
-    await menu.getByText('PR#17', { exact: true }).click();
+    await menu.waitFor();
+    await menu.locator('summary').click({ force: true });
     const link = menu.getByRole('link', { name: 'Open', exact: true });
     await link.waitFor();
     assert.equal(await link.getAttribute('href'), url);
@@ -1752,11 +1757,27 @@ try {
     await page.goto(new URL('/?issue=' + previous, page.url()).href);
   });
   await check('Worktree Delete requires confirmation and shows why the menu is disabled afterward', async () => {
-    const { checkout, branch } = (await view()).flow.workspace;
+    issueId = worktreeIssueId;
+    assert.ok(issueId);
+    await page.goto(new URL('/flow?issue=' + issueId, page.url()).href);
+    await page.locator('[data-node="__base"]').waitFor();
+    const flow = service.flows.read(service.flows.selected(issueId));
+    assert.ok(flow.workspace?.checkout);
+    const { checkout, branch } = flow.workspace;
+    if (!service.lifecycleRuns[issueId]?.work) {
+      saveLifecycle(
+        service,
+        { issueId, events: [] },
+        {
+          work: { checkout: realpathSync(checkout), branch, config: deliveryConfig },
+        }
+      );
+    }
     const menu = page.getByRole('combobox', { name: 'Worktree', exact: true });
-    const cancel = page.waitForEvent('dialog');
+    await menu.waitFor();
+    const previewPromise = page.waitForEvent('dialog');
     await menu.selectOption('delete');
-    const preview = await cancel;
+    const preview = await previewPromise;
     assert.match(preview.message(), /Delete this issue worktree/);
     assert.ok(preview.message().includes(realpathSync(checkout)));
     await preview.dismiss();
@@ -1777,7 +1798,7 @@ try {
     assert.equal(await menu.getAttribute('title'), 'This issue’s worktree has been deleted.');
     assert.throws(() => readFileSync(join(checkout, 'source.txt')), /ENOENT/);
     assert.equal(git(project, 'branch', '--list', branch), '');
-    assert.equal(service.flows.selected(issueId).closure.reason, 'fixed');
+    assert.equal(service.flows.selected(issueId).closure.reason, 'duplicate');
   });
   await check('Closed issues can be reopened or archived from Flow', async () => {
     const archive = page.getByRole('combobox', { name: 'Archive', exact: true });
