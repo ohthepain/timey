@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import { requiredSkillSets } from './factory-ui/required-skills.mjs';
-import { writeFileSync, readFileSync } from 'node:fs';
+import { readRequiredSkillSets } from './factory-ui/required-skills.mjs';
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export async function projectDiscussBrowserChecks({ page, service, project, poll, screenshot }) {
+  const requiredSkillSets = readRequiredSkillSets(process.cwd());
+  const skillsDirectory = join(project, 'user/skills');
+  mkdirSync(skillsDirectory, { recursive: true });
+  writeFileSync(join(skillsDirectory, 'requirements.json'), JSON.stringify(requiredSkillSets));
   const calls = [];
   let availableSkills = ['grilling', 'grill-with-docs'].map((name) => ({
     name,

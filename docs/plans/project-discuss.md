@@ -184,8 +184,11 @@ with `kind: skill` declare their skill name; entries with `kind: value` are
 ordinary choices with no skill dependency. **No Grilling** uses `kind: value`
 and appears last, after any setup action.
 
-The registry in `scripts/factory-ui/required-skills.mjs` maps skills to pstack
-by poteto and Matt Pocock's collections and their installation sources. Setup
+Each project declares its own required skill sets in `user/skills/requirements.json`.
+Each entry contains `name`, optional `source` (the installation URL), and `skills`
+(the required skill names). This project registers pstack and Matt Pocock's
+collection. Other projects can use different sources or declare project-owned
+skills without a source URL. No configuration means no required collections. Setup
 readiness is scoped to the skill options in this control, rather than unrelated
 skills elsewhere in those collections.
 
@@ -197,7 +200,12 @@ Use Refresh skills afterward to update the control.
 
 Factory supplies its own `skill-installer` in
 `factory/system/skills/skill-installer/SKILL.md`. It installs complete skill
-folders into the active project's `user/skills`, with known sources for pstack
-and Matt Pocock's collection. Factory-owned skills take precedence over host
+folders into the active project's `user/skills`, using the current project’s configured installation sources. Factory-owned skills take precedence over host
 Codex skills with the same name, so setup does not depend on a personal Codex
 installation or install into its private directory.
+
+Selected Factory and Project skill instructions are included as text in the
+actual turn, with their source path for resolving supporting resources. Native
+Codex skill discovery does not know about the factory's custom directories;
+passing only a native skill reference can silently omit these instructions.
+Host-owned skills retain native skill inputs.

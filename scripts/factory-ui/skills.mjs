@@ -79,7 +79,14 @@ export function selectedSkills(skills, names) {
 }
 
 export function skillInputs(skills) {
-  return skills.map(({ name, path }) => ({ type: 'skill', name, path }));
+  return skills.map(({ name, path, source }) =>
+    source === 'Factory' || source === 'Project'
+      ? {
+          type: 'text',
+          text: `Selected project skill: ${name}\nSkill file: ${path}\nResolve supporting files relative to this skill file. Follow these instructions for this request:\n\n${readFileSync(path, 'utf8')}`,
+        }
+      : { type: 'skill', name, path }
+  );
 }
 
 export function publicSkills(skills) {

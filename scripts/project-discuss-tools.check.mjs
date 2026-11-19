@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createProjectDiscussTools } from './factory-ui/project-discuss-tools.mjs';
 import { gitFixture } from './git-fixture.mjs';
-import { listAvailableSkills } from './factory-ui/skills.mjs';
+import { listAvailableSkills, skillInputs } from './factory-ui/skills.mjs';
 
 function fixture(t) {
   const { root } = gitFixture(t, 'project-tool-');
@@ -249,7 +249,16 @@ test('factory skill-installer takes precedence over the host Codex installer', a
   assert.equal(matches[0].source, 'Factory');
   const instructions = readFileSync(matches[0].path, 'utf8');
   assert.match(instructions, /user\/skills/);
-  assert.match(instructions, /mattpocock\/skills/);
-  assert.match(instructions, /cursor\/plugins/);
+  assert.match(instructions, /user\/skills\/requirements.json/);
   assert.doesNotMatch(instructions, /\.codex\/skills|CODEX_HOME/);
+});
+
+test('factory skill contents reach the turn without relying on native skill discovery', async (t) => {
+  const f = fixture(t);
+  const skills = await listAvailableSkills({ ready: async () => {}, call: async () => ({ data: [] }) }, f.root);
+  const installer = skills.find((skill) => skill.name === 'skill-installer');
+  const input = skillInputs([installer]);
+  assert.equal(input[0].type, 'text');
+  assert.ok(input[0].text.includes(readFileSync(installer.path, 'utf8')));
+  assert.ok(input[0].text.includes(installer.path));
 });

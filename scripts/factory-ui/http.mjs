@@ -401,7 +401,8 @@ async function read(service, request, response, owner) {
         skills,
         setup: skillSetup(
           skills,
-          clarificationSkills.filter((entry) => entry.kind === 'skill').map((entry) => entry.skill)
+          clarificationSkills.filter((entry) => entry.kind === 'skill').map((entry) => entry.skill),
+          service.root
         ),
       };
     },

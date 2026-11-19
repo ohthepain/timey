@@ -11,16 +11,14 @@ file and shell tools and the source repository's installation documentation.
 
 ## Sources
 
-When the person names one of these collections, use its official source without
-asking for a link:
+Read the current project's `user/skills/requirements.json` first. It lists skill
+sets with a name, an optional installation source URL, and required skill names.
+Use the matching project's source rather than guessing another repository. A
+set without a source contains project-owned skills; inspect the project files
+and history for those skills. Do not substitute a similarly named public skill.
 
-- Matt Pocock skills: https://github.com/mattpocock/skills. Inspect `skills/` and
-  the README for the current collection layout.
-- pstack by poteto: https://github.com/cursor/plugins/tree/main/pstack. Inspect
-  `pstack/skills/` and `pstack/README.md` for the current collection layout.
-
-For another named collection, find its official repository before asking the
-person for a link. If the source cannot be established, ask for it.
+If the requested collection is not configured, find its official repository
+before asking the person for a link. If its source cannot be established, ask.
 
 ## Install
 

@@ -1,6 +1,11 @@
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { requiredSkillSets, skillSetup } from './factory-ui/required-skills.mjs';
+import { readRequiredSkillSets, skillSetup } from './factory-ui/required-skills.mjs';
+
+const requiredSkillSets = readRequiredSkillSets(process.cwd());
 
 test('setup identifies incomplete collections and requests installation from their sources', () => {
   const result = skillSetup([{ name: 'poteto-mode' }]);
@@ -32,4 +37,21 @@ test('a control checks only and all of its skill options', () => {
       [missing]
     );
   }
+});
+
+test('projects define independent required sets and installation URLs, including local skills', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'timey-skill-config-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.deepEqual(readRequiredSkillSets(root), []);
+  mkdirSync(join(root, 'user/skills'), { recursive: true });
+  const sets = [
+    { name: 'Custom collection', source: 'https://example.com/team/skills', skills: ['custom'] },
+    { name: 'Local', skills: ['local-skill'] },
+  ];
+  writeFileSync(join(root, 'user/skills/requirements.json'), JSON.stringify(sets));
+  assert.deepEqual(readRequiredSkillSets(root), sets);
+  const setup = skillSetup([{ name: 'local-skill' }], undefined, root);
+  assert.match(setup.prompt, /https:\/\/example.com\/team\/skills/);
+  assert.doesNotMatch(setup.prompt, /mattpocock|cursor/);
+  assert.equal(skillSetup([{ name: 'local-skill' }, { name: 'custom' }], undefined, root).needed, false);
 });
