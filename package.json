@@ -42,7 +42,8 @@
     "test:project-home": "node --test scripts/project-home.check.mjs scripts/project-automate-me.check.mjs",
     "test:project-home:browser": "node scripts/flow-browser.mjs --project-home",
     "test:project-discuss": "node --test scripts/project-discuss.check.mjs scripts/project-discuss-provider.check.mjs scripts/project-discuss-tools.check.mjs",
-    "test:project-discuss:browser": "node scripts/flow-browser.mjs --project-discuss"
+    "test:project-discuss:browser": "node scripts/flow-browser.mjs --project-discuss",
+    "update:playwright": "pnpm exec playwright-cli install-browser chromium"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.46",
