@@ -41,7 +41,7 @@
     "test:folder-settings:browser": "node scripts/flow-browser.mjs --folder-settings",
     "test:project-home": "node --test scripts/project-home.check.mjs scripts/project-automate-me.check.mjs",
     "test:project-home:browser": "node scripts/flow-browser.mjs --project-home",
-    "test:project-discuss": "node --test scripts/project-discuss.check.mjs scripts/project-discuss-provider.check.mjs scripts/project-discuss-tools.check.mjs",
+    "test:project-discuss": "node --test scripts/project-discuss.check.mjs scripts/project-discuss-provider.check.mjs scripts/project-discuss-tools.check.mjs scripts/required-skills.check.mjs",
     "test:project-discuss:browser": "node scripts/flow-browser.mjs --project-discuss",
     "update:playwright": "pnpm exec playwright-cli install-browser chromium"
   },

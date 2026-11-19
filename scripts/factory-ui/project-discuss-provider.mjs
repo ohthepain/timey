@@ -78,7 +78,10 @@ class ProjectDiscussProvider {
       const available = await this.skills();
       const selected = selectedSkills(available, message.settings.skills || []);
       const clarification = available.find((skill) => skill.name === message.settings.clarificationSkill);
-      requireThat(clarification, 'The selected clarification skill is unavailable. Refresh skills or choose another.');
+      requireThat(
+        message.settings.clarificationSkill === 'none' || clarification,
+        'The selected clarification skill is unavailable. Choose No Grilling or set up skills.'
+      );
       const instructions = this.instructions(available, clarification);
       await this.attach(session, message.settings, instructions);
       context.signal.throwIfAborted();
@@ -107,8 +110,10 @@ class ProjectDiscussProvider {
       .map(({ name, description, path }) => ({ name, description, path }));
     return (
       adapter +
-      '\nExplicitly chosen clarification skill (invoke only for unresolved ambiguity): ' +
-      JSON.stringify({ name: clarification.name, path: clarification.path }) +
+      (clarification
+        ? '\nExplicitly chosen clarification skill (invoke only for unresolved ambiguity): ' +
+          JSON.stringify({ name: clarification.name, path: clarification.path })
+        : '\nNo Grilling: do not invoke a clarification or grilling skill. Ask ordinary questions only when needed.') +
       '\nAvailable implicitly invocable skills (read their instructions before applying): ' +
       JSON.stringify(catalogue)
     );

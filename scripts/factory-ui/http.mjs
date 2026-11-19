@@ -1,3 +1,4 @@
+import { skillSetup } from './required-skills.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -394,7 +395,10 @@ async function read(service, request, response, owner) {
     '/api/project-local-branch-cleanup': () => localBranchCleanup(service).preview(url.searchParams.get('ref')),
     '/api/project-archive-deletion': () => archiveDeletion(service).preview(),
     '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
-    '/api/project-discuss-skills': async () => ({ skills: await projectDiscuss(service).skills() }),
+    '/api/project-discuss-skills': async () => {
+      const skills = await projectDiscuss(service).skills();
+      return { skills, setup: skillSetup(skills) };
+    },
     '/api/investigation': () =>
       projectHome(service).investigations.issueView(new URL(request.url, 'http://localhost').searchParams.get('issue')),
     '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),

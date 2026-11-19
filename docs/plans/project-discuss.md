@@ -109,6 +109,8 @@ sessions are deliberately limited to drafting reviewed skill changes.
   whenever a request remains ambiguous after checking available facts. This is
   an ordinary skill invocation, with no special looping mechanism or autonomous
   extra turns. The skill asks questions and waits for the person's answers.
+- **No Grilling** is the default for new conversations and invokes no clarification
+  skill. Existing conversations retain their saved choice.
 - Available choices include **Grill Me** (`grill-me`), **Grill with Docs**
   (`grill-with-docs`), and **Grilling** (`grilling`). Retain the selected choice
   for the conversation until changed. Clear requests proceed directly.
@@ -167,3 +169,19 @@ Actual dictation uses browser speech recognition and requires browser support an
 microphone permission. Unsupported browsers retain normal text input and explain
 why dictation is unavailable. Real closed issues have not been archived; the
 user's live Discuss archive test remains a separate acceptance step.
+
+## Skill setup
+
+Discuss shows **Set up skills** when its discovered skill list lacks a supported
+collection's core skills. The registry in `scripts/factory-ui/required-skills.mjs`
+records collection sources and the core skills used for readiness:
+pstack by poteto (`poteto-mode`, `setup-pstack`, `grilling`) and Matt Pocock's
+skills (`grill-me`, `grill-with-docs`). This checks core availability, not every
+optional upstream skill or its version.
+
+Selecting Set up skills sends a visible installation request in the selected chat
+(or creates a chat if needed), using No Grilling and no selected skills. It
+preserves the composer draft and uses normal queue and permission controls. The
+prompt requests the missing collections, preserves custom skills, and asks the
+agent to verify discovery. No installation runs merely from opening Discuss.
+Use Refresh skills after installation to update readiness.

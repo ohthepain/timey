@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { requiredSkillSets } from './factory-ui/required-skills.mjs';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export async function projectDiscussBrowserChecks({ page, service, project, poll, screenshot }) {
   const calls = [];
+  let availableSkills = [{ name: 'grilling', description: 'Ask questions', source: 'Project', icon: '✦' }];
   const choices = {
     defaults: { model: 'model-a', effort: 'high' },
     models: [
@@ -14,7 +16,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   };
   service.projectDiscussOptions = {
     modelSettings: () => choices,
-    skills: async () => [{ name: 'grilling', description: 'Ask questions', source: 'Project', icon: '✦' }],
+    skills: async () => availableSkills,
     createProvider: () => ({
       async turn(session, message, { signal, event, retain }) {
         calls.push(message);
@@ -172,6 +174,23 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await page.locator(`[data-discuss-edit="${held.id}"]`).click();
   assert.equal(await page.locator('#discuss-draft').inputValue(), 'Hold response');
   assert.equal(calls.length, 4);
+  await page.locator('#discuss-draft').fill('Keep my draft during setup');
+  await page.locator('#discuss-setup-skills').waitFor();
+  await page.locator('#discuss-setup-skills').click();
+  await page.locator('#discuss-resume').click();
+  await poll(
+    () => calls.length,
+    (value) => value === 5,
+    'Skill setup prompt did not dispatch.'
+  );
+  assert.equal(calls[4].settings.clarificationSkill, 'none');
+  assert.deepEqual(calls[4].settings.skills, []);
+  assert.match(calls[4].text, /Set up the missing supported skill collections/);
+  assert.equal(await page.locator('#discuss-draft').inputValue(), 'Keep my draft during setup');
+  availableSkills = requiredSkillSets.flatMap((set) => set.skills.map((name) => ({ name })));
+  await page.locator('#discuss-refresh-skills').click();
+  await page.locator('#discuss-setup-skills').waitFor({ state: 'hidden' });
+  await page.locator('#discuss-clarification').selectOption('none');
   await screenshot('project-discuss');
   await page.setViewportSize({ width: 640, height: 900 });
   assert.equal(
