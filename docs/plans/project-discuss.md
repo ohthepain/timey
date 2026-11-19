@@ -221,3 +221,9 @@ from revision `abeeaf95660ba9e8b7c753eb38f441ca707a8823`. An independent
 comparison found no missing or changed upstream files. The first attempt copied
 only two wrapper skills; the retained chat records that failure and the explicit
 request that completed the collection.
+
+Chat grilling options now come from `factory/system/chat/grilling.md`, with
+additive project `user/chat/grilling.md` and personal Markdown extensions. The
+shared selector keeps No Grilling last and offers Add skill to open the project
+extension. Block selectors use their existing Markdown Skill lists and user
+extensions; the separate block-skills JSON configuration has been removed.

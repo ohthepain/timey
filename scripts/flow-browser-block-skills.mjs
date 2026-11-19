@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export async function blockSkillsBrowserChecks({ page, service, project, poll }) {
@@ -40,4 +40,18 @@ export async function blockSkillsBrowserChecks({ page, service, project, poll })
     (value) => value === 'poteto-mode',
     'Selected block skill was not saved'
   );
+  let opened = false;
+  await page.route('**/api/flow-action', async (route) => {
+    const input = route.request().postDataJSON();
+    if (input.action !== 'open-block-extension') return route.continue();
+    assert.equal(input.blockId, work.id);
+    const path = service.flows.catalog.openExtension('work');
+    assert.match(readFileSync(path, 'utf8'), /# Skill list/);
+    opened = true;
+    await route.fulfill({ json: service.flows.view(id) });
+  });
+  await picker.click();
+  await select.selectOption('__add_skill__');
+  await poll(() => opened, Boolean, 'Add skill did not open the block Markdown extension');
+  await page.unroute('**/api/flow-action');
 }

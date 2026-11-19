@@ -92,6 +92,7 @@
     const clarificationSelect = window.createSkillSelect(byId('discuss-clarification'), {
       onChange: () => void saveSettings(),
       onSetup: setupSkills,
+      onAdd: () => void action('open-skill-extension'),
     });
     const skillComposer = window.createSkillComposer(form, draft, discoverSkills);
     const settings = () => ({
@@ -471,7 +472,14 @@
         if (!setup?.needed || (!selectedId && !(await create()))) return;
         await action('send', {
           clientId: crypto.randomUUID(),
-          text: setup.prompt,
+          text:
+            setup.prompt +
+            '\nAdditional skill sources from the chat grilling Markdown: ' +
+            JSON.stringify(
+              (data?.clarificationSkills || [])
+                .filter((entry) => entry.source)
+                .map(({ name, source }) => ({ name, source }))
+            ),
           settings: { ...settings(), clarificationSkill: 'none', skills: [] },
           attachments: [],
         });

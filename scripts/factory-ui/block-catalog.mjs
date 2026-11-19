@@ -1,4 +1,10 @@
-import { blockSkillSettings, resolveBlockSkills } from './block-skills.mjs';
+import {
+  skillEntries,
+  markdownSkillEntries,
+  readSkillExtension,
+  personalSkillExtension,
+  ensureSkillExtension,
+} from './skill-list.mjs';
 import { copyFileSync, constants, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
@@ -64,14 +70,7 @@ function source(path) {
 }
 
 function skillList(path, lines) {
-  const skills = lines
-    .trim()
-    .split(/\r?\n/)
-    .filter((line) => line.trim())
-    .map((line) => /^ {0,3}[-+*]\s+`?([\w.:-]{1,160})`?[ \t]*$/.exec(line)?.[1]);
-  if (skills.some((skill) => !skill) || new Set(skills).size !== skills.length)
-    throw Error(path + ' needs one unique skill name per bullet under Skill list.');
-  return skills;
+  return skillEntries(path, lines).map((entry) => entry.name);
 }
 
 function content(path, text, isExtension, id) {
@@ -83,7 +82,7 @@ function content(path, text, isExtension, id) {
     );
     const next = index >= 0 && tokens.slice(index + 1).find(heading);
     const prompt = index < 0 ? '' : text.split(/\r?\n/).slice(tokens[index].map[1], next?.map[0]).join('\n').trim();
-    return { path, text, html: markdown.render(text), prompt };
+    return { path, text, html: markdown.render(text), prompt, skillEntries: markdownSkillEntries(path, text) };
   }
   if (/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(text))
     throw Error(path + ' contains front matter. Move block settings to catalog.json.');
@@ -208,6 +207,7 @@ function content(path, text, isExtension, id) {
     text,
     description,
     skills,
+    skillEntries: markdownSkillEntries(path, text),
     extensionFile,
     details: sections.has('details') ? details : undefined,
     artifacts: sections.has('artifacts') ? artifacts : undefined,
@@ -230,20 +230,12 @@ export class BlockCatalog {
 
   read() {
     const errors = [];
-    let skillSettings = { user: {}, project: {} };
-    let skillSettingsError;
-    try {
-      skillSettings = blockSkillSettings(this.project, this.options.userSkillsPath);
-    } catch (error) {
-      skillSettingsError = error.message;
-      errors.push(error.message);
-    }
     const bundled = this.#folder(bundledBlocks, errors);
     const project = this.project ? this.#folder(join(this.project, userBlocks), errors) : { ids: [], entries: {} };
     const entries = [];
     for (const id of new Set([...bundled.ids, ...project.ids])) {
       if (id === 'target') continue;
-      const diagnostics = skillSettingsError ? [skillSettingsError] : [];
+      const diagnostics = [];
       const base = bundled.ids.includes(id) ? this.#content(bundledBlocks, id, diagnostics) : null;
       const override = project.ids.includes(id) ? this.#content(project.directory, id, diagnostics) : null;
       const visible = override?.description ? override : (base ?? override);
@@ -254,7 +246,8 @@ export class BlockCatalog {
       }
       const extensionFile = override?.extensionFile ?? base?.extensionFile ?? id + '.md';
       const extension = this.project ? this.#extension(id, extensionFile, project.directory, diagnostics) : null;
-      const appliedExtension = extension?.text.trim() ? extension : null;
+      const extensionText = extension?.text.replace(/<!--[\s\S]*?-->/g, '').trim();
+      const appliedExtension = extensionText && extensionText !== '# Skill list' ? extension : null;
       errors.push(...diagnostics);
       const kind = bundled.ids.includes(id) ? id : 'work';
       const basePrompt = override?.prompt ?? base?.prompt;
@@ -282,16 +275,32 @@ export class BlockCatalog {
       const configuredDefault = Object.hasOwn(project.entries[id] || {}, 'defaultSkill')
         ? project.entries[id].defaultSkill
         : (bundled.entries[id]?.defaultSkill ?? null);
-      let resolvedSkills = {
-        skills: baseSkills,
-        defaultSkill: baseSkills.includes(configuredDefault) ? configuredDefault : null,
-      };
+      let personalEntries = [];
       try {
-        resolvedSkills = resolveBlockSkills(id, resolvedSkills, skillSettings);
+        personalEntries = readSkillExtension(
+          this.options.userSkillsDirectory
+            ? join(this.options.userSkillsDirectory, id + '.md')
+            : personalSkillExtension('flow/extensions/blocks/' + id + '.md')
+        );
       } catch (error) {
         diagnostics.push(error.message);
         errors.push(error.message);
       }
+      const entriesByName = new Map(
+        [
+          ...(override?.skillEntries ?? base?.skillEntries ?? []),
+          ...personalEntries,
+          ...(extension?.skillEntries || []),
+        ].map((entry) => [entry.name, entry])
+      );
+      const skills = [...entriesByName.keys()];
+      const resolvedSkills = {
+        skills,
+        skillSources: Object.fromEntries(
+          [...entriesByName.values()].filter((entry) => entry.source).map((entry) => [entry.name, entry.source])
+        ),
+        defaultSkill: skills.includes(configuredDefault) ? configuredDefault : null,
+      };
       const effective = [
         resolvedSkills,
         visible.text,
@@ -345,7 +354,7 @@ export class BlockCatalog {
     const destination = join(this.project, entry.content.extensionPath);
     mkdirSync(join(this.project, blockExtensions), { recursive: true });
     try {
-      writeFileSync(destination, '', { flag: 'wx' });
+      ensureSkillExtension(destination);
     } catch (error) {
       if (error.code !== 'EEXIST' || !lstatSync(destination).isFile()) throw error;
     }

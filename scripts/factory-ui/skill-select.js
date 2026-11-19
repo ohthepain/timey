@@ -1,6 +1,6 @@
 (() => {
   // Entries with kind "value" are ordinary choices and require no installed skill.
-  window.createSkillSelect = function (select, { onChange, onSetup }) {
+  window.createSkillSelect = function (select, { onChange, onSetup, onAdd }) {
     let entries = [],
       available = null,
       selected = '';
@@ -15,12 +15,16 @@
       });
       const nodes = options.filter(({ entry }) => entry.kind === 'skill').map(({ option }) => option);
       if (missing.length) nodes.push(new Option('Set up skills', setupValue));
+      if (onAdd) nodes.push(new Option('Add skill…', '__add_skill__'));
       nodes.push(...options.filter(({ entry }) => entry.kind === 'value').map(({ option }) => option));
       select.replaceChildren(...nodes);
       select.value = selected;
     }
     select.addEventListener('change', () => {
-      if (select.value === setupValue) {
+      if (select.value === '__add_skill__') {
+        select.value = selected;
+        void onAdd();
+      } else if (select.value === setupValue) {
         select.value = selected;
         void onSetup(entries.filter((entry) => entry.kind === 'skill').map((entry) => entry.skill));
       } else {

@@ -1,3 +1,7 @@
+import { readSkillExtension, personalSkillExtension, ensureSkillExtension } from './skill-list.mjs';
+import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -8,12 +12,27 @@ import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
 const copy = (value) => structuredClone(value);
-export const clarificationSkills = [
-  { kind: 'skill', name: 'grilling', label: 'Grilling', skill: 'grilling' },
-  { kind: 'skill', name: 'grill-me', label: 'Grill Me', skill: 'grill-me' },
-  { kind: 'skill', name: 'grill-with-docs', label: 'Grill with Docs', skill: 'grill-with-docs' },
-  { kind: 'value', name: 'none', label: 'No Grilling' },
-];
+export function readClarificationSkills(root) {
+  const paths = [
+    fileURLToPath(new URL('../../factory/system/chat/grilling.md', import.meta.url)),
+    personalSkillExtension('chat/grilling.md'),
+    join(root, 'user/chat/grilling.md'),
+  ];
+  const entries = new Map(paths.flatMap(readSkillExtension).map((entry) => [entry.name, entry]));
+  return [...entries.values()]
+    .map(({ name, source }) => ({
+      kind: 'skill',
+      name,
+      label: name
+        .split('-')
+        .map((word) => word[0].toUpperCase() + word.slice(1))
+        .join(' '),
+      skill: name,
+      ...(source ? { source } : {}),
+    }))
+    .concat({ kind: 'value', name: 'none', label: 'No Grilling' });
+}
+
 function checkedId(id) {
   requireThat(typeof id === 'string' && idPattern.test(id), 'Choose a valid project conversation or message.');
   return id;
@@ -78,7 +97,7 @@ export class ProjectDiscuss {
     );
     requireThat(choices.efforts.includes(result.effort), 'Choose an available effort level.');
     requireThat(
-      clarificationSkills.some(({ name }) => name === result.clarificationSkill),
+      readClarificationSkills(this.service.root).some(({ name }) => name === result.clarificationSkill),
       'Choose a listed clarification skill.'
     );
     requireThat(
@@ -172,7 +191,7 @@ export class ProjectDiscuss {
       conversations: sessions.map(({ id, title, status, updatedAt }) => ({ id, title, status, updatedAt })),
       selected: selected ? this.publicSession(selected) : null,
       ...this.choices(),
-      clarificationSkills,
+      clarificationSkills: readClarificationSkills(this.service.root),
     };
   }
   provider(id) {
@@ -207,6 +226,12 @@ export class ProjectDiscuss {
     const operation = input.action;
     if (['send', 'retry', 'resume', 'steer'].includes(operation))
       this.service.serverControl?.allow('/api/project-discuss-action', input);
+    if (operation === 'open-skill-extension') {
+      const path = ensureSkillExtension(join(this.service.root, 'user/chat/grilling.md'));
+      if (this.options.openFile) await this.options.openFile(path);
+      else await promisify(execFile)('/usr/bin/open', [path]);
+      return this.view(input.conversationId || undefined);
+    }
     if (operation === 'create') {
       const requestId = checkedId(input.requestId || randomUUID());
       const existing = this.records().find((session) => session.requestId === requestId);

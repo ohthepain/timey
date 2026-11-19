@@ -58,3 +58,13 @@ test('projects define independent required sets and installation URLs, including
   assert.doesNotMatch(setup.prompt, /mattpocock|cursor/);
   assert.equal(skillSetup([{ name: 'local-skill' }, { name: 'custom' }], undefined, root).needed, false);
 });
+
+test('a missing custom Markdown skill offers setup using its declared source', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'timey-custom-skill-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const result = skillSetup([], ['custom-grilling'], root, {
+    'custom-grilling': 'https://example.com/custom/SKILL.md',
+  });
+  assert.equal(result.needed, true);
+  assert.match(result.prompt, /https:\/\/example.com\/custom\/SKILL.md/);
+});

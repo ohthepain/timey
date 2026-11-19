@@ -13,7 +13,7 @@ file and shell tools and the source repository's installation documentation.
 
 Read the current project's `user/skills/requirements.json` first. It lists skill
 sets with a name, an optional installation source URL, and required skill names.
-Use the matching project's source rather than guessing another repository. Required names are minimum readiness checks, not an installation allowlist. A
+Use sources explicitly declared by the person or linked in the selector's Markdown first; otherwise use the matching project's configured source rather than guessing another repository. Local Markdown links identify project files or skill folders to copy into user/skills, while URL links identify sources to fetch. Required names are minimum readiness checks, not an installation allowlist. A
 set without a source contains project-owned skills; inspect the project files
 and history for those skills. Do not substitute a similarly named public skill.
 

@@ -211,3 +211,14 @@ test('a new message after failure uses current settings before older queued mess
   assert.equal(saved.messages.find((m) => m.replyTo === 'fresh').text, 'Recovered');
   assert.ok(saved.messages.some((m) => m.id === 'older') || saved.queue.some((m) => m.id === 'older'));
 });
+
+test('Add skill opens the chat Markdown extension without creating or starting a conversation', async (t) => {
+  const f = fixture(t);
+  const opened = [];
+  f.options.openFile = async (path) => opened.push(path);
+  const result = await f.discuss.action({ action: 'open-skill-extension' });
+  assert.equal(result.selected, null);
+  assert.deepEqual(opened, [join(f.root, 'user/chat/grilling.md')]);
+  assert.match(readFileSync(opened[0], 'utf8'), /# Skill list/);
+  assert.equal(f.calls.length, 0);
+});

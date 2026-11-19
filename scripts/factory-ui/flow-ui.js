@@ -1473,10 +1473,15 @@
     const issueId = state.issueId;
     const dialog = document.createElement('dialog');
     dialog.innerHTML =
-      '<h2>Block skill</h2><label class="field">Skill<select aria-label="Block skill"></select></label><p>Available choices and defaults come from this block type. Extend them in user/flow/block-skills.json or your user configuration.</p><form method="dialog"><button>Close</button></form>';
+      '<h2>Block skill</h2><label class="field">Skill<select aria-label="Block skill"></select></label><p>Available choices and defaults come from this block type. Use Add skill… to edit this block’s user Markdown skill list.</p><form method="dialog"><button>Close</button></form>';
     document.body.append(dialog);
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
     const picker = window.createSkillSelect(dialog.querySelector('select'), {
+      onAdd: async () => {
+        if (state.issueId !== issueId) return dialog.close();
+        await action('open-block-extension', { blockId });
+        dialog.close();
+      },
       onChange: async (skill) => {
         if (state.issueId !== issueId) return dialog.close();
         if (await action('update', { blockId, changes: { skill: skill === 'none' ? null : skill } })) dialog.close();
@@ -1492,7 +1497,9 @@
             text:
               'Install these missing block skills for this project: ' +
               missing.join(', ') +
-              '. Read user/skills/requirements.json for installation sources. Preserve existing custom skills and verify discovery.',
+              '. Declared skill sources: ' +
+              JSON.stringify(definition?.skillSources || {}) +
+              '. Read user/skills/requirements.json for additional sources. Preserve existing custom skills and verify discovery.',
             settings: { clarificationSkill: 'none', skills: ['skill-installer'] },
             attachments: [],
           });

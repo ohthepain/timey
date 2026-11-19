@@ -48,7 +48,7 @@ import { ProjectWorktreeCleanup } from './project-worktree-cleanup.mjs';
 import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs';
 import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
 import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
-import { ProjectDiscuss, clarificationSkills } from './project-discuss.mjs';
+import { ProjectDiscuss, readClarificationSkills } from './project-discuss.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   deleteIssueWorktree,
@@ -397,12 +397,14 @@ async function read(service, request, response, owner) {
     '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
     '/api/project-discuss-skills': async () => {
       const skills = await projectDiscuss(service).skills();
+      const choices = readClarificationSkills(service.root);
       return {
         skills,
         setup: skillSetup(
           skills,
-          clarificationSkills.filter((entry) => entry.kind === 'skill').map((entry) => entry.skill),
-          service.root
+          choices.filter((entry) => entry.kind === 'skill').map((entry) => entry.skill),
+          service.root,
+          Object.fromEntries(choices.filter((entry) => entry.source).map((entry) => [entry.name, entry.source]))
         ),
       };
     },
