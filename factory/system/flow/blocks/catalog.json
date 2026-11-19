@@ -59,6 +59,12 @@
     "order": 10,
     "defaultSkill": "poteto-mode"
   },
+  "fix-the-branch": {
+    "label": "Fix the Branch",
+    "color": "orange",
+    "order": 10,
+    "defaultSkill": "poteto-mode"
+  },
   "edit": {
     "label": "Edit",
     "color": "green",

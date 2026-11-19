@@ -48,6 +48,12 @@ when one is available. Save temporary evidence files in an ignored location insi
 the checkout. Report any gap and why the proof could not be collected in the
 response. Use the structured failure field for blockers to completing the work.
 
+When a project check prevents tests or Requested Proof, lead the response and
+structured failure with the failed command and its relevant diagnostic. State
+whether the failure also occurs on the supplied destination revision, or whether
+that is still unknown. Then explain which tests or proof could not run because of
+that failure. A missing-proof message alone does not explain the blocker.
+
 # Details
 
 | Key            | Source                 | Label           | Type      | Options                           | Default |
