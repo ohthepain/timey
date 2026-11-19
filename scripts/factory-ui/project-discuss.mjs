@@ -8,11 +8,11 @@ import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
 const copy = (value) => structuredClone(value);
-const clarificationSkills = [
-  { name: 'none', label: 'No Grilling' },
-  { name: 'grilling', label: 'Grilling' },
-  { name: 'grill-me', label: 'Grill Me' },
-  { name: 'grill-with-docs', label: 'Grill with Docs' },
+export const clarificationSkills = [
+  { kind: 'skill', name: 'grilling', label: 'Grilling', skill: 'grilling' },
+  { kind: 'skill', name: 'grill-me', label: 'Grill Me', skill: 'grill-me' },
+  { kind: 'skill', name: 'grill-with-docs', label: 'Grill with Docs', skill: 'grill-with-docs' },
+  { kind: 'value', name: 'none', label: 'No Grilling' },
 ];
 function checkedId(id) {
   requireThat(typeof id === 'string' && idPattern.test(id), 'Choose a valid project conversation or message.');

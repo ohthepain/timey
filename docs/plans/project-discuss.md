@@ -172,16 +172,20 @@ user's live Discuss archive test remains a separate acceptance step.
 
 ## Skill setup
 
-Discuss shows **Set up skills** when its discovered skill list lacks a supported
-collection's core skills. The registry in `scripts/factory-ui/required-skills.mjs`
-records collection sources and the core skills used for readiness:
-pstack by poteto (`poteto-mode`, `setup-pstack`, `grilling`) and Matt Pocock's
-skills (`grill-me`, `grill-with-docs`). This checks core availability, not every
-optional upstream skill or its version.
+The shared `createSkillSelect` control in `scripts/factory-ui/skill-select.js`
+checks every listed skill against discovery and inserts **Set up skills** into
+the dropdown when any are absent. Missing skill choices are disabled. Entries
+with `kind: skill` declare their skill name; entries with `kind: value` are
+ordinary choices with no skill dependency. **No Grilling** uses `kind: value`
+and appears last, after any setup action.
 
-Selecting Set up skills sends a visible installation request in the selected chat
-(or creates a chat if needed), using No Grilling and no selected skills. It
-preserves the composer draft and uses normal queue and permission controls. The
-prompt requests the missing collections, preserves custom skills, and asks the
-agent to verify discovery. No installation runs merely from opening Discuss.
-Use Refresh skills after installation to update readiness.
+The registry in `scripts/factory-ui/required-skills.mjs` maps skills to pstack
+by poteto and Matt Pocock's collections and their installation sources. Setup
+readiness is scoped to the skill options in this control, rather than unrelated
+skills elsewhere in those collections.
+
+Selecting Set up skills restores the saved selection and sends a visible
+installation request in the selected chat (or creates a chat if needed), using
+No Grilling and no selected skills. It preserves the composer draft and uses
+normal queue and permission controls. Opening Discuss starts no installation.
+Use Refresh skills afterward to update the control.

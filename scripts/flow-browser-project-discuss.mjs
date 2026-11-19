@@ -5,7 +5,12 @@ import { join } from 'node:path';
 
 export async function projectDiscussBrowserChecks({ page, service, project, poll, screenshot }) {
   const calls = [];
-  let availableSkills = [{ name: 'grilling', description: 'Ask questions', source: 'Project', icon: '✦' }];
+  let availableSkills = ['grilling', 'grill-with-docs'].map((name) => ({
+    name,
+    description: 'Ask questions',
+    source: 'Project',
+    icon: '✦',
+  }));
   const choices = {
     defaults: { model: 'model-a', effort: 'high' },
     models: [
@@ -175,8 +180,8 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(await page.locator('#discuss-draft').inputValue(), 'Hold response');
   assert.equal(calls.length, 4);
   await page.locator('#discuss-draft').fill('Keep my draft during setup');
-  await page.locator('#discuss-setup-skills').waitFor();
-  await page.locator('#discuss-setup-skills').click();
+  assert.equal(await page.locator('#discuss-clarification option').last().textContent(), 'No Grilling');
+  await page.locator('#discuss-clarification').selectOption('__setup_skills__');
   await page.locator('#discuss-resume').click();
   await poll(
     () => calls.length,
@@ -189,7 +194,11 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(await page.locator('#discuss-draft').inputValue(), 'Keep my draft during setup');
   availableSkills = requiredSkillSets.flatMap((set) => set.skills.map((name) => ({ name })));
   await page.locator('#discuss-refresh-skills').click();
-  await page.locator('#discuss-setup-skills').waitFor({ state: 'hidden' });
+  await poll(
+    () => page.locator('#discuss-clarification option[value="__setup_skills__"]').count(),
+    (count) => count === 0,
+    'Setup option remained after all listed skills were installed.'
+  );
   await page.locator('#discuss-clarification').selectOption('none');
   await screenshot('project-discuss');
   await page.setViewportSize({ width: 640, height: 900 });

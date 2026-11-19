@@ -60,7 +60,7 @@
     root.innerHTML = `<div class="discuss-conversations"><div id="discuss-conversation-tabs" role="tablist" aria-label="Project conversations"></div><button id="discuss-new" class="small-button" type="button">New chat</button></div>
       <p id="discuss-error" class="inline-error" role="alert" hidden></p><div id="discuss-messages" class="discuss-messages" role="log" aria-label="Project conversation messages"></div>
       <div id="discuss-approvals" class="discuss-approvals"></div><div id="discuss-queue" class="discuss-queue" aria-label="Queued messages"></div>
-      <form id="discuss-form" class="discuss-composer"><p id="discuss-editing" class="muted" hidden></p><div id="discuss-draft-attachments" class="discuss-attachments"></div><div class="discuss-draft-wrap"><textarea id="discuss-draft" aria-label="Message project" rows="3" maxlength="64000" placeholder="Ask about your project, or type / to choose a skill…"></textarea><span id="discuss-suggestion" class="discuss-suggestion" aria-hidden="true"></span></div><div class="discuss-composer-actions"><div><div class="discuss-toolbar"><label><span class="visually-hidden">Clarification skill</span><select id="discuss-clarification" aria-label="Clarification skill"></select></label><label><span class="visually-hidden">Model</span><select id="discuss-model" aria-label="Discuss model"></select></label><label><span class="visually-hidden">Effort</span><select id="discuss-effort" aria-label="Discuss effort"></select></label><button id="discuss-setup-skills" class="small-button" type="button" hidden>Set up skills</button><button id="discuss-refresh-skills" class="small-button" type="button">Refresh skills</button><label class="discuss-icon-control" title="Attach files"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 8.5 4.1-4.1a2.1 2.1 0 0 1 3 3l-5.7 5.7a3.3 3.3 0 0 1-4.7-4.7l5.5-5.5"/></svg><span class="visually-hidden">Attach files</span><input id="discuss-files" type="file" multiple hidden></label><button id="discuss-mic" class="discuss-icon-control" type="button" aria-label="Start dictation" title="Dictate"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg></button></div><span id="discuss-voice-status" class="muted" role="status"></span></div><div><button id="discuss-cancel-edit" class="small-button" type="button" hidden>Cancel edit</button><button id="discuss-resume" class="small-button" type="button" hidden>Resume</button><button id="discuss-send" class="discuss-send-button" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg></button></div></div></form><p id="discuss-status" class="visually-hidden" role="status"></p>`;
+      <form id="discuss-form" class="discuss-composer"><p id="discuss-editing" class="muted" hidden></p><div id="discuss-draft-attachments" class="discuss-attachments"></div><div class="discuss-draft-wrap"><textarea id="discuss-draft" aria-label="Message project" rows="3" maxlength="64000" placeholder="Ask about your project, or type / to choose a skill…"></textarea><span id="discuss-suggestion" class="discuss-suggestion" aria-hidden="true"></span></div><div class="discuss-composer-actions"><div><div class="discuss-toolbar"><label><span class="visually-hidden">Clarification skill</span><select id="discuss-clarification" aria-label="Clarification skill"></select></label><label><span class="visually-hidden">Model</span><select id="discuss-model" aria-label="Discuss model"></select></label><label><span class="visually-hidden">Effort</span><select id="discuss-effort" aria-label="Discuss effort"></select></label><button id="discuss-refresh-skills" class="small-button" type="button">Refresh skills</button><label class="discuss-icon-control" title="Attach files"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 8.5 4.1-4.1a2.1 2.1 0 0 1 3 3l-5.7 5.7a3.3 3.3 0 0 1-4.7-4.7l5.5-5.5"/></svg><span class="visually-hidden">Attach files</span><input id="discuss-files" type="file" multiple hidden></label><button id="discuss-mic" class="discuss-icon-control" type="button" aria-label="Start dictation" title="Dictate"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg></button></div><span id="discuss-voice-status" class="muted" role="status"></span></div><div><button id="discuss-cancel-edit" class="small-button" type="button" hidden>Cancel edit</button><button id="discuss-resume" class="small-button" type="button" hidden>Resume</button><button id="discuss-send" class="discuss-send-button" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg></button></div></div></form><p id="discuss-status" class="visually-hidden" role="status"></p>`;
     const draft = byId('discuss-draft');
     const form = byId('discuss-form');
     let draftSave = Promise.resolve();
@@ -86,13 +86,13 @@
     async function discoverSkills() {
       const value = await request('/api/project-discuss-skills');
       setup = value.setup;
-      byId('discuss-setup-skills').hidden = !setup?.needed;
-      byId('discuss-setup-skills').title = (setup?.sets || [])
-        .filter((set) => set.missing.length)
-        .map((set) => set.name + ': ' + set.missing.join(', '))
-        .join('; ');
+      clarificationSelect.discovered(value.skills || value);
       return value.skills || value;
     }
+    const clarificationSelect = window.createSkillSelect(byId('discuss-clarification'), {
+      onChange: () => void saveSettings(),
+      onSetup: setupSkills,
+    });
     const skillComposer = window.createSkillComposer(form, draft, discoverSkills);
     const settings = () => ({
       model: byId('discuss-model').value,
@@ -284,11 +284,7 @@
         })),
         selectedSettings?.effort || data?.defaults?.effort
       );
-      choices(
-        'discuss-clarification',
-        (data?.clarificationSkills || []).map((entry) => ({ value: entry.name, label: entry.label || entry.name })),
-        selectedSettings?.clarificationSkill || 'none'
-      );
+      clarificationSelect.update(data?.clarificationSkills || [], selectedSettings?.clarificationSkill || 'none');
       const log = byId('discuss-messages');
       const html =
         (current?.messages || []).map(messageHtml).join('') ||
@@ -467,11 +463,9 @@
       updateUrl();
       await refresh(true);
     });
-    for (const id of ['discuss-model', 'discuss-effort', 'discuss-clarification'])
+    for (const id of ['discuss-model', 'discuss-effort'])
       byId(id).addEventListener('change', () => void saveSettings());
-    byId('discuss-setup-skills').addEventListener('click', async () => {
-      const button = byId('discuss-setup-skills');
-      button.disabled = true;
+    async function setupSkills() {
       try {
         await discoverSkills();
         if (!setup?.needed || (!selectedId && !(await create()))) return;
@@ -483,10 +477,8 @@
         });
       } catch (failure) {
         error(failure.message);
-      } finally {
-        button.disabled = false;
       }
-    });
+    }
     byId('discuss-refresh-skills').addEventListener('click', () => {
       void discoverSkills().catch((failure) => error(failure.message));
       skillComposer.refresh();

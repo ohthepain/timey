@@ -12,9 +12,12 @@ export const requiredSkillSets = [
   },
 ];
 
-export function skillSetup(available) {
+export function skillSetup(available, required) {
   const names = new Set(available.map((skill) => skill.name));
-  const sets = requiredSkillSets.map((set) => ({ ...set, missing: set.skills.filter((name) => !names.has(name)) }));
+  const sets = requiredSkillSets.map((set) => ({
+    ...set,
+    missing: set.skills.filter((name) => (!required || required.includes(name)) && !names.has(name)),
+  }));
   const missing = sets.filter((set) => set.missing.length);
   return {
     sets,

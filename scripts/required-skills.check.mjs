@@ -16,3 +16,20 @@ test('setup disappears once all required core skills are discoverable', () => {
   assert.equal(result.prompt, '');
   assert.ok(result.sets.every((set) => !set.missing.length));
 });
+
+test('a control checks only and all of its skill options', () => {
+  const required = ['grilling', 'grill-me', 'grill-with-docs'];
+  const available = required.map((name) => ({ name }));
+  assert.equal(skillSetup(available, required).needed, false);
+  for (const missing of required) {
+    const result = skillSetup(
+      available.filter((skill) => skill.name !== missing),
+      required
+    );
+    assert.equal(result.needed, true);
+    assert.deepEqual(
+      result.sets.flatMap((set) => set.missing),
+      [missing]
+    );
+  }
+});
