@@ -659,3 +659,17 @@ test('investigation closure still requires explicit acceptance', async (t) => {
   f.ctx.input.confirmed = false;
   await assert.rejects(f.close(), /Accept the recorded result explicitly/);
 });
+
+test('closure uses the selected flow type when derived Request fields were invalidated', async (t) => {
+  const f = fixture(t);
+  f.ctx.flow.routeType = 'bug';
+  f.ctx.flow.blocks.unshift({
+    id: 'request',
+    kind: 'request',
+    data: { wording: 'Fix the bug', fields: null },
+    attempts: [],
+  });
+  f.ctx.details = { type: undefined };
+  const result = await flowClosureArtifact(f.service, f.ctx, f.workspace, f.folder, f.options);
+  assert.equal(result.revision, f.input.revision);
+});

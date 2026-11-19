@@ -1930,3 +1930,8 @@ built-in choice with no skill dependency and always appears last.
 Installed custom skills live in `user/skills/<name>/SKILL.md`. Required collection
 sources remain in `user/skills/requirements.json`; selector options come from
 Markdown rather than a parallel JSON list. Refresh after editing a list.
+
+Closure resolves issue type from its declared input, the current Request fields,
+then the saved flow type shown by the Request selector. Invalidated derived fields
+do not erase that saved type. Candidate verification, retained proof, and merged
+PR identity checks still apply before Fixed acceptance.

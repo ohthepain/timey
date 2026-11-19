@@ -1,3 +1,4 @@
+import { issueTypes } from './flow-definitions.mjs';
 import {
   deliveryTarget,
   latestCurrentAttempt,
@@ -478,8 +479,8 @@ function deliveryWorkProof(ctx, candidate) {
 
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
-  const type = ctx.details ? ctx.details.type : requestData(ctx.flow).fields?.type;
-  requireThat(type, 'Missing issue type. Refresh Request before closing.');
+  const type = ctx.details?.type ?? requestData(ctx.flow).fields?.type ?? ctx.flow.routeType;
+  requireThat(issueTypes.includes(type), 'Missing issue type. Set the issue type in Request before closing.');
   if (type === 'investigation') return investigationClosureArtifact(ctx, workspace);
   const candidate = verifiedFlowCandidate(ctx, workspace, options);
   const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block);
