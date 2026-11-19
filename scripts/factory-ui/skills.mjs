@@ -35,7 +35,7 @@ export async function listAvailableSkills(connection, cwd) {
       if (typeof metadata.name !== 'string' || !metadata.name) continue;
       const duplicate = found.findIndex((entry) => entry.name === metadata.name);
       if (duplicate !== -1) {
-        if (source !== 'Factory') continue;
+        if (found[duplicate].source === 'Factory') continue;
         found.splice(duplicate, 1);
       }
       found.push({

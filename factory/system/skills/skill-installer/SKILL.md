@@ -13,7 +13,7 @@ file and shell tools and the source repository's installation documentation.
 
 Read the current project's `user/skills/requirements.json` first. It lists skill
 sets with a name, an optional installation source URL, and required skill names.
-Use the matching project's source rather than guessing another repository. A
+Use the matching project's source rather than guessing another repository. Required names are minimum readiness checks, not an installation allowlist. A
 set without a source contains project-owned skills; inspect the project files
 and history for those skills. Do not substitute a similarly named public skill.
 
@@ -39,7 +39,9 @@ before asking the person for a link. If its source cannot be established, ask.
    to the project destination instead. Installing does not authorize starting the
    skills' workflows or changing model preferences.
 5. Verify each installed folder has valid YAML name and description metadata in
-   SKILL.md and that its referenced local resources exist. Check factory skill
+   SKILL.md and that its referenced local resources and named skill dependencies
+   exist. Wrapper skills that only invoke other skills need those dependencies
+   installed too. Check factory skill
    discovery if available; otherwise report the file checks and ask the person
    to use Refresh skills in Discuss. Report the installed names, project paths,
    source revision and anything skipped or still missing. Clean up the temporary

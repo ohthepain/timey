@@ -198,6 +198,7 @@ test('No Grilling reaches the model without any installed clarification skills',
   assert.ok(f.calls.some(({ method }) => method === 'provider/turn'));
   const start = f.calls.find(({ method }) => method === 'thread/start');
   assert.match(start.params.developerInstructions, /No Grilling: do not invoke/);
+  assert.match(start.params.developerInstructions, /Factory does not provide a native Skill tool/);
   assert.doesNotMatch(start.params.developerInstructions, /Explicitly chosen clarification skill/);
 });
 

@@ -209,3 +209,15 @@ actual turn, with their source path for resolving supporting resources. Native
 Codex skill discovery does not know about the factory's custom directories;
 passing only a native skill reference can silently omit these instructions.
 Host-owned skills retain native skill inputs.
+
+Required skill names are minimum readiness checks, not a filter on installing a
+requested collection. Copy the full requested collection, including named skill
+dependencies. Discuss translates vendor Skill-tool calls into reading the named
+project skill file; it exposes those dependency paths separately from the
+implicitly invocable catalogue.
+
+The live Discuss installation test installed all 39 Matt Pocock skill folders
+from revision `abeeaf95660ba9e8b7c753eb38f441ca707a8823`. An independent
+comparison found no missing or changed upstream files. The first attempt copied
+only two wrapper skills; the retained chat records that failure and the explicit
+request that completed the collection.

@@ -262,3 +262,25 @@ test('factory skill contents reach the turn without relying on native skill disc
   assert.ok(input[0].text.includes(readFileSync(installer.path, 'utf8')));
   assert.ok(input[0].text.includes(installer.path));
 });
+
+test('project-owned skills override host skills with the same name', async (t) => {
+  const f = fixture(t);
+  const host = join(f.root, 'host.md');
+  writeFileSync(host, '---\nname: custom\ndescription: Host skill\n---\nHost instructions.');
+  mkdirSync(join(f.root, 'user/skills/custom'), { recursive: true });
+  writeFileSync(
+    join(f.root, 'user/skills/custom/SKILL.md'),
+    '---\nname: custom\ndescription: Project skill\n---\nProject instructions.'
+  );
+  const skills = await listAvailableSkills(
+    {
+      ready: async () => {},
+      call: async () => ({ data: [{ skills: [{ name: 'custom', path: host, enabled: true }] }] }),
+    },
+    f.root
+  );
+  const selected = skills.filter((skill) => skill.name === 'custom');
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].source, 'Project');
+  assert.match(skillInputs(selected)[0].text, /Project instructions/);
+});
