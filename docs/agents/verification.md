@@ -110,8 +110,14 @@ The Flow **Verify** block can check saved, uncommitted source changes. Its
 verification and step audit must report the same snapshot tree. The source
 check records symlinks by their link targets and accounts for deleted files.
 Update Branch checks that the issue branch contains the fetched starting commit. Publish PR requires a clean commit.
-Merge requires full Verify on the committed candidate against the fetched
-destination and reuses passing evidence when its inputs and evidence still match.
+Merge verifies the committed candidate against the fetched destination. Request
+sets the local scope for each new attempt. The default runs the Factory smoke
+suite, both browser suites, Vitest and Work's recorded focused tests, along with
+formatting, Fallow, type checking and the build. Enabling full regression runs
+the full Factory suite in place of the smoke suite. Both scopes end a local
+verification command after 15 minutes. Evidence reuse requires matching inputs,
+including focused commands and the required scope. GitHub CI retains its full
+suite and existing branch protection.
 
 When closing a delivered flow, the delivery manifest records the verified
 candidate tree and the upstream Work blocks' requested proof. It retains proof

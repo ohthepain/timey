@@ -876,6 +876,20 @@ test('request data and block order persist with revision conflicts rejected', as
   assert.ok(existsSync(join(root, '.issues/flows', id, 'flow.json')));
 });
 
+test('Request saves the full regression setting across reloads and rejects stale edits', async (t) => {
+  const { id, service } = fixture(t);
+  const flows = createIssueFlows(service, { executor: executor(async () => ({})) });
+  const { flow } = await flows.view(id);
+  assert.notEqual(requestData(flow).fullRegression, true);
+  const toggle = (revision, enabled) =>
+    flows.action({ issueId: id, revision, action: 'full-regression-setting', enabled });
+  const saved = await toggle(flow.revision, true);
+  await assert.rejects(toggle(flow.revision, false), /flow changed/);
+  const reloaded = createIssueFlows(service, { executor: executor(async () => ({})) });
+  assert.equal(requestData((await reloaded.view(id)).flow).fullRegression, true);
+  assert.equal(requestData((await toggle(saved.flow.revision, false)).flow).fullRegression, false);
+});
+
 test('a block runs only on explicit start and retry retains both attempts', async (t) => {
   const { id, service } = fixture(t);
   let calls = 0;

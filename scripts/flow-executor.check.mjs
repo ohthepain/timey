@@ -237,7 +237,7 @@ test('an explicit work block makes one model turn and records its managed checko
       'Observed the issue in the same folder. The browser was unavailable for the reload check.',
       '',
       '```flow-result',
-      '{"files":{"proof":".issues/observed-proof.txt"}}',
+      '{"files":{"proof":".issues/observed-proof.txt"},"focusedTests":[["node","--test","scripts/folder-operations.check.mjs"]]}',
       '```',
     ].join('\n');
   };
@@ -268,6 +268,7 @@ test('an explicit work block makes one model turn and records its managed checko
   assert.equal(readFileSync(result.evidence[0].path, 'utf8'), result.output);
   assert.match(result.output, /The browser was unavailable for the reload check/);
   assert.equal(result.status, undefined);
+  assert.deepEqual(result.result.focusedTests, [['node', '--test', 'scripts/folder-operations.check.mjs']]);
   assert.equal(
     readFileSync(result.artifacts.files.proof.path, 'utf8'),
     'The created issue appeared in the same folder.'

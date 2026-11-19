@@ -359,7 +359,7 @@ class IssueFlows {
     flow.resolvedBranch = settings.values.branch;
     if (typeof issue.run_retro === 'boolean') requestBlock(flow).data.runRetro = issue.run_retro;
     if (!flow.closing) setRetroBlock(flow, catalog);
-    if (isInvestigation(issue, flow)) {
+    if (isInvestigation(issue, flow) && !flow.closing && !issue.closed) {
       const removed = flow.blocks.filter((block) =>
         ['close', 'retro', 'cleanup', 'delete-worktree'].includes(block.kind)
       );
@@ -949,9 +949,16 @@ class IssueFlows {
     );
     if (issue.state === 'needs-approval')
       requireThat(
-        ['open-block', 'rename-issue', 'edit-request', 'comment', 'retro-setting', 'folder', 'folder-lock'].includes(
-          action
-        ),
+        [
+          'open-block',
+          'rename-issue',
+          'edit-request',
+          'comment',
+          'retro-setting',
+          'full-regression-setting',
+          'folder',
+          'folder-lock',
+        ].includes(action),
         'Approve this issue before starting work.'
       );
     if (flow.closing && !flow.closing.complete)
@@ -1047,8 +1054,8 @@ class IssueFlows {
     let flow = this.read(issue, catalog);
     if (isInvestigation(issue, flow))
       requireThat(
-        !closureActions.has(input.action) && input.action !== 'retro-setting',
-        'Investigations are archived directly; they have no Close or Retro step.'
+        !closureActions.has(input.action) && !['retro-setting', 'full-regression-setting'].includes(input.action),
+        'Investigations are archived directly; they have no Close, Retro, or Merge step.'
       );
     this.overnight.requireManualAction(issue.id, input.action);
     if (['approve-issue', 'delete-pending-issue'].includes(input.action)) {
@@ -1082,35 +1089,16 @@ class IssueFlows {
     }
     if (!['comment', 'open-block'].includes(input.action))
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
-    if (input.action === 'edit-request') {
-      requireThat(!issue.closed, 'Reopen this issue before editing its request.');
-      const editsWording = input.wording !== undefined;
-      const editsType = input.type !== undefined;
-      requireThat(editsWording || editsType, 'Choose an original prompt or issue type to edit.');
-      if (editsWording) {
-        requireThat(
-          typeof input.wording === 'string' && input.wording.trim() && input.wording.length <= 24000,
-          'Enter Your words in up to 24,000 characters.'
-        );
-        if (input.wording !== requestBlock(flow).data.wording) {
-          await this.refreshRequest(issue, flow, input.wording, catalog);
-          flow = this.read(this.selected(issue.id), catalog);
-        }
-      }
-      if (editsType) {
-        requireThat(issueTypes.includes(input.type), 'Choose a valid issue type.');
-        const request = requestBlock(flow);
-        const fields = request.data.fields || {};
-        const currentType = fields.type ?? flow.routeType;
-        if (currentType !== input.type || fields.type !== input.type) {
-          request.data.fields = { ...fields, type: input.type };
-          if (currentType !== input.type)
-            return this.applyFlowDefinition(issue, flow, catalog, { action: 'rebuild-flow' });
-          this.store.save(flow, flow.revision);
-        }
-      }
+    if (input.action === 'full-regression-setting') {
+      requireThat(
+        !issue.closed && typeof input.enabled === 'boolean',
+        'Choose whether to run full regression on this open issue.'
+      );
+      requestBlock(flow).data.fullRegression = input.enabled;
+      this.store.save(flow, flow.revision);
       return this.view(issue.id);
     }
+    if (input.action === 'edit-request') return this.editRequest(issue, flow, input, catalog);
     if (input.action === 'folder' || input.action === 'folder-lock') return this.editFolder(issue, flow, input);
     if (closureActions.has(input.action)) return this.dispatchClosure(input, issue, flow, catalog);
     if (['open-block-extension', 'reveal-definition'].includes(input.action))
@@ -1166,6 +1154,35 @@ class IssueFlows {
       return this.view(issue.id);
     }
     return this.dispatchBlockAction(issue, flow, input, catalog);
+  }
+  async editRequest(issue, flow, input, catalog) {
+    requireThat(!issue.closed, 'Reopen this issue before editing its request.');
+    const editsWording = input.wording !== undefined;
+    const editsType = input.type !== undefined;
+    requireThat(editsWording || editsType, 'Choose an original prompt or issue type to edit.');
+    if (editsWording) {
+      requireThat(
+        typeof input.wording === 'string' && input.wording.trim() && input.wording.length <= 24000,
+        'Enter Your words in up to 24,000 characters.'
+      );
+      if (input.wording !== requestBlock(flow).data.wording) {
+        await this.refreshRequest(issue, flow, input.wording, catalog);
+        flow = this.read(this.selected(issue.id), catalog);
+      }
+    }
+    if (editsType) {
+      requireThat(issueTypes.includes(input.type), 'Choose a valid issue type.');
+      const request = requestBlock(flow);
+      const fields = request.data.fields || {};
+      const currentType = fields.type ?? flow.routeType;
+      if (currentType !== input.type || fields.type !== input.type) {
+        request.data.fields = { ...fields, type: input.type };
+        if (currentType !== input.type)
+          return this.applyFlowDefinition(issue, flow, catalog, { action: 'rebuild-flow' });
+        this.store.save(flow, flow.revision);
+      }
+    }
+    return this.view(issue.id);
   }
   dispatchFolder(input) {
     if (input.action === 'migrate-folders') return this.migrateFolders();
@@ -1803,7 +1820,7 @@ class IssueFlows {
     return this.view(issue.id);
   }
   async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
-    if (isInvestigation(issue, flow)) {
+    if (isInvestigation(issue, flow) && !flow.closing) {
       requireThat(
         input.investigationOperation && this.investigations?.active.has(input.investigationOperation),
         'Run this investigation from its issue page.'

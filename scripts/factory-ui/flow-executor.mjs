@@ -35,6 +35,7 @@ import { decisionBasis } from './recorded-result.mjs';
 import { readQueue } from './data.mjs';
 import { git, cleanEnvironment, requireThat, writeJson, digest } from './common.mjs';
 import { redactValue } from './activity.mjs';
+import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
 import {
@@ -83,7 +84,9 @@ export function createFlowExecutor(service, options = {}) {
         ctx.definition ?? catalog.read().entries.find((entry) => entry.id === blockDefinitionId(ctx.block));
       const command = commandBlocks.has(ctx.block.kind);
       requireThat(
-        !isInvestigation(ctx.issue, ctx.flow) || ctx.block.kind === 'understand',
+        !isInvestigation(ctx.issue, ctx.flow) ||
+          ctx.block.kind === 'understand' ||
+          (ctx.flow.closing && ['close', 'cleanup', 'delete-worktree'].includes(ctx.block.kind)),
         'Investigations run Understand without code delivery, worktrees, or closure.'
       );
       requireThat(
@@ -377,6 +380,12 @@ function modelManifest(output) {
   return manifest ? JSON.parse(manifest) : {};
 }
 
+function workFocusedResult(kind, output) {
+  if (kind !== 'work') return {};
+  const { focusedTests } = modelManifest(output) ?? {};
+  return focusedTests === undefined ? {} : { focusedTests: normalizeFocusedTests(focusedTests) };
+}
+
 function modelArtifacts(definition, output, workspace, response) {
   const recorded = modelManifest(output);
   const files = {};
@@ -511,7 +520,7 @@ function modelPrompt(ctx, options) {
     task: [
       'Diagnose and fix the blocker using the saved evidence. Merge authorizes the smallest repairs needed for its required checks, including repairs outside the original feature when they address an inherited failure.',
       'Reproduce and repair inherited test failures, formatting failures, and new Fallow findings that block delivery. Preserve the behavior and coverage the checks protect. Use focused checks to confirm the repair.',
-      'Preserve the issue and target history. Commit the repaired candidate in this checkout. Factory will run the full verification and publish the checked candidate.',
+      'Preserve the issue and target history. Commit the repaired candidate in this checkout. Factory will run the selected Merge verification checks and publish the checked candidate.',
       'If a product decision, unrelated change, or permission is required, stop and end your response with a flow-result fenced JSON object containing a failure string that names the blocker.',
     ].join('\n'),
     failure: options.repair.error.message,
@@ -890,6 +899,7 @@ async function runModel(service, ctx, owned, options) {
         base: workspace.base,
         commit: head,
         uncommitted: candidate.uncommitted,
+        ...workFocusedResult(ctx.block.kind, outputs.at(-1)),
       },
       ...(workspace.temporary ? {} : { workspace }),
     };

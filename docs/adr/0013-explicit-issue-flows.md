@@ -120,8 +120,9 @@ later verification, publication, merge, closure, or cleanup blocks.
 
 The standard delivery flow verifies the updated candidate at delivery.
 Merge reuses passing evidence when the issue commit, destination revision,
-verification inputs and retained evidence match. Verify remains available as a
-standalone block. A change to Goal or Requested proof invalidates related flow
+verification inputs and retained evidence match. Existing standalone Verify
+blocks remain runnable and are hidden when adding blocks or generating new
+flows. A change to Goal or Requested proof invalidates related flow
 results. Publish PR prepares and
 rechecks an exact preview before writing to GitHub. New PR descriptions include
 Requested proof when present. Repeat publication updates the title and commit as
@@ -133,10 +134,14 @@ uncommitted tree can be reused after that same tree is committed; a different tr
 requires verification again.
 
 Merge fetches Destination and merges its current revision into the issue branch.
-It checks full verification for the issue commit against that destination revision,
-pushes any changed commit to the existing PR, and waits for required GitHub checks.
-It repeats if Destination
-advances. GitHub determines readiness, including repositories with zero required
+It verifies the issue commit against that destination revision using the local
+scope selected in Request at the start of the attempt. The default uses the
+Factory smoke checks, both browser suites, Vitest and Work's recorded focused
+checks, along with formatting, Fallow, types and the build. Full regression
+substitutes the full Factory suite. Every local verification command has a
+15-minute deadline. Merge pushes any changed commit to the existing PR and waits
+for required GitHub checks. It repeats if Destination advances. GitHub determines
+readiness, including repositories with zero required
 checks or unsuccessful optional checks. The Merge block Markdown sets the merge
 policy, polling interval, check timeout, and repair limit. Merge defaults to
 automatic and proceeds when verification and GitHub requirements pass. Human-first policy

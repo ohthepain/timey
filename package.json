@@ -29,6 +29,7 @@
     "domain:migrate": "drizzle-kit migrate --config domain/drizzle.config.ts",
     "test:auth": "python3 scripts/auth-fixture.py",
     "factory:ui": "node scripts/factory-ui.mjs",
+    "test:factory:smoke": "node --test scripts/factory-priorities.check.mjs scripts/factory-interface.check.mjs scripts/flow-delivery.check.mjs",
     "test:workflow": "node --test scripts/factory-workflow.check.mjs",
     "factory:deploy": "node scripts/factory-deploy.mjs",
     "factory:restart": "node --env-file=.env scripts/factory-restart.mjs",

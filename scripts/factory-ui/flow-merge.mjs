@@ -67,9 +67,20 @@ async function synchronize(workspace, target, invoke) {
   });
 }
 
+function repairableMergeFailure(error) {
+  return (
+    error.code !== 'MERGE_CHECK_TIMEOUT' &&
+    (['target-conflict', 'ci-failure'].includes(error.code) || error.verificationFailure)
+  );
+}
+
 async function repairCandidate(ctx, workspace, error, options, state) {
-  const repairable = ['target-conflict', 'ci-failure'].includes(error.code) || error.verificationFailure;
-  if (ctx.signal.aborted || !repairable || permissionFailure(error) || state.repairs >= state.workflow.repairAttempts)
+  if (
+    ctx.signal.aborted ||
+    !repairableMergeFailure(error) ||
+    permissionFailure(error) ||
+    state.repairs >= state.workflow.repairAttempts
+  )
     throw error;
   const before = headOf(workspace);
   const tree = treeOf(workspace);
@@ -151,7 +162,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
 
 async function verifyMergeCandidate(service, ctx, workspace, head, options, state) {
   const input = options.verificationInput(ctx, workspace.checkout, options.verificationBase);
-  if (state.checked?.head !== head || state.checked.verification.input !== input) {
+  if (state.checked?.head !== head || state.checkedInput !== input) {
     state.checked = await ensureFlowVerification(
       service,
       ctx,
@@ -160,6 +171,7 @@ async function verifyMergeCandidate(service, ctx, workspace, head, options, stat
       options
     );
     state.evidence.push(...state.checked.evidence);
+    state.checkedInput = input;
   }
 }
 

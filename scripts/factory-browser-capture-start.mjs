@@ -56,6 +56,10 @@ export default async function captureStartChecks(page) {
     await page.waitForFunction(() => !refreshing);
     await page.getByRole('button', { name: 'Create issue', exact: true }).click();
     await page.getByLabel('Description', { exact: true }).fill(description);
+    await page.waitForFunction(() => {
+      const select = document.querySelector('#capture-folder');
+      return select && !select.disabled && select.options.length > 1;
+    });
     await page.locator('#capture-folder').selectOption('Inbox');
   }
 

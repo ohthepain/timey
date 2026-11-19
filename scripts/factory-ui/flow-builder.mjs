@@ -40,7 +40,9 @@ export async function buildFlowStructure({ service, issue, type, definition, cat
           issueType: type,
           request: request ?? { title: issue.title, wording: issue.content.slice(0, 24000) },
           blocks: definition.blocks,
-          availableBlockDefinitions: catalog.filter((entry) => entry.usable).map(({ id, label }) => ({ id, label })),
+          availableBlockDefinitions: catalog
+            .filter((entry) => entry.usable && entry.kind !== 'verify')
+            .map(({ id, label }) => ({ id, label })),
         }),
         skills,
         schema

@@ -4,7 +4,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 // Own the spawned process group; cancellation never discovers PIDs by ordering or name.
 export function runVerificationProcess(command, args, options, log) {
   writeFileSync(log, '');
-  const { signal, ...spawnOptions } = options;
+  const { signal, timeoutMs, ...spawnOptions } = options;
   if (signal?.aborted)
     return Promise.resolve({ status: null, stdout: '', stderr: '', error: 'Verification cancelled.' });
   return new Promise((resolve) => {
@@ -27,11 +27,19 @@ export function runVerificationProcess(command, args, options, log) {
         if (error.code !== 'ESRCH') result.error = 'Could not stop the owned verification process.';
       }
     };
-    const abort = () => {
-      result.error = 'Verification cancelled. No remaining checks were started.';
+    const stop = (message) => {
+      if (escalation) return;
+      result.error = message;
       terminate('SIGTERM');
       escalation = setTimeout(() => terminate('SIGKILL'), 2000);
     };
+    const abort = () => stop('Verification cancelled. No remaining checks were started.');
+    const onTimeout = () => {
+      if (escalation) return;
+      result.timedOut = true;
+      stop(`Verification command timed out after ${timeoutMs / 1000} seconds: ${[command, ...args].join(' ')}`);
+    };
+    const deadline = timeoutMs && setTimeout(onTimeout, timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     const heartbeat = setInterval(
       () =>
@@ -48,10 +56,16 @@ export function runVerificationProcess(command, args, options, log) {
     });
     child.on('close', (status) => {
       clearInterval(heartbeat);
+      clearTimeout(deadline);
+      if (escalation) terminate('SIGKILL');
       clearTimeout(escalation);
       signal?.removeEventListener('abort', abort);
       resolve({ ...result, status, finishedAt: new Date().toISOString() });
     });
-    if (signal?.aborted) abort();
+    abortIfAlreadyCancelled(signal, abort);
   });
+}
+
+function abortIfAlreadyCancelled(signal, abort) {
+  if (signal?.aborted) abort();
 }

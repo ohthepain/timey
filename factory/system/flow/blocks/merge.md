@@ -4,6 +4,10 @@ Sync the target into the issue branch, verify and push each new candidate, then 
 
 Fetch Destination again before merging. If the target advanced, repeat from the sync step. If a conflict or verification failure needs a decision, or repair stops making progress, pause for input. Under human-first policy, wait for approval of the current PR commit and target revision.
 
+Use the local verification scope saved in Request when the attempt starts.
+Repeat the focused tests recorded by Work. Local verification commands have a
+15-minute deadline. GitHub's required checks still apply.
+
 # Merge workflow
 
 ```json

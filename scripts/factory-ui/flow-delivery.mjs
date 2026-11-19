@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { digest, git, requireThat, writeJson } from './common.mjs';
 import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
-import { flowVerificationInput } from './flow-verification.mjs';
+import { flowMergeChecks, flowVerificationInput } from './flow-verification.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
 
@@ -109,7 +109,10 @@ export function flowVerificationHead(block) {
 export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const candidate = committedCandidate(workspace);
   const base = options.verificationBase;
-  const input = base && (options.verificationInput || flowVerificationInput)(ctx, workspace.checkout, base);
+  const mergeChecks = base && flowMergeChecks(ctx);
+  const getInput = options.verificationInput || flowVerificationInput;
+  const inputs = base ? [getInput(ctx, workspace.checkout, base)] : [];
+  if (mergeChecks?.scope === 'default') inputs.push(getInput(ctx, workspace.checkout, base, 'full'));
   const previous = ctx.block.attempts?.filter((attempt) => attempt.id !== ctx.attempt?.id).at(-1);
   const checks = [
     options.verification,
@@ -122,11 +125,11 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
     (checked) =>
       ((!checked?.uncommitted && checked?.head === candidate.head) ||
         (checked?.uncommitted && checked?.tree === candidate.tree)) &&
-      (!base || (input && checked.base === base && checked.input === input))
+      (!base || (checked?.input && checked.base === base && inputs.includes(checked.input)))
   );
   requireThat(
     current.some((checked) => checked.proof?.length >= 2),
-    'Run an explicit Verify block for this exact issue candidate. Required independent verification and step evidence are missing.'
+    'Required independent verification and step evidence is missing for this exact issue candidate.'
   );
   let failure;
   for (const checked of current) {
@@ -136,7 +139,7 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
       return {
         ...candidate,
         verification: checked,
-        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, options),
+        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, { ...options, mergeChecks }),
       };
     } catch (error) {
       failure ??= error;
@@ -161,12 +164,12 @@ function verifyEvidence({ tree, base }, checked, options) {
   }
   for (const proof of checked.proof) {
     const bytes = readFileSync(proof.path);
-    requireThat(
-      digest(bytes) === proof.sha256,
-      'The retained verification evidence changed. Run an explicit Verify block again.'
-    );
+    requireThat(digest(bytes) === proof.sha256, 'The retained verification evidence changed. Run verification again.');
     const summary = JSON.parse(bytes);
-    (options.validateSummary || validateSummary)(summary, base, tree, { auditPolicy: 'required' });
+    (options.validateSummary || validateSummary)(summary, base, tree, {
+      auditPolicy: 'required',
+      mergeChecks: options.mergeChecks,
+    });
     checkpoints.add(summary.checkpoint);
     evidence.push(proof);
     for (const check of summary.checks || []) {
@@ -196,7 +199,7 @@ export async function ensureFlowVerification(service, ctx, workspace, folder, op
     if (!options.verifyCandidate) throw error;
   }
   service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'verify', workspace.base);
-  ctx.onProgress('Running independent Verify checks on the issue commit.\n', true);
+  ctx.onProgress('Running independent verification on the issue commit.\n', true);
   const base = options.verificationBase;
   const { result, evidence } = await options.verifyCandidate(ctx, base ? { ...workspace, base } : workspace, folder);
   ctx.signal.throwIfAborted();

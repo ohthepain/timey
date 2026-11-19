@@ -15,6 +15,85 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { gitFixture } from './git-fixture.mjs';
 import { fallowAuditScope } from './verify-scope.mjs';
+import { factoryCheckCommand, normalizeFocusedTests } from './verify-merge-checks.mjs';
+import { flowMergeChecks } from './factory-ui/flow-verification.mjs';
+import { validateSummary } from './factory-ui/checks.mjs';
+import { digest } from './factory-ui/common.mjs';
+
+test('Merge uses the Request setting and records only completed upstream focused tests', () => {
+  const command = ['node', '--test', 'scripts/one.check.mjs'];
+  const request = { id: 'request', kind: 'request', after: [], data: {} };
+  const work = {
+    id: 'work',
+    kind: 'work',
+    after: ['request'],
+    attempts: [{ status: 'completed', result: { focusedTests: [command] } }],
+  };
+  const unrelated = {
+    ...work,
+    id: 'other',
+    attempts: [{ status: 'completed', result: { focusedTests: [['pnpm', 'run', 'test:unrelated']] } }],
+  };
+  const block = { id: 'merge', kind: 'merge', after: ['work'] };
+  const ctx = { block, flow: { blocks: [request, work, unrelated, block] } };
+  assert.deepEqual(flowMergeChecks(ctx), { scope: 'default', focusedRecorded: true, focused: [command] });
+  request.data.fullRegression = true;
+  assert.equal(flowMergeChecks(ctx).scope, 'full');
+  work.attempts.push({ status: 'completed', invalidatedAt: 'edited', result: { focusedTests: [] } });
+  assert.deepEqual(flowMergeChecks(ctx), { scope: 'full', focusedRecorded: false, focused: [] });
+  assert.equal(flowMergeChecks({ ...ctx, block: { kind: 'verify' } }), undefined);
+  assert.deepEqual(normalizeFocusedTests([command, command]), [command]);
+  for (const invalid of [
+    ['sh', '-c', 'test'],
+    ['pnpm', 'run', 'test:factory'],
+    ['node', '--test', 'scripts/a.check.mjs', '--import', 'other.mjs'],
+  ])
+    assert.throws(() => normalizeFocusedTests([invalid]), /Record focused test commands/);
+});
+
+test('Merge evidence checks the regression scope and the exact focused commands', (t) => {
+  const { root } = gitFixture(t, 'merge-scope-');
+  const { proof, browser, factory } = Object.fromEntries(
+    ['proof', 'browser', 'factory'].map((name) => [name, join(root, name)])
+  );
+  writeFileSync(proof, 'fixture');
+  writeFileSync(browser, 'PASS browser scenario: fixture');
+  writeFileSync(factory, 'ℹ tests 5');
+  const artifactHash = digest('fixture');
+  const focused = [['node', '--test', 'scripts/one.check.mjs']];
+  const plan = (scope) => ({ scope, focusedRecorded: true, focused });
+  const step = { base: 'base', snapshot_tree: 'tree', passed: true, checkpoint: 'step', checks: [] };
+  assert.throws(
+    () => validateSummary({ ...step, mergeChecks: plan('default') }, 'base', 'tree', { mergeChecks: plan('full') }),
+    /verification scope/
+  );
+  validateSummary({ ...step, mergeChecks: plan('full') }, 'base', 'tree', { mergeChecks: plan('default') });
+  const checks = [
+    { name: 'fallow', skipped: true, passed: true, command: ['skipped'] },
+    { name: 'factory', passed: true, exit: 0, command: factoryCheckCommand('default'), log: factory },
+    { name: 'browser', passed: true, exit: 0, log: browser, artifacts: [{ path: proof, sha256: artifactHash }] },
+    ...['typecheck', 'tests', 'build'].map((name) => ({ name, passed: true, exit: 0 })),
+  ];
+  const summary = { ...step, checkpoint: 'verification', changed_files: [], mergeChecks: plan('default'), checks };
+  assert.throws(() => validateSummary(summary, 'base', 'tree'), /focused test is missing/);
+  checks.push({ name: 'focused-1', passed: true, exit: 0, command: focused[0] });
+  validateSummary(summary, 'base', 'tree');
+  checks[1].command = factoryCheckCommand('full');
+  assert.throws(() => validateSummary(summary, 'base', 'tree'), /different regression suite/);
+});
+
+test('a hung verification command reports its deadline as a timeout', async (t) => {
+  const { root } = gitFixture(t, 'merge-timeout-');
+  const { runVerificationProcess } = await import('./verify-process.mjs');
+  const result = await runVerificationProcess(
+    process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)'],
+    { cwd: root, timeoutMs: 150 },
+    join(root, 'timeout.log')
+  );
+  assert.equal(result.timedOut, true);
+  assert.match(result.error, /timed out.*setInterval/);
+});
 
 test('fallow audit scope narrows to one path', () => {
   assert.equal(fallowAuditScope(['scripts/factory-ui/http.mjs']), 'scripts/factory-ui/http.mjs');
@@ -106,6 +185,7 @@ function auditFixture(t, extraFiles = {}) {
     'verify.mjs',
     'verify-scope.mjs',
     'verify-process.mjs',
+    'verify-merge-checks.mjs',
     'verify-preflight.mjs',
     'audit-result.mjs',
   ])
@@ -215,6 +295,7 @@ function aggregateFixture(t) {
   const manifestPath = join(root, 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   manifest.scripts['test:factory'] = 'node --test scripts/factory-interface.check.mjs';
+  manifest.scripts['test:factory:smoke'] = 'node -e "console.log(\'factory smoke sentinel\')"';
   manifest.scripts['test:browser'] = 'node index.js';
   manifest.scripts.build = 'node index.js';
   writeFileSync(manifestPath, JSON.stringify(manifest));
@@ -313,6 +394,26 @@ test('aggregate verification dispatches the package factory suite in an isolated
   );
   assert.equal(passed.summary.passed, true);
   assert.match(readFileSync(passed.factory.log, 'utf8'), /interface dispatch sentinel/);
+});
+
+test('Merge runs the focused command, common checks, and selected Factory suite', (t) => {
+  const { run } = aggregateFixture(t);
+  const focused = ['node', '--test', 'scripts/factory-interface.check.mjs'];
+  for (const scope of ['default', 'full']) {
+    const plan = { scope, focusedRecorded: true, focused: [focused] };
+    const { result, summary, factory } = run('--merge-checks', JSON.stringify(plan));
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual(summary.mergeChecks, plan);
+    assert.deepEqual(
+      summary.checks.map(({ name }) => name),
+      ['format-changed', 'fallow', 'focused-1', 'browser', 'factory', 'typecheck', 'tests', 'build']
+    );
+    const focusedResult = summary.checks.find(({ name }) => name === 'focused-1');
+    assert.deepEqual(focusedResult.command, focused);
+    assert.match(readFileSync(focusedResult.log, 'utf8'), /interface dispatch sentinel/);
+    const sentinel = scope === 'default' ? /factory smoke sentinel/ : /interface dispatch sentinel/;
+    assert.match(readFileSync(factory.log, 'utf8'), sentinel);
+  }
 });
 
 test('Verify stops before Fallow and tests on an unformatted change', (t) => {

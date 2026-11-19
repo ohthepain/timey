@@ -10,19 +10,25 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { assessAudit } from '../audit-result.mjs';
+import { factoryCheckCommand, focusedCheckName, mergeCheckPlan } from '../verify-merge-checks.mjs';
 import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
 import { cleanEnvironment, git, readJson, requireThat, runLogged, digest, writeJson } from './common.mjs';
 
-function candidateRunner({ auditPolicy, verifier, scope }) {
+function candidateRunner({ auditPolicy, verifier, scope, mergeChecks }) {
   const files = [fileURLToPath(import.meta.url)];
   if (verifier)
     files.push(
       verifier,
-      ...['verify-scope.mjs', 'verify-process.mjs', 'verify-preflight.mjs', 'audit-result.mjs', 'format-files.mjs'].map(
-        (name) => join(dirname(verifier), name)
-      )
+      ...[
+        'verify-scope.mjs',
+        'verify-process.mjs',
+        'verify-preflight.mjs',
+        'audit-result.mjs',
+        'format-files.mjs',
+        'verify-merge-checks.mjs',
+      ].map((name) => join(dirname(verifier), name))
     );
-  return digest(JSON.stringify([auditPolicy, scope, files.map((path) => digest(readFileSync(path)))]));
+  return digest(JSON.stringify([auditPolicy, scope, mergeChecks, files.map((path) => digest(readFileSync(path)))]));
 }
 
 export function verificationInput(root, base, options) {
@@ -32,8 +38,7 @@ export function verificationInput(root, base, options) {
 const activeChecks = new Map();
 export async function checkCandidate(root, base, folder, options = {}) {
   root = realpathSync(root);
-  const key =
-    git(root, 'rev-parse', base) + ':' + git(root, 'rev-parse', 'HEAD') + ':' + (options.auditPolicy || 'legacy');
+  const key = [git(root, 'rev-parse', base), git(root, 'rev-parse', 'HEAD'), candidateRunner(options)].join(':');
   const active = activeChecks.get(root);
   if (active) {
     requireThat(
@@ -112,7 +117,7 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
   const attempt = join(folder, 'attempt-' + randomUUID());
   mkdirSync(attempt);
   const summaries = [];
-  for (const [checkpoint, command, args, log] of checkpointCommands(base, options.verifier)) {
+  for (const [checkpoint, command, args, log] of checkpointCommands(base, options.verifier, options.mergeChecks)) {
     const context = { root, base: resolvedBase, tree: treeBefore, folder, attempt, input, options };
     const output = await executeCheckpoint(context, command, args, log);
     const path = commandSummary(root, output);
@@ -143,11 +148,12 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
   return result;
 }
 
-function checkpointCommands(base, script) {
+function checkpointCommands(base, script, mergeChecks) {
+  const profile = mergeChecks ? ['--merge-checks', JSON.stringify(mergeChecks)] : [];
   if (script)
     return [
-      ['verification', process.execPath, [script, '--base', base], 'verify.log'],
-      ['step', process.execPath, [script, '--step', '--audit-only', '--base', base], 'audit-step.log'],
+      ['verification', process.execPath, [script, '--base', base, ...profile], 'verify.log'],
+      ['step', process.execPath, [script, '--step', '--audit-only', '--base', base, ...profile], 'audit-step.log'],
     ];
   return [
     ['verification', 'pnpm', ['run', 'verify', '--', '--base', base], 'verify.log'],
@@ -199,6 +205,11 @@ function retainCheckpointFailure(context, log, error) {
   const savedLog = join(attempt, log);
   copyFileSync(join(folder, log), savedLog);
   const summaries = failedCheckpointSummaries(context, error);
+  const timedOut = summaries.map(readJson).find((summary) => summary.checks.some((check) => check.timedOut));
+  if (timedOut) {
+    error.code = 'MERGE_CHECK_TIMEOUT';
+    error.message = timedOut.error;
+  }
   error.verificationFailure = failureEvidence(summaries, [savedLog]);
   if (input === verificationInput(root, base, options))
     retainFailure(root, input, `Required check failed (${error.exitCode}). See ${savedLog}`, summaries, [savedLog]);
@@ -263,17 +274,49 @@ export function validateSummary(summary, base, tree, options = {}) {
     matchesSummary(summary, base, tree),
     'Evidence does not match the exact candidate tree and recorded base.'
   );
-  if (summary.checkpoint === 'verification') validateRequiredChecks(summary);
+  const plan = validateMergePlan(summary.mergeChecks, options.mergeChecks);
+  if (summary.checkpoint === 'verification') validateRequiredChecks(summary, plan);
   for (const check of summary.checks) validateCommand(check, summary.changed_files, options);
 }
-function validateRequiredChecks(summary) {
+function validateMergePlan(saved, required) {
+  const plan = saved === undefined ? null : mergeCheckPlan(saved);
+  if (required)
+    requireThat(
+      compatibleMergeChecks(plan, required),
+      'Evidence does not cover the required Merge verification scope.'
+    );
+  return plan;
+}
+function compatibleMergeChecks(actual, required) {
+  return (
+    [required.scope, 'full'].includes(actual?.scope) &&
+    actual.focusedRecorded === required.focusedRecorded &&
+    JSON.stringify(actual.focused) === JSON.stringify(required.focused)
+  );
+}
+
+function validateRequiredChecks(summary, plan) {
   const required = ['fallow', 'browser', 'factory', 'typecheck', 'tests', 'build'];
   if (summary.changed_files.length) required.push('format-changed');
   requireThat(
     required.every((n) => summary.checks.some((c) => c.name === n && c.passed)),
     'A required check is missing or failed.'
   );
+  if (!plan) return;
+  requireThat(
+    commandMatches(summary, 'factory', factoryCheckCommand(plan.scope)),
+    'Factory evidence used a different regression suite.'
+  );
+  for (const [index, command] of plan.focused.entries())
+    requireThat(
+      commandMatches(summary, focusedCheckName(index), command),
+      'A recorded focused test is missing or failed.'
+    );
 }
+const commandMatches = (summary, name, command) =>
+  summary.checks.some(
+    (check) => check.name === name && check.passed && JSON.stringify(check.command) === JSON.stringify(command)
+  );
 function skippedFallow(check) {
   return check.name === 'fallow' && check.skipped;
 }

@@ -32,6 +32,14 @@ same failure there in an isolated checkout. Record the revision and matching
 failure and continue. Report issue-specific failures that you cannot repair as
 blockers. Factory checks formatting and Fallow again after the response.
 
+In the final `flow-result` JSON, include a top-level `focusedTests` array
+with the passing focused test commands Merge should rerun. Use argument
+arrays without shell syntax or environment assignments. Supported commands
+include `["node","--test","scripts/example.check.mjs"]`,
+`["node","scripts/flow-browser.mjs","--project-discuss"]`, a named focused
+`pnpm run test:…` script, and `pnpm exec vp test run` with specific test paths.
+Use `"focusedTests": []` when no focused automated tests apply, and explain why.
+
 Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.
 
 Use Requested Proof to check the current result. In each response, describe what

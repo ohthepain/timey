@@ -543,7 +543,7 @@ test('an uncommitted verification survives its unchanged commit and expires when
   f.source.git('commit', '-m', 'Change candidate content');
   assert.throws(
     () => verifiedFlowCandidate(f.ctx, f.workspace, { validateSummary: () => {} }),
-    /Run an explicit Verify block/
+    /Required independent verification and step evidence is missing/
   );
 });
 
