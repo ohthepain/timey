@@ -1940,3 +1940,9 @@ When Run a retro is enabled, Retro is a planned closure block. It uses the norma
 block status and solid outline before it starts. Saved suggested Retro blocks
 are normalized without replacing their selected skill or attempt history. During
 closure the saved closure decision controls whether Retro remains enabled.
+
+Saving changed Your words invalidates Request and all subsequent blocks, across
+all lanes, before clarification runs. This includes Work and any retained
+verification, publication or merge results, even if clarification derives the
+same goal and proof criteria. Attempts and evidence stay in history. Rerunning
+unchanged wording keeps the existing criteria-based invalidation behavior.

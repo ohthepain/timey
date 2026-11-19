@@ -525,7 +525,7 @@ test('issue Play pauses on failure and Stop, retries once, and does not recover 
   await lastRun;
 });
 
-test('the issue pencil saves one title and Request edits keep verification when the criteria match', async (t) => {
+test('the issue pencil preserves results while changing Your words invalidates verification', async (t) => {
   const { root, id, service } = fixture(t);
   let fields = {
     type: 'bug',
@@ -565,7 +565,7 @@ test('the issue pencil saves one title and Request edits keep verification when 
   fields = { ...fields, constraints: 'Use test data' };
   await act('request', { wording: 'Fix the Save action' });
   assert.equal(view.issue.title, 'Fix the Save button');
-  assert.equal(currentVerify().invalidatedAt, undefined);
+  assert.ok(currentVerify().invalidatedAt);
   fields = { ...fields, requestedProof: 'Reload twice' };
   await act('request', { wording: 'Fix the Save action' });
   assert.ok(currentVerify().invalidatedAt);
@@ -1957,4 +1957,38 @@ test('opening a changed definition stops active work and invalidates only its co
   assert.ok(attempt(verify.id).invalidatedAt);
   assert.equal(attempt(independent.id).invalidatedAt, undefined);
   assert.equal(calls, 1);
+});
+
+test('editing Your words invalidates every following block even when clarification criteria match', async (t) => {
+  const { id, service } = fixture(t);
+  const fields = { type: 'bug', goal: 'Repair Save', requestedProof: 'Reload Save' };
+  const flows = createIssueFlows(service, { clarify: async () => ({ artifacts: { values: fields } }) });
+  t.after(() => flows.close());
+  let view = await flows.view(id);
+  view = await flows.action({ action: 'request', issueId: id, revision: view.flow.revision, wording: 'Fix Save' });
+  const issue = flows.selected(id);
+  const saved = flows.read(issue);
+  const independent = makeBlock('advice', []);
+  saved.blocks.push(independent);
+  for (const block of saved.blocks.filter((block) => block.kind !== 'request'))
+    block.attempts.push({
+      id: 'previous-' + block.id,
+      status: 'completed',
+      startedAt: '2026-11-19T12:00:00Z',
+      endedAt: '2026-11-19T12:00:01Z',
+      output: 'Retained earlier output',
+      evidence: [],
+    });
+  flows.store.save(saved, saved.revision);
+  view = await flows.action({
+    action: 'request',
+    issueId: id,
+    revision: flows.read(issue).revision,
+    wording: 'Fix Save with the revised requirements',
+  });
+  for (const block of view.flow.blocks.filter((block) => block.kind !== 'request')) {
+    const previous = block.attempts.find((attempt) => attempt.id === 'previous-' + block.id);
+    assert.ok(previous?.invalidatedAt, block.id + ' kept stale results');
+    assert.equal(previous.output, 'Retained earlier output');
+  }
 });

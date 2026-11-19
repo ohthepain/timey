@@ -1566,11 +1566,13 @@ class IssueFlows {
   async refreshRequest(issue, flow, wording, catalog, keepPlaying = false) {
     const block = requestBlock(flow);
     const priorFields = block.data.fields;
+    const wordingChanged = block.data.wording !== wording;
     this.checkDefinition(issue, flow, block.id, catalog);
     block.data.wording = wording;
     const revision = (block.data.editId = randomUUID());
     const previous = this.active.get(issue.id);
-    this.saveEdit(flow, new Set([block.id]), false, keepPlaying);
+    const affected = wordingChanged ? flow.blocks.map((item) => item.id) : [block.id];
+    this.saveEdit(flow, new Set(affected), false, keepPlaying);
     await previous?.task;
     flow = this.read(this.selected(issue.id));
     requireThat(
