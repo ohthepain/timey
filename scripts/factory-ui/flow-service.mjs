@@ -358,7 +358,7 @@ class IssueFlows {
     const settings = this.issueSettings(issue, flow);
     flow.resolvedBranch = settings.values.branch;
     if (typeof issue.run_retro === 'boolean') requestBlock(flow).data.runRetro = issue.run_retro;
-    if (!flow.closing) setRetroBlock(flow, catalog);
+    setRetroBlock(flow, catalog);
     if (isInvestigation(issue, flow) && !flow.closing && !issue.closed) {
       const removed = flow.blocks.filter((block) =>
         ['close', 'retro', 'cleanup', 'delete-worktree'].includes(block.kind)

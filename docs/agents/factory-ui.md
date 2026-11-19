@@ -1935,3 +1935,8 @@ Closure resolves issue type from its declared input, the current Request fields,
 then the saved flow type shown by the Request selector. Invalidated derived fields
 do not erase that saved type. Candidate verification, retained proof, and merged
 PR identity checks still apply before Fixed acceptance.
+
+When Run a retro is enabled, Retro is a planned closure block. It uses the normal
+block status and solid outline before it starts. Saved suggested Retro blocks
+are normalized without replacing their selected skill or attempt history. During
+closure the saved closure decision controls whether Retro remains enabled.
