@@ -169,3 +169,45 @@ test('reading Discuss in a new or preview project creates no settings or convers
   assert.equal(discuss.view().selected, null);
   assert.deepEqual(readdirSync(f.root), []);
 });
+
+test('a new message after failure uses current settings before older queued messages', async (t) => {
+  const f = fixture(t, async (_session, message) => {
+    if (message.settings.clarificationSkill !== 'none') throw Error('Missing clarification skill');
+    return { text: 'Recovered', suggestion: '' };
+  });
+  const id = (await f.discuss.action({ action: 'create' })).selected.id;
+  await f.discuss.action({
+    action: 'send',
+    conversationId: id,
+    clientId: 'failed',
+    text: 'First',
+    settings: { clarificationSkill: 'grilling' },
+  });
+  await until(
+    () => f.discuss.read(id),
+    (s) => s.status === 'paused' && !s.activeMessageId
+  );
+  f.discuss.change(id, (s) => s.queue.push({ ...s.messages[0], id: 'older', status: 'queued' }));
+  assert.equal(f.discuss.view(id).selected.queue.length, 1);
+  assert.equal(f.calls.length, 1, 'Reading a failed chat must not restart it');
+  await f.discuss.action({
+    action: 'send',
+    conversationId: id,
+    clientId: 'fresh',
+    text: 'Continue without grilling',
+    settings: { clarificationSkill: 'none' },
+  });
+  await until(
+    () => f.calls.length,
+    (n) => n >= 2
+  );
+  assert.equal(f.calls[1].message.id, 'fresh');
+  await until(
+    () => f.discuss.read(id),
+    (s) => !s.activeMessageId
+  );
+  const saved = f.discuss.read(id);
+  assert.equal(saved.messages.find((m) => m.replyTo === 'failed').status, 'failed');
+  assert.equal(saved.messages.find((m) => m.replyTo === 'fresh').text, 'Recovered');
+  assert.ok(saved.messages.some((m) => m.id === 'older') || saved.queue.some((m) => m.id === 'older'));
+});

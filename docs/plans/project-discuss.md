@@ -74,6 +74,11 @@ These ordinary query results do not import issue conversations or establish
 ongoing updates.
 
 Chat message editing and retries are independent of issue execution.
+A failed response pauses queued work and preserves its error. Sending a new
+message explicitly continues the chat with that message's current settings,
+ahead of the older queue. Reading or refreshing never resumes failed work.
+Explicit Stop and uncertain interrupted turns retain their existing Resume/Retry
+requirements.
 
 ## Message editing and retries
 
@@ -109,6 +114,8 @@ sessions are deliberately limited to drafting reviewed skill changes.
   whenever a request remains ambiguous after checking available facts. This is
   an ordinary skill invocation, with no special looping mechanism or autonomous
   extra turns. The skill asks questions and waits for the person's answers.
+- **No Grilling** is the default for new conversations and invokes no clarification
+  skill. Existing conversations retain their saved choice.
 - Available choices include **Grill Me** (`grill-me`), **Grill with Docs**
   (`grill-with-docs`), and **Grilling** (`grilling`). Retain the selected choice
   for the conversation until changed. Clear requests proceed directly.
@@ -167,3 +174,50 @@ Actual dictation uses browser speech recognition and requires browser support an
 microphone permission. Unsupported browsers retain normal text input and explain
 why dictation is unavailable. Real closed issues have not been archived; the
 user's live Discuss archive test remains a separate acceptance step.
+
+## Skill setup
+
+The shared `createSkillSelect` control in `scripts/factory-ui/skill-select.js`
+checks every listed skill against discovery and inserts **Set up skills** into
+the dropdown when any are absent. Missing skill choices are disabled. Entries
+with `kind: skill` declare their skill name; entries with `kind: value` are
+ordinary choices with no skill dependency. **No Grilling** uses `kind: value`
+and appears last, after any setup action.
+
+Each project declares its own required skill sets in `user/skills/requirements.json`.
+Each entry contains `name`, optional `source` (the installation URL), and `skills`
+(the required skill names). This project registers pstack and Matt Pocock's
+collection. Other projects can use different sources or declare project-owned
+skills without a source URL. No configuration means no required collections. Setup
+readiness is scoped to the skill options in this control, rather than unrelated
+skills elsewhere in those collections.
+
+Selecting Set up skills restores the saved selection and sends a visible
+installation request in the selected chat (or creates a chat if needed), using
+No Grilling and no selected skills. It preserves the composer draft and uses
+normal queue and permission controls. Opening Discuss starts no installation.
+Use Refresh skills afterward to update the control.
+
+Factory supplies its own `skill-installer` in
+`factory/system/skills/skill-installer/SKILL.md`. It installs complete skill
+folders into the active project's `user/skills`, using the current project’s configured installation sources. Factory-owned skills take precedence over host
+Codex skills with the same name, so setup does not depend on a personal Codex
+installation or install into its private directory.
+
+Selected Factory and Project skill instructions are included as text in the
+actual turn, with their source path for resolving supporting resources. Native
+Codex skill discovery does not know about the factory's custom directories;
+passing only a native skill reference can silently omit these instructions.
+Host-owned skills retain native skill inputs.
+
+Required skill names are minimum readiness checks, not a filter on installing a
+requested collection. Copy the full requested collection, including named skill
+dependencies. Discuss translates vendor Skill-tool calls into reading the named
+project skill file; it exposes those dependency paths separately from the
+implicitly invocable catalogue.
+
+The live Discuss installation test installed all 39 Matt Pocock skill folders
+from revision `abeeaf95660ba9e8b7c753eb38f441ca707a8823`. An independent
+comparison found no missing or changed upstream files. The first attempt copied
+only two wrapper skills; the retained chat records that failure and the explicit
+request that completed the collection.

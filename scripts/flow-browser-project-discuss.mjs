@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
-import { writeFileSync, readFileSync } from 'node:fs';
+import { readRequiredSkillSets } from './factory-ui/required-skills.mjs';
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export async function projectDiscussBrowserChecks({ page, service, project, poll, screenshot }) {
+  const requiredSkillSets = readRequiredSkillSets(process.cwd());
+  const skillsDirectory = join(project, 'user/skills');
+  mkdirSync(skillsDirectory, { recursive: true });
+  writeFileSync(join(skillsDirectory, 'requirements.json'), JSON.stringify(requiredSkillSets));
   const calls = [];
+  let availableSkills = ['grilling', 'grill-with-docs'].map((name) => ({
+    name,
+    description: 'Ask questions',
+    source: 'Project',
+    icon: '✦',
+  }));
   const choices = {
     defaults: { model: 'model-a', effort: 'high' },
     models: [
@@ -14,10 +25,11 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   };
   service.projectDiscussOptions = {
     modelSettings: () => choices,
-    skills: async () => [{ name: 'grilling', description: 'Ask questions', source: 'Project', icon: '✦' }],
+    skills: async () => availableSkills,
     createProvider: () => ({
       async turn(session, message, { signal, event, retain }) {
         calls.push(message);
+        if (message.text === 'Fail response') throw Error('Fixture provider failure');
         retain({ threadId: 'fixture-' + session.id, startup: { status: 'ready' } });
         event({ method: 'item/agentMessage/delta', params: { delta: 'Live partial response' } });
         event({
@@ -172,6 +184,27 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await page.locator(`[data-discuss-edit="${held.id}"]`).click();
   assert.equal(await page.locator('#discuss-draft').inputValue(), 'Hold response');
   assert.equal(calls.length, 4);
+  await page.locator('#discuss-draft').fill('Keep my draft during setup');
+  assert.equal(await page.locator('#discuss-clarification option').last().textContent(), 'No Grilling');
+  await page.locator('#discuss-clarification').selectOption('__setup_skills__');
+  await page.locator('#discuss-resume').click();
+  await poll(
+    () => calls.length,
+    (value) => value === 5,
+    'Skill setup prompt did not dispatch.'
+  );
+  assert.equal(calls[4].settings.clarificationSkill, 'none');
+  assert.deepEqual(calls[4].settings.skills, []);
+  assert.match(calls[4].text, /Set up the missing supported skill collections/);
+  assert.equal(await page.locator('#discuss-draft').inputValue(), 'Keep my draft during setup');
+  availableSkills = requiredSkillSets.flatMap((set) => set.skills.map((name) => ({ name })));
+  await page.locator('#discuss-refresh-skills').click();
+  await poll(
+    () => page.locator('#discuss-clarification option[value="__setup_skills__"]').count(),
+    (count) => count === 0,
+    'Setup option remained after all listed skills were installed.'
+  );
+  await page.locator('#discuss-clarification').selectOption('none');
   await screenshot('project-discuss');
   await page.setViewportSize({ width: 640, height: 900 });
   assert.equal(
@@ -180,4 +213,19 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'Discuss overflows narrow viewport'
   );
   await page.setViewportSize({ width: 1440, height: 960 });
+  await page.locator('#discuss-draft').fill('Fail response');
+  await page.locator('#discuss-draft').press('Enter');
+  await poll(
+    () => attachedSession().status,
+    (status) => status === 'paused',
+    'Failed chat did not pause'
+  );
+  await page.locator('#discuss-draft').fill('Continue after failure');
+  await page.locator('#discuss-draft').press('Enter');
+  await poll(
+    () => attachedSession().messages.at(-1)?.status,
+    (status) => status === 'completed',
+    'New message remained queued after failure'
+  );
+  assert.equal(calls.at(-1).text, 'Continue after failure');
 }

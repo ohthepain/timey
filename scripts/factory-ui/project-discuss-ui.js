@@ -82,10 +82,18 @@
       recognition = null;
     const localDrafts = new Map();
     const session = () => data?.selected;
-    const skillComposer = window.createSkillComposer(form, draft, async () => {
+    let setup = null;
+    async function discoverSkills() {
       const value = await request('/api/project-discuss-skills');
+      setup = value.setup;
+      clarificationSelect.discovered(value.skills || value);
       return value.skills || value;
+    }
+    const clarificationSelect = window.createSkillSelect(byId('discuss-clarification'), {
+      onChange: () => void saveSettings(),
+      onSetup: setupSkills,
     });
+    const skillComposer = window.createSkillComposer(form, draft, discoverSkills);
     const settings = () => ({
       model: byId('discuss-model').value,
       effort: byId('discuss-effort').value,
@@ -276,11 +284,7 @@
         })),
         selectedSettings?.effort || data?.defaults?.effort
       );
-      choices(
-        'discuss-clarification',
-        (data?.clarificationSkills || []).map((entry) => ({ value: entry.name, label: entry.label || entry.name })),
-        selectedSettings?.clarificationSkill || 'grilling'
-      );
+      clarificationSelect.update(data?.clarificationSkills || [], selectedSettings?.clarificationSkill || 'none');
       const log = byId('discuss-messages');
       const html =
         (current?.messages || []).map(messageHtml).join('') ||
@@ -459,9 +463,24 @@
       updateUrl();
       await refresh(true);
     });
-    for (const id of ['discuss-model', 'discuss-effort', 'discuss-clarification'])
+    for (const id of ['discuss-model', 'discuss-effort'])
       byId(id).addEventListener('change', () => void saveSettings());
+    async function setupSkills() {
+      try {
+        await discoverSkills();
+        if (!setup?.needed || (!selectedId && !(await create()))) return;
+        await action('send', {
+          clientId: crypto.randomUUID(),
+          text: setup.prompt,
+          settings: { ...settings(), clarificationSkill: 'none', skills: [] },
+          attachments: [],
+        });
+      } catch (failure) {
+        error(failure.message);
+      }
+    }
     byId('discuss-refresh-skills').addEventListener('click', () => {
+      void discoverSkills().catch((failure) => error(failure.message));
       skillComposer.refresh();
       byId('discuss-status').textContent = 'Skill discovery will refresh when you type /.';
     });
@@ -626,7 +645,10 @@
         const was = visible;
         visible = value;
         root.hidden = !value;
-        if (value && !was) void refresh(true);
+        if (value && !was) {
+          void refresh(true);
+          void discoverSkills().catch((failure) => error(failure.message));
+        }
         if (!value && was) {
           remember();
           void saveDraft();

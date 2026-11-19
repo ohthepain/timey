@@ -188,3 +188,23 @@ test('concurrent Stop signals interrupt the exact native turn only once', async 
   await Promise.all([f.provider.stop(f.session), f.provider.stop(f.session)]);
   assert.equal(f.calls.filter(({ method }) => method === 'turn/interrupt').length, 1);
 });
+
+test('No Grilling reaches the model without any installed clarification skills', async (t) => {
+  const f = fixture(t);
+  const call = f.connection.call.bind(f.connection);
+  f.connection.call = (method, params) => (method === 'skills/list' ? { data: [] } : call(method, params));
+  f.message.settings.clarificationSkill = 'none';
+  await f.provider.turn(f.session, f.message, f.context);
+  assert.ok(f.calls.some(({ method }) => method === 'provider/turn'));
+  const start = f.calls.find(({ method }) => method === 'thread/start');
+  assert.match(start.params.developerInstructions, /No Grilling: do not invoke/);
+  assert.match(start.params.developerInstructions, /Factory does not provide a native Skill tool/);
+  assert.doesNotMatch(start.params.developerInstructions, /Explicitly chosen clarification skill/);
+});
+
+test('missing selected clarification skill fails before starting a model turn', async (t) => {
+  const f = fixture(t);
+  f.message.settings.clarificationSkill = 'grill-me';
+  await assert.rejects(f.provider.turn(f.session, f.message, f.context), /Choose No Grilling or set up skills/);
+  assert.ok(!f.calls.some(({ method }) => method === 'thread/start'));
+});

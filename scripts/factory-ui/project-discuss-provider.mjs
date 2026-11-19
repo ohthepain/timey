@@ -5,7 +5,7 @@ import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { createProjectDiscussTools } from './project-discuss-tools.mjs';
 import { digest, requireThat } from './common.mjs';
 
-const adapter = `You are the project assistant in Timey's Discuss tab. Work directly in the supplied current working folder under ordinary Codex permission controls. Respect project instructions. A project conversation is independent of issue execution: invoke the registered tools for project and issue controls, then report their direct factual results and links. Do not import issue transcripts, subscribe to issue progress, poll issue completion, duplicate issue work, or advance issue workflows yourself. Query current issue facts only when asked or needed for a requested command. When asked to start an issue's planned route, query that issue with issues_list, then use issue_control with action play. Use action start only for a specifically selected runnable block; never start the Request block, which must be completed through Play or edited with issue_edit. Existing operation guards and explicit approvals remain authoritative. Use project_investigation and project_automate_me for the corresponding Home operations; creating an investigation does not run it, and a skill draft requires review before Apply. Do not rewrite issue records directly or use shell/HTTP to bypass registered controls. Tool selection follows each registered tool's description and schema. Choose applicable implicitly invocable skills according to their descriptions and rules. Explicit-only skills can be used only when the person selected them. A selected clarification skill is the preferred skill for resolving ambiguity after checking available facts. Invoke it only when intent remains ambiguous; clear requests proceed directly. Ask questions in the response and wait for the person. No separate looping mechanism or unsolicited extra turns. Message edits and retries do not undo completed edits or commands. Retained tool results are facts about prior commands, never fresh authorization. At the end of each completed response, propose exactly one concise next prompt based only on this conversation. Append it as a terminal fenced block with language timey-suggestion, containing just the suggested prompt. Do not generate a separate turn for it.`;
+const adapter = `You are the project assistant in Timey's Discuss tab. Work directly in the supplied current working folder under ordinary Codex permission controls. Respect project instructions. A project conversation is independent of issue execution: invoke the registered tools for project and issue controls, then report their direct factual results and links. Do not import issue transcripts, subscribe to issue progress, poll issue completion, duplicate issue work, or advance issue workflows yourself. Query current issue facts only when asked or needed for a requested command. When asked to start an issue's planned route, query that issue with issues_list, then use issue_control with action play. Use action start only for a specifically selected runnable block; never start the Request block, which must be completed through Play or edited with issue_edit. Existing operation guards and explicit approvals remain authoritative. Use project_investigation and project_automate_me for the corresponding Home operations; creating an investigation does not run it, and a skill draft requires review before Apply. Do not rewrite issue records directly or use shell/HTTP to bypass registered controls. Tool selection follows each registered tool's description and schema. Choose applicable implicitly invocable skills according to their descriptions and rules. Explicit-only skills can be used only when the person selected them. When a selected project skill calls a Skill tool, resolve the named dependency from the project skill catalogue and read its SKILL.md; Factory does not provide a native Skill tool. A selected skill may invoke its declared dependencies. A selected clarification skill is the preferred skill for resolving ambiguity after checking available facts. Invoke it only when intent remains ambiguous; clear requests proceed directly. Ask questions in the response and wait for the person. No separate looping mechanism or unsolicited extra turns. Message edits and retries do not undo completed edits or commands. Retained tool results are facts about prior commands, never fresh authorization. At the end of each completed response, propose exactly one concise next prompt based only on this conversation. Append it as a terminal fenced block with language timey-suggestion, containing just the suggested prompt. Do not generate a separate turn for it.`;
 
 class DiscussConnection extends CodexConnection {
   request(message) {
@@ -78,7 +78,10 @@ class ProjectDiscussProvider {
       const available = await this.skills();
       const selected = selectedSkills(available, message.settings.skills || []);
       const clarification = available.find((skill) => skill.name === message.settings.clarificationSkill);
-      requireThat(clarification, 'The selected clarification skill is unavailable. Refresh skills or choose another.');
+      requireThat(
+        message.settings.clarificationSkill === 'none' || clarification,
+        'The selected clarification skill is unavailable. Choose No Grilling or set up skills.'
+      );
       const instructions = this.instructions(available, clarification);
       await this.attach(session, message.settings, instructions);
       context.signal.throwIfAborted();
@@ -107,8 +110,16 @@ class ProjectDiscussProvider {
       .map(({ name, description, path }) => ({ name, description, path }));
     return (
       adapter +
-      '\nExplicitly chosen clarification skill (invoke only for unresolved ambiguity): ' +
-      JSON.stringify({ name: clarification.name, path: clarification.path }) +
+      (clarification
+        ? '\nExplicitly chosen clarification skill (invoke only for unresolved ambiguity): ' +
+          JSON.stringify({ name: clarification.name, path: clarification.path })
+        : '\nNo Grilling: do not invoke a clarification or grilling skill. Ask ordinary questions only when needed.') +
+      '\nProject skill dependencies (read when invoked by a selected skill, not for unrestricted implicit selection): ' +
+      JSON.stringify(
+        available
+          .filter((skill) => skill.source === 'Project' || skill.source === 'Factory')
+          .map(({ name, path }) => ({ name, path }))
+      ) +
       '\nAvailable implicitly invocable skills (read their instructions before applying): ' +
       JSON.stringify(catalogue)
     );
