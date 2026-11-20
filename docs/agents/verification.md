@@ -748,3 +748,9 @@ in the real Issues iframe, verifies that the editor and resize handle are absent
 archives only the checked reports, and opens an issue in the normal Flow view.
 It also checks that open selections retain the bulk editor. All archive fixtures
 are isolated; the user's production closed reports are never moved by this test.
+
+The project Issues browser check switches through the visible Open and Closed
+buttons in both directions, verifies that switching clears selection and the
+editor, and archives a closed selection with Archive all. It also verifies that
+the disabled direction caret is hidden for fixed status ordering and reappears
+for an order whose direction can change.

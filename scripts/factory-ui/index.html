@@ -1888,6 +1888,14 @@
         align-items: stretch;
         gap: 0;
       }
+      html[data-project-issues-embed='true'] [data-project-issue-mode][aria-pressed='true'] {
+        background: #3a3a3a;
+        border-color: #828282;
+        font-weight: 600;
+      }
+      html[data-project-issues-embed='true'] #queue-direction:disabled {
+        display: none;
+      }
       html[data-project-issues-embed='true'] .issue-workspace.has-project-issue-detail {
         grid-template-columns: minmax(0, 1fr) 8px var(--project-issue-detail-width, 335px);
       }
@@ -2724,6 +2732,7 @@
       let queueRouteMessage = '';
       const queueFilters = { search: '', roles: new Map(), sort: 'statusOrder', direction: 'desc', folderId: 'all' };
       const selectedProjectIssueIds = new Set();
+      let projectIssueMode = localStorage.getItem('factory.project-issues.mode') === 'closed' ? 'closed' : 'open';
       const projectIssueArchive = { saving: false, feedback: '' };
       const projectIssueBulk = {
         idsKey: '',
@@ -2748,12 +2757,22 @@
       function roleCount(stage) {
         return data.issues.filter((issue) => issue.state === stage.state && matchesQueueSearch(issue)).length;
       }
+      function embeddedIssueRoleSelected(issue) {
+        if (projectIssueMode === 'closed') return closedIssueState(issue.state);
+        if (closedIssueState(issue.state)) return false;
+        const stage = data.lifecycle.find((item) => item.state === issue.state);
+        return !stage || roleSelected(stage);
+      }
+      function issueRoleSelected(issue) {
+        if (document.documentElement.dataset.projectIssuesEmbed === 'true') return embeddedIssueRoleSelected(issue);
+        const stage = data.lifecycle.find((item) => item.state === issue.state);
+        return !stage || roleSelected(stage);
+      }
       function queueIssues() {
         return queueSortUI.sort(
           data.issues.filter((issue) => {
-            const stage = data.lifecycle.find((item) => item.state === issue.state);
             const folderMatches = queueFilters.folderId === 'all' || issue.folderId === queueFilters.folderId;
-            return (!stage || roleSelected(stage)) && matchesQueueSearch(issue) && folderMatches;
+            return issueRoleSelected(issue) && matchesQueueSearch(issue) && folderMatches;
           }),
           queueFilters
         );
@@ -2818,7 +2837,7 @@
       }
       function roleFilters() {
         return data.lifecycle
-          .filter(visibleLifecycleStage)
+          .filter(selectableLifecycleStage)
           .map((stage) => {
             const selected = roleSelected(stage);
             return `<label class="role-filter"><input type="checkbox" data-role-filter="${esc(stage.state)}" aria-label="${esc(stage.name)}" ${selected ? 'checked' : ''}>${esc(stage.name)} <b>${roleCount(stage)}</b></label>`;
@@ -2920,6 +2939,30 @@
         if (closedIssueState(issue.state)) return 'Closed';
         return [issue.strategy?.status, issue.stage, 'queued'].find(Boolean);
       }
+      function projectIssueModeControls(embedded) {
+        if (!embedded) return '';
+        return `<div class="toolbar" role="group" aria-label="Issue status">${['open', 'closed'].map((mode) => `<button type="button" data-project-issue-mode="${mode}" class="${projectIssueMode === mode ? 'primary' : ''}" aria-pressed="${projectIssueMode === mode}">${mode === 'open' ? 'Open' : 'Closed'}</button>`).join('')}</div>`;
+      }
+      function bindProjectIssueModes() {
+        document.querySelectorAll('[data-project-issue-mode]').forEach((button) => {
+          button.onclick = () => {
+            projectIssueMode = button.dataset.projectIssueMode;
+            localStorage.setItem('factory.project-issues.mode', projectIssueMode);
+            selectedProjectIssueIds.clear();
+            projectIssueArchive.feedback = '';
+            updateProjectIssueRoute();
+          };
+        });
+      }
+      function issueRoleControls(embedded) {
+        if (embedded && projectIssueMode === 'closed') return '';
+        return `<details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details>`;
+      }
+      function selectableLifecycleStage(stage) {
+        if (!visibleLifecycleStage(stage)) return false;
+        if (document.documentElement.dataset.projectIssuesEmbed !== 'true') return true;
+        return stage.role !== 'closed';
+      }
       function issueSidebar(selectedId) {
         const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
         const issues = queueIssues();
@@ -2933,7 +2976,7 @@
         const headingActions = projectIssuesEmbed
           ? queueRefreshButton()
           : `<button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button>`;
-        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions">${headingActions}</span></div>${folderMarkup}${projectIssueArchiveControls(projectIssuesEmbed)}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
+        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions">${headingActions}</span></div>${folderMarkup}${projectIssueModeControls(projectIssuesEmbed)}${projectIssueArchiveControls(projectIssuesEmbed)}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div>${issueRoleControls(projectIssuesEmbed)}</div>${
           issues.length
             ? `<nav aria-label="Issues">${projectIssuesEmbed ? `<label class="project-issue-select-all-row"><input type="checkbox" data-select-visible-issues ${allVisibleSelected ? 'checked' : ''}><span class="project-issue-select-all">Select all</span></label>` : ''}${issues
                 .map(
@@ -2950,6 +2993,7 @@
       }
       function bindProjectIssueSelection() {
         if (document.documentElement.dataset.projectIssuesEmbed !== 'true') return;
+        bindProjectIssueModes();
         bindProjectIssueArchive();
         const visibleIssues = queueIssues();
         const selectAll = document.querySelector('[data-select-visible-issues]');

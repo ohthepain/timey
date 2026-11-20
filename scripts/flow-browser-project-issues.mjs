@@ -46,8 +46,24 @@ export async function projectIssuesBrowserChecks({ page, project, root, output }
   try {
     await page.goto('/?projectTab=issues');
     const frame = page.frameLocator('#project-issues iframe');
-    await frame.getByText('Filter by role', { exact: true }).click();
-    await frame.locator('[data-role-filter="closed"]').check();
+    await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
+    assert.equal(await frame.locator('#queue-direction').isVisible(), false);
+    await frame.locator('#queue-sort').selectOption('created');
+    assert.equal(await frame.locator('#queue-direction').isVisible(), true);
+    await frame.locator('#queue-direction').click();
+    await frame.locator('#queue-sort').selectOption('statusOrder');
+    assert.equal(await frame.locator('#queue-direction').isVisible(), false);
+    await frame.locator(`[data-select-issue="${open}"]`).check();
+    await frame.getByText('Edit shared fields across the selection.', { exact: true }).waitFor();
+    await frame.getByRole('button', { name: 'Closed', exact: true }).click();
+    await frame.locator(`[data-select-issue="${closed[0]}"]`).waitFor();
+    assert.equal(await frame.locator(`[data-select-issue="${open}"]`).count(), 0);
+    assert.equal(await frame.locator('.issue-workspace-content').count(), 0);
+    await frame.getByRole('button', { name: 'Open', exact: true }).click();
+    await frame.locator(`[data-select-issue="${open}"]`).waitFor();
+    assert.equal(await frame.locator(`[data-select-issue="${open}"]`).isChecked(), false);
+    assert.equal(await frame.locator('.issue-workspace-content').count(), 0);
+    await frame.getByRole('button', { name: 'Closed', exact: true }).click();
     await frame.locator(`[data-select-issue="${closed[0]}"]`).check();
     await frame.locator(`[data-select-issue="${closed[1]}"]`).check();
     assert.equal(await frame.locator(`[data-issue-row="${closed[0]}"] small`).textContent(), 'Closed');
@@ -64,6 +80,7 @@ export async function projectIssuesBrowserChecks({ page, project, root, output }
     }
     assert.equal(existsSync(join(project, '.issues/closed', closed[2] + '.md')), true);
     assert.equal(existsSync(join(project, '.issues', open + '.md')), true);
+    await frame.getByRole('button', { name: 'Open', exact: true }).click();
     await frame.locator(`[data-select-issue="${open}"]`).check();
     await frame.getByText('Edit shared fields across the selection.', { exact: true }).waitFor();
     assert.equal(await frame.locator('.issue-workspace-content').count(), 1);

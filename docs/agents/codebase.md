@@ -706,6 +706,7 @@ between Home and Discuss and embeds the shared issue workspace for project-wide
 and folder views. `project-issues-bulk.mjs` applies selected shared fields with
 per-issue outcomes. Tapping an issue opens its normal Flow workspace in the top-level page.
 Open-issue checkbox selections use the shared bulk editor, including one checked issue.
+Always-visible Open/Closed controls scope the list and clear selection when switching.
 Selections containing only closed issues hide the detail column and offer Archive all
 through the guarded issue-storage operation; archiving reports per-issue outcomes.
 The embedded list opts into closed reports from the Closed folder.

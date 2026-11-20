@@ -21,8 +21,10 @@ The project-wide issue list loads when its tab is first opened. Opening an issue
 navigates to its normal Flow workspace and starts no work. The selection editor
 remains specific to bulk actions; it does not replace the normal issue view.
 
-The project Issues view lists open issues across folders by default. Closed
-issues can be viewed through the existing lifecycle filtering; Archived issues
+The project Issues view has always-visible **Open** and **Closed** buttons.
+The chosen mode is remembered in this browser, and switching modes clears the
+checkbox selection and detail column. Open mode retains lifecycle filters for
+open stages; Closed mode lists only closed issues. Archived issues
 remain in the Archive view. The list shows each issue's folder and priority.
 Priority is visible and sortable, but the list does not edit issue fields inline.
 The project's existing issue search, lifecycle filters, and ordering controls
