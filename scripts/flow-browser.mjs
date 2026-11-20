@@ -534,9 +534,12 @@ try {
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', async () => {
-    const labels = join(project, '.issues/triage-labels.md');
-    const savedLabels = existsSync(labels) ? readFileSync(labels) : null;
-    copyFileSync(join(root, '.issues/triage-labels.md'), labels);
+    const configuration = ['triage-labels.md', 'preferences.json'].map((file) => {
+      const path = join(project, '.issues', file);
+      return { path, content: existsSync(path) ? readFileSync(path) : null };
+    });
+    copyFileSync(join(root, '.issues/triage-labels.md'), configuration[0].path);
+    writeFileSync(configuration[1].path, '{"commit":true}');
     try {
       await page.goto('/');
       const issues = page.locator('.sidebar-issues-link');
@@ -572,8 +575,10 @@ try {
       assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
     } finally {
       await page.goto('about:blank');
-      if (savedLabels === null) rmSync(labels);
-      else writeFileSync(labels, savedLabels);
+      for (const { path, content } of configuration) {
+        if (content === null) rmSync(path);
+        else writeFileSync(path, content);
+      }
     }
   });
   await check('Local notes capture and handoff preserve flow', async () => {
