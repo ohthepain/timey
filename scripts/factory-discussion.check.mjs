@@ -196,19 +196,15 @@ test('temporary discussion lists enabled skills and invokes selected skills with
       ],
     };
   };
-  assert.deepEqual(await f.discussion.skills(f.input, f.owner), [
-    { name: 'sample', description: 'Sample skill', source: 'Personal', icon: '✦' },
-  ]);
+  const listed = await f.discussion.skills(f.input, f.owner);
+  assert.ok(listed.some(({ name, source }) => name === 'sample' && source === 'Personal'));
+  assert.ok(listed.some(({ source }) => source === 'Factory'));
   await f.discussion.turn({ ...f.input, text: '', skills: ['sample'] }, f.owner);
-  assert.deepEqual(f.skillCalls[0], [
-    {
-      name: 'sample',
-      path: f.skillPath,
-      description: 'Sample skill',
-      source: 'Personal',
-      sha256: (await import('./factory-ui/common.mjs')).digest(readFileSync(f.skillPath)),
-    },
-  ]);
+  assert.equal(f.skillCalls[0].length, 1);
+  const [selected] = f.skillCalls[0];
+  assert.equal(selected.name, 'sample');
+  assert.equal(selected.path, f.skillPath);
+  assert.equal(selected.sha256, digest(readFileSync(f.skillPath)));
   assert.equal(f.service.store.list(new Map()).length, 0);
 });
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -108,4 +108,12 @@ test('invalid selections and missing issue IDs are rejected', (t) => {
     () => saveIssueModelSettings(service, { issueId: 'issue-one', model: '', effort: 'xhigh' }),
     /listed effort levels/
   );
+});
+
+test('reading legacy model defaults preserves them without creating project settings files', (t) => {
+  const { root } = project(t);
+  writeFileSync(join(root, 'factory.config.json'), '{"factoryModel":"gpt-6.1-sol","factoryEffort":"high"}');
+  assert.deepEqual(readModelSettings(root).defaults, { model: 'gpt-6.1-sol', effort: 'high' });
+  assert.equal(existsSync(join(root, 'folder.md')), false);
+  assert.equal(existsSync(join(root, 'user/Inbox/folder.md')), false);
 });

@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 
 async function addAdviceBlock(service, issue) {
   const flow = service.flows.read(issue);
+  const before = new Set(flow.blocks.map(({ id }) => id));
   await service.flows.action({ action: 'add', issueId: issue.id, revision: flow.revision, kind: 'advice' });
-  return service.flows.read(issue).blocks.at(-1).id;
+  const added = service.flows.read(issue).blocks.find((block) => block.kind === 'advice' && !before.has(block.id));
+  assert.ok(added, 'Adding advice must return a new advice block.');
+  return added.id;
 }
 
 export async function flowBlockDeletionBrowserChecks(page, service, issueId) {

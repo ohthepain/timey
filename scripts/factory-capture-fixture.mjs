@@ -42,6 +42,7 @@ export function captureFixture(t, options = {}) {
   mkdirSync(helper, { recursive: true });
   for (const name of ['human-input.mjs', 'human-input-version.json'])
     cpSync(resolve('.agents/skills/issues/scripts', name), join(helper, name));
+  createIssueFolderSettings(root, 'Inbox');
   git('add', '.');
   git('commit', '-qm', 'capture fixture');
   mkdirSync(join(root, '.issues'));
@@ -58,7 +59,6 @@ export function captureFixture(t, options = {}) {
     '---\nid: 20261025-existing\ntitle: Existing issue\nstate: backlog\ngrill_later: false\nautonomy: ask\n---\nPreserve original bytes.\n'
   );
   factory(root).init();
-  createIssueFolderSettings(root, 'Inbox');
   const service = new FactoryUI(root, {
     capture: { assess: async (description) => ({ issues: [proposal(description)] }), ...options },
   });
