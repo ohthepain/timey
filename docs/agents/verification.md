@@ -707,3 +707,9 @@ Flow-card reveal checks wait for the whole card to be visible in the current
 scroll viewport. Card bounds and viewport bounds are measured together; partial
 scroll movement alone does not mean the reveal has finished. Failures retain
 relative card bounds and viewport height in the polling diagnostic.
+
+`node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
+and verifies that a successful explicit Refresh clears its old error banner.
+Background polling retains action errors. The running-Work browser scenario also
+checks that both Update Branch entry points are disabled while a block is active;
+opening the worktree remains available.

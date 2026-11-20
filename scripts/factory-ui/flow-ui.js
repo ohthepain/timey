@@ -397,6 +397,7 @@
       state.connectionError = '';
       $('connection-status').className = 'connection';
       $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · 2s';
+      if (announce) state.error = '';
       applyView(result);
       if (announce) toast('Saved flow refreshed.');
     } catch (error) {
@@ -518,7 +519,9 @@
     const startingBranch = $('starting-branch');
     if (startingBranch)
       startingBranch.disabled = busy || !state.view?.startingPointEditable || !state.view.branches?.length;
-    $('target-update-menu').disabled = busy;
+    const branchBusy = busy || Boolean(state.view?.flow?.blocks.some(isRunning));
+    $('target-update-menu').disabled = branchBusy;
+    $('worktree-menu').querySelector('option[value="update"]').disabled = branchBusy;
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
     $('merge-state-menu').disabled = busy || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);

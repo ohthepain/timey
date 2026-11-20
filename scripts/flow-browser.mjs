@@ -1,3 +1,4 @@
+import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
 import { browserScenarioSelected } from './browser-scenario-policy.mjs';
 import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
@@ -245,6 +246,7 @@ function connectionRecoveryIssue() {
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
     [
       '--connection-recovery',
       'Flow and Classic reload the selected issue after a lost connection without replaying the click',
@@ -440,6 +442,9 @@ try {
           })
       );
   });
+  await check('Successful refresh clears rejected branch update errors', () =>
+    errorRecoveryBrowserChecks({ page, service, project, output })
+  );
   await check('The whole sidebar scrolls over every section', async () => {
     const issuePaths = Array.from({ length: 24 }, (_, index) =>
       join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
@@ -1403,6 +1408,8 @@ try {
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
       'The running block was not centered within its content bounds on reload.'
     );
+    assert.equal(await page.locator('#target-update-menu').isDisabled(), true);
+    assert.equal(await page.locator('#worktree-menu option[value="update"]').isDisabled(), true);
     await screenshot('work-running-desktop');
     await clickAction(page.locator('[data-action="stop"]'));
     const stopped = await poll(
