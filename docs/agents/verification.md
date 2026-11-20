@@ -742,3 +742,9 @@ must match the candidate commit before evidence is used. The repair worker gets
 those local files, then Factory verifies, pushes, and waits for fresh checks.
 `flow-executor.check.mjs` drives this sequence through CI-only failure, changed
 candidates, multiple blockers, repeated failures, and cycles.
+
+`node scripts/flow-browser.mjs --project-issues` selects disposable closed issues
+in the real Issues iframe, verifies that the editor and resize handle are absent,
+archives only the checked reports, and opens an issue in the normal Flow view.
+It also checks that open selections retain the bulk editor. All archive fixtures
+are isolated; the user's production closed reports are never moved by this test.

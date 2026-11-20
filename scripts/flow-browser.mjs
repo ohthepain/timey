@@ -1,3 +1,4 @@
+import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
 import { browserScenarioSelected } from './browser-scenario-policy.mjs';
@@ -247,6 +248,7 @@ function connectionRecoveryIssue() {
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
     ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
     [
@@ -526,6 +528,9 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.reload();
   });
+  await check('Closed issue selections archive together and issue links open the normal view', () =>
+    projectIssuesBrowserChecks({ page, project, root, output })
+  );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Local notes capture and handoff preserve flow', async () => {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot });

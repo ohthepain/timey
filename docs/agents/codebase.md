@@ -704,9 +704,11 @@ renders the header button and retained progress and review dialog.
 The project landing area has Home, Issues, Discuss and Admin tabs. Issues sits
 between Home and Discuss and embeds the shared issue workspace for project-wide
 and folder views. `project-issues-bulk.mjs` applies selected shared fields with
-per-issue outcomes. Opening an issue embeds the Flow Request inspector;
-`flow-ui.js` owns its Request fields and Merge branch control. One or more
-checkbox selections use the shared bulk editor, including one checked issue.
+per-issue outcomes. Tapping an issue opens its normal Flow workspace in the top-level page.
+Open-issue checkbox selections use the shared bulk editor, including one checked issue.
+Selections containing only closed issues hide the detail column and offer Archive all
+through the guarded issue-storage operation; archiving reports per-issue outcomes.
+The embedded list opts into closed reports from the Closed folder.
 The project-wide queue iframe starts when the Issues tab is first opened;
 Request embeds do not start another hidden queue, and investigation routes retain
 the Request inspector inside that embed. Its selected-issue view skips the full

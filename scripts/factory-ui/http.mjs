@@ -451,7 +451,9 @@ async function read(service, request, response, owner) {
     '/api/issue-closure': () =>
       issueClosureContext(service, issue(selectedIssue), url.searchParams.get('kind') === 'reopen'),
     '/api/queue': () =>
-      selectedIssue ? issueResponse(service, owner, issue(selectedIssue)) : queueResponse(service.snapshot(owner)),
+      selectedIssue
+        ? issueResponse(service, owner, issue(selectedIssue))
+        : queueResponse(service.snapshot(owner, { includeClosed: url.searchParams.get('includeClosed') === 'true' })),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),

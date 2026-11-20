@@ -2171,6 +2171,10 @@
         if (!response.ok) throw Error(result.error);
         return result;
       }
+      function issueQueueEndpoint(issueId, embedded) {
+        if (embedded) return 'queue?includeClosed=true';
+        return issueId ? 'issue?issue=' + encodeURIComponent(issueId) : 'queue';
+      }
       async function refresh() {
         if (refreshing || serverControlUI.isWaitingForServer()) return;
         refreshing = true;
@@ -2181,7 +2185,7 @@
           const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
           const storage = issueStorageLocation();
           const [snapshot, runtime, conversation, stored] = await Promise.all([
-            request(issueId && !projectIssuesEmbed ? 'issue?issue=' + encodeURIComponent(issueId) : 'queue'),
+            request(issueQueueEndpoint(issueId, projectIssuesEmbed)),
             request('runtime'),
             issueId && !projectIssuesEmbed ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
             storage ? loadStoredIssues(storage) : null,
@@ -2720,6 +2724,7 @@
       let queueRouteMessage = '';
       const queueFilters = { search: '', roles: new Map(), sort: 'statusOrder', direction: 'desc', folderId: 'all' };
       const selectedProjectIssueIds = new Set();
+      const projectIssueArchive = { saving: false, feedback: '' };
       const projectIssueBulk = {
         idsKey: '',
         loading: false,
@@ -2857,6 +2862,64 @@
       function queueRefreshButton() {
         return '<button class="queue-refresh-button" type="button" data-queue-refresh aria-label="Refresh queue" title="Refresh queue"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"></path><path d="M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2"></path></svg></button>';
       }
+      function selectedProjectIssues() {
+        return data.issues.filter((issue) => selectedProjectIssueIds.has(issue.id));
+      }
+      function closedProjectIssueSelection() {
+        const issues = selectedProjectIssues();
+        return issues.length > 0 && issues.every((issue) => closedIssueState(issue.state));
+      }
+      function projectIssueDetailsVisible(route) {
+        if (closedProjectIssueSelection()) return false;
+        return selectedProjectIssueIds.size > 0 || Boolean(route.id);
+      }
+      function projectIssueLinkAttributes(issue, embedded) {
+        if (embedded) return `href="/?issue=${encodeURIComponent(issue.id)}" target="_top"`;
+        return `href="#/issue/${encodeURIComponent(issue.issueNumber)}"`;
+      }
+      function projectIssueArchiveButton() {
+        if (!closedProjectIssueSelection()) return '';
+        return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive all'}</button></div>`;
+      }
+      function projectIssueArchiveControls(embedded) {
+        if (!embedded) return '';
+        return `${projectIssueArchiveButton()}<p role="status" aria-live="polite">${esc(projectIssueArchive.feedback)}</p>`;
+      }
+      function applyProjectIssueArchive(results) {
+        projectIssueArchive.feedback = storageFeedback('closed', results);
+        for (const item of results) if (!item.error) selectedProjectIssueIds.delete(item.id);
+        updateProjectIssueRoute();
+      }
+      function bindProjectIssueArchive() {
+        const button = document.querySelector('[data-archive-project-issues]');
+        if (button) button.onclick = () => void archiveSelectedProjectIssues();
+      }
+      async function archiveSelectedProjectIssues() {
+        if (projectIssueArchive.saving || !closedProjectIssueSelection()) return;
+        const issueIds = selectedProjectIssues().map((issue) => issue.id);
+        projectIssueArchive.saving = true;
+        projectIssueArchive.feedback = '';
+        render();
+        try {
+          const result = await request('issue-storage-move', { action: 'archive', issueIds });
+          applyProjectIssueArchive(result.results);
+          await refresh();
+        } catch (error) {
+          projectIssueArchive.feedback = error.message;
+        } finally {
+          projectIssueArchive.saving = false;
+          render();
+        }
+      }
+      function loadProjectIssueSelection() {
+        if (closedProjectIssueSelection()) return;
+        const issues = selectedProjectIssues();
+        if (issues.length) void ensureProjectIssueBulk(issues);
+      }
+      function issueSidebarStatus(issue) {
+        if (closedIssueState(issue.state)) return 'Closed';
+        return [issue.strategy?.status, issue.stage, 'queued'].find(Boolean);
+      }
       function issueSidebar(selectedId) {
         const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
         const issues = queueIssues();
@@ -2870,12 +2933,12 @@
         const headingActions = projectIssuesEmbed
           ? queueRefreshButton()
           : `<button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button>`;
-        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions">${headingActions}</span></div>${folderMarkup}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
+        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions">${headingActions}</span></div>${folderMarkup}${projectIssueArchiveControls(projectIssuesEmbed)}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
           issues.length
             ? `<nav aria-label="Issues">${projectIssuesEmbed ? `<label class="project-issue-select-all-row"><input type="checkbox" data-select-visible-issues ${allVisibleSelected ? 'checked' : ''}><span class="project-issue-select-all">Select all</span></label>` : ''}${issues
                 .map(
                   (item) =>
-                    `<div class="issue-sidebar-item${projectIssuesEmbed ? ' has-selector' : ' has-drag-handle'}" data-issue-row="${esc(item.id)}"${projectIssuesEmbed && queueFilters.sort === 'implementationOrder' ? ' draggable="true"' : ''}>${projectIssuesEmbed ? `<input class="project-issue-select" type="checkbox" data-select-issue="${esc(item.id)}" aria-label="Select #${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" ${selectedProjectIssueIds.has(item.id) ? 'checked' : ''}>` : `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to organize ${esc(item.title || 'Untitled issue')}" title="Drag to move or reorder">⠿</button>`}<a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.issueNumber)}" aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
+                    `<div class="issue-sidebar-item${projectIssuesEmbed ? ' has-selector' : ' has-drag-handle'}" data-issue-row="${esc(item.id)}"${projectIssuesEmbed && queueFilters.sort === 'implementationOrder' ? ' draggable="true"' : ''}>${projectIssuesEmbed ? `<input class="project-issue-select" type="checkbox" data-select-issue="${esc(item.id)}" aria-label="Select #${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" ${selectedProjectIssueIds.has(item.id) ? 'checked' : ''}>` : `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to organize ${esc(item.title || 'Untitled issue')}" title="Drag to move or reorder">⠿</button>`}<a class="issue-sidebar-link" ${projectIssueLinkAttributes(item, projectIssuesEmbed)} aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(issueSidebarStatus(item))}</small></a></div>`
                 )
                 .join('')}</nav>`
             : '<p class="issue-sidebar-empty">No issues yet.</p>'
@@ -2887,6 +2950,7 @@
       }
       function bindProjectIssueSelection() {
         if (document.documentElement.dataset.projectIssuesEmbed !== 'true') return;
+        bindProjectIssueArchive();
         const visibleIssues = queueIssues();
         const selectAll = document.querySelector('[data-select-visible-issues]');
         if (selectAll) {
@@ -4763,11 +4827,11 @@
           return;
         }
         const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
-        const hasProjectIssueDetail = projectIssuesEmbed && (selectedProjectIssueIds.size > 0 || route.id);
+        const hasProjectIssueDetail = projectIssuesEmbed && projectIssueDetailsVisible(route);
         const wideSidebar =
           projectIssuesEmbed || (!data.issueScoped && window.matchMedia?.('(min-width: 1000px)').matches);
         const issueDetails =
-          projectIssuesEmbed && selectedProjectIssueIds.size > 0
+          hasProjectIssueDetail && selectedProjectIssueIds.size > 0
             ? projectIssueBulkEditor([...selectedProjectIssueIds])
             : route.id
               ? projectIssuesEmbed
@@ -4791,10 +4855,7 @@
         if (projectIssuesEmbed) {
           bindProjectIssueResizer();
           bindProjectIssueBulkEditor();
-          if (selectedProjectIssueIds.size > 0)
-            void ensureProjectIssueBulk(
-              [...selectedProjectIssueIds].map((id) => data.issues.find((issue) => issue.id === id)).filter(Boolean)
-            );
+          loadProjectIssueSelection();
         }
         if (route.run && route.id) {
           const selected = data.issues.find((entry) => entry.id === route.id);

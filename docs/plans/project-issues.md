@@ -13,16 +13,13 @@ workspace:
 
 1. Project navigation and issue folders on the left.
 2. A filterable issue list in the middle.
-3. The selected issue's Request block view on the right, using the same
+3. Shared fields for checked open issues on the right, using the same
    responsive width as the Flow block inspector. The detail column can be
-   resized independently.
+   resized independently. Closed-issue selections hide this column.
 
-The project-wide issue list loads when its tab is first opened. Request embeds
-do not start a second, hidden issue list. Investigation issues keep their Request
-visible in the detail column instead of switching to the full investigation page.
-Request embeds use a selected-issue view that skips building the full project
-index and branch catalog. Flow actions continue through the existing revision
-and destination checks.
+The project-wide issue list loads when its tab is first opened. Opening an issue
+navigates to its normal Flow workspace and starts no work. The selection editor
+remains specific to bulk actions; it does not replace the normal issue view.
 
 The project Issues view lists open issues across folders by default. Closed
 issues can be viewed through the existing lifecycle filtering; Archived issues
@@ -35,8 +32,8 @@ In the project Issues tab, checkboxes replace the issue-list drag handles. The
 checkbox at the top selects all issues currently visible through search and
 filters. When sorting by implementation order, dragging anywhere on an issue row
 reorders the implementation order. The existing project navigation and folder
-column stay visible. Clicking an issue row opens its Request view without
-changing checkbox selection; only clicking a checkbox changes selection.
+column stay visible. Tapping an issue title opens its normal Flow workspace in the top-level page.
+Checkboxes select issues for bulk actions.
 Selecting the **Issues** heading opens the Issues tab.
 
 A real issue folder uses this same workspace with the list scoped to that folder.
@@ -45,15 +42,18 @@ issues to add do not appear in the project-wide Issues view.
 
 ## Selecting and editing issues
 
-Tapping an issue in the middle list opens its Request block view in the right
-column at the narrower workspace width. Request includes a Merge branch control
-for the issue's destination branch. The right column can be resized. When no
-issue is open or checked, the right column and resize handle are hidden and the
-issue list fills the available width.
-A separate checkbox supports multi-selection. When one or more issues are
-checked, the right column switches to a shared bulk editor and shows the number
-selected, including when exactly one issue is checked. The issue list remains
-available while editing.
+Tapping an issue in the middle list opens its normal Flow workspace. Checkboxes
+select issues for bulk actions. When one or more open issues are checked, the
+right column shows the shared bulk editor, including exactly one checked issue.
+The issue list remains available while editing.
+
+When every checked issue is closed, hide the right column and its resize handle.
+Show **Archive all** beside the selection count. This archives only the selected
+issues through the existing guarded storage operation, reports failures for each
+issue, and leaves unselected issues alone. Successfully processed issues are
+deselected; failed issues remain selected for review or retry. Shared-queue
+publication and review requirements still apply. Archived issues disappear from
+the list after refresh.
 
 The bulk editor offers folder, priority, target branch, reusable, and retro
 settings. Target branch means the destination branch for the issue's pull
