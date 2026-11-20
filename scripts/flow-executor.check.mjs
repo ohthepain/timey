@@ -760,7 +760,7 @@ function verificationResult(workspace, folder) {
   return { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), base: workspace.base, proof };
 }
 
-function mergeFixture(t, { merged = false, onWait, repair, beforeVerify } = {}) {
+function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit } = {}) {
   const verificationInput = () => 'fixture-input';
   const observations = [];
   let publishedHead;
@@ -785,6 +785,7 @@ function mergeFixture(t, { merged = false, onWait, repair, beforeVerify } = {}) 
       await onWait?.(advanceTarget);
     },
     async execute({ cwd, args }) {
+      onGit?.(args);
       const git = (...values) =>
         execFileSync('git', ['-C', cwd, ...values], { encoding: 'utf8', stdio: 'pipe' }).trim();
       if (args[0] === 'fetch') return git('update-ref', 'refs/remotes/origin/dev', f.git('rev-parse', 'dev'));
@@ -971,8 +972,26 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
 test('Merge asks its worker to repair an inherited browser failure and verifies the repaired commit', async (t) => {
   const f = mergeFixture(t, {
     beforeVerify({ checkout }) {
-      if (readFileSync(join(checkout, 'source.txt'), 'utf8') === 'Initial source.\n')
-        throw Object.assign(Error('Closure waited for background resource checks.'), { verificationFailure: true });
+      if (readFileSync(join(checkout, 'source.txt'), 'utf8') === 'Initial source.\n') {
+        const folder = join(f.root, '.issues/failed-merge');
+        mkdirSync(folder, { recursive: true });
+        const log = join(folder, 'browser.log');
+        const summary = join(folder, 'summary.json');
+        writeFileSync(log, 'AssertionError: Only explicit Send starts a reply\n');
+        writeFileSync(
+          summary,
+          JSON.stringify({
+            checks: [
+              { name: 'build', passed: true },
+              { name: 'browser', passed: false, exit: 1, log },
+            ],
+          })
+        );
+        throw Object.assign(Error('Closure waited for background resource checks.'), {
+          verificationFailure: { summaries: [summary], logs: [log] },
+          evidence: [{ path: summary, label: 'Verification summary' }],
+        });
+      }
     },
   });
   await f.run('understand');
@@ -982,6 +1001,14 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
     const [, checkout, prompt] = args;
     assert.match(prompt, /repair inherited test failures/);
     assert.match(prompt, /Closure waited for background resource checks/);
+    const repairInput = JSON.parse(prompt);
+    for (const item of repairInput.evidence) {
+      assert.ok(item.path.startsWith(checkout + '/'), 'Repair evidence must be readable inside the issue checkout');
+      assert.ok(existsSync(item.path));
+    }
+    const failed = repairInput.failedChecks.find((check) => check.name === 'browser');
+    assert.equal(failed.exit, 1);
+    assert.match(readFileSync(failed.log, 'utf8'), /Only explicit Send starts a reply/);
     repairs++;
     writeFileSync(join(checkout, 'source.txt'), 'Browser scenario repaired.\n');
     execFileSync('git', ['-C', checkout, 'commit', '-am', 'Repair inherited browser failure']);
@@ -1142,11 +1169,12 @@ for (const resolves of [true, false]) {
       await assert.rejects(f.run('update-branch'), /Files to review: source.txt.*Choose a default/);
       assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
       assert.equal(f.work('show', 'HEAD:source.txt'), 'Local change.');
-      await assert.rejects(f.run('update-branch'), /already in progress.*source.txt/);
+      await assert.rejects(f.run('update-branch'), /Files to review: source.txt.*Choose a default/);
+      assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
       f.work('merge', '--abort');
       assert.equal(f.work('show', 'HEAD:source.txt'), 'Local change.');
     }
-    assert.equal(attempts, 1);
+    assert.equal(attempts, resolves ? 1 : 2);
   });
 }
 
@@ -1254,4 +1282,197 @@ test('investigation skills use the project catalog and preserve the investigatio
     f.calls.find(({ method }) => method === 'start').instructions,
     /Inspect validation and retain historical findings/
   );
+});
+
+test('Work recovers a local-listener permission refusal in the same chat before recording missing proof', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  let attempts = 0;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    attempts++;
+    return attempts === 1
+      ? '```flow-result\n{"failure":"Requested proof unavailable: node scripts/flow-browser.mjs --project-discuss failed with listen EPERM on 127.0.0.1."}\n```'
+      : 'The permission-enabled check passed and collected proof.\n```flow-result\n{"focusedTests":[]}\n```';
+  };
+  const result = await f.run('work');
+  const turns = f.calls.filter(({ method }) => method === 'turn');
+  assert.equal(turns.length, 2);
+  assert.equal(turns[1].threadId, turns[0].threadId);
+  assert.equal(turns[1].cwd, turns[0].cwd);
+  assert.match(turns[1].prompt, /require_escalated/);
+  assert.match(turns[1].prompt, /denied/i);
+  assert.notEqual(result.status, 'blocked');
+});
+
+test('Work bounds repeated unfinished-check responses and retains their reason', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    return '```flow-result\n{"failure":"The local server cannot start: listen EPERM on 127.0.0.1."}\n```';
+  };
+  await assert.rejects(f.run('work'), /unfinished steps after 3 continuations.*listen EPERM/);
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 4);
+});
+
+test('Work respects an explicit denial of the native local-server permission request', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    return '```flow-result\n{"failure":"The native permission request was denied. The local check failed with listen EPERM on 127.0.0.1."}\n```';
+  };
+  const result = await f.run('work');
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /denied/);
+});
+
+test('Work stops when native permission requests are unavailable', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    return '```flow-result\n{"failure":"Native permission requests are unavailable in this session. The check failed with listen EPERM on 127.0.0.1."}\n```';
+  };
+  const result = await f.run('work');
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /unavailable/);
+});
+
+test('Work completes ordinary unfinished proof collection in the same run', async (t) => {
+  let checks = 0;
+  const f = fixture(t, {
+    verifyWork: async () => {
+      checks++;
+      return { evidence: [] };
+    },
+  });
+  const original = f.connection.turn;
+  let turns = 0;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    turns++;
+    if (turns === 1)
+      return '```flow-result\n{"failure":"Computed-style proof for the message divider was not collected; the focused browser check passed."}\n```';
+    const folder = join(args[1], '.issues');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, 'rendered-style.json'),
+      JSON.stringify({ borderBottomStyle: 'none', borderBottomWidth: '0px' })
+    );
+    return 'Rendered border styles collected.\n```flow-result\n{"files":{"proof":".issues/rendered-style.json"},"focusedTests":[]}\n```';
+  };
+  const result = await f.run('work');
+  const calls = f.calls.filter(({ method }) => method === 'turn');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].threadId, calls[1].threadId);
+  assert.equal(calls[0].cwd, calls[1].cwd);
+  assert.match(calls[1].prompt, /Continue|continue/);
+  assert.notEqual(result.status, 'blocked');
+  assert.equal(checks, 1);
+  assert.equal(JSON.parse(readFileSync(result.artifacts.files.proof.path)).borderBottomWidth, '0px');
+});
+
+test('Work stops for a concrete human decision instead of continuing that decision itself', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    return '```flow-result\n{"failure":"Choose which conflicting behavior to preserve.","blocker":"human-input"}\n```';
+  };
+  const result = await f.run('work');
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /Choose which/);
+});
+
+test('unfinished Work continuations leave the full check-repair budget available', async (t) => {
+  let checks = 0;
+  const f = fixture(t, {
+    async verifyWork() {
+      checks++;
+      if (checks <= 3) throw Object.assign(Error('Fix the required check'), { verificationFailure: true });
+      return { evidence: [] };
+    },
+  });
+  const turn = f.connection.turn.bind(f.connection);
+  let turns = 0;
+  f.connection.turn = async (...args) => {
+    turns++;
+    if (turns <= 3) return '```flow-result\n{"failure":"Requested measurement is still unfinished."}\n```';
+    return turn(...args);
+  };
+  await f.run('work');
+  assert.equal(turns, 7);
+  assert.equal(checks, 4);
+});
+
+test('Update Branch aborts a pending merge before fetching and merging the latest starting branch', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const oldTarget = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue implementation.\n');
+  f.work('commit', '-am', 'Preserve issue implementation');
+  const saved = f.work('rev-parse', 'HEAD');
+  assert.throws(() => f.work('merge', '--no-edit', oldTarget));
+  writeFileSync(join(f.checkout, 'draft.txt'), 'Keep this draft.\n');
+  writeFileSync(join(f.root, 'source.txt'), 'Latest starting branch change.\n');
+  f.git('commit', '-am', 'Advance starting branch again');
+  const latest = f.git('rev-parse', 'HEAD');
+  const turn = f.connection.turn.bind(f.connection);
+  let repairs = 0;
+  f.connection.turn = async (...args) => {
+    repairs++;
+    assert.equal(f.work('rev-parse', 'MERGE_HEAD'), latest);
+    writeFileSync(join(f.checkout, 'source.txt'), 'Issue implementation.\nLatest starting branch change.\n');
+    f.work('add', 'source.txt');
+    return turn(...args);
+  };
+  await f.run('update-branch');
+  assert.equal(repairs, 1);
+  assert.equal(f.work('merge-base', 'HEAD', latest), latest);
+  assert.equal(f.work('merge-base', 'HEAD', saved), saved);
+  assert.equal(f.work('show', 'HEAD:draft.txt'), 'Keep this draft.');
+  assert.equal(f.work('status', '--porcelain'), '');
+});
+
+test('Update Branch leaves an unfinished cherry-pick intact', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const incoming = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue implementation.\n');
+  f.work('commit', '-am', 'Preserve issue implementation');
+  const saved = f.work('rev-parse', 'HEAD');
+  assert.throws(() => f.work('cherry-pick', incoming));
+  await assert.rejects(f.run('update-branch'), /Git operation already in progress/);
+  assert.equal(f.work('rev-parse', 'CHERRY_PICK_HEAD'), incoming);
+  assert.equal(f.work('rev-parse', 'HEAD'), saved);
+  assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), 'source.txt');
+});
+
+test('a new Merge run aborts a leftover local merge before synchronizing its target', async (t) => {
+  const commands = [];
+  const f = mergeFixture(t, { onGit: (args) => commands.push(args) });
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  const work = (...args) => f.git('-C', checkout, ...args);
+  writeFileSync(join(checkout, 'source.txt'), 'Issue implementation.\n');
+  work('commit', '-am', 'Issue implementation');
+  const saved = work('rev-parse', 'HEAD');
+  writeFileSync(join(f.root, 'source.txt'), 'Target implementation.\n');
+  f.git('commit', '-am', 'Target implementation');
+  assert.throws(() => work('merge', '--no-edit', 'dev'));
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    writeFileSync(join(checkout, 'source.txt'), 'Both implementations.\n');
+    work('add', 'source.txt');
+    work('commit', '--no-edit');
+    return turn(...args);
+  };
+  const result = await f.run('merge');
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(work('merge-base', 'HEAD', saved), saved);
+  assert.equal(work('status', '--porcelain'), '');
+  assert.equal(commands.filter((args) => args.join(' ') === 'merge --abort').length, 1);
 });

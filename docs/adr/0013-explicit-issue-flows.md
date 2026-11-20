@@ -192,6 +192,12 @@ when needed. Factory runs the branch update without a second prompt. The Branch
 button runs the action directly and shows a spinner. The action leaves the flow
 graph intact.
 
+An explicit Update Branch run aborts an existing merge in the managed issue
+checkout before fetching. This discards that merge’s partial resolutions;
+committed issue work remains. Other unfinished Git operations still stop the
+update. A new conflict receives the existing bounded resolution attempt and
+remains available for review if it cannot be resolved.
+
 Factory fetches the exact remote branch selected in Starting point, or the
 configured remote upstream of a local starting branch. A local branch without
 a remote upstream stops with a clear error. If the issue branch already contains the
@@ -259,3 +265,15 @@ Their single issue page owns creation-independent execution and run history.
 They archive directly, without a Close block or button, and execute in temporary
 committed snapshots. Reusable enables additional completed runs under the same
 issue identity. Other issue delivery and closure semantics are unchanged.
+
+## Pending local merges
+
+The issue header shows a red **Merge in progress** dropdown beside Worktree when
+Git has a pending local merge. **Abort merge** applies only to the observed merge
+on an idle issue. It keeps committed issue work and discards partial merge
+resolutions. The control follows Git state on refresh; it is distinct from a
+Merge block waiting for GitHub checks.
+
+An explicitly started Merge run also aborts a leftover local merge before its
+first synchronization. It does this once per run, after checking the PR and
+branch authority. Conflict repair within that run retains the merge it owns.

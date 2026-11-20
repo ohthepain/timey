@@ -33,6 +33,9 @@ selection, Tab acceptance, downloading retained attachment copies, queued edits 
 uses an injected speech recognizer in this scenario. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
+The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
+It records the source commit and each rendered message's top and bottom border
+styles and widths, so divider checks can use observed computed styles.
 The production closed issues are reserved for the user's own archive test and
 must not be used by these checks.
 
@@ -132,7 +135,16 @@ aggregate result while the other required checks still run and report separately
 The Flow **Verify** block can check saved, uncommitted source changes. Its
 verification and step audit must report the same snapshot tree. The source
 check records symlinks by their link targets and accounts for deleted files.
-Update Branch checks that the issue branch contains the fetched starting commit. Publish PR requires a clean commit.
+Update Branch aborts a pending merge before fetching the starting branch, then
+checks that the issue branch contains the fetched commit. Its focused executor
+checks cover restarting a conflicted merge against the latest upstream while
+preserving committed issue work and an untracked draft. Other Git operations
+remain blocked. The issue header shows a red Merge in progress menu while Git
+has a pending local merge. Its Abort merge action checks the observed merge and
+requires an idle issue. A new Merge run also aborts a pending local merge once
+before synchronization; subsequent repair steps preserve their own merge state.
+`node scripts/flow-browser.mjs --merge-recovery` checks the control through reload
+and abort using a disposable real conflict. Publish PR requires a clean commit.
 Merge verifies the committed candidate against the fetched destination. Request
 sets the local scope for each new attempt. The default runs the Factory smoke
 suite, both browser suites, Vitest and Work's recorded focused tests, along with
@@ -141,6 +153,27 @@ the full Factory suite in place of the smoke suite. Both scopes end a local
 verification command after 15 minutes. Evidence reuse requires matching inputs,
 including focused commands and the required scope. GitHub CI retains its full
 suite and existing branch protection.
+
+Drag-and-drop browser scenarios are excluded from ordinary verification and
+full regression, including Merge and CI. They run only when explicitly requested
+with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
+issue-folder assignment and Flow folder dragging. These fragile browser
+interactions must not gate unrelated delivery. Deterministic folder and ordering
+tests remain in their existing suites. `browser-scenario-policy.mjs` applies this
+selection in both browser runners; its focused check verifies ordinary, full and
+explicit selection.
+
+Before Merge invokes its repair worker, it copies the verification summaries,
+command output and each failed check log into the issue checkout. The prompt
+identifies failed checks separately from successful checks and references the
+local copies. Original records remain unchanged. The regression in
+`scripts/flow-executor.check.mjs` covers a passing build followed by a browser
+failure whose original logs are outside the worker checkout.
+
+The Notes browser scenario closes the preceding Discuss service before
+installing its own injected provider. Run
+`node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
+Discuss-to-Notes transition; combining focused flags runs those scenarios together.
 
 When closing a delivered flow, the delivery manifest records the verified
 candidate tree and the upstream Work blocks' requested proof. It retains proof
@@ -519,6 +552,20 @@ verification also opens and closes an actual localhost listener before running t
 suite, so a sandbox refusal is an immediate environment failure with no claimed
 checks. Audit-only checkpoints do not require networking. Preflight never grants
 permissions or installs dependencies automatically.
+
+For model-run checks, a `listen EPERM` or `listen EACCES` refusal requires a native
+permission request for that exact command. Work retains the same conversation and
+checkout when the model reports unfinished work, including uncollected proof.
+It allows up to three continuation turns, separately from the three check-repair
+attempts. A concrete human input requirement, denied or unavailable permission,
+or unavailable external dependency stops the run with its reason. Factory never
+grants permission itself. `node --test scripts/flow-executor.check.mjs` checks
+continuation, its limit, and actual blocker handling.
+
+Fallow already skips hidden agent tooling. `.fallowrc.json` explicitly excludes
+`.agents/**` so this intentional scope does not emit `skipped-source-dotdir`.
+Application code remains checked, including new unused exports; the real CLI
+regression is in `scripts/fallow-css-reset.check.mjs`.
 
 Summaries retain execution phase timestamps and owned command PIDs. Cancellation
 stops the runner's own child process group, retains a failed summary and starts no

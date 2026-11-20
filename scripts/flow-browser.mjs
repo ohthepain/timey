@@ -1,3 +1,5 @@
+import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
+import { browserScenarioSelected } from './browser-scenario-policy.mjs';
 import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
 import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
 import assert from 'node:assert/strict';
@@ -228,7 +230,10 @@ function unexpectedConsoleErrors(entries) {
   });
 }
 function checkExcluded(name) {
+  if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
+    ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
     ['--local-notes', 'Local notes capture and handoff preserve flow'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
@@ -241,7 +246,8 @@ function checkExcluded(name) {
     ['--human-input', humanInputCheck],
     ['--merge-settings', mergeSettingsCheck],
   ];
-  return selections.some(([flag, selected]) => process.argv.includes(flag) && name !== selected);
+  const selected = selections.filter(([flag]) => process.argv.includes(flag));
+  return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
 }
 
 async function check(name, run) {
@@ -311,6 +317,35 @@ async function block(id) {
 }
 async function screenshot(name) {
   await page.screenshot({ path: join(output, name + '.png'), fullPage: true });
+  if (name === 'project-discuss') {
+    const entries = await page.locator('.discuss-message').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        return {
+          id: node.dataset.discussMessage,
+          classes: node.className,
+          borderTopStyle: style.borderTopStyle,
+          borderTopWidth: style.borderTopWidth,
+          borderBottomStyle: style.borderBottomStyle,
+          borderBottomWidth: style.borderBottomWidth,
+        };
+      })
+    );
+    writeFileSync(
+      join(output, name + '-styles.json'),
+      JSON.stringify(
+        {
+          sourceCommit: git(root, 'rev-parse', 'HEAD'),
+          sourceStatus: git(root, 'status', '--porcelain'),
+          observedAt: new Date().toISOString(),
+          selector: '.discuss-message',
+          entries,
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  }
 }
 async function selectedGeometry() {
   return page.evaluate(() => {
@@ -553,6 +588,19 @@ try {
     assert.equal(logs.execution.length, 0);
   });
   await check('Issue folders retain every issue and accept drags between folders', async () => {
+    if (!issueId) {
+      await service.flows.action({ action: 'create-folder', name: 'Browser folder' });
+      const captured = await service.flows.action({
+        action: 'capture',
+        requestId: randomUUID(),
+        description,
+        folder: 'Browser folder',
+      });
+      issueId = captured.issue.id;
+      worktreeIssueId = issueId;
+      await page.goto('/?issue=' + issueId);
+      await page.locator('#request-form').waitFor();
+    }
     await flowIssueFoldersBrowserChecks(page, issueId, 'Browser folder');
     await screenshot('issue-folder-drag');
     await page.goto('/?issue=' + issueId);
@@ -2148,6 +2196,9 @@ try {
     await screenshot('starting-branch-moved');
   });
   await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
+  await check('Pending local merges are visible and can be aborted', () =>
+    mergeStateBrowserChecks({ page, project, service, screenshot })
+  );
   passed = true;
 } catch (error) {
   failure = error.stack;

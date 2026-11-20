@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
   "entry": ["src/routes/**/*.{ts,tsx}", "src/router.tsx", "src/start.ts"],
-  "ignorePatterns": [".output/**", "src/routeTree.gen.ts", "!.agents/**"],
+  "ignorePatterns": [".output/**", "src/routeTree.gen.ts", ".agents/**"],
   "production": {
     "health": true,
     "dupes": true

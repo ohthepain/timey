@@ -1,7 +1,10 @@
 # Codebase map
 
-Timey is a MIDI rhythm-practice app. Read the code for current signatures and
-configuration; this map explains responsibilities and the useful starting points.
+This repository implements the Timey MIDI rhythm-practice app in `src/` and the
+Factory development app in `scripts/factory-ui/`. The project Home, Issues,
+Discuss, and Admin tabs belong to Factory. Factory UI is application code in this
+repository. Read the code for current signatures and configuration; this map
+explains responsibilities and the useful starting points.
 
 Project-local quick capture lives in `scripts/factory-ui/local-notes.mjs` and
 `local-notes-ui.js`. The store resolves Git worktrees to their owning project,
@@ -577,7 +580,9 @@ and reports coordinator-owned recovery without changing approval policy.
 Browser verification uses `scripts/factory-browser.mjs` and its
 `browser-fixture.mjs` disposable data server. It discovers tracked
 `factory-browser-*.mjs` scenarios and the legacy sorting replay, reads actual
-candidate assets, and retains CLI logs and screenshots. `verify.mjs` invokes it
+candidate assets, and retains CLI logs and screenshots.
+`browser-scenario-policy.mjs` keeps drag-and-drop scenarios opt-in through
+`pnpm run test:browser:drag-and-drop`; ordinary and full regression exclude them. `verify.mjs` invokes it
 before the other behavior/type/build checks and records artifact hashes in the
 full summary. `factory-ui/checks.mjs`, candidate caching and issue delivery retain
 and validate this browser evidence against the same candidate tree.
@@ -681,6 +686,11 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+`execution-permissions.mjs` supplies native permission guidance for model-run
+checks. `work-progress.mjs` separates bounded unfinished-work continuations from
+check repairs and stops for concrete human, permission or external blockers.
+`flow-repair-evidence.mjs` copies Merge failure records and failed-check logs into
+the issue checkout before its repair worker starts.
 `branch-repair.mjs` owns issue-page branch repair runs and approval.
 `branch-repair-workspace.mjs` snapshots the source without changing its index and
 applies only an approved patch. `branch-repair-runner.mjs` runs the block prompt
@@ -798,7 +808,10 @@ cleanup for explicitly selected branches associated with the deleted reports.
 `flow-delivery.mjs` reads live destination branches, prepares the publication
 preview, and validates or refreshes independent verification evidence.
 `flow-update-branch.mjs` owns the local branch update used by the Branch button
-and the Update Branch block, using the starting branch’s upstream.
+and the Update Branch block, using the starting branch’s upstream. An explicit
+update aborts a pending merge before fetching and retains the other Git-operation
+guards. `flow-merge-state.mjs` reads the pending local merge for the header
+control, whose explicit abort action is guarded by the flow service.
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
