@@ -70,7 +70,10 @@ function mergeIdentity(checkout, allowed) {
 
 function requireStagedResolution(checkout, result) {
   requireThat(result.status !== 'blocked', result.summary);
-  requireThat(conflicts(checkout).length === 0, 'Codex left unresolved conflicts.');
+  requireThat(
+    conflicts(checkout).length === 0,
+    'Codex left unresolved conflicts. ' + (result.summary || 'Inspect the retained worker response.')
+  );
   requireThat(
     !git(checkout, 'ls-files', '-mo', '--exclude-standard', '-z'),
     'The resolution left unstaged or untracked files.'
