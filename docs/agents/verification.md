@@ -649,3 +649,10 @@ GitHub Actions receives verification stdout/stderr as each child emits it. A
 summary and retained evidence logs remain available after the command exits.
 An already-running GitHub job keeps the verifier from its checked-out revision;
 new streaming behavior requires a run containing the updated verifier.
+
+Flow browser verification writes under `TIMEY_BROWSER_OUTPUT/flow` when run by
+the aggregate verifier. An explicit `TIMEY_FLOW_BROWSER_OUTPUT` still overrides
+that location. This keeps its logs, response diagnostics and screenshots inside
+the retained verification artifacts after the exported checkout is removed.
+HTTP error records include the response body and originating request; unexpected
+browser errors continue to fail verification.
