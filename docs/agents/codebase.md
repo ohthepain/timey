@@ -3,6 +3,15 @@
 Timey is a MIDI rhythm-practice app. Read the code for current signatures and
 configuration; this map explains responsibilities and the useful starting points.
 
+Project-local quick capture lives in `scripts/factory-ui/local-notes.mjs` and
+`local-notes-ui.js`. The store resolves Git worktrees to their owning project,
+keeps notes excluded from Git, and serializes writes with stale-edit protection.
+`local-note-routes.mjs` joins notes to project discussion and existing issue
+creation. `ProjectDiscuss.prepareNote` records quiet context and a draft;
+`project-discuss-provider.mjs` passes that context on a later user turn.
+`scripts/local-note.mjs`, project chat tools and the bundled `local-note` skill
+share the store. See the [local notes design](../plans/local-notes.md).
+
 | Area                     | Start reading                                                                                                                                                                                                         | Responsibility                                                                                                                                                                                                      |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`, `vite.config.ts`, `src/start.ts`                                                                                                                                           | Shared UI, authentication context, route restoration, Vite+ and Start setup                                                                                                                                         |
@@ -672,6 +681,11 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+`branch-repair.mjs` owns issue-page branch repair runs and approval.
+`branch-repair-workspace.mjs` snapshots the source without changing its index and
+applies only an approved patch. `branch-repair-runner.mjs` runs the block prompt
+and Work prerequisite checks in the isolated candidate. `branch-repair-ui.js`
+renders the header button and retained progress and review dialog.
 `flow-ui.js` offers catalog blocks, including user-added Retro blocks; the distinct
 `closure-retro` block remains managed by the issue's closing settings.
 The project landing area has Home, Issues, Discuss and Admin tabs. Issues sits

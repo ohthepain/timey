@@ -1,3 +1,4 @@
+import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
 import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
 import assert from 'node:assert/strict';
 import {
@@ -34,6 +35,7 @@ import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -74,6 +76,8 @@ const assets = [
   'project-home-ui.js',
   'project-discuss-ui.js',
   'project-discuss.css',
+  'local-notes-ui.js',
+  'local-notes.css',
   'issue-chat-ui.js',
   'investigation-issue-ui.js',
   'project-home.css',
@@ -225,9 +229,11 @@ function unexpectedConsoleErrors(entries) {
 }
 function checkExcluded(name) {
   const selections = [
+    ['--local-notes', 'Local notes capture and handoff preserve flow'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
     ['--investigation-followups', followupsCheck],
+    ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
     ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
@@ -366,6 +372,9 @@ try {
     logs.responses.push({ path: new URL(response.url()).pathname, status: response.status() })
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check('Local notes capture and handoff preserve flow', () =>
+    localNotesBrowserChecks({ page, project, service, poll, screenshot })
+  );
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );
@@ -1996,6 +2005,9 @@ try {
       executor.run = run;
     }
     if (issueId) await page.goto('/?issue=' + issueId);
+  });
+  await check('Branch repair progress survives reload and requires candidate approval', async () => {
+    await branchRepairBrowserChecks({ page, service, project, poll, screenshot });
   });
   await check('Block skill choices preserve defaults and offer missing-skill setup', async () => {
     await blockSkillsBrowserChecks({ page, service, project, poll });

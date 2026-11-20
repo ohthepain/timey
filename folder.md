@@ -1,7 +1,7 @@
 ---
-branch: 'dev'
-skill: 'none'
-model: 'gpt-6-luna'
+branch: 'number_2'
+skill: 'poteto-mode'
+model: 'gpt-6.1-sol'
 effort: 'medium'
-selection_strategy: 'same-blast-radius'
+selection_strategy: 'different-blast-radii'
 ---

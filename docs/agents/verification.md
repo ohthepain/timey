@@ -2,6 +2,19 @@
 
 ## Commands and evidence
 
+`node --test scripts/fallow-css-reset.check.mjs` runs the pinned Fallow CLI and
+the unchanged strict audit policy on a CSS reset. It also adds an actually unused
+selector and confirms that the same policy blocks it.
+
+`node --test scripts/branch-repair.check.mjs` checks isolated repair candidates,
+retained progress, approval, stale source and environment files, tampered patches
+and check evidence, Stop, restart visibility, and bounded provider repair with
+injected model and check responses. It preserves staged and uncommitted edits.
+`node scripts/flow-browser.mjs --branch-repair` drives the real issue-page button,
+red check-failure state, progress after reload, candidate diff, and explicit
+approval in a disposable checkout. It injects the repair worker and does not run
+a live model or repair a production issue.
+
 `node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
 checks per-block defaults, personal/project extensions and explicit skill choices.
 `node scripts/flow-browser.mjs --block-skills` drives the graph skill picker,
@@ -141,6 +154,14 @@ when an aggregate command would include unrelated tests. Work leaves aggregate
 suites such as `pnpm run test:factory` to full candidate verification, which
 Merge requires. Add a focused test when needed. Factory rechecks formatting and
 Fallow after Work's response.
+
+Fallow 3.35.0 can miss CSS consumers in plain JavaScript HTML strings, and its
+source-location attribution can mark unchanged findings as introduced when an
+earlier line is deleted. Reproduce suspected inherited findings on the saved base.
+When the intent is to remove a visible style, an explicit reset such as
+`border-bottom: none` can preserve that intent without shifting existing findings.
+Do not add meaningless padding or suppress diagnostics. The project extension at
+`user/flow/extensions/blocks/fix-the-branch.md` gives repair runs this guidance.
 
 When a Work check cannot install dependencies, the issue checkout retains
 `.issues/evidence/dependency-recovery.json` and per-attempt install logs. A

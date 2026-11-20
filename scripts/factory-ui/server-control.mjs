@@ -51,7 +51,7 @@ export function serverControl(service, restart) {
         nativeActions(service.codex) +
         controllers.length +
         (service.captures?.active || 0) +
-        (service.flows?.active.size || 0) +
+        flowActions(service) +
         (service.flows?.flowBuilds?.size || 0) +
         (service.flows?.captures?.size || 0) +
         (service.flows?.followups?.busy.size || 0) +
@@ -388,4 +388,8 @@ function pendingPermissions(service) {
 
 function projectHomeActions(service) {
   return service.projectHome?.activeCount || 0;
+}
+
+function flowActions(service) {
+  return (service.flows?.active.size || 0) + (service.flows?.branchRepairs?.active.size || 0);
 }

@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/flow.css" />
     <link rel="stylesheet" href="/project-home.css" />
     <link rel="stylesheet" href="/project-discuss.css" />
+    <link rel="stylesheet" href="/local-notes.css" />
     <script src="/issue-chat-ui.js" defer></script>
     <script src="/discuss-markdown.js" defer></script>
     <script src="/skill-select.js" defer></script>
@@ -20,7 +21,9 @@
     <script src="/project-admin-ui.js" defer></script>
     <script src="/project-home-ui.js" defer></script>
     <script src="/investigation-issue-ui.js" defer></script>
+    <script src="/branch-repair-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
+    <script src="/local-notes-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
   </head>
@@ -82,6 +85,24 @@
           ><span aria-hidden="true">⌕</span
           ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
         /></label>
+        <section id="local-notes" class="local-notes" aria-label="Local notes">
+          <header>
+            <h2>Local notes</h2>
+            <button id="local-note-quick" type="button" class="small-button" title="Quick note (Alt+N)">＋ Note</button>
+          </header>
+          <form id="local-note-form">
+            <textarea
+              id="local-note-text"
+              aria-label="Quick local note"
+              placeholder="A thought to keep…"
+              maxlength="24000"
+              rows="2"
+            ></textarea
+            ><button type="submit" class="small-button">Save note</button>
+          </form>
+          <ul id="local-note-list" class="local-note-list"></ul>
+          <p id="local-note-status" role="status" aria-live="polite"></p>
+        </section>
         <section class="sidebar-files" aria-label="Files">
           <div id="sidebar-file-tree"></div>
           <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
@@ -209,6 +230,9 @@
             <span class="status-icon active-spinner" style="--spinner-color: currentColor" aria-hidden="true"></span>
             Updating branch…
           </span>
+          <button id="fix-branch" class="environment-chip branch-repair-control" type="button" aria-haspopup="dialog">
+            Fix Branch
+          </button>
           <span id="worktree-hint">
             <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
               <option value="" disabled selected>Worktree</option>
@@ -727,6 +751,17 @@
         <button class="primary-button" type="button" data-followups-create disabled>Create selected issues</button>
       </div>
     </dialog>
+    <dialog id="local-note-editor" class="modal local-note-modal" aria-labelledby="local-note-editor-heading">
+      <form id="local-note-edit-form">
+        <h2 id="local-note-editor-heading">Quick note</h2>
+        <textarea id="local-note-edit-text" aria-label="Note text" maxlength="24000" required></textarea>
+        <p id="local-note-edit-error" role="alert"></p>
+        <footer>
+          <button id="local-note-edit-cancel" type="button" class="small-button">Cancel</button
+          ><button type="submit" class="small-button">Save note</button>
+        </footer>
+      </form>
+    </dialog>
     <dialog id="capture-dialog" class="modal capture-modal">
       <form id="capture-form">
         <div class="modal-heading">
@@ -1071,6 +1106,29 @@
       <footer>
         <button class="small-button" type="button" data-home-command="automate-stop" hidden>Stop</button
         ><button class="small-button" type="button" data-home-command="automate-retry" hidden>Retry</button>
+      </footer>
+    </dialog>
+    <dialog class="modal branch-repair-dialog" id="branch-repair-dialog" aria-labelledby="branch-repair-heading">
+      <h2 id="branch-repair-heading">Fix Branch</h2>
+      <p data-repair-status role="status"></p>
+      <p class="muted" data-repair-timing></p>
+      <p data-repair-error role="alert"></p>
+      <h3>Progress and check output</h3>
+      <pre data-repair-output></pre>
+      <section data-repair-review>
+        <h3>Candidate diff</h3>
+        <pre data-repair-diff></pre>
+        <p class="muted" data-repair-checks></p>
+        <p>
+          Approval applies these repairs to this issue checkout as uncommitted changes. Review and commit them with your
+          issue work.
+        </p>
+      </section>
+      <footer>
+        <button class="primary-button" type="button" data-repair-command></button
+        ><button class="small-button" type="button" data-repair-stop>Stop</button
+        ><button class="small-button" type="button" data-repair-reconcile>Retain interrupted run and allow retry</button
+        ><button class="small-button" type="button" data-repair-close>Close</button>
       </footer>
     </dialog>
   </body>

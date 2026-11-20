@@ -1227,7 +1227,10 @@
     );
   }
 
+  const branchRepairUI = window.createBranchRepairUI({ button: $('fix-branch'), action });
+
   function renderEnvironment() {
+    branchRepairUI.update(state.view);
     const environment = state.view?.environment;
     $('environment').hidden = !environment;
     if (!environment) return;
@@ -2382,6 +2385,7 @@
   }
 
   function openCapture(folder) {
+    state.captureNote = null;
     const selected =
       typeof folder === 'string'
         ? folder
@@ -3167,6 +3171,12 @@
   });
 
   window.openFlowCapture = openCapture;
+  window.openFlowCaptureFromNote = (note) => {
+    openCapture();
+    state.captureNote = note;
+    state.captureId = null;
+    $('capture-description').value = note.text;
+  };
   $('new-issue').addEventListener('click', openCapture);
   $('rename-issue').addEventListener('click', () => {
     const form = $('rename-issue-form');
@@ -3450,6 +3460,16 @@
     $('capture-dialog').close();
     toast('Issue created. Its blocks are ready for you to choose.');
     const id = result.issue?.id || result.issueId;
+    if (id && state.captureNote) {
+      const note = state.captureNote;
+      state.captureNote = null;
+      try {
+        await window.localNotesUI.issueCreated(note, id);
+      } catch (error) {
+        toast('Issue created. Open it from Local notes. Discussion could not be prepared: ' + error.message);
+      }
+      return;
+    }
     if (id) selectIssue(id);
     else await load(true);
   });

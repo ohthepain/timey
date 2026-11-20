@@ -97,6 +97,17 @@ test('project provider uses current folder, writable permission guards, conditio
   assert.equal(skills.find(({ name }) => name === 'grill-with-docs').allowImplicitInvocation, false);
 });
 
+test('a prepared local note reaches the provider only with the later explicit prompt', async (t) => {
+  const f = fixture(t);
+  f.session.noteContext = { id: 'note', text: 'Keep this thought', issueId: '20261120-note' };
+  assert.deepEqual(f.calls, []);
+  await f.provider.turn(f.session, f.message, f.context);
+  const prompt = f.calls.find(({ method }) => method === 'provider/turn').params.prompt;
+  assert.match(prompt, /Keep this thought/);
+  assert.match(prompt, /20261120-note/);
+  assert.match(prompt, /Current request:\nRead this project\./);
+});
+
 test('explicit-only selections and retained images/files are actual native turn input', async (t) => {
   const f = fixture(t);
   const path = join(f.root, 'retained.txt');

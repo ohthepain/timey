@@ -2409,3 +2409,45 @@ kbd {
 #folder-bulk-preview li {
   padding: 4px 0;
 }
+
+.branch-repair-control {
+  background: transparent;
+}
+.branch-repair-control:where([data-repair-state='broken']),
+.branch-repair-control:where([data-repair-state='failed']),
+.branch-repair-control:where([data-repair-state='interrupted']) {
+  color: #f28b82;
+  border-color: currentColor;
+}
+.branch-repair-control:where([data-repair-state='ready']) {
+  color: var(--green);
+  border-color: currentColor;
+}
+.branch-repair-dialog {
+  width: min(860px, 90vw);
+  max-height: 85vh;
+  overflow: auto;
+}
+.branch-repair-dialog h3 {
+  margin: 20px 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.branch-repair-dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 35vh;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.branch-repair-dialog footer {
+  margin-top: 24px;
+  justify-content: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
