@@ -1476,3 +1476,12 @@ test('a new Merge run aborts a leftover local merge before synchronizing its tar
   assert.equal(work('status', '--porcelain'), '');
   assert.equal(commands.filter((args) => args.join(' ') === 'merge --abort').length, 1);
 });
+
+test('Update Branch shows the worker decision when its response leaves conflicts unresolved', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue change.\n');
+  f.connection.turn = async () =>
+    'Decision needed: include or exclude the installed agent tooling?\n\n```flow-result\n{"status":"failure","values":{"decision":"Choose the audit scope."}}\n```';
+  await assert.rejects(f.run('update-branch'), /Decision needed: include or exclude the installed agent tooling/);
+});
