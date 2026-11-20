@@ -135,7 +135,11 @@ aggregate result while the other required checks still run and report separately
 The Flow **Verify** block can check saved, uncommitted source changes. Its
 verification and step audit must report the same snapshot tree. The source
 check records symlinks by their link targets and accounts for deleted files.
-Update Branch checks that the issue branch contains the fetched starting commit. Publish PR requires a clean commit.
+Update Branch aborts a pending merge before fetching the starting branch, then
+checks that the issue branch contains the fetched commit. Its focused executor
+checks cover restarting a conflicted merge against the latest upstream while
+preserving committed issue work and an untracked draft. Other Git operations
+remain blocked. Publish PR requires a clean commit.
 Merge verifies the committed candidate against the fetched destination. Request
 sets the local scope for each new attempt. The default runs the Factory smoke
 suite, both browser suites, Vitest and Work's recorded focused tests, along with

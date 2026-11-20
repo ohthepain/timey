@@ -1168,11 +1168,12 @@ for (const resolves of [true, false]) {
       await assert.rejects(f.run('update-branch'), /Files to review: source.txt.*Choose a default/);
       assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
       assert.equal(f.work('show', 'HEAD:source.txt'), 'Local change.');
-      await assert.rejects(f.run('update-branch'), /already in progress.*source.txt/);
+      await assert.rejects(f.run('update-branch'), /Files to review: source.txt.*Choose a default/);
+      assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
       f.work('merge', '--abort');
       assert.equal(f.work('show', 'HEAD:source.txt'), 'Local change.');
     }
-    assert.equal(attempts, 1);
+    assert.equal(attempts, resolves ? 1 : 2);
   });
 }
 
@@ -1406,4 +1407,45 @@ test('unfinished Work continuations leave the full check-repair budget available
   await f.run('work');
   assert.equal(turns, 7);
   assert.equal(checks, 4);
+});
+
+test('Update Branch aborts a pending merge before fetching and merging the latest starting branch', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const oldTarget = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue implementation.\n');
+  f.work('commit', '-am', 'Preserve issue implementation');
+  const saved = f.work('rev-parse', 'HEAD');
+  assert.throws(() => f.work('merge', '--no-edit', oldTarget));
+  writeFileSync(join(f.checkout, 'draft.txt'), 'Keep this draft.\n');
+  writeFileSync(join(f.root, 'source.txt'), 'Latest starting branch change.\n');
+  f.git('commit', '-am', 'Advance starting branch again');
+  const latest = f.git('rev-parse', 'HEAD');
+  const turn = f.connection.turn.bind(f.connection);
+  let repairs = 0;
+  f.connection.turn = async (...args) => {
+    repairs++;
+    assert.equal(f.work('rev-parse', 'MERGE_HEAD'), latest);
+    writeFileSync(join(f.checkout, 'source.txt'), 'Issue implementation.\nLatest starting branch change.\n');
+    f.work('add', 'source.txt');
+    return turn(...args);
+  };
+  await f.run('update-branch');
+  assert.equal(repairs, 1);
+  assert.equal(f.work('merge-base', 'HEAD', latest), latest);
+  assert.equal(f.work('merge-base', 'HEAD', saved), saved);
+  assert.equal(f.work('show', 'HEAD:draft.txt'), 'Keep this draft.');
+  assert.equal(f.work('status', '--porcelain'), '');
+});
+
+test('Update Branch leaves an unfinished cherry-pick intact', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const incoming = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue implementation.\n');
+  f.work('commit', '-am', 'Preserve issue implementation');
+  const saved = f.work('rev-parse', 'HEAD');
+  assert.throws(() => f.work('cherry-pick', incoming));
+  await assert.rejects(f.run('update-branch'), /Git operation already in progress/);
+  assert.equal(f.work('rev-parse', 'CHERRY_PICK_HEAD'), incoming);
+  assert.equal(f.work('rev-parse', 'HEAD'), saved);
+  assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), 'source.txt');
 });

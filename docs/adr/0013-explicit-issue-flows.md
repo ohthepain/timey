@@ -192,6 +192,12 @@ when needed. Factory runs the branch update without a second prompt. The Branch
 button runs the action directly and shows a spinner. The action leaves the flow
 graph intact.
 
+An explicit Update Branch run aborts an existing merge in the managed issue
+checkout before fetching. This discards that merge’s partial resolutions;
+committed issue work remains. Other unfinished Git operations still stop the
+update. A new conflict receives the existing bounded resolution attempt and
+remains available for review if it cannot be resolved.
+
 Factory fetches the exact remote branch selected in Starting point, or the
 configured remote upstream of a local starting branch. A local branch without
 a remote upstream stops with a clear error. If the issue branch already contains the
