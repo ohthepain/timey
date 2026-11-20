@@ -34,6 +34,7 @@ rejects invalid PEM input before writing. It uses disposable directories and key
 message settings and attachment copies, explicit queue/Stop/Retry behavior,
 native tool and permission ownership, skill invocation policy, and guarded
 Home/issue dispatch in disposable projects. `pnpm run test:project-discuss:browser`
+checks that Home opens without a selected issue or a Branch Fix control, then
 drives Home/Discuss navigation, retained drafts, Markdown, model/effort and skill
 selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop.
 It also checks opening a long conversation after delayed history and image loading,
