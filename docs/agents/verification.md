@@ -172,8 +172,9 @@ local copies. Original records remain unchanged. The regression in
 `scripts/flow-executor.check.mjs` covers a passing build followed by a browser
 failure whose original logs are outside the worker checkout.
 
-The Notes browser scenario closes the preceding Discuss service before
-installing its own injected provider. Run
+The Notes browser scenario leaves a pending Discuss draft, unloads the preceding
+page, and closes its Discuss service before installing its own injected provider.
+Its console assertion catches draft saves that cross that fixture boundary. Run
 `node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
 Discuss-to-Notes transition; combining focused flags runs those scenarios together.
 

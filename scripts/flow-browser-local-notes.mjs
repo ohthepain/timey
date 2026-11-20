@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { LocalNotes } from './factory-ui/local-notes.mjs';
 
 export async function localNotesBrowserChecks({ page, service, project, poll, screenshot }) {
+  if (await page.locator('#discuss-draft').isVisible())
+    await page.locator('#discuss-draft').fill('Pending draft at the Notes fixture boundary');
+  await page.goto('about:blank');
   service.projectDiscuss?.close();
   service.projectDiscuss = null;
   const turns = [];

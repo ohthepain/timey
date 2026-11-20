@@ -407,9 +407,10 @@ try {
     logs.responses.push({ path: new URL(response.url()).pathname, status: response.status() })
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
-  await check('Local notes capture and handoff preserve flow', () =>
-    localNotesBrowserChecks({ page, project, service, poll, screenshot })
-  );
+  await check('Local notes capture and handoff preserve flow', async () => {
+    await localNotesBrowserChecks({ page, project, service, poll, screenshot });
+    assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+  });
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );
