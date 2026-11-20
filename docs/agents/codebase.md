@@ -728,7 +728,10 @@ Issue activity is not streamed back into Discuss.
 horizontal conversation tabs, message alignment and hover actions, settings,
 attachments, dictation, and suggested prompts. The composer overlays the bottom
 of the scrollable history with enough trailing space to keep the final message
-visible. Its settings and attachment controls share a row with Send. Discuss hides
+visible. Opening Discuss scrolls the loaded history to the bottom, including after
+initial images settle. Interacting with the history cancels that opening scroll;
+ordinary polling preserves the reader’s position. Its settings and attachment
+controls share a row with Send. Discuss hides
 the shared Flow footer. The shared skill composer lives in `issue-chat-ui.js`.
 Open conversation tabs stay in creation order; closing a tab marks its conversation
 closed and retains its saved history.
