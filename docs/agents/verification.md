@@ -139,7 +139,12 @@ Update Branch aborts a pending merge before fetching the starting branch, then
 checks that the issue branch contains the fetched commit. Its focused executor
 checks cover restarting a conflicted merge against the latest upstream while
 preserving committed issue work and an untracked draft. Other Git operations
-remain blocked. Publish PR requires a clean commit.
+remain blocked. The issue header shows a red Merge in progress menu while Git
+has a pending local merge. Its Abort merge action checks the observed merge and
+requires an idle issue. A new Merge run also aborts a pending local merge once
+before synchronization; subsequent repair steps preserve their own merge state.
+`node scripts/flow-browser.mjs --merge-recovery` checks the control through reload
+and abort using a disposable real conflict. Publish PR requires a clean commit.
 Merge verifies the committed candidate against the fetched destination. Request
 sets the local scope for each new attempt. The default runs the Factory smoke
 suite, both browser suites, Vitest and Work's recorded focused tests, along with

@@ -520,6 +520,7 @@
       startingBranch.disabled = busy || !state.view?.startingPointEditable || !state.view.branches?.length;
     $('target-update-menu').disabled = busy;
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
+    $('merge-state-menu').disabled = busy || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);
   }
 
@@ -1235,6 +1236,9 @@
     $('environment').hidden = !environment;
     if (!environment) return;
     renderWorktreeHint(environment.worktreeExists);
+    const mergeMenu = $('merge-state-menu');
+    mergeMenu.hidden = !environment.merge;
+    mergeMenu.title = environment.merge?.conflicts.join(', ') || 'A local merge is awaiting completion.';
     const chips = [];
     if (environment.branch)
       chips.push(`<span class="environment-chip" title="Current issue branch">⑂ ${escape(environment.branch)}</span>`);
@@ -3022,6 +3026,14 @@
       void load(true);
     }
   }
+
+  $('merge-state-menu').addEventListener('change', async (event) => {
+    const operation = event.target.value;
+    event.target.value = '';
+    if (operation === 'abort' && (await action('abort-merge', { merge: state.view.environment.merge }))) {
+      toast('Merge aborted. Saved issue commits are preserved.');
+    }
+  });
 
   $('target-update-menu').addEventListener('change', async (event) => {
     const menu = event.target;

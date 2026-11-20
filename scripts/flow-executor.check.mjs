@@ -760,7 +760,7 @@ function verificationResult(workspace, folder) {
   return { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), base: workspace.base, proof };
 }
 
-function mergeFixture(t, { merged = false, onWait, repair, beforeVerify } = {}) {
+function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit } = {}) {
   const verificationInput = () => 'fixture-input';
   const observations = [];
   let publishedHead;
@@ -785,6 +785,7 @@ function mergeFixture(t, { merged = false, onWait, repair, beforeVerify } = {}) 
       await onWait?.(advanceTarget);
     },
     async execute({ cwd, args }) {
+      onGit?.(args);
       const git = (...values) =>
         execFileSync('git', ['-C', cwd, ...values], { encoding: 'utf8', stdio: 'pipe' }).trim();
       if (args[0] === 'fetch') return git('update-ref', 'refs/remotes/origin/dev', f.git('rev-parse', 'dev'));
@@ -1448,4 +1449,30 @@ test('Update Branch leaves an unfinished cherry-pick intact', async (t) => {
   assert.equal(f.work('rev-parse', 'CHERRY_PICK_HEAD'), incoming);
   assert.equal(f.work('rev-parse', 'HEAD'), saved);
   assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), 'source.txt');
+});
+
+test('a new Merge run aborts a leftover local merge before synchronizing its target', async (t) => {
+  const commands = [];
+  const f = mergeFixture(t, { onGit: (args) => commands.push(args) });
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  const work = (...args) => f.git('-C', checkout, ...args);
+  writeFileSync(join(checkout, 'source.txt'), 'Issue implementation.\n');
+  work('commit', '-am', 'Issue implementation');
+  const saved = work('rev-parse', 'HEAD');
+  writeFileSync(join(f.root, 'source.txt'), 'Target implementation.\n');
+  f.git('commit', '-am', 'Target implementation');
+  assert.throws(() => work('merge', '--no-edit', 'dev'));
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    writeFileSync(join(checkout, 'source.txt'), 'Both implementations.\n');
+    work('add', 'source.txt');
+    work('commit', '--no-edit');
+    return turn(...args);
+  };
+  const result = await f.run('merge');
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(work('merge-base', 'HEAD', saved), saved);
+  assert.equal(work('status', '--porcelain'), '');
+  assert.equal(commands.filter((args) => args.join(' ') === 'merge --abort').length, 1);
 });

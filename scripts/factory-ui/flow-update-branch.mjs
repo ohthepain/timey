@@ -239,7 +239,7 @@ function reportReplayFailure(replay, error) {
   throw error;
 }
 
-async function abortPendingMerge(workspace, invoke) {
+export async function abortPendingMerge(workspace, invoke) {
   const { checkout, branch: issueBranch } = workspace;
   requireThat(branch(checkout) === issueBranch, 'The issue branch changed. Open the managed issue branch and retry.');
   const active = gitOperations.filter((name) =>

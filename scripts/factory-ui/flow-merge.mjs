@@ -1,3 +1,4 @@
+import { abortPendingMerge } from './flow-update-branch.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -211,6 +212,12 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, verificationOptions, state);
 }
 
+async function prepareMergeCheckout(state, workspace, invoke) {
+  if (state.started) return;
+  await abortPendingMerge(workspace, invoke);
+  state.started = true;
+}
+
 export async function mergeFlowPR(service, ctx, workspace, folder, options) {
   const workflow = ctx.definition?.mergeWorkflow;
   requireThat(workflow, 'The Merge block needs workflow settings in its Markdown definition.');
@@ -252,6 +259,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
       assertFlowRemote(workspace, deliveryTarget(ctx.flow).remote, provider.config.repository, 'fetch');
       await assertPublicationIdle(provider, pr, workspace.branch);
       service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'implement', workspace.base);
+      await prepareMergeCheckout(state, workspace, invoke);
       try {
         const outcome = await advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state);
         if (outcome) return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
