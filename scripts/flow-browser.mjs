@@ -534,35 +534,47 @@ try {
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', async () => {
-    await page.goto('/');
-    const issues = page.locator('.sidebar-issues-link');
-    const notes = page.locator('#local-notes > header > h2');
-    await issues.waitFor();
-    await notes.waitFor();
-    const textStyle = (node) => {
-      const style = getComputedStyle(node);
-      return Object.fromEntries(
-        [
-          'fontFamily',
-          'fontSize',
-          'fontWeight',
-          'fontStyle',
-          'lineHeight',
-          'letterSpacing',
-          'textTransform',
-          'color',
-        ].map((property) => [property, style[property]])
+    const labels = join(project, '.issues/triage-labels.md');
+    const savedLabels = existsSync(labels) ? readFileSync(labels) : null;
+    copyFileSync(join(root, '.issues/triage-labels.md'), labels);
+    try {
+      await page.goto('/');
+      const issues = page.locator('.sidebar-issues-link');
+      const notes = page.locator('#local-notes > header > h2');
+      await issues.waitFor();
+      await notes.waitFor();
+      const textStyle = (node) => {
+        const style = getComputedStyle(node);
+        return Object.fromEntries(
+          [
+            'fontFamily',
+            'fontSize',
+            'fontWeight',
+            'fontStyle',
+            'lineHeight',
+            'letterSpacing',
+            'textTransform',
+            'color',
+          ].map((property) => [property, style[property]])
+        );
+      };
+      const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
+      await screenshot('sidebar-labels');
+      writeFileSync(
+        join(output, 'sidebar-labels-styles.json'),
+        JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
       );
-    };
-    const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
-    await screenshot('sidebar-labels');
-    writeFileSync(
-      join(output, 'sidebar-labels-styles.json'),
-      JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
-    );
-    assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
-    await issues.click();
-    await page.locator('#project-issues').waitFor();
+      assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
+      await issues.click();
+      await page.locator('#project-issues').waitFor();
+      const frame = page.frameLocator('#project-issues iframe');
+      await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
+      assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+    } finally {
+      await page.goto('about:blank');
+      if (savedLabels === null) rmSync(labels);
+      else writeFileSync(labels, savedLabels);
+    }
   });
   await check('Local notes capture and handoff preserve flow', async () => {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot });
