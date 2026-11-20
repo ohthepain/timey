@@ -87,24 +87,34 @@
             ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
           /></label>
           <section id="local-notes" class="local-notes" aria-label="Local notes">
-            <header>
-              <h2>Local notes</h2>
+            <header class="sidebar-folder-row">
+              <button
+                id="local-notes-toggle"
+                class="icon-button folder-disclosure"
+                type="button"
+                aria-label="Collapse Local notes"
+                aria-expanded="true"
+                aria-controls="local-notes-body"
+              ></button>
+              <h2 class="sidebar-folder-name">Local notes</h2>
               <button id="local-note-quick" type="button" class="small-button" title="Quick note (Alt+N)">
                 ＋ Note
               </button>
             </header>
-            <form id="local-note-form">
-              <textarea
-                id="local-note-text"
-                aria-label="Quick local note"
-                placeholder="A thought to keep…"
-                maxlength="24000"
-                rows="2"
-              ></textarea
-              ><button type="submit" class="small-button">Save note</button>
-            </form>
-            <ul id="local-note-list" class="local-note-list"></ul>
-            <p id="local-note-status" role="status" aria-live="polite"></p>
+            <div id="local-notes-body">
+              <form id="local-note-form">
+                <textarea
+                  id="local-note-text"
+                  aria-label="Quick local note"
+                  placeholder="A thought to keep…"
+                  maxlength="24000"
+                  rows="2"
+                ></textarea
+                ><button type="submit" class="small-button">Save note</button>
+              </form>
+              <ul id="local-note-list" class="local-note-list"></ul>
+              <p id="local-note-status" role="status" aria-live="polite"></p>
+            </div>
           </section>
           <section class="sidebar-files" aria-label="Files">
             <div id="sidebar-file-tree"></div>

@@ -1,4 +1,5 @@
 import { moveStoredIssue } from './factory-ui/issue-report-storage.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { addPrompt, changePromptQueue } from './factory-ui/issue-prompt-queue.mjs';
 import { appendMessage, conversationMessages } from './factory-ui/conversation-store.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
@@ -23,6 +24,7 @@ function fixture(t) {
     cpSync(resolve('.agents/skills/issues/scripts', name), join(root, '.agents/skills/issues/scripts', name));
   writeFileSync(join(root, '.gitignore'), '.issues/\n');
   writeFileSync(join(root, 'source.js'), 'export const x = 1;\n');
+  initializeFolderSettings(root);
   git('add', '.');
   git('commit', '-qm', 'fixture');
   writeFileSync(
@@ -197,6 +199,7 @@ test('temporary discussion lists enabled skills and invokes selected skills with
     };
   };
   const skills = await f.discussion.skills(f.input, f.owner);
+  assert.deepEqual(skills.map(({ name }) => name).sort(), ['archive', 'local-note', 'sample', 'skill-installer']);
   assert.deepEqual(
     skills.filter(({ source }) => source !== 'Factory'),
     [
@@ -698,10 +701,8 @@ test('site review HTTP routes project opening receipts and record feedback witho
     snapshot.issues.find((issue) => issue.id === f.input.issueId).siteReview.checks[0].opened.token,
     receipt.token
   );
-  assert.equal(
-    (await post('decide', { ...request, token: receipt.token, status: 'failed', result: 'Fix spacing.' })).status,
-    200
-  );
+  const decision = await post('decide', { ...request, token: receipt.token, status: 'failed', result: 'Fix spacing.' });
+  assert.equal(decision.status, 200, await decision.text());
 });
 
 test('a completed prototype remains completed when Verify offers the implementation site', async (t) => {

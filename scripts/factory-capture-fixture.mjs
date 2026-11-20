@@ -1,4 +1,4 @@
-import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { factoryGitFixture } from './git-fixture.mjs';
@@ -42,7 +42,7 @@ export function captureFixture(t, options = {}) {
   mkdirSync(helper, { recursive: true });
   for (const name of ['human-input.mjs', 'human-input-version.json'])
     cpSync(resolve('.agents/skills/issues/scripts', name), join(helper, name));
-  createIssueFolderSettings(root, 'Inbox');
+  initializeFolderSettings(root);
   git('add', '.');
   git('commit', '-qm', 'capture fixture');
   mkdirSync(join(root, '.issues'), { recursive: true });
