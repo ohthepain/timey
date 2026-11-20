@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { LocalNotes } from './factory-ui/local-notes.mjs';
 
 export async function localNotesBrowserChecks({ page, service, project, poll, screenshot }) {
+  if (await page.locator('#discuss-draft').isVisible())
+    await page.locator('#discuss-draft').fill('Pending draft at the Notes fixture boundary');
+  await page.goto('about:blank');
   service.projectDiscuss?.close();
   service.projectDiscuss = null;
   const turns = [];
@@ -27,6 +30,35 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   await field.press('Enter');
   await page.getByRole('button', { name: 'Remember the quick thought', exact: true }).waitFor();
   assert.equal(await field.inputValue(), '');
+  const disclosure = page.locator('#local-notes-toggle');
+  const otherDisclosure = page.locator('.sidebar-files .folder-disclosure').first();
+  await otherDisclosure.waitFor();
+  const caretStyle = (button) => {
+    const style = getComputedStyle(button, '::before');
+    return { clipPath: style.clipPath, width: style.width, height: style.height, background: style.backgroundColor };
+  };
+  assert.deepEqual(await disclosure.evaluate(caretStyle), await otherDisclosure.evaluate(caretStyle));
+  const expandedTransform = await disclosure.evaluate((button) => getComputedStyle(button, '::before').transform);
+  await field.fill('Unfinished local note');
+  await disclosure.click();
+  assert.equal(await disclosure.getAttribute('aria-expanded'), 'false');
+  assert.equal(await disclosure.getAttribute('aria-label'), 'Expand Local notes');
+  assert.equal(await field.isVisible(), false);
+  assert.equal(await page.locator('#local-note-list').isVisible(), false);
+  const collapsedTransform = await disclosure.evaluate((button) => getComputedStyle(button, '::before').transform);
+  assert.notEqual(collapsedTransform, expandedTransform);
+  await screenshot('local-notes-collapsed');
+  await disclosure.click();
+  assert.equal(await disclosure.getAttribute('aria-expanded'), 'true');
+  assert.equal(await field.isVisible(), true);
+  assert.equal(await field.inputValue(), 'Unfinished local note');
+  await page.getByRole('button', { name: 'Remember the quick thought', exact: true }).waitFor();
+  assert.equal(
+    await disclosure.evaluate((button) => getComputedStyle(button, '::before').transform),
+    expandedTransform
+  );
+  await screenshot('local-notes-expanded');
+  await field.fill('');
   await page.reload();
   await page.getByRole('button', { name: 'Remember the quick thought', exact: true }).waitFor();
   await page.keyboard.press('Alt+n');

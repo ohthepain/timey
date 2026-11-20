@@ -301,3 +301,26 @@ test('uncertain provider ownership requires reconciliation before another repair
   await f.repairs.reconcile(f.issue);
   assert.equal(f.repairs.read(f.issue.id).status, 'interrupted');
 });
+
+test('unresolved merge conflicts override an old passed branch check without changing the checkout', async (t) => {
+  const { pendingIssueMerge } = await import('./factory-ui/flow-merge-state.mjs');
+  const f = fixture(t, async () => {});
+  await f.start();
+  await f.finish();
+  assert.equal(f.repairs.view(f.issue, f.flow).status, 'passed');
+  writeFileSync(join(f.root, 'source.txt'), 'Target edit\n');
+  git(f.root, 'commit', '-am', 'Target edit');
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue edit\n');
+  git(f.checkout, 'commit', '-am', 'Issue edit');
+  assert.throws(() => git(f.checkout, 'merge', '--no-edit', 'dev'));
+  const merge = pendingIssueMerge(f.checkout);
+  const index = git(f.checkout, 'ls-files', '--stage');
+  const view = f.repairs.view(f.issue, f.flow, merge);
+  assert.equal(view.status, 'broken');
+  assert.equal(view.failure.kind, 'merge-conflict');
+  assert.match(view.failure.summary, /source.txt/);
+  assert.equal(git(f.checkout, 'ls-files', '--stage'), index);
+  assert.deepEqual(pendingIssueMerge(f.checkout), merge);
+  git(f.checkout, 'merge', '--abort');
+  assert.notEqual(f.repairs.view(f.issue, f.flow, null).status, 'broken');
+});

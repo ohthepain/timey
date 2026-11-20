@@ -1,3 +1,4 @@
+import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
 import { browserScenarioSelected } from './browser-scenario-policy.mjs';
 import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
@@ -42,7 +43,9 @@ import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
-  process.env.TIMEY_FLOW_BROWSER_OUTPUT || join(root, '.issues/evidence/flow-browser-' + randomUUID())
+  process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
+    (process.env.TIMEY_BROWSER_OUTPUT && join(process.env.TIMEY_BROWSER_OUTPUT, 'flow')) ||
+    join(root, '.issues/evidence/flow-browser-' + randomUUID())
 );
 const project = join(output, 'project');
 mkdirSync(output, { recursive: true });
@@ -110,6 +113,7 @@ const discussCheck = 'Project Discuss retains independent conversations, setting
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const mergeSettingsCheck = 'Request saves the regression choice and the block palette hides Verify';
+const pendingResponses = [];
 const logs = {
   console: [],
   pageErrors: [],
@@ -230,13 +234,29 @@ function unexpectedConsoleErrors(entries) {
     );
   });
 }
+function connectionRecoveryIssue() {
+  const id = '20261120-connection-recovery-fixture';
+  if (!existsSync(join(project, '.issues/triage-labels.md')))
+    copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
+  writeFileSync(
+    join(project, '.issues', id + '.md'),
+    `---\nid: ${id}\ntitle: Reconnect the selected issue\nstate: backlog\n---\n\nKeep the selected issue after reconnecting.\n`
+  );
+  return id;
+}
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
+    ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
+    [
+      '--connection-recovery',
+      'Flow and Classic reload the selected issue after a lost connection without replaying the click',
+    ],
     ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
     ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
     ['--local-notes', 'Local notes capture and handoff preserve flow'],
+    ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
     ['--investigation-followups', followupsCheck],
@@ -358,6 +378,9 @@ async function selectedGeometry() {
     const centered = scroll.scrollTop + rect.top + rect.height / 2 - bounds.top - scroll.clientHeight / 2;
     return {
       blockId: card.dataset.block,
+      top: rect.top - bounds.top,
+      bottom: rect.bottom - bounds.top,
+      viewportHeight: scroll.clientHeight,
       scrollTop: scroll.scrollTop,
       centerOffset: rect.top + rect.height / 2 - bounds.top - scroll.clientHeight / 2,
       expectedCenter: Math.max(0, Math.min(scroll.scrollHeight - scroll.clientHeight, centered)),
@@ -405,13 +428,109 @@ try {
       failure.error?.errorText === 'net::ERR_ABORTED';
     logs[cancelledRead ? 'cancelledReads' : 'failedRequests'].push(failure);
   });
-  page.on('response', (response) =>
-    logs.responses.push({ path: new URL(response.url()).pathname, status: response.status() })
+  page.on('response', (response) => {
+    const entry = { path: new URL(response.url()).pathname, status: response.status() };
+    logs.responses.push(entry);
+    if (response.status() >= 400)
+      pendingResponses.push(
+        response
+          .text()
+          .then((body) => {
+            entry.body = body.slice(0, 4000);
+            entry.request = response.request().postData();
+          })
+          .catch((error) => {
+            entry.body = error.message;
+          })
+      );
+  });
+  await check('Successful refresh clears rejected branch update errors', () =>
+    errorRecoveryBrowserChecks({ page, service, project, output })
   );
+  await check('The whole sidebar scrolls over every section', async () => {
+    const issuePaths = Array.from({ length: 24 }, (_, index) =>
+      join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
+    );
+    issuePaths.forEach((path, index) =>
+      writeFileSync(
+        path,
+        `---\nid: 20261120-sidebar-overflow-${index}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`
+      )
+    );
+    await page.goto('/');
+    await page.locator('#sidebar-file-tree details').first().waitFor();
+    await page.evaluate(() => {
+      const notes = document.getElementById('local-note-list');
+      const files = document.getElementById('sidebar-file-tree');
+      for (let index = 0; index < 24; index++) {
+        const note = document.createElement('li');
+        note.className = 'local-note';
+        note.textContent = 'Overflowing local note ' + index;
+        notes.append(note);
+        const file = document.createElement('button');
+        file.className = 'sidebar-file-link';
+        file.textContent = 'Overflowing file ' + index + '.md';
+        files.append(file);
+      }
+    });
+    await page.locator('#issue-list [data-issue="20261120-sidebar-overflow-0"]').waitFor();
+    const observations = [];
+    for (const viewport of [
+      { width: 1440, height: 720 },
+      { width: 760, height: 600 },
+    ]) {
+      await page.setViewportSize(viewport);
+      for (const section of ['.project-home-menu', '#local-note-list', '#sidebar-file-tree', '#issue-list']) {
+        const target = page.locator(section);
+        await target.scrollIntoViewIfNeeded();
+        const bounds = await target.boundingBox();
+        const sidebar = await page.locator('.sidebar').boundingBox();
+        const y = Math.max(sidebar.y + 5, Math.min(bounds.y + 12, sidebar.y + sidebar.height - 20));
+        const x = bounds.x + Math.min(bounds.width / 2, 70);
+        assert.ok(
+          await target.evaluate((node, point) => node.contains(document.elementFromPoint(point.x, point.y)), { x, y }),
+          'Wheel pointer must be over ' + section
+        );
+        await page.mouse.move(x, y);
+        await screenshot('sidebar-scroll-' + viewport.width + '-' + section.replace(/[^a-z]/g, ''));
+        const before = await page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top);
+        await page.mouse.wheel(0, 160);
+        await poll(
+          () => page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top),
+          (top) => top < before - 20,
+          'Wheel over ' + section + ' must move content outside that section'
+        );
+        observations.push({
+          viewport,
+          section,
+          before,
+          after: await page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top),
+        });
+      }
+      const footer = page.locator('.sidebar-footer');
+      await footer.scrollIntoViewIfNeeded();
+      assert.ok(await footer.isVisible());
+      const resizer = await page.locator('#sidebar-resizer').boundingBox();
+      assert.ok(resizer.y <= 1 && resizer.height >= 590, 'Sidebar resize handle must remain at the column edge');
+      await page.locator('#sidebar-resizer').focus();
+      const widthBefore = (await page.locator('.sidebar').boundingBox()).width;
+      await page.keyboard.press('ArrowRight');
+      assert.ok(
+        (await page.locator('.sidebar').boundingBox()).width > widthBefore,
+        'Sidebar remains resizable after scrolling'
+      );
+      await screenshot('sidebar-scroll-' + viewport.width);
+    }
+    writeFileSync(join(output, 'sidebar-scroll.json'), JSON.stringify({ candidate, observations }, null, 2));
+    issuePaths.forEach((path) => rmSync(path));
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.reload();
+  });
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
-  await check('Local notes capture and handoff preserve flow', () =>
-    localNotesBrowserChecks({ page, project, service, poll, screenshot })
-  );
+  await check('Local notes capture and handoff preserve flow', async () => {
+    await localNotesBrowserChecks({ page, project, service, poll, screenshot });
+    assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+  });
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );
@@ -1154,15 +1273,17 @@ try {
     const viewport = await page.locator('#graph-scroll').boundingBox();
     assert.ok(bounds.y < viewport.y - 20, 'The test card must be clipped before selection.');
     await page.mouse.click(bounds.x + bounds.width / 2, viewport.y + 20);
-    await poll(
+    const after = await poll(
       selectedGeometry,
-      (value) => value.scrollTop < clipped.scrollTop - 20,
-      'The clipped card was not revealed.'
+      (value) =>
+        value.blockId === workId &&
+        value.scrollTop < clipped.scrollTop - 20 &&
+        value.top >= -1 &&
+        value.bottom <= value.viewportHeight + 1,
+      'The clipped card was not fully revealed.'
     );
-    const revealed = await target.evaluate((node) => node.getBoundingClientRect().toJSON());
-    const after = await selectedGeometry();
-    assert.ok(revealed.y >= viewport.y - 1);
-    assert.ok(revealed.y + revealed.height <= viewport.y + viewport.height + 1);
+    assert.ok(after.top >= -1);
+    assert.ok(after.bottom <= after.viewportHeight + 1);
     assert.ok(clipped.scrollTop - after.scrollTop <= 55, 'The card moved further than necessary.');
     await page.setViewportSize({ width: 1440, height: 960 });
   });
@@ -1289,6 +1410,8 @@ try {
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
       'The running block was not centered within its content bounds on reload.'
     );
+    assert.equal(await page.locator('#target-update-menu').isDisabled(), true);
+    assert.equal(await page.locator('#worktree-menu option[value="update"]').isDisabled(), true);
     await screenshot('work-running-desktop');
     await clickAction(page.locator('[data-action="stop"]'));
     const stopped = await poll(
@@ -2109,6 +2232,7 @@ try {
   await check(
     'Flow and Classic reload the selected issue after a lost connection without replaying the click',
     async () => {
+      issueId = connectionRecoveryIssue();
       const helperDir = '.agents/skills/issues/scripts';
       mkdirSync(join(project, helperDir), { recursive: true });
       for (const file of ['human-input.mjs', 'human-input-version.json']) {
@@ -2134,11 +2258,14 @@ try {
         assert.equal(await waiting.isVisible(), false);
         assert.equal(page.url(), url);
         await page.reload();
-        await toggle.waitFor();
+        await page.locator('#server-actions-dialog').waitFor({ state: 'attached' });
         if (await toggle.isChecked()) await toggle.uncheck();
+        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
 
         const release = Promise.withResolvers();
+        const pauseReceived = Promise.withResolvers();
         await page.route('**/api/health', async (route) => {
+          await pauseReceived.promise;
           if (screen.path.startsWith('/classic')) await release.promise;
           await route.abort().catch(() => {});
         });
@@ -2148,8 +2275,11 @@ try {
           const response = await route.fetch();
           assert.equal(response.status(), 200);
           await route.abort();
+          pauseReceived.resolve();
         });
-        await toggle.check();
+        const pauseRequest = page.waitForRequest('**/api/server-pause');
+        await toggle.click();
+        await pauseRequest;
         await waiting.waitFor();
         assert.equal(page.url(), url);
         assert.equal(clicks, 1);
@@ -2211,6 +2341,7 @@ try {
   if (page) await screenshot('failure').catch(() => {});
   process.exitCode = 1;
 } finally {
+  await Promise.all(pendingResponses);
   await browser?.close();
   server.closeAllConnections();
   if (server.listening) await new Promise((done) => server.close(done));

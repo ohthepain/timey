@@ -178,7 +178,7 @@ export class FactoryUI {
       ...queue,
       sharedQueueEnabled: Boolean(this.sharedIssues),
       sharedQueueWarning,
-      modelSettings: readModelSettings(this.root),
+      modelSettings: readModelSettings(this.root, { initialize: false }),
       coordinator: includeCoordinatorDiscussion
         ? this.coordinator.view()
         : redactValue(this.coordinator.reviewActivity()),

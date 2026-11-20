@@ -108,7 +108,7 @@ html[data-project-issue-request-embed='true'] .request-embed-error {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 25px 14px 0;
+  --sidebar-padding-top: 25px;
 }
 .sidebar-resizer,
 .inspector-resizer {
@@ -305,8 +305,8 @@ kbd {
   color: #eee;
 }
 .issue-list {
-  flex: 1;
-  overflow: auto;
+  flex: 1 0 auto;
+  overflow: visible;
   padding-bottom: 20px;
 }
 .issue-row {
@@ -1671,8 +1671,8 @@ kbd {
     grid-template-columns: var(--sidebar-width, 205px) minmax(310px, 1fr) var(--inspector-width, 335px);
   }
   .sidebar {
-    padding-left: 10px;
-    padding-right: 10px;
+    --sidebar-padding-left: 10px;
+    --sidebar-padding-right: 10px;
   }
   .graph {
     padding-left: 22px;
@@ -1766,9 +1766,9 @@ kbd {
     grid-template-rows: 55dvh minmax(270px, 45dvh);
   }
   .sidebar {
-    padding-left: 6px;
-    padding-right: 6px;
-    padding-top: 18px;
+    --sidebar-padding-left: 6px;
+    --sidebar-padding-right: 6px;
+    --sidebar-padding-top: 18px;
   }
   .brand {
     font-size: 13px;
@@ -2196,16 +2196,16 @@ kbd {
 }
 
 .sidebar-files {
-  max-height: 44%;
+  max-height: none;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   margin-bottom: 8px;
 }
 
 #sidebar-file-tree {
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
 }
 
 [data-collection] > summary::before {
@@ -2456,4 +2456,18 @@ kbd {
   color: #f28b82;
   border-color: currentColor;
   background: #302020;
+}
+
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sidebar-padding-top) var(--sidebar-padding-right, 14px) 0 var(--sidebar-padding-left, 14px);
+}
+.sidebar-content > * {
+  flex-shrink: 0;
 }

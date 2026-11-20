@@ -731,7 +731,10 @@ Issue activity is not streamed back into Discuss.
 horizontal conversation tabs, message alignment and hover actions, settings,
 attachments, dictation, and suggested prompts. The composer overlays the bottom
 of the scrollable history with enough trailing space to keep the final message
-visible. Its settings and attachment controls share a row with Send. Discuss hides
+visible. Opening Discuss scrolls the loaded history to the bottom, including after
+initial images settle. Interacting with the history cancels that opening scroll;
+ordinary polling preserves the reader’s position. Its settings and attachment
+controls share a row with Send. Discuss hides
 the shared Flow footer. The shared skill composer lives in `issue-chat-ui.js`.
 Open conversation tabs stay in creation order; closing a tab marks its conversation
 closed and retains its saved history.
@@ -778,7 +781,10 @@ revision-checked YAML edits, project-default migration, and parent inheritance.
 defaults. `folder-settings-routes.mjs` binds settings operations to validated sidebar
 locations. `folder-settings-ui.js` renders the shared settings form and repair UI.
 Both Flow and Classic capture save the selected folder ID on each new report.
-The issue read path places older reports without membership in Inbox.
+The issue read path projects older reports without membership into Inbox using
+a stable ID. It does not create tracked files. Flow startup and explicit setup
+initialize real folder settings; queue and model-selection snapshots only read
+them, preserving source cleanliness and review fingerprints.
 Folder landing pages share the workspace in `flow-ui.js`. `SidebarFiles`
 validates deletion paths and directory identity. `flow-service.mjs` checks
 folder membership before deletion. `folder-trash.mjs` uses macOS Trash and
@@ -811,7 +817,7 @@ cleanup for explicitly selected branches associated with the deleted reports.
 `flow-delivery.mjs` reads live destination branches, prepares the publication
 preview, and validates or refreshes independent verification evidence.
 `flow-update-branch.mjs` owns the local branch update used by the Branch button
-and the Update Branch block, using the starting branch’s upstream. An explicit
+and the Update Branch block, using the starting branch’s upstream. Conflict resolution makes up to three attempts in the owning conversation, retaining each failure for the next attempt. Unresolved merges feed the issue header’s Fix Branch state and its guarded update retry. An explicit
 update aborts a pending merge before fetching and retains the other Git-operation
 guards. `flow-merge-state.mjs` reads the pending local merge for the header
 control, whose explicit abort action is guarded by the flow service.

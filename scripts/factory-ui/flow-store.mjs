@@ -356,7 +356,7 @@ export function editFlow(flow, input, catalog) {
   };
   requireThat(Object.hasOwn(actions, input.action), 'Choose a supported flow edit.');
   actions[input.action]();
-  joinSuggestions(next.blocks);
+  joinPendingLanes(next.blocks);
   return next;
 }
 export function folderName(value) {
@@ -383,7 +383,9 @@ export function isWorkBlock(block) {
 }
 
 function defaultInsertionIndex(blocks, kind) {
-  return kind === 'update-branch' ? updateBranchIndex(blocks) : blocks.findIndex((item) => item.suggested);
+  return kind === 'update-branch'
+    ? updateBranchIndex(blocks)
+    : blocks.findIndex((item) => item.suggested || item.kind === 'publish');
 }
 
 function requireEditable(block) {
@@ -394,9 +396,9 @@ function laneDependencies(blocks, index, lane) {
   const previous = blocks.slice(0, index).findLast((item) => item.lane === lane && !item.suggested) || blocks[0];
   return previous && index > 0 ? [previous.id] : [];
 }
-function joinSuggestions(blocks) {
+function joinPendingLanes(blocks) {
   blocks.forEach((block, index) => {
-    if (!block.suggested || block.attempts.length) return;
+    if ((!block.suggested && block.kind !== 'publish') || block.attempts.length) return;
     const prefix = blocks.slice(0, index);
     const parents = new Set(prefix.flatMap((item) => item.after));
     block.after = prefix.filter((item) => !parents.has(item.id)).map((item) => item.id);

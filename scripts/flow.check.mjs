@@ -23,7 +23,7 @@ import {
   requestData,
   startingPoint,
 } from './factory-ui/flow-block-data.mjs';
-import { giveIssueFolderCopyNewId } from './factory-ui/issue-folder-settings.mjs';
+import { giveIssueFolderCopyNewId, initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { FlowStore, newFlow, editFlow, makeBlock } from './factory-ui/flow-store.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowObserver } from './factory-ui/flow-observer.mjs';
@@ -162,6 +162,7 @@ function fixture(t) {
   const { root, git } = gitFixture(t, 'explicit-flow-');
   mkdirSync(join(root, '.issues'));
   writeFileSync(join(root, 'source.txt'), 'original');
+  initializeFolderSettings(root);
   git('add', '.');
   git('commit', '-qm', 'original');
   git('branch', 'dev');
@@ -353,6 +354,20 @@ test('issue Play runs Update Branch without confirmation and Pause lets the acti
   assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Flow complete' });
 });
 
+async function waitForNightSignal(signal, label) {
+  let timer;
+  try {
+    await Promise.race([
+      signal,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error(`Work All Night did not ${label} within 30 seconds.`)), 30000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 test('Work All Night keeps dependency failures separate and retains the exact handoff', async (t) => {
   const { id, root, service } = fixture(t);
   const dependent = '20261113-dependent';
@@ -386,6 +401,7 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
   });
   t.after(() => flows.close());
   const folder = 'Save repairs';
+  await flows.action({ action: 'create-folder', name: folder });
   const issueIds = [id, dependent, independent];
   for (const issueId of issueIds) {
     const flow = flows.read(flows.selected(issueId));
@@ -407,7 +423,8 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
   assert.equal(report.status, 'finished');
   assert.deepEqual(
     report.issues.map(({ status }) => status),
-    ['paused', 'paused', 'ready']
+    ['paused', 'paused', 'ready'],
+    [JSON.stringify(report), report.issues.map(({ summary }) => summary).join('\n')].join('\n')
   );
   assert.equal(report.issues[0].failedCheck, 'Work');
   assert.match(report.issues[0].summary, /regression check failed/);
@@ -448,6 +465,7 @@ test('stopping Work All Night cancels the owned block and leaves queued issues u
   });
   t.after(() => flows.close());
   const folder = 'Save repairs';
+  await flows.action({ action: 'create-folder', name: folder });
   for (const issueId of [id, queued]) {
     const flow = flows.read(flows.selected(issueId));
     flow.folder = folder;
@@ -455,9 +473,9 @@ test('stopping Work All Night cancels the owned block and leaves queued issues u
   }
   const plan = await flows.action({ action: 'folder-night-plan', folder, issueIds: [id, queued] });
   await flows.action({ action: 'folder-night-start', planId: plan.id });
-  await started.promise;
+  await waitForNightSignal(started.promise, 'start its worker');
   await flows.action({ action: 'folder-night-stop', folder });
-  await stopped.promise;
+  await waitForNightSignal(stopped.promise, 'stop its worker');
   let report;
   for (let retries = 0; retries < 100; retries += 1) {
     report = flows.overnight.reports()[folder];
@@ -867,7 +885,13 @@ test('request data and block order persist with revision conflicts rejected', as
   assert.equal(view.flow.routeType, 'bug');
   const request = view.flow.blocks[0].id;
   assert.equal((await flows.view(id)).flow.blocks[0].id, request);
-  view = await flows.action({ issueId: id, revision: 0, action: 'add', kind: 'repro' });
+  view = await flows.action({
+    issueId: id,
+    revision: 0,
+    action: 'add',
+    kind: 'repro',
+    afterId: view.flow.blocks.find((block) => block.kind === 'work').id,
+  });
   assert.equal(view.flow.blocks[2].kind, 'repro');
   assert.equal(view.flow.blocks[3].kind, 'publish');
   await assert.rejects(flows.action({ issueId: id, revision: 0, action: 'folder', folder: 'Stale' }), /flow changed/);
@@ -1528,7 +1552,7 @@ test('a suggested target update precedes Work in the graph and in Play', { timeo
   assert.deepEqual(started, ['update-branch', 'work']);
 });
 
-test('completed target merges do not hide a later target change and parallel lanes join before publication', async (t) => {
+test('completed target merges do not hide a later target change and parallel lanes join before suggested publication', async (t) => {
   const { root, id, service } = fixture(t);
   const flows = createIssueFlows(service, {
     executor: executor(async () => ({})),
@@ -1551,6 +1575,7 @@ test('completed target merges do not hide a later target change and parallel lan
   assert.ok(view.flow.blocks.some((block) => block.id === 'target-new-target'));
   await flows.action({ action: 'remove', issueId: id, revision: view.flow.revision, blockId: 'target-new-target' });
   assert.ok(!(await flows.view(id)).flow.blocks.some((block) => block.id === 'target-new-target'));
+  flow.blocks.find((block) => block.kind === 'publish').suggested = true;
   flow = editFlow(flow, { action: 'add', kind: 'design', lane: 1 });
   const design = flow.blocks.find((block) => block.kind === 'design');
   assert.deepEqual(design.after, ['request']);

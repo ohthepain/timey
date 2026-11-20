@@ -154,8 +154,8 @@ export function createFlowExecutor(service, options = {}) {
               repair:
                 options.repair ??
                 ((error, round) => runMergeRepair(scopedService, context, owned, runtime, error, round)),
-              resolveBranchConflicts: (paths, target) =>
-                runBranchConflictRepair(scopedService, context, owned, runtime, paths, target),
+              resolveBranchConflicts: (paths, target, recovery) =>
+                runBranchConflictRepair(scopedService, context, owned, runtime, paths, target, recovery),
             });
         return command && !result.artifacts ? { ...result, artifacts: commandArtifacts(definition, result) } : result;
       } finally {
@@ -410,6 +410,7 @@ function modelArtifacts(definition, output, workspace, response) {
     artifacts: { values, files },
     evidence: [response, ...Object.values(files).filter((item) => item !== response)],
     ...(failure ? { status: 'blocked', summary: failure.slice(0, 1200) } : {}),
+    ...(recorded?.blocker === 'human-input' ? { blocker: 'human-input' } : {}),
   };
 }
 
@@ -442,21 +443,35 @@ async function runMergeRepair(service, ctx, owned, options, error, round) {
   }
 }
 
-async function runBranchConflictRepair(service, ctx, owned, options, paths, target) {
+async function runBranchConflictRepair(service, ctx, owned, options, paths, target, recovery) {
   const task =
     'Resolve only these conflicted paths and stage the resolution: ' +
     JSON.stringify(paths) +
     '. Leave tests to Verify. Preserve both sides of the merge with ' +
     target +
     '. If preserving both sides needs a product decision, return a flow-result failure with the decision. ' +
-    'You have one attempt. Leave HEAD and the merge in place and let Factory commit. ' +
-    'Do not edit other paths, commit, abort, reset, switch branches, push, or publish.';
+    'This is attempt ' +
+    recovery.attempt +
+    ' of 3. Leave HEAD and the merge in place and let Factory commit. ' +
+    'For a required human decision, include "blocker":"human-input" in flow-result. ' +
+    'Do not edit other paths, commit, abort, reset, switch branches, push, or publish. ' +
+    (recovery.previousFailure
+      ? 'The previous attempt failed: ' + recovery.previousFailure + '. Use a different approach.'
+      : '');
+  ctx.onProgress('Resolving branch conflicts (' + recovery.attempt + '/3).\n', true);
   const context = {
     ...ctx,
+    continuing: ctx.continuing || recovery.attempt > 1,
+    attempt: { ...ctx.attempt, id: ctx.attempt.id + '-conflict-' + recovery.attempt },
     block: { ...ctx.block, prompt: '', skill: null },
     definition: { ...ctx.definition, prompt: task, artifacts: ctx.definition?.artifacts ?? [] },
   };
-  return runModel(service, context, owned, { ...options, branchConflictTask: task });
+  try {
+    return await runModel(service, context, owned, { ...options, branchConflictTask: task });
+  } finally {
+    owned.connection?.close();
+    owned.connection = null;
+  }
 }
 
 async function reconcileMergeRepair(service, ctx, workspace, options) {

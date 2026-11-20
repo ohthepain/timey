@@ -180,6 +180,9 @@ Unmatched assignment kinds stay visible under Other work.
 
 ### Files and issue folders
 
+The entire left column scrolls together, including the project menu, local notes,
+Files and Issues. Its resize handle stays at the column edge while scrolling.
+
 The sidebar shows the installation's flow and skill folders and the
 project's `user/` directory. Use the plus icon on a writable folder row to
 create a subfolder. Drop an outside folder onto the sidebar to browse it

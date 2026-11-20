@@ -53,8 +53,7 @@
     }
     function renderDetails(repair) {
       const status = repair.status;
-      find('status').textContent =
-        repair.step || repair.failure?.summary || 'Run the blocking checks and prepare a branch repair for review.';
+      find('status').textContent = statusMessage(repair);
       find('timing').textContent = repair.startedAt
         ? `${repair.branch || ''} · ${Math.max(0, Math.floor(((repair.endedAt ? Date.parse(repair.endedAt) : Date.now()) - Date.parse(repair.startedAt)) / 1000))}s elapsed${repair.lastActiveAt ? ' · Last activity ' + new Date(repair.lastActiveAt).toLocaleTimeString() : ''}`
         : '';
@@ -74,17 +73,32 @@
     function renderActions(repair, ineligible) {
       const status = repair.status;
       find('command').hidden = busy(status) || status === 'interrupted';
-      find('command').textContent =
-        status === 'ready'
-          ? 'Approve Branch Fix'
-          : ['stale', 'failed', 'stopped', 'passed', 'applied'].includes(status)
-            ? 'Recheck Branch'
-            : 'Fix Branch';
+      find('command').textContent = commandLabel(repair);
       find('command').disabled = Boolean(ineligible || pending);
       find('stop').hidden = !busy(status);
       find('stop').disabled = status === 'stopping' || pending;
       find('reconcile').hidden = status !== 'interrupted';
       find('reconcile').disabled = pending;
+    }
+    function statusMessage(repair) {
+      return [
+        view.branchUpdateSummary,
+        repair.step,
+        repair.failure?.summary,
+        'Run the blocking checks and prepare a branch repair for review.',
+      ].find(Boolean);
+    }
+    function commandLabel(repair) {
+      const command = nextCommand(repair);
+      if (command === 'update-worktree') return 'Retry Update Branch';
+      if (command === 'branch-repair-approve') return 'Approve Branch Fix';
+      return ['stale', 'failed', 'stopped', 'passed', 'applied'].includes(repair.status)
+        ? 'Recheck Branch'
+        : 'Fix Branch';
+    }
+    function nextCommand(repair) {
+      if (repair.failure?.kind === 'merge-conflict') return 'update-worktree';
+      return repair.status === 'ready' ? 'branch-repair-approve' : 'branch-repair-start';
     }
     async function perform(command) {
       if (pending || view?.issue?.id !== issueId) return;
@@ -110,10 +124,7 @@
       dialog.showModal();
     });
     find('close').addEventListener('click', () => dialog.close());
-    find('command').addEventListener(
-      'click',
-      () => void perform(view.branchRepair?.status === 'ready' ? 'branch-repair-approve' : 'branch-repair-start')
-    );
+    find('command').addEventListener('click', () => void perform(nextCommand(view.branchRepair || { status: 'idle' })));
     find('stop').addEventListener('click', () => void perform('branch-repair-stop'));
     find('reconcile').addEventListener('click', () => void perform('branch-repair-reconcile'));
     return { update };

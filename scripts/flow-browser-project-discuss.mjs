@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readRequiredSkillSets } from './factory-ui/required-skills.mjs';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export async function projectDiscussBrowserChecks({ page, service, project, poll, screenshot }) {
   const requiredSkillSets = readRequiredSkillSets(process.cwd());
@@ -228,4 +228,123 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'New message remained queued after failure'
   );
   assert.equal(calls.at(-1).text, 'Continue after failure');
+
+  const history = service.projectDiscuss.read(attachedConversation);
+  const template = history.messages.at(-1);
+  history.messages = Array.from({ length: 40 }, (_, index) => ({
+    ...template,
+    id: 'scroll-history-' + index,
+    text: `History message ${index + 1}\n\n` + 'Retained project conversation.\n\n'.repeat(4),
+    attachments: [],
+    events: [],
+  }));
+  const historyImageUrl = new URL('/discuss-history.svg', page.url()).href;
+  history.messages.at(-1).text += `\n\n![Delayed history diagram](${historyImageUrl})`;
+  service.projectDiscuss.save(history);
+  const scrollEvidence = { conversationId: attachedConversation, observations: [] };
+  const proofPath = join(dirname(project), 'project-discuss-scroll.json');
+  const scrollMetrics = () =>
+    page.locator('#discuss-messages').evaluate((log) => {
+      const viewport = log.getBoundingClientRect();
+      const latest = log.querySelector('.discuss-message:last-child')?.getBoundingClientRect();
+      return {
+        scrollTop: log.scrollTop,
+        scrollHeight: log.scrollHeight,
+        clientHeight: log.clientHeight,
+        bottomDistance: log.scrollHeight - log.clientHeight - log.scrollTop,
+        latestVisible: Boolean(latest && latest.bottom <= viewport.bottom + 1 && latest.bottom > viewport.top),
+      };
+    });
+  async function recordScroll(stage) {
+    const metrics = await scrollMetrics();
+    scrollEvidence.observations.push({ stage, ...metrics });
+    writeFileSync(proofPath, JSON.stringify(scrollEvidence, null, 2) + '\n');
+    return metrics;
+  }
+  async function assertOpenedAtBottom(stage) {
+    try {
+      await poll(
+        scrollMetrics,
+        (metrics) => metrics.scrollHeight > metrics.clientHeight && metrics.bottomDistance < 2 && metrics.latestVisible,
+        stage + ' did not show the latest message without scrolling.'
+      );
+    } finally {
+      await recordScroll(stage);
+    }
+  }
+  const initialHistory = Promise.withResolvers();
+  let imageRequested = false;
+  const imageLoaded = Promise.withResolvers();
+  await page.route(historyImageUrl, async (route) => {
+    imageRequested = true;
+    await imageLoaded.promise;
+    await route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="1000"><rect width="600" height="1000" fill="#303232"/></svg>',
+    });
+  });
+  let heldHistory = false;
+  await page.route(/\/api\/project-discuss(?:\?|$)/, async (route) => {
+    const response = await route.fetch();
+    if (!heldHistory) {
+      heldHistory = true;
+      await initialHistory.promise;
+    }
+    await route.fulfill({ response });
+  });
+  await page.reload();
+  await page.locator('#discuss-messages').waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#discuss-messages .discuss-message').count(), 0);
+  initialHistory.resolve();
+  await page.locator('[data-discuss-message="scroll-history-39"]').waitFor();
+  await poll(() => imageRequested, Boolean, 'Delayed history image was not requested.');
+  imageLoaded.resolve();
+  await poll(
+    () => page.locator('#discuss-messages img').evaluate((image) => image.complete && image.naturalHeight > 0),
+    (loaded) => loaded,
+    'Delayed history image did not finish rendering.'
+  );
+  await assertOpenedAtBottom('Reload after delayed history and image');
+  await page.unroute(/\/api\/project-discuss(?:\?|$)/);
+  await page.locator('#discuss-messages').hover();
+  await page.mouse.wheel(0, -1000);
+  await poll(scrollMetrics, (metrics) => metrics.bottomDistance > 500, 'Could not scroll to older messages.');
+  const olderPosition = await recordScroll('Reading older messages');
+  const updated = service.projectDiscuss.read(attachedConversation);
+  updated.messages.at(-1).text += '\n\nRefreshed latest message';
+  service.projectDiscuss.save(updated);
+  await page.locator('#discuss-messages').getByText('Refreshed latest message', { exact: true }).waitFor();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const refreshedPosition = await recordScroll('Polling while reading older messages');
+  assert.ok(Math.abs(refreshedPosition.scrollTop - olderPosition.scrollTop) < 2, 'Polling pulled the reader down.');
+  assert.equal(refreshedPosition.latestVisible, false);
+  await page.locator('#project-tab-home').click();
+  await page.locator('#project-tab-discuss').click();
+  await assertOpenedAtBottom('Returning to Discuss');
+  await page.unroute(historyImageUrl);
+  const lateImage = Promise.withResolvers();
+  await page.route(historyImageUrl, async (route) => {
+    await lateImage.promise;
+    await route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="1000"/>',
+    });
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('[data-discuss-message="scroll-history-39"]').waitFor();
+  await assertOpenedAtBottom('Opening while image is pending');
+  await page.locator('#discuss-messages').hover();
+  await page.mouse.wheel(0, -1000);
+  await poll(scrollMetrics, (metrics) => metrics.bottomDistance > 500, 'Could not scroll during image loading.');
+  lateImage.resolve();
+  await poll(
+    () => page.locator('#discuss-messages img').evaluate((image) => image.complete && image.naturalHeight > 0),
+    Boolean,
+    'Late image did not finish rendering.'
+  );
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const afterLateImage = await recordScroll('Reading older messages after pending image loads');
+  assert.equal(afterLateImage.latestVisible, false, 'Late image loading pulled the reader down.');
+  assert.ok(afterLateImage.bottomDistance > 500);
+  await screenshot('project-discuss-scroll');
 }
