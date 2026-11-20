@@ -1992,3 +1992,37 @@ test('editing Your words invalidates every following block even when clarificati
     assert.equal(previous.output, 'Retained earlier output');
   }
 });
+
+test('issue merge status exposes conflicts and Abort merge rejects stale or busy requests', async (t) => {
+  const { root, git, id, service } = fixture(t);
+  service.guard = () => {};
+  const base = git('rev-parse', 'HEAD');
+  const checkout = join(root, '.issues/issue-work', id);
+  const branch = 'codex/merge-state';
+  git('worktree', 'add', '-qb', branch, checkout, base);
+  const work = (...args) => git('-C', checkout, ...args);
+  writeFileSync(join(root, 'source.txt'), 'Incoming change\n');
+  git('commit', '-am', 'Incoming change');
+  const target = git('rev-parse', 'HEAD');
+  writeFileSync(join(checkout, 'source.txt'), 'Issue change\n');
+  work('commit', '-am', 'Issue change');
+  const saved = work('rev-parse', 'HEAD');
+  assert.throws(() => work('merge', '--no-edit', target));
+  const flows = createIssueFlows(service);
+  t.after(() => flows.close());
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  flow.workspace = { checkout, branch, base };
+  flows.store.save(flow, flow.revision);
+  const view = await flows.view(id);
+  assert.deepEqual(view.environment.merge, { head: saved, target, conflicts: ['source.txt'] });
+  const input = { action: 'abort-merge', issueId: id, revision: view.flow.revision, merge: view.environment.merge };
+  await assert.rejects(flows.action({ ...input, merge: { ...input.merge, target: base } }), /merge changed/);
+  flows.active.set(id, { controller: new AbortController(), blockId: 'work' });
+  await assert.rejects(flows.action(input), /active issue work/);
+  flows.active.delete(id);
+  const result = await flows.action(input);
+  assert.equal(result.environment.merge, null);
+  assert.equal(work('rev-parse', 'HEAD'), saved);
+  assert.equal(work('status', '--porcelain'), '');
+});

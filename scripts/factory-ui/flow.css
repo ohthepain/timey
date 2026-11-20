@@ -2451,3 +2451,9 @@ kbd {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.environment .merge-in-progress {
+  color: #f28b82;
+  border-color: currentColor;
+  background: #302020;
+}

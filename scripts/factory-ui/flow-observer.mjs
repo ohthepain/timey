@@ -1,3 +1,4 @@
+import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { deliveryTarget } from './flow-block-data.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -60,6 +61,7 @@ export function createFlowObserver(service, options = {}) {
       targetRevision: target,
       localTargetRevision: targetState?.localRevision,
     });
+    observePendingMerge(checkout, result);
     const failures = queries.filter((entry) => entry.status === 'rejected');
     if (failures.length) result.error = failures.map((entry) => entry.reason.message).join('\n');
     await observeStartingBranch(root, flow, result).catch(() => {});
@@ -134,4 +136,12 @@ async function resolveTarget(root, target) {
       `Target ${target.branch} is unavailable. Fetch it with Git or edit the project delivery configuration.`
     );
   return { revision: remote || local, localRevision: local };
+}
+
+function observePendingMerge(checkout, result) {
+  try {
+    result.merge = pendingIssueMerge(checkout);
+  } catch (error) {
+    result.error = error.message;
+  }
 }

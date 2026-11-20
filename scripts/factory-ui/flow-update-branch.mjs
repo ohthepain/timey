@@ -70,7 +70,10 @@ function mergeIdentity(checkout, allowed) {
 
 function requireStagedResolution(checkout, result) {
   requireThat(result.status !== 'blocked', result.summary);
-  requireThat(conflicts(checkout).length === 0, 'Codex left unresolved conflicts.');
+  requireThat(
+    conflicts(checkout).length === 0,
+    'Codex left unresolved conflicts. ' + (result.summary || 'Inspect the retained worker response.')
+  );
   requireThat(
     !git(checkout, 'ls-files', '-mo', '--exclude-standard', '-z'),
     'The resolution left unstaged or untracked files.'
@@ -239,8 +242,21 @@ function reportReplayFailure(replay, error) {
   throw error;
 }
 
+export async function abortPendingMerge(workspace, invoke) {
+  const { checkout, branch: issueBranch } = workspace;
+  requireThat(branch(checkout) === issueBranch, 'The issue branch changed. Open the managed issue branch and retry.');
+  const active = gitOperations.filter((name) =>
+    existsSync(git(checkout, 'rev-parse', '--path-format=absolute', '--git-path', name))
+  );
+  if (!active.includes('MERGE_HEAD')) return;
+  requireThat(active.length === 1, 'Finish the other Git operation before updating the issue branch.');
+  await invoke('git', ['merge', '--abort']);
+}
+
 export async function updateIssueBranch(workspace, upstream, invoke, repair, signal) {
   const { checkout } = workspace;
+  signal.throwIfAborted();
+  await abortPendingMerge(workspace, invoke);
   requireIdleCheckout(workspace);
   const target = await fetchIssueTarget(checkout, upstream, invoke);
   signal.throwIfAborted();

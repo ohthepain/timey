@@ -811,7 +811,10 @@ cleanup for explicitly selected branches associated with the deleted reports.
 `flow-delivery.mjs` reads live destination branches, prepares the publication
 preview, and validates or refreshes independent verification evidence.
 `flow-update-branch.mjs` owns the local branch update used by the Branch button
-and the Update Branch block, using the starting branch’s upstream.
+and the Update Branch block, using the starting branch’s upstream. An explicit
+update aborts a pending merge before fetching and retains the other Git-operation
+guards. `flow-merge-state.mjs` reads the pending local merge for the header
+control, whose explicit abort action is guarded by the flow service.
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
