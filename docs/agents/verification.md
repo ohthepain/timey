@@ -138,7 +138,9 @@ check records symlinks by their link targets and accounts for deleted files.
 Update Branch aborts a pending merge before fetching the starting branch, then
 checks that the issue branch contains the fetched commit. Its focused executor
 checks cover restarting a conflicted merge against the latest upstream while
-preserving committed issue work and an untracked draft. Other Git operations
+preserving committed issue work and an untracked draft. If conflict resolution
+returns without resolving the files, the error includes the worker’s explanation
+or decision request. Other Git operations
 remain blocked. The issue header shows a red Merge in progress menu while Git
 has a pending local merge. Its Abort merge action checks the observed merge and
 requires an idle issue. A new Merge run also aborts a pending local merge once
