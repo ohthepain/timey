@@ -34,8 +34,8 @@
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
-  max-height: 32vh;
-  overflow-y: auto;
+  max-height: none;
+  overflow-y: visible;
 }
 .local-note {
   padding: 8px 0;
