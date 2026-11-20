@@ -1,4 +1,5 @@
 import { DeliveryStore } from './issue-delivery-store.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { mkdirSync, writeFileSync, readFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
@@ -12,9 +13,10 @@ export function deliveryFixture(t) {
   for (const repo of [queue, source]) {
     writeFileSync(join(repo.root, '.gitignore'), '.issues/\n');
     writeFileSync(join(repo.root, 'code.js'), 'export const value = 1;\n');
+    initializeFolderSettings(repo.root);
     repo.git('add', '.');
     repo.git('commit', '-qm', 'source');
-    mkdirSync(join(repo.root, '.issues'));
+    mkdirSync(join(repo.root, '.issues'), { recursive: true });
   }
   const helper = join(queue.root, '.agents/skills/issues/scripts');
   mkdirSync(helper, { recursive: true });

@@ -1,4 +1,4 @@
-import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
@@ -42,9 +42,10 @@ export function captureFixture(t, options = {}) {
   mkdirSync(helper, { recursive: true });
   for (const name of ['human-input.mjs', 'human-input-version.json'])
     cpSync(resolve('.agents/skills/issues/scripts', name), join(helper, name));
+  initializeFolderSettings(root);
   git('add', '.');
   git('commit', '-qm', 'capture fixture');
-  mkdirSync(join(root, '.issues'));
+  mkdirSync(join(root, '.issues'), { recursive: true });
   writeFileSync(
     join(root, '.issues/triage-labels.md'),
     '| Role | State | Next | Exit |\n| --- | --- | --- | --- |\n' +
@@ -58,7 +59,6 @@ export function captureFixture(t, options = {}) {
     '---\nid: 20261025-existing\ntitle: Existing issue\nstate: backlog\ngrill_later: false\nautonomy: ask\n---\nPreserve original bytes.\n'
   );
   factory(root).init();
-  createIssueFolderSettings(root, 'Inbox');
   const service = new FactoryUI(root, {
     capture: { assess: async (description) => ({ issues: [proposal(description)] }), ...options },
   });

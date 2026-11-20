@@ -1,4 +1,5 @@
 import { issueGit } from './factory-ui/issue-git.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
@@ -29,6 +30,7 @@ function fixture(t, options = {}) {
   for (const name of ['human-input.mjs', 'human-input-version.json']) {
     cpSync(resolve('.agents/skills/issues/scripts', name), join(root, '.agents/skills/issues/scripts', name));
   }
+  initializeFolderSettings(root);
   git('add', '.');
   git('commit', '-qm', 'fixture');
   writeFileSync(
@@ -3603,8 +3605,9 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
   t.after(() => dom.window.close());
   dom.window.scrollTo = () => {};
   dom.window.matchMedia = (media) => ({ matches: wideSidebar, media, addEventListener() {}, removeEventListener() {} });
-  const script = html
-    .match(/<script>([\s\S]*?)<\/script>/)[1]
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((match) => match[1])
+    .find((script) => script.includes('function render()'))
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/coordinator-ui.js'), 'utf8') +
@@ -4656,6 +4659,7 @@ test('native completion rejects an inspection whose dependencies or assignments 
 
 for (const sandbox of ['workspace-write', 'read-only']) {
   test(`slow ${sandbox} chat startup retains the exact request and dispatches once`, async (t) => {
+    const { root } = fixture(t);
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const connection = new CodexConnection();
     const sent = [],
@@ -4664,6 +4668,7 @@ for (const sandbox of ['workspace-write', 'read-only']) {
     connection.send = (message) => sent.push(message);
     const run = { id: 'run', kind: sandbox === 'read-only' ? 'lifecycle-review' : 'integration' };
     const service = {
+      root,
       codex: connection,
       store: {
         runs: [run],
@@ -4673,8 +4678,8 @@ for (const sandbox of ['workspace-write', 'read-only']) {
         },
       },
     };
-    const first = startChat(service, run, '/project', sandbox);
-    const repeated = startChat(service, run, '/project', sandbox);
+    const first = startChat(service, run, root, sandbox);
+    const repeated = startChat(service, run, root, sandbox);
     assert.equal(first, repeated);
     await Promise.resolve();
     assert.equal(sent.length, 1);
@@ -4695,13 +4700,14 @@ for (const sandbox of ['workspace-write', 'read-only']) {
 }
 
 test('disconnected uncertain startup blocks replacement creation, including after reload', async (t) => {
+  const { root } = fixture(t);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const connection = new CodexConnection();
   connection.ready = async () => {};
   connection.send = () => {};
-  const run = { id: 'old', kind: 'lifecycle-review', issueId: 'issue', actionId: 'assessment' };
-  const service = { codex: connection, store: { runs: [run], update: Object.assign } };
-  const started = startChat(service, run, '/project', 'read-only');
+  const run = { id: 'old', kind: 'lifecycle-review', issueId: '20261022-one', actionId: 'assessment' };
+  const service = { root, codex: connection, store: { runs: [run], update: Object.assign } };
+  const started = startChat(service, run, root, 'read-only');
   await Promise.resolve();
   t.mock.timers.tick(30001);
   const rejected = assert.rejects(started, /disconnected/);
@@ -4717,10 +4723,7 @@ test('disconnected uncertain startup blocks replacement creation, including afte
     },
     store: { runs: JSON.parse(JSON.stringify([run, replacement])) },
   };
-  await assert.rejects(
-    startChat(restarted, replacement, '/project', 'read-only'),
-    /earlier chat startup is unresolved/
-  );
+  await assert.rejects(startChat(restarted, replacement, root, 'read-only'), /earlier chat startup is unresolved/);
   assert.equal(creates, 0);
 });
 
