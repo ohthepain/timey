@@ -39,6 +39,7 @@ import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
+import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -246,6 +247,7 @@ function connectionRecoveryIssue() {
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--actions-menu', 'Actions menu lists two running Flow blocks'],
     ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
     [
       '--connection-recovery',
@@ -1649,7 +1651,10 @@ try {
     await targetMenu.selectOption('update');
     await page.locator('#target-update-progress').waitFor();
     release.resolve();
-    await page.getByText('Updated the issue branch from the starting branch.', { exact: true }).waitFor();
+    await page
+      .locator('#toast')
+      .getByText('Updated the issue branch from the starting branch.', { exact: true })
+      .waitFor();
     await page.unroute('**/api/flow-action');
     await targetMenu.waitFor({ state: 'hidden' });
     const finished = (await view()).flow.blocks;
@@ -2328,6 +2333,9 @@ try {
   await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
   await check('Pending local merges are visible and can be aborted', () =>
     mergeStateBrowserChecks({ page, project, service, screenshot })
+  );
+  await check('Actions menu lists two running Flow blocks', () =>
+    actionsMenuBrowserChecks({ page, project, service, poll, screenshot, output })
   );
   passed = true;
 } catch (error) {

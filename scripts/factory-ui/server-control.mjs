@@ -153,7 +153,7 @@ function actionItems(service) {
     .filter((run) => listableAction(run, service))
     .sort((left, right) => Date.parse(right.updated || right.created) - Date.parse(left.updated || left.created))
     .map((run) => actionEntry(run, service, queue));
-  const current = runs.filter((item) => item.active);
+  const current = [...flowActionItems(service, queue), ...runs.filter((item) => item.active)];
   const recent = runs.filter((item) => !item.active && item.currentStrategy);
   const cleanup = activeCleanups(service).map((record) => ({
     id: `cleanup:${record.issueId}`,
@@ -172,6 +172,43 @@ function actionItems(service) {
     canSteer: false,
   }));
   return [...cleanup, ...current, ...recent.slice(0, Math.max(0, 40 - cleanup.length - current.length))];
+}
+
+function flowActionItems(service, queue) {
+  return [...(service.flows?.active || [])].map(([issueId, active]) => {
+    const issue = service.flows.selected(issueId);
+    const flow = service.flows.read(issue);
+    const block = flow.blocks.find((item) => item.id === active.blockId);
+    const label = block?.label || active.blockId.replaceAll('-', ' ');
+    return {
+      id: `flow:${issueId}:${active.attemptId || active.blockId}`,
+      title: `${issue.title} · ${label}`,
+      kind: 'flow',
+      active: true,
+      ...flowActionProgress(block, active.attemptId),
+      issues: [issueLink(queue, issueId)],
+      outputHref: `/?issue=${encodeURIComponent(issueId)}&block=${encodeURIComponent(active.blockId)}`,
+      canStop: false,
+      canRestart: false,
+      canSkip: false,
+      canCancel: false,
+      canPause: false,
+      canSteer: false,
+    };
+  });
+}
+
+function flowActionProgress(block = { attempts: [] }, attemptId) {
+  const attempt = block.attempts.find((item) => item.id === attemptId) || {
+    status: 'running',
+    summary: 'Action is running.',
+  };
+  const summary = attempt.summary;
+  return {
+    status: attempt.status,
+    summary,
+    details: `${attempt.step || summary} Open the issue for controls.`,
+  };
 }
 
 function cleanupSummary(record) {

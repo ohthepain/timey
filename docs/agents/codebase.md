@@ -179,7 +179,10 @@ subprocess failures retain exit status or signal and bounded structured helper
 diagnostics while omitting raw process output. The guard remains fail-closed.
 The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
-links routed by `scripts/factory-ui/index.html`. `issue-action-cancellation.mjs`
+links routed by `scripts/factory-ui/index.html`. Active Flow entries come from
+`FlowService.active`, with saved block status and output links to the Flow issue.
+Flow controls remain on the issue page. The open list refreshes with server
+status and preserves cards when their content is unchanged. `issue-action-cancellation.mjs`
 cancels stopped actions directly or when an issue closes, preserving work history
 and leaving actions shared with another open issue untouched. It also cancels
 an exact disconnected strategy preparation with no saved worker thread.
