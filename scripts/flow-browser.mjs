@@ -258,6 +258,7 @@ function checkExcluded(name) {
     ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
     ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
     ['--local-notes', 'Local notes capture and handoff preserve flow'],
+    ['--sidebar-labels', 'Issues and Local notes use matching text styles'],
     ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
@@ -532,6 +533,37 @@ try {
     projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check('Issues and Local notes use matching text styles', async () => {
+    await page.goto('/');
+    const issues = page.locator('.sidebar-issues-link');
+    const notes = page.locator('#local-notes > header > h2');
+    await issues.waitFor();
+    await notes.waitFor();
+    const textStyle = (node) => {
+      const style = getComputedStyle(node);
+      return Object.fromEntries(
+        [
+          'fontFamily',
+          'fontSize',
+          'fontWeight',
+          'fontStyle',
+          'lineHeight',
+          'letterSpacing',
+          'textTransform',
+          'color',
+        ].map((property) => [property, style[property]])
+      );
+    };
+    const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
+    await screenshot('sidebar-labels');
+    writeFileSync(
+      join(output, 'sidebar-labels-styles.json'),
+      JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
+    );
+    assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
+    await issues.click();
+    await page.locator('#project-issues').waitFor();
+  });
   await check('Local notes capture and handoff preserve flow', async () => {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot });
     assert.deepEqual(unexpectedConsoleErrors(logs.console), []);

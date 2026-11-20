@@ -277,7 +277,7 @@ kbd {
 .sidebar-issues-link {
   border: 0;
   padding: 0;
-  color: inherit;
+  color: var(--muted);
   background: transparent;
   font: inherit;
   cursor: pointer;
@@ -2470,4 +2470,9 @@ kbd {
 }
 .sidebar-content > * {
   flex-shrink: 0;
+}
+
+.sidebar-issues-link {
+  font-size: 12px;
+  line-height: 20px;
 }
