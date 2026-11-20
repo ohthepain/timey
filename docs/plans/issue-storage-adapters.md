@@ -6,22 +6,89 @@ official sources are in the [provider evidence](issue-storage-provider-evidence.
 
 ## Recommendation
 
-Introduce an issue storage adapter that owns reports, issue metadata, revisions,
-display numbers, claims, and durable operation receipts. Keep Git as one adapter.
-Use SQLite as the first alternative for one local authority and PostgreSQL as the
-preferred shared alternative. DynamoDB is a strong option for an AWS deployment.
+Keep local issues in files. The user's clarified concern is shared issue visibility
+and status changes advancing source branches, which then require workspace updates.
+Replacing local storage with a database does not address that concern.
 
-Treat Jira and GitHub Issues as tracker adapters with explicit field ownership.
-They can supply the human-facing issue record, while a transactional store owns
-Timey's execution claims and operation receipts. A tracker-only implementation
-must prove the same concurrency guarantees before it can start shared work.
+First complete the separation already described in ADR 0011. Shared reports,
+lifecycle state, display numbers, and any shared execution summary belong on one
+dedicated metadata branch. Claims can become files on that same branch instead
+of separate remote branches. The shared adapter reads and writes that branch
+without checking it out into a source workspace.
 
-S3 can support a complete issue record through conditional writes. It deserves a
-prototype if operating without a database is a priority. Separate claim and report
-objects require more coordination than a filesystem-shaped adapter suggests.
+Retain the broader provider comparison for deployments that need it. PostgreSQL
+and DynamoDB remain credible shared alternatives, but neither is required to fix
+source-branch churn. Jira and GitHub Issues remain possible tracker adapters with
+explicit field ownership and a proven claim protocol.
 
 These are design judgments based on the current code and the cited provider
 guarantees. No provider was benchmarked or connected to a live Timey queue.
+
+## One metadata branch can hold reports, statuses, and claims
+
+Use one branch such as the existing `issue-queue`, with separate paths for reports,
+claim records, and number assignments. Lifecycle state is already report metadata.
+It does not need its own branch or a second authoritative status file. If a shared
+execution summary needs its own record, keep it on the same metadata branch.
+Full local Flow attempts and workspaces remain separate in scope.
+
+Each mutation reads the current remote tip, checks the relevant issue revision and
+ownership token, and builds a commit whose parent is that tip. A normal push can
+advance the branch when no competing writer won first. Otherwise, fetch again and
+revalidate the operation against the new tip before building a new commit. Preserve
+unrelated changes. Never force past another writer or retry a stale claim decision
+without revalidation. Git documents this protection in its
+[push rules](https://git-scm.com/docs/git-push#_push_rules).
+
+Acquiring a claim means committing a record only when the latest tree has no claim
+for that issue and its report is still eligible. Start work only after confirming
+the operation and current ownership. Releasing a claim checks the exact attempt
+token. A status checkpoint and its claim release can be one commit and one branch
+update. Lost push responses still require durable operation IDs and reconciliation.
+Preserve stopped-run recovery rather than adding automatic claim expiry.
+
+The adapter can construct trees and commits using an isolated index and private
+refs, as today's publication path already does. Git's
+[commit-tree command](https://git-scm.com/docs/git-commit-tree) creates a commit from
+a tree and parent without requiring the source workspace to check out that tree.
+An isolated bare repository is another implementation option. Readers fetch the
+metadata branch into a private ref and refresh an ignored local cache. Metadata
+refresh must not merge, rebase, move source HEAD, dirty source files, or invalidate
+code verification merely because the metadata commit changed.
+
+The tradeoff is one shared publication point. Two different issues can compete
+for the same branch tip, so the adapter must retry unrelated updates safely.
+Claims add commits to metadata history, but do not require source workspace
+updates. This is a reasonable initial design for Timey's stated problem. A shared
+database becomes more attractive if measured contention or operational limits
+make this publication protocol burdensome.
+
+Automatic commits need a metadata-only path allowlist and narrowly scoped writer
+permission. Existing code-review, source-branch protection, acceptance, and merge
+authorization remain independent.
+
+### The checkout does not yet match its configured separation
+
+At investigation time, `factory.config.json` enables `sharedIssueQueue`, selects
+`issue-queue`, and enables direct publication. However, the current source branch
+still tracks issue reports. Its `.gitignore` contains `!/.issues/*.md`, which also
+permits new report files to enter source commits. These observations establish a
+remaining source-tracking path, not a complete diagnosis of a running deployment.
+
+Recheck those observations with the following read-only commands.
+
+```sh
+git ls-files -- ':(glob).issues/[0-9]*.md' ':(glob).issues/closed/[0-9]*.md' .issues/issue-numbers.json
+git check-ignore --no-index -v .issues/EXAMPLE_ISSUE_ID.md
+```
+
+Complete the report cutover before attributing workspace churn to Git storage as
+a whole. Back up and verify authoritative shared copies, remove tracked report
+copies from source through the normal source-change process, and ignore report
+caches while retaining explicit policy-file exceptions. Existing workspaces need
+that source migration once. Subsequent status changes should refresh issue data
+without changing their source revisions. Consolidating claim branches is an
+additional simplification and can follow independently.
 
 ## What the current implementation needs
 
@@ -61,7 +128,7 @@ underlying provider guarantees and their limits.
 | Candidate                    | Reports, metadata, and history                                                                                                                                       | Claims and concurrent updates                                                                                                                                                   | Assessment                                                                                                                                                                           |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Local Markdown and JSON      | Preserves the existing format and direct editing. Durable history, multi-file commits, and recovery need an explicit journal or snapshots.                           | Local locks coordinate cooperating processes on one filesystem. Separate clones are separate authorities.                                                                       | Retain for compatibility and export. Wrapping file reads alone does not replace shared Git.                                                                                          |
-| Local SQLite                 | Transactions can save report, metadata, history, receipt, and claim together. No separate database server.                                                           | Conditional updates and uniqueness constraints suit one host. Multiple local processes can share the database, subject to SQLite's writer serialization.                        | Preferred local database. Several runners can use one owning service over an API, but must not each treat their own database as shared authority.                                    |
+| Local SQLite                 | Transactions can save report, metadata, history, receipt, and claim together. No separate database server.                                                           | Conditional updates and uniqueness constraints suit one host. Multiple local processes can share the database, subject to SQLite's writer serialization.                        | Technically viable, but outside the clarified need. Keep local files.                                                                                                                |
 | PostgreSQL                   | Relational queries, constraints, and transactions fit issues, relationships, reports, and retained revisions. Audit history still needs application tables.          | Conditional updates and row locks can coordinate claims and checkpoints in a transaction.                                                                                       | Preferred general shared store. Requires a service, schema migrations, credentials, backups, and restore procedures.                                                                 |
 | DynamoDB                     | Conditional item updates and transactions fit issue records and receipts. Access patterns need planned keys and indexes. Large reports may require separate storage. | Conditional writes can acquire and release exact claims. Regional transactions can bind several records. TTL deletion is not a claim protocol.                                  | Strong AWS alternative. Prefer one authoritative Region initially. Define how indexes become current and how large report objects are committed.                                     |
 | S3                           | Strong consistency and conditional writes support a current issue object. Versioning can retain object history when enabled.                                         | Compare-and-swap works on one key. S3 provides no atomic transaction across separate report, claim, counter, and receipt keys.                                                  | Viable with an issue aggregate or a versioned manifest protocol. More custom coordination than PostgreSQL or DynamoDB. Useful separately for large artifacts.                        |
@@ -199,16 +266,14 @@ history and unresolved operations. This is a new storage protocol to prove.
 
 1. Approve an adapter contract against today's behavior. Build a provider contract
    suite using disposable queues and the existing shared-queue race scenarios.
-2. Put the current local-file and Git behavior behind that interface. Migrate all
-   authoritative readers and writers, including factory ledger code and installed
-   issue helpers. A remote database adapter cannot replace only the publication path.
-3. Implement SQLite to prove that reports and decisions can operate without a Git
-   queue. Retain Markdown import and export for humans and existing tools.
-4. Implement PostgreSQL if several runners need shared authority. Choose DynamoDB
-   instead if an AWS deployment's operational constraints favor it. Prototype S3
-   before selecting it as a full authority.
-5. Add one tracker adapter after agreeing field ownership and synchronization
-   direction. Test human edits and workflow transitions as well as machine writes.
+2. Complete the dedicated-branch cutover. Prove that an issue status update changes
+   shared metadata while source HEAD, source status, and code verification identity
+   remain unchanged in two independent runner checkouts.
+3. Put shared operations behind an adapter and consolidate claims into files on
+   the metadata branch. Race claim acquisition, checkpoint, and release against
+   unrelated issue writes. Preserve local issue files and existing reports.
+4. Retain PostgreSQL, DynamoDB, S3, and trackers as optional shared adapters. Build
+   another provider only when its deployment or collaboration benefits justify it.
 
 The contract suite should race two owners for one issue, race creates for numbers,
 reject stale updates, and preserve concurrent changes to different issues. It must
@@ -227,18 +292,18 @@ snapshot. Git can remain a backup or export destination.
 
 ## Scope and decisions still open
 
-This proposal changes the storage described in ADR 0011. A selected design needs
-a replacement ADR. Moving archives into shared storage would also change the
+The dedicated metadata branch follows ADR 0011. Consolidating claims changes the
+remote-claim design and needs its own recorded decision and contract proof.
+Selecting a non-Git shared authority would supersede ADR 0011. Moving archives into shared storage would also change the
 local archive decision in [ADR 0012](../adr/0012-retain-closed-issues-and-archive-locally.md).
 This investigation makes neither change.
 
-The remaining product choices are whether the default is one local host or several
-independent runners, whether a tracker owns user edits, and whether Flow records
-and evidence must travel between runners. Reports and claims alone do not provide
+The remaining choices concern which execution summaries need shared visibility,
+whether a tracker owns user edits, and whether full Flow records and evidence must
+travel between runners. Reports and claims alone do not provide
 execution handoff. Full handoff needs a separate scope covering attempts, chats,
 artifacts, credentials, and worktree availability.
 
-The working recommendation is local SQLite plus shared PostgreSQL, with Git
-retained as a supported provider and Markdown export. DynamoDB is the AWS-specific
-alternative. Jira and GitHub Issues remain valuable integrations with an explicit
-coordination design.
+The working recommendation is local files and one shared Git metadata branch,
+accessed through an adapter without updating source workspaces. First complete
+the source-report separation. Consolidate claim branches as a separate improvement.

@@ -4,6 +4,10 @@ Research checked against official sources on 2026-11-20. This note separates
 documented guarantees from design inferences. It does not select a provider or
 change Timey's accepted architecture.
 
+The [current recommendation](issue-storage-adapters.md) retains local files and
+focuses on isolating shared Git metadata from source workspaces. SQLite remains
+in this comparison as a technical option, not a proposed local migration.
+
 Timey currently keeps shared reports and display numbers on the `issue-queue`
 branch. Remote claims coordinate runners. Local execution state and evidence
 remain local. Claims do not expire automatically. Recovery requires confirmation
