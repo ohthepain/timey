@@ -1,6 +1,8 @@
-import { listenerPreflight, dependencyPreflight } from './verify-preflight.mjs';
+import { listenerPreflight, dependencyPreflight, workspacePackages } from './verify-preflight.mjs';
+import { formatArgs, formattingFiles } from './format-files.mjs';
 import { fallowAuditScope } from './verify-scope.mjs';
 import { runVerificationProcess } from './verify-process.mjs';
+import { factoryCheckCommand, focusedCheckName, mergeCheckPlan, mergeCheckTimeoutMs } from './verify-merge-checks.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   cpSync,
@@ -23,8 +25,13 @@ import { assessAudit } from './audit-result.mjs';
 // Analyze an exported snapshot: unstaged edits cannot mask a staged audit finding,
 // and the pre-pilot recorder tests cannot write CSV files into the user's checkout.
 const args = process.argv.slice(2);
+const mergeIndex = args.indexOf('--merge-checks');
+const mergeChecks = mergeIndex < 0 ? null : mergeCheckPlan(JSON.parse(args[mergeIndex + 1]));
+const timeoutMs = mergeCheckTimeoutMs;
 const staged = args.includes('--staged');
 const auditOnly = args.includes('--audit-only');
+const workChecks = args.includes('--work-checks');
+const writeFormat = workChecks && args.includes('--write-format');
 const step = args.includes('--step');
 const baseIndex = args.indexOf('--base');
 // Preserve the source index (including an alternate hook index), but never leak
@@ -49,11 +56,12 @@ mkdirSync(reportDir, { recursive: true });
 const stamp = new Date().toISOString().replaceAll(':', '-') + '-' + randomUUID();
 const report = {
   revision: head,
-  checkpoint: staged ? 'commit' : step ? 'step' : 'verification',
+  checkpoint: workChecks ? 'work' : staged ? 'commit' : step ? 'step' : 'verification',
   snapshot: staged ? 'index' : 'working-tree',
   startedAt: new Date().toISOString(),
   phases: [],
   checks: [],
+  ...(mergeChecks ? { mergeChecks } : {}),
 };
 let failure = false;
 const cancellation = new AbortController();
@@ -73,12 +81,12 @@ function browserArtifacts(directory) {
 }
 function fallowEnforced(env = isolatedEnv) {
   const value = env.TIMEY_FALLOW_ENFORCE;
-  return value === '1' || value === 'true';
+  return workChecks || value === '1' || value === 'true';
 }
 function checkAssessment(name, result) {
   if (name === 'fallow')
     return assessAudit(result, report.changed_files, {
-      warningsAsErrors: isolatedEnv.TIMEY_FALLOW_WARNINGS === 'error',
+      warningsAsErrors: workChecks || isolatedEnv.TIMEY_FALLOW_WARNINGS === 'error',
     });
   return { passed: result.status === 0 && !result.error };
 }
@@ -121,6 +129,7 @@ function recordCheck(name, command, result) {
     pid: result.pid,
     startedAt: result.startedAt,
     finishedAt: result.finishedAt,
+    timedOut: result.timedOut,
   });
   console.log(`${details.passed ? 'PASS' : 'FAIL'} ${name}: ${log}`);
   if (!details.passed) {
@@ -142,13 +151,15 @@ async function run(name, command, commandArgs) {
   if (cancellation.signal.aborted) throw Error('Verification cancelled. No remaining checks were started.');
   const startedAt = new Date().toISOString();
   report.phases.push({ name, startedAt });
-  console.log(`START ${name}`);
+  console.log(`START ${name}: ${[command, ...commandArgs].join(' ')}`);
   const result = await runVerificationProcess(
     command,
     commandArgs,
     {
       cwd: snapshot,
       signal: cancellation.signal,
+      streamOutput: true,
+      timeoutMs,
       encoding: 'utf8',
       env:
         name === 'browser'
@@ -162,25 +173,33 @@ async function run(name, command, commandArgs) {
     finishedAt: new Date().toISOString(),
     passed: report.checks.at(-1).passed,
   });
-}
-function workspacePackages(directory) {
-  const file = join(directory, 'pnpm-workspace.yaml');
-  if (!existsSync(file)) return [];
-  const packages = [];
-  let inPackages = false;
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (/^packages:\s*$/.test(line)) {
-      inPackages = true;
-      continue;
-    }
-    if (!inPackages) continue;
-    if (/^\S/.test(line)) break;
-    const match = line.match(/^\s+-\s+['"]?([^'"#\s]+)['"]?\s*$/);
-    if (match) packages.push(match[1]);
-  }
-  return packages;
+  if (result.timedOut)
+    throw Error(
+      `${name} timed out after 15 minutes: ${[command, ...commandArgs].join(' ')}. See its verification log.`
+    );
 }
 
+async function runFocusedChecks() {
+  if (!mergeChecks.focused.length) {
+    console.log(
+      mergeChecks.focusedRecorded
+        ? 'Work recorded that no focused tests apply.'
+        : 'No focused tests were recorded by Work.'
+    );
+    return;
+  }
+  for (const [index, [command, ...args]] of mergeChecks.focused.entries()) {
+    requireFlowBrowserScenario(command, args);
+    await run(focusedCheckName(index), command, args);
+  }
+}
+
+function requireFlowBrowserScenario(command, [script, flag]) {
+  if (command !== 'node' || script !== 'scripts/flow-browser.mjs') return;
+  const fixture = readFileSync(join(snapshot, script), 'utf8');
+  const scenarios = [...fixture.matchAll(/\[\s*(['"])(--[\w-]+)\1,/g)].map((match) => match[2]);
+  if (!scenarios.includes(flag)) throw Error('Work recorded an unknown focused Flow browser scenario: ' + flag);
+}
 function copySourceFile(name) {
   const source = join(root, name),
     destination = join(snapshot, name);
@@ -191,10 +210,31 @@ function copySourceFile(name) {
   else cpSync(source, destination, { recursive: true, dereference: false });
 }
 
+const bin = (name) => join(root, 'node_modules', '.bin', name);
+
+async function checkFormatting(base) {
+  const names = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
+    .split('\0')
+    .filter(Boolean);
+  const files = formattingFiles(snapshot, names);
+  if (files.length) await run('format-changed', bin('vp'), ['fmt', '--check', ...formatArgs(files)]);
+  else if (report.changed_files.length)
+    await run('format-changed', process.execPath, [
+      '-e',
+      'console.log("No changed regular files require formatting.")',
+    ]);
+}
+
 try {
   if (step && baseIndex < 0) throw Error('Step completion requires --base REF naming the start of the step.');
   const base = git(root, 'rev-parse', '--verify', `${baseIndex >= 0 ? args[baseIndex + 1] : 'HEAD'}^{commit}`).trim();
   report.base = base;
+  if (writeFormat) {
+    const changed = git(root, 'diff', '--name-only', '--diff-filter=ACMR', '-z', base);
+    const untracked = git(root, 'ls-files', '--others', '--exclude-standard', '-z');
+    const files = formattingFiles(root, (changed + untracked).split('\0').filter(Boolean));
+    if (files.length) execFileSync(bin('vp'), ['fmt', ...formatArgs(files)], { cwd: root, stdio: 'inherit' });
+  }
   report.phases.push({ name: 'snapshot', startedAt: new Date().toISOString() });
   execFileSync('git', ['clone', '--shared', '--no-checkout', '--quiet', root, snapshot], { env: isolatedEnv });
   git(snapshot, 'reset', '--mixed', head);
@@ -235,13 +275,8 @@ try {
   git(snapshot, 'cat-file', '-e', base + '^{commit}');
   git(snapshot, 'cat-file', '-e', report.snapshot_tree + '^{tree}');
   Object.assign(report.phases.at(-1), { finishedAt: new Date().toISOString(), passed: true });
-  if (!auditOnly) {
-    const preflight = { name: 'execution-preflight', startedAt: new Date().toISOString(), passed: false };
-    report.phases.push(preflight);
-    await listenerPreflight();
-    Object.assign(preflight, { passed: true, finishedAt: new Date().toISOString() });
-  }
-  const bin = (name) => join(root, 'node_modules', '.bin', name);
+  if (!auditOnly) await checkFormatting(base);
+  if (failure) throw Error('Fix changed-file formatting before continuing verification.');
   // Tests may substitute the pinned binary without changing node_modules.
   const fallowCommand = isolatedEnv.TIMEY_FALLOW_COMMAND || bin('fallow');
   const fallowArgs = ['audit', '--base', base, '--format', 'json'];
@@ -252,22 +287,18 @@ try {
   else fallowArgs.push(fallowAuditScope(report.changed_files));
   if (fallowEnforced()) await run('fallow', fallowCommand, fallowArgs);
   else recordSkippedFallow();
-  if (!auditOnly) {
-    const changed = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
-      .split('\0')
-      .filter(Boolean);
-    // A link is Git metadata, not a formatter input. Changed tracked targets
-    // remain independent entries; all links stay in snapshot and audit scope.
-    const regular = changed.filter((name) => !lstatSync(join(snapshot, name)).isSymbolicLink());
-    if (regular.length)
-      await run('format-changed', bin('vp'), ['fmt', '--check', '--no-error-on-unmatched-pattern', ...regular]);
-    else if (changed.length)
-      await run('format-changed', process.execPath, [
-        '-e',
-        'console.log("No changed regular files require formatting; symbolic-link metadata remains in audit scope.")',
-      ]);
+  if (!auditOnly && !workChecks && !failure) {
+    const preflight = { name: 'execution-preflight', startedAt: new Date().toISOString(), passed: false };
+    report.phases.push(preflight);
+    await listenerPreflight();
+    Object.assign(preflight, { passed: true, finishedAt: new Date().toISOString() });
+    if (mergeChecks) {
+      console.log(`Merge verification scope: ${mergeChecks.scope}`);
+      await runFocusedChecks();
+    }
     await run('browser', 'pnpm', ['run', 'test:browser']);
-    await run('factory', 'pnpm', ['run', 'test:factory']);
+    const [factory, ...factoryArgs] = factoryCheckCommand(mergeChecks?.scope);
+    await run('factory', factory, factoryArgs);
     await run('typecheck', bin('tsc'), ['--noEmit']);
     await run('tests', bin('vp'), ['test', 'run']);
     await run('build', 'pnpm', ['run', 'build']);

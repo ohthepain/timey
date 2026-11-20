@@ -110,12 +110,15 @@ test('concurrent candidate checks share one run and reject a conflicting base', 
   const fixture = gitFixture(t, 'candidate-concurrency-');
   const root = realpathSync(fixture.root),
     git = fixture.git;
+  const lock = 'lockfileVersion: 9.0\n';
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
+  writeFileSync(join(root, 'pnpm-lock.yaml'), lock);
   git('add', '.');
   git('commit', '-qm', 'fixture');
   const base = git('rev-parse', 'HEAD');
   git('commit', '--allow-empty', '-qm', 'second comparison base');
-  mkdirSync(join(root, 'node_modules'));
+  mkdirSync(join(root, 'node_modules/.pnpm'), { recursive: true });
+  writeFileSync(join(root, 'node_modules/.pnpm/lock.yaml'), lock);
   const folder = join(root, '.issues/evidence');
   const checked = await fixtureDeliveryCheck(root, base, folder);
   const bin = join(root, '.issues/bin');

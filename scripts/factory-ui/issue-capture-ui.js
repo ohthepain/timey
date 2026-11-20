@@ -128,6 +128,7 @@ function captureInput(context) {
   context.state.requestId ||= crypto.randomUUID();
   const input = {
     description: context.field.value,
+    folder: context.dialog.querySelector('#capture-folder').value,
     requestId: context.state.requestId,
     grill: context.grilling.checked,
     go: context.go.checked,
@@ -160,6 +161,12 @@ async function submitCapture(event, context) {
   if (!context.field.value.trim()) {
     context.error.textContent = 'Description is required.';
     context.field.focus();
+    return;
+  }
+  const folder = context.dialog.querySelector('#capture-folder');
+  if (!folder.value || folder.disabled) {
+    context.error.textContent = 'Choose a folder for the issue.';
+    folder.focus();
     return;
   }
   const input = captureInput(context);
@@ -198,9 +205,33 @@ function populateCaptureModels(model, settings) {
   delete model.dataset.draft;
 }
 
+async function populateCaptureFolders(context) {
+  const select = context.dialog.querySelector('#capture-folder');
+  select.disabled = true;
+  try {
+    const [response, defaultResponse] = await Promise.all([
+      fetch('/api/issue-folder-options', { cache: 'no-store' }),
+      fetch('/api/issue-folder-default', { cache: 'no-store' }),
+    ]);
+    const folders = await response.json();
+    if (!response.ok || !Array.isArray(folders)) throw Error(folders.error || 'Could not load issue folders.');
+    const defaultFolder = await defaultResponse.json();
+    if (!defaultResponse.ok) throw Error(defaultFolder.error || 'Could not load the default issue folder.');
+    const previous = select.value || select.dataset.draft || defaultFolder.folder || '';
+    select.replaceChildren(new Option('Choose a folder', ''));
+    for (const name of folders) select.add(new Option(name, name));
+    select.value = previous;
+    select.disabled = false;
+    if (!select.value && defaultFolder.error) context.error.textContent = defaultFolder.error;
+  } catch (error) {
+    context.error.textContent = error.message;
+  }
+}
+
 function openCaptureDialog(context) {
   context.error.textContent = '';
   context.reading = { x: window.scrollX, y: window.scrollY };
+  void populateCaptureFolders(context);
   context.dialog.showModal();
   context.field.focus();
 }
@@ -261,6 +292,7 @@ const issueCaptureUI = (() => {
   dialog.innerHTML = `<form id="capture-form">
     <header class="capture-header"><span class="capture-eyebrow">A little idea. A big next step.</span><h2 id="create-issue-heading">Make something better<span aria-hidden="true">.</span></h2><p>Describe the change. Choose how far to take it.</p></header>
     <section class="capture-body"><label for="capture-description">Description</label><textarea id="capture-description" required maxlength="24000" rows="5" placeholder="What would you like to build, improve, or fix?"></textarea>
+    <label for="capture-folder">Folder</label><select id="capture-folder" required><option value="">Choose a folder</option></select>
     <div class="capture-model-card"><label for="capture-model">Your model</label><select id="capture-model"><option value="">Use project default</option></select><p id="capture-model-hint">Used for new work on the issues you create.</p></div>
     <div class="capture-options" role="group" aria-label="What happens next">
       <label class="capture-option capture-option--grill"><span class="capture-option-copy"><strong>Grill me</strong><small>Talk through the idea together.</small></span><svg class="capture-illustration" viewBox="0 0 88 64" aria-hidden="true"><path d="M18 35h49l-5 17H23z" fill="#e85d32"/><path d="M22 34c1-8 8-13 20-13s19 5 20 13" fill="#ffb84d" stroke="#9a472f" stroke-width="3"/><path d="M28 48v10m29-10v10M30 39h25" fill="none" stroke="#713c35" stroke-width="3" stroke-linecap="round"/><path d="M35 16c-4-5 3-6 0-11m12 11c-4-5 3-6 0-11" fill="none" stroke="#e68a49" stroke-width="3" stroke-linecap="round"/><circle cx="69" cy="17" r="10" fill="#fff"/><path d="M65 17h8m-4-4v8" stroke="#e85d32" stroke-width="2" stroke-linecap="round"/></svg><input id="capture-grill" type="checkbox" aria-label="Grill me"></label>
@@ -305,6 +337,7 @@ const issueCaptureUI = (() => {
   go.checked = draft.go === true;
   state.requestId = captureDraftRequestId(draft.requestId);
   model.dataset.draft = captureDraftText(draft.model);
+  dialog.querySelector('#capture-folder').dataset.draft = captureDraftText(draft.folder);
   merge.checked = captureDraftMerge(draft);
   function updateChoices() {
     [grilling, go, merge].forEach((choice) => (choice.disabled = state.saving));

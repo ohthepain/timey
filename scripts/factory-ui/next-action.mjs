@@ -18,6 +18,7 @@ export function resolveNextAction(queue, issue, runs) {
 }
 
 export function nextProgress(queue, issue, runs) {
+  if (issue.state === 'needs-approval') return unavailable('Approve this issue before starting work.');
   const stage = queue.lifecycle.find((s) => s.state === issue.state);
   const invalid = invalidStage(stage);
   if (invalid) return invalid;

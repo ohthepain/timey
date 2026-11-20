@@ -1,4 +1,5 @@
 import { issueGit } from './factory-ui/issue-git.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
@@ -11,7 +12,7 @@ import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeF
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import vm from 'node:vm';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
@@ -21,14 +22,15 @@ import { checkCandidate } from './factory-ui/checks.mjs';
 import { disconnectedSavedRun, liveSavedRun } from './factory-saved-run-fixtures.mjs';
 
 function fixture(t, options = {}) {
-  const { root, git } = gitFixture(t, 'factory-ui-check-');
-  mkdirSync(join(root, '.issues'));
+  const { root, git } = factoryGitFixture(t, 'factory-ui-check-');
+  mkdirSync(join(root, '.issues'), { recursive: true });
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
   writeFileSync(join(root, 'source.js'), 'export const answer = 42;\n');
   mkdirSync(join(root, '.agents/skills/issues/scripts'), { recursive: true });
   for (const name of ['human-input.mjs', 'human-input-version.json']) {
     cpSync(resolve('.agents/skills/issues/scripts', name), join(root, '.agents/skills/issues/scripts', name));
   }
+  initializeFolderSettings(root);
   git('add', '.');
   git('commit', '-qm', 'fixture');
   writeFileSync(
@@ -189,7 +191,10 @@ test('Codex approval responses are bound to the pending chat', (t) => {
 test('a claimed successful integration cannot bypass independent verification', async (t) => {
   const { root, git, api, proposal, service } = fixture(t);
   transport(t, service);
-  mkdirSync(join(root, 'node_modules'));
+  const lock = 'lockfileVersion: 9.0\n';
+  mkdirSync(join(root, 'node_modules/.pnpm'), { recursive: true });
+  writeFileSync(join(root, 'pnpm-lock.yaml'), lock);
+  writeFileSync(join(root, 'node_modules/.pnpm/lock.yaml'), lock);
   writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node -e "process.exit(1)"' } }));
   git('add', '.');
   git('commit', '-qm', 'failing independent check');
@@ -244,6 +249,10 @@ test('HTTP reads stay inert and cross-origin mutation is refused', async (t) => 
   const { url, page } = await startFactoryHttp(t, service);
   const cookie = page.headers.get('set-cookie').split(';')[0];
   assert.equal(page.status, 200);
+  const health = await fetch(url + '/api/health');
+  assert.equal(health.status, 204);
+  assert.equal(health.headers.get('set-cookie'), null);
+  assert.equal(await health.text(), '');
   const expired = await fetch(url + '/api/lifecycle-answer', {
     method: 'POST',
     headers: { origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' },
@@ -1493,6 +1502,7 @@ test('final-review buttons close with explicit acceptance and reopen without lau
   const closed = selectedIssueView(service);
   assert.match(closed.content, /user selected Close issue/);
   assert.equal(closed.state, 'closed');
+  await service.issueCleanupTasks.get('20261022-one');
   assert.deepEqual(
     service.decideIssue('20261022-one', 'closed', 'reopen', closed.decisionBasis, 'Still fails for my file.'),
     { state: 'investigate' }
@@ -2672,7 +2682,7 @@ test('direct closure gives immediate feedback, prevents duplicates, and confirms
   assert.equal(button.textContent, 'Accept fix and close');
   button.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(identities, 1);
+  assert.equal(identities, 0);
   window.document.getElementById('approve').click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(window.document.querySelector('[data-issue-decision-status]').textContent, /Waiting for the server/);
@@ -2717,7 +2727,7 @@ test('direct closure exposes the exact blocker and enables retry without a model
   );
 });
 
-test('close dialog previews exact cleanup resources and disables already-deleted branches', async (t) => {
+test('the separate Cleanup dialog previews resources and disables already-deleted branches', async (t) => {
   const { window, snapshot } = await activityScreen(t);
   snapshot.issues[0].state = 'final';
   window.screenTest.show(snapshot);
@@ -2748,28 +2758,35 @@ test('close dialog previews exact cleanup resources and disables already-deleted
       defaultSelected: true,
     },
   ];
-  window.fetch = async (url, options) => {
-    if (url.endsWith('/issue-cleanup-identities'))
-      return { ok: true, json: async () => ({ basis: 'cleanup-basis', resources }) };
-    if (url.endsWith('/issue-cleanup-resource')) {
-      const { resourceId } = JSON.parse(options.body);
-      return { ok: true, json: async () => ({ resource: resources.find((item) => item.id === resourceId) }) };
-    }
-    return { ok: true, json: async () => snapshot };
-  };
-  window.document.getElementById('confirm').showModal = function () {
+  const modal = window.document.getElementById('confirm');
+  modal.showModal = function () {
     this.open = true;
   };
-  window.document.querySelector('[data-issue-decision="close"]').click();
+  const cleanup = window.createIssueClosureDialog({
+    dialog: modal,
+    panel: window.document.getElementById('selection'),
+    approve: window.document.getElementById('approve'),
+    error: window.document.getElementById('confirmation-error'),
+    async request(name, { resourceId }) {
+      if (name === 'issue-cleanup-identities') return { resources };
+      return { resource: resources.find((item) => item.id === resourceId) };
+    },
+  });
+  await cleanup.open(() => ({
+    issueId: snapshot.issues[0].id,
+    cleanupOnly: true,
+    flowRevision: 1,
+    resolution: 'fixed',
+    closureReasons: snapshot.closureReasons,
+  }));
   await new Promise((resolve) => setTimeout(resolve, 0));
   const dialog = window.document.getElementById('selection').textContent;
   assert.match(dialog, /ohthepain\/timey:codex\/issue-one/);
   assert.match(dialog, /Already deleted/);
   assert.match(dialog, /\/repo\/\.issues\/issue-work\/one/);
   assert.match(dialog, /2\.0 KB/);
-  assert.match(dialog, /Thread thread-1/);
+  assert.equal(window.document.querySelector('[data-cleanup-choice="chat"]'), null);
   assert.equal(window.document.querySelector('[data-cleanup-choice="remote"]').disabled, true);
-  assert.equal(window.document.querySelector('[data-cleanup-choice="chat"]').checked, true);
 });
 
 test('older final-review issue with an integrated commit can be accepted without fabricated stage history', (t) => {
@@ -3588,8 +3605,9 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
   t.after(() => dom.window.close());
   dom.window.scrollTo = () => {};
   dom.window.matchMedia = (media) => ({ matches: wideSidebar, media, addEventListener() {}, removeEventListener() {} });
-  const script = html
-    .match(/<script>([\s\S]*?)<\/script>/)[1]
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map(([, source]) => source)
+    .join('\n')
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/coordinator-ui.js'), 'utf8') +
@@ -3603,10 +3621,12 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
       readFileSync(resolve('scripts/factory-ui/issue-capture-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/server-control-ui.js'), 'utf8') +
-      '\n' +
+      '\nserverControlUI.watchConnection = () => {};\n' +
       readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-progress-ui.js'), 'utf8') +
+      '\n' +
+      readFileSync(resolve('scripts/factory-ui/issue-closure-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       '\n' +
@@ -4639,14 +4659,23 @@ test('native completion rejects an inspection whose dependencies or assignments 
 
 for (const sandbox of ['workspace-write', 'read-only']) {
   test(`slow ${sandbox} chat startup retains the exact request and dispatches once`, async (t) => {
+    const { root } = fixture(t);
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const connection = new CodexConnection();
     const sent = [],
       receipts = [];
     connection.ready = async () => {};
-    connection.send = (message) => sent.push(message);
+    let dispatched;
+    const requestSent = new Promise((resolve) => {
+      dispatched = resolve;
+    });
+    connection.send = (message) => {
+      sent.push(message);
+      dispatched();
+    };
     const run = { id: 'run', kind: sandbox === 'read-only' ? 'lifecycle-review' : 'integration' };
     const service = {
+      root,
       codex: connection,
       store: {
         runs: [run],
@@ -4656,10 +4685,10 @@ for (const sandbox of ['workspace-write', 'read-only']) {
         },
       },
     };
-    const first = startChat(service, run, '/project', sandbox);
-    const repeated = startChat(service, run, '/project', sandbox);
+    const first = startChat(service, run, root, sandbox);
+    const repeated = startChat(service, run, root, sandbox);
     assert.equal(first, repeated);
-    await Promise.resolve();
+    await Promise.race([requestSent, first]);
     assert.equal(sent.length, 1);
     t.mock.timers.tick(30001);
     assert.equal(run.startup.status, 'waiting');
@@ -4678,14 +4707,19 @@ for (const sandbox of ['workspace-write', 'read-only']) {
 }
 
 test('disconnected uncertain startup blocks replacement creation, including after reload', async (t) => {
+  const { root } = fixture(t);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const connection = new CodexConnection();
   connection.ready = async () => {};
-  connection.send = () => {};
-  const run = { id: 'old', kind: 'lifecycle-review', issueId: 'issue', actionId: 'assessment' };
-  const service = { codex: connection, store: { runs: [run], update: Object.assign } };
-  const started = startChat(service, run, '/project', 'read-only');
-  await Promise.resolve();
+  let dispatched;
+  const requestSent = new Promise((resolve) => {
+    dispatched = resolve;
+  });
+  connection.send = () => dispatched();
+  const run = { id: 'old', kind: 'lifecycle-review', issueId: '20261022-one', actionId: 'assessment' };
+  const service = { root, codex: connection, store: { runs: [run], update: Object.assign } };
+  const started = startChat(service, run, root, 'read-only');
+  await Promise.race([requestSent, started]);
   t.mock.timers.tick(30001);
   const rejected = assert.rejects(started, /disconnected/);
   connection.fail(Error('Codex disconnected'));
@@ -4700,10 +4734,7 @@ test('disconnected uncertain startup blocks replacement creation, including afte
     },
     store: { runs: JSON.parse(JSON.stringify([run, replacement])) },
   };
-  await assert.rejects(
-    startChat(restarted, replacement, '/project', 'read-only'),
-    /earlier chat startup is unresolved/
-  );
+  await assert.rejects(startChat(restarted, replacement, root, 'read-only'), /earlier chat startup is unresolved/);
   assert.equal(creates, 0);
 });
 
@@ -5129,7 +5160,7 @@ test('a real pending question stays prominent even while its issue chat is conne
 });
 
 test('issue Git identity follows unfinished work, assembly and live HEAD without using the server branch', (t) => {
-  const { root, git } = gitFixture(t, 'issue-git-');
+  const { root, git } = factoryGitFixture(t, 'issue-git-');
   writeFileSync(join(root, 'source.js'), 'one');
   git('add', '.');
   git('commit', '-qm', 'initial');
@@ -5544,4 +5575,14 @@ test('retained output history is authenticated, read-only and restricted to save
   assert.equal((await fetch(url + '/issue-progress-ui.js', { headers: { cookie } })).status, 200);
   assert.equal(JSON.stringify(service.store.runs), before);
   assert.equal(readFileSync(join(service.store.directory, 'retained-one.jsonl'), 'utf8'), log);
+});
+
+test('reading queue snapshots preserves clean source and a stable review basis', (t) => {
+  const { git, service } = fixture(t);
+  assert.equal(git('status', '--porcelain'), '');
+  const first = service.snapshot(null, { includeCoordinatorDiscussion: false });
+  const second = service.snapshot(null, { includeCoordinatorDiscussion: false });
+  assert.equal(git('status', '--porcelain'), '');
+  assert.deepEqual(second.snapshot.worktree, first.snapshot.worktree);
+  assert.equal(second.reviewBasis, first.reviewBasis);
 });

@@ -4,6 +4,11 @@ Language used to coordinate work and review changes.
 
 ## Language
 
+**Local note**:
+A quick project-owned thought or todo saved outside version control. It can be
+discussed in the project conversation or used to prefill an issue. Capture starts
+no work, and issue creation retains the note until the person deletes it.
+
 **Clarify**:
 The issue stage that brings human intent and available technical evidence together
 to establish enough understanding to begin useful work. Remaining technical
@@ -44,6 +49,12 @@ _Avoid_: Never grilled
 A request the person has chosen to address later. Deferral leaves the requirement
 and its effect on dependent work intact.
 _Avoid_: Completed request, waived requirement
+
+**Needs your input**:
+An issue has a specific outstanding human input request that prevents dependent
+work from continuing. The person handles the request and explicitly continues
+the affected block.
+_Avoid_: Failed, needs retry
 
 **Delegated decision**:
 A choice the person explicitly authorizes the agent to make within a defined
@@ -144,9 +155,38 @@ the report ID, never reused after deletion, and distinct from a GitHub pull requ
 number.
 
 **Issue folder**:
-A user-named local grouping of issues, stored separately from issue reports and
-lifecycle state. Moving an issue between folders changes its organization only;
-implementation order remains separately saved.
+A project folder configured to show assigned issues and issue actions alongside
+its files. Every issue belongs to a folder, and its report lives in the queue.
+_Avoid_: Issue group
+
+**Project Issues view**:
+A project-level view of issues across issue folders, with filtering and bulk
+selection. Folder views use the same issue workspace scoped to one folder.
+_Avoid_: Virtual folder
+
+**System folder**:
+A browsable folder without issue settings. The term describes its issue behavior,
+while installed content describes who owns its files.
+
+**Default issue folder**:
+The single issue folder used for a new issue when the person has not chosen a
+folder. Each project has its own default issue folder.
+
+**Inherited setting**:
+A setting whose value comes from a parent folder, or from the project when no
+parent folder supplies a value.
+
+**Selection strategy**:
+A rule for recommending which issues to select and explaining why they fit
+together.
+
+**Master issue**:
+An issue that combines requests from selected issues and owns the work needed to
+fulfill them.
+
+**Sub-issue**:
+An original issue whose work belongs to a master issue. It keeps its own identity
+and report and cannot start work independently while attached.
 
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
@@ -198,6 +238,114 @@ intent. Publication, merge, successful checks and strategy completion do not imp
 The recorded decision to end work on an issue, either with an accepted fix or a
 stated reason for closing without a fix. It is independent of historical lifecycle stages.
 
+**Fixed by**:
+The closure reason for a sub-issue whose fix the user accepted by closing its
+master issue as Fixed.
+
+**Issue cleanup**:
+Removal of a closed issue's worktree and any selected local or remote issue
+branches. Incomplete cleanup can be retried while the issue stays closed.
+
 **Issue archive**:
-A locally retained collection of closed issue reports. Archiving removes an issue
-from the Closed issues view and preserves its identity and closure.
+A retained collection of issues outside the active views. Archiving preserves
+identity and history. Investigations can be archived without being closed.
+
+**Retro**:
+A review of what happened on an issue and what could improve future work.
+
+**Project home**:
+The project's landing page for activity summaries and operations that improve its
+codebase and working processes.
+
+**Project conversation**:
+A retained conversation about the project as a whole, available through Discuss.
+Its scope can span the project's code, issue controls, and working processes.
+Issue handling remains independent of the project conversation.
+_Avoid_: Coordinator conversation, issue conversation
+
+**Clarification skill**:
+The person's selected grilling skill for resolving ambiguity in a project
+conversation.
+_Avoid_: Looping skill
+
+**Investigation**:
+A bounded inquiry into a project's codebase or working processes, recorded as an
+issue with its goals, conversation, findings, and resulting follow-up issues.
+
+**Reusable investigation**:
+An investigation that remains available for additional runs after a completed
+inquiry, with each run retaining its own findings and resulting issues.
+
+**Investigation run**:
+One execution of an investigation against a chosen revision, retaining the
+instructions, settings, findings, evidence, and related issues for that execution.
+
+**Retro item**:
+A follow-up issue proposed by a retro that retains its originating issue for
+evidence and context.
+
+**Investigation follow-up**:
+An issue that turns a finding from a completed investigation into a concrete next
+action. It retains the source finding and evidence, independently of a retro or
+acceptance of the investigation.
+
+**Needs approval**:
+The state of an issue that awaits an explicit decision before work can start.
+
+**Flow definition**:
+A reusable description of how to build an issue flow and which issue types
+can use it.
+
+**Issue flow**:
+An explicitly controlled graph of blocks for one issue. The graph records the
+planned route. Run starts the selected block. Play starts the route and waits
+for any confirmations along the way.
+
+**Flow block**:
+One visible request, advisory, work, verification, delivery, or cleanup operation.
+Its Markdown declares its system prompt, Details and Artifacts. Its intent, skill,
+comments, attempts and evidence are inspectable. A block reads declared inputs
+from its own Details, the issue and upstream blocks. An edit invalidates the
+edited block and its connected successors. Details types each input and Artifacts
+types each output. An input uses either a manual value or a linked upstream
+output; the inspector shows inputs before read-only latest outputs.
+
+**Request block**:
+The required first block and owner of Your words and the derived request fields. Saving the wording
+or refreshing Request reruns clarification. A change of issue type applies that
+type's default flow.
+
+**Block attempt**:
+One execution of a block. Retry appends an attempt and preserves earlier results.
+An uncertain attempt requires reconciliation of its original execution.
+
+**Suggested block**:
+A dotted future operation that has not started. A target-change suggestion is a
+code-generated observation and grants no execution authority.
+
+**Flow lane**:
+A displayed branch of the issue graph. The issue keeps one owning conversation;
+parallel workers belong to the explicitly selected Arena or Swarm block.
+
+**Flow starting point**:
+The chosen Git branch ref and exact commit used to create an issue's checkout.
+It defaults to the delivery target branch. An idle, unpublished issue can change
+its starting point by moving its saved work onto the new base.
+
+**Flow candidate identity**:
+The base commit, source tree, current commit and uncommitted state captured for a
+flow result. Publication requires a clean committed candidate. Verification of an
+uncommitted tree remains valid after that exact tree is committed, and expires when
+its content changes.
+
+**Flow destination**:
+The GitHub branch used as the PR base and by Merge. It follows the
+starting branch until the operator pins a branch or the issue gets a PR.
+
+**Merge verification scope**:
+The set of local checks required for a Merge attempt. The full regression suite
+is an opt-in scope that adds broader regression checks to the default scope.
+
+**Update Branch**:
+The Flow block that fetches the branch recorded in Starting point and brings
+its latest commits into the issue branch.

@@ -8,6 +8,7 @@ import { clarificationLifecycle } from './factory-ui/clarify-policy.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { progressBasis } from './factory-ui/next-action.mjs';
 import { sameStage } from './factory-ui/lifecycle-runs.mjs';
+import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { createCaptures } from './factory-ui/issue-capture.mjs';
 import { captureRoute } from './factory-ui/capture-routing.mjs';
 import { createIssueChats } from './factory-ui/issue-chat.mjs';
@@ -202,7 +203,8 @@ test('capture grilling is explicit, follows durable creation, survives retries a
   f.service.captures = createCaptures(f.service, {
     assess: async (description) => ({ issues: [proposal(description)] }),
   });
-  const input = { requestId: randomUUID(), description: 'Improve Save', grill: true };
+  createIssueFolderSettings(f.root, 'Inbox');
+  const input = { requestId: randomUUID(), description: 'Improve Save', grill: true, folder: 'Inbox' };
   const created = await f.service.captures.save(input);
   assert.equal(created.issues[0].state, 'backlog');
   assert.equal(created.grilling[0].started, true);

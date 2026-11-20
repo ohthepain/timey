@@ -1,3 +1,5 @@
+import { flowOwnsIssue } from './flow-ownership.mjs';
+import { requireIndependentIssue } from './issue-group.mjs';
 import { existsSync } from 'node:fs';
 import { interruptCodexTurn } from './codex.mjs';
 import { startIssueStrategy, strategyBasis } from './issue-strategy.mjs';
@@ -10,6 +12,7 @@ import {
   saveConversationState,
 } from './conversation-store.mjs';
 import { conversationContext } from './conversation-context.mjs';
+import { retroProof } from './flow-retro-proof.mjs';
 import { conversationPage } from './conversation-view.mjs';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
@@ -20,7 +23,7 @@ import { randomUUID } from 'node:crypto';
 import { IssuePromptScheduler } from './issue-prompt-scheduler.mjs';
 import { addPrompt, readPromptQueue, changePrompt, pendingPrompts } from './issue-prompt-queue.mjs';
 
-const retroSchema = {
+export const retroSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -83,6 +86,7 @@ class IssueChats {
       'The installed retro skill is unavailable.'
     );
     const id = 'retro-' + randomUUID();
+    const proof = retroProof(this.service, issueId);
     appendMessage(this.service.root, issueId, {
       id: 'request:' + id,
       actor: 'factory',
@@ -96,7 +100,9 @@ class IssueChats {
       skills: ['retro'],
       generated: true,
       outputSchema: retroSchema,
-      text: 'Run the installed retro skill using the shared lifecycle history and evidence links. Return a concise summary and actionable recommendations for this issue. Do not claim implementation, verification or merge from conversation claims.',
+      text:
+        'Run the installed retro skill using the shared lifecycle history and evidence links. Retained proof has been independently checked and supplied below. Treat only verified artifacts as proof; distinguish established outcomes from remaining evidence gaps and never infer behavior beyond the artifact. Return a concise summary and actionable recommendations for this issue. Do not claim implementation, verification or merge from conversation claims.\nVerified retained proof: ' +
+        JSON.stringify(proof),
     });
     appendMessage(this.service.root, issueId, {
       id: 'result:' + id,
@@ -123,7 +129,7 @@ class IssueChats {
     return this.scheduler.reconcileOperation(issueId, operation, callback);
   }
   activity() {
-    const queues = [...this.scheduler.known].map((id) => this.scheduler.read(id));
+    const queues = this.scheduler.knownQueues();
     return {
       operations: queues.filter((queue) => queue.operation).length,
       uncertain: queues.filter((queue) => pendingPrompts(queue).some((entry) => entry.status === 'uncertain')).length,
@@ -143,7 +149,13 @@ class IssueChats {
   }
   async send(input) {
     validateMessage(input);
+    if (input.mode !== 'comment') requireIndependentIssue(this.service.root, input.issueId);
+    requireThat(
+      !flowOwnsIssue(this.service, input.issueId),
+      'A flow block owns this issue. Stop it before sending a classic chat prompt.'
+    );
     const { issue } = this.selected(input.issueId, input.mode === 'comment');
+    requireThat(issue.state !== 'needs-approval', 'Approve this issue before starting its chat.');
     this.service.ownServer();
     if (input.mode === 'answer') return this.sendAnswer(input);
     const queue = this.scheduler.read(issue.id);

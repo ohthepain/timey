@@ -1,18 +1,21 @@
 import { moveStoredIssue } from './factory-ui/issue-report-storage.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { createIssueChats } from './factory-ui/issue-chat.mjs';
 import { conversationMessages, conversationState, appendMessage } from './factory-ui/conversation-store.mjs';
+import { addPrompt } from './factory-ui/issue-prompt-queue.mjs';
+import { writeProgress } from './factory-progress.mjs';
 import { conversationPrompt } from './factory-ui/conversation-context.mjs';
 import { prepareNativeChat, bindNativeChat } from './factory-native-chat.mjs';
 import { createIssueChatConnection, attachIssueChat } from './factory-ui/issue-chat-runtime.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
 import { nameIssueChat } from './factory-ui/chat-name.mjs';
+import { digest } from './factory-ui/common.mjs';
 
 function fixture(t) {
   const f = deliveryFixture(t),
@@ -90,6 +93,18 @@ test('one issue conversation persists messages, role contributions and native ch
 
 test('retro on a closed report retains its request and result in the saved issue conversation', async (t) => {
   const f = fixture(t);
+  const retained = join(f.queue.root, '.issues/evidence', 'retro-proof.log');
+  mkdirSync(join(f.queue.root, '.issues/evidence'), { recursive: true });
+  writeFileSync(retained, 'Commit reused after an unchanged-tree commit.\n');
+  appendMessage(f.queue.root, f.input.issueId, {
+    id: 'proof-source',
+    actor: 'factory',
+    role: 'Factory',
+    kind: 'stage-outcome',
+    at: new Date().toISOString(),
+    body: 'Recorded result from attempt 134.',
+    source: { evidence: [{ path: retained, sha256: digest(readFileSync(retained)), attemptId: 'attempt-134' }] },
+  });
   const report = join(f.queue.root, '.issues', f.input.issueId + '.md');
   writeFileSync(report, readFileSync(report, 'utf8').replace(/^state: .*$/m, 'state: closed'));
   moveStoredIssue(f.queue.root, f.input.issueId, 'open', 'closed');
@@ -99,6 +114,11 @@ test('retro on a closed report retains its request and result in the saved issue
   });
   const result = await f.service.issueChats.retro(f.input.issueId);
   assert.deepEqual(result, { summary: 'No follow-up needed.', recommendations: [] });
+  const request = f.calls.find((call) => call.prompt)?.prompt;
+  assert.match(request, /Verified retained proof/);
+  assert.match(request, /unchanged-tree commit/);
+  assert.match(request, /attempt-134/);
+  assert.match(request, /distinguish established outcomes from remaining evidence gaps/);
   const messages = conversationMessages(f.queue.root, f.input.issueId);
   assert.ok(messages.some((message) => message.kind === 'retro-request'));
   assert.ok(
@@ -728,6 +748,30 @@ test('durable queue retains pause, FIFO, selected skills and edited positions ac
   assert.equal(calls[0].skills[0].name, 'retro');
   assert.match(calls[1].prompt, /Latest prompt: Third/);
   assert.equal(f.service.issueChats.view(id).queue.entries.length, 0);
+});
+
+test('the scheduler discovers and drains an unopened saved worktree prompt after restart', async (t) => {
+  const f = fixture(t);
+  const root = f.queue.root;
+  const issueId = f.input.issueId;
+  const checkout = join(root, '.issues', 'managed-worktree');
+  f.queue.git('worktree', 'add', '-q', '--detach', checkout);
+  writeProgress(root, { issueId, chatCheckout: { checkout } });
+  addPrompt(root, { issueId, id: 'saved-worktree-prompt', mode: 'comment', text: 'Saved in the worktree.' });
+  const savedQueue = join(checkout, '.issues', 'conversations', issueId, 'queue.json');
+  assert.equal(JSON.parse(readFileSync(savedQueue, 'utf8')).entries[0].status, 'waiting');
+
+  f.service.issueChats.close();
+  f.service.issueChats = createIssueChats(f.service, () => f.connection);
+  f.service.issueChats.scheduler.tick();
+  await f.finish();
+  f.service.issueChats.scheduler.tick();
+  await f.finish();
+
+  const calls = f.calls.filter((call) => call.prompt);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].prompt, /Saved in the worktree/);
+  assert.equal(JSON.parse(readFileSync(savedQueue, 'utf8')).entries[0].status, 'completed');
 });
 
 test('two tabs cannot dispatch or mutate a claimed prompt twice', async (t) => {

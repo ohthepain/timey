@@ -1,3 +1,4 @@
+import { browserScenarioSelected } from './browser-scenario-policy.mjs';
 import { mkdirSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -28,7 +29,16 @@ const server = browserFixture(root);
 const config = join(output, 'browser-config.json');
 writeFileSync(
   config,
-  JSON.stringify({ browser: { browserName: 'chromium', isolated: true, launchOptions: { headless: true } } })
+  JSON.stringify({
+    browser: {
+      browserName: 'chromium',
+      isolated: true,
+      launchOptions: {
+        headless: true,
+        ...(process.env.TIMEY_BROWSER_CHANNEL ? { channel: process.env.TIMEY_BROWSER_CHANNEL } : {}),
+      },
+    },
+  })
 );
 const browserSourcePaths = ['scripts/factory-ui', 'scripts/browser-fixture.mjs'];
 function browserSourceDiff() {
@@ -62,10 +72,14 @@ try {
   await once(server, 'listening');
   const url = 'http://127.0.0.1:' + server.address().port;
   const scenarios = readdirSync(source)
-    .filter((name) => /^factory-browser-.+\.mjs$/.test(name))
+    .filter((name) => /^factory-browser-.+\.mjs$/.test(name) && browserScenarioSelected(name))
     .sort();
   // Legacy pilot: the tracked sorting test registers its browser replay, even if its UI controls regress.
-  if (existsSync(join(root, 'scripts/factory-queue.check.mjs'))) scenarios.push('browser-scenarios/queue-sorting.mjs');
+  if (
+    existsSync(join(root, 'scripts/factory-queue.check.mjs')) &&
+    browserScenarioSelected('browser-scenarios/queue-sorting.mjs')
+  )
+    scenarios.push('browser-scenarios/queue-sorting.mjs');
   if (!scenarios.length) throw Error('No browser scenarios are registered.');
   await run('open', ['open', url, '--config', config, '--idle-timeout', '60000']);
   for (const name of scenarios) {

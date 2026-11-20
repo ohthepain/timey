@@ -36,10 +36,35 @@ function cancelClosingAction(service, action, issueId) {
 }
 
 export function cancelBlockedAction(service, run, issueId) {
+  if (run.kind === 'issue-work' && run.status === 'preparing') {
+    requireThat(
+      run.issueId === issueId && canCancelInterruptedPreparation(service, run),
+      'This preparation may still have a worker. Check its action before cancelling.'
+    );
+    recordRunCancellation(service, run, issueId, 'cancel-interrupted-preparation', new Date().toISOString());
+    updateCancelledStrategy(service, issueId, run);
+    return { cancelled: true };
+  }
   const queue = readQueue(service.root);
   const action = queue.actions.find((entry) => entry.id === run.actionId);
   if (action) return cancelLedgerAction(service, action, run, issueId, queue);
   return cancelIssueWorkAction(service, run, issueId);
+}
+
+export function canCancelInterruptedPreparation(service, run) {
+  const current = service.lifecycleRuns?.[run.issueId]?.work;
+  return (
+    run.kind === 'issue-work' &&
+    run.status === 'preparing' &&
+    Boolean(run.issueId) &&
+    !run.threadId &&
+    !(current?.runId === run.id && current.threadId) &&
+    !service.store.connected.has(run.id) &&
+    !actionConnected(service, run.actionId) &&
+    !service.lifecycleTasks.has(run.issueId) &&
+    !service.issueChats?.tasks?.has(run.issueId) &&
+    !service.issueChats?.active?.has(run.issueId)
+  );
 }
 
 function cancelLedgerAction(service, action, run, issueId, queue) {
@@ -135,10 +160,14 @@ function cancelRun(service, action, issueId, operation, at) {
 
 function cancelStoredRun(service, run, issueId, operation, at = new Date().toISOString()) {
   if (!['blocked', 'failed', 'paused'].includes(run.status)) return false;
+  recordRunCancellation(service, run, issueId, operation, at);
+  return true;
+}
+
+function recordRunCancellation(service, run, issueId, operation, at) {
   run.events ||= [];
   run.events.push({ at, message: 'Action cancelled. Earlier summary and saved output are retained.' });
   service.store.update(run, { status: 'cancelled', cancellation: { at, issueId, operation } });
-  return true;
 }
 
 function updateCancelledStrategy(service, issueId, run) {

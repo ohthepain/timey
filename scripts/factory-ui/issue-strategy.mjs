@@ -1,3 +1,6 @@
+import { flowOwnsIssue } from './flow-ownership.mjs';
+import { requireIndependentIssue } from './issue-group.mjs';
+import { queueReportPaths } from './shared-issue-config.mjs';
 import { factoryBoundary, factoryOperation } from './issue-operation.mjs';
 import { conversationContext } from './conversation-context.mjs';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
@@ -549,6 +552,7 @@ function selected(service, input) {
   const queue = readQueue(service.root),
     issue = queue.issues.find((item) => item.id === input.issueId);
   requireThat(issue && /^[a-zA-Z0-9_-]+$/.test(issue.id), 'Select an existing issue.');
+  requireThat(issue.state !== 'needs-approval', 'Approve this issue before starting work.');
   requireThat(
     !['closed', 'ready-to-close'].includes(queue.lifecycle.find((stage) => stage.state === issue.state)?.role),
     'Reopen this issue explicitly before starting work.'
@@ -558,7 +562,9 @@ function selected(service, input) {
     'The issue or strategy changed. Review the current issue before starting.'
   );
   requireThat(
-    !service.lifecycleTasks.has(issue.id) && !service.issueChats.tasks.has(issue.id),
+    !service.lifecycleTasks.has(issue.id) &&
+      !service.issueChats.tasks.has(issue.id) &&
+      !flowOwnsIssue(service, issue.id),
     'This issue is already working.'
   );
   requireThat(
@@ -575,6 +581,7 @@ function selected(service, input) {
 }
 export function startIssueStrategy(service, input) {
   service.ownServer();
+  requireIndependentIssue(service.root, input.issueId);
   const { queue, issue } = selected(service, input);
   const record = strategyRecord(service, issue);
   const old = record.work || record.chatCheckout;
@@ -614,6 +621,7 @@ export async function prepareIssueChatCheckout(service, issueId) {
   const queue = readQueue(service.root);
   const issue = queue.issues.find((entry) => entry.id === issueId);
   requireThat(issue, 'Select an existing issue.');
+  requireThat(issue.state !== 'needs-approval', 'Approve this issue before creating its worktree.');
   requireThat(
     queue.lifecycle.find((stage) => stage.state === issue.state)?.role !== 'closed',
     'Reopen this issue before editing code.'
@@ -871,8 +879,12 @@ async function checkStrategyCandidate(service, record, run, work, force = false)
 
 async function inspectStrategyReadiness(service, work, head) {
   const provider = strategyProvider(service, work.config, work.checkout);
-  const readiness = await provider.ready(await provider.inspect(work.pr), work.branch, head);
+  const readiness = await deliveryReadiness(provider, work, await provider.inspect(work.pr), head);
   return { provider, readiness };
+}
+
+function deliveryReadiness(provider, work, pr, head) {
+  return provider.ready(pr, work.branch, head, { handoff: work.strategy === 'full-stop' });
 }
 
 async function publishVerifiedCandidate(service, record, run, head) {
@@ -893,7 +905,7 @@ function strategyOutcome(work, readiness) {
   if (work.strategy === 'full-send')
     return {
       status: 'ready-to-merge',
-      summary: `PR ${readiness.url} is ready for your Merge action. GitHub approval and required checks will be rechecked before merging.${discrepancy}`,
+      summary: `PR ${readiness.url} is ready for your Merge action. GitHub merge readiness will be rechecked before merging.${discrepancy}`,
     };
   return {
     status: 'handed-off',
@@ -980,15 +992,14 @@ async function mergeReadyCandidate(service, context, provider, readiness) {
   const latest = await inspectMergeReadiness(provider, work);
   if (latest.merged) return latest.merge;
   assertSharedReportsOutsideCodePR(service, work, latest.target, work.prHead);
-  await provider.assertApproved(work.pr, work.prHead);
   return mergeOrReconcile(provider, work);
 }
 
 function assertSharedReportsOutsideCodePR(service, work, target, head) {
   if (!service.sharedIssues) return;
   requireThat(
-    !git(work.checkout, 'diff', '--name-only', target, head, '--', '.issues/'),
-    'Shared issue report changes require a human-reviewed queue PR.'
+    !git(work.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
+    'Shared issue report changes require a separate queue PR.'
   );
 }
 
@@ -1080,9 +1091,6 @@ async function recordStrategyOutcome(service, record, run, issue, work, readines
 
 async function executeStrategy(service, record, run, issue, input) {
   await factoryBoundary(service, issue.id);
-  const preflightProvider = strategyProvider(service, record.work.config, service.root);
-  if (record.work.strategy === 'full-send' && input.operation !== 'review')
-    await retryInfrastructure(service, record, () => preflightProvider.assertMergeProtection());
   assertStrategyActive(record, 'Paused by you. Saved work is retained.');
   await checkoutFor(service, record, run, issue);
   const work = record.work;
@@ -1224,7 +1232,7 @@ async function reconcileCheckedDelivery(service, record, run, issue, input, work
 async function inspectReconciledPR(service, record, work, knownProvider, knownPR) {
   if (knownPR) {
     const readiness = await coordinatedReadiness(service, record, () =>
-      retryInfrastructure(service, record, () => knownProvider.ready(knownPR, work.branch, work.prHead))
+      retryInfrastructure(service, record, () => deliveryReadiness(knownProvider, work, knownPR, work.prHead))
     );
     return { provider: knownProvider, pr: knownPR, readiness };
   }
@@ -1282,7 +1290,7 @@ async function inspectSavedPR(service, record, work) {
   const pr = await retryInfrastructure(service, record, () => provider.inspect(work.pr));
   if (!pr) return { provider, pr, readiness: null };
   const readiness = await coordinatedReadiness(service, record, () =>
-    retryInfrastructure(service, record, () => provider.ready(pr, work.branch, work.prHead))
+    retryInfrastructure(service, record, () => deliveryReadiness(provider, work, pr, work.prHead))
   );
   return { provider, pr, readiness };
 }

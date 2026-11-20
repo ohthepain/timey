@@ -5,6 +5,7 @@ import { parseDocument } from 'yaml';
 import { recordStage } from './factory-ui/lifecycle.mjs';
 import { requireThat } from './factory-ui/common.mjs';
 import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
+import { formatIssueReport } from './factory-ui/issue-report-format.mjs';
 import { describeAuthorization } from './factory-authorization.mjs';
 export function appendCompletion(root, issue, result, run, evidence, target) {
   const path = storedIssuePath(root, issue.id, issue.reportLocation),
@@ -31,7 +32,7 @@ export function appendCompletion(root, issue, result, run, evidence, target) {
     const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${formatReviewEvidence(evidence)}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${transitionNote(issue, target, result)}`;
     const next = '---\n' + doc.toString() + '---' + content.slice(match[0].length) + notes;
     const temp = join(dirname(path), '.review-' + randomUUID() + '.tmp');
-    writeFileSync(temp, next, { mode: 0o600 });
+    writeFileSync(temp, formatIssueReport(next), { mode: 0o600 });
     renameSync(temp, path);
   } finally {
     rmSync(lock, { recursive: true });
@@ -102,10 +103,27 @@ function recordInterviewMetadata(doc, result) {
 
 function recordClosureMetadata(doc, result) {
   if (result.closure) {
+    retainClosureHistory(doc, result.closure);
     doc.set('closure', doc.createNode(result.closure));
     if (result.closure.reason !== 'fixed') doc.delete('accepted_result');
   }
-  if (result.user_decision === 'reopen') doc.delete('closure');
+  if (result.user_decision === 'reopen') {
+    retainClosureHistory(doc);
+    doc.delete('closure');
+  }
+}
+
+function retainClosureHistory(doc, closure) {
+  const history = doc.get('closure_history')?.toJSON() || [];
+  requireThat(Array.isArray(history), 'Saved closure history is invalid; preserve it before recording.');
+  const entries = [doc.get('closure')?.toJSON(), closure].filter(hasClosureTime);
+  const unique = new Map(history.map((entry) => [entry.at, entry]));
+  for (const entry of entries) unique.set(entry.at, entry);
+  if (unique.size) doc.set('closure_history', doc.createNode([...unique.values()], { aliasDuplicateObjects: false }));
+}
+
+function hasClosureTime(closure) {
+  return Boolean(closure?.at);
 }
 
 function transitionNote(issue, target, result) {

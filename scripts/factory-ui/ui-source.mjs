@@ -11,3 +11,7 @@ export function uiDirectory() {
 export function factoryEntry() {
   return resolve(installed, '..', 'factory-ui.mjs');
 }
+
+export function systemFlowDirectory() {
+  return resolve(installed, '..', '..', 'factory', 'system', 'flow');
+}

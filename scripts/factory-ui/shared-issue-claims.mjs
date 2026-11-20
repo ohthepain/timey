@@ -1,10 +1,12 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
+import { promisify } from 'node:util';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { cleanEnvironment, git, requireThat } from './common.mjs';
 
+const executeAsync = promisify(execFile);
 const namespace = 'refs/heads/claims/';
 const issuePattern = /^[a-zA-Z0-9_-]{1,100}$/;
 const oidPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
@@ -14,7 +16,7 @@ function claimRef(issueId) {
   return namespace + issueId;
 }
 
-export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev' }) {
+export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev', transport }) {
   requireThat(typeof remote === 'string' && /^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(remote), 'Invalid queue remote.');
   const targetRef = `refs/heads/${target}`;
   git(root, 'check-ref-format', targetRef);
@@ -24,7 +26,7 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
   function execute(args, input) {
     return execFileSync('git', ['-C', root, ...args], {
       encoding: 'utf8',
-      env: { ...cleanEnvironment(), GIT_TERMINAL_PROMPT: '0' },
+      env: { ...cleanEnvironment(), ...transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
       stdio: 'pipe',
       timeout: 30000,
       maxBuffer: 8 * 1024 * 1024,
@@ -85,7 +87,6 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
     const ref = claimRef(issueId);
     return locked(issueId, (path) => {
       requireThat(!own(issueId), 'This checkout already has a claim record. Reconcile it before starting again.');
-      requireThat(!remoteOid(ref), 'Another run already claims this issue.');
       const identity = { issueId, attemptId: randomUUID(), runner: hostname(), remote };
       const tree = execute(['mktree'], '').trim();
       const oid = execute([
@@ -134,37 +135,65 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
     const ref = claimRef(issueId);
     return locked(issueId, (path) => {
       requireThat(own(issueId)?.oid === oid && oidPattern.test(oid), 'The saved issue claim does not match this run.');
-      if (remoteOid(ref) === oid) {
-        try {
-          execute([
-            'push',
-            '--no-follow-tags',
-            '--recurse-submodules=no',
-            `--force-with-lease=${ref}:${oid}`,
-            '--',
-            remote,
-            `:${ref}`,
-          ]);
-        } catch {
-          requireThat(
-            remoteOid(ref) !== oid,
-            'Could not release the remote claim. Its record was retained for recovery.'
-          );
-        }
+      try {
+        execute([
+          'push',
+          '--no-follow-tags',
+          '--recurse-submodules=no',
+          `--force-with-lease=${ref}:${oid}`,
+          '--',
+          remote,
+          `:${ref}`,
+        ]);
+      } catch {
+        requireThat(
+          remoteOid(ref) !== oid,
+          'Could not release the remote claim. Its record was retained for recovery.'
+        );
       }
       rmSync(path);
       return true;
     });
   }
 
+  function forgetReleased(claim) {
+    return locked(claim.issueId, (path) => {
+      requireThat(own(claim.issueId)?.oid === claim.oid, 'The saved issue claim does not match the atomic release.');
+      rmSync(path);
+      return true;
+    });
+  }
+
   function list() {
-    const claims = new Map();
-    for (const [oid, ref] of refs(namespace + '*')) {
-      if (!ref?.startsWith(namespace) || !oidPattern.test(oid)) continue;
-      const issueId = ref.slice(namespace.length);
-      if (issuePattern.test(issueId)) claims.set(issueId, { issueId, oid });
-    }
-    return claims;
+    return parseClaims(refs(namespace + '*'));
+  }
+
+  async function listAsync() {
+    const { stdout } = await executeAsync('git', ['ls-remote', '--heads', '--', remote, namespace + '*'], {
+      cwd: root,
+      env: { ...cleanEnvironment(), ...transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
+      timeout: 30000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    return parseClaims(
+      stdout
+        .trim()
+        .split('\n')
+        .map((line) => line.split('\t'))
+    );
+  }
+
+  function parseClaims(entries) {
+    return new Map(
+      entries.filter(validClaim).map(([oid, ref]) => {
+        const issueId = ref.slice(namespace.length);
+        return [issueId, { issueId, oid }];
+      })
+    );
+  }
+
+  function validClaim([oid, ref]) {
+    return ref?.startsWith(namespace) && oidPattern.test(oid) && issuePattern.test(ref.slice(namespace.length));
   }
 
   function readTargetReport(issueId) {
@@ -179,5 +208,5 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
     return execute(['show', `${revision}:${path}`]);
   }
 
-  return { acquire, own, verifyOwn, recover: verifyOwn, release, list, readTargetReport };
+  return { acquire, own, verifyOwn, recover: verifyOwn, release, forgetReleased, list, listAsync, readTargetReport };
 }

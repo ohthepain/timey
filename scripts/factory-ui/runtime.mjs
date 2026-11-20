@@ -57,13 +57,13 @@ export async function readRuntime(address, observe = () => {}, site = false, req
   );
   requireThat(response.ok, 'This server does not expose runtime identity.');
   const identity = await response.json();
-  if (site) await checkQueue(url.origin, cookie, observe, timeoutMs);
+  if (site) await checkQueue(url.origin, cookie, observe, timeoutMs, requestOptions.issueListPath);
   return { ...identity, url: url.origin, sessionCookie: cookie };
 }
 
-async function checkQueue(origin, cookie, observe, timeoutMs) {
+async function checkQueue(origin, cookie, observe, timeoutMs, path = '/api/queue') {
   const response = await runtimeRequest(
-    origin + '/api/queue',
+    origin + path,
     { headers: { cookie }, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) },
     'queue',
     observe

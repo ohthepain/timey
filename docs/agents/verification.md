@@ -2,12 +2,122 @@
 
 ## Commands and evidence
 
+`node scripts/flow-browser.mjs --actions-menu` holds two FlowService executions
+with an injected executor, opens the actions menu, and checks both running rows
+and their Flow output links. It also checks that the open menu removes completed
+work. The disposable fixture saves screenshots and `actions-menu-proof.json`
+under its reported evidence directory. It starts no live model work.
+
+`node --test scripts/fallow-css-reset.check.mjs` runs the pinned Fallow CLI and
+the unchanged strict audit policy on a CSS reset. It also adds an actually unused
+selector and confirms that the same policy blocks it.
+
+`node --test scripts/branch-repair.check.mjs` checks isolated repair candidates,
+retained progress, approval, stale source and environment files, tampered patches
+and check evidence, Stop, restart visibility, and bounded provider repair with
+injected model and check responses. It preserves staged and uncommitted edits.
+`node scripts/flow-browser.mjs --branch-repair` drives the real issue-page button,
+red check-failure state, progress after reload, candidate diff, and explicit
+approval in a disposable checkout. It injects the repair worker and does not run
+a live model or repair a production issue.
+
+`node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
+checks per-block defaults, personal/project extensions and explicit skill choices.
+`node scripts/flow-browser.mjs --block-skills` drives the graph skill picker,
+missing-skill setup option, and saved No skill/skill selections in a disposable project.
+
+`pnpm run test:factory:env` checks project `.env` credential loading, exported
+environment precedence, and idempotent setup that preserves unrelated values and
+rejects invalid PEM input before writing. It uses disposable directories and keys.
+
+`pnpm run test:project-discuss` checks saved project conversations, immutable
+message settings and attachment copies, explicit queue/Stop/Retry behavior,
+native tool and permission ownership, skill invocation policy, and guarded
+Home/issue dispatch in disposable projects. `pnpm run test:project-discuss:browser`
+checks that Home opens without a selected issue or a Branch Fix control, then
+drives Home/Discuss navigation, retained drafts, Markdown, model/effort and skill
+selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop.
+It also checks opening a long conversation after delayed history and image loading,
+reloads, returning to Discuss, and preserving manual scrolling through a polling
+rerender. It retains those observations in `project-discuss-scroll.json`. Dictation
+uses an injected speech recognizer in this scenario. Real dictation requires
+browser speech-recognition support and microphone permission; audio is not saved
+by Timey. Native provider availability is a separate smoke check.
+The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
+It records the source commit and each rendered message's top and bottom border
+styles and widths, so divider checks can use observed computed styles.
+The production closed issues are reserved for the user's own archive test and
+must not be used by these checks.
+
+`pnpm run test:project-home` checks project investigation capture, selected-branch
+execution, automatic follow-up approval and retry, historical closure statistics,
+project-scoped Automate me history, retained conversations, and reviewed skill
+application in disposable projects. `pnpm run test:project-home:browser` drives
+the actual home page and dialogs, including custom history duration, discussion,
+Run, findings, draft edits, Apply, reload, and narrow layout with injected models.
+The factory and Flow aggregate checks include these scenarios. Live provider
+availability remains a separate check.
+
+The investigation checks also cover create-only navigation, one-time and reusable
+runs, immutable run history, per-run destinations, fresh defaults and branch tips,
+source-preserving temporary snapshots, success/failure/Stop cleanup, and direct
+archive/restore. Shared-queue checks retain report freshness, protected claim
+release and ordinary closed-issue behavior. Chrome drives the shared investigation
+page, historical result selection and Archive/Restore using injected responses.
+
+`pnpm run test:flow` checks flow records, cancellation, exact candidate evidence,
+publication, and guarded closure in disposable projects. `pnpm run test:flow:browser`
+drives the real flow page and HTTP routes with an injected executor. Its results,
+logs, screenshots, and fixture stay under `.issues/evidence/flow-browser-*`. These
+checks establish UI and protocol behavior, not live model or GitHub execution.
+Use `pnpm run test:flow:browser --block-deletion` for the isolated click-selection,
+confirmation, keyboard safety and persisted block-removal scenario.
+Its fixture identifies added blocks by their new IDs so it deletes the intended
+Advice blocks regardless of their insertion position.
+Use `pnpm run test:flow:browser --issue-results` to check result placement below
+the issue banner, independent playback status, and hiding empty results.
+Use `pnpm run test:flow:browser --human-input` for required-review instructions,
+PR links, sidebar and block indicators, persisted requests, explicit Continue,
+and the distinction between human input and technical failure. The fixture
+injects review readiness; it performs no live GitHub review or merge.
+Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
+repair, search, grouping eligibility, and selected Open or Closed bulk actions.
+The fixture injects AI responses and execution, and uses disposable reports.
+The aggregate factory and browser scripts include these checks.
+Run `node scripts/flow-browser.mjs --sidebar-scroll` to check wheel scrolling over
+the project menu, Notes, Files and Issues with overflowing content at desktop and
+narrow widths. The fixture adds rows to the real page and checks that each wheel
+moves content outside the hovered section. It retains screenshots and
+`sidebar-scroll.json`, and checks that resizing remains available after scrolling.
+For the isolated investigation follow-up review, run
+`node scripts/flow-browser.mjs --investigation-followups`.
+`node --test scripts/flow-followups.check.mjs` checks reviewed creation, lineage,
+restart/replay, partial failures, and changed findings with disposable reports.
+These checks inject proposal responses and create no issues in the live queue.
+For an installed Chrome when the Playwright Chromium cache is unavailable, run
+`TIMEY_BROWSER_CHANNEL=chrome pnpm run test:browser`.
+
+`node scripts/flow-browser.mjs --connection-recovery` checks expired sessions and
+recovery after a lost action response in Flow and Classic with a disposable issue.
+It waits for initialized controls and the pause request before dropping health
+responses, then checks the selected issue, saved pause state and single dispatch
+after recovery. The action uses a click because its deliberately lost response
+can reset the checkbox before reconnection restores the saved state.
+
 For default [draft PR handoff](issue-delivery.md#default-draft-pr-handoff), attempt
 relevant checks once per changed candidate and retain failures or unavailable
 checks as such. They do not block the handoff or trigger a repair loop. Passing
 verification, fixed closure and the explicitly selected verified-delivery route
 retain the gates below. A handed-off assignment may contain incomplete code;
 never describe that result as verified implementation.
+
+Factory protocol fixtures use `factoryGitFixture` to stage project and Inbox settings
+before their initial commit, so later queue reads preserve the clean source tree.
+Deployment and restart fixtures copy `factory/system` with the server scripts.
+The legacy UI rendering fixture loads all inline scripts in document order,
+including both the embed setup and the application script.
+Chat startup tests use disposable project settings and wait for actual request
+dispatch before advancing their mocked timeout.
 
 Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions and the pnpm version in
@@ -32,7 +142,7 @@ regular target files retain their own formatting checks.
 | `pnpm run audit:diff -- --base REF` | Fallow audit on changed files in an exported working snapshot (same new-only gate as other checkpoints)                |
 | `pnpm run audit:step -- --base REF` | Required audit before declaring an implementation step complete, even without a commit                                 |
 | `pnpm run audit:staged`             | Exact index snapshot audit; unstaged fixes cannot hide staged findings                                                 |
-| `pnpm run verify -- --base REF`     | Changed-file formatting, factory checks, types, tests, build, and Fallow; runs all and fails if any fails              |
+| `pnpm run verify -- --base REF`     | Changed-file formatting and Fallow gate the browser, Factory, type, test, and build checks                             |
 | `pnpm run format-check`             | Repository-wide formatting, including inherited drift                                                                  |
 
 Recorder tests create a unique directory under the system temporary directory for
@@ -42,8 +152,10 @@ or root CSV files. Existing root CSVs are never test cleanup targets.
 
 `verify` exports source into a disposable local clone, shares installed dependencies
 only when lockfiles match, and deletes the clone afterward. Each command prints
-START, streams output while it runs, and emits a periodic running message during
-silence. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
+START, streams child stdout and stderr into the console while also retaining
+them in the evidence log, and emits a periodic running message during
+silence. Every verification command, including CI, has a 15-minute deadline;
+a heartbeat never extends it. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
 Per-command logs are readable before completion; summaries retain the
 original pass/fail and separate audit-channel assessment. Evidence stays under
 `.issues/evidence/` with a JSON summary and per-command logs. Preserve relevant
@@ -52,6 +164,85 @@ base and snapshot mode; a failed or unavailable check remains a failure/blocker.
 The aggregate verifier invokes `pnpm run test:factory` inside that export so its
 factory coverage follows the package entry point. A factory failure fails the
 aggregate result while the other required checks still run and report separately.
+
+The Flow **Verify** block can check saved, uncommitted source changes. Its
+verification and step audit must report the same snapshot tree. The source
+check records symlinks by their link targets and accounts for deleted files.
+Update Branch aborts a pending merge before fetching the starting branch, then
+checks that the issue branch contains the fetched commit. Its focused executor
+checks cover restarting a conflicted merge against the latest upstream while
+preserving committed issue work and an untracked draft. If conflict resolution
+returns without resolving the files, the error includes the worker’s explanation
+or decision request. Other Git operations
+remain blocked. The issue header shows a red Merge in progress menu while Git
+has a pending local merge. Its Abort merge action checks the observed merge and
+requires an idle issue. A new Merge run also aborts a pending local merge once
+before synchronization; subsequent repair steps preserve their own merge state.
+`node scripts/flow-browser.mjs --merge-recovery` checks the control through reload
+and abort using a disposable real conflict. Publish PR requires a clean commit.
+Merge verifies the committed candidate against the fetched destination. Request
+sets the local scope for each new attempt. The default runs the Factory smoke
+suite, both browser suites, Vitest and Work's recorded focused tests, along with
+formatting, Fallow, type checking and the build. Enabling full regression runs
+the full Factory suite in place of the smoke suite. Both scopes end a local
+verification command after 15 minutes. Evidence reuse requires matching inputs,
+including focused commands and the required scope. GitHub CI retains its full
+suite and existing branch protection.
+
+Drag-and-drop browser scenarios are excluded from ordinary verification and
+full regression, including Merge and CI. They run only when explicitly requested
+with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
+issue-folder assignment and Flow folder dragging. These fragile browser
+interactions must not gate unrelated delivery. Deterministic folder and ordering
+tests remain in their existing suites. `browser-scenario-policy.mjs` applies this
+selection in both browser runners; its focused check verifies ordinary, full and
+explicit selection.
+
+Before Merge invokes its repair worker, it copies the verification summaries,
+command output and each failed check log into the issue checkout. The prompt
+identifies failed checks separately from successful checks and references the
+local copies. Original records remain unchanged. The regression in
+`scripts/flow-executor.check.mjs` covers a passing build followed by a browser
+failure whose original logs are outside the worker checkout.
+
+The Notes browser scenario leaves a pending Discuss draft, unloads the preceding
+page, and closes its Discuss service before installing its own injected provider.
+Its console assertion catches draft saves that cross that fixture boundary. Run
+`node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
+Discuss-to-Notes transition; combining focused flags runs those scenarios together.
+
+The capture-start browser scenario waits for active route handlers before removing
+its mocks. Issue refreshes can still be fetching the fixture queue when capture
+finishes; removing those routes immediately can release a request before its
+handler fulfills it.
+
+When closing a delivered flow, the delivery manifest records the verified
+candidate tree and the upstream Work blocks' requested proof. It retains proof
+whose hash and recorded Work tree match the delivered candidate. The manifest
+records missing or unavailable proof and proof from a different tree as gaps.
+
+Work runs `verify -- --work-checks --write-format --base REF` to format
+issue files and check Fallow before running focused tests for the changed
+behavior and Requested Proof. Run individual test files or scenarios directly
+when an aggregate command would include unrelated tests. Work leaves aggregate
+suites such as `pnpm run test:factory` to full candidate verification, which
+Merge requires. Add a focused test when needed. Factory rechecks formatting and
+Fallow after Work's response.
+
+Fallow 3.35.0 can miss CSS consumers in plain JavaScript HTML strings, and its
+source-location attribution can mark unchanged findings as introduced when an
+earlier line is deleted. Reproduce suspected inherited findings on the saved base.
+When the intent is to remove a visible style, an explicit reset such as
+`border-bottom: none` can preserve that intent without shifting existing findings.
+Do not add meaningless padding or suppress diagnostics. The project extension at
+`user/flow/extensions/blocks/fix-the-branch.md` gives repair runs this guidance.
+
+When a Work check cannot install dependencies, the issue checkout retains
+`.issues/evidence/dependency-recovery.json` and per-attempt install logs. A
+continued Work resolves an unfinished recovery record before starting its model
+turn. Transient network failures retry at most three times across interruptions;
+the record marks dependencies ready only after the installed lock and workspace
+dependencies pass `dependencyPreflight` and describes the recovery command.
 
 Install the checked-in staged Fallow hook with `pnpm run hooks:install`. It refuses
 to replace another hooks directory. It runs the audit on the index snapshot before
@@ -100,8 +291,17 @@ retain strict validation and cannot infer empty scope from a saved tool report.
 
 ### Commit and step-completion checkpoints
 
-Before a commit, the pre-commit hook checks formatting on the exact staged file
-contents, then runs `pnpm run audit:staged`, which exports the staged snapshot
+GitHub Actions runs Verify for pull requests to any branch, including the
+Destination selected in Flow. Direct pushes trigger Verify on `main` and `dev`.
+
+Factory formats issue reports when it captures an issue, saves report metadata
+or a lifecycle result, or completes archive. Captured original wording keeps
+its literal whitespace.
+
+Before a commit, the pre-commit hook formats staged issue reports and checks
+formatting on other staged files. It updates a working copy of a report only
+when it matches the original staged contents, preserving unstaged edits. It
+then runs `pnpm run audit:staged`, which exports the staged snapshot
 for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
 Strategy candidate checks and CI enforce Fallow with
 `TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Their new findings, including
@@ -111,8 +311,9 @@ these strategy checks or be reused from the legacy cache. Set
 `audit:step`, or full `verify`. Before declaring an implementation step complete,
 including an uncommitted step, run `pnpm run audit:step -- --base <step-start-commit>`.
 Use the recorded starting revision, not the new HEAD after committing (which could
-hide that step's changes). Full `verify -- --base REF` still runs types, tests,
-build, and factory checks. Fallow enforcement is opt-in outside strategy and CI checks. A successful audit
+hide that step's changes). Full `verify -- --base REF` runs types, tests,
+build, and factory checks after formatting and Fallow pass. Fallow enforcement
+is opt-in outside Flow, strategy, and CI checks. A successful audit
 does not establish type/build/device success.
 
 A checkpoint fails on a nonzero Fallow process exit, a `fail` or `error` audit
@@ -378,6 +579,13 @@ full verification and saved-start step/staged checkpoints still apply.
 
 ## Execution preflight and recovery
 
+An explicitly started Flow **Verify** block prepares dependencies in the saved
+issue worktree. It reuses an installation that matches the pnpm lockfile and
+declared workspaces. If dependencies are missing or stale, it runs
+`pnpm install --frozen-lockfile`, then checks the installation again before
+running verification. The block records the install output and stops if setup
+fails.
+
 Before any verification command runs, the exporter checks the installed pnpm lock
 against the exported lock and requires dependencies for each declared workspace.
 It resolves the immutable comparison commit and exported tree in the clone. Full
@@ -385,6 +593,20 @@ verification also opens and closes an actual localhost listener before running t
 suite, so a sandbox refusal is an immediate environment failure with no claimed
 checks. Audit-only checkpoints do not require networking. Preflight never grants
 permissions or installs dependencies automatically.
+
+For model-run checks, a `listen EPERM` or `listen EACCES` refusal requires a native
+permission request for that exact command. Work retains the same conversation and
+checkout when the model reports unfinished work, including uncollected proof.
+It allows up to three continuation turns, separately from the three check-repair
+attempts. A concrete human input requirement, denied or unavailable permission,
+or unavailable external dependency stops the run with its reason. Factory never
+grants permission itself. `node --test scripts/flow-executor.check.mjs` checks
+continuation, its limit, and actual blocker handling.
+
+Fallow already skips hidden agent tooling. `.fallowrc.json` explicitly excludes
+`.agents/**` so this intentional scope does not emit `skipped-source-dotdir`.
+Application code remains checked, including new unused exports; the real CLI
+regression is in `scripts/fallow-css-reset.check.mjs`.
 
 Summaries retain execution phase timestamps and owned command PIDs. Cancellation
 stops the runner's own child process group, retains a failed summary and starts no
@@ -459,3 +681,76 @@ of failure lines. Full stdout/stderr remains in per-command logs. The outer
 verification log updates while commands run, and factory activity receives the
 same concise progress. Protocol fixtures inject both legacy and coordinator
 connections and reject accidental access to the installed model provider.
+
+GitHub Actions receives verification stdout/stderr as each child emits it. A
+`RUNNING` line is a process heartbeat, not a completed test. The final failure
+summary and retained evidence logs remain available after the command exits.
+An already-running GitHub job keeps the verifier from its checked-out revision;
+new streaming behavior requires a run containing the updated verifier.
+
+Flow browser verification writes under `TIMEY_BROWSER_OUTPUT/flow` when run by
+the aggregate verifier. An explicit `TIMEY_FLOW_BROWSER_OUTPUT` still overrides
+that location. This keeps its logs, response diagnostics and screenshots inside
+the retained verification artifacts after the exported checkout is removed.
+HTTP error records include the response body and originating request; unexpected
+browser errors continue to fail verification.
+
+Work All Night fixtures create the folders they assign, so execution reaches the
+injected worker through the same settings validation as a real issue. Start/stop
+checks have a 30-second test deadline and retain per-issue failure explanations.
+Pending publication joins all preceding unfinished lanes even when the standard
+flow has no suggested Verify block. New blocks default to insertion before
+publication; existing attempted publication dependencies remain unchanged.
+
+Queue and settings snapshots must not create tracked Inbox or project settings
+files. Startup and explicit setup own initialization. The source-cleanliness
+regression in `factory-ui.check.mjs` checks repeated snapshots and a stable review
+basis. Deployment and restart fixtures include the installed `factory/system`
+assets alongside scripts, matching the real runtime’s schema dependencies.
+Browser fixture helpers identify the block created by an add action by its ID;
+they do not assume additions occupy the last position in a flow.
+
+Flow-card reveal checks wait for the whole card to be visible in the current
+scroll viewport. Card bounds and viewport bounds are measured together; partial
+scroll movement alone does not mean the reveal has finished. Failures retain
+relative card bounds and viewport height in the polling diagnostic.
+
+`node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
+and verifies that a successful explicit Refresh clears its old error banner.
+Background polling retains action errors. The running-Work browser scenario also
+checks that both Update Branch entry points are disabled while a block is active;
+opening the worktree remains available.
+
+Update Branch automatically makes up to three conflict-resolution attempts in the
+same conversation. Each attempt receives the previous failure, retains separate
+evidence, and preserves the target, HEAD, and unrelated staged files. An explicit
+`flow-result` blocker of `human-input` or a permission denial stops the loop early.
+Only a fully staged resolution is committed. Failed attempts retain the merge.
+Unresolved conflicts turn Fix Branch red after the operation stops, including
+when an older repair record is stale or passed. The dialog offers Retry Update
+Branch after automatic recovery has failed; it reuses the guarded update path.
+`flow-executor.check.mjs` checks recovery on a later attempt, exhaustion, and human
+input. `--branch-repair` checks the red fallback and retry through the real UI.
+
+Merge budgets repair attempts per distinct blocker within an explicit run. Each
+blocker receives up to the configured `repairAttempts`; a new failure does not
+inherit an unrelated check's exhausted budget. Repeated failing source trees and
+unchanged repair candidates stop without another worker turn. GitHub failures
+retain the exact failed run's uploaded verification summaries and command logs in
+the issue checkout. Missing artifacts fall back to failed job output. Run metadata
+must match the candidate commit before evidence is used. The repair worker gets
+those local files, then Factory verifies, pushes, and waits for fresh checks.
+`flow-executor.check.mjs` drives this sequence through CI-only failure, changed
+candidates, multiple blockers, repeated failures, and cycles.
+
+`node scripts/flow-browser.mjs --project-issues` selects disposable closed issues
+in the real Issues iframe, verifies that the editor and resize handle are absent,
+archives only the checked reports, and opens an issue in the normal Flow view.
+It also checks that open selections retain the bulk editor. All archive fixtures
+are isolated; the user's production closed reports are never moved by this test.
+
+The project Issues browser check switches through the visible Open and Closed
+buttons in both directions, verifies that switching clears selection and the
+editor, and archives a closed selection with Archive all. It also verifies that
+the disabled direction caret is hidden for fixed status ordering and reappears
+for an order whose direction can change.

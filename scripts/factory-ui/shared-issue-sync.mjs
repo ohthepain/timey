@@ -1,16 +1,30 @@
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { cleanEnvironment, digest, readJson, requireThat, writeJson } from './common.mjs';
+
+const execute = promisify(execFile);
+const targetRef = 'refs/timey/shared-issue-target';
+const fetchArgs = ({ remote, target }) => ['fetch', '--no-tags', remote, `+refs/heads/${target}:${targetRef}`];
+
+export async function fetchSharedIssueTarget(root, config) {
+  await execute('git', fetchArgs(config), {
+    cwd: root,
+    env: { ...cleanEnvironment(), ...config.transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
+    timeout: 8000,
+  });
+  return runGit(root, ['rev-parse', '--verify', targetRef]).trim();
+}
 
 const registry = 'issue-numbers.json';
 const report = /^(?:closed\/)?(\d[\w-]*)\.md$/;
 
-function runGit(root, args) {
+function runGit(root, args, transport) {
   const result = spawnSync('git', args, {
     cwd: root,
-    env: { ...cleanEnvironment(), GIT_TERMINAL_PROMPT: '0' },
+    env: { ...cleanEnvironment(), ...transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
     encoding: 'utf8',
     timeout: 8000,
     maxBuffer: 16 * 1024 * 1024,
@@ -62,16 +76,18 @@ function reportGroups(names) {
   return new Map([[null, [registry]], ...[...ids].map((id) => [id, [`${id}.md`, `closed/${id}.md`]])]);
 }
 
-export function syncSharedIssueFiles(root, config, statePath, isActive) {
+function refreshTarget(root, config) {
+  runGit(root, fetchArgs(config), config.transport);
+  return targetRef;
+}
+
+export function syncSharedIssueFiles(root, config, statePath, isActive, revision = refreshTarget(root, config)) {
   const directory = join(root, '.issues');
   requireThat(lstatSync(directory).isDirectory(), 'The local issue directory must be a real directory.');
   const closed = join(directory, 'closed');
   if (existsSync(closed))
     requireThat(lstatSync(closed).isDirectory(), 'The local closed issue directory must be a real directory.');
-  const { remote, target } = config;
-  const ref = 'refs/timey/shared-issue-target';
-  runGit(root, ['fetch', '--no-tags', remote, `+refs/heads/${target}:${ref}`]);
-  const targetFiles = issueFiles(root, ref);
+  const targetFiles = issueFiles(root, revision);
   const initial = issueFiles(root, 'HEAD');
   const previous = existsSync(statePath) ? readJson(statePath) : {};
   const staged = new Set(

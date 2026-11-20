@@ -1,13 +1,16 @@
 const serverControlUI = (() => {
-  let reconnectingSince = 0;
   let actionRequest = 0;
+  let renderedActions = null;
+  let waitingForServer = false;
   let state = null,
-    expecting = false,
-    previousPid = null,
     busy = false,
     requestedPause = null;
   function panel() {
     let element = document.getElementById('server-controls');
+    if (!element && document.getElementById('flow-server-restart')) {
+      actionsDialog();
+      return document.getElementById('server-controls') || document.body;
+    }
     if (element && !element.querySelector('[data-server-restart]')) {
       element.remove();
       element = null;
@@ -26,6 +29,7 @@ const serverControlUI = (() => {
     if (dialog) return dialog;
     dialog = document.createElement('dialog');
     dialog.id = 'server-actions-dialog';
+    if (document.getElementById('project-actions')) dialog.className = 'modal';
     dialog.setAttribute('aria-labelledby', 'server-actions-title');
     dialog.innerHTML =
       '<h2 id="server-actions-title">Action list</h2><p data-actions-empty></p><div data-server-action-list></div><button type="button" data-actions-close>Close</button>';
@@ -35,45 +39,80 @@ const serverControlUI = (() => {
       else dialog.removeAttribute('open');
     };
     dialog.addEventListener('close', () =>
-      panel().querySelector('[data-server-count]').setAttribute('aria-expanded', 'false')
+      document.getElementById('project-actions')?.setAttribute('aria-expanded', 'false')
     );
     return dialog;
   }
   function show(value, request) {
     const element = panel();
-    refreshOpenActions(value, request);
+    refreshOpenActions(request);
     state = value;
-    if (['draining', 'restarting'].includes(state.phase)) {
-      expecting = true;
-      previousPid = state.pid;
-    }
     const count = element.querySelector('[data-server-count]');
-    count.textContent = counts(state);
-    count.onclick = () => {
-      const dialog = actionsDialog();
-      if (!dialog.open) {
-        if (typeof dialog.showModal === 'function') dialog.showModal();
-        else dialog.setAttribute('open', '');
-      }
-      count.setAttribute('aria-expanded', 'true');
-      loadActions(dialog, request);
-    };
+    if (count) count.textContent = counts(state);
+    if (count)
+      count.onclick = () => {
+        const dialog = actionsDialog();
+        if (!dialog.open) {
+          if (typeof dialog.showModal === 'function') dialog.showModal();
+          else dialog.setAttribute('open', '');
+        }
+        count.setAttribute('aria-expanded', 'true');
+        loadActions(dialog, request);
+      };
     const toggle = element.querySelector('[data-server-toggle]');
-    toggle.checked = requestedPause ?? state.phase !== 'idle';
-    toggle.disabled = toggleUnavailable();
-    element.querySelector('[data-server-message]').textContent = message(state);
-    toggle.onchange = () => {
-      requestedPause = toggle.checked;
-      void change(toggle.checked ? 'server-pause' : 'server-cancel-restart', request);
-    };
+    const compact = document.getElementById('project-actions');
+    if (compact) {
+      const countValue = value.actions + value.chats;
+      compact.textContent = countValue === 1 ? '1 action running' : countValue + ' actions running';
+      compact.disabled = false;
+      compact.onclick = () => {
+        const dialog = actionsDialog();
+        if (!dialog.open) {
+          if (typeof dialog.showModal === 'function') dialog.showModal();
+          else dialog.setAttribute('open', '');
+        }
+        compact.setAttribute('aria-expanded', 'true');
+        loadActions(dialog, request);
+      };
+    }
+    if (toggle) {
+      toggle.checked = requestedPause ?? state.phase !== 'idle';
+      toggle.disabled = toggleUnavailable();
+      toggle.onchange = () => {
+        requestedPause = toggle.checked;
+        void change(toggle.checked ? 'server-pause' : 'server-cancel-restart', request);
+      };
+    }
     const restart = element.querySelector('[data-server-restart]');
-    restart.hidden = !state.supported;
-    restart.disabled = restartUnavailable();
-    restart.onclick = () => void change('server-restart', request);
+    if (restart) {
+      restart.hidden = !state.supported;
+      restart.disabled = restartUnavailable();
+      restart.onclick = () => void change('server-restart', request);
+    }
+    const flowToggle = document.querySelector('#flow-actions-switch [data-server-toggle]');
+    if (flowToggle) {
+      flowToggle.checked = requestedPause ?? state.phase !== 'idle';
+      flowToggle.disabled = toggleUnavailable();
+      flowToggle.onchange = () => {
+        requestedPause = flowToggle.checked;
+        void change(flowToggle.checked ? 'server-pause' : 'server-cancel-restart', request);
+      };
+    }
+    const flowRestart = document.getElementById('flow-server-restart');
+    if (flowRestart) {
+      flowRestart.hidden = !state.supported;
+      flowRestart.disabled = restartUnavailable();
+      flowRestart.onclick = () => void change('server-restart', request);
+    }
+    const flowMessage = document.querySelector('.project-actions-message');
+    if (flowMessage) flowMessage.textContent = message(state);
+    document.dispatchEvent(
+      new CustomEvent('factory-actions-paused', { detail: requestedPause ?? state.phase !== 'idle' })
+    );
   }
-  function refreshOpenActions(value, request) {
+  function refreshOpenActions(request) {
     const dialog = actionsDialog();
-    if (dialog.open && state?.actions !== value.actions) loadActions(dialog, request);
+    if (dialog.open) loadActions(dialog, request);
   }
   function loadActions(dialog, request) {
     const current = ++actionRequest;
@@ -90,13 +129,16 @@ const serverControlUI = (() => {
     const dialog = actionsDialog();
     const list = dialog.querySelector('[data-server-action-list]');
     const empty = dialog.querySelector('[data-actions-empty]');
+    empty.textContent = items.length
+      ? 'Current work stays on its issue. Stop cancels the current action; Pause lets it finish and prevents later work on that issue.'
+      : 'No issue-linked actions are running.';
+    const signature = JSON.stringify(items);
+    if (signature === renderedActions) return;
+    renderedActions = signature;
     const drafts = new Map(
       [...list.querySelectorAll('[data-steer-text]')].map((field) => [field.dataset.steerText, field.value])
     );
     list.replaceChildren();
-    empty.textContent = items.length
-      ? 'Current work stays on its issue. Stop cancels the current action; Pause lets it finish and prevents later work on that issue.'
-      : 'No issue-linked actions are running.';
     for (const item of items) list.append(actionCard(item, request, drafts));
   }
   function actionCard(item, request, drafts) {
@@ -130,17 +172,23 @@ const serverControlUI = (() => {
       links.textContent = 'No linked issue';
       return links;
     }
+    const flowWorkspace = Boolean(document.getElementById('project-actions'));
     for (const issue of item.issues) {
       const link = document.createElement('a');
-      link.href = `#/issue/${encodeURIComponent(issue.id)}`;
-      link.textContent = `Issue: ${issue.title}`;
+      link.href = flowWorkspace ? `/?issue=${encodeURIComponent(issue.id)}` : `#/issue/${encodeURIComponent(issue.id)}`;
+      link.textContent = `Issue: ${issue.title}${issue.issueNumber ? ` (#${issue.issueNumber})` : ''}`;
       links.append(link, document.createTextNode(' '));
     }
-    const output = document.createElement('a');
-    output.href = `#/issue/${encodeURIComponent(item.issues[0].id)}?run=${encodeURIComponent(item.id)}`;
-    output.textContent = 'Action output';
-    links.append(output);
+    links.append(actionOutputLink(item, flowWorkspace));
     return links;
+  }
+  function actionOutputLink(item, flowWorkspace) {
+    const output = document.createElement('a');
+    output.href =
+      item.outputHref ||
+      `${flowWorkspace ? '/classic' : ''}#/issue/${encodeURIComponent(item.issues[0].id)}?run=${encodeURIComponent(item.id)}`;
+    output.textContent = 'Action output';
+    return output;
   }
   function actionControls(item, request, drafts) {
     const controls = document.createElement('div');
@@ -233,7 +281,6 @@ const serverControlUI = (() => {
     show(state, request);
     try {
       const result = await request(path, {});
-      if (path === 'server-cancel-restart') expecting = false;
       show(result, request);
     } catch (error) {
       problem = error.message;
@@ -252,32 +299,24 @@ const serverControlUI = (() => {
     const chat = value.chats === 1 ? 'chat' : 'chats';
     return `${value.actions} ${action} running · ${value.chats} open ${chat}`;
   }
-  async function reconnect(request) {
-    if (!expecting) return false;
-    beginReconnect();
-    try {
-      const page = await fetch('/', { cache: 'no-store' });
-      if (!page.ok) throw Error('The restarted page is unavailable.');
-      const current = await request('server-status');
-      if (current.pid !== previousPid) {
-        expecting = false;
-        reconnectingSince = 0;
-        show(current, request);
-        panel().querySelector('[data-server-message]').textContent = 'Server restarted. Saved progress restored.';
+  function watchConnection(onWaiting) {
+    async function probe() {
+      const response = await fetch('/api/health', {
+        cache: 'no-store',
+        credentials: 'omit',
+        signal: AbortSignal.timeout(4000),
+      }).catch(() => {
+        if (waitingForServer) return;
+        waitingForServer = true;
+        onWaiting();
+      });
+      if (waitingForServer && response?.status === 204) {
+        location.reload();
+        return;
       }
-    } catch {
-      /* Retry through the normal polling cycle. */
+      setTimeout(probe, 2000);
     }
-    return true;
+    void probe();
   }
-  function beginReconnect() {
-    reconnectingSince ||= Date.now();
-    panel().querySelector('[data-server-message]').textContent = reconnectMessage();
-  }
-  function reconnectMessage() {
-    return Date.now() - reconnectingSince > 30000
-      ? 'The server has not returned yet. Check .issues/factory-ui/server-restart.log in the project.'
-      : 'Restarting. Your saved work is kept.';
-  }
-  return { show, reconnect };
+  return { show, watchConnection, isWaitingForServer: () => waitingForServer };
 })();

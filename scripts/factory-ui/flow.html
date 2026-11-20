@@ -1,0 +1,1158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Factory · Flow workspace</title>
+    <link rel="stylesheet" href="/flow.css" />
+    <link rel="stylesheet" href="/project-home.css" />
+    <link rel="stylesheet" href="/project-discuss.css" />
+    <link rel="stylesheet" href="/local-notes.css" />
+    <script src="/issue-chat-ui.js" defer></script>
+    <script src="/discuss-markdown.js" defer></script>
+    <script src="/skill-select.js" defer></script>
+    <script src="/project-discuss-ui.js" defer></script>
+    <script src="/server-control-ui.js" defer></script>
+    <script src="/issue-closure-ui.js" defer></script>
+    <script src="/issue-folder-drag-ui.js" defer></script>
+    <script src="/folder-settings-ui.js" defer></script>
+    <script src="/investigation-followups-ui.js" defer></script>
+    <script src="/project-admin-ui.js" defer></script>
+    <script src="/project-home-ui.js" defer></script>
+    <script src="/investigation-issue-ui.js" defer></script>
+    <script src="/branch-repair-ui.js" defer></script>
+    <script src="/flow-ui.js" defer></script>
+    <script src="/local-notes-ui.js" defer></script>
+    <script src="/sidebar-files-ui.js" defer></script>
+    <script src="/view-inspection.js" defer></script>
+  </head>
+  <body>
+    <script>
+      if (new URLSearchParams(location.search).get('embed') === 'project-issue-request')
+        document.documentElement.dataset.projectIssueRequestEmbed = 'true';
+    </script>
+    <div id="app" class="workspace">
+      <aside class="sidebar" aria-label="Factory sidebar">
+        <div class="sidebar-content">
+          <div class="project-header">
+            <a class="brand" href="/" aria-label="Project home"
+              ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
+              ><span class="brand-tag">FLOW</span></a
+            >
+            <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
+                />
+                <circle cx="11" cy="12.5" r="3.5" />
+              </svg>
+            </button>
+          </div>
+          <nav class="project-home-menu" aria-label="Project menu">
+            <button type="button" data-project-home="home">Home</button>
+            <button type="button" data-project-home="discuss">Discuss</button>
+            <button type="button" data-project-home="investigate">Investigate</button>
+            <button type="button" data-project-home="automate">Automate me</button>
+          </nav>
+          <div class="project-actions-row">
+            <button
+              class="project-actions"
+              id="project-actions"
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+            >
+              0 actions running
+            </button>
+            <label class="actions-switch" id="flow-actions-switch"
+              ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
+            >
+            <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
+              Restart server
+            </button>
+          </div>
+          <small class="project-actions-message" data-server-message role="status"></small>
+          <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
+          <label class="search-box"
+            ><span aria-hidden="true">⌕</span
+            ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
+          /></label>
+          <section id="local-notes" class="local-notes" aria-label="Local notes">
+            <header class="sidebar-folder-row">
+              <button
+                id="local-notes-toggle"
+                class="icon-button folder-disclosure"
+                type="button"
+                aria-label="Collapse Local notes"
+                aria-expanded="true"
+                aria-controls="local-notes-body"
+              ></button>
+              <h2 class="sidebar-folder-name">Local notes</h2>
+              <button id="local-note-quick" type="button" class="small-button" title="Quick note (Alt+N)">
+                ＋ Note
+              </button>
+            </header>
+            <div id="local-notes-body">
+              <form id="local-note-form">
+                <textarea
+                  id="local-note-text"
+                  aria-label="Quick local note"
+                  placeholder="A thought to keep…"
+                  maxlength="24000"
+                  rows="2"
+                ></textarea
+                ><button type="submit" class="small-button">Save note</button>
+              </form>
+              <ul id="local-note-list" class="local-note-list"></ul>
+              <p id="local-note-status" role="status" aria-live="polite"></p>
+            </div>
+          </section>
+          <section class="sidebar-files" aria-label="Files">
+            <div id="sidebar-file-tree"></div>
+            <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
+          </section>
+          <div class="sidebar-heading">
+            <button class="sidebar-issues-link" type="button" data-open-project-issues>Issues</button
+            ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
+          </div>
+          <button type="button" class="small-button" id="migrate-issue-folders" hidden>
+            Move existing issue folders
+          </button>
+          <nav id="issue-list" class="issue-list" aria-label="Issue list">
+            <p class="sidebar-empty">Loading issues…</p>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="connection" id="connection-status"><span class="connection-dot"></span> Connecting</span
+            ><a href="/classic" title="Open the original factory controls">Classic ↗</a>
+          </footer>
+        </div>
+        <div
+          id="sidebar-resizer"
+          class="sidebar-resizer"
+          role="separator"
+          aria-label="Resize issue sidebar"
+          aria-orientation="vertical"
+          aria-controls="issue-list"
+          tabindex="0"
+        ></div>
+      </aside>
+      <main class="flow-main">
+        <header class="flow-heading">
+          <div class="breadcrumb">
+            <span>Workspace</span><span class="breadcrumb-divider">/</span><span id="flow-view-title">Issue flow</span>
+          </div>
+          <div class="flow-heading-actions">
+            <button class="small-button view-inspect-toggle" id="view-inspect" type="button" aria-pressed="false">
+              Inspect UI
+            </button>
+            <button class="small-button" id="view-index-open" type="button">View index</button>
+            <button class="small-button" id="refresh" title="Refresh saved state">↻ <span>Refresh</span></button>
+          </div>
+        </header>
+        <div class="error-banner" id="error-banner" role="alert" hidden>
+          <span id="error-message"></span
+          ><button class="icon-button" id="dismiss-error" aria-label="Dismiss error">×</button>
+        </div>
+        <section class="issue-heading" id="issue-heading" hidden>
+          <div>
+            <div class="issue-title-row">
+              <span class="issue-number" id="issue-number" hidden></span>
+              <h1 id="issue-title"></h1>
+              <button
+                class="icon-button"
+                id="rename-issue"
+                type="button"
+                aria-label="Rename issue"
+                title="Rename issue"
+              >
+                ✎
+              </button>
+            </div>
+            <form id="rename-issue-form" class="issue-title-row" hidden>
+              <input id="rename-issue-title" aria-label="Issue title" maxlength="256" required />
+              <button class="small-button" type="submit">Save</button>
+              <button class="small-button" id="cancel-rename" type="button">Cancel</button>
+            </form>
+            <details id="issue-settings" class="issue-settings">
+              <summary>Issue settings</summary>
+              <form id="issue-settings-form">
+                <div id="issue-settings-fields" class="folder-settings-fields"></div>
+                <button class="small-button" type="submit">Save issue settings</button>
+                <p id="issue-settings-error" class="inline-error" role="alert" hidden></p>
+              </form>
+            </details>
+            <div class="issue-flow-meta">
+              <span id="issue-type-label"></span>
+              <span id="issue-subtitle"></span>
+              <details id="issue-flow-picker" class="issue-flow-picker">
+                <summary id="issue-flow-menu" class="small-button" title="Choose a flow">
+                  Flow <span id="issue-flow-name"></span>
+                </summary>
+                <div id="issue-flow-options" class="issue-flow-options"></div>
+              </details>
+              <button id="rebuild-flow" class="small-button" type="button" data-action="rebuild-flow">
+                <span aria-hidden="true">🪄</span> Rebuild flow
+              </button>
+            </div>
+          </div>
+          <div class="issue-playback">
+            <button class="primary-button" id="issue-playback" type="button">▷ Play</button>
+            <span
+              class="closed-issue-indicator"
+              id="closed-issue-indicator"
+              role="img"
+              aria-label="Issue closed"
+              title="Issue closed"
+              hidden
+            ></span>
+            <button class="small-button" id="waiting-block" type="button" hidden></button>
+            <button class="small-button" id="retry-closure" type="button" hidden>Continue closure</button>
+            <button class="small-button" id="skip-retro" type="button" hidden>Continue to Cleanup</button>
+            <span class="muted" id="playback-status" aria-live="polite"></span>
+          </div>
+        </section>
+        <section id="issue-results" class="issue-results" aria-labelledby="issue-results-title" hidden>
+          <h2 id="issue-results-title">Results</h2>
+          <p id="issue-results-message" role="status"></p>
+          <div id="issue-input-actions" class="folder-controls" hidden>
+            <a id="issue-input-link" class="small-button" target="_blank" rel="noopener noreferrer">Review PR</a>
+            <button id="issue-input-continue" class="primary-button" type="button">Continue</button>
+          </div>
+        </section>
+        <div id="shared-queue-status" class="environment" hidden>
+          <span id="shared-queue-message" role="status"></span>
+          <a id="shared-queue-review" target="_blank" rel="noopener" hidden>Review queue PR</a>
+          <button id="shared-queue-action" class="small-button" type="button" hidden></button>
+        </div>
+        <div id="environment" class="environment" hidden>
+          <div id="environment-status" class="environment-status"></div>
+          <select class="environment-chip warning" id="target-update-menu" aria-label="Target branch is ahead" hidden>
+            <option value="" disabled selected></option>
+            <option value="update">Update Branch</option>
+            <option value="add">Add update branch block</option>
+          </select>
+          <span class="environment-chip warning" id="target-update-progress" role="status" hidden>
+            <span class="status-icon active-spinner" style="--spinner-color: currentColor" aria-hidden="true"></span>
+            Updating branch…
+          </span>
+          <button id="fix-branch" class="environment-chip branch-repair-control" type="button" aria-haspopup="dialog">
+            Fix Branch
+          </button>
+          <select
+            id="merge-state-menu"
+            class="environment-chip merge-in-progress"
+            aria-label="Merge in progress"
+            hidden
+          >
+            <option value="" disabled selected>Merge in progress</option>
+            <option value="abort">Abort merge</option>
+          </select>
+          <span id="worktree-hint">
+            <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
+              <option value="" disabled selected>Worktree</option>
+              <option value="open">Open</option>
+              <option value="terminal">Open Terminal</option>
+              <option value="update">Update</option>
+              <option value="delete">Delete</option>
+            </select>
+          </span>
+          <button
+            class="environment-chip issue-close-control"
+            id="close-with-reason"
+            type="button"
+            title="Close with reason"
+            aria-haspopup="dialog"
+            hidden
+          >
+            Close
+          </button>
+          <details class="issue-pr-menu" id="issue-pr-menu" hidden>
+            <summary class="environment-chip issue-pr-control" id="issue-pr-label"></summary>
+            <div class="issue-flow-options">
+              <a id="issue-pr-link" target="_blank" rel="noopener noreferrer">Open</a>
+              <a id="issue-pr-review" target="_blank" rel="noopener noreferrer" title="Review and approve on GitHub"
+                >Approve</a
+              >
+            </div>
+          </details>
+          <button class="environment-chip issue-approve-control" id="approve-issue" type="button" hidden>
+            Approve
+          </button>
+          <button
+            class="environment-chip issue-delete-control"
+            id="delete-pending-issue"
+            type="button"
+            title="Permanently delete this unapproved issue"
+            hidden
+          >
+            Delete
+          </button>
+          <select class="environment-chip" id="issue-archive-menu" aria-label="Archive" hidden>
+            <option value="" disabled selected>Archive</option>
+            <option value="archive">Archive issue</option>
+            <option value="reveal">Reveal in Finder</option>
+            <option value="reopen">Reopen</option>
+            <option value="cleanup">Run Cleanup</option>
+          </select>
+        </div>
+        <section id="folder-workspace" class="folder-workspace" aria-labelledby="folder-workspace-title" hidden>
+          <div class="folder-landing-heading">
+            <h1 id="folder-workspace-title"></h1>
+            <div class="folder-landing-actions">
+              <button
+                type="button"
+                class="icon-button"
+                id="open-sidebar-folder"
+                aria-label="Open folder in Finder"
+                title="Open in Finder"
+              >
+                ↗
+              </button>
+              <button
+                type="button"
+                class="icon-button"
+                id="delete-sidebar-folder"
+                aria-label="Delete folder"
+                title="Move folder to Trash"
+              >
+                ⌫
+              </button>
+            </div>
+          </div>
+          <section id="folder-settings-panel" class="folder-settings-panel" aria-label="Folder settings"></section>
+          <div id="issue-folder-content">
+            <div class="folder-controls">
+              <label for="folder-selection-strategy">Selection strategy</label>
+              <select id="folder-selection-strategy">
+                <option value="same-blast-radius">Same blast radius</option>
+                <option value="different-blast-radii">Different blast radii</option>
+              </select>
+              <button class="small-button" type="button" data-folder-command="recommend">Recommend issues</button>
+              <button class="small-button" type="button" id="copy-folder-strategy">Copy selection strategy</button>
+            </div>
+            <h2>Issues in this folder</h2>
+            <div class="folder-controls folder-issue-toolbar">
+              <label for="folder-issue-view">Show</label>
+              <select id="folder-issue-view">
+                <option value="open">Open issues</option>
+                <option value="closed">Closed issues</option>
+              </select>
+              <label class="folder-check"><input id="folder-select-all" type="checkbox" /> Select all</label>
+              <button class="small-button" type="button" data-folder-command="bulk" disabled>Start all</button>
+            </div>
+            <form id="folder-search-form" class="folder-controls" role="search">
+              <input
+                id="folder-search-query"
+                type="search"
+                aria-label="Search issues in this folder"
+                placeholder="Search this folder…"
+              />
+              <button class="small-button" type="submit">Search</button>
+              <button class="small-button" type="button" id="folder-ai-search">AI Search</button>
+            </form>
+            <p id="folder-search-status" class="muted" role="status" hidden></p>
+            <section
+              id="folder-bulk-preview"
+              class="folder-preview"
+              aria-label="Review selected issues"
+              hidden
+            ></section>
+            <section id="folder-bulk-results" class="folder-preview" aria-label="Bulk action results" hidden></section>
+            <p class="muted" id="folder-selection-summary" aria-live="polite"></p>
+            <ul id="folder-member-list" class="folder-issues" aria-label="Issues in this folder"></ul>
+            <div class="folder-controls">
+              <button class="small-button" type="button" data-folder-command="group">Propose master issue</button>
+              <button class="small-button" type="button" data-folder-command="plan-night">Work All Night</button>
+            </div>
+            <form id="folder-group-form" class="folder-preview" hidden>
+              <h2>Combined request</h2>
+              <label for="folder-master-wording">Review and edit the master issue request</label>
+              <textarea id="folder-master-wording" rows="8" maxlength="24000" required></textarea>
+              <div class="folder-controls">
+                <button class="primary-button" type="submit">Create master issue</button>
+                <button class="small-button" type="button" data-folder-command="cancel-group">Cancel</button>
+              </div>
+            </form>
+            <section id="folder-night-preview" class="folder-preview" aria-label="Overnight plan" hidden></section>
+            <section id="folder-night-report" class="folder-preview" aria-label="Overnight report" hidden></section>
+            <form id="folder-scan-form" class="folder-preview">
+              <h2>Find issues to add</h2>
+              <div class="folder-controls">
+                <label for="folder-scan-source">Search</label>
+                <select id="folder-scan-source" name="source"></select>
+                <label class="folder-check"><input type="checkbox" name="autoApprove" /> Auto-approve this scan</label>
+                <button class="small-button" type="submit">Find issues</button>
+              </div>
+            </form>
+            <form id="folder-scan-review" class="folder-preview" hidden>
+              <h2>Review suggested moves</h2>
+              <ul id="folder-scan-list" class="folder-issues" aria-label="Suggested moves"></ul>
+              <div class="folder-controls">
+                <button class="primary-button" type="submit">Move selected issues</button>
+                <button class="small-button" type="button" data-folder-command="cancel-scan">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </section>
+        <section id="investigation-page" class="project-home investigation-page" hidden aria-label="Investigation">
+          <p class="muted">
+            Investigations inspect committed snapshots without creating a Git worktree. Temporary files are cleaned
+            automatically.
+          </p>
+          <form id="investigation-settings-form">
+            <label class="folder-check"><input id="investigation-reusable" type="checkbox" /> Reusable</label>
+            <p class="muted">Keep this investigation available for repeated runs.</p>
+            <label class="field">Branch<select id="investigation-branch" required></select></label>
+            <label class="field"
+              >Investigation prompt<textarea id="investigation-prompt" rows="4" required></textarea>
+            </label>
+            <label class="field"
+              >Additional instructions<textarea id="investigation-instructions" rows="2"></textarea>
+            </label>
+            <button class="small-button" type="submit">Save investigation settings</button>
+          </form>
+          <div class="investigation-run-controls">
+            <label class="field"
+              >Follow-up destination for this run (optional)<select id="investigation-destination"></select
+            ></label>
+            <button class="primary-button" id="investigation-run">Run investigation</button>
+            <button class="small-button" id="investigation-stop" hidden>Stop</button>
+            <button class="small-button" id="investigation-retry" hidden>Retry</button>
+            <button class="small-button" id="investigation-archive">Archive</button>
+          </div>
+          <p id="investigation-status" role="status"></p>
+          <p id="investigation-error" class="home-error" role="alert"></p>
+          <details id="investigation-runs">
+            <summary id="investigation-runs-label" role="button">Runs (0)</summary>
+            <div id="investigation-run-list" class="home-run-list"></div>
+          </details>
+          <section id="investigation-result-panel" aria-label="Run results"></section>
+          <details>
+            <summary>Discuss goals or ask about the codebase</summary>
+            <div id="investigation-discussions"></div>
+            <form id="investigation-discussion-form">
+              <label class="field">Your message<textarea id="investigation-message" rows="3" required></textarea></label
+              ><button class="small-button" type="submit">Send message</button>
+            </form>
+          </details>
+        </section>
+        <section id="project-home" class="project-home" aria-label="Project home" hidden>
+          <div class="project-workspace-tabs" role="tablist" aria-label="Project workspace">
+            <button
+              id="project-tab-home"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="project-home-content"
+              data-project-tab="home"
+            >
+              Home
+            </button>
+            <button
+              id="project-tab-issues"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-issues"
+              data-project-tab="issues"
+            >
+              Issues
+            </button>
+            <button
+              id="project-tab-discuss"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-discuss"
+              data-project-tab="discuss"
+            >
+              Discuss
+            </button>
+            <button
+              id="project-tab-admin"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-admin"
+              data-project-tab="admin"
+            >
+              Admin
+            </button>
+          </div>
+          <div
+            id="project-home-content"
+            class="project-home-content"
+            role="tabpanel"
+            aria-labelledby="project-tab-home"
+          >
+            <div class="home-intro">
+              <p class="home-eyebrow">PROJECT OVERVIEW</p>
+              <h1 id="home-title">Project home</h1>
+              <p>Understand the codebase. Improve how work gets done.</p>
+            </div>
+            <div class="home-operations">
+              <article class="home-operation">
+                <span class="home-operation-icon" aria-hidden="true">⌕</span>
+                <h2>Investigate</h2>
+                <p>Explore your project, ask questions, and turn evidence into actionable issues.</p>
+                <button class="primary-button" data-project-home="investigate">Start an investigation</button>
+              </article>
+              <article class="home-operation">
+                <span class="home-operation-icon" aria-hidden="true">✦</span>
+                <h2>Automate me</h2>
+                <p>Learn from your project conversations and refine a skill for how you work.</p>
+                <button class="small-button" data-project-home="automate">Run Automate me</button>
+              </article>
+            </div>
+            <section class="home-activity" aria-label="Project activity">
+              <div class="home-section-title">
+                <h2>Last seven days</h2>
+                <span id="home-window" class="muted"></span>
+              </div>
+              <div class="home-stat-grid">
+                <article><strong id="home-created">—</strong><span>Issues created</span></article>
+                <article><strong id="home-closed">—</strong><span>Issues closed</span></article>
+              </div>
+              <p id="home-stats-note" class="muted"></p>
+            </section>
+            <section class="home-history">
+              <h2>Investigations</h2>
+              <div id="home-investigations" class="home-run-list">
+                <p class="muted">Loading saved investigations…</p>
+              </div>
+            </section>
+            <section class="home-history">
+              <h2>Automate me sessions</h2>
+              <div id="home-automate-sessions" class="home-run-list"></div>
+            </section>
+            <p id="home-error" class="home-error" role="alert"></p>
+          </div>
+          <section
+            id="project-issues"
+            class="project-issues"
+            role="tabpanel"
+            aria-labelledby="project-tab-issues"
+            hidden
+          >
+            <iframe title="Project issues" data-src="/classic?embed=project-issues#queue"></iframe>
+          </section>
+          <section
+            id="project-discuss"
+            class="project-discuss"
+            role="tabpanel"
+            aria-labelledby="project-tab-discuss"
+            hidden
+          ></section>
+          <section
+            id="project-admin"
+            class="project-home-content"
+            role="tabpanel"
+            aria-labelledby="project-tab-admin"
+            hidden
+          >
+            <div class="home-operations">
+              <article class="home-operation">
+                <h2>Prune worktrees</h2>
+                <p>Review missing Git worktrees and clean up their records and local branches in bulk.</p>
+                <button id="admin-prune-worktrees" class="primary-button" type="button">Prune worktrees</button>
+              </article>
+              <article class="home-operation">
+                <h2>Clean up remote branches</h2>
+                <p>Review remote branches already merged into the delivery branch.</p>
+                <button id="admin-remote-open" class="small-button" type="button">Preview remote branches</button>
+              </article>
+              <article class="home-operation">
+                <h2>Clean up local branches</h2>
+                <p>Review merged local branches unused by worktrees or issues outside the archive.</p>
+                <button id="admin-local-open" class="small-button" type="button">Preview local branches</button>
+              </article>
+              <article class="home-operation">
+                <h2>Delete archived issues</h2>
+                <p>Review archived reports and optionally delete their merged local branches.</p>
+                <button id="admin-archive-open" class="small-button" type="button">Preview archived issues</button>
+              </article>
+            </div>
+            <dialog id="admin-prune-dialog" class="home-dialog" aria-labelledby="admin-prune-title">
+              <header>
+                <h2 id="admin-prune-title" class="home-dialog-title">Prune worktrees</h2>
+                <button id="admin-prune-close" class="small-button" type="button">Close</button>
+              </header>
+              <form id="admin-prune-form">
+                <label>Comparison branch<select id="admin-prune-ref" class="home-field-control"></select></label>
+                <p id="admin-prune-status" class="muted" role="status"></p>
+                <section id="admin-prune-list" aria-label="Worktree cleanup entries"></section>
+                <p id="admin-prune-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-prune-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-prune-apply" class="primary-button" type="submit" disabled>Remove selected</button>
+                </footer>
+              </form>
+            </dialog>
+            <dialog id="admin-branches-dialog" class="home-dialog" aria-labelledby="admin-branches-title">
+              <header>
+                <h2 id="admin-branches-title" class="home-dialog-title">Clean up remote branches</h2>
+                <button id="admin-branches-close" class="small-button" type="button">Close</button>
+              </header>
+              <section>
+                <p id="admin-branches-status" role="status"></p>
+                <div id="admin-branches-preview" hidden>
+                  <label id="admin-branches-comparison" hidden
+                    >Comparison branch
+                    <select id="admin-branches-target" class="home-field-control"></select>
+                  </label>
+                  <label class="home-activate"
+                    ><input id="admin-branches-all" type="checkbox" /> Select all eligible branches</label
+                  >
+                  <div id="admin-branches-eligible"></div>
+                  <details id="admin-branches-kept">
+                    <summary id="admin-branches-kept-title"></summary>
+                    <ul id="admin-branches-kept-list"></ul>
+                  </details>
+                </div>
+                <div id="admin-branches-review" hidden>
+                  <h3>Confirm branch deletion</h3>
+                  <ul id="admin-branches-selected"></ul>
+                </div>
+                <ul id="admin-branches-results" hidden></ul>
+                <p id="admin-branches-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-branches-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-branches-back" class="small-button" type="button" hidden>Back</button>
+                  <button id="admin-branches-review-button" class="primary-button" type="button" disabled>
+                    Review deletion
+                  </button>
+                  <button id="admin-branches-apply" class="primary-button" type="button" hidden>
+                    Delete remote branches
+                  </button>
+                </footer>
+              </section>
+            </dialog>
+            <dialog id="admin-archive-dialog" class="home-dialog" aria-labelledby="admin-archive-title">
+              <header>
+                <h2 id="admin-archive-title" class="home-dialog-title">Delete archived issues</h2>
+                <button id="admin-archive-close" class="small-button" type="button">Close</button>
+              </header>
+              <section>
+                <p id="admin-archive-status" role="status"></p>
+                <section id="admin-archive-preview" aria-label="Archived issues" hidden>
+                  <label class="home-activate"
+                    ><input id="admin-archive-all" type="checkbox" /> Select all eligible issues</label
+                  >
+                  <div id="admin-archive-list"></div>
+                </section>
+                <section id="admin-archive-review" hidden>
+                  <h3>Confirm archive deletion</h3>
+                  <p>Delete these archived reports permanently? Selected local branches are listed under each issue.</p>
+                  <ul id="admin-archive-selected"></ul>
+                </section>
+                <ul id="admin-archive-results" hidden></ul>
+                <p id="admin-archive-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-archive-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-archive-back" class="small-button" type="button" hidden>Back</button>
+                  <button id="admin-archive-review-button" class="primary-button" type="button" disabled>
+                    Review deletion
+                  </button>
+                  <button id="admin-archive-apply" class="primary-button" type="button" hidden>
+                    Delete selected reports
+                  </button>
+                </footer>
+              </section>
+            </dialog>
+          </section>
+        </section>
+        <section
+          id="graph-scroll"
+          class="graph-scroll"
+          aria-label="Issue flow, from starting point at the top to destination at the bottom"
+        >
+          <div class="workspace-empty" id="workspace-empty">
+            <div class="empty-graphic" aria-hidden="true"><span>◇</span><i></i><span>□</span><i></i><span>○</span></div>
+            <h1>Your work, one block at a time.</h1>
+            <p>Choose an issue to see its flow.<br />You decide what runs and what comes next.</p>
+            <button class="primary-button" id="empty-new-issue">＋ Create an issue</button>
+          </div>
+          <div id="graph" class="graph" hidden></div>
+        </section>
+        <footer class="flow-footer">
+          <span><span class="footer-dot"></span> <span id="flow-footer-label">Changes are saved locally</span></span
+          ><span class="direction-hint">Flow runs from top to bottom ↓</span>
+        </footer>
+      </main>
+      <aside class="inspector" aria-label="Block inspector">
+        <div
+          id="inspector-resizer"
+          class="inspector-resizer"
+          role="separator"
+          aria-label="Resize block inspector"
+          aria-orientation="vertical"
+          aria-controls="inspector-body"
+          tabindex="0"
+        ></div>
+        <header class="inspector-header">
+          <span class="eyebrow">INSPECTOR</span>
+          <span id="inspector-kind" class="muted">Block details</span>
+        </header>
+        <div class="inspector-title" id="inspector-title">
+          <span class="inspector-symbol" id="inspector-symbol" aria-hidden="true">◇</span>
+          <h2 id="inspector-block-name">Select a block</h2>
+          <button class="primary-button" id="run-block" type="button" hidden></button>
+          <button
+            class="icon-button block-delete-control"
+            id="delete-block"
+            type="button"
+            data-action="remove"
+            aria-label="Delete block"
+            hidden
+          >
+            ×
+          </button>
+        </div>
+        <div class="inspector-tabs" role="tablist" aria-label="Inspector view">
+          <button
+            role="tab"
+            id="tab-details"
+            aria-selected="true"
+            data-tab="details"
+            data-ui-source="flow/block-inspector/details-tab"
+          >
+            <span data-ui-label>Details</span></button
+          ><button
+            role="tab"
+            id="tab-conversation"
+            aria-selected="false"
+            data-tab="conversation"
+            data-ui-source="flow/block-inspector/conversation-tab"
+          >
+            <span data-ui-label>Conversation</span></button
+          ><button
+            role="tab"
+            id="tab-artifacts"
+            aria-selected="false"
+            data-tab="artifacts"
+            data-ui-source="flow/block-inspector/artifacts-tab"
+          >
+            <span data-ui-label>Artifacts</span> <span id="artifact-count"></span>
+          </button>
+        </div>
+        <section id="issue-grouping" class="issue-grouping" aria-label="Grouped issues" hidden></section>
+        <div class="inspector-body" id="inspector-body" role="tabpanel" aria-labelledby="tab-details">
+          <div class="error-banner request-embed-error" id="request-embed-error" role="alert" hidden>
+            <span id="request-embed-error-message"></span>
+          </div>
+          <div class="inspector-empty">
+            <span aria-hidden="true">↖</span>
+            <p>Select a block to inspect its intent, progress and evidence.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <dialog
+      id="investigation-followups-dialog"
+      class="modal publish-modal"
+      aria-labelledby="investigation-followups-title"
+    >
+      <div class="modal-heading">
+        <h2 id="investigation-followups-title">Act on investigation findings</h2>
+        <button class="icon-button" type="button" data-followups-close aria-label="Close follow-up review">×</button>
+      </div>
+      <p class="muted">
+        Review, edit and select concrete work. New issues need approval; the investigation stays open.
+      </p>
+      <div data-followups-body></div>
+      <p class="muted" data-followups-message role="status"></p>
+      <div class="modal-footer">
+        <button class="primary-button" type="button" data-followups-create disabled>Create selected issues</button>
+      </div>
+    </dialog>
+    <dialog id="local-note-editor" class="modal local-note-modal" aria-labelledby="local-note-editor-heading">
+      <form id="local-note-edit-form">
+        <h2 id="local-note-editor-heading">Quick note</h2>
+        <textarea id="local-note-edit-text" aria-label="Note text" maxlength="24000" required></textarea>
+        <p id="local-note-edit-error" role="alert"></p>
+        <footer>
+          <button id="local-note-edit-cancel" type="button" class="small-button">Cancel</button
+          ><button type="submit" class="small-button">Save note</button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog id="capture-dialog" class="modal capture-modal">
+      <form id="capture-form">
+        <div class="modal-heading">
+          <div>
+            <span class="eyebrow">NEW ISSUE</span>
+            <h2>What would you like to do?</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-dialog="capture-dialog" aria-label="Close new issue">
+            ×
+          </button>
+        </div>
+        <p class="muted">Start with your own words. Refine the request in its first block.</p>
+        <label class="field"
+          >Your request<textarea
+            id="capture-description"
+            name="description"
+            rows="6"
+            required
+            placeholder="Describe a problem, a change, or something to investigate…"
+          ></textarea></label
+        ><label class="field"
+          >Issue type<select id="capture-type" name="type">
+            <option value="feature">Feature</option>
+            <option value="bug">Bug fix</option>
+            <option value="investigation">Investigation</option>
+          </select></label
+        >
+        <label class="field">Folder<select id="capture-folder" name="folder" required></select></label>
+        <label><input type="checkbox" id="capture-retro" /> Run a retro</label>
+        <label><input type="checkbox" id="capture-needs-approval" /> Needs approval</label>
+        <p id="capture-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button class="small-button" type="button" data-close-dialog="capture-dialog">Cancel</button
+          ><button class="primary-button" id="capture-submit" type="submit">Create issue</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="palette-dialog" class="modal palette-modal">
+      <div class="modal-heading">
+        <div>
+          <span class="eyebrow">BUILD YOUR FLOW</span>
+          <h2>Add a block</h2>
+        </div>
+        <button class="icon-button" data-close-dialog="palette-dialog" aria-label="Close block palette">×</button>
+      </div>
+      <p class="muted">Add the next step. Nothing runs until you start it.</p>
+      <p id="block-palette-error" class="inline-error" role="alert" hidden></p>
+      <div id="block-palette" class="block-palette"></div>
+    </dialog>
+    <dialog id="issue-closure-dialog" class="modal" aria-labelledby="issue-closure-heading">
+      <form id="issue-closure-form">
+        <div class="closure-fields" id="issue-closure-fields"></div>
+        <p class="closure-error" id="issue-closure-error" role="alert"></p>
+        <div class="modal-footer">
+          <button class="small-button" id="cancel-issue-closure" type="button" data-close-dialog="issue-closure-dialog">
+            Cancel
+          </button>
+          <button class="primary-button" id="confirm-issue-closure" type="submit">Close issue</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="starting-branch-dialog" class="modal" aria-labelledby="starting-branch-heading">
+      <form method="dialog">
+        <h2 id="starting-branch-heading">Change starting branch</h2>
+        <p id="starting-branch-target"></p>
+        <p>
+          Timey saves local edits in a commit and replays the issue commits on the selected branch. Previous runs stay
+          in history.
+        </p>
+        <p id="starting-branch-error" role="alert" hidden></p>
+        <div class="block-actions">
+          <button class="small-button" value="cancel">Cancel</button>
+          <button class="primary-button" id="move-starting-branch" type="button">Move issue work</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="destination-dialog" class="modal" aria-labelledby="destination-heading">
+      <form method="dialog">
+        <h2 id="destination-heading">Destination branch</h2>
+        <p id="destination-message" role="status"></p>
+        <label class="field" id="destination-choices" hidden>
+          <span>Branch</span>
+          <select id="destination-branch"></select>
+        </label>
+        <div class="block-actions">
+          <button class="small-button" value="cancel">Cancel</button>
+          <button class="small-button" id="retry-branches" type="button" hidden>Retry</button>
+          <button class="primary-button" id="save-destination" value="save" hidden>Save destination</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="publish-dialog" class="modal publish-modal" aria-labelledby="publish-heading">
+      <form method="dialog">
+        <h2 id="publish-heading">Publish PR</h2>
+        <div id="publish-preview" aria-live="polite"></div>
+        <p id="publish-error" role="alert" hidden></p>
+        <div class="block-actions">
+          <button class="small-button" id="close-publish" value="cancel">Close</button>
+          <button class="primary-button" id="confirm-publish" type="button" hidden>Publish</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="folder-dialog" class="modal">
+      <form id="folder-form">
+        <div class="modal-heading">
+          <h2>New folder</h2>
+          <button class="icon-button" type="button" data-close-dialog="folder-dialog" aria-label="Close new folder">
+            ×
+          </button>
+        </div>
+        <label class="field"
+          >Folder name<input
+            name="name"
+            id="folder-name"
+            required
+            maxlength="100"
+            placeholder="A group of related issues"
+        /></label>
+        <p id="folder-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button class="small-button" type="button" data-close-dialog="folder-dialog">Cancel</button
+          ><button class="primary-button" type="submit">Create folder</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="export-flow-dialog" class="modal" aria-labelledby="export-flow-title">
+      <form id="export-flow-form">
+        <div class="modal-heading">
+          <h2 id="export-flow-title">Save as user flow</h2>
+          <button type="button" class="icon-button" data-close-dialog="export-flow-dialog" aria-label="Close">×</button>
+        </div>
+        <label class="field">Flow name<input name="name" maxlength="100" required autofocus /></label>
+        <label class="field">
+          File name
+          <input
+            id="export-flow-id"
+            name="flowId"
+            pattern="[a-z][a-z0-9\-]{0,79}"
+            maxlength="80"
+            aria-describedby="export-flow-path"
+            required
+          />
+        </label>
+        <small id="export-flow-path"></small>
+        <p id="export-flow-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button class="small-button" type="button" data-close-dialog="export-flow-dialog">Cancel</button>
+          <button id="export-flow-submit" class="primary-button" type="submit">Save and link</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="file-dialog" class="modal file-modal">
+      <div class="modal-heading">
+        <h2 id="file-title">Artifact</h2>
+        <button class="icon-button" data-close-dialog="file-dialog" aria-label="Close artifact">×</button>
+      </div>
+      <label id="file-restate-control" class="actions-switch" hidden>
+        <input id="file-restate" type="checkbox" role="switch" disabled /> Restate
+      </label>
+      <pre id="file-content" class="file-content" aria-live="polite"></pre>
+    </dialog>
+    <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
+      <div class="modal-heading">
+        <h2 id="project-settings-title">Project settings</h2>
+        <button class="icon-button" data-close-dialog="project-settings-dialog" aria-label="Close project settings">
+          ×
+        </button>
+      </div>
+      <section id="project-folder-settings" class="folder-settings-panel" aria-label="Project defaults"></section>
+      <div id="project-settings-content" class="settings-content" aria-live="polite"></div>
+      <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
+      <div class="modal-footer">
+        <button class="small-button" data-close-dialog="project-settings-dialog">Done</button>
+        <button class="primary-button" id="initialize-lifecycle" hidden>Initialize lifecycle configuration</button>
+      </div>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <p id="view-source-status" class="view-source-status" role="status" hidden></p>
+    <div id="view-source-tooltip" class="view-source-popover view-source-tooltip" role="tooltip" hidden></div>
+    <p class="block-content definition-actions detail-value" hidden aria-hidden="true"></p>
+    <div id="view-source-menu" class="view-source-popover" aria-label="UI source options" hidden>
+      <button class="small-button" id="view-source-open" type="button">Show source</button>
+      <button class="small-button" id="view-source-copy" type="button">Copy source location</button>
+      <button class="small-button" id="view-source-edit" type="button">Edit override</button>
+    </div>
+    <dialog id="view-source-dialog" class="modal view-source-dialog" aria-labelledby="view-source-title">
+      <form id="view-source-form">
+        <div class="modal-heading"><h2 id="view-source-title">UI source</h2></div>
+        <pre id="view-source-location" class="file-content"></pre>
+        <label id="view-source-field" class="field"
+          >Label<input id="view-source-label" required maxlength="120"
+        /></label>
+        <p id="view-source-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button type="button" class="small-button" data-close-dialog="view-source-dialog">Close</button>
+          <button type="submit" class="primary-button" id="view-source-save">Save and reload</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="sidebar-file-dialog" class="modal" aria-labelledby="sidebar-file-title">
+      <form id="sidebar-file-form">
+        <h2 id="sidebar-file-title"></h2>
+        <label id="sidebar-file-path-label">Path<input id="sidebar-file-path" type="text" autocomplete="off" /></label>
+        <label id="sidebar-file-text-label">Markdown<textarea id="sidebar-file-text" rows="16"></textarea></label>
+        <p id="sidebar-file-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-footer">
+          <button type="button" id="sidebar-file-browse" class="small-button" hidden>Choose Folder…</button>
+          <button type="button" id="sidebar-file-open" class="small-button" hidden>Open in editor</button>
+          <button type="button" id="sidebar-file-install" class="small-button" hidden>Install project skill</button>
+          <button type="button" id="sidebar-file-copy" class="small-button" hidden>Copy to user/</button>
+          <button type="button" id="sidebar-file-close" class="small-button">Close</button>
+          <button type="submit" id="sidebar-file-submit" class="primary-button">Save</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="view-index" class="modal" aria-labelledby="view-index-title">
+      <div class="modal-heading"><h2 id="view-index-title">View index</h2></div>
+      <div id="view-index-content"></div>
+      <div class="modal-footer">
+        <button type="button" class="small-button" data-close-dialog="view-index">Close</button>
+      </div>
+    </dialog>
+    <dialog id="home-investigation-dialog" class="home-dialog">
+      <header>
+        <div>
+          <p class="home-eyebrow">PROJECT OPERATION</p>
+          <h2 class="home-dialog-title">Investigate project</h2>
+        </div>
+        <button class="icon-button" data-home-close="investigation" aria-label="Close investigation">×</button>
+      </header>
+      <form id="home-investigation-form">
+        <div class="home-field-row">
+          <label>Focus<select class="home-field-control" id="home-investigation-focus"></select></label
+          ><label>Branch<select class="home-field-control" id="home-investigation-branch" required></select></label>
+        </div>
+        <p class="muted">Applies to the entire project on the selected branch.</p>
+        <label
+          >Investigation prompt<textarea
+            class="home-field-control"
+            id="home-investigation-prompt"
+            rows="4"
+            required
+          ></textarea></label
+        ><label
+          >Additional instructions<textarea
+            class="home-field-control"
+            id="home-investigation-instructions"
+            rows="2"
+            placeholder="What matters most? What should the investigation consider?"
+          ></textarea></label
+        ><label>Issue folder<select class="home-field-control" id="home-investigation-folder"></select></label>
+        <label class="folder-check"><input type="checkbox" id="home-investigation-reusable" /> Reusable</label>
+        <p class="muted">Keep this investigation available for repeated runs.</p>
+        <p class="muted">Investigations inspect temporary snapshots without creating a Git worktree.</p>
+        <p id="home-investigation-error" class="home-error" role="alert"></p>
+        <footer>
+          <button type="submit" class="primary-button" id="home-investigation-run">Create investigation</button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog id="home-automate-dialog" class="home-dialog">
+      <header>
+        <div>
+          <p class="home-eyebrow">PSTACK</p>
+          <h2 class="home-dialog-title">Automate me</h2>
+        </div>
+        <button class="icon-button" data-home-close="automate" aria-label="Close Automate me">×</button>
+      </header>
+      <form id="home-automate-form">
+        <p class="muted">Use this project's available conversations to draft or refine your working-style skill.</p>
+        <div class="home-field-row">
+          <label
+            >History duration<input
+              class="home-field-control"
+              id="home-automate-duration"
+              type="number"
+              min="1"
+              max="3650"
+              value="4"
+              required /></label
+          ><label
+            >Unit<select class="home-field-control" id="home-automate-unit">
+              <option value="weeks">Weeks</option>
+              <option value="days">Days</option>
+              <option value="months">Months</option>
+            </select></label
+          ><label
+            >Save skill in<select class="home-field-control" id="home-automate-destination">
+              <option value="project">This project</option>
+              <option value="personal">Personal skills</option>
+            </select></label
+          >
+        </div>
+        <p id="home-automate-coverage" class="muted"></p>
+        <button class="primary-button home-submit" type="submit" id="home-automate-start">Start conversation</button>
+      </form>
+      <div id="home-automate-messages" class="home-messages" aria-live="polite"></div>
+      <form id="home-automate-reply" hidden>
+        <label
+          >Your reply<textarea
+            class="home-field-control"
+            id="home-automate-message"
+            rows="3"
+            required
+          ></textarea></label
+        ><button class="small-button" type="submit">Send reply</button>
+      </form>
+      <section id="home-automate-review" hidden>
+        <h3>Review skill changes</h3>
+        <label
+          >Skill name<input class="home-field-control" id="home-automate-name" pattern="[a-z0-9][a-z0-9-]*-mode"
+        /></label>
+        <p id="home-automate-path" class="home-path"></p>
+        <div class="home-review-columns">
+          <label
+            >Current skill<textarea
+              class="home-field-control"
+              id="home-automate-current"
+              rows="12"
+              readonly
+            ></textarea></label
+          ><label
+            >Proposed skill<textarea class="home-field-control" id="home-automate-content" rows="12"></textarea>
+          </label>
+        </div>
+        <label class="home-activate"
+          ><input type="checkbox" id="home-automate-activate" /> Use this skill as this project's default for future
+          work</label
+        >
+        <div class="home-controls">
+          <button class="small-button" type="button" id="home-automate-preview" data-home-command="automate-preview">
+            Review destination and changes</button
+          ><button class="primary-button" type="button" id="home-automate-apply" data-home-command="automate-apply">
+            Apply reviewed skill
+          </button>
+        </div>
+      </section>
+      <div id="home-automate-status" class="home-run-status" role="status"></div>
+      <p id="home-automate-error" class="home-error" role="alert"></p>
+      <footer>
+        <button class="small-button" type="button" data-home-command="automate-stop" hidden>Stop</button
+        ><button class="small-button" type="button" data-home-command="automate-retry" hidden>Retry</button>
+      </footer>
+    </dialog>
+    <dialog class="modal branch-repair-dialog" id="branch-repair-dialog" aria-labelledby="branch-repair-heading">
+      <h2 id="branch-repair-heading">Fix Branch</h2>
+      <p data-repair-status role="status"></p>
+      <p class="muted" data-repair-timing></p>
+      <p data-repair-error role="alert"></p>
+      <h3>Progress and check output</h3>
+      <pre data-repair-output></pre>
+      <section data-repair-review>
+        <h3>Candidate diff</h3>
+        <pre data-repair-diff></pre>
+        <p class="muted" data-repair-checks></p>
+        <p>
+          Approval applies these repairs to this issue checkout as uncommitted changes. Review and commit them with your
+          issue work.
+        </p>
+      </section>
+      <footer>
+        <button class="primary-button" type="button" data-repair-command></button
+        ><button class="small-button" type="button" data-repair-stop>Stop</button
+        ><button class="small-button" type="button" data-repair-reconcile>Retain interrupted run and allow retry</button
+        ><button class="small-button" type="button" data-repair-close>Close</button>
+      </footer>
+    </dialog>
+  </body>
+</html>

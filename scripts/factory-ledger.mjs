@@ -1,4 +1,5 @@
 import { listStoredIssues, storedIssuePath } from './factory-ui/issue-report-storage.mjs';
+import { requireIndependentIssue } from './factory-ui/issue-group.mjs';
 import { sharedIssueQueueEnabled } from './factory-ui/shared-issue-config.mjs';
 import { hasAssignmentScope } from './factory-assignment-scope.mjs';
 import { verificationStart } from './issue-verification-start.mjs';
@@ -148,6 +149,7 @@ function claimsIssue(entry, action) {
 }
 
 function validateDispatchableReport(report, action, closed) {
+  assert(report.state !== 'needs-approval', 'Approve this issue before dispatching work.');
   assert(
     report.state !== closed && !report.grill_later && !report.kind?.startsWith('wayfinder-'),
     'Closed, deferred or planning-only report is not dispatchable.'
@@ -349,6 +351,12 @@ export function factory(project) {
         instruction: 'Known claims restored; no chats were launched.',
       };
     },
+    issueRecords(locations) {
+      return {
+        reports: locations.flatMap((location) => reports(location)),
+        actions: existsSync(ledger) ? readLedger().actions : [],
+      };
+    },
     inspect({ location = 'open', issueId } = {}) {
       const inspection = {
         project: root,
@@ -468,6 +476,7 @@ export function factory(project) {
         assert(closed, 'Lifecycle has no closed-role mapping.');
         for (const id of action.issues) {
           const report = current.find((entry) => entry.metadata.id === id).metadata;
+          requireIndependentIssue(root, id);
           validateDispatchableReport(report, action, closed);
         }
         action.status = 'reserved';

@@ -155,7 +155,6 @@ function fixture(t) {
     };
   };
   service.strategyProvider = () => ({
-    assertMergeProtection: async () => true,
     publish: async () => ({ number: 12 }),
     inspect: () => ({}),
     findByBranch: async () => {
@@ -177,7 +176,6 @@ function fixture(t) {
       url: 'https://github.com/fixture/timey/pull/12',
       target: queue.git('rev-parse', 'HEAD'),
     }),
-    assertApproved: async () => true,
     merge: () => {
       merges++;
       return { url: 'https://github.com/fixture/timey/pull/12', revision: 'merge' };
@@ -1442,44 +1440,41 @@ function providerFixture() {
     html_url: 'https://github.com/fixture/timey/pull/12',
   };
   const commands = [];
-  let strict = true,
-    admin = true,
-    queued = false,
-    clean = true,
-    reviewDecision = null,
-    bypass = 'always',
-    classicReviews = false,
-    checkStatus = 'COMPLETED',
-    conclusion = 'SUCCESS',
-    allowMergeCommit = true,
-    reviewRules = [
-      { type: 'required_status_checks', ruleset_id: 42 },
-      { type: 'pull_request', ruleset_id: 43 },
-    ];
+  const view = { headRefOid: 'head', baseRefName: 'main', baseRefOid: 'base', mergeStateStatus: 'CLEAN' };
+  const passingCheck = {
+    __typename: 'CheckRun',
+    name: 'verify',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    isRequired: true,
+  };
+  const settings = {
+    checks: [passingCheck],
+    allowMergeCommit: true,
+    classicReviews: false,
+    strict: true,
+    ciBypass: 'never',
+    reviewBypass: 'always',
+  };
   provider.gh = (args) => {
     commands.push(args);
-    if (args.includes('graphql'))
-      return JSON.stringify({
-        data: { repository: { pullRequest: { mergeQueueEntry: queued ? { id: 'queue' } : null } } },
-      });
-    if (args[0] === 'pr' && args[1] === 'view')
-      return JSON.stringify({
-        reviewDecision,
-        mergeStateStatus: clean ? 'CLEAN' : 'BLOCKED',
-        statusCheckRollup: [{ name: 'verify', status: checkStatus, conclusion }],
-      });
+    if (args.includes('graphql')) {
+      const commits = { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: settings.checks } } } }] };
+      return JSON.stringify([{ data: { repository: { pullRequest: { ...view, commits } } } }]);
+    }
     if (args[1] === 'user') return JSON.stringify({ login: 'fixture' });
-    if (args[1]?.includes('/rules/branches/')) return JSON.stringify([reviewRules]);
+    if (args[1]?.includes('/rules/branches/'))
+      return JSON.stringify([[{ ruleset_id: 42 }, { type: 'pull_request', ruleset_id: 43 }]]);
     if (args[1]?.endsWith('/rulesets/42'))
       return JSON.stringify({
         id: 42,
         enforcement: 'active',
-        current_user_can_bypass: admin ? 'never' : 'always',
+        current_user_can_bypass: settings.ciBypass,
         rules: [
           {
             type: 'required_status_checks',
             parameters: {
-              strict_required_status_checks_policy: strict,
+              strict_required_status_checks_policy: settings.strict,
               required_status_checks: [{ context: 'verify' }],
             },
           },
@@ -1489,157 +1484,146 @@ function providerFixture() {
       return JSON.stringify({
         id: 43,
         enforcement: 'active',
-        current_user_can_bypass: bypass,
+        current_user_can_bypass: settings.reviewBypass,
         rules: [],
       });
     if (args[1]?.endsWith('/merge')) return JSON.stringify({ merged: true, sha: 'merged' });
     if (args[1] === 'repos/fixture/timey')
       return JSON.stringify({
-        allow_merge_commit: allowMergeCommit,
+        allow_merge_commit: settings.allowMergeCommit,
         allow_squash_merge: true,
         allow_rebase_merge: true,
       });
     if (args[1]?.endsWith('/protection'))
-      return JSON.stringify({ required_pull_request_reviews: classicReviews ? {} : null });
+      return JSON.stringify({ required_pull_request_reviews: settings.classicReviews ? {} : null });
     return '{}';
   };
-  return {
-    provider,
-    pr,
-    commands,
-    change: (options) => {
-      if ('strict' in options) strict = options.strict;
-      if ('admin' in options) admin = options.admin;
-      if ('queued' in options) queued = options.queued;
-      if ('clean' in options) clean = options.clean;
-      if ('reviewDecision' in options) reviewDecision = options.reviewDecision;
-      if ('bypass' in options) bypass = options.bypass;
-      if ('classicReviews' in options) classicReviews = options.classicReviews;
-      if ('checkStatus' in options) checkStatus = options.checkStatus;
-      if ('conclusion' in options) conclusion = options.conclusion;
-      if ('allowMergeCommit' in options) allowMergeCommit = options.allowMergeCommit;
-      if ('reviewRules' in options) reviewRules = options.reviewRules;
-    },
-  };
+  const ready = (options) => provider.ready(pr, pr.head.ref, pr.head.sha, options);
+  return { provider, pr, commands, settings, view, passingCheck, ready };
 }
-test('live readiness rejects draft, changed head, queue enrollment, failing checks and wrong repository', async () => {
+
+test('GitHub merge readiness accepts no checks and unsuccessful optional checks', async () => {
   const f = providerFixture();
-  assert.equal((await f.provider.ready(f.pr, 'codex/issue-one', 'head')).head, 'head');
+  f.settings.checks = [];
+  assert.deepEqual((await f.ready()).checks, []);
+  f.view.mergeStateStatus = 'UNSTABLE';
+  f.settings.checks = [
+    f.passingCheck,
+    { name: 'optional lint', status: 'COMPLETED', conclusion: 'FAILURE' },
+    { name: 'optional benchmark', status: 'IN_PROGRESS' },
+  ];
+  assert.equal((await f.ready()).checks.length, 3);
+});
+
+test('GitHub readiness rejects drafts, changed PR identity and queue enrollment', async () => {
+  const f = providerFixture();
+  assert.equal((await f.ready()).head, 'head');
   await assert.rejects(() => f.provider.ready({ ...f.pr, draft: true }, 'codex/issue-one', 'head'), /non-draft/);
   await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'other'), /candidate changed/);
-  await assert.rejects(
-    () => f.provider.ready({ ...f.pr, base: { ...f.pr.base, ref: 'other' } }, 'codex/issue-one', 'head'),
-    /target changed/
-  );
-  f.change({ queued: true });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /merge queue/);
-  f.change({ queued: false, checkStatus: 'IN_PROGRESS' });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /pending: verify/);
-  f.change({ checkStatus: 'COMPLETED', clean: false });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /unfinished checks/);
+  f.view.headRefOid = 'new-head';
+  await assert.rejects(() => f.ready(), /head or target changed/);
+  f.view.headRefOid = 'head';
+  f.view.baseRefName = 'other';
+  await assert.rejects(() => f.ready(), /head or target changed/);
+  f.view.baseRefName = 'main';
+  f.view.mergeQueueEntry = { id: 'queue' };
+  await assert.rejects(() => f.ready(), /merge queue/);
 });
 
-test('readiness reconciles an externally merged candidate using the latest check attempt without hiding other checks', async () => {
+test('GitHub readiness distinguishes required checks, required reviews and other blockers', async () => {
+  const f = providerFixture();
+  f.view.mergeStateStatus = 'BLOCKED';
+  f.settings.checks = [{ ...f.passingCheck, status: 'IN_PROGRESS' }];
+  await assert.rejects(() => f.ready(), /pending: verify/);
+  f.settings.checks = [{ ...f.passingCheck, conclusion: 'FAILURE' }];
+  await assert.rejects(
+    () => f.ready(),
+    (error) => error.code === 'ci-failure'
+  );
+  f.settings.checks = [];
+  await assert.rejects(() => f.ready(), /outstanding merge requirements/);
+  f.view.reviewDecision = 'REVIEW_REQUIRED';
+  await assert.rejects(
+    () => f.ready(),
+    (error) => {
+      assert.match(error.message, /waiting for a required review/);
+      assert.equal(error.humanInput.kind, 'pr-review');
+      assert.match(error.humanInput.message, /eligible reviewer.*Continue/);
+      return true;
+    }
+  );
+  f.view.reviewDecision = 'CHANGES_REQUESTED';
+  await assert.rejects(
+    () => f.ready(),
+    (error) => error.code === 'review-findings'
+  );
+  f.view.reviewDecision = 'APPROVED';
+  f.view.mergeStateStatus = 'BEHIND';
+  await assert.rejects(
+    () => f.ready(),
+    (error) => error.code === 'target-outdated'
+  );
+  f.view.mergeStateStatus = 'UNKNOWN';
+  await assert.rejects(
+    () => f.ready(),
+    (error) => error.code === 'STRATEGY_PENDING'
+  );
+});
+
+test('readiness reconciles a merged candidate and records its latest check attempts', async () => {
   const f = providerFixture();
   Object.assign(f.pr, { merged_at: 'now', merge_commit_sha: 'merged', state: 'closed', mergeable: false });
-  const gh = f.provider.gh;
-  const checks = [
-    {
-      __typename: 'CheckRun',
-      name: 'test',
-      workflowName: 'Verify',
-      status: 'COMPLETED',
-      conclusion: 'FAILURE',
-      startedAt: '2026-11-01T00:00:00Z',
-    },
-    {
-      __typename: 'CheckRun',
-      name: 'test',
-      workflowName: 'Verify',
-      status: 'COMPLETED',
-      conclusion: 'SUCCESS',
-      startedAt: '2026-11-02T00:00:00Z',
-    },
+  f.settings.checks = [
+    { ...f.passingCheck, conclusion: 'FAILURE', startedAt: '2026-11-01T00:00:00Z' },
+    { ...f.passingCheck, startedAt: '2026-11-02T00:00:00Z' },
+    { __typename: 'CheckRun', name: 'security', status: 'COMPLETED', conclusion: 'FAILURE' },
   ];
-  f.provider.gh = (args) => (args[0] === 'pr' ? JSON.stringify({ statusCheckRollup: checks }) : gh(args));
-  const result = await f.provider.ready(f.pr, 'codex/issue-one', 'head');
+  const result = await f.ready();
   assert.equal(result.merged, true);
   assert.equal(result.merge.revision, 'merged');
-  checks.push({ __typename: 'CheckRun', name: 'security', status: 'COMPLETED', conclusion: 'FAILURE' });
-  await assert.rejects(f.provider.ready(f.pr, 'codex/issue-one', 'head'), (error) => error.code === 'ci-failure');
-});
-test('the Merge action requires an approving GitHub review for the exact PR head', async () => {
-  const f = providerFixture();
-  let reviewDecision = 'APPROVED';
-  let headRefOid = 'head';
-  f.provider.gh = async () => JSON.stringify({ reviewDecision, headRefOid });
-  await f.provider.assertApproved(12, 'head');
-  headRefOid = 'new-head';
-  await assert.rejects(() => f.provider.assertApproved(12, 'head'), /head changed/);
-  headRefOid = 'head';
-  reviewDecision = 'REVIEW_REQUIRED';
-  await assert.rejects(() => f.provider.assertApproved(12, 'head'), /approving review/);
+  assert.deepEqual(result.checks, f.settings.checks.slice(1));
 });
 
-test('Full Send refuses unsafe protection and uses an exact-head merge without bypass or auto-merge', async () => {
+test('the GitHub merge request pins the exact head and uses an ordinary merge commit', async () => {
   const f = providerFixture();
-  f.change({ strict: false });
-  await assert.rejects(() => f.provider.merge(12, 'head'), /strict required checks/);
-  f.change({ strict: true, admin: false });
-  await assert.rejects(() => f.provider.merge(12, 'head'), /administrators/);
-  f.change({ admin: true });
   f.provider.inspect = () => ({ ...f.pr, merged_at: 'now', merge_commit_sha: 'merged' });
   assert.equal((await f.provider.merge(12, 'head')).revision, 'merged');
-  const args = f.commands.find((command) => command[1]?.endsWith('/merge'));
-  assert.ok(args.includes('sha=head'));
-  assert.ok(args.includes('merge_method=merge'));
-  assert.ok(args.includes('PUT'));
-  assert.ok(!args.includes('--admin'));
-  assert.ok(!args.includes('--auto'));
+  assert.deepEqual(f.commands[1], [
+    'api',
+    'repos/fixture/timey/pulls/12/merge',
+    '--method',
+    'PUT',
+    '-f',
+    'sha=head',
+    '-f',
+    'merge_method=merge',
+  ]);
 });
 
 test('Full Send stops before merging when the repository disallows merge commits', async () => {
   const f = providerFixture();
-  f.change({ allowMergeCommit: false });
-  f.provider.inspect = () => ({ ...f.pr, merged_at: 'now', merge_commit_sha: 'merged' });
+  f.settings.allowMergeCommit = false;
   await assert.rejects(() => f.provider.merge(12, 'head'), /enable merge commits/i);
   assert.ok(!f.commands.some((args) => args[1]?.endsWith('/merge')));
 });
-test('owner-authored PR respects its verified ruleset review bypass without bypassing CI', async () => {
+
+test('Full Stop retains its review bypass for handoff and requires independent CI protection', async () => {
   const f = providerFixture();
-  f.change({ reviewDecision: 'REVIEW_REQUIRED', clean: false });
-  assert.equal((await f.provider.ready(f.pr, 'codex/issue-one', 'head')).head, 'head');
-  f.change({ bypass: 'never' });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
-  f.change({ bypass: 'always', classicReviews: true });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
-  f.change({ classicReviews: false, strict: false });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /strict required checks/);
-  f.change({ strict: true, admin: false });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /administrators/);
-  f.change({ admin: true, reviewDecision: 'CHANGES_REQUESTED' });
-  await assert.rejects(
-    () => f.provider.ready(f.pr, 'codex/issue-one', 'head'),
-    (error) => error.code === 'review-findings'
-  );
-  f.change({ reviewDecision: 'REVIEW_REQUIRED' });
-  await assert.rejects(
-    () => f.provider.ready({ ...f.pr, user: { login: 'another' } }, 'codex/issue-one', 'head'),
-    /required human review/
-  );
-  f.change({ conclusion: 'FAILURE' });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /pending or failed/);
-  f.change({ conclusion: 'SUCCESS', reviewRules: [{ type: 'required_status_checks', ruleset_id: 42 }] });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
-  f.change({
-    reviewRules: [
-      { type: 'required_status_checks', ruleset_id: 42 },
-      { type: 'pull_request', ruleset_id: 43 },
-      { type: 'pull_request', ruleset_id: 44 },
-    ],
-  });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /required human review/);
-  assert.ok(!f.commands.some((args) => args[1]?.endsWith('/merge')));
+  Object.assign(f.view, { reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED' });
+  const handoff = { handoff: true };
+  assert.equal((await f.ready(handoff)).head, 'head');
+  await assert.rejects(() => f.ready(), /waiting for a required review/);
+  f.settings.reviewBypass = 'never';
+  await assert.rejects(() => f.ready(handoff), /required human review/);
+  f.settings.reviewBypass = 'always';
+  f.settings.classicReviews = true;
+  await assert.rejects(() => f.ready(handoff), /required human review/);
+  f.settings.classicReviews = false;
+  f.settings.strict = false;
+  await assert.rejects(() => f.ready(handoff), /strict required checks/);
+  f.settings.strict = true;
+  f.settings.ciBypass = 'always';
+  await assert.rejects(() => f.ready(handoff), /administrators/);
 });
 test('Sol Loop is optional and unavailable Sol never silently substitutes a model', async () => {
   const service = { codex: { ready: async () => {}, call: async () => ({ data: [{ id: 'other' }] }) } };
@@ -1652,21 +1636,6 @@ test('Sol Loop is optional and unavailable Sol never silently substitutes a mode
   const prompt = strategyPrompt('/repo', { id: 'one' }, { strategy: 'full-stop', config: {}, solRounds: 0 });
   assert.match(prompt, /Sol Loop was not selected/);
   assert.match(prompt, /Never merge/);
-});
-
-test('missing Full Send enforcement blocks before creating a checkout or starting an AI turn', async (t) => {
-  const f = fixture(t);
-  f.service.strategyProvider = () => ({
-    assertMergeProtection: async () => {
-      throw Error('Protection is unavailable');
-    },
-  });
-  startIssueStrategy(f.service, f.input('full-send'));
-  await f.service.lifecycleTasks.get(f.issue.id);
-  const record = f.service.lifecycleRuns[f.issue.id];
-  assert.equal(record.status, 'blocked');
-  assert.equal(record.work.checkout, undefined);
-  assert.equal(f.counts().calls, 0);
 });
 
 test('optional Sol review can run after Full Stop without repeating implementation', async (t) => {
@@ -1757,7 +1726,6 @@ test('No new actions pauses a Full Send before merge even if readiness just beca
   const f = fixture(t);
   let merges = 0;
   f.service.strategyProvider = () => ({
-    assertMergeProtection: async () => true,
     publish: async () => ({ number: 12 }),
     inspect: () => ({}),
     ready: (_pr, _branch, head) => {
@@ -1935,15 +1903,16 @@ test('installation credentials can be loaded from server environment settings', 
   assert.equal(credentials.config.privateKey, '-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----');
 });
 
-test('factory app honors review bypass without user identity endpoint or CI bypass', async () => {
+test('Full Stop handoff honors the app review bypass without user identity lookup or CI bypass', async () => {
   const f = providerFixture();
   f.provider.credentials = { session: async () => ({ slug: 'factory' }) };
-  f.change({ bypass: 'pull_requests_only' });
-  f.change({ reviewDecision: 'REVIEW_REQUIRED', clean: false });
-  assert.equal((await f.provider.ready(f.pr, 'codex/issue-one', 'head')).head, 'head');
+  f.settings.reviewBypass = 'pull_requests_only';
+  Object.assign(f.view, { reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED' });
+  const handoff = { handoff: true };
+  assert.equal((await f.ready(handoff)).head, 'head');
   assert.ok(!f.commands.some((args) => args[1] === 'user'));
-  f.change({ admin: false });
-  await assert.rejects(() => f.provider.ready(f.pr, 'codex/issue-one', 'head'), /prevent this credential/);
+  f.settings.ciBypass = 'always';
+  await assert.rejects(() => f.ready(handoff), /prevent this credential/);
 });
 
 test('editable chat prepares the normal issue checkout without starting a delivery strategy', async (t) => {

@@ -1,5 +1,6 @@
 test*.csv
 node_modules
+/.local-notes/
 .pnpm-store
 
 .DS_Store
@@ -34,11 +35,11 @@ coverage/
 /playwright/.cache/
 .vitest/
 
-# Shared issue reports and their display numbers are reviewed on the target.
-/.issues/*
+# Issue reports and their display numbers are synced from the queue branch.
+/.issues/**
+!/.issues/*.md
 !/.issues/triage-labels.md
-!/.issues/[0-9]*.md
-!/.issues/issue-numbers.json
-!/.issues/closed/
-/.issues/closed/*
-!/.issues/closed/[0-9]*.md
+!/.issues/preferences.json
+/.issues/evidence/
+/.issues/issue-work/
+

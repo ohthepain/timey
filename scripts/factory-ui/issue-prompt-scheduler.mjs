@@ -1,10 +1,12 @@
-import { readQueue } from './data.mjs';
+import { basename } from 'node:path';
 import { attachIssueChat } from './issue-chat-runtime.mjs';
 import { randomUUID } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { conversationState, appendMessage } from './conversation-store.mjs';
+import { listStoredIssues } from './issue-report-storage.mjs';
 import {
   readPromptQueue,
+  readPromptQueues,
   changePromptQueue,
   changePrompt,
   pendingPrompts,
@@ -27,6 +29,9 @@ export class IssuePromptScheduler {
   read(id) {
     this.known.add(id);
     return readPromptQueue(this.service.root, id);
+  }
+  knownQueues() {
+    return readPromptQueues(this.service.root, this.known);
   }
   change(id, change) {
     const result = changePromptQueue(this.service.root, id, change);
@@ -83,31 +88,26 @@ export class IssuePromptScheduler {
   }
   tick() {
     if (!this.tickEnabled()) return;
-    if (!this.claimPendingServer()) return;
-    for (const id of this.known) this.wakeWaiting(id);
+    for (const queue of this.claimPendingQueues()) this.wakeWaiting(queue);
   }
-  claimPendingServer() {
+  claimPendingQueues() {
     try {
-      if (!this.discoverPending()) return false;
+      this.service.serverControl?.allow('/api/issue-chat-send');
+      for (const path of listStoredIssues(this.service.root)) this.known.add(basename(path, '.md'));
+      const queues = this.knownQueues();
+      if (!queues.some((queue) => pendingPrompts(queue).length)) return [];
       this.service.ownServer();
-      return true;
+      return queues;
     } catch {
-      return false;
+      return [];
     }
   }
   tickEnabled() {
     return !this.manager.closed && this.service.issueChats === this.manager && this.service.reviewMode !== 'preview';
   }
-  discoverPending() {
-    this.service.serverControl?.allow('/api/issue-chat-send');
-    for (const issue of readQueue(this.service.root).issues) this.known.add(issue.id);
-    return [...this.known].some((id) => pendingPrompts(this.read(id)).length);
-  }
-  wakeWaiting(id) {
-    if (this.manager.tasks.has(id)) return;
-    const queue = this.read(id);
-    if (queue.native) return;
-    if (pendingPrompts(queue).some((entry) => entry.status === 'waiting')) this.manager.resumePending(id);
+  wakeWaiting(queue) {
+    if (this.manager.tasks.has(queue.issueId) || queue.native) return;
+    if (queue.entries.some((entry) => entry.status === 'waiting')) this.manager.resumePending(queue.issueId);
   }
   activeTurn(id) {
     const active = this.manager.active.get(id);

@@ -7,51 +7,95 @@ import {
 } from './candidate-cache.mjs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, readFileSync, realpathSync, copyFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { assessAudit } from '../audit-result.mjs';
-import { git, readJson, requireThat, runLogged, digest, writeJson } from './common.mjs';
+import { factoryCheckCommand, focusedCheckName, mergeCheckPlan } from '../verify-merge-checks.mjs';
+import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
+import { cleanEnvironment, git, readJson, requireThat, runLogged, digest, writeJson } from './common.mjs';
+
+function candidateRunner({ auditPolicy, verifier, scope, mergeChecks }) {
+  const files = [fileURLToPath(import.meta.url)];
+  if (verifier)
+    files.push(
+      verifier,
+      ...[
+        'verify-scope.mjs',
+        'verify-process.mjs',
+        'verify-preflight.mjs',
+        'audit-result.mjs',
+        'format-files.mjs',
+        'verify-merge-checks.mjs',
+      ].map((name) => join(dirname(verifier), name))
+    );
+  return digest(JSON.stringify([auditPolicy, scope, mergeChecks, files.map((path) => digest(readFileSync(path)))]));
+}
+
+export function verificationInput(root, base, options) {
+  return candidateInput(root, base, candidateRunner(options), cleanEnvironment());
+}
 
 const activeChecks = new Map();
 export async function checkCandidate(root, base, folder, options = {}) {
   root = realpathSync(root);
-  const key =
-    git(root, 'rev-parse', base) +
-    ':' +
-    git(root, 'rev-parse', 'HEAD^{tree}') +
-    ':' +
-    (options.auditPolicy || 'legacy');
+  const key = [git(root, 'rev-parse', base), git(root, 'rev-parse', 'HEAD'), candidateRunner(options)].join(':');
   const active = activeChecks.get(root);
   if (active) {
     requireThat(
-      active.key === key,
+      active.key === key && !active.workingTree && !options.allowUncommitted,
       'Verification is already running for a different candidate in this checkout. Wait for its owned run to finish.'
     );
     return active.task;
   }
   const task = checkCandidateOnce(root, base, folder, options);
-  activeChecks.set(root, { key, task });
+  activeChecks.set(root, { key, task, workingTree: options.allowUncommitted });
   try {
     return await task;
   } finally {
     activeChecks.delete(root);
   }
 }
-async function checkCandidateOnce(root, base, folder, options = {}) {
-  root = realpathSync(root);
+async function ensureWorkerDependencies(root, folder, options) {
+  const workspaces = workspacePackages(root);
+  try {
+    dependencyPreflight(root, root, workspaces);
+    return;
+  } catch (error) {
+    if (error.code !== 'PREFLIGHT_DEPENDENCIES') throw error;
+  }
+  const autoInstall = options.installDependencies ?? Boolean(options.allowUncommitted);
   requireThat(
-    existsSync(join(root, 'node_modules')),
+    existsSync(join(root, 'pnpm-lock.yaml')),
+    'Matching dependencies are missing from the worker checkout and pnpm-lock.yaml is absent. Install dependencies there before continuing.'
+  );
+  requireThat(
+    autoInstall,
     'Matching dependencies are missing from the worker checkout. Install them there before continuing.'
   );
-  requireThat(
-    !git(root, 'status', '--porcelain', '--untracked-files=all'),
-    'The candidate checkout has uncommitted source changes. Preserve them before verification.'
+  mkdirSync(folder, { recursive: true });
+  await runLogged(
+    root,
+    'pnpm',
+    ['install', '--frozen-lockfile'],
+    join(folder, 'dependency-install.log'),
+    options.onProgress
   );
+  dependencyPreflight(root, root, workspaces);
+}
+async function checkCandidateOnce(root, base, folder, options = {}) {
+  root = realpathSync(root);
+  await ensureWorkerDependencies(root, folder, options);
   git(root, 'merge-base', '--is-ancestor', base, 'HEAD');
   const treeBefore = git(root, 'rev-parse', 'HEAD^{tree}'),
+    headBefore = git(root, 'rev-parse', 'HEAD'),
+    statusBefore = git(root, 'status', '--porcelain', '--untracked-files=all'),
     resolvedBase = git(root, 'rev-parse', base);
-  const runner = digest(readFileSync(fileURLToPath(import.meta.url))) + ':' + (options.auditPolicy || 'legacy');
-  const input = candidateInput(root, resolvedBase, runner);
+  requireThat(
+    !statusBefore || options.allowUncommitted,
+    'The candidate checkout has uncommitted source changes. Preserve them before verification.'
+  );
+  const sourceBefore = statusBefore ? workingSourceDigest(root) : null;
+  const input = verificationInput(root, resolvedBase, options);
   const retained = options.force
     ? null
     : retainedCandidate(root, input, (value) => validateSummary(value, resolvedBase, treeBefore, options));
@@ -73,27 +117,48 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
   const attempt = join(folder, 'attempt-' + randomUUID());
   mkdirSync(attempt);
   const summaries = [];
-  for (const [checkpoint, args, log] of [
-    ['verification', ['run', 'verify', '--', '--base', base], 'verify.log'],
-    ['step', ['run', 'audit:step', '--', '--base', base], 'audit-step.log'],
-  ]) {
-    const context = { root, base: resolvedBase, tree: treeBefore, folder, attempt, input, runner, options };
-    const output = await executeCheckpoint(context, args, log);
+  for (const [checkpoint, command, args, log] of checkpointCommands(base, options.verifier, options.mergeChecks)) {
+    const context = { root, base: resolvedBase, tree: treeBefore, folder, attempt, input, options };
+    const output = await executeCheckpoint(context, command, args, log);
     const path = commandSummary(root, output);
     const value = readJson(path);
     requireThat(value.checkpoint === checkpoint, 'Verification returned the wrong checkpoint.');
     summaries.push({ path, value });
   }
-  const head = git(root, 'rev-parse', 'HEAD'),
-    tree = git(root, 'rev-parse', 'HEAD^{tree}');
   requireThat(
-    !git(root, 'status', '--porcelain', '--untracked-files=all'),
-    'The checked checkout has uncommitted source changes.'
+    git(root, 'rev-parse', 'HEAD') === headBefore &&
+      git(root, 'status', '--porcelain', '--untracked-files=all') === statusBefore &&
+      (!sourceBefore || workingSourceDigest(root) === sourceBefore),
+    'The candidate checkout changed during verification. Preserve the new changes and verify them separately.'
   );
-  for (const { value } of summaries) validateSummary(value, base, tree, options);
-  const result = { head, tree, summaries: summaries.map((s) => s.path) };
-  if (input === candidateInput(root, resolvedBase, runner)) retainCandidate(root, input, result);
+  const tree = statusBefore ? summaries[0].value.snapshot_tree : treeBefore;
+  requireThat(
+    typeof tree === 'string' && /^[0-9a-f]{40,64}$/.test(tree),
+    'Verification did not identify its snapshot tree.'
+  );
+  for (const { value } of summaries) validateSummary(value, resolvedBase, tree, options);
+  const result = {
+    head: headBefore,
+    tree,
+    uncommitted: Boolean(statusBefore),
+    summaries: summaries.map((s) => s.path),
+    input,
+  };
+  if (input && input === verificationInput(root, resolvedBase, options)) retainCandidate(root, input, result);
   return result;
+}
+
+function checkpointCommands(base, script, mergeChecks) {
+  const profile = mergeChecks ? ['--merge-checks', JSON.stringify(mergeChecks)] : [];
+  if (script)
+    return [
+      ['verification', process.execPath, [script, '--base', base, ...profile], 'verify.log'],
+      ['step', process.execPath, [script, '--step', '--audit-only', '--base', base, ...profile], 'audit-step.log'],
+    ];
+  return [
+    ['verification', 'pnpm', ['run', 'verify', '--', '--base', base], 'verify.log'],
+    ['step', 'pnpm', ['run', 'audit:step', '--', '--base', base], 'audit-step.log'],
+  ];
 }
 function auditEnvironment(options) {
   return options.auditPolicy === 'required' ? { TIMEY_FALLOW_ENFORCE: '1', TIMEY_FALLOW_WARNINGS: 'error' } : {};
@@ -115,12 +180,12 @@ function assertNoRetainedFailure(failed) {
   );
 }
 
-async function executeCheckpoint(context, args, log) {
+async function executeCheckpoint(context, command, args, log) {
   const { root, folder, attempt, options } = context;
   try {
     const output = await runLogged(
       root,
-      'pnpm',
+      command,
       args,
       join(folder, log),
       options.onProgress,
@@ -136,12 +201,17 @@ async function executeCheckpoint(context, args, log) {
 
 function retainCheckpointFailure(context, log, error) {
   if (!Number.isInteger(error.exitCode)) return;
-  const { root, folder, attempt, input, base, runner } = context;
+  const { root, folder, attempt, input, base, options } = context;
   const savedLog = join(attempt, log);
   copyFileSync(join(folder, log), savedLog);
   const summaries = failedCheckpointSummaries(context, error);
+  const timedOut = summaries.map(readJson).find((summary) => summary.checks.some((check) => check.timedOut));
+  if (timedOut) {
+    error.code = 'MERGE_CHECK_TIMEOUT';
+    error.message = timedOut.error;
+  }
   error.verificationFailure = failureEvidence(summaries, [savedLog]);
-  if (input === candidateInput(root, base, runner))
+  if (input === verificationInput(root, base, options))
     retainFailure(root, input, `Required check failed (${error.exitCode}). See ${savedLog}`, summaries, [savedLog]);
 }
 
@@ -180,22 +250,73 @@ export function commandSummary(root, output) {
   );
   return path;
 }
+export function workingSourceDigest(root) {
+  const files = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z')
+    .split('\0')
+    .filter(Boolean)
+    .sort();
+  return digest(
+    JSON.stringify(
+      files.map((path) => {
+        const file = join(root, path);
+        const entry = lstatSync(file, { throwIfNoEntry: false });
+        if (!entry) return [path, 'missing'];
+        if (entry.isSymbolicLink()) return [path, 'symlink', readlinkSync(file)];
+        if (entry.isDirectory()) return [path, 'directory', entry.mode];
+        requireThat(entry.isFile(), 'Cannot snapshot this Git entry as a regular file or symlink: ' + path);
+        return [path, entry.mode, digest(readFileSync(file))];
+      })
+    )
+  );
+}
 export function validateSummary(summary, base, tree, options = {}) {
   requireThat(
     matchesSummary(summary, base, tree),
     'Evidence does not match the exact candidate tree and recorded base.'
   );
-  if (summary.checkpoint === 'verification') validateRequiredChecks(summary);
+  const plan = validateMergePlan(summary.mergeChecks, options.mergeChecks);
+  if (summary.checkpoint === 'verification') validateRequiredChecks(summary, plan);
   for (const check of summary.checks) validateCommand(check, summary.changed_files, options);
 }
-function validateRequiredChecks(summary) {
+function validateMergePlan(saved, required) {
+  const plan = saved === undefined ? null : mergeCheckPlan(saved);
+  if (required)
+    requireThat(
+      compatibleMergeChecks(plan, required),
+      'Evidence does not cover the required Merge verification scope.'
+    );
+  return plan;
+}
+function compatibleMergeChecks(actual, required) {
+  return (
+    [required.scope, 'full'].includes(actual?.scope) &&
+    actual.focusedRecorded === required.focusedRecorded &&
+    JSON.stringify(actual.focused) === JSON.stringify(required.focused)
+  );
+}
+
+function validateRequiredChecks(summary, plan) {
   const required = ['fallow', 'browser', 'factory', 'typecheck', 'tests', 'build'];
   if (summary.changed_files.length) required.push('format-changed');
   requireThat(
     required.every((n) => summary.checks.some((c) => c.name === n && c.passed)),
     'A required check is missing or failed.'
   );
+  if (!plan) return;
+  requireThat(
+    commandMatches(summary, 'factory', factoryCheckCommand(plan.scope)),
+    'Factory evidence used a different regression suite.'
+  );
+  for (const [index, command] of plan.focused.entries())
+    requireThat(
+      commandMatches(summary, focusedCheckName(index), command),
+      'A recorded focused test is missing or failed.'
+    );
 }
+const commandMatches = (summary, name, command) =>
+  summary.checks.some(
+    (check) => check.name === name && check.passed && JSON.stringify(check.command) === JSON.stringify(command)
+  );
 function skippedFallow(check) {
   return check.name === 'fallow' && check.skipped;
 }

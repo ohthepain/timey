@@ -56,6 +56,11 @@ export default async function captureStartChecks(page) {
     await page.waitForFunction(() => !refreshing);
     await page.getByRole('button', { name: 'Create issue', exact: true }).click();
     await page.getByLabel('Description', { exact: true }).fill(description);
+    await page.waitForFunction(() => {
+      const select = document.querySelector('#capture-folder');
+      return select && !select.disabled && select.options.length > 1;
+    });
+    await page.locator('#capture-folder').selectOption('Inbox');
   }
 
   async function verifyDefaultCapture(page, captures, starts) {
@@ -149,9 +154,7 @@ export default async function captureStartChecks(page) {
   await verifyGoStarts(page, captures, starts);
   await verifyGrillDefersGo(page, captures, starts);
   await verifyFullSendStartFailure(page, captures, starts);
-  await page.unroute('**/api/issue?issue=*');
-  await page.unroute('**/api/issue-capture');
-  await page.unroute('**/api/issue-strategy-start');
+  await page.unrouteAll({ behavior: 'wait' });
   return {
     passed: true,
     assertions: [

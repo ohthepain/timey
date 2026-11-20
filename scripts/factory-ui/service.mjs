@@ -93,13 +93,20 @@ async function recoverWorkerTurn(service, run, error) {
   return recoverWorkerText(service, run, error);
 }
 
+function selectedClosedIssues(root, queue, id) {
+  if (!id || !/^[\w-]+$/.test(id)) return [];
+  if (queue.issues.some((issue) => issue.id === id)) return [];
+  return readQueue(root, { location: 'closed', issueId: id }).issues;
+}
+
 export class FactoryUI {
   constructor(project, options = {}) {
     this.reviewMode = options.preview ? 'preview' : 'live';
     this.authoritativeUrl = options.authoritativeUrl || null;
+    this.projectHomeOptions = options.projectHome;
+    this.projectDiscussOptions = options.projectDiscuss;
     this.root = git(project, 'rev-parse', '--show-toplevel');
     this.runtimeIdentity = runtimeInfo(this);
-    this.api = factory(this.root);
     this.store = new RunStore(this.root, (subject, kind) => runAuthorization(this, subject, kind));
     this.intents = new Map();
     this.deliveries = new IssueDelivery(this.root, {
@@ -141,25 +148,36 @@ export class FactoryUI {
       );
     };
     this.guard = humanGuard;
-    this.sharedIssues = createSharedIssueQueue(this, options.sharedIssues);
+    try {
+      this.sharedIssues = createSharedIssueQueue(this, options.sharedIssues);
+    } catch (error) {
+      if (!error.message?.includes('Configure GitHub issue delivery before enabling the shared queue.')) throw error;
+      this.sharedIssues = null;
+      this.sharedQueueStartupWarning = error.message;
+    }
     installWorkerHealth(this);
   }
-  snapshot(owner = null, { includeCoordinatorDiscussion = true, selectedIssue = null } = {}) {
+  get api() {
+    this.factoryApi ||= factory(this.root);
+    return this.factoryApi;
+  }
+  snapshot(owner = null, { includeCoordinatorDiscussion = true, selectedIssue = null, includeClosed = false } = {}) {
     if (!this.serverLock) this.store.reload();
-    let sharedQueueWarning;
+    let sharedQueueWarning = this.sharedQueueStartupWarning;
     if (this.sharedIssues) {
       try {
         this.ownServer();
-        sharedQueueWarning = this.sharedIssues.refresh();
+        sharedQueueWarning = this.sharedIssues.refreshInBackground();
       } catch (error) {
         sharedQueueWarning = error.message;
       }
     }
     const queue = readQueue(this.root);
-    if (selectedIssue && /^[\w-]+$/.test(selectedIssue) && !queue.issues.some((issue) => issue.id === selectedIssue)) {
-      const closed = readQueue(this.root, { location: 'closed', issueId: selectedIssue });
-      queue.issues.push(...closed.issues);
-    }
+    const closed = includeClosed
+      ? readQueue(this.root, { location: 'closed' }).issues
+      : selectedClosedIssues(this.root, queue, selectedIssue);
+    const existing = new Set(queue.issues.map((issue) => issue.id));
+    queue.issues.push(...closed.filter((issue) => !existing.has(issue.id)));
     const runs = this.store.list(this.permissionRequests());
     const issues = selectedIssue ? queue.issues.filter((issue) => issue.id === selectedIssue) : queue.issues;
     const humanInputs = queueHumanInputReader({ ...queue, issues });
@@ -167,7 +185,7 @@ export class FactoryUI {
       ...queue,
       sharedQueueEnabled: Boolean(this.sharedIssues),
       sharedQueueWarning,
-      modelSettings: readModelSettings(this.root),
+      modelSettings: readModelSettings(this.root, { initialize: false }),
       coordinator: includeCoordinatorDiscussion
         ? this.coordinator.view()
         : redactValue(this.coordinator.reviewActivity()),
@@ -258,8 +276,8 @@ export class FactoryUI {
   connectWorker(id, state, basis, link) {
     return connectWorker(this, id, state, basis, link);
   }
-  decideIssue(id, state, kind, basis, reason, resolution, cleanup) {
-    return decideIssue(this, id, state, kind, basis, reason, resolution, cleanup);
+  decideIssue(id, state, kind, basis, reason, resolution, cleanup, artifact, options) {
+    return decideIssue(this, id, state, kind, basis, reason, resolution, cleanup, artifact, options);
   }
   checkReadiness(id, state) {
     return checkReadiness(this, id, state);
@@ -773,6 +791,10 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.projectDiscuss?.close();
+    this.projectHome?.close();
+    this.sharedIssues?.close();
+    this.flows?.close();
     this.store.flush();
     this.discussions.close();
     this.issueChats.close();

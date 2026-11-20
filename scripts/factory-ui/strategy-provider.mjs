@@ -3,12 +3,11 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
-import { assertChecks, inspectReadiness, latestChecks } from './strategy-readiness.mjs';
-import { infrastructureFailure, repairableBlocker } from './strategy-repair.mjs';
-import { findStrategyPR, publishStrategyPR } from './strategy-publication.mjs';
+import { assertChecks, inspectReadiness, inspectRequiredPRChecks, latestChecks } from './strategy-readiness.mjs';
+import { repairableBlocker } from './strategy-repair.mjs';
+import { findIssueBranchPR, findStrategyPR, publishStrategyPR } from './strategy-publication.mjs';
+import { safeGitHubFailure } from './github-request-failure.mjs';
 
-// GitHub enforces freshness through strict required checks. A verified ruleset
-// review bypass never bypasses CI or replaces server enforcement with a local lock.
 export class StrategyProvider {
   constructor(root, config, credentialRoot = root) {
     this.root = root;
@@ -42,44 +41,25 @@ export class StrategyProvider {
     requireThat(Number.isSafeInteger(number) && number > 0, 'Return the actual issue PR number.');
     return JSON.parse(await this.gh(['api', `repos/${this.config.repository}/pulls/${number}`]));
   }
-  async inspectExternalDelivery(number) {
+  async inspectExternalDelivery(number, { requiredChecksOnly = false } = {}) {
     requireThat(Number.isSafeInteger(number) && number > 0, 'Enter the pull request number to verify.');
     const pr = await this.inspect(number);
     assertExternalPRState(pr);
     assertExternalPRRepository(pr, this.config.repository);
     assertExternalPRTarget(pr, this.config.target, this.config.repository);
-    const comparison = JSON.parse(
-      await this.gh([
-        'api',
-        `repos/${this.config.repository}/compare/${encodeURIComponent(pr.merge_commit_sha)}...${encodeURIComponent(this.config.target)}`,
-      ])
-    );
-    assertCurrentTargetContainsPR(comparison);
-    const view = JSON.parse(
-      await this.gh([
-        'pr',
-        'view',
-        String(number),
-        '--repo',
-        this.config.repository,
-        '--json',
-        'statusCheckRollup,files',
-      ])
-    );
-    const checks = latestChecks(view.statusCheckRollup || []);
-    assertChecks(checks);
-    assertExternalFiles(view.files);
+    const { targetRevision, checks, files } = await externalDeliveryEvidence(this, number, pr, requiredChecksOnly);
+    assertExternalFiles(files);
     return {
       number,
       url: pr.html_url,
       target: pr.base.ref,
-      targetRevision: comparison.head_sha,
+      targetRevision,
       branch: pr.head.ref,
       head: pr.head.sha,
       mergedAt: pr.merged_at,
       mergeCommit: pr.merge_commit_sha,
       checks,
-      files: view.files.map((file) => file.path),
+      files: files.map((file) => file.path),
     };
   }
   async publish(work, head, publication) {
@@ -88,26 +68,12 @@ export class StrategyProvider {
   async findByBranch(branch, target) {
     return findStrategyPR(this, branch, target);
   }
-  async ready(pr, branch, head) {
-    return inspectReadiness(this, pr, branch, head, () => this.canBypassOwnReview(pr));
+  async findIssueBranchPR(branch) {
+    return findIssueBranchPR(this, branch);
   }
-  async assertApproved(number, head) {
-    const view = JSON.parse(
-      await this.gh([
-        'pr',
-        'view',
-        String(number),
-        '--repo',
-        this.config.repository,
-        '--json',
-        'reviewDecision,headRefOid',
-      ])
-    );
-    requireThat(view.headRefOid === head, 'The PR head changed. Refresh its checks and approval before merging.');
-    requireThat(
-      view.reviewDecision === 'APPROVED',
-      'GitHub must show an approving review for the current PR head before merging.'
-    );
+  async ready(pr, branch, head, { handoff = false, waitForChecks = false } = {}) {
+    const reviewBypass = handoff ? () => this.canBypassOwnReview(pr) : undefined;
+    return inspectReadiness(this, pr, branch, head, reviewBypass, waitForChecks);
   }
   async canBypassOwnReview(pr) {
     const [owner] = this.config.repository.split('/');
@@ -118,7 +84,7 @@ export class StrategyProvider {
       const viewer = JSON.parse(await this.gh(['api', 'user']));
       if (!viewer.login || viewer.login !== owner || pr.user?.login !== viewer.login) return false;
     }
-    await this.assertMergeProtection();
+    await this.assertHandoffBypassProtection();
     // Classic protection may coexist with rulesets; only its absence is optional.
     try {
       const protection = JSON.parse(
@@ -153,7 +119,7 @@ export class StrategyProvider {
     }
     return true;
   }
-  async assertMergeProtection() {
+  async assertHandoffBypassProtection() {
     const pages = JSON.parse(
       await this.gh([
         'api',
@@ -181,23 +147,23 @@ export class StrategyProvider {
           parameters.strict_required_status_checks_policy === true &&
           (parameters.required_status_checks?.length || 0) > 0
       ),
-      'Full Send needs an active ruleset with strict required checks on the target branch. No merge was attempted.'
+      'Full Stop review bypass needs an active ruleset with strict required checks on the target branch. No merge was attempted.'
     );
     requireThat(
       ciRulesets.every((ruleset) => ruleset.current_user_can_bypass === 'never'),
-      'Full Send requires CI rulesets to prevent this credential from bypassing required checks, including administrators. No merge was attempted.'
+      'Full Stop review bypass requires CI rulesets to prevent this credential from bypassing required checks, including administrators. No merge was attempted.'
     );
     return true;
   }
-  async merge(number, head) {
-    await this.assertMergeProtection();
+  async merge(number, head, { beforeMerge } = {}) {
     const repository = JSON.parse(await this.gh(['api', 'repos/' + this.config.repository]));
     requireThat(
       repository.allow_merge_commit === true,
       'Enable merge commits in the GitHub repository settings before using Full Send.'
     );
     // REST merges refuse a required merge queue instead of silently enrolling it.
-    // The expected SHA is enforced remotely; strict protection enforces the base.
+    // GitHub enforces the expected head and applicable target branch requirements.
+    await beforeMerge?.();
     const merged = JSON.parse(
       await this.gh([
         'api',
@@ -218,6 +184,37 @@ export class StrategyProvider {
     );
     return { url: pr.html_url, revision: pr.merge_commit_sha };
   }
+}
+
+async function externalDeliveryEvidence(provider, number, pr, requiredChecksOnly) {
+  if (requiredChecksOnly) {
+    const ready = await inspectRequiredPRChecks(provider, number, pr.head.sha);
+    await compareExternalTarget(provider, pr.merge_commit_sha, ready.targetRevision);
+    const { files } = await externalPRFields(provider, number, 'files');
+    return { ...ready, files };
+  }
+  const comparison = await compareExternalTarget(provider, pr.merge_commit_sha, provider.config.target);
+  const { statusCheckRollup, files } = await externalPRFields(provider, number, 'statusCheckRollup,files');
+  const checks = latestChecks(statusCheckRollup ?? []);
+  assertChecks(checks);
+  return { targetRevision: comparison.head_sha, checks, files };
+}
+
+async function compareExternalTarget(provider, merged, target) {
+  const comparison = JSON.parse(
+    await provider.gh([
+      'api',
+      `repos/${provider.config.repository}/compare/${encodeURIComponent(merged)}...${encodeURIComponent(target)}`,
+    ])
+  );
+  assertCurrentTargetContainsPR(comparison);
+  return comparison;
+}
+
+async function externalPRFields(provider, number, fields) {
+  return JSON.parse(
+    await provider.gh(['pr', 'view', String(number), '--repo', provider.config.repository, '--json', fields])
+  );
 }
 
 function assertExternalPRState(pr) {
@@ -266,12 +263,5 @@ function githubFailure(error, session) {
       'GitHub rejected the merge because its candidate or target changed. Fetch and merge the current target, then verify the repaired candidate.'
     );
   if (!session) return error;
-  return safeGitHubFailure(error, status);
-}
-
-function safeGitHubFailure(error, status) {
-  const safe = Error('Factory GitHub App request failed' + (status ? ` (HTTP ${status})` : '') + '.');
-  safe.githubStatus = Number(status) || null;
-  safe.transient = infrastructureFailure(error);
-  return safe;
+  return safeGitHubFailure(error, status, session);
 }

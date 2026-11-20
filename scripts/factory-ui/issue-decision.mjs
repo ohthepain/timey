@@ -17,29 +17,44 @@ import {
   recordCleanupFailure,
 } from './issue-cleanup.mjs';
 import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
+import { groupChildren, requireIndependentIssue } from './issue-group.mjs';
 
-export function decideIssue(service, id, state, kind, basis, reason = '', resolution = 'fixed', cleanup = null) {
+export function decideIssue(
+  service,
+  id,
+  state,
+  kind,
+  basis,
+  reason = '',
+  resolution = 'fixed',
+  cleanup = null,
+  artifact = null,
+  { deferCleanup = false, automatic = false, flowGroupClosure = false } = {}
+) {
   service.ownServer();
   const location = decisionLocation(service.root, id);
   let queue = location === 'open' ? readQueue(service.root) : readQueue(service.root, { location, issueId: id }),
     issue = progressIssue(queue, id, state);
+  const groupClosure = validateGroupDecision(service.root, issue, kind, flowGroupClosure);
   requireThat(validDecisionBasis(queue, issue, basis), 'This issue changed. Refresh before making a decision.');
   requireThat(['close', 'reopen'].includes(kind), 'Choose Close issue or Reopen issue.');
   const role = queue.lifecycle.find((s) => s.state === state).role;
   requireThat(typeof reason === 'string' && reason.length <= 4000, 'Keep the reason under 4,000 characters.');
   const { choice, dismissed } = closureChoice(queue, role, kind, resolution);
+  requireThat(issue.state !== 'needs-approval', 'Approve this issue before closing it.');
   checkIdle(service, queue, issue, { kind, dismissed });
   const target = decisionTarget(queue, role, kind, dismissed);
   const action = { issues: [id] };
-  const shared = service.sharedIssues?.acquire(issue, true);
-  const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target });
+  const shared = acquireDecisionClaim(service.sharedIssues, issue, groupClosure);
+  const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target }, artifact);
   queue = prepared.queue;
   issue = prepared.issue;
   basis = decisionBasis(queue, issue);
   const run = service.store.add({ id }, 'decision', queue.head);
-  const summary = decisionSummary(kind, choice, dismissed);
+  const summary = decisionSummary(kind, choice, dismissed, automatic);
   const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: prepared.accepted };
   applyClosure(result, choice, reason, target, dismissed);
+  if (automatic && result.closure) result.closure.source = 'auto-close-opt-in';
   const evidence = [{ path: storedIssuePath(service.root, id, location), sha256: digest(issue.content) }];
   const destination = kind === 'close' ? 'closed' : 'open';
   const moveTo = !shared && location !== destination ? destination : null;
@@ -53,17 +68,38 @@ export function decideIssue(service, id, state, kind, basis, reason = '', resolu
     moveTo,
   });
   if (shared) {
-    const publication = service.sharedIssues.checkpoint(
-      id,
-      kind === 'close' ? 'Issue closed' : 'Issue reopened',
-      shared,
-      undefined,
-      destination
-    );
+    const publication = publishDecision(service.sharedIssues, issue, shared, groupClosure, destination);
     return { ...decision, publication: { status: publication.status, url: publication.url, error: publication.error } };
   }
   if (kind !== 'close') return decision;
+  if (deferCleanup) {
+    cancelIssueActionsOnClose(service, id);
+    return decision;
+  }
   return finishIssueClosure(service, id, decision, cleanup, resolution);
+}
+
+function validateGroupDecision(root, issue, kind, flowGroupClosure) {
+  requireIndependentIssue(root, issue.id);
+  const grouped = kind === 'close' && groupChildren(issue).length > 0;
+  requireThat(!grouped || flowGroupClosure, 'Use the Flow workspace to close a master with attached sub-issues.');
+  return grouped;
+}
+
+function acquireDecisionClaim(shared, issue, groupClosure) {
+  if (groupClosure) return shared?.acquireGroupClosure(issue, 'Issue closed');
+  return shared?.acquire(issue, true);
+}
+
+function publishDecision(shared, issue, context, groupClosure, destination) {
+  if (groupClosure) return shared.publishGroupClosure(issue, 'Issue closed', context);
+  return shared.checkpoint(
+    issue.id,
+    destination === 'closed' ? 'Issue closed' : 'Issue reopened',
+    context,
+    undefined,
+    destination
+  );
 }
 
 function decisionLocation(root, id) {
@@ -103,12 +139,12 @@ function closureChoice(queue, role, kind, resolution) {
     requireThat(['ready-to-close', 'closed'].includes(role), 'This issue is not at final review or closed.');
     return { choice: null, dismissed: false };
   }
-  const choice = queue.closureReasons.find((entry) => entry.id === resolution);
+  const choice = queue.closureReasons.find((entry) => entry.id === resolution && entry.id !== 'fixed-by');
   requireThat(choice, 'Choose a closure reason from the project’s current list.');
   const dismissed = choice.id !== 'fixed';
   return { choice, dismissed };
 }
-function prepareDecision(service, queue, issue, action, decision) {
+function prepareDecision(service, queue, issue, action, decision, suppliedArtifact) {
   if (decision.kind === 'reopen') {
     service.guard(service.root, action, 'advance', queue.head, {
       target_state: decision.target,
@@ -117,7 +153,7 @@ function prepareDecision(service, queue, issue, action, decision) {
     return { queue, issue };
   }
   if (decision.dismissed) return { queue, issue };
-  const artifact = strategyClosureResult(service, issue);
+  const artifact = suppliedArtifact || strategyClosureResult(service, issue);
   const delivery = new DeliveryStore(service.root, issue.id).read();
   requireThat(
     artifact || !delivery || delivery.state === 'verified',
@@ -127,9 +163,10 @@ function prepareDecision(service, queue, issue, action, decision) {
   issue = progressIssue(queue, issue.id, issue.state);
   return { queue, issue, accepted: checkClosure(service, queue, issue, action, artifact) };
 }
-function decisionSummary(kind, choice, dismissed) {
+function decisionSummary(kind, choice, dismissed, automatic) {
   if (kind === 'reopen') return 'Reopened by the user for investigation.';
   if (dismissed) return `Closed by the user: ${choice.label}. No fix or acceptance is claimed.`;
+  if (automatic) return 'Accepted and closed after Factory Merge using the saved opt-in.';
   return 'Accepted and closed by the user.';
 }
 function applyClosure(result, choice, reason, target, dismissed) {
@@ -171,6 +208,7 @@ function recordDecision(service, issue, run, result, evidence, target, basis, { 
 }
 
 function checkIdle(service, queue, issue, decision) {
+  requireThat(!service.issueCleanupTasks?.has(issue.id), 'Wait for this issue’s Cleanup to finish.');
   requireThat(!service.lifecycleTasks.has(issue.id), 'Wait for this issue’s current work to finish before closing.');
   requireThat(!service.issueChats?.tasks?.has(issue.id), 'Wait for this issue’s active chat to finish before closing.');
   const actions = queue.actions.filter((a) => a.issues.includes(issue.id));

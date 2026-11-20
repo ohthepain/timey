@@ -23,7 +23,7 @@ Keep specs and working plans under `docs/plans/`; link them from reports.
 Record durable terminology and architecture decisions using
 `docs/agents/domain.md`.
 
-The queue is local by default. In [shared queue mode](../plans/shared-issue-queue.md), reports and display numbers are tracked on the target through human-reviewed PRs. Workspaces and runtime files stay local. The [Closed issues and Archive design](../plans/archive-closed-issues.md) describes the separate views and local migration.
+The queue is local by default. In [shared queue mode](../plans/shared-issue-queue.md), reports and display numbers are tracked on a dedicated queue branch. Timey publishes new report updates as direct commits using its GitHub App. Workspaces and runtime files stay local. The [Closed issues and Archive design](../plans/archive-closed-issues.md) describes the separate views and local migration.
 
 ## Clarification and lifecycle roles
 
@@ -151,3 +151,8 @@ prerequisite. Closure starts no AI turn or new verification. See the
 [direct closure design](../plans/direct-issue-closure.md).
 Project-specific reasons live in the Closed reasons table in
 `.issues/triage-labels.md`; `fixed` retains its acceptance meaning.
+
+When the user accepts a master issue as Fixed, Flow closes the attached
+sub-issues with the **Fixed by** reason. Each sub-issue uses the existing Closed
+state and links to the master. See
+[acceptance through a master issue](../adr/0014-accept-sub-issues-through-the-master.md).
