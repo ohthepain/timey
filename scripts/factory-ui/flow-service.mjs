@@ -618,7 +618,7 @@ class IssueFlows {
       flowDefinitions,
       startingPointEditable: !branchCatalogError && this.startingPointEditable(issue, flow, environment.pr),
       environment,
-      branchRepair: this.branchRepairs.view(issue, savedFlow),
+      branchRepair: this.branchRepairs.view(issue, savedFlow, environment.merge),
       artifacts: this.artifacts(flow),
       conversation: conversationMessages(this.service.root, id).slice(-100),
     };

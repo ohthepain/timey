@@ -713,3 +713,14 @@ and verifies that a successful explicit Refresh clears its old error banner.
 Background polling retains action errors. The running-Work browser scenario also
 checks that both Update Branch entry points are disabled while a block is active;
 opening the worktree remains available.
+
+Update Branch automatically makes up to three conflict-resolution attempts in the
+same conversation. Each attempt receives the previous failure, retains separate
+evidence, and preserves the target, HEAD, and unrelated staged files. An explicit
+`flow-result` blocker of `human-input` or a permission denial stops the loop early.
+Only a fully staged resolution is committed. Failed attempts retain the merge.
+Unresolved conflicts turn Fix Branch red after the operation stops, including
+when an older repair record is stale or passed. The dialog offers Retry Update
+Branch after automatic recovery has failed; it reuses the guarded update path.
+`flow-executor.check.mjs` checks recovery on a later attempt, exhaustion, and human
+input. `--branch-repair` checks the red fallback and retry through the real UI.

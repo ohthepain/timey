@@ -18,6 +18,20 @@ import { runBranchRepair, reconcileBranchRepair } from './branch-repair-runner.m
 const running = new Set(['running', 'stopping']);
 const unreconciled = new Set([...running, 'uncertain']);
 
+function mergeConflictFailure(merge, busy) {
+  if (!merge || !merge.conflicts.length || busy) return null;
+  return {
+    kind: 'merge-conflict',
+    summary: 'Automatic branch update could not resolve conflicts in ' + merge.conflicts.join(', ') + '.',
+    evidence: [],
+  };
+}
+
+function mergeFailureView(view, failure) {
+  if (!failure || unreconciled.has(view.status)) return view;
+  return { ...view, status: 'broken', failure, step: failure.summary, error: null };
+}
+
 export function branchCheckFailure(flow) {
   for (const block of flow.blocks.toReversed()) {
     const attempt = latestCurrentAttempt(block);
@@ -100,37 +114,47 @@ export class BranchRepairs {
       sameRepairSource(record.source, branchRepairSource(this.workspace(flow).checkout))
     );
   }
-  view(issue, flow) {
+  view(issue, flow, merge = null) {
     const record = this.read(issue.id);
-    const failure = branchCheckFailure(flow);
+    const mergeFailure = mergeConflictFailure(merge, this.flows.active.has(issue.id));
+    const failure = mergeFailure || branchCheckFailure(flow);
     if (!record) return { status: failure ? 'broken' : 'idle', failure };
-    let status = record.status;
-    if (unreconciled.has(status) && !this.active.has(issue.id)) status = 'interrupted';
-    if (['ready', 'passed'].includes(status)) {
-      try {
-        if (!this.current(record, flow) || branchRepairSource(record.checkout).tree !== record.candidateTree)
-          status = 'stale';
-      } catch {
-        status = 'stale';
-      }
-    }
-    return {
-      id: record.id,
-      status,
-      branch: record.source?.branch,
-      startedAt: record.startedAt,
-      endedAt: record.endedAt,
-      lastActiveAt: record.lastActiveAt,
-      step: record.step,
-      output: record.output,
-      error: record.error,
-      report: record.report,
-      diff: record.diff,
-      candidateTree: record.candidateTree,
-      checks: (record.checks || []).map(({ label }) => ({ label })),
-      failure,
-    };
+    const status = this.recordStatus(record, flow);
+    return mergeFailureView(
+      {
+        id: record.id,
+        status,
+        branch: record.source?.branch,
+        startedAt: record.startedAt,
+        endedAt: record.endedAt,
+        lastActiveAt: record.lastActiveAt,
+        step: record.step,
+        output: record.output,
+        error: record.error,
+        report: record.report,
+        diff: record.diff,
+        candidateTree: record.candidateTree,
+        checks: (record.checks || []).map(({ label }) => ({ label })),
+        failure,
+      },
+      mergeFailure
+    );
   }
+  recordStatus(record, flow) {
+    if (unreconciled.has(record.status)) return this.active.has(flow.issueId) ? record.status : 'interrupted';
+    if (!['ready', 'passed'].includes(record.status)) return record.status;
+    return this.candidateStatus(record, flow);
+  }
+  candidateStatus(record, flow) {
+    try {
+      return this.current(record, flow) && branchRepairSource(record.checkout).tree === record.candidateTree
+        ? record.status
+        : 'stale';
+    } catch {
+      return 'stale';
+    }
+  }
+
   requireIdle(issue) {
     requireThat(
       !this.flows.active.has(issue.id) &&

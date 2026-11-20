@@ -1145,7 +1145,7 @@ test('Update Branch formats local changes before running the save commit hook', 
 });
 
 for (const resolves of [true, false]) {
-  test(`Update Branch gives Codex one conflict attempt and ${resolves ? 'commits the resolution' : 'retains the merge'}`, async (t) => {
+  test(`Update Branch ${resolves ? 'commits a resolved conflict' : 'retains the merge after three failed conflict attempts'}`, async (t) => {
     const f = await branchUpdateFixture(t, 'source.txt');
     const target = f.advance();
     writeFileSync(join(f.checkout, 'source.txt'), 'Local change.\n');
@@ -1174,7 +1174,7 @@ for (const resolves of [true, false]) {
       f.work('merge', '--abort');
       assert.equal(f.work('show', 'HEAD:source.txt'), 'Local change.');
     }
-    assert.equal(attempts, resolves ? 1 : 2);
+    assert.equal(attempts, resolves ? 1 : 6);
   });
 }
 
@@ -1484,4 +1484,38 @@ test('Update Branch shows the worker decision when its response leaves conflicts
   f.connection.turn = async () =>
     'Decision needed: include or exclude the installed agent tooling?\n\n```flow-result\n{"status":"failure","values":{"decision":"Choose the audit scope."}}\n```';
   await assert.rejects(f.run('update-branch'), /Decision needed: include or exclude the installed agent tooling/);
+});
+
+test('Update Branch automatically retries a failed resolution with its diagnostic and then commits', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const target = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue edit.\n');
+  let calls = 0;
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    if (++calls === 1) return '```flow-result\n{"failure":"First approach did not resolve the file."}\n```';
+    assert.match(args[2], /attempt 2 of 3/);
+    assert.match(args[2], /First approach did not resolve/);
+    writeFileSync(join(f.checkout, 'source.txt'), 'Issue and target edits.\n');
+    f.work('add', 'source.txt');
+    return turn(...args);
+  };
+  await f.run('update-branch');
+  assert.equal(calls, 2);
+  assert.equal(f.work('rev-parse', 'HEAD^2'), target);
+  assert.equal(f.work('status', '--porcelain'), '');
+});
+
+test('Update Branch stops its conflict loop for an explicit human decision', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const target = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue edit.\n');
+  let calls = 0;
+  f.connection.turn = async () => {
+    calls++;
+    return '```flow-result\n{"failure":"Choose which behavior to preserve.","blocker":"human-input"}\n```';
+  };
+  await assert.rejects(f.run('update-branch'), /Choose which behavior/);
+  assert.equal(calls, 1);
+  assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
 });

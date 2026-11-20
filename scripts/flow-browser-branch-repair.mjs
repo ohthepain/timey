@@ -33,6 +33,7 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
   });
   const repairs = service.flows.branchRepairs;
   const original = repairs.run;
+  const originalExecutor = service.flows.executor;
   repairs.run = async ({ run, progress, step, retain }) => {
     step('Repairing Fallow');
     progress('Fallow: source.txt needs repair\n');
@@ -93,8 +94,42 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
       'blocked'
     );
     await dialog.locator('[data-repair-close]').click();
+    writeFileSync(join(project, 'source.txt'), 'Incoming change\n');
+    git(project, 'commit', '-am', 'Incoming change');
+    writeFileSync(join(checkout, 'source.txt'), 'Issue change\n');
+    git(checkout, 'add', 'source.txt', 'branch-fix.txt');
+    git(checkout, 'commit', '-m', 'Issue change and approved repair');
+    assert.throws(() => git(checkout, 'merge', '--no-edit', 'dev'));
+    await page.reload();
+    await poll(
+      () => button.getAttribute('data-repair-state'),
+      (value) => value === 'broken',
+      'Unresolved merge did not turn Fix Branch red'
+    );
+    await button.click();
+    assert.match(await dialog.locator('[data-repair-status]').textContent(), /conflicts in source.txt/);
+    assert.equal(await dialog.locator('[data-repair-command]').textContent(), 'Retry Update Branch');
+    let updates = 0;
+    service.flows.executor = {
+      async run({ block }) {
+        assert.equal(block.kind, 'update-branch');
+        updates++;
+        writeFileSync(join(checkout, 'source.txt'), 'Issue and incoming changes\n');
+        git(checkout, 'add', 'source.txt');
+        git(checkout, 'commit', '--no-edit');
+        return { summary: 'Updated the issue branch from the starting branch.' };
+      },
+    };
+    await dialog.locator('[data-repair-command]').click();
+    await dialog.locator('[data-repair-status]').filter({ hasText: 'Updated the issue branch' }).waitFor();
+    assert.equal(updates, 1);
+    assert.equal(git(checkout, 'diff', '--name-only', '--diff-filter=U'), '');
+    assert.notEqual(await button.getAttribute('data-repair-state'), 'broken');
+    await screenshot('branch-conflict-recovered');
+    await dialog.locator('[data-repair-close]').click();
   } finally {
     release();
     repairs.run = original;
+    service.flows.executor = originalExecutor;
   }
 }
