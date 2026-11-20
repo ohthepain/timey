@@ -172,8 +172,9 @@ local copies. Original records remain unchanged. The regression in
 `scripts/flow-executor.check.mjs` covers a passing build followed by a browser
 failure whose original logs are outside the worker checkout.
 
-The Notes browser scenario closes the preceding Discuss service before
-installing its own injected provider. Run
+The Notes browser scenario navigates away from the preceding page before
+closing its Discuss service and installing a new injected provider. This keeps
+outgoing draft saves from using the next scenario’s model configuration. Run
 `node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
 Discuss-to-Notes transition; combining focused flags runs those scenarios together.
 
@@ -648,3 +649,10 @@ GitHub Actions receives verification stdout/stderr as each child emits it. A
 summary and retained evidence logs remain available after the command exits.
 An already-running GitHub job keeps the verifier from its checked-out revision;
 new streaming behavior requires a run containing the updated verifier.
+
+Flow browser verification writes under `TIMEY_BROWSER_OUTPUT/flow` when run by
+the aggregate verifier. An explicit `TIMEY_FLOW_BROWSER_OUTPUT` still overrides
+that location. This keeps its logs, response diagnostics and screenshots inside
+the retained verification artifacts after the exported checkout is removed.
+HTTP error records include the response body and originating request; unexpected
+browser errors continue to fail verification.
