@@ -359,6 +359,9 @@ async function selectedGeometry() {
     const centered = scroll.scrollTop + rect.top + rect.height / 2 - bounds.top - scroll.clientHeight / 2;
     return {
       blockId: card.dataset.block,
+      top: rect.top - bounds.top,
+      bottom: rect.bottom - bounds.top,
+      viewportHeight: scroll.clientHeight,
       scrollTop: scroll.scrollTop,
       centerOffset: rect.top + rect.height / 2 - bounds.top - scroll.clientHeight / 2,
       expectedCenter: Math.max(0, Math.min(scroll.scrollHeight - scroll.clientHeight, centered)),
@@ -1168,15 +1171,17 @@ try {
     const viewport = await page.locator('#graph-scroll').boundingBox();
     assert.ok(bounds.y < viewport.y - 20, 'The test card must be clipped before selection.');
     await page.mouse.click(bounds.x + bounds.width / 2, viewport.y + 20);
-    await poll(
+    const after = await poll(
       selectedGeometry,
-      (value) => value.scrollTop < clipped.scrollTop - 20,
-      'The clipped card was not revealed.'
+      (value) =>
+        value.blockId === workId &&
+        value.scrollTop < clipped.scrollTop - 20 &&
+        value.top >= -1 &&
+        value.bottom <= value.viewportHeight + 1,
+      'The clipped card was not fully revealed.'
     );
-    const revealed = await target.evaluate((node) => node.getBoundingClientRect().toJSON());
-    const after = await selectedGeometry();
-    assert.ok(revealed.y >= viewport.y - 1);
-    assert.ok(revealed.y + revealed.height <= viewport.y + viewport.height + 1);
+    assert.ok(after.top >= -1);
+    assert.ok(after.bottom <= after.viewportHeight + 1);
     assert.ok(clipped.scrollTop - after.scrollTop <= 55, 'The card moved further than necessary.');
     await page.setViewportSize({ width: 1440, height: 960 });
   });
