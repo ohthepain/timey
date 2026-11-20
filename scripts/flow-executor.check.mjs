@@ -971,8 +971,26 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
 test('Merge asks its worker to repair an inherited browser failure and verifies the repaired commit', async (t) => {
   const f = mergeFixture(t, {
     beforeVerify({ checkout }) {
-      if (readFileSync(join(checkout, 'source.txt'), 'utf8') === 'Initial source.\n')
-        throw Object.assign(Error('Closure waited for background resource checks.'), { verificationFailure: true });
+      if (readFileSync(join(checkout, 'source.txt'), 'utf8') === 'Initial source.\n') {
+        const folder = join(f.root, '.issues/failed-merge');
+        mkdirSync(folder, { recursive: true });
+        const log = join(folder, 'browser.log');
+        const summary = join(folder, 'summary.json');
+        writeFileSync(log, 'AssertionError: Only explicit Send starts a reply\n');
+        writeFileSync(
+          summary,
+          JSON.stringify({
+            checks: [
+              { name: 'build', passed: true },
+              { name: 'browser', passed: false, exit: 1, log },
+            ],
+          })
+        );
+        throw Object.assign(Error('Closure waited for background resource checks.'), {
+          verificationFailure: { summaries: [summary], logs: [log] },
+          evidence: [{ path: summary, label: 'Verification summary' }],
+        });
+      }
     },
   });
   await f.run('understand');
@@ -982,6 +1000,14 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
     const [, checkout, prompt] = args;
     assert.match(prompt, /repair inherited test failures/);
     assert.match(prompt, /Closure waited for background resource checks/);
+    const repairInput = JSON.parse(prompt);
+    for (const item of repairInput.evidence) {
+      assert.ok(item.path.startsWith(checkout + '/'), 'Repair evidence must be readable inside the issue checkout');
+      assert.ok(existsSync(item.path));
+    }
+    const failed = repairInput.failedChecks.find((check) => check.name === 'browser');
+    assert.equal(failed.exit, 1);
+    assert.match(readFileSync(failed.log, 'utf8'), /Only explicit Send starts a reply/);
     repairs++;
     writeFileSync(join(checkout, 'source.txt'), 'Browser scenario repaired.\n');
     execFileSync('git', ['-C', checkout, 'commit', '-am', 'Repair inherited browser failure']);

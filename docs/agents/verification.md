@@ -145,6 +145,27 @@ verification command after 15 minutes. Evidence reuse requires matching inputs,
 including focused commands and the required scope. GitHub CI retains its full
 suite and existing branch protection.
 
+Drag-and-drop browser scenarios are excluded from ordinary verification and
+full regression, including Merge and CI. They run only when explicitly requested
+with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
+issue-folder assignment and Flow folder dragging. These fragile browser
+interactions must not gate unrelated delivery. Deterministic folder and ordering
+tests remain in their existing suites. `browser-scenario-policy.mjs` applies this
+selection in both browser runners; its focused check verifies ordinary, full and
+explicit selection.
+
+Before Merge invokes its repair worker, it copies the verification summaries,
+command output and each failed check log into the issue checkout. The prompt
+identifies failed checks separately from successful checks and references the
+local copies. Original records remain unchanged. The regression in
+`scripts/flow-executor.check.mjs` covers a passing build followed by a browser
+failure whose original logs are outside the worker checkout.
+
+The Notes browser scenario closes the preceding Discuss service before
+installing its own injected provider. Run
+`node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
+Discuss-to-Notes transition; combining focused flags runs those scenarios together.
+
 When closing a delivered flow, the delivery manifest records the verified
 candidate tree and the upstream Work blocks' requested proof. It retains proof
 whose hash and recorded Work tree match the delivered candidate. The manifest

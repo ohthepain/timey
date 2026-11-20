@@ -580,7 +580,9 @@ and reports coordinator-owned recovery without changing approval policy.
 Browser verification uses `scripts/factory-browser.mjs` and its
 `browser-fixture.mjs` disposable data server. It discovers tracked
 `factory-browser-*.mjs` scenarios and the legacy sorting replay, reads actual
-candidate assets, and retains CLI logs and screenshots. `verify.mjs` invokes it
+candidate assets, and retains CLI logs and screenshots.
+`browser-scenario-policy.mjs` keeps drag-and-drop scenarios opt-in through
+`pnpm run test:browser:drag-and-drop`; ordinary and full regression exclude them. `verify.mjs` invokes it
 before the other behavior/type/build checks and records artifact hashes in the
 full summary. `factory-ui/checks.mjs`, candidate caching and issue delivery retain
 and validate this browser evidence against the same candidate tree.
@@ -687,6 +689,8 @@ explicit attempts, invalidation, route rebuilding, capture, and artifact listing
 `execution-permissions.mjs` supplies native permission guidance for model-run
 checks. `work-progress.mjs` separates bounded unfinished-work continuations from
 check repairs and stops for concrete human, permission or external blockers.
+`flow-repair-evidence.mjs` copies Merge failure records and failed-check logs into
+the issue checkout before its repair worker starts.
 `branch-repair.mjs` owns issue-page branch repair runs and approval.
 `branch-repair-workspace.mjs` snapshots the source without changing its index and
 applies only an approved patch. `branch-repair-runner.mjs` runs the block prompt
