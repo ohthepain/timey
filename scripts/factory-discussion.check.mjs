@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { createDiscussions } from './factory-ui/discussion.mjs';
@@ -16,8 +16,8 @@ import { humanGuard } from './factory-ui/guard.mjs';
 import { digest } from './factory-ui/common.mjs';
 
 function fixture(t) {
-  const { root, git } = gitFixture(t, 'discussion-check-');
-  mkdirSync(join(root, '.issues'));
+  const { root, git } = factoryGitFixture(t, 'discussion-check-');
+  mkdirSync(join(root, '.issues'), { recursive: true });
   mkdirSync(join(root, '.agents/skills/issues/scripts'), { recursive: true });
   for (const name of ['human-input.mjs', 'human-input-version.json'])
     cpSync(resolve('.agents/skills/issues/scripts', name), join(root, '.agents/skills/issues/scripts', name));
@@ -196,15 +196,33 @@ test('temporary discussion lists enabled skills and invokes selected skills with
       ],
     };
   };
-  const listed = await f.discussion.skills(f.input, f.owner);
-  assert.ok(listed.some(({ name, source }) => name === 'sample' && source === 'Personal'));
-  assert.ok(listed.some(({ source }) => source === 'Factory'));
+  const skills = await f.discussion.skills(f.input, f.owner);
+  assert.deepEqual(
+    skills.filter(({ source }) => source !== 'Factory'),
+    [
+      {
+        name: 'sample',
+        description: 'Sample skill',
+        source: 'Personal',
+        displayName: undefined,
+        allowImplicitInvocation: true,
+        icon: '✦',
+      },
+    ]
+  );
+  assert.ok(skills.some(({ name, source }) => name === 'local-note' && source === 'Factory'));
   await f.discussion.turn({ ...f.input, text: '', skills: ['sample'] }, f.owner);
-  assert.equal(f.skillCalls[0].length, 1);
-  const [selected] = f.skillCalls[0];
-  assert.equal(selected.name, 'sample');
-  assert.equal(selected.path, f.skillPath);
-  assert.equal(selected.sha256, digest(readFileSync(f.skillPath)));
+  assert.deepEqual(f.skillCalls[0], [
+    {
+      name: 'sample',
+      path: f.skillPath,
+      description: 'Sample skill',
+      source: 'Personal',
+      displayName: undefined,
+      allowImplicitInvocation: true,
+      sha256: (await import('./factory-ui/common.mjs')).digest(readFileSync(f.skillPath)),
+    },
+  ]);
   assert.equal(f.service.store.list(new Map()).length, 0);
 });
 

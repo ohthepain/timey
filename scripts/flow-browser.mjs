@@ -232,9 +232,23 @@ function unexpectedConsoleErrors(entries) {
     );
   });
 }
+function connectionRecoveryIssue() {
+  const id = '20261120-connection-recovery-fixture';
+  if (!existsSync(join(project, '.issues/triage-labels.md')))
+    copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
+  writeFileSync(
+    join(project, '.issues', id + '.md'),
+    `---\nid: ${id}\ntitle: Reconnect the selected issue\nstate: backlog\n---\n\nKeep the selected issue after reconnecting.\n`
+  );
+  return id;
+}
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    [
+      '--connection-recovery',
+      'Flow and Classic reload the selected issue after a lost connection without replaying the click',
+    ],
     ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
     ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
     ['--local-notes', 'Local notes capture and handoff preserve flow'],
@@ -2128,6 +2142,7 @@ try {
   await check(
     'Flow and Classic reload the selected issue after a lost connection without replaying the click',
     async () => {
+      issueId = connectionRecoveryIssue();
       const helperDir = '.agents/skills/issues/scripts';
       mkdirSync(join(project, helperDir), { recursive: true });
       for (const file of ['human-input.mjs', 'human-input-version.json']) {
@@ -2153,11 +2168,14 @@ try {
         assert.equal(await waiting.isVisible(), false);
         assert.equal(page.url(), url);
         await page.reload();
-        await toggle.waitFor();
+        await page.locator('#server-actions-dialog').waitFor({ state: 'attached' });
         if (await toggle.isChecked()) await toggle.uncheck();
+        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
 
         const release = Promise.withResolvers();
+        const pauseReceived = Promise.withResolvers();
         await page.route('**/api/health', async (route) => {
+          await pauseReceived.promise;
           if (screen.path.startsWith('/classic')) await release.promise;
           await route.abort().catch(() => {});
         });
@@ -2167,8 +2185,11 @@ try {
           const response = await route.fetch();
           assert.equal(response.status(), 200);
           await route.abort();
+          pauseReceived.resolve();
         });
-        await toggle.check();
+        const pauseRequest = page.waitForRequest('**/api/server-pause');
+        await toggle.click();
+        await pauseRequest;
         await waiting.waitFor();
         assert.equal(page.url(), url);
         assert.equal(clicks, 1);

@@ -2,6 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
+
+export function factoryGitFixture(t, prefix) {
+  const fixture = gitFixture(t, prefix);
+  initializeFolderSettings(fixture.root);
+  fixture.git('add', 'folder.md', 'user/Inbox/folder.md');
+  return fixture;
+}
 
 // Test repositories never inherit the caller's live hooks or identity.
 export function gitFixture(t, prefix) {
