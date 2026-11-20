@@ -231,6 +231,9 @@ test('the Notes browser handoff saves an outgoing Discuss draft before replacing
   f.service.projectDiscussOptions = f.options;
   const navigated = Error('Outgoing page navigation completed');
   const page = {
+    locator() {
+      return { isVisible: async () => false };
+    },
     async goto() {
       const discuss = (f.service.projectDiscuss ||= new ProjectDiscuss(f.service, f.service.projectDiscussOptions));
       await discuss.action({ action: 'settings', conversationId: session.id, settings: { skills: [] } });

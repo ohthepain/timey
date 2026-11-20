@@ -1,4 +1,5 @@
 import { issueGit } from './factory-ui/issue-git.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
 import { startChat } from './factory-ui/chat-start.mjs';
 import { approvalOptions } from './factory-ui/approval-options.mjs';
@@ -29,6 +30,7 @@ function fixture(t, options = {}) {
   for (const name of ['human-input.mjs', 'human-input-version.json']) {
     cpSync(resolve('.agents/skills/issues/scripts', name), join(root, '.agents/skills/issues/scripts', name));
   }
+  initializeFolderSettings(root);
   git('add', '.');
   git('commit', '-qm', 'fixture');
   writeFileSync(

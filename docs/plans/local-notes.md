@@ -4,7 +4,9 @@ Local notes capture thoughts and todos without leaving the current work. They
 have a separate **Local notes** section in the Flow sidebar. Enter saves an
 inline note; Shift+Enter adds a line. **＋ Note** and Alt+N open a small editor.
 Notes retain the supplied text and support editing, completion, deletion and
-manual ordering.
+manual ordering. The section opens expanded. Its caret uses the same control as
+the sidebar folders and hides or shows the inline form and notes without losing
+the draft. The quick-note button remains available while collapsed.
 
 The bundled `local-note` skill uses the same store through project chat tools
 or the installed `scripts/local-note.mjs` command. Capturing a note starts no

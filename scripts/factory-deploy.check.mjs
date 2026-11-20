@@ -42,7 +42,7 @@ async function deploymentFixture(t, diagnosticFailures = false) {
   });
   const f = deliveryFixture(t);
   cpSync(resolve('scripts'), join(f.source.root, 'scripts'), { recursive: true });
-  cpSync(resolve('factory/system'), join(f.source.root, 'factory/system'), { recursive: true });
+  cpSync(resolve('factory'), join(f.source.root, 'factory'), { recursive: true });
   writeFileSync(join(f.source.root, '.gitignore'), '.issues/\nnode_modules\n');
   writeFileSync(join(f.source.root, 'package.json'), '{"type":"module"}\n');
   symlinkSync(resolve('node_modules'), join(f.source.root, 'node_modules'), 'dir');

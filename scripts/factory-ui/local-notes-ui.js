@@ -2,6 +2,13 @@
   'use strict';
   const root = document.getElementById('local-notes');
   if (!root) return;
+  const disclosure = document.getElementById('local-notes-toggle');
+  const body = document.getElementById('local-notes-body');
+  disclosure.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    disclosure.setAttribute('aria-expanded', String(!body.hidden));
+    disclosure.setAttribute('aria-label', (body.hidden ? 'Expand ' : 'Collapse ') + 'Local notes');
+  });
   const escape = (value) =>
     String(value).replace(
       /[&<>"']/g,
