@@ -190,7 +190,8 @@ and report and cannot start work independently while attached.
 
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
-A claim can remain held while the run's outcome is being published.
+A claim can remain held while the run's outcome is being published. Shared
+claims are records on the dedicated issue queue branch, separate from source revisions.
 
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one

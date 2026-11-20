@@ -26,7 +26,7 @@ function fixture(t) {
   writeFileSync(join(root, '.issues', id + '.md'), '---\nstate: closed\n---\n\nSaved report.\n');
   git(root, 'add', '.');
   git(root, 'commit', '-qm', 'Seed queue');
-  git(root, 'push', '-q', 'origin', 'dev');
+  git(root, 'push', '-q', 'origin', 'dev', 'HEAD:refs/heads/issue-queue');
   return { base, root, remote };
 }
 
@@ -161,7 +161,10 @@ test('closing the shared queue removes its private transport', (t) => {
   const { base, root, remote } = fixture(t);
   const events = fakeSSH(t, base, remote);
   git(root, 'remote', 'set-url', 'origin', 'git@github.com:example/timey.git');
-  writeFileSync(join(root, 'factory.config.json'), JSON.stringify({ sharedIssueQueue: true }));
+  writeFileSync(
+    join(root, 'factory.config.json'),
+    JSON.stringify({ sharedIssueQueue: true, sharedIssueQueueBranch: 'issue-queue' })
+  );
   writeFileSync(
     join(root, '.issues/issue-delivery-config.json'),
     JSON.stringify({

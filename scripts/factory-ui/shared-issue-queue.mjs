@@ -43,7 +43,7 @@ export function createSharedIssueQueue(service, options = {}) {
   if (!queueConfig) return null;
   const transport = createSharedIssueTransport(root, queueConfig.remote);
   const config = { ...queueConfig, transport };
-  const claims = createSharedIssueClaims({ root, ...config });
+  const claims = createSharedIssueClaims({ root, ...config, pushDirect: options.pushClaim });
   const publication = createSharedIssuePublication({ root, ...config, ...options });
   const directory = join(root, '.issues/shared-queue');
   mkdirSync(directory, { recursive: true });
@@ -283,8 +283,8 @@ export function createSharedIssueQueue(service, options = {}) {
     release(claim.issueId, claim);
     save(pending, { status: 'published' });
   }
-  function archiveClaim(record) {
-    return config.direct && record.storageAction === 'archive' ? record.claim : undefined;
+  function checkpointClaim(record) {
+    return config.direct ? record.claim : undefined;
   }
   function publish(record, reprepare = false) {
     try {
@@ -295,7 +295,8 @@ export function createSharedIssueQueue(service, options = {}) {
         location: record.location === undefined ? 'open' : record.location,
         report: record.report,
         reason: record.reason,
-        releaseClaim: archiveClaim(record),
+        claim: record.claim,
+        releaseClaim: checkpointClaim(record),
         batchHead: record.batchHead,
       });
       if (result.status === 'landed') return publishConfirmed(record, result);

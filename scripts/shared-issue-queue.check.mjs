@@ -14,7 +14,7 @@ const unpublishedId = '20261111T165431736-ca3555165563420b';
 const reportPath = `.issues/${issueId}.md`;
 const original = '---\ntitle: Shared report\nstate: in-progress\n---\n\n# Shared report\n';
 
-function fixture(t, closed = false, separate = false, investigation = false) {
+function fixture(t, closed = false, separate = true, investigation = false) {
   const base = mkdtempSync(join(tmpdir(), 'shared-issue-queue-'));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const remote = join(base, 'origin.git');
@@ -29,7 +29,7 @@ function fixture(t, closed = false, separate = false, investigation = false) {
   const contents = investigation
     ? `---\nid: ${issueId}\ntitle: Reusable investigation\nrequest_type: investigation\nreusable: true\nstate: backlog\n---\n\n# Investigation\n`
     : closed
-      ? `---\nid: ${issueId}\nstate: closed\n---\n\n# Shared report\n`
+      ? `---\nid: ${issueId}\ntitle: Closed report\nstate: closed\n---\n\n# Shared report\n`
       : original;
   if (closed) mkdirSync(join(first, '.issues/closed'));
   writeFileSync(join(first, relative), contents);
@@ -74,6 +74,10 @@ function fixture(t, closed = false, separate = false, investigation = false) {
     git(root, 'config', 'user.email', 'runner@example.test');
     mkdirSync(join(root, '.issues'), { recursive: true });
     writeFileSync(join(root, '.issues/issue-delivery-config.json'), JSON.stringify(config));
+    if (closed) {
+      mkdirSync(join(root, '.issues/closed'), { recursive: true });
+      writeFileSync(join(root, relative), contents);
+    }
   }
   return { remote, first, second, relative, contents };
 }
@@ -87,7 +91,14 @@ function queue(root, openPullRequest) {
     issueChats: { tasks: new Map() },
     store: { runs: [], connected: new Map() },
   };
-  return { service, queue: createSharedIssueQueue(service, { openPullRequest }) };
+  return {
+    service,
+    queue: createSharedIssueQueue(service, {
+      openPullRequest,
+      pushClaim: (commit, target, _, head) =>
+        git(root, 'push', `--force-with-lease=${target}:${head}`, 'origin', `${commit}:${target}`),
+    }),
+  };
 }
 
 test('a stopped runner holds its claim until a human publishes the report', (t) => {
@@ -131,11 +142,11 @@ test('a stopped runner holds its claim until a human publishes the report', (t) 
   assert.equal(owner.retry(issueId).status, 'review');
   assert.equal(reviews.length, 2);
   assert.equal(reviews[0].commit, reviews[1].commit);
-  assert.equal(git(remote, 'show', `dev:${reportPath}`), original.trim());
+  assert.equal(git(remote, 'show', `issue-queue:${reportPath}`), original.trim());
   assert.equal(git(remote, 'ls-tree', reviews[1].commit, '.issues/issue-work/'), '');
 
   // Simulate the human merging the queued PR, leaving each factory checkout in place.
-  git(remote, 'update-ref', 'refs/heads/dev', reviews[1].commit);
+  git(remote, 'update-ref', 'refs/heads/issue-queue', reviews[1].commit);
   assert.equal(owner.refresh(true), null);
   assert.equal(owner.view(issueId).checkpoint.status, 'published');
   assert.equal(owner.view(issueId).claimed, false);
@@ -147,7 +158,7 @@ test('a stopped runner holds its claim until a human publishes the report', (t) 
   assert.match(published, /shared_progress: completed/);
   assert.match(published, /Run `run-1` ended with status \*\*completed\*\*/);
   assert.equal(readFileSync(join(first, reportPath), 'utf8'), published);
-  assert.equal(git(remote, 'ls-tree', 'dev', '.issues/issue-work/'), '');
+  assert.equal(git(remote, 'ls-tree', 'issue-queue', '.issues/issue-work/'), '');
 });
 
 test('an interrupted group closure resumes its claim and publishes to Closed', (t) => {
@@ -166,7 +177,7 @@ test('an interrupted group closure resumes its claim and publishes to Closed', (
   const closed = `---\nid: ${issueId}\ntitle: Shared report\nstate: closed\nclosure:\n  reason: fixed-by\n---\n\n# Shared report\n`;
   writeFileSync(join(first, reportPath), closed);
   assert.equal(restarted.publishGroupClosure({ ...issue, content: closed }, reason).status, 'review');
-  git(remote, 'update-ref', 'refs/heads/dev', reviews[0].commit);
+  git(remote, 'update-ref', 'refs/heads/issue-queue', reviews[0].commit);
   assert.equal(restarted.refresh(true), null);
   assert.equal(restarted.view(issueId).checkpoint.status, 'published');
   assert.equal(existsSync(join(first, reportPath)), false);
@@ -197,7 +208,7 @@ test('shared archive and restore keep a local copy through failed publication an
   assert.equal(readFileSync(join(second, closedPath), 'utf8'), contents);
   assert.equal(existsSync(join(second, archivePath)), false);
 
-  git(remote, 'update-ref', 'refs/heads/dev', reviews[1].commit);
+  git(remote, 'update-ref', 'refs/heads/issue-queue', reviews[1].commit);
   assert.equal(owner.refresh(true), null);
   assert.equal(observer.refresh(true), null);
   assert.equal(owner.storageStatus(issueId).status, 'published');
@@ -205,19 +216,19 @@ test('shared archive and restore keep a local copy through failed publication an
   assert.equal(existsSync(join(first, closedPath)), false);
   assert.equal(existsSync(join(second, closedPath)), false);
   assert.equal(readFileSync(join(first, archivePath), 'utf8'), contents);
-  assert.equal(git(remote, 'ls-tree', 'dev', '.issues/archive/'), '');
+  assert.equal(git(remote, 'ls-tree', 'issue-queue', '.issues/archive/'), '');
 
   assert.equal(owner.moveStorage(issueId, 'restore', contents).status, 'review');
   assert.equal(readFileSync(join(first, archivePath), 'utf8'), contents);
   assert.equal(existsSync(join(first, closedPath)), false);
-  git(remote, 'update-ref', 'refs/heads/dev', reviews[2].commit);
+  git(remote, 'update-ref', 'refs/heads/issue-queue', reviews[2].commit);
   assert.equal(owner.refresh(true), null);
   assert.equal(observer.refresh(true), null);
   assert.equal(owner.storageStatus(issueId).status, 'published');
   assert.equal(existsSync(join(first, archivePath)), false);
   assert.equal(readFileSync(join(first, closedPath), 'utf8'), contents);
   assert.equal(readFileSync(join(second, closedPath), 'utf8'), contents);
-  assert.equal(JSON.parse(git(remote, 'show', 'dev:.issues/issue-numbers.json')).issues[issueId], 1);
+  assert.equal(JSON.parse(git(remote, 'show', 'issue-queue:.issues/issue-numbers.json')).issues[issueId], 1);
 });
 
 test('archiving fetches the shared report once before claiming and rechecks it afterward', (t) => {
@@ -236,29 +247,40 @@ test('archiving fetches the shared report once before claiming and rechecks it a
   const fetches = readFileSync(trace, 'utf8')
     .split('\n')
     .filter((line) => /built-in: git fetch /.test(line));
-  assert.equal(fetches.length, 3, 'Archive needs its pre-claim, post-claim and publication fetches.');
+  assert.ok(fetches.some((line) => line.includes('refs/heads/issue-queue')));
+  assert.ok(!/built-in: git (?:checkout|switch|merge |rebase )/.test(readFileSync(trace, 'utf8')));
 });
 
 test('archive rejects a report changed during claiming and releases the claim', (t) => {
-  const { remote, first, second, relative, contents } = fixture(t, true);
-  writeFileSync(join(second, relative), contents + '\nChanged by another runner.\n');
-  git(second, 'add', '-f', relative);
-  git(second, 'commit', '-qm', 'Change the closed report');
-  const changed = git(second, 'rev-parse', 'HEAD');
-  git(remote, 'fetch', '-q', second, 'HEAD');
+  const { remote, first, relative, contents } = fixture(t, true);
+  const changedReport = contents + '\nChanged by another runner.\n';
+  const { queue: owner } = queue(first, () => assert.fail('A changed report must not be published.'));
   const hook = join(remote, 'hooks/post-receive');
+  // The receive hook appends a report edit while preserving the new claim tree.
+  const replacement = join(remote, 'replacement.md');
+  writeFileSync(replacement, changedReport);
   writeFileSync(
     hook,
-    '#!/bin/sh\nwhile read old new ref; do\ncase "$ref" in\nrefs/heads/claims/*) git update-ref refs/heads/dev ' +
-      changed +
-      ';;\nesac\ndone\n'
+    `#!/bin/sh
+while read old new ref; do
+  if [ "$ref" = refs/heads/issue-queue ]; then
+    rm -f hooks/post-receive
+    export GIT_INDEX_FILE="$PWD/claim-race-index"
+    git read-tree "$new"
+    blob=$(git hash-object -w replacement.md)
+    git update-index --cacheinfo 100644,$blob,${relative}
+    tree=$(git write-tree)
+    next=$(git -c user.name=Fixture -c user.email=fixture@example.test commit-tree "$tree" -p "$new" -m 'Concurrent report edit')
+    git update-ref refs/heads/issue-queue "$next" "$new"
+  fi
+done
+`
   );
   chmodSync(hook, 0o755);
-  const { queue: owner } = queue(first, () => assert.fail('A changed report must not be published.'));
   assert.throws(() => owner.moveStorage(issueId, 'archive', contents), /changed while it was being claimed/);
   assert.equal(owner.view(issueId).claimed, false);
-  assert.equal(git(remote, 'for-each-ref', 'refs/heads/claims'), '');
-  assert.equal(git(remote, 'rev-parse', 'dev'), changed);
+  assert.equal(git(remote, 'ls-tree', 'issue-queue', `.issues/claims/${issueId}.json`), '');
+  assert.equal(git(remote, 'show', `issue-queue:${relative}`), changedReport.trim());
   assert.equal(readFileSync(join(first, relative), 'utf8'), contents);
   assert.equal(existsSync(join(first, `.issues/archive/${issueId}.md`)), false);
 });
@@ -394,7 +416,7 @@ test('two Flow clones share the separate branch without advancing code', async (
 });
 
 test('an open investigation archives directly and restores open without inventing closure', (t) => {
-  const { remote, first, second, contents } = fixture(t, false, false, true);
+  const { remote, first, second, contents } = fixture(t, false, true, true);
   const reviews = [];
   const { queue: owner } = queue(first, (record) => {
     reviews.push(record);
@@ -410,16 +432,83 @@ test('an open investigation archives directly and restores open without inventin
   const archivedResult = owner.moveStorage(issueId, 'archive', contents);
   assert.equal(archivedResult.status, 'review', JSON.stringify(archivedResult));
   assert.equal(readFileSync(join(first, reportPath), 'utf8'), contents);
-  git(remote, 'update-ref', 'refs/heads/dev', reviews[0].commit);
+  git(remote, 'update-ref', 'refs/heads/issue-queue', reviews[0].commit);
   owner.refresh(true);
   observer.refresh(true);
   assert.equal(existsSync(join(first, reportPath)), false);
   assert.equal(readFileSync(join(first, '.issues/archive', issueId + '.md'), 'utf8'), contents);
   assert.equal(owner.moveStorage(issueId, 'restore', contents).status, 'review');
-  git(remote, 'update-ref', 'refs/heads/dev', reviews[1].commit);
+  git(remote, 'update-ref', 'refs/heads/issue-queue', reviews[1].commit);
   owner.refresh(true);
   observer.refresh(true);
   assert.equal(readFileSync(join(first, reportPath), 'utf8'), contents);
   assert.equal(readFileSync(join(second, reportPath), 'utf8'), contents);
   assert.equal(existsSync(join(first, '.issues/closed', issueId + '.md')), false);
+});
+
+test('direct status publication is visible in another clone without updating either source workspace', (t) => {
+  const { remote, first, second } = fixture(t);
+  for (const root of [first, second]) {
+    writeFileSync(
+      join(root, 'factory.config.json'),
+      JSON.stringify({
+        sharedIssueQueue: true,
+        sharedIssueQueueBranch: 'issue-queue',
+        sharedIssueQueueDirect: true,
+      })
+    );
+    git(root, 'add', 'factory.config.json');
+  }
+  const make = (root) => {
+    const service = {
+      root,
+      lifecycleRuns: {},
+      lifecycleTasks: new Map(),
+      issueChats: { tasks: new Map() },
+      store: { runs: [], connected: new Map() },
+    };
+    const push = (commit, target, _, head) =>
+      git(root, 'push', `--force-with-lease=${target}:${head}`, 'origin', `${commit}:${target}`);
+    const shared = createSharedIssueQueue(service, { pushClaim: push, pushDirect: push });
+    t.after(() => shared.close());
+    assert.equal(shared.refresh(true), null);
+    return shared;
+  };
+  const owner = make(first);
+  const observer = make(second);
+  const basis = [first, second].map((root) => {
+    writeFileSync(join(root, 'source.txt'), 'Staged code\n');
+    git(root, 'add', 'source.txt');
+    writeFileSync(join(root, 'source.txt'), 'Unstaged code\n');
+    return {
+      head: git(root, 'rev-parse', 'HEAD'),
+      index: git(root, 'write-tree'),
+      status: git(root, 'status', '--porcelain'),
+      tracking: git(root, 'rev-parse', 'refs/remotes/origin/dev'),
+    };
+  });
+  const updated = original.replace('in-progress', 'in-review');
+  writeFileSync(join(first, reportPath), updated);
+  assert.equal(owner.publishDraft(issueId).status, 'published');
+  assert.equal(observer.refresh(true), null);
+  assert.equal(readFileSync(join(second, reportPath), 'utf8'), updated);
+  assert.equal(observer.view(issueId).claimed, false);
+  assert.equal(git(remote, 'show', `issue-queue:${reportPath}`), updated.trim());
+  const receipt = JSON.parse(readFileSync(join(first, '.issues/shared-publication', issueId + '.json')));
+  assert.equal(receipt.atomicRelease.commit, receipt.commit);
+  assert.deepEqual(
+    git(first, 'diff-tree', '--no-commit-id', '--name-only', '-r', `${receipt.commit}^`, receipt.commit)
+      .split('\n')
+      .sort(),
+    [reportPath, `.issues/claims/${issueId}.json`, '.issues/issue-numbers.json'].sort()
+  );
+  for (const [i, root] of [first, second].entries()) {
+    assert.equal(git(root, 'rev-parse', 'HEAD'), basis[i].head);
+    assert.equal(git(root, 'write-tree'), basis[i].index);
+    assert.equal(git(root, 'status', '--porcelain'), basis[i].status);
+    assert.equal(git(root, 'rev-parse', 'refs/remotes/origin/dev'), basis[i].tracking);
+    assert.equal(readFileSync(join(root, 'source.txt'), 'utf8'), 'Unstaged code\n');
+  }
+  assert.equal(git(remote, 'rev-parse', 'dev'), basis[0].head);
+  assert.equal(git(remote, 'for-each-ref', 'refs/heads/claims/'), '');
 });

@@ -6,8 +6,15 @@ import { randomUUID } from 'node:crypto';
 import { cleanEnvironment, digest, readJson, requireThat, writeJson } from './common.mjs';
 
 const execute = promisify(execFile);
-const targetRef = 'refs/timey/shared-issue-target';
-const fetchArgs = ({ remote, target }) => ['fetch', '--no-tags', remote, `+refs/heads/${target}:${targetRef}`];
+const targetRef = 'refs/worktree/timey/shared-issue-target';
+const fetchArgs = ({ remote, target }) => [
+  'fetch',
+  '--no-tags',
+  '--no-write-fetch-head',
+  '--refmap=',
+  remote,
+  `+refs/heads/${target}:${targetRef}`,
+];
 
 export async function fetchSharedIssueTarget(root, config) {
   await execute('git', fetchArgs(config), {

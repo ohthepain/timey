@@ -2,6 +2,15 @@
 
 ## Commands and evidence
 
+`node --test scripts/shared-issue-claims.check.mjs scripts/shared-issue-queue.check.mjs scripts/shared-issue-atomic-archive.check.mjs scripts/source-issue-separation.check.mjs`
+uses independent clones and a disposable remote. It checks same-issue exclusion,
+unrelated claim races, exact-owner release, unknown push outcomes, atomic report
+checkpoints, local file preservation, and legacy cutover guards. The direct status
+case refreshes another runner while preserving source HEAD, source tracking refs,
+staged index, source status, and unstaged files in both checkouts. The source
+cutover command is repeatable and refuses unpublished report bytes. The commit
+guard preserves alternate-index semantics. These tests start no production work.
+
 `node scripts/flow-browser.mjs --actions-menu` holds two FlowService executions
 with an injected executor, opens the actions menu, and checks both running rows
 and their Flow output links. It also checks that the open menu removes completed

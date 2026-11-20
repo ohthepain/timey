@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
+import { readQueueClaim } from './shared-issue-paths.mjs';
+import { sharedIssueQueueConfig, queueMetadataPath } from './shared-issue-config.mjs';
 
 // This process bridges the synchronous queue publisher and async App authentication.
 const { repository, targetRef, commit, releaseClaim, expectedHead } = JSON.parse(readFileSync(0, 'utf8'));
@@ -11,27 +13,15 @@ requireThat(
   typeof targetRef === 'string' && /^refs\/heads\/[a-zA-Z0-9][\w./-]*$/.test(targetRef),
   'Invalid queue ref.'
 );
-function archiveClaimRef(claim) {
-  if (!claim) return null;
-  requireThat(
-    typeof claim.issueId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(claim.issueId),
-    'Invalid archive claim ID.'
-  );
-  requireThat(
-    typeof claim.oid === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(claim.oid),
-    'Invalid archive claim OID.'
-  );
-  return 'refs/heads/claims/' + claim.issueId;
-}
-const claimRef = archiveClaimRef(releaseClaim);
-if (expectedHead !== undefined) {
-  requireThat(Boolean(claimRef), 'A target hash guard requires an archive claim.');
-  requireThat(
-    typeof expectedHead === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(expectedHead),
-    'Invalid expected queue head.'
-  );
-}
-requireThat(!claimRef || targetRef !== claimRef, 'Queue target must differ from the claim ref.');
+requireThat(
+  typeof expectedHead === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(expectedHead),
+  'A queue push requires its expected head.'
+);
+const config = sharedIssueQueueConfig(process.cwd());
+requireThat(
+  config && targetRef === `refs/heads/${config.target}` && config.repository === repository,
+  'Only the configured dedicated issue queue can receive automatic metadata commits.'
+);
 const url = `https://github.com/${repository}.git`;
 const remote = 'timey-queue-app';
 const env = cleanEnvironment();
@@ -48,11 +38,25 @@ const git = (args, authentication = {}) =>
   }).trim();
 
 git(['check-ref-format', targetRef]);
-if (expectedHead !== undefined)
+requireThat(
+  git(['rev-parse', `${commit}^`]) === expectedHead,
+  'The queue commit must directly extend its expected head.'
+);
+const paths = git(['diff-tree', '--no-renames', '--no-commit-id', '--name-only', '-r', expectedHead, commit]).split(
+  '\n'
+);
+requireThat(paths.length > 0 && paths.every(queueMetadataPath), 'Queue writes may only change issue metadata.');
+for (const path of paths) {
+  const entry = git(['ls-tree', commit, '--', path]);
+  requireThat(!entry || entry.startsWith('100644 blob '), 'Queue metadata must be regular files.');
+}
+if (releaseClaim) {
   requireThat(
-    git(['rev-parse', `${commit}^`]) === expectedHead,
-    'The queue commit must directly extend its expected head.'
+    readQueueClaim(git, expectedHead, releaseClaim.issueId)?.oid === releaseClaim.oid &&
+      readQueueClaim(git, commit, releaseClaim.issueId) === null,
+    'The queue commit must release its exact owned claim.'
   );
+}
 const pushUrls = git(['remote', '-v'])
   .split('\n')
   .filter((line) => line.startsWith(`${remote}\t`) && line.endsWith(' (push)'));
@@ -82,18 +86,18 @@ try {
       '--no-verify',
       '--no-follow-tags',
       '--recurse-submodules=no',
-      ...(claimRef ? ['--atomic', `--force-with-lease=${claimRef}:${releaseClaim.oid}`] : []),
-      ...(expectedHead === undefined ? [] : [`--force-with-lease=${targetRef}:${expectedHead}`]),
+      `--force-with-lease=${targetRef}:${expectedHead}`,
       remote,
       `${commit}:${targetRef}`,
-      ...(claimRef ? [`:${claimRef}`] : []),
     ],
     { TIMEY_QUEUE_GIT_AUTHORIZATION: `Authorization: Basic ${authorization}` }
   );
-  if (releaseClaim)
-    process.stdout.write(
-      JSON.stringify({ commit, releasedClaim: { issueId: releaseClaim.issueId, oid: releaseClaim.oid } })
-    );
+  process.stdout.write(
+    JSON.stringify({
+      commit,
+      ...(releaseClaim && { releasedClaim: { issueId: releaseClaim.issueId, oid: releaseClaim.oid } }),
+    })
+  );
 } catch {
   // Git errors may contain authentication details. Report only the failed stage.
   process.exitCode = 3;
