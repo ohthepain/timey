@@ -145,6 +145,15 @@ verification command after 15 minutes. Evidence reuse requires matching inputs,
 including focused commands and the required scope. GitHub CI retains its full
 suite and existing branch protection.
 
+Drag-and-drop browser scenarios are excluded from ordinary verification and
+full regression, including Merge and CI. They run only when explicitly requested
+with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
+issue-folder assignment and Flow folder dragging. These fragile browser
+interactions must not gate unrelated delivery. Deterministic folder and ordering
+tests remain in their existing suites. `browser-scenario-policy.mjs` applies this
+selection in both browser runners; its focused check verifies ordinary, full and
+explicit selection.
+
 Before Merge invokes its repair worker, it copies the verification summaries,
 command output and each failed check log into the issue checkout. The prompt
 identifies failed checks separately from successful checks and references the

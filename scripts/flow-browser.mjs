@@ -1,3 +1,4 @@
+import { browserScenarioSelected } from './browser-scenario-policy.mjs';
 import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
 import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
 import assert from 'node:assert/strict';
@@ -228,7 +229,9 @@ function unexpectedConsoleErrors(entries) {
   });
 }
 function checkExcluded(name) {
+  if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
     ['--local-notes', 'Local notes capture and handoff preserve flow'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
@@ -583,6 +586,19 @@ try {
     assert.equal(logs.execution.length, 0);
   });
   await check('Issue folders retain every issue and accept drags between folders', async () => {
+    if (!issueId) {
+      await service.flows.action({ action: 'create-folder', name: 'Browser folder' });
+      const captured = await service.flows.action({
+        action: 'capture',
+        requestId: randomUUID(),
+        description,
+        folder: 'Browser folder',
+      });
+      issueId = captured.issue.id;
+      worktreeIssueId = issueId;
+      await page.goto('/?issue=' + issueId);
+      await page.locator('#request-form').waitFor();
+    }
     await flowIssueFoldersBrowserChecks(page, issueId, 'Browser folder');
     await screenshot('issue-folder-drag');
     await page.goto('/?issue=' + issueId);
