@@ -311,6 +311,35 @@ async function block(id) {
 }
 async function screenshot(name) {
   await page.screenshot({ path: join(output, name + '.png'), fullPage: true });
+  if (name === 'project-discuss') {
+    const entries = await page.locator('.discuss-message').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        return {
+          id: node.dataset.discussMessage,
+          classes: node.className,
+          borderTopStyle: style.borderTopStyle,
+          borderTopWidth: style.borderTopWidth,
+          borderBottomStyle: style.borderBottomStyle,
+          borderBottomWidth: style.borderBottomWidth,
+        };
+      })
+    );
+    writeFileSync(
+      join(output, name + '-styles.json'),
+      JSON.stringify(
+        {
+          sourceCommit: git(root, 'rev-parse', 'HEAD'),
+          sourceStatus: git(root, 'status', '--porcelain'),
+          observedAt: new Date().toISOString(),
+          selector: '.discuss-message',
+          entries,
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  }
 }
 async function selectedGeometry() {
   return page.evaluate(() => {
