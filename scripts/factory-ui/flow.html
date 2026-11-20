@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/flow.css" />
     <link rel="stylesheet" href="/project-home.css" />
     <link rel="stylesheet" href="/project-discuss.css" />
+    <link rel="stylesheet" href="/local-notes.css" />
     <script src="/issue-chat-ui.js" defer></script>
     <script src="/discuss-markdown.js" defer></script>
     <script src="/skill-select.js" defer></script>
@@ -22,6 +23,7 @@
     <script src="/investigation-issue-ui.js" defer></script>
     <script src="/branch-repair-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
+    <script src="/local-notes-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
   </head>
@@ -83,6 +85,24 @@
           ><span aria-hidden="true">⌕</span
           ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
         /></label>
+        <section id="local-notes" class="local-notes" aria-label="Local notes">
+          <header>
+            <h2>Local notes</h2>
+            <button id="local-note-quick" type="button" class="small-button" title="Quick note (Alt+N)">＋ Note</button>
+          </header>
+          <form id="local-note-form">
+            <textarea
+              id="local-note-text"
+              aria-label="Quick local note"
+              placeholder="A thought to keep…"
+              maxlength="24000"
+              rows="2"
+            ></textarea
+            ><button type="submit" class="small-button">Save note</button>
+          </form>
+          <ul id="local-note-list" class="local-note-list"></ul>
+          <p id="local-note-status" role="status" aria-live="polite"></p>
+        </section>
         <section class="sidebar-files" aria-label="Files">
           <div id="sidebar-file-tree"></div>
           <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
@@ -730,6 +750,17 @@
       <div class="modal-footer">
         <button class="primary-button" type="button" data-followups-create disabled>Create selected issues</button>
       </div>
+    </dialog>
+    <dialog id="local-note-editor" class="modal local-note-modal" aria-labelledby="local-note-editor-heading">
+      <form id="local-note-edit-form">
+        <h2 id="local-note-editor-heading">Quick note</h2>
+        <textarea id="local-note-edit-text" aria-label="Note text" maxlength="24000" required></textarea>
+        <p id="local-note-edit-error" role="alert"></p>
+        <footer>
+          <button id="local-note-edit-cancel" type="button" class="small-button">Cancel</button
+          ><button type="submit" class="small-button">Save note</button>
+        </footer>
+      </form>
     </dialog>
     <dialog id="capture-dialog" class="modal capture-modal">
       <form id="capture-form">

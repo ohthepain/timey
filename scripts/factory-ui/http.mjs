@@ -49,6 +49,8 @@ import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs'
 import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
 import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
 import { ProjectDiscuss, readClarificationSkills } from './project-discuss.mjs';
+import { LocalNotes } from './local-notes.mjs';
+import { localNoteAction } from './local-note-routes.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   deleteIssueWorktree,
@@ -141,7 +143,8 @@ function requireClassicIdle(service, path, value) {
 }
 
 const pauseSafeActions = {
-  '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
+  '/api/local-notes-action': ['create', 'edit', 'complete', 'delete', 'move', 'discuss', 'link'],
+  '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued', 'delete-note'],
   '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop', 'branch-repair-stop'],
   '/api/project-home-action': ['investigation-stop', 'automate-stop'],
 };
@@ -173,6 +176,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
     '/api/project-home-action': () => projectHome(service).action(value),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).apply(value),
@@ -390,6 +394,7 @@ async function read(service, request, response, owner) {
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/project-home': () => projectHome(service).view(),
+    '/api/local-notes': () => new LocalNotes(service.root).view(),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).preview(url.searchParams.get('ref')),
     '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).preview(),
     '/api/project-local-branch-cleanup': () => localBranchCleanup(service).preview(url.searchParams.get('ref')),
@@ -528,6 +533,8 @@ function readResource(service, request, response, owner) {
     return response.end();
   }
   const scripts = {
+    '/local-notes-ui.js': 'local-notes-ui.js',
+    '/local-notes.css': 'local-notes.css',
     '/project-discuss-ui.js': 'project-discuss-ui.js',
     '/skill-select.js': 'skill-select.js',
     '/project-discuss.css': 'project-discuss.css',

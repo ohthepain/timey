@@ -89,7 +89,9 @@ class ProjectDiscussProvider {
       const output = await connection.turn(
         session.threadId,
         this.service.root,
-        message.text,
+        (session.noteContext
+          ? 'Local note context:\n' + JSON.stringify(session.noteContext) + '\n\nCurrent request:\n'
+          : '') + message.text,
         undefined,
         input,
         message.settings,

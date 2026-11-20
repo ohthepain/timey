@@ -4,6 +4,11 @@ Language used to coordinate work and review changes.
 
 ## Language
 
+**Local note**:
+A quick project-owned thought or todo saved outside version control. It can be
+discussed in the project conversation or used to prefill an issue. Capture starts
+no work, and issue creation retains the note until the person deletes it.
+
 **Clarify**:
 The issue stage that brings human intent and available technical evidence together
 to establish enough understanding to begin useful work. Remaining technical

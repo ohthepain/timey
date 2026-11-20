@@ -3,6 +3,15 @@
 Timey is a MIDI rhythm-practice app. Read the code for current signatures and
 configuration; this map explains responsibilities and the useful starting points.
 
+Project-local quick capture lives in `scripts/factory-ui/local-notes.mjs` and
+`local-notes-ui.js`. The store resolves Git worktrees to their owning project,
+keeps notes excluded from Git, and serializes writes with stale-edit protection.
+`local-note-routes.mjs` joins notes to project discussion and existing issue
+creation. `ProjectDiscuss.prepareNote` records quiet context and a draft;
+`project-discuss-provider.mjs` passes that context on a later user turn.
+`scripts/local-note.mjs`, project chat tools and the bundled `local-note` skill
+share the store. See the [local notes design](../plans/local-notes.md).
+
 | Area                     | Start reading                                                                                                                                                                                                         | Responsibility                                                                                                                                                                                                      |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`, `vite.config.ts`, `src/start.ts`                                                                                                                                           | Shared UI, authentication context, route restoration, Vite+ and Start setup                                                                                                                                         |

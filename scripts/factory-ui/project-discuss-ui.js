@@ -261,7 +261,7 @@
     function messageHtml(message) {
       const user = message.role === 'user' || message.role === 'human';
       const model = message.settings?.model;
-      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
+      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : message.localNoteId ? '' : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
     }
     function render() {
       const current = session();
@@ -288,7 +288,15 @@
       clarificationSelect.update(data?.clarificationSkills || [], selectedSettings?.clarificationSkill || 'none');
       const log = byId('discuss-messages');
       const html =
-        (current?.messages || []).map(messageHtml).join('') ||
+        (current?.messages || [])
+          .map(
+            (message) =>
+              messageHtml(message) +
+              (message.localNoteId
+                ? `<div class="discuss-note-offer">${message.localNoteDeleted ? 'Original note deleted.' : `<button type="button" class="small-button" data-discuss-delete-note="${escape(message.localNoteId)}">Delete original note</button>`}</div>`
+                : '')
+          )
+          .join('') ||
         '<div class="discuss-empty"><h2>What would you like to work on?</h2><p>Ask about the codebase, choose a skill with /, or request a project action.</p></div>';
       if (log.innerHTML !== html) {
         log.innerHTML = html;
@@ -508,6 +516,11 @@
     root.addEventListener('click', async (event) => {
       const button = event.target.closest('button');
       if (!button) return;
+      if (button.dataset.discussDeleteNote) {
+        await action('delete-note', { noteId: button.dataset.discussDeleteNote });
+        void window.localNotesUI?.refresh();
+        return;
+      }
       const messages = session()?.messages || [];
       if (button.hasAttribute('data-discuss-copy-code')) {
         await navigator.clipboard.writeText(button.parentElement.querySelector('code').textContent);
