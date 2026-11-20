@@ -77,6 +77,11 @@ Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
 repair, search, grouping eligibility, and selected Open or Closed bulk actions.
 The fixture injects AI responses and execution, and uses disposable reports.
 The aggregate factory and browser scripts include these checks.
+Run `node scripts/flow-browser.mjs --sidebar-scroll` to check wheel scrolling over
+the project menu, Notes, Files and Issues with overflowing content at desktop and
+narrow widths. The fixture adds rows to the real page and checks that each wheel
+moves content outside the hovered section. It retains screenshots and
+`sidebar-scroll.json`, and checks that resizing remains available after scrolling.
 For the isolated investigation follow-up review, run
 `node scripts/flow-browser.mjs --investigation-followups`.
 `node --test scripts/flow-followups.check.mjs` checks reviewed creation, lineage,

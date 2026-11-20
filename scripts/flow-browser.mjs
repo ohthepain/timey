@@ -254,6 +254,7 @@ function checkExcluded(name) {
     ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
     ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
     ['--local-notes', 'Local notes capture and handoff preserve flow'],
+    ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
     ['--investigation-followups', followupsCheck],
@@ -444,6 +445,85 @@ try {
   await check('Successful refresh clears rejected branch update errors', () =>
     errorRecoveryBrowserChecks({ page, service, project, output })
   );
+  await check('The whole sidebar scrolls over every section', async () => {
+    const issuePaths = Array.from({ length: 24 }, (_, index) =>
+      join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
+    );
+    issuePaths.forEach((path, index) =>
+      writeFileSync(
+        path,
+        `---\nid: 20261120-sidebar-overflow-${index}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`
+      )
+    );
+    await page.goto('/');
+    await page.locator('#sidebar-file-tree details').first().waitFor();
+    await page.evaluate(() => {
+      const notes = document.getElementById('local-note-list');
+      const files = document.getElementById('sidebar-file-tree');
+      for (let index = 0; index < 24; index++) {
+        const note = document.createElement('li');
+        note.className = 'local-note';
+        note.textContent = 'Overflowing local note ' + index;
+        notes.append(note);
+        const file = document.createElement('button');
+        file.className = 'sidebar-file-link';
+        file.textContent = 'Overflowing file ' + index + '.md';
+        files.append(file);
+      }
+    });
+    await page.locator('#issue-list [data-issue="20261120-sidebar-overflow-0"]').waitFor();
+    const observations = [];
+    for (const viewport of [
+      { width: 1440, height: 720 },
+      { width: 760, height: 600 },
+    ]) {
+      await page.setViewportSize(viewport);
+      for (const section of ['.project-home-menu', '#local-note-list', '#sidebar-file-tree', '#issue-list']) {
+        const target = page.locator(section);
+        await target.scrollIntoViewIfNeeded();
+        const bounds = await target.boundingBox();
+        const sidebar = await page.locator('.sidebar').boundingBox();
+        const y = Math.max(sidebar.y + 5, Math.min(bounds.y + 12, sidebar.y + sidebar.height - 20));
+        const x = bounds.x + Math.min(bounds.width / 2, 70);
+        assert.ok(
+          await target.evaluate((node, point) => node.contains(document.elementFromPoint(point.x, point.y)), { x, y }),
+          'Wheel pointer must be over ' + section
+        );
+        await page.mouse.move(x, y);
+        await screenshot('sidebar-scroll-' + viewport.width + '-' + section.replace(/[^a-z]/g, ''));
+        const before = await page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top);
+        await page.mouse.wheel(0, 160);
+        await poll(
+          () => page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top),
+          (top) => top < before - 20,
+          'Wheel over ' + section + ' must move content outside that section'
+        );
+        observations.push({
+          viewport,
+          section,
+          before,
+          after: await page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top),
+        });
+      }
+      const footer = page.locator('.sidebar-footer');
+      await footer.scrollIntoViewIfNeeded();
+      assert.ok(await footer.isVisible());
+      const resizer = await page.locator('#sidebar-resizer').boundingBox();
+      assert.ok(resizer.y <= 1 && resizer.height >= 590, 'Sidebar resize handle must remain at the column edge');
+      await page.locator('#sidebar-resizer').focus();
+      const widthBefore = (await page.locator('.sidebar').boundingBox()).width;
+      await page.keyboard.press('ArrowRight');
+      assert.ok(
+        (await page.locator('.sidebar').boundingBox()).width > widthBefore,
+        'Sidebar remains resizable after scrolling'
+      );
+      await screenshot('sidebar-scroll-' + viewport.width);
+    }
+    writeFileSync(join(output, 'sidebar-scroll.json'), JSON.stringify({ candidate, observations }, null, 2));
+    issuePaths.forEach((path) => rmSync(path));
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.reload();
+  });
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Local notes capture and handoff preserve flow', () =>
     localNotesBrowserChecks({ page, project, service, poll, screenshot })
