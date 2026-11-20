@@ -82,7 +82,7 @@
     }
     function statusMessage(repair) {
       return [
-        view.branchUpdateSummary,
+        view?.branchUpdateSummary,
         repair.step,
         repair.failure?.summary,
         'Run the blocking checks and prepare a branch repair for review.',
