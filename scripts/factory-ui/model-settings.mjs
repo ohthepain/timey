@@ -18,7 +18,7 @@ function readLocalSettings(root) {
   return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { issues: {} };
 }
 
-export function readModelSettings(root, { initialize = true } = {}) {
+export function readModelSettings(root, { initialize = false } = {}) {
   if (initialize) initializeFolderSettings(root);
   const { values, errors } = resolveFolderSettings(root, null);
   const fields = folderSettingsFields(root, { branchChoices: false });
@@ -33,7 +33,6 @@ export function readModelSettings(root, { initialize = true } = {}) {
 }
 
 export function readIssueModelSettings(root, issueId) {
-  readModelSettings(root);
   const { values, overrides, errors } = savedIssueExecutionSettings(root, issueId);
   return {
     model: overrides.model === 'default' ? '' : overrides.model || '',

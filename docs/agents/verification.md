@@ -95,8 +95,8 @@ never describe that result as verified implementation.
 Factory protocol fixtures use `factoryGitFixture` to stage project and Inbox settings
 before their initial commit, so later queue reads preserve the clean source tree.
 Deployment and restart fixtures copy `factory/system` with the server scripts.
-The legacy UI rendering fixture loads the final inline application script rather
-than the earlier embed setup script.
+The legacy UI rendering fixture loads all inline scripts in document order,
+including both the embed setup and the application script.
 Chat startup tests use disposable project settings and wait for actual request
 dispatch before advancing their mocked timeout.
 
@@ -682,3 +682,11 @@ checks have a 30-second test deadline and retain per-issue failure explanations.
 Pending publication joins all preceding unfinished lanes even when the standard
 flow has no suggested Verify block. New blocks default to insertion before
 publication; existing attempted publication dependencies remain unchanged.
+
+Queue and settings snapshots must not create tracked Inbox or project settings
+files. Startup and explicit setup own initialization. The source-cleanliness
+regression in `factory-ui.check.mjs` checks repeated snapshots and a stable review
+basis. Deployment and restart fixtures include the installed `factory/system`
+assets alongside scripts, matching the real runtime’s schema dependencies.
+Browser fixture helpers identify the block created by an add action by its ID;
+they do not assume additions occupy the last position in a flow.

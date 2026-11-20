@@ -778,7 +778,10 @@ revision-checked YAML edits, project-default migration, and parent inheritance.
 defaults. `folder-settings-routes.mjs` binds settings operations to validated sidebar
 locations. `folder-settings-ui.js` renders the shared settings form and repair UI.
 Both Flow and Classic capture save the selected folder ID on each new report.
-The issue read path places older reports without membership in Inbox.
+The issue read path projects older reports without membership into Inbox using
+a stable ID. It does not create tracked files. Flow startup and explicit setup
+initialize real folder settings; queue and model-selection snapshots only read
+them, preserving source cleanliness and review fingerprints.
 Folder landing pages share the workspace in `flow-ui.js`. `SidebarFiles`
 validates deletion paths and directory identity. `flow-service.mjs` checks
 folder membership before deletion. `folder-trash.mjs` uses macOS Trash and

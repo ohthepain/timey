@@ -3603,10 +3603,9 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
   t.after(() => dom.window.close());
   dom.window.scrollTo = () => {};
   dom.window.matchMedia = (media) => ({ matches: wideSidebar, media, addEventListener() {}, removeEventListener() {} });
-  const script = html
-    .matchAll(/<script>([\s\S]*?)<\/script>/g)
-    .toArray()
-    .at(-1)[1]
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map(([, source]) => source)
+    .join('\n')
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/coordinator-ui.js'), 'utf8') +
@@ -5574,4 +5573,14 @@ test('retained output history is authenticated, read-only and restricted to save
   assert.equal((await fetch(url + '/issue-progress-ui.js', { headers: { cookie } })).status, 200);
   assert.equal(JSON.stringify(service.store.runs), before);
   assert.equal(readFileSync(join(service.store.directory, 'retained-one.jsonl'), 'utf8'), log);
+});
+
+test('reading queue snapshots preserves clean source and a stable review basis', (t) => {
+  const { git, service } = fixture(t);
+  assert.equal(git('status', '--porcelain'), '');
+  const first = service.snapshot(null, { includeCoordinatorDiscussion: false });
+  const second = service.snapshot(null, { includeCoordinatorDiscussion: false });
+  assert.equal(git('status', '--porcelain'), '');
+  assert.deepEqual(second.snapshot.worktree, first.snapshot.worktree);
+  assert.equal(second.reviewBasis, first.reviewBasis);
 });
