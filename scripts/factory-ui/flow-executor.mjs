@@ -571,9 +571,21 @@ async function checkWorkResponse(ctx, options, workspace, folder, round, output,
   if (followup) return { repairPrompt: followup, failedChecks: [] };
   if (typeof manifest?.failure === 'string' && manifest.failure.trim()) return {};
   try {
-    return {
-      workCheck: await options.verifyWork(ctx, workspace, join(folder, `work-checks-${round}`)),
-    };
+    const workCheck = await options.verifyWork(ctx, workspace, join(folder, `work-checks-${round}`));
+    if (git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all')) {
+      return {
+        workCheck,
+        repairPrompt: progress.followup(
+          {
+            failure:
+              'Commit the checked issue changes through normal Git hooks before completing Work. Preserve unrelated changes; if they prevent a clean result, report the concrete blocker. Work requires a clean committed checkout.',
+          },
+          prompt
+        ),
+        failedChecks: [],
+      };
+    }
+    return { workCheck };
   } catch (error) {
     if (ctx.signal.aborted || !error.verificationFailure) throw error;
     progress.checkFailed(error);

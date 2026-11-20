@@ -133,6 +133,10 @@ rechecks an exact preview before writing to GitHub. New PR descriptions include
 Requested proof when present. Repeat publication updates the title and commit as
 needed and preserves the original PR description.
 
+Work commits its checked issue changes through normal Git hooks before completing.
+Factory rechecks formatting and Fallow, then requires a clean committed checkout.
+Uncommitted changes continue in the same Work conversation within the existing
+three-continuation limit; an exhausted limit blocks completion and preserves work.
 Work records candidate base, tree, commit and uncommitted state from the actual
 checkout snapshot. Publish requires a committed candidate. Verification for an
 uncommitted tree can be reused after that same tree is committed; a different tree
