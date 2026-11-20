@@ -181,6 +181,11 @@ outgoing draft saves from using the next scenario’s model configuration. Run
 `node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
 Discuss-to-Notes transition; combining focused flags runs those scenarios together.
 
+The capture-start browser scenario waits for active route handlers before removing
+its mocks. Issue refreshes can still be fetching the fixture queue when capture
+finishes; removing those routes immediately can release a request before its
+handler fulfills it.
+
 When closing a delivered flow, the delivery manifest records the verified
 candidate tree and the upstream Work blocks' requested proof. It retains proof
 whose hash and recorded Work tree match the delivered candidate. The manifest

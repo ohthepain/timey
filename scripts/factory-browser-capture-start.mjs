@@ -154,9 +154,7 @@ export default async function captureStartChecks(page) {
   await verifyGoStarts(page, captures, starts);
   await verifyGrillDefersGo(page, captures, starts);
   await verifyFullSendStartFailure(page, captures, starts);
-  await page.unroute('**/api/issue?issue=*');
-  await page.unroute('**/api/issue-capture');
-  await page.unroute('**/api/issue-strategy-start');
+  await page.unrouteAll({ behavior: 'wait' });
   return {
     passed: true,
     assertions: [
