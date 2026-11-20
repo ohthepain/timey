@@ -2,6 +2,12 @@
 
 ## Commands and evidence
 
+`node scripts/flow-browser.mjs --actions-menu` holds two FlowService executions
+with an injected executor, opens the actions menu, and checks both running rows
+and their Flow output links. It also checks that the open menu removes completed
+work. The disposable fixture saves screenshots and `actions-menu-proof.json`
+under its reported evidence directory. It starts no live model work.
+
 `node --test scripts/fallow-css-reset.check.mjs` runs the pinned Fallow CLI and
 the unchanged strict audit policy on a CSS reset. It also adds an actually unused
 selector and confirms that the same policy blocks it.

@@ -38,6 +38,7 @@ import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
+import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -232,6 +233,7 @@ function unexpectedConsoleErrors(entries) {
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--actions-menu', 'Actions menu lists two running Flow blocks'],
     ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
     ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
     ['--local-notes', 'Local notes capture and handoff preserve flow'],
@@ -2198,6 +2200,9 @@ try {
   await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
   await check('Pending local merges are visible and can be aborted', () =>
     mergeStateBrowserChecks({ page, project, service, screenshot })
+  );
+  await check('Actions menu lists two running Flow blocks', () =>
+    actionsMenuBrowserChecks({ page, project, service, poll, screenshot, output })
   );
   passed = true;
 } catch (error) {
