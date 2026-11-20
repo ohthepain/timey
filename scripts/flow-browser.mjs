@@ -1,3 +1,4 @@
+import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
 import { browserScenarioSelected } from './browser-scenario-policy.mjs';
 import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
 import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
@@ -231,6 +232,7 @@ function unexpectedConsoleErrors(entries) {
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
     ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
     ['--local-notes', 'Local notes capture and handoff preserve flow'],
     ['--project-home', homeCheck],
@@ -2194,6 +2196,9 @@ try {
     await screenshot('starting-branch-moved');
   });
   await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
+  await check('Pending local merges are visible and can be aborted', () =>
+    mergeStateBrowserChecks({ page, project, service, screenshot })
+  );
   passed = true;
 } catch (error) {
   failure = error.stack;

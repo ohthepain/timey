@@ -233,6 +233,15 @@
           <button id="fix-branch" class="environment-chip branch-repair-control" type="button" aria-haspopup="dialog">
             Fix Branch
           </button>
+          <select
+            id="merge-state-menu"
+            class="environment-chip merge-in-progress"
+            aria-label="Merge in progress"
+            hidden
+          >
+            <option value="" disabled selected>Merge in progress</option>
+            <option value="abort">Abort merge</option>
+          </select>
           <span id="worktree-hint">
             <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
               <option value="" disabled selected>Worktree</option>

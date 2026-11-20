@@ -1,3 +1,5 @@
+import { pendingIssueMerge } from './flow-merge-state.mjs';
+import { abortPendingMerge } from './flow-update-branch.mjs';
 import { BranchRepairs } from './branch-repair.mjs';
 import {
   existsSync,
@@ -109,6 +111,7 @@ import { FlowOvernight } from './flow-overnight.mjs';
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
 const branchActions = new Set([
+  'abort-merge',
   'open-worktree',
   'branch-repair-start',
   'branch-repair-stop',
@@ -1188,7 +1191,42 @@ class IssueFlows {
     }
     return this.dispatchBlockAction(issue, flow, input, catalog);
   }
+  async abortMerge(issue, flow, input) {
+    this.branchRepairs.requireIdle(issue);
+    requireThat(
+      !issueHasActiveWork(this.service, issue.id),
+      'Finish or stop active issue work before aborting its merge.'
+    );
+    requireThat(!this.branchRepairs.active.has(issue.id), 'Wait for the branch repair to finish.');
+    requireThat(!issue.closed && !this.flowBuilds.has(issue.id), 'Choose an idle, open issue.');
+    requireThat(input.revision === flow.revision, 'This issue changed. Refresh before aborting its merge.');
+    const workspace = flowWorkspace(this.service, flow);
+    const merge = pendingIssueMerge(workspace?.checkout);
+    requireThat(
+      merge && JSON.stringify(input.merge) === JSON.stringify(merge),
+      'The merge changed. Refresh before aborting.'
+    );
+    this.service.guard(
+      this.service.root,
+      { id: 'abort-merge-' + issue.id, issues: [issue.id] },
+      'implement',
+      workspace.base
+    );
+    const queue = this.service.sharedIssues;
+    const claim = queue?.acquireFlowBlock(issue, 'abort-merge', false);
+    const controller = new AbortController();
+    this.active.set(issue.id, { controller, blockId: 'abort-merge' });
+    try {
+      this.pauseAutoplay(issue.id, 'The local merge was aborted.');
+      await abortPendingMerge(workspace, (command, args) => git(workspace.checkout, ...args));
+    } finally {
+      this.active.delete(issue.id);
+      if (claim) queue.releaseFlowBlock(claim);
+    }
+    return this.view(issue.id);
+  }
   async branchOperation(issue, flow, input) {
+    if (input.action === 'abort-merge') return this.abortMerge(issue, flow, input);
     if (input.action === 'open-worktree')
       return openWorkFolder(flowWorkspace(this.service, flow)?.checkout, undefined, {
         terminal: input.terminal === true,
