@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { LocalNotes } from './factory-ui/local-notes.mjs';
 
 export async function localNotesBrowserChecks({ page, service, project, poll, screenshot }) {
+  service.projectDiscuss?.close();
+  service.projectDiscuss = null;
   const turns = [];
   service.projectDiscussOptions = {
     modelSettings: () => ({
