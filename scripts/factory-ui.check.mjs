@@ -3603,8 +3603,9 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
   t.after(() => dom.window.close());
   dom.window.scrollTo = () => {};
   dom.window.matchMedia = (media) => ({ matches: wideSidebar, media, addEventListener() {}, removeEventListener() {} });
-  const script = html
-    .match(/<script>([\s\S]*?)<\/script>/)[1]
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map(([, source]) => source)
+    .join('\n')
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/coordinator-ui.js'), 'utf8') +
@@ -4656,6 +4657,7 @@ test('native completion rejects an inspection whose dependencies or assignments 
 
 for (const sandbox of ['workspace-write', 'read-only']) {
   test(`slow ${sandbox} chat startup retains the exact request and dispatches once`, async (t) => {
+    const { root } = fixture(t);
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const connection = new CodexConnection();
     const sent = [],
@@ -4664,6 +4666,7 @@ for (const sandbox of ['workspace-write', 'read-only']) {
     connection.send = (message) => sent.push(message);
     const run = { id: 'run', kind: sandbox === 'read-only' ? 'lifecycle-review' : 'integration' };
     const service = {
+      root,
       codex: connection,
       store: {
         runs: [run],
@@ -4673,8 +4676,8 @@ for (const sandbox of ['workspace-write', 'read-only']) {
         },
       },
     };
-    const first = startChat(service, run, '/project', sandbox);
-    const repeated = startChat(service, run, '/project', sandbox);
+    const first = startChat(service, run, root, sandbox);
+    const repeated = startChat(service, run, root, sandbox);
     assert.equal(first, repeated);
     await Promise.resolve();
     assert.equal(sent.length, 1);
@@ -4695,13 +4698,14 @@ for (const sandbox of ['workspace-write', 'read-only']) {
 }
 
 test('disconnected uncertain startup blocks replacement creation, including after reload', async (t) => {
+  const { root } = fixture(t);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const connection = new CodexConnection();
   connection.ready = async () => {};
   connection.send = () => {};
-  const run = { id: 'old', kind: 'lifecycle-review', issueId: 'issue', actionId: 'assessment' };
-  const service = { codex: connection, store: { runs: [run], update: Object.assign } };
-  const started = startChat(service, run, '/project', 'read-only');
+  const run = { id: 'old', kind: 'lifecycle-review', issueId: '20261022-one', actionId: 'assessment' };
+  const service = { root, codex: connection, store: { runs: [run], update: Object.assign } };
+  const started = startChat(service, run, root, 'read-only');
   await Promise.resolve();
   t.mock.timers.tick(30001);
   const rejected = assert.rejects(started, /disconnected/);
@@ -4717,10 +4721,7 @@ test('disconnected uncertain startup blocks replacement creation, including afte
     },
     store: { runs: JSON.parse(JSON.stringify([run, replacement])) },
   };
-  await assert.rejects(
-    startChat(restarted, replacement, '/project', 'read-only'),
-    /earlier chat startup is unresolved/
-  );
+  await assert.rejects(startChat(restarted, replacement, root, 'read-only'), /earlier chat startup is unresolved/);
   assert.equal(creates, 0);
 });
 
@@ -5561,4 +5562,14 @@ test('retained output history is authenticated, read-only and restricted to save
   assert.equal((await fetch(url + '/issue-progress-ui.js', { headers: { cookie } })).status, 200);
   assert.equal(JSON.stringify(service.store.runs), before);
   assert.equal(readFileSync(join(service.store.directory, 'retained-one.jsonl'), 'utf8'), log);
+});
+
+test('reading queue snapshots preserves clean source and a stable review basis', (t) => {
+  const { git, service } = fixture(t);
+  assert.equal(git('status', '--porcelain'), '');
+  const first = service.snapshot(null, { includeCoordinatorDiscussion: false });
+  const second = service.snapshot(null, { includeCoordinatorDiscussion: false });
+  assert.equal(git('status', '--porcelain'), '');
+  assert.deepEqual(second.snapshot.worktree, first.snapshot.worktree);
+  assert.equal(second.reviewBasis, first.reviewBasis);
 });
