@@ -11,7 +11,7 @@ import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeF
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import vm from 'node:vm';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
@@ -21,8 +21,8 @@ import { checkCandidate } from './factory-ui/checks.mjs';
 import { disconnectedSavedRun, liveSavedRun } from './factory-saved-run-fixtures.mjs';
 
 function fixture(t, options = {}) {
-  const { root, git } = gitFixture(t, 'factory-ui-check-');
-  mkdirSync(join(root, '.issues'));
+  const { root, git } = factoryGitFixture(t, 'factory-ui-check-');
+  mkdirSync(join(root, '.issues'), { recursive: true });
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
   writeFileSync(join(root, 'source.js'), 'export const answer = 42;\n');
   mkdirSync(join(root, '.agents/skills/issues/scripts'), { recursive: true });
@@ -4663,7 +4663,14 @@ for (const sandbox of ['workspace-write', 'read-only']) {
     const sent = [],
       receipts = [];
     connection.ready = async () => {};
-    connection.send = (message) => sent.push(message);
+    let dispatched;
+    const requestSent = new Promise((resolve) => {
+      dispatched = resolve;
+    });
+    connection.send = (message) => {
+      sent.push(message);
+      dispatched();
+    };
     const run = { id: 'run', kind: sandbox === 'read-only' ? 'lifecycle-review' : 'integration' };
     const service = {
       root,
@@ -4679,7 +4686,7 @@ for (const sandbox of ['workspace-write', 'read-only']) {
     const first = startChat(service, run, root, sandbox);
     const repeated = startChat(service, run, root, sandbox);
     assert.equal(first, repeated);
-    await Promise.resolve();
+    await Promise.race([requestSent, first]);
     assert.equal(sent.length, 1);
     t.mock.timers.tick(30001);
     assert.equal(run.startup.status, 'waiting');
@@ -4702,11 +4709,15 @@ test('disconnected uncertain startup blocks replacement creation, including afte
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const connection = new CodexConnection();
   connection.ready = async () => {};
-  connection.send = () => {};
+  let dispatched;
+  const requestSent = new Promise((resolve) => {
+    dispatched = resolve;
+  });
+  connection.send = () => dispatched();
   const run = { id: 'old', kind: 'lifecycle-review', issueId: '20261022-one', actionId: 'assessment' };
   const service = { root, codex: connection, store: { runs: [run], update: Object.assign } };
   const started = startChat(service, run, root, 'read-only');
-  await Promise.resolve();
+  await Promise.race([requestSent, started]);
   t.mock.timers.tick(30001);
   const rejected = assert.rejects(started, /disconnected/);
   connection.fail(Error('Codex disconnected'));
@@ -5147,7 +5158,7 @@ test('a real pending question stays prominent even while its issue chat is conne
 });
 
 test('issue Git identity follows unfinished work, assembly and live HEAD without using the server branch', (t) => {
-  const { root, git } = gitFixture(t, 'issue-git-');
+  const { root, git } = factoryGitFixture(t, 'issue-git-');
   writeFileSync(join(root, 'source.js'), 'one');
   git('add', '.');
   git('commit', '-qm', 'initial');

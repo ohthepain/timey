@@ -29,7 +29,10 @@ message settings and attachment copies, explicit queue/Stop/Retry behavior,
 native tool and permission ownership, skill invocation policy, and guarded
 Home/issue dispatch in disposable projects. `pnpm run test:project-discuss:browser`
 drives Home/Discuss navigation, retained drafts, Markdown, model/effort and skill
-selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop. Dictation
+selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop.
+It also checks opening a long conversation after delayed history and image loading,
+reloads, returning to Discuss, and preserving manual scrolling through a polling
+rerender. It retains those observations in `project-discuss-scroll.json`. Dictation
 uses an injected speech recognizer in this scenario. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
@@ -62,6 +65,8 @@ logs, screenshots, and fixture stay under `.issues/evidence/flow-browser-*`. The
 checks establish UI and protocol behavior, not live model or GitHub execution.
 Use `pnpm run test:flow:browser --block-deletion` for the isolated click-selection,
 confirmation, keyboard safety and persisted block-removal scenario.
+Its fixture identifies added blocks by their new IDs so it deletes the intended
+Advice blocks regardless of their insertion position.
 Use `pnpm run test:flow:browser --issue-results` to check result placement below
 the issue banner, independent playback status, and hiding empty results.
 Use `pnpm run test:flow:browser --human-input` for required-review instructions,
@@ -80,12 +85,27 @@ These checks inject proposal responses and create no issues in the live queue.
 For an installed Chrome when the Playwright Chromium cache is unavailable, run
 `TIMEY_BROWSER_CHANNEL=chrome pnpm run test:browser`.
 
+`node scripts/flow-browser.mjs --connection-recovery` checks expired sessions and
+recovery after a lost action response in Flow and Classic with a disposable issue.
+It waits for initialized controls and the pause request before dropping health
+responses, then checks the selected issue, saved pause state and single dispatch
+after recovery. The action uses a click because its deliberately lost response
+can reset the checkbox before reconnection restores the saved state.
+
 For default [draft PR handoff](issue-delivery.md#default-draft-pr-handoff), attempt
 relevant checks once per changed candidate and retain failures or unavailable
 checks as such. They do not block the handoff or trigger a repair loop. Passing
 verification, fixed closure and the explicitly selected verified-delivery route
 retain the gates below. A handed-off assignment may contain incomplete code;
 never describe that result as verified implementation.
+
+Factory protocol fixtures use `factoryGitFixture` to stage project and Inbox settings
+before their initial commit, so later queue reads preserve the clean source tree.
+Deployment and restart fixtures copy `factory/system` with the server scripts.
+The legacy UI rendering fixture loads all inline scripts in document order,
+including both the embed setup and the application script.
+Chat startup tests use disposable project settings and wait for actual request
+dispatch before advancing their mocked timeout.
 
 Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions and the pnpm version in
@@ -178,6 +198,11 @@ closing its Discuss service and installing a new injected provider. This keeps
 outgoing draft saves from using the next scenario’s model configuration. Run
 `node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
 Discuss-to-Notes transition; combining focused flags runs those scenarios together.
+
+The capture-start browser scenario waits for active route handlers before removing
+its mocks. Issue refreshes can still be fetching the fixture queue when capture
+finishes; removing those routes immediately can release a request before its
+handler fulfills it.
 
 When closing a delivered flow, the delivery manifest records the verified
 candidate tree and the upstream Work blocks' requested proof. It retains proof
@@ -672,3 +697,8 @@ basis. Deployment and restart fixtures include the installed `factory/system`
 assets alongside scripts, matching the real runtime’s schema dependencies.
 Browser fixture helpers identify the block created by an add action by its ID;
 they do not assume additions occupy the last position in a flow.
+
+Flow-card reveal checks wait for the whole card to be visible in the current
+scroll viewport. Card bounds and viewport bounds are measured together; partial
+scroll movement alone does not mean the reveal has finished. Failures retain
+relative card bounds and viewport height in the polling diagnostic.
