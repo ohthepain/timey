@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 
 function refreshFixture(t) {
   const html = readFileSync('scripts/factory-ui/index.html', 'utf8');
-  const start = html.indexOf('      async function refresh()');
+  const start = html.indexOf('      function issueQueueEndpoint(');
   const end = html.indexOf('      function showRuntime(', start);
   const dom = new JSDOM(
     '<div id="coordinator-strip" hidden></div><div id="connection-banner" hidden></div><input id="draft"><dialog id="confirm"></dialog><dialog id="model-settings"></dialog><dialog id="plan"></dialog><div id="connection"></div><div id="error"></div><main id="app"></main>',
