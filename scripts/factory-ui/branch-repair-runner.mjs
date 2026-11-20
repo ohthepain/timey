@@ -1,3 +1,4 @@
+import { executionPermissionInstructions } from './execution-permissions.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
@@ -27,6 +28,7 @@ export async function runBranchRepair(input, options = {}) {
     let failure = 'Run the blocking checks and repair their failures.';
     const instructions = [
       definition.prompt,
+      executionPermissionInstructions,
       'This run prepares a candidate for explicit human approval. Do not publish, merge, commit in another checkout, or apply the repair to the original issue branch.',
       'The checkout is an isolated snapshot including the user’s uncommitted changes. Keep all work here. Keep checks and thresholds enabled. You may correct analyzer inputs when actual consumers prove they are incomplete; demonstrate that genuinely unused code still fails.',
       `Comparison base: ${run.comparisonBase}. Blocking check command: ${JSON.stringify([process.execPath, workVerificationScript, '--work-checks', '--base', run.comparisonBase])}.`,

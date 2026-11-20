@@ -1255,3 +1255,63 @@ test('investigation skills use the project catalog and preserve the investigatio
     /Inspect validation and retain historical findings/
   );
 });
+
+test('Work recovers a local-listener permission refusal in the same chat before recording missing proof', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  let attempts = 0;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    attempts++;
+    return attempts === 1
+      ? '```flow-result\n{"failure":"Requested proof unavailable: node scripts/flow-browser.mjs --project-discuss failed with listen EPERM on 127.0.0.1."}\n```'
+      : 'The permission-enabled check passed and collected proof.\n```flow-result\n{"focusedTests":[]}\n```';
+  };
+  const result = await f.run('work');
+  const turns = f.calls.filter(({ method }) => method === 'turn');
+  assert.equal(turns.length, 2);
+  assert.equal(turns[1].threadId, turns[0].threadId);
+  assert.equal(turns[1].cwd, turns[0].cwd);
+  assert.match(turns[1].prompt, /require_escalated/);
+  assert.match(turns[1].prompt, /denied/i);
+  assert.notEqual(result.status, 'blocked');
+});
+
+test('Work bounds permission recovery and preserves a repeated local-listener refusal', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    return '```flow-result\n{"failure":"The local server cannot start: listen EPERM on 127.0.0.1."}\n```';
+  };
+  const result = await f.run('work');
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 2);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /listen EPERM/);
+});
+
+test('Work respects an explicit denial of the native local-server permission request', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    return '```flow-result\n{"failure":"The native permission request was denied. The local check failed with listen EPERM on 127.0.0.1."}\n```';
+  };
+  const result = await f.run('work');
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /denied/);
+});
+
+test('Work stops when native permission requests are unavailable', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    return '```flow-result\n{"failure":"Native permission requests are unavailable in this session. The check failed with listen EPERM on 127.0.0.1."}\n```';
+  };
+  const result = await f.run('work');
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /unavailable/);
+});

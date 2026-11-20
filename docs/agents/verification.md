@@ -520,6 +520,14 @@ suite, so a sandbox refusal is an immediate environment failure with no claimed
 checks. Audit-only checkpoints do not require networking. Preflight never grants
 permissions or installs dependencies automatically.
 
+For model-run checks, a `listen EPERM` or `listen EACCES` refusal requires a native
+permission request for that exact command. Work retains the same conversation and
+checkout for one recovery turn if the model reports this refusal without
+collecting proof. A repeated refusal remains blocked. An explicit denial or an
+unavailable permission request stops the run; Factory never grants permission
+itself. `node --test --test-name-pattern='Work.*permission|local-listener'
+scripts/flow-executor.check.mjs` checks recovery, its limit, and denial handling.
+
 Summaries retain execution phase timestamps and owned command PIDs. Cancellation
 stops the runner's own child process group, retains a failed summary and starts no
 remaining checks. Concurrent checks for the same checkout and candidate share the

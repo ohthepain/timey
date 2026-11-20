@@ -23,6 +23,12 @@ or worsened Fallow findings before testing. Run it again before tests if you edi
 the source.
 
 Run only focused tests that cover the changed behavior and Requested Proof.
+If a local-server check fails with `listen EPERM` or `listen EACCES`, request
+native execution permission for that exact command and rerun it after approval.
+Stop if the request is denied or permission requests are unavailable. Report the
+permission restriction and the proof it prevented, rather than a project test
+failure. Do not repeat the restricted command unchanged.
+
 Run individual test files or scenarios directly when an aggregate command would
 also run unrelated tests. Leave full suites such as `pnpm run test:factory` and
 full candidate verification to the delivery checks. Add a focused test when there
