@@ -122,7 +122,8 @@ or root CSV files. Existing root CSVs are never test cleanup targets.
 only when lockfiles match, and deletes the clone afterward. Each command prints
 START, streams child stdout and stderr into the console while also retaining
 them in the evidence log, and emits a periodic running message during
-silence. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
+silence. Every verification command, including CI, has a 15-minute deadline;
+a heartbeat never extends it. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
 Per-command logs are readable before completion; summaries retain the
 original pass/fail and separate audit-channel assessment. Evidence stays under
 `.issues/evidence/` with a JSON summary and per-command logs. Preserve relevant
@@ -172,8 +173,9 @@ local copies. Original records remain unchanged. The regression in
 `scripts/flow-executor.check.mjs` covers a passing build followed by a browser
 failure whose original logs are outside the worker checkout.
 
-The Notes browser scenario closes the preceding Discuss service before
-installing its own injected provider. Run
+The Notes browser scenario navigates away from the preceding page before
+closing its Discuss service and installing a new injected provider. This keeps
+outgoing draft saves from using the next scenario’s model configuration. Run
 `node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
 Discuss-to-Notes transition; combining focused flags runs those scenarios together.
 
@@ -648,3 +650,17 @@ GitHub Actions receives verification stdout/stderr as each child emits it. A
 summary and retained evidence logs remain available after the command exits.
 An already-running GitHub job keeps the verifier from its checked-out revision;
 new streaming behavior requires a run containing the updated verifier.
+
+Flow browser verification writes under `TIMEY_BROWSER_OUTPUT/flow` when run by
+the aggregate verifier. An explicit `TIMEY_FLOW_BROWSER_OUTPUT` still overrides
+that location. This keeps its logs, response diagnostics and screenshots inside
+the retained verification artifacts after the exported checkout is removed.
+HTTP error records include the response body and originating request; unexpected
+browser errors continue to fail verification.
+
+Work All Night fixtures create the folders they assign, so execution reaches the
+injected worker through the same settings validation as a real issue. Start/stop
+checks have a 30-second test deadline and retain per-issue failure explanations.
+Pending publication joins all preceding unfinished lanes even when the standard
+flow has no suggested Verify block. New blocks default to insertion before
+publication; existing attempted publication dependencies remain unchanged.
