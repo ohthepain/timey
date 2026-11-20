@@ -241,7 +241,8 @@ function checkExcluded(name) {
     ['--human-input', humanInputCheck],
     ['--merge-settings', mergeSettingsCheck],
   ];
-  return selections.some(([flag, selected]) => process.argv.includes(flag) && name !== selected);
+  const selected = selections.filter(([flag]) => process.argv.includes(flag));
+  return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
 }
 
 async function check(name, run) {

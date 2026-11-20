@@ -687,6 +687,8 @@ explicit attempts, invalidation, route rebuilding, capture, and artifact listing
 `execution-permissions.mjs` supplies native permission guidance for model-run
 checks. `work-progress.mjs` separates bounded unfinished-work continuations from
 check repairs and stops for concrete human, permission or external blockers.
+`flow-repair-evidence.mjs` copies Merge failure records and failed-check logs into
+the issue checkout before its repair worker starts.
 `branch-repair.mjs` owns issue-page branch repair runs and approval.
 `branch-repair-workspace.mjs` snapshots the source without changing its index and
 applies only an approved patch. `branch-repair-runner.mjs` runs the block prompt
