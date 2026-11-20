@@ -685,7 +685,8 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
 `execution-permissions.mjs` supplies native permission guidance for model-run
-checks and one bounded Work recovery after a local-listener refusal.
+checks. `work-progress.mjs` separates bounded unfinished-work continuations from
+check repairs and stops for concrete human, permission or external blockers.
 `branch-repair.mjs` owns issue-page branch repair runs and approval.
 `branch-repair-workspace.mjs` snapshots the source without changing its index and
 applies only an approved patch. `branch-repair-runner.mjs` runs the block prompt

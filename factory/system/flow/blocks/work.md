@@ -52,7 +52,12 @@ Use Requested Proof to check the current result. In each response, describe what
 you did and what you observed. Retain a supporting file as the `proof` artifact
 when one is available. Save temporary evidence files in an ignored location inside
 the checkout. Report any gap and why the proof could not be collected in the
-response. Use the structured failure field for blockers to completing the work.
+response. Finish available implementation and verification steps before returning. Missing
+measurements or uncollected proof are unfinished work to continue in the same
+conversation. Use `failure` only for a concrete blocker, paired with `blocker`:
+`human-input`, `permission-denied`, `permission-unavailable`, or
+`external-dependency`. Explain the specific input, permission or dependency
+preventing progress. Never make a required human decision yourself.
 
 When a project check prevents tests or Requested Proof, lead the response and
 structured failure with the failed command and its relevant diagnostic. State

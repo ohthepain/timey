@@ -525,11 +525,17 @@ permissions or installs dependencies automatically.
 
 For model-run checks, a `listen EPERM` or `listen EACCES` refusal requires a native
 permission request for that exact command. Work retains the same conversation and
-checkout for one recovery turn if the model reports this refusal without
-collecting proof. A repeated refusal remains blocked. An explicit denial or an
-unavailable permission request stops the run; Factory never grants permission
-itself. `node --test --test-name-pattern='Work.*permission|local-listener'
-scripts/flow-executor.check.mjs` checks recovery, its limit, and denial handling.
+checkout when the model reports unfinished work, including uncollected proof.
+It allows up to three continuation turns, separately from the three check-repair
+attempts. A concrete human input requirement, denied or unavailable permission,
+or unavailable external dependency stops the run with its reason. Factory never
+grants permission itself. `node --test scripts/flow-executor.check.mjs` checks
+continuation, its limit, and actual blocker handling.
+
+Fallow already skips hidden agent tooling. `.fallowrc.json` explicitly excludes
+`.agents/**` so this intentional scope does not emit `skipped-source-dotdir`.
+Application code remains checked, including new unused exports; the real CLI
+regression is in `scripts/fallow-css-reset.check.mjs`.
 
 Summaries retain execution phase timestamps and owned command PIDs. Cancellation
 stops the runner's own child process group, retains a failed summary and starts no

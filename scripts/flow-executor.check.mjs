@@ -1277,17 +1277,15 @@ test('Work recovers a local-listener permission refusal in the same chat before 
   assert.notEqual(result.status, 'blocked');
 });
 
-test('Work bounds permission recovery and preserves a repeated local-listener refusal', async (t) => {
+test('Work bounds repeated unfinished-check responses and retains their reason', async (t) => {
   const f = fixture(t);
   const original = f.connection.turn;
   f.connection.turn = async (...args) => {
     await original(...args);
     return '```flow-result\n{"failure":"The local server cannot start: listen EPERM on 127.0.0.1."}\n```';
   };
-  const result = await f.run('work');
-  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 2);
-  assert.equal(result.status, 'blocked');
-  assert.match(result.summary, /listen EPERM/);
+  await assert.rejects(f.run('work'), /unfinished steps after 3 continuations.*listen EPERM/);
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 4);
 });
 
 test('Work respects an explicit denial of the native local-server permission request', async (t) => {
@@ -1314,4 +1312,72 @@ test('Work stops when native permission requests are unavailable', async (t) => 
   assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
   assert.equal(result.status, 'blocked');
   assert.match(result.summary, /unavailable/);
+});
+
+test('Work completes ordinary unfinished proof collection in the same run', async (t) => {
+  let checks = 0;
+  const f = fixture(t, {
+    verifyWork: async () => {
+      checks++;
+      return { evidence: [] };
+    },
+  });
+  const original = f.connection.turn;
+  let turns = 0;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    turns++;
+    if (turns === 1)
+      return '```flow-result\n{"failure":"Computed-style proof for the message divider was not collected; the focused browser check passed."}\n```';
+    const folder = join(args[1], '.issues');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, 'rendered-style.json'),
+      JSON.stringify({ borderBottomStyle: 'none', borderBottomWidth: '0px' })
+    );
+    return 'Rendered border styles collected.\n```flow-result\n{"files":{"proof":".issues/rendered-style.json"},"focusedTests":[]}\n```';
+  };
+  const result = await f.run('work');
+  const calls = f.calls.filter(({ method }) => method === 'turn');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].threadId, calls[1].threadId);
+  assert.equal(calls[0].cwd, calls[1].cwd);
+  assert.match(calls[1].prompt, /Continue|continue/);
+  assert.notEqual(result.status, 'blocked');
+  assert.equal(checks, 1);
+  assert.equal(JSON.parse(readFileSync(result.artifacts.files.proof.path)).borderBottomWidth, '0px');
+});
+
+test('Work stops for a concrete human decision instead of continuing that decision itself', async (t) => {
+  const f = fixture(t);
+  const original = f.connection.turn;
+  f.connection.turn = async (...args) => {
+    await original(...args);
+    return '```flow-result\n{"failure":"Choose which conflicting behavior to preserve.","blocker":"human-input"}\n```';
+  };
+  const result = await f.run('work');
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /Choose which/);
+});
+
+test('unfinished Work continuations leave the full check-repair budget available', async (t) => {
+  let checks = 0;
+  const f = fixture(t, {
+    async verifyWork() {
+      checks++;
+      if (checks <= 3) throw Object.assign(Error('Fix the required check'), { verificationFailure: true });
+      return { evidence: [] };
+    },
+  });
+  const turn = f.connection.turn.bind(f.connection);
+  let turns = 0;
+  f.connection.turn = async (...args) => {
+    turns++;
+    if (turns <= 3) return '```flow-result\n{"failure":"Requested measurement is still unfinished."}\n```';
+    return turn(...args);
+  };
+  await f.run('work');
+  assert.equal(turns, 7);
+  assert.equal(checks, 4);
 });

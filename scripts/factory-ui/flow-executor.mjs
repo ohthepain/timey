@@ -1,4 +1,5 @@
-import { executionPermissionInstructions, localServerPermissionRecovery } from './execution-permissions.mjs';
+import { createWorkProgress } from './work-progress.mjs';
+import { executionPermissionInstructions } from './execution-permissions.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
 import { blockDefinitionId, deliveryTarget, startingPoint, upstreamBlocks } from './flow-block-data.mjs';
 import { spawn, execFileSync } from 'node:child_process';
@@ -63,7 +64,6 @@ const commandBlocks = new Set([
   'cleanup',
   'delete-worktree',
 ]);
-const maxWorkRepairs = 3;
 
 export function createFlowExecutor(service, options = {}) {
   const active = new Map();
@@ -356,7 +356,7 @@ function artifactInstructions(definition) {
   const available = definition.artifacts.filter(({ key }) => key !== 'response');
   return (
     'Factory automatically saves your final response as the Block response artifact, including on read-only blocks. You do not need to create a proof file to retain your response. Cite observed evidence and state what is unavailable. Never claim unavailable evidence was obtained. ' +
-    'End your response with a flow-result fenced JSON object when you publish declared artifacts or report a failure. Use values and files as maps keyed by the declared artifact names. File paths must be inside the saved issue checkout. For missing required inputs or proof, include a failure string naming what is missing. Include only actual results. Declared artifacts: ' +
+    'End your response with a flow-result fenced JSON object when you publish declared artifacts or report a failure. Use values and files as maps keyed by the declared artifact names. File paths must be inside the saved issue checkout. Finish available work and collect requested proof before returning. Use failure only when a concrete blocker prevents further authorized work. An uncollected check or measurement you can perform is unfinished work. Include only actual results. Declared artifacts: ' +
     JSON.stringify(available)
   );
 }
@@ -545,18 +545,17 @@ function workScope(ctx, workspace) {
 async function checkWorkResponse(ctx, options, workspace, folder, round, output, prompt) {
   if (ctx.block.kind !== 'work') return {};
   const manifest = modelManifest(output);
-  const permissionPrompt = localServerPermissionRecovery(manifest?.failure, ctx.permissionRecoveryAttempted, prompt);
-  if (permissionPrompt) {
-    ctx.permissionRecoveryAttempted = true;
-    return { repairPrompt: permissionPrompt, failedChecks: [] };
-  }
+  const progress = (ctx.workProgress ??= createWorkProgress());
+  const followup = progress.followup(manifest, prompt);
+  if (followup) return { repairPrompt: followup, failedChecks: [] };
   if (typeof manifest?.failure === 'string' && manifest.failure.trim()) return {};
   try {
     return {
       workCheck: await options.verifyWork(ctx, workspace, join(folder, `work-checks-${round}`)),
     };
   } catch (error) {
-    if (ctx.signal.aborted || !error.verificationFailure || round > maxWorkRepairs) throw error;
+    if (ctx.signal.aborted || !error.verificationFailure) throw error;
+    progress.checkFailed(error);
     return {
       repairPrompt: JSON.stringify({
         originalWork: prompt,
@@ -820,7 +819,7 @@ async function runModel(service, ctx, owned, options) {
       ctx.signal.throwIfAborted();
       progress.begin(
         repairPrompt
-          ? `Retrying Work after a blocked check (attempt ${round - 1} of ${maxWorkRepairs}).\n`
+          ? `Continuing Work (step ${round}).\n`
           : ctx.block.kind === 'sol'
             ? `Sol iteration ${round}/${rounds}.`
             : `Running ${ctx.block.kind} block.`
