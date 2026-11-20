@@ -354,6 +354,20 @@ test('issue Play runs Update Branch without confirmation and Pause lets the acti
   assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Flow complete' });
 });
 
+async function waitForNightSignal(signal, label) {
+  let timer;
+  try {
+    await Promise.race([
+      signal,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error(`Work All Night did not ${label} within 30 seconds.`)), 30000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 test('Work All Night keeps dependency failures separate and retains the exact handoff', async (t) => {
   const { id, root, service } = fixture(t);
   const dependent = '20261113-dependent';
@@ -410,7 +424,7 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
   assert.deepEqual(
     report.issues.map(({ status }) => status),
     ['paused', 'paused', 'ready'],
-    JSON.stringify(report)
+    [JSON.stringify(report), report.issues.map(({ summary }) => summary).join('\n')].join('\n')
   );
   assert.equal(report.issues[0].failedCheck, 'Work');
   assert.match(report.issues[0].summary, /regression check failed/);
@@ -459,9 +473,9 @@ test('stopping Work All Night cancels the owned block and leaves queued issues u
   }
   const plan = await flows.action({ action: 'folder-night-plan', folder, issueIds: [id, queued] });
   await flows.action({ action: 'folder-night-start', planId: plan.id });
-  await started.promise;
+  await waitForNightSignal(started.promise, 'start its worker');
   await flows.action({ action: 'folder-night-stop', folder });
-  await stopped.promise;
+  await waitForNightSignal(stopped.promise, 'stop its worker');
   let report;
   for (let retries = 0; retries < 100; retries += 1) {
     report = flows.overnight.reports()[folder];

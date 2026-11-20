@@ -2,14 +2,14 @@ import { DeliveryStore } from './issue-delivery-store.mjs';
 import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { mkdirSync, writeFileSync, readFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory } from './factory-ledger.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { digest } from './factory-ui/common.mjs';
 
 export function deliveryFixture(t) {
-  const queue = gitFixture(t, 'delivery-queue-'),
-    source = gitFixture(t, 'delivery-source-');
+  const queue = factoryGitFixture(t, 'delivery-queue-'),
+    source = factoryGitFixture(t, 'delivery-source-');
   for (const repo of [queue, source]) {
     writeFileSync(join(repo.root, '.gitignore'), '.issues/\n');
     writeFileSync(join(repo.root, 'code.js'), 'export const value = 1;\n');

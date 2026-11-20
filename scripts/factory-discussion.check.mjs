@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { createDiscussions } from './factory-ui/discussion.mjs';
@@ -17,8 +17,8 @@ import { humanGuard } from './factory-ui/guard.mjs';
 import { digest } from './factory-ui/common.mjs';
 
 function fixture(t) {
-  const { root, git } = gitFixture(t, 'discussion-check-');
-  mkdirSync(join(root, '.issues'));
+  const { root, git } = factoryGitFixture(t, 'discussion-check-');
+  mkdirSync(join(root, '.issues'), { recursive: true });
   mkdirSync(join(root, '.agents/skills/issues/scripts'), { recursive: true });
   for (const name of ['human-input.mjs', 'human-input-version.json'])
     cpSync(resolve('.agents/skills/issues/scripts', name), join(root, '.agents/skills/issues/scripts', name));
@@ -201,16 +201,19 @@ test('temporary discussion lists enabled skills and invokes selected skills with
   const skills = await f.discussion.skills(f.input, f.owner);
   assert.deepEqual(skills.map(({ name }) => name).sort(), ['archive', 'local-note', 'sample', 'skill-installer']);
   assert.deepEqual(
-    skills.find(({ name }) => name === 'sample'),
-    {
-      name: 'sample',
-      description: 'Sample skill',
-      source: 'Personal',
-      icon: '✦',
-      displayName: undefined,
-      allowImplicitInvocation: true,
-    }
+    skills.filter(({ source }) => source !== 'Factory'),
+    [
+      {
+        name: 'sample',
+        description: 'Sample skill',
+        source: 'Personal',
+        displayName: undefined,
+        allowImplicitInvocation: true,
+        icon: '✦',
+      },
+    ]
   );
+  assert.ok(skills.some(({ name, source }) => name === 'local-note' && source === 'Factory'));
   await f.discussion.turn({ ...f.input, text: '', skills: ['sample'] }, f.owner);
   assert.deepEqual(f.skillCalls[0], [
     {
@@ -218,9 +221,9 @@ test('temporary discussion lists enabled skills and invokes selected skills with
       path: f.skillPath,
       description: 'Sample skill',
       source: 'Personal',
-      sha256: (await import('./factory-ui/common.mjs')).digest(readFileSync(f.skillPath)),
       displayName: undefined,
       allowImplicitInvocation: true,
+      sha256: (await import('./factory-ui/common.mjs')).digest(readFileSync(f.skillPath)),
     },
   ]);
   assert.equal(f.service.store.list(new Map()).length, 0);

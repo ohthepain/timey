@@ -109,6 +109,11 @@ The issue timeline groups notes and results from its blocks. Model blocks use
 their own Codex conversations so each receives its declared inputs independently.
 Explicit continuation can reuse a block conversation with the same inputs and
 definition. Before the checkout exists, the timeline uses its project fallback. Classic and flow writers cannot own the same issue concurrently.
+Without an explicit insertion point, added blocks go before Publish PR. An
+unattempted Publish PR waits for every preceding lane, including in flows without
+a suggested Verify block. Existing attempted publication dependencies remain
+unchanged.
+
 Parallel graph lanes describe independent branches. The owning Arena or Swarm
 skill can coordinate isolated parallel workers inside its block; ordinary blocks
 serialize through the one conversation.
