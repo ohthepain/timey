@@ -91,6 +91,10 @@ export function resolveIssueExecutionSettings(root, issue, flow, { started = fal
   return { ...resolved, overrides, basis, frozen: Boolean(flow.executionSettings || started) };
 }
 
+function configuredInboxName(folders) {
+  return folders.find(({ name }) => name === 'Inbox')?.name ?? null;
+}
+
 export function savedIssueExecutionSettings(root, id) {
   const path = join(root, '.issues/flows', id, 'flow.json');
   const flow = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { issueId: id, blocks: [] };
@@ -99,7 +103,10 @@ export function savedIssueExecutionSettings(root, id) {
   const header = parse(report.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1]);
   const folders = readIssueFolderSettings(root);
   flow.folder =
-    folders.find(({ id: folderId }) => folderId === header.folder_id)?.name || flow.folder || header.folder || 'Inbox';
+    folders.find(({ id: folderId }) => folderId === header.folder_id)?.name ||
+    flow.folder ||
+    header.folder ||
+    configuredInboxName(folders);
   return resolveIssueExecutionSettings(root, { id }, flow, { started: executionStarted({}, flow) });
 }
 
