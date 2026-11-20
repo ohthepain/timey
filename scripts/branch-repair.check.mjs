@@ -260,7 +260,7 @@ test('native model-reported blockers cannot produce passing candidate checks', a
         },
       }
     ),
-    /reported a blocker/
+    /Missing check configuration/
   );
   assert.equal(checked, false);
 });

@@ -375,7 +375,7 @@ function retainModelFile(workspace, folder, { key, label }, file) {
   return { path, label, sha256: digest(bytes) };
 }
 
-function modelManifest(output) {
+export function modelManifest(output) {
   const manifest = output.match(/```flow-result\s*\n([\s\S]*?)\n```\s*$/i)?.[1];
   return manifest ? JSON.parse(manifest) : {};
 }

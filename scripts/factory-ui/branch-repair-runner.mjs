@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { runWorkVerification, workVerificationScript } from './flow-verification.mjs';
-import { executeCommand } from './flow-executor.mjs';
+import { executeCommand, modelManifest } from './flow-executor.mjs';
 import { requireThat } from './common.mjs';
 
 export async function runBranchRepair(input, options = {}) {
@@ -28,7 +28,7 @@ export async function runBranchRepair(input, options = {}) {
     const instructions = [
       definition.prompt,
       'This run prepares a candidate for explicit human approval. Do not publish, merge, commit in another checkout, or apply the repair to the original issue branch.',
-      'The checkout is an isolated snapshot including the user’s uncommitted changes. Keep all work here. Do not modify check configuration to bypass failures.',
+      'The checkout is an isolated snapshot including the user’s uncommitted changes. Keep all work here. Keep checks and thresholds enabled. You may correct analyzer inputs when actual consumers prove they are incomplete; demonstrate that genuinely unused code still fails.',
       `Comparison base: ${run.comparisonBase}. Blocking check command: ${JSON.stringify([process.execPath, workVerificationScript, '--work-checks', '--base', run.comparisonBase])}.`,
     ].join('\n\n');
     signal.throwIfAborted();
@@ -56,10 +56,8 @@ export async function runBranchRepair(input, options = {}) {
       const output = await connection.turn(thread, run.checkout, failure, undefined, skillInputs(skills));
       turnPending = false;
       progress(output + '\n');
-      requireThat(
-        !/```flow-result\s*\n[\s\S]*?"failure"\s*:\s*"[^"\n]+/i.test(output),
-        'The repair reported a blocker. Review its output before retrying.'
-      );
+      const reportedFailure = modelManifest(output).failure;
+      if (typeof reportedFailure === 'string' && reportedFailure.trim()) throw Error(reportedFailure.trim());
       signal.throwIfAborted();
       failure = await checkBranchRepair(input, round, options.verify || runWorkVerification);
       if (!failure) return;
