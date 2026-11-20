@@ -1,7 +1,7 @@
 import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory } from './factory-ledger.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 
@@ -35,7 +35,7 @@ export function proposal(description, role = 'ready-to-fix') {
   };
 }
 export function captureFixture(t, options = {}) {
-  const { root, git } = gitFixture(t, 'factory-capture-');
+  const { root, git } = factoryGitFixture(t, 'factory-capture-');
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
   writeFileSync(join(root, 'source.js'), 'export const value = 1;\n');
   const helper = join(root, '.agents/skills/issues/scripts');
@@ -44,7 +44,7 @@ export function captureFixture(t, options = {}) {
     cpSync(resolve('.agents/skills/issues/scripts', name), join(helper, name));
   git('add', '.');
   git('commit', '-qm', 'capture fixture');
-  mkdirSync(join(root, '.issues'));
+  mkdirSync(join(root, '.issues'), { recursive: true });
   writeFileSync(
     join(root, '.issues/triage-labels.md'),
     '| Role | State | Next | Exit |\n| --- | --- | --- | --- |\n' +

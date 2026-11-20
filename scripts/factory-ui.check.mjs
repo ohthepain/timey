@@ -11,7 +11,7 @@ import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeF
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import vm from 'node:vm';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
@@ -21,8 +21,8 @@ import { checkCandidate } from './factory-ui/checks.mjs';
 import { disconnectedSavedRun, liveSavedRun } from './factory-saved-run-fixtures.mjs';
 
 function fixture(t, options = {}) {
-  const { root, git } = gitFixture(t, 'factory-ui-check-');
-  mkdirSync(join(root, '.issues'));
+  const { root, git } = factoryGitFixture(t, 'factory-ui-check-');
+  mkdirSync(join(root, '.issues'), { recursive: true });
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
   writeFileSync(join(root, 'source.js'), 'export const answer = 42;\n');
   mkdirSync(join(root, '.agents/skills/issues/scripts'), { recursive: true });
@@ -3604,7 +3604,9 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
   dom.window.scrollTo = () => {};
   dom.window.matchMedia = (media) => ({ matches: wideSidebar, media, addEventListener() {}, removeEventListener() {} });
   const script = html
-    .match(/<script>([\s\S]*?)<\/script>/)[1]
+    .matchAll(/<script>([\s\S]*?)<\/script>/g)
+    .toArray()
+    .at(-1)[1]
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/coordinator-ui.js'), 'utf8') +
@@ -4656,14 +4658,23 @@ test('native completion rejects an inspection whose dependencies or assignments 
 
 for (const sandbox of ['workspace-write', 'read-only']) {
   test(`slow ${sandbox} chat startup retains the exact request and dispatches once`, async (t) => {
+    const { root } = fixture(t);
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const connection = new CodexConnection();
     const sent = [],
       receipts = [];
     connection.ready = async () => {};
-    connection.send = (message) => sent.push(message);
+    let dispatched;
+    const requestSent = new Promise((resolve) => {
+      dispatched = resolve;
+    });
+    connection.send = (message) => {
+      sent.push(message);
+      dispatched();
+    };
     const run = { id: 'run', kind: sandbox === 'read-only' ? 'lifecycle-review' : 'integration' };
     const service = {
+      root,
       codex: connection,
       store: {
         runs: [run],
@@ -4673,10 +4684,10 @@ for (const sandbox of ['workspace-write', 'read-only']) {
         },
       },
     };
-    const first = startChat(service, run, '/project', sandbox);
-    const repeated = startChat(service, run, '/project', sandbox);
+    const first = startChat(service, run, root, sandbox);
+    const repeated = startChat(service, run, root, sandbox);
     assert.equal(first, repeated);
-    await Promise.resolve();
+    await Promise.race([requestSent, first]);
     assert.equal(sent.length, 1);
     t.mock.timers.tick(30001);
     assert.equal(run.startup.status, 'waiting');
@@ -4695,14 +4706,19 @@ for (const sandbox of ['workspace-write', 'read-only']) {
 }
 
 test('disconnected uncertain startup blocks replacement creation, including after reload', async (t) => {
+  const { root } = fixture(t);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const connection = new CodexConnection();
   connection.ready = async () => {};
-  connection.send = () => {};
-  const run = { id: 'old', kind: 'lifecycle-review', issueId: 'issue', actionId: 'assessment' };
-  const service = { codex: connection, store: { runs: [run], update: Object.assign } };
-  const started = startChat(service, run, '/project', 'read-only');
-  await Promise.resolve();
+  let dispatched;
+  const requestSent = new Promise((resolve) => {
+    dispatched = resolve;
+  });
+  connection.send = () => dispatched();
+  const run = { id: 'old', kind: 'lifecycle-review', issueId: '20261022-one', actionId: 'assessment' };
+  const service = { root, codex: connection, store: { runs: [run], update: Object.assign } };
+  const started = startChat(service, run, root, 'read-only');
+  await Promise.race([requestSent, started]);
   t.mock.timers.tick(30001);
   const rejected = assert.rejects(started, /disconnected/);
   connection.fail(Error('Codex disconnected'));
@@ -4717,10 +4733,7 @@ test('disconnected uncertain startup blocks replacement creation, including afte
     },
     store: { runs: JSON.parse(JSON.stringify([run, replacement])) },
   };
-  await assert.rejects(
-    startChat(restarted, replacement, '/project', 'read-only'),
-    /earlier chat startup is unresolved/
-  );
+  await assert.rejects(startChat(restarted, replacement, root, 'read-only'), /earlier chat startup is unresolved/);
   assert.equal(creates, 0);
 });
 
@@ -5146,7 +5159,7 @@ test('a real pending question stays prominent even while its issue chat is conne
 });
 
 test('issue Git identity follows unfinished work, assembly and live HEAD without using the server branch', (t) => {
-  const { root, git } = gitFixture(t, 'issue-git-');
+  const { root, git } = factoryGitFixture(t, 'issue-git-');
   writeFileSync(join(root, 'source.js'), 'one');
   git('add', '.');
   git('commit', '-qm', 'initial');

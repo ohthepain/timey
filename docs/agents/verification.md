@@ -92,6 +92,14 @@ verification, fixed closure and the explicitly selected verified-delivery route
 retain the gates below. A handed-off assignment may contain incomplete code;
 never describe that result as verified implementation.
 
+Factory protocol fixtures use `factoryGitFixture` to stage project and Inbox settings
+before their initial commit, so later queue reads preserve the clean source tree.
+Deployment and restart fixtures copy `factory/system` with the server scripts.
+The legacy UI rendering fixture loads the final inline application script rather
+than the earlier embed setup script.
+Chat startup tests use disposable project settings and wait for actual request
+dispatch before advancing their mocked timeout.
+
 Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions and the pnpm version in
 `packageManager`. Run `pnpm install --frozen-lockfile` in a clean checkout.
