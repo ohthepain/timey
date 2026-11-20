@@ -672,3 +672,8 @@ basis. Deployment and restart fixtures include the installed `factory/system`
 assets alongside scripts, matching the real runtime’s schema dependencies.
 Browser fixture helpers identify the block created by an add action by its ID;
 they do not assume additions occupy the last position in a flow.
+
+Flow-card reveal checks wait for the whole card to be visible in the current
+scroll viewport. Card bounds and viewport bounds are measured together; partial
+scroll movement alone does not mean the reveal has finished. Failures retain
+relative card bounds and viewport height in the polling diagnostic.
