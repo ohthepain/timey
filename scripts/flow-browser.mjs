@@ -41,7 +41,9 @@ import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
-  process.env.TIMEY_FLOW_BROWSER_OUTPUT || join(root, '.issues/evidence/flow-browser-' + randomUUID())
+  process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
+    (process.env.TIMEY_BROWSER_OUTPUT && join(process.env.TIMEY_BROWSER_OUTPUT, 'flow')) ||
+    join(root, '.issues/evidence/flow-browser-' + randomUUID())
 );
 const project = join(output, 'project');
 mkdirSync(output, { recursive: true });
@@ -109,6 +111,7 @@ const discussCheck = 'Project Discuss retains independent conversations, setting
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const mergeSettingsCheck = 'Request saves the regression choice and the block palette hides Verify';
+const pendingResponses = [];
 const logs = {
   console: [],
   pageErrors: [],
@@ -404,9 +407,22 @@ try {
       failure.error?.errorText === 'net::ERR_ABORTED';
     logs[cancelledRead ? 'cancelledReads' : 'failedRequests'].push(failure);
   });
-  page.on('response', (response) =>
-    logs.responses.push({ path: new URL(response.url()).pathname, status: response.status() })
-  );
+  page.on('response', (response) => {
+    const entry = { path: new URL(response.url()).pathname, status: response.status() };
+    logs.responses.push(entry);
+    if (response.status() >= 400)
+      pendingResponses.push(
+        response
+          .text()
+          .then((body) => {
+            entry.body = body.slice(0, 4000);
+            entry.request = response.request().postData();
+          })
+          .catch((error) => {
+            entry.body = error.message;
+          })
+      );
+  });
   await check('The whole sidebar scrolls over every section', async () => {
     const issuePaths = Array.from({ length: 24 }, (_, index) =>
       join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
@@ -2286,6 +2302,7 @@ try {
   if (page) await screenshot('failure').catch(() => {});
   process.exitCode = 1;
 } finally {
+  await Promise.all(pendingResponses);
   await browser?.close();
   server.closeAllConnections();
   if (server.listening) await new Promise((done) => server.close(done));
