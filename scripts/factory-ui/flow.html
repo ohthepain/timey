@@ -34,103 +34,105 @@
     </script>
     <div id="app" class="workspace">
       <aside class="sidebar" aria-label="Factory sidebar">
-        <div class="project-header">
-          <a class="brand" href="/" aria-label="Project home"
-            ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
-            ><span class="brand-tag">FLOW</span></a
-          >
-          <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
+        <div class="sidebar-content">
+          <div class="project-header">
+            <a class="brand" href="/" aria-label="Project home"
+              ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
+              ><span class="brand-tag">FLOW</span></a
             >
-              <path
-                d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
-              />
-              <circle cx="11" cy="12.5" r="3.5" />
-            </svg>
-          </button>
-        </div>
-        <nav class="project-home-menu" aria-label="Project menu">
-          <button type="button" data-project-home="home">Home</button>
-          <button type="button" data-project-home="discuss">Discuss</button>
-          <button type="button" data-project-home="investigate">Investigate</button>
-          <button type="button" data-project-home="automate">Automate me</button>
-        </nav>
-        <div class="project-actions-row">
-          <button
-            class="project-actions"
-            id="project-actions"
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded="false"
-          >
-            0 actions running
-          </button>
-          <label class="actions-switch" id="flow-actions-switch"
-            ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
-          >
-          <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
-            Restart server
-          </button>
-        </div>
-        <small class="project-actions-message" data-server-message role="status"></small>
-        <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
-        <label class="search-box"
-          ><span aria-hidden="true">⌕</span
-          ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
-        /></label>
-        <section id="local-notes" class="local-notes" aria-label="Local notes">
-          <header class="sidebar-folder-row">
-            <button
-              id="local-notes-toggle"
-              class="icon-button folder-disclosure"
-              type="button"
-              aria-label="Collapse Local notes"
-              aria-expanded="true"
-              aria-controls="local-notes-body"
-            ></button>
-            <h2 class="sidebar-folder-name">Local notes</h2>
-            <button id="local-note-quick" type="button" class="small-button" title="Quick note (Alt+N)">＋ Note</button>
-          </header>
-          <div id="local-notes-body">
-            <form id="local-note-form">
-              <textarea
-                id="local-note-text"
-                aria-label="Quick local note"
-                placeholder="A thought to keep…"
-                maxlength="24000"
-                rows="2"
-              ></textarea
-              ><button type="submit" class="small-button">Save note</button>
-            </form>
-            <ul id="local-note-list" class="local-note-list"></ul>
-            <p id="local-note-status" role="status" aria-live="polite"></p>
+            <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
+                />
+                <circle cx="11" cy="12.5" r="3.5" />
+              </svg>
+            </button>
           </div>
-        </section>
-        <section class="sidebar-files" aria-label="Files">
-          <div id="sidebar-file-tree"></div>
-          <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
-        </section>
-        <div class="sidebar-heading">
-          <button class="sidebar-issues-link" type="button" data-open-project-issues>Issues</button
-          ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
+          <nav class="project-home-menu" aria-label="Project menu">
+            <button type="button" data-project-home="home">Home</button>
+            <button type="button" data-project-home="discuss">Discuss</button>
+            <button type="button" data-project-home="investigate">Investigate</button>
+            <button type="button" data-project-home="automate">Automate me</button>
+          </nav>
+          <div class="project-actions-row">
+            <button
+              class="project-actions"
+              id="project-actions"
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+            >
+              0 actions running
+            </button>
+            <label class="actions-switch" id="flow-actions-switch"
+              ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
+            >
+            <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
+              Restart server
+            </button>
+          </div>
+          <small class="project-actions-message" data-server-message role="status"></small>
+          <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
+          <label class="search-box"
+            ><span aria-hidden="true">⌕</span
+            ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
+          /></label>
+          <section id="local-notes" class="local-notes" aria-label="Local notes">
+            <header class="sidebar-folder-row">
+              <button
+                id="local-notes-toggle"
+                class="icon-button folder-disclosure"
+                type="button"
+                aria-label="Collapse Local notes"
+                aria-expanded="true"
+                aria-controls="local-notes-body"
+              ></button>
+              <h2 class="sidebar-folder-name">Local notes</h2>
+              <button id="local-note-quick" type="button" class="small-button" title="Quick note (Alt+N)">＋ Note</button>
+            </header>
+            <div id="local-notes-body">
+              <form id="local-note-form">
+                <textarea
+                  id="local-note-text"
+                  aria-label="Quick local note"
+                  placeholder="A thought to keep…"
+                  maxlength="24000"
+                  rows="2"
+                ></textarea
+                ><button type="submit" class="small-button">Save note</button>
+              </form>
+              <ul id="local-note-list" class="local-note-list"></ul>
+              <p id="local-note-status" role="status" aria-live="polite"></p>
+            </div>
+          </section>
+          <section class="sidebar-files" aria-label="Files">
+            <div id="sidebar-file-tree"></div>
+            <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
+          </section>
+          <div class="sidebar-heading">
+            <button class="sidebar-issues-link" type="button" data-open-project-issues>Issues</button
+            ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
+          </div>
+          <button type="button" class="small-button" id="migrate-issue-folders" hidden>
+            Move existing issue folders
+          </button>
+          <nav id="issue-list" class="issue-list" aria-label="Issue list">
+            <p class="sidebar-empty">Loading issues…</p>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="connection" id="connection-status"><span class="connection-dot"></span> Connecting</span
+            ><a href="/classic" title="Open the original factory controls">Classic ↗</a>
+          </footer>
         </div>
-        <button type="button" class="small-button" id="migrate-issue-folders" hidden>
-          Move existing issue folders
-        </button>
-        <nav id="issue-list" class="issue-list" aria-label="Issue list">
-          <p class="sidebar-empty">Loading issues…</p>
-        </nav>
-        <footer class="sidebar-footer">
-          <span class="connection" id="connection-status"><span class="connection-dot"></span> Connecting</span
-          ><a href="/classic" title="Open the original factory controls">Classic ↗</a>
-        </footer>
         <div
           id="sidebar-resizer"
           class="sidebar-resizer"
