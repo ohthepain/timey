@@ -17,3 +17,9 @@ A search limited to `src/` does not establish that Factory UI is missing. Check
 the repository-wide source map before declaring a checkout unsuitable. If the
 requested change is already in the candidate, inspect and verify that behavior
 instead of claiming there is no implementation to check.
+
+The focused Discuss browser check saves `project-discuss.png` and
+`project-discuss-styles.json` in its reported evidence directory. The JSON records
+the source commit and the rendered top and bottom border styles and widths of
+each message. Inspect it when checking message dividers; retain that file as the
+proof artifact instead of reporting computed-style evidence as uncollected.

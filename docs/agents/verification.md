@@ -33,6 +33,9 @@ selection, Tab acceptance, downloading retained attachment copies, queued edits 
 uses an injected speech recognizer in this scenario. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
+The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
+It records the source commit and each rendered message's top and bottom border
+styles and widths, so divider checks can use observed computed styles.
 The production closed issues are reserved for the user's own archive test and
 must not be used by these checks.
 
