@@ -85,6 +85,13 @@ These checks inject proposal responses and create no issues in the live queue.
 For an installed Chrome when the Playwright Chromium cache is unavailable, run
 `TIMEY_BROWSER_CHANNEL=chrome pnpm run test:browser`.
 
+`node scripts/flow-browser.mjs --connection-recovery` checks expired sessions and
+recovery after a lost action response in Flow and Classic with a disposable issue.
+It waits for initialized controls and the pause request before dropping health
+responses, then checks the selected issue, saved pause state and single dispatch
+after recovery. The action uses a click because its deliberately lost response
+can reset the checkbox before reconnection restores the saved state.
+
 For default [draft PR handoff](issue-delivery.md#default-draft-pr-handoff), attempt
 relevant checks once per changed candidate and retain failures or unavailable
 checks as such. They do not block the handoff or trigger a repair loop. Passing
