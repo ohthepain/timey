@@ -2,6 +2,15 @@
 
 ## Commands and evidence
 
+`node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
+merged-issue lock, preserved definitions and attempts, external merge observation,
+restart persistence, editable unmerged/local issues, and historical Fixed acceptance.
+`node scripts/flow-browser.mjs --merged-issue` drives the disabled controls and
+direct HTTP guards, bulk preflight, history after reload, Close, Cleanup and the
+deferred reopen guard in a disposable project. It saves a screenshot and
+`merged-issue-readonly.json` under its reported evidence directory and starts no
+live model work.
+
 `node --test scripts/shared-issue-claims.check.mjs scripts/shared-issue-queue.check.mjs scripts/shared-issue-atomic-archive.check.mjs scripts/source-issue-separation.check.mjs`
 uses independent clones and a disposable remote. It checks same-issue exclusion,
 unrelated claim races, exact-owner release, unknown push outcomes, atomic report

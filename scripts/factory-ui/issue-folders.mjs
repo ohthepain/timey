@@ -1,3 +1,4 @@
+import { requireUnmergedIssue } from './merged-issue.mjs';
 import { createIssueFolderSettings, inboxFolderId, readIssueFolderSettings } from './issue-folder-settings.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -85,6 +86,7 @@ export function createIssueFolder(root, issues, input) {
 }
 
 export function assignIssueFolder(root, issues, input) {
+  requireUnmergedIssue(root, input.issueId);
   const saved = savedFolders(root);
   requireThat(input.basis === folderBasis(issues, saved), 'The issue folders changed. Refresh before moving an issue.');
   requireThat(

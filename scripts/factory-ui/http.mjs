@@ -152,9 +152,52 @@ function mayFinishWhilePaused(path, value) {
   return pauseSafeActions[path]?.includes(value.action);
 }
 
+const mergedReadRoutes = new Set([
+  '/api/flow-action',
+  '/api/issue-cleanup-preview',
+  '/api/issue-cleanup-identities',
+  '/api/issue-cleanup-resource',
+  '/api/issue-cleanup-workspace-size',
+  '/api/issue-report-reveal',
+  '/api/issue-work-folder-open',
+  '/api/issue-storage-open-folder',
+  '/api/issue-chat-stop',
+  '/api/issue-strategy-stop',
+  '/api/lifecycle-pause',
+  '/api/shared-queue-retry',
+  '/api/shared-queue-confirm',
+  '/api/shared-queue-recover',
+]);
+function preservesMergedIssue(path, value) {
+  return mergedReadRoutes.has(path) || (path === '/api/issue-decision' && value.kind === 'close');
+}
+function savedMutationIssueIds(root, value) {
+  return [...new Set([value.issueId, value.input?.issueId, ...(value.issueIds || [])].filter(Boolean))].filter(
+    (issueId) =>
+      typeof issueId === 'string' &&
+      /^[\w-]+$/.test(issueId) &&
+      existsSync(join(root, '.issues/flows', issueId, 'flow.json'))
+  );
+}
+function closedIssueCleanup(workflow, path, issueId) {
+  return (
+    ['/api/issue-cleanup-retry', '/api/issue-worktree-delete', '/api/issue-storage-move'].includes(path) &&
+    workflow.selected(issueId).closed
+  );
+}
+async function requireEditableMutation(service, path, value) {
+  if (preservesMergedIssue(path, value)) return;
+  for (const issueId of savedMutationIssueIds(service.root, value)) {
+    const workflow = flows(service);
+    if (closedIssueCleanup(workflow, path, issueId)) continue;
+    await workflow.requireEditableIssue(issueId);
+  }
+}
+
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
   requireClassicIdle(service, path, value);
+  await requireEditableMutation(service, path, value);
   if (!mayFinishWhilePaused(path, value)) service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),

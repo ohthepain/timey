@@ -177,6 +177,10 @@ See [Close and Cleanup](../plans/flow-close-cleanup.md) and
 On closed issues, a red square replaces Play.
 Once the issue is closed, **Archive** replaces **Close**. The menu can archive the
 saved report, reveal it in Finder, or reopen the issue for investigation.
+For merged issues, [ADR 0020](0020-freeze-merged-issues.md) supersedes editing and
+reopening: the issue and work flow are read-only, while Close, its existing
+closure sequence, history and archival remain available. Reopening merged issues
+is deferred.
 
 Use **×** in the inspector’s top-right corner to remove a block after
 confirmation. You can also click a block in the center column and press

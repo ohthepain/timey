@@ -311,6 +311,13 @@ edited block and its connected successors. Details types each input and Artifact
 types each output. An input uses either a manual value or a linked upstream
 output; the inspector shows inputs before read-only latest outputs.
 
+**Merged issue**:
+An issue whose PR has a successful Merge receipt or a retained GitHub merge
+observation. Its issue settings and work flow are read-only, including historical
+attempts and block definitions. Close and its Retro/Cleanup sequence remain
+available. Restarting work requires a future reopen operation; merged-issue
+reopening is deferred. See [ADR 0020](docs/adr/0020-freeze-merged-issues.md).
+
 **Request block**:
 The required first block and owner of Your words and the derived request fields. Saving the wording
 or refreshing Request reruns clarification. A change of issue type applies that
