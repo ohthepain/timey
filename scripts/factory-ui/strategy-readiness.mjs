@@ -212,11 +212,17 @@ async function assertHandoffReadiness(pr, view, checks, canBypassReview) {
 
 function assertPassingChecks(checks) {
   const failed = checks.filter(failedCheck);
-  if (failed.length)
-    throw repairableBlocker(
+  if (failed.length) {
+    const error = repairableBlocker(
       'ci-failure',
       'PR checks are pending or failed. Failed checks: ' + failed.map(describeCheck).join(', ')
     );
+    error.githubChecks = failed.map((check) => ({
+      name: check.name ?? check.context,
+      url: check.detailsUrl ?? check.targetUrl,
+    }));
+    throw error;
+  }
   const pending = checks.filter(pendingCheck);
   if (pending.length)
     throw pendingReadiness('PR checks are pending: ' + pending.map((check) => check.name ?? check.context).join(', '));

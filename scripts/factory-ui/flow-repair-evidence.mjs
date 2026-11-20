@@ -48,3 +48,21 @@ function failedCheckRecords(reports, retain) {
       }));
   });
 }
+
+function checkFailureSignature(path) {
+  const report = JSON.parse(readFileSync(path, 'utf8'));
+  return report.checks
+    .filter((check) => !check.passed)
+    .map((check) => {
+      const log = check.log ? readFileSync(check.log, 'utf8') : '';
+      const failures = log
+        .split('\n')
+        .filter((line) => /^(?:not ok |✖ |AssertionError|Error:|locator\.\w+:|\s*- waiting for locator)/.test(line));
+      return { name: check.name, reasons: check.reasons, failures };
+    });
+}
+
+export function verificationFailureKey(error) {
+  const reports = error.verificationFailure?.summaries;
+  return reports?.length ? JSON.stringify(reports.flatMap(checkFailureSignature)) : error.blockerKey;
+}

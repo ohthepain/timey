@@ -760,7 +760,7 @@ function verificationResult(workspace, folder) {
   return { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), base: workspace.base, proof };
 }
 
-function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit } = {}) {
+function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit, onReady, github } = {}) {
   const verificationInput = () => 'fixture-input';
   const observations = [];
   let publishedHead;
@@ -804,7 +804,8 @@ function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit }
     },
     provider: {
       config: { repository: 'test/fixture', target: 'dev' },
-      async gh() {
+      async gh(args) {
+        if (github) return github(args);
         return JSON.stringify({ data: { repository: { pullRequest: {} } } });
       },
       async findIssueBranchPR(branch) {
@@ -813,6 +814,7 @@ function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit }
       async ready(pr, branch, head) {
         assert.equal(head, pr.head.sha);
         observations.push({ operation: 'ready', head });
+        await onReady?.(pr, branch, head);
         return {
           head,
           merged,
@@ -1518,4 +1520,153 @@ test('Update Branch stops its conflict loop for an explicit human decision', asy
   await assert.rejects(f.run('update-branch'), /Choose which behavior/);
   assert.equal(calls, 1);
   assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
+});
+
+test('Merge gives a new blocker its own repair budget and keeps verifying changed candidates', async (t) => {
+  let repairs = 0;
+  const f = mergeFixture(t, {
+    beforeVerify() {
+      if (repairs >= 4) return;
+      throw Object.assign(Error(repairs < 3 ? 'First broken check' : 'Second broken check'), {
+        verificationFailure: { summaries: [] },
+        blockerKey: repairs < 3 ? 'first' : 'second',
+      });
+    },
+  });
+  await f.run('understand');
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    const checkout = f.flow.workspace.checkout;
+    writeFileSync(join(checkout, 'source.txt'), 'Repair ' + ++repairs + '\n');
+    f.git('-C', checkout, 'commit', '-am', 'Repair ' + repairs);
+    return turn(...args);
+  };
+  const result = await f.run('merge');
+  assert.equal(repairs, 4);
+  assert.equal(result.result.revision, 'actual-merge');
+});
+
+test('Merge stops after three changed candidates fail the same blocker', async (t) => {
+  let repairs = 0;
+  const f = mergeFixture(t, {
+    beforeVerify() {
+      throw Object.assign(Error('Same broken check'), { verificationFailure: { summaries: [] }, blockerKey: 'same' });
+    },
+  });
+  await f.run('understand');
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    const checkout = f.flow.workspace.checkout;
+    writeFileSync(join(checkout, 'source.txt'), 'Repair ' + ++repairs + '\n');
+    f.git('-C', checkout, 'commit', '-am', 'Attempt repair');
+    return turn(...args);
+  };
+  await assert.rejects(f.run('merge'), /three|3 repair attempts for the same blocker/);
+  assert.equal(repairs, 3);
+});
+
+test('Merge downloads failed GitHub verification evidence, repairs it, verifies, pushes and merges', async (t) => {
+  const { assertChecks } = await import('./factory-ui/strategy-readiness.mjs');
+  let failed = true,
+    downloads = 0;
+  const f = mergeFixture(t, {
+    onReady() {
+      if (failed)
+        assertChecks([
+          {
+            __typename: 'CheckRun',
+            name: 'test',
+            status: 'COMPLETED',
+            conclusion: 'FAILURE',
+            detailsUrl: 'https://github.com/test/fixture/actions/runs/77/job/88',
+          },
+        ]);
+    },
+    async github(args) {
+      if (args[1] === 'graphql') return JSON.stringify({ data: { repository: { pullRequest: {} } } });
+      if (args[0] === 'api')
+        return JSON.stringify({ head_sha: f.git('-C', f.flow.workspace.checkout, 'rev-parse', 'HEAD') });
+      assert.equal(args[1], 'download');
+      downloads++;
+      const folder = args[args.indexOf('--dir') + 1];
+      writeFileSync(join(folder, 'browser.log'), 'AssertionError: GitHub-only browser failure\n');
+      writeFileSync(
+        join(folder, 'ci-summary.json'),
+        JSON.stringify({
+          checks: [
+            { name: 'browser', passed: false, exit: 1, log: '/home/runner/work/project/.issues/evidence/browser.log' },
+          ],
+        })
+      );
+      return '';
+    },
+  });
+  await f.run('understand');
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    const input = JSON.parse(args[2]);
+    assert.match(input.failure, /Failed checks: test/);
+    const check = input.failedChecks.find((check) => check.name === 'browser');
+    assert.match(readFileSync(check.log, 'utf8'), /GitHub-only browser failure/);
+    assert.ok(check.log.startsWith(f.flow.workspace.checkout));
+    writeFileSync(join(f.flow.workspace.checkout, 'source.txt'), 'CI repair\n');
+    f.git('-C', f.flow.workspace.checkout, 'commit', '-am', 'Repair CI failure');
+    failed = false;
+    return turn(...args);
+  };
+  const result = await f.run('merge');
+  assert.equal(downloads, 1);
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 2);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 1);
+});
+
+test('Merge stops when repairs cycle back to the same failing source tree', async (t) => {
+  let repairs = 0;
+  const f = mergeFixture(t, {
+    beforeVerify() {
+      throw Object.assign(Error('Same broken check'), { verificationFailure: { summaries: [] }, blockerKey: 'same' });
+    },
+  });
+  await f.run('understand');
+  const checkout = f.flow.workspace.checkout;
+  const original = readFileSync(join(checkout, 'source.txt'), 'utf8');
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    writeFileSync(join(checkout, 'source.txt'), ++repairs % 2 ? 'Changed candidate\n' : original);
+    f.git('-C', checkout, 'commit', '-am', 'Repair attempt');
+    return turn(...args);
+  };
+  await assert.rejects(f.run('merge'), /same failing candidate without progress/);
+  assert.equal(repairs, 2);
+});
+
+test('GitHub repair evidence rejects a run for another commit', async (t) => {
+  const { retainGitHubFailure } = await import('./factory-ui/flow-ci-evidence.mjs');
+  const f = fixture(t);
+  const provider = {
+    config: { repository: 'test/fixture' },
+    async gh() {
+      return JSON.stringify({ head_sha: 'other' });
+    },
+  };
+  const error = { githubChecks: [{ url: 'https://github.com/test/fixture/actions/runs/77/job/88' }] };
+  await assert.rejects(retainGitHubFailure(provider, error, 'expected', f.root), /different commit/);
+});
+
+test('GitHub repair retains failed job output when verification artifacts are unavailable', async (t) => {
+  const { retainGitHubFailure } = await import('./factory-ui/flow-ci-evidence.mjs');
+  const f = fixture(t);
+  const provider = {
+    config: { repository: 'test/fixture' },
+    async gh(args) {
+      if (args[0] === 'api') return JSON.stringify({ head_sha: 'expected' });
+      if (args[1] === 'download') throw Error('No verification artifact was uploaded.');
+      assert.equal(args[1], 'view');
+      return 'AssertionError: CI test failed before evidence upload.';
+    },
+  };
+  const error = { githubChecks: [{ url: 'https://github.com/test/fixture/actions/runs/77/job/88' }] };
+  await retainGitHubFailure(provider, error, 'expected', f.root);
+  assert.match(readFileSync(error.evidence[0].path, 'utf8'), /CI test failed before evidence upload/);
 });

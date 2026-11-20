@@ -724,3 +724,14 @@ when an older repair record is stale or passed. The dialog offers Retry Update
 Branch after automatic recovery has failed; it reuses the guarded update path.
 `flow-executor.check.mjs` checks recovery on a later attempt, exhaustion, and human
 input. `--branch-repair` checks the red fallback and retry through the real UI.
+
+Merge budgets repair attempts per distinct blocker within an explicit run. Each
+blocker receives up to the configured `repairAttempts`; a new failure does not
+inherit an unrelated check's exhausted budget. Repeated failing source trees and
+unchanged repair candidates stop without another worker turn. GitHub failures
+retain the exact failed run's uploaded verification summaries and command logs in
+the issue checkout. Missing artifacts fall back to failed job output. Run metadata
+must match the candidate commit before evidence is used. The repair worker gets
+those local files, then Factory verifies, pushes, and waits for fresh checks.
+`flow-executor.check.mjs` drives this sequence through CI-only failure, changed
+candidates, multiple blockers, repeated failures, and cycles.

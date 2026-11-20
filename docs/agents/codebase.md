@@ -818,7 +818,7 @@ and the Update Branch block, using the starting branch’s upstream. Conflict re
 update aborts a pending merge before fetching and retains the other Git-operation
 guards. `flow-merge-state.mjs` reads the pending local merge for the header
 control, whose explicit abort action is guarded by the flow service.
-`flow-merge.mjs` shares the Git fetch and merge helpers for Destination, waits for GitHub checks, and binds approval to the exact issue commit
+`flow-merge.mjs` shares the Git fetch and merge helpers for Destination, budgets recovery per blocker, stops repeated failing source trees, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
 request from retained attempts, including legacy review blockers. Flow views and
@@ -848,3 +848,9 @@ The shared Flow UI owns the card layout, inspector sections, and controls.
 **Inspect UI**, **View index**, and `pnpm run factory ui find`. It also compiles
 the editor's tab labels. See
 [Edit the Factory UI from Markdown](../../README.md#edit-the-factory-ui-from-markdown).
+
+`flow-ci-evidence.mjs` downloads failed GitHub verification artifacts through the
+configured provider, validates the run's commit, and rewrites command-log paths
+to retained local files. It falls back to failed job output when artifacts are
+unavailable. `flow-repair-evidence.mjs` copies that evidence into the repair
+worker's checkout and derives blocker identities from failed checks and logs.
