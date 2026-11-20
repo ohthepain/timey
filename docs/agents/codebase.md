@@ -1,7 +1,10 @@
 # Codebase map
 
-Timey is a MIDI rhythm-practice app. Read the code for current signatures and
-configuration; this map explains responsibilities and the useful starting points.
+This repository implements the Timey MIDI rhythm-practice app in `src/` and the
+Factory development app in `scripts/factory-ui/`. The project Home, Issues,
+Discuss, and Admin tabs belong to Factory. Factory UI is application code in this
+repository. Read the code for current signatures and configuration; this map
+explains responsibilities and the useful starting points.
 
 Project-local quick capture lives in `scripts/factory-ui/local-notes.mjs` and
 `local-notes-ui.js`. The store resolves Git worktrees to their owning project,
