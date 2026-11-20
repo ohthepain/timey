@@ -23,6 +23,12 @@ or worsened Fallow findings before testing. Run it again before tests if you edi
 the source.
 
 Run only focused tests that cover the changed behavior and Requested Proof.
+If a local-server check fails with `listen EPERM` or `listen EACCES`, request
+native execution permission for that exact command and rerun it after approval.
+Stop if the request is denied or permission requests are unavailable. Report the
+permission restriction and the proof it prevented, rather than a project test
+failure. Do not repeat the restricted command unchanged.
+
 Run individual test files or scenarios directly when an aggregate command would
 also run unrelated tests. Leave full suites such as `pnpm run test:factory` and
 full candidate verification to the delivery checks. Add a focused test when there
@@ -46,7 +52,12 @@ Use Requested Proof to check the current result. In each response, describe what
 you did and what you observed. Retain a supporting file as the `proof` artifact
 when one is available. Save temporary evidence files in an ignored location inside
 the checkout. Report any gap and why the proof could not be collected in the
-response. Use the structured failure field for blockers to completing the work.
+response. Finish available implementation and verification steps before returning. Missing
+measurements or uncollected proof are unfinished work to continue in the same
+conversation. Use `failure` only for a concrete blocker, paired with `blocker`:
+`human-input`, `permission-denied`, `permission-unavailable`, or
+`external-dependency`. Explain the specific input, permission or dependency
+preventing progress. Never make a required human decision yourself.
 
 When a project check prevents tests or Requested Proof, lead the response and
 structured failure with the failed command and its relevant diagnostic. State

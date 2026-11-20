@@ -33,6 +33,9 @@ selection, Tab acceptance, downloading retained attachment copies, queued edits 
 uses an injected speech recognizer in this scenario. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
+The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
+It records the source commit and each rendered message's top and bottom border
+styles and widths, so divider checks can use observed computed styles.
 The production closed issues are reserved for the user's own archive test and
 must not be used by these checks.
 
@@ -519,6 +522,20 @@ verification also opens and closes an actual localhost listener before running t
 suite, so a sandbox refusal is an immediate environment failure with no claimed
 checks. Audit-only checkpoints do not require networking. Preflight never grants
 permissions or installs dependencies automatically.
+
+For model-run checks, a `listen EPERM` or `listen EACCES` refusal requires a native
+permission request for that exact command. Work retains the same conversation and
+checkout when the model reports unfinished work, including uncollected proof.
+It allows up to three continuation turns, separately from the three check-repair
+attempts. A concrete human input requirement, denied or unavailable permission,
+or unavailable external dependency stops the run with its reason. Factory never
+grants permission itself. `node --test scripts/flow-executor.check.mjs` checks
+continuation, its limit, and actual blocker handling.
+
+Fallow already skips hidden agent tooling. `.fallowrc.json` explicitly excludes
+`.agents/**` so this intentional scope does not emit `skipped-source-dotdir`.
+Application code remains checked, including new unused exports; the real CLI
+regression is in `scripts/fallow-css-reset.check.mjs`.
 
 Summaries retain execution phase timestamps and owned command PIDs. Cancellation
 stops the runner's own child process group, retains a failed summary and starts no

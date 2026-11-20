@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync, execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { assessAudit } from './audit-result.mjs';
@@ -46,6 +46,44 @@ test('an explicit CSS reset passes unchanged Fallow policy while a new unused se
   const valid = analyze();
   assert.equal(valid.passed, true, JSON.stringify(valid));
   writeFileSync(join(root, 'style.css'), reset + '.unused-css-reset-canary { display: block; }\n');
+  const invalid = analyze();
+  assert.equal(invalid.passed, false);
+  assert.match(invalid.reasons.join('\n'), /New Fallow findings/);
+});
+
+test('agent tooling scope removes skipped-source warnings while unused application code still blocks', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'timey-agent-scope-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, 'node_modules'));
+  mkdirSync(join(root, '.agents/skills/probe'), { recursive: true });
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { env: cleanEnvironment(), stdio: 'pipe' });
+  git('init', '-q', '-b', 'main');
+  git('config', 'user.name', 'Agent scope check');
+  git('config', 'user.email', 'scope@example.invalid');
+  const { ignorePatterns } = JSON.parse(readFileSync(resolve('.fallowrc.json'), 'utf8'));
+  writeFileSync(
+    join(root, '.fallowrc.json'),
+    JSON.stringify({ entry: ['app.js'], ignorePatterns, audit: { gate: 'new-only' } })
+  );
+  writeFileSync(join(root, '.agents/skills/probe/helper.ts'), 'export const helper = 1;');
+  writeFileSync(join(root, 'app.js'), 'import { value } from "./feature.js"; console.log(value);');
+  writeFileSync(join(root, 'feature.js'), 'export const value = 1;');
+  git('add', '.');
+  git('commit', '-qm', 'Application with external agent tooling');
+  const analyze = () =>
+    assessAudit(
+      spawnSync(resolve('node_modules/.bin/fallow'), ['audit', '--base', 'HEAD', '--format', 'json', '--no-cache'], {
+        cwd: root,
+        env: cleanEnvironment(),
+        encoding: 'utf8',
+      }),
+      ['feature.js'],
+      { warningsAsErrors: true }
+    );
+  writeFileSync(join(root, 'feature.js'), 'export const value = 2;');
+  const valid = analyze();
+  assert.equal(valid.passed, true, JSON.stringify(valid));
+  writeFileSync(join(root, 'feature.js'), 'export const value = 2; export const unusedCanary = 3;');
   const invalid = analyze();
   assert.equal(invalid.passed, false);
   assert.match(invalid.reasons.join('\n'), /New Fallow findings/);
