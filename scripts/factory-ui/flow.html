@@ -20,6 +20,7 @@
     <script src="/project-admin-ui.js" defer></script>
     <script src="/project-home-ui.js" defer></script>
     <script src="/investigation-issue-ui.js" defer></script>
+    <script src="/branch-repair-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
@@ -209,6 +210,9 @@
             <span class="status-icon active-spinner" style="--spinner-color: currentColor" aria-hidden="true"></span>
             Updating branch…
           </span>
+          <button id="fix-branch" class="environment-chip branch-repair-control" type="button" aria-haspopup="dialog">
+            Fix Branch
+          </button>
           <span id="worktree-hint">
             <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
               <option value="" disabled selected>Worktree</option>
@@ -1071,6 +1075,29 @@
       <footer>
         <button class="small-button" type="button" data-home-command="automate-stop" hidden>Stop</button
         ><button class="small-button" type="button" data-home-command="automate-retry" hidden>Retry</button>
+      </footer>
+    </dialog>
+    <dialog class="modal branch-repair-dialog" id="branch-repair-dialog" aria-labelledby="branch-repair-heading">
+      <h2 id="branch-repair-heading">Fix Branch</h2>
+      <p data-repair-status role="status"></p>
+      <p class="muted" data-repair-timing></p>
+      <p data-repair-error role="alert"></p>
+      <h3>Progress and check output</h3>
+      <pre data-repair-output></pre>
+      <section data-repair-review>
+        <h3>Candidate diff</h3>
+        <pre data-repair-diff></pre>
+        <p class="muted" data-repair-checks></p>
+        <p>
+          Approval applies these repairs to this issue checkout as uncommitted changes. Review and commit them with your
+          issue work.
+        </p>
+      </section>
+      <footer>
+        <button class="primary-button" type="button" data-repair-command></button
+        ><button class="small-button" type="button" data-repair-stop>Stop</button
+        ><button class="small-button" type="button" data-repair-reconcile>Retain interrupted run and allow retry</button
+        ><button class="small-button" type="button" data-repair-close>Close</button>
       </footer>
     </dialog>
   </body>

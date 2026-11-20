@@ -1,3 +1,4 @@
+import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
 import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
 import assert from 'node:assert/strict';
 import {
@@ -228,6 +229,7 @@ function checkExcluded(name) {
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
     ['--investigation-followups', followupsCheck],
+    ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
     ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
@@ -1996,6 +1998,9 @@ try {
       executor.run = run;
     }
     if (issueId) await page.goto('/?issue=' + issueId);
+  });
+  await check('Branch repair progress survives reload and requires candidate approval', async () => {
+    await branchRepairBrowserChecks({ page, service, project, poll, screenshot });
   });
   await check('Block skill choices preserve defaults and offer missing-skill setup', async () => {
     await blockSkillsBrowserChecks({ page, service, project, poll });

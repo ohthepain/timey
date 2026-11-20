@@ -142,7 +142,7 @@ function requireClassicIdle(service, path, value) {
 
 const pauseSafeActions = {
   '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
-  '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop'],
+  '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop', 'branch-repair-stop'],
   '/api/project-home-action': ['investigation-stop', 'automate-stop'],
 };
 function mayFinishWhilePaused(path, value) {
@@ -532,6 +532,7 @@ function readResource(service, request, response, owner) {
     '/skill-select.js': 'skill-select.js',
     '/project-discuss.css': 'project-discuss.css',
     '/flow-ui.js': 'flow-ui.js',
+    '/branch-repair-ui.js': 'branch-repair-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
     '/project-admin-ui.js': 'project-admin-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',

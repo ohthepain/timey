@@ -1,8 +1,7 @@
 # Fix the Branch
 
-Status: proposed execution design. The block definition is available to the
-catalogue. The issue-page control, standalone project action, and automatic
-project-check configuration are not implemented.
+Status: the block definition and issue-page control are implemented. A standalone
+project action and configurable project-check commands are not implemented.
 
 Project checks can prevent implementation or collection of requested proof. A
 missing-proof message must retain the check failure that caused it. Fix the Branch
@@ -42,8 +41,24 @@ reconciliation and fresh checks. Do not overwrite edits made during repair.
 
 Approval explicitly applies the reviewed repair to this issue's branch. It does
 not publish or merge into the shared starting branch. After applying, show the
-result and let the user explicitly continue issue work. Starting or completing
-repair does not silently retry a failed block or advance the issue's status.
+result and let the user explicitly continue issue work. Repairs become uncommitted
+changes in that checkout. Existing staged edits stay staged. Applying a repair
+invalidates earlier block results while retaining their history and the Request.
+Starting or completing repair does not silently retry a failed block or advance
+the issue's status.
+
+The issue-page action uses Work's existing prerequisite verifier, including its
+dependency preparation, formatting, and strict Fallow checks against the issue's
+saved base. Factory checks the candidate after each model response, with at most
+three repair rounds. It retains check evidence and its hashes with the candidate.
+Approval also checks the verifier, runtime, block definition, comparison base,
+original source and index, environment-file hashes, candidate, and patch.
+Full test suites remain outside this operation.
+
+Run history, progress, the candidate checkout, and the patch remain under
+`.issues/branch-repairs/<issue-id>/<run-id>/`. A `current.json` record selects the
+current run. Failed and interrupted runs remain available on disk when a later
+run starts. The running operation counts toward the server's drain guard.
 
 ## Reuse the block procedure
 
@@ -91,7 +106,10 @@ revision, exit result, diagnostic, and log. Distinguish an inherited branch fail
 from a finding introduced by the issue. A missing proof artifact alone does not
 establish which kind occurred.
 
-The block prompt now requests this report. General Work failure presentation
+The block prompt requests this report. The issue-page control recognizes retained
+check evidence and older structured Work failures naming prerequisite checks.
+It does not classify a missing-proof message alone as a check failure.
+General Work failure presentation
 still needs runtime support if Factory is to display check failures consistently
 without relying on the model's wording. A failed prerequisite must not start
 branch repair, retry an issue, or change its route automatically.

@@ -1,3 +1,4 @@
+import { BranchRepairs } from './branch-repair.mjs';
 import {
   existsSync,
   mkdirSync,
@@ -107,6 +108,13 @@ import { FlowOvernight } from './flow-overnight.mjs';
 
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
+const branchActions = new Set([
+  'open-worktree',
+  'branch-repair-start',
+  'branch-repair-stop',
+  'branch-repair-approve',
+  'branch-repair-reconcile',
+]);
 const retroFolder = 'Retro items';
 const closureActions = new Set(['retro-setting', 'auto-close-setting', 'retry-closure', 'skip-retro', 'cleanup-again']);
 const folderSelectionActions = new Set(['folder-selection', 'folder-scan', 'folder-move', 'folder-remove']);
@@ -267,6 +275,7 @@ class IssueFlows {
     this.observer = options.observer || createFlowObserver(service);
     this.executor = options.executor || createFlowExecutor(service, this.deliveryOptions);
     this.active = new Map();
+    this.branchRepairs = new BranchRepairs(this, options.branchRepairs);
     this.autoplay = new Map();
     this.clarify = options.clarify || clarifyRequest;
     this.buildStructure = options.buildStructure || buildFlowStructure;
@@ -606,6 +615,7 @@ class IssueFlows {
       flowDefinitions,
       startingPointEditable: !branchCatalogError && this.startingPointEditable(issue, flow, environment.pr),
       environment,
+      branchRepair: this.branchRepairs.view(issue, savedFlow),
       artifacts: this.artifacts(flow),
       conversation: conversationMessages(this.service.root, id).slice(-100),
     };
@@ -954,10 +964,22 @@ class IssueFlows {
     }
   }
   requireAvailableAction(issue, flow, action) {
-    if (!['open-block', 'open-worktree', 'pause', 'stop', 'folder', 'folder-lock', 'comment'].includes(action))
+    if (
+      ![
+        'open-block',
+        'open-worktree',
+        'pause',
+        'stop',
+        'branch-repair-stop',
+        'folder',
+        'folder-lock',
+        'comment',
+      ].includes(action)
+    )
       this.groups.requireIndependent(issue.id);
     requireThat(
-      ['pause', 'open-worktree'].includes(action) || !this.active.get(issue.id)?.movingStartingPoint,
+      ['pause', 'open-worktree', 'branch-repair-stop'].includes(action) ||
+        !this.active.get(issue.id)?.movingStartingPoint,
       'Wait for the starting branch move to finish.'
     );
     if (issue.state === 'needs-approval')
@@ -980,6 +1002,7 @@ class IssueFlows {
           'pause',
           'cancel-confirmation',
           'stop',
+          'branch-repair-stop',
           'open-block',
           'comment',
           'retry-closure',
@@ -1082,10 +1105,7 @@ class IssueFlows {
         this.pause(issue.id);
       return this.view(issue.id);
     }
-    if (input.action === 'open-worktree')
-      return openWorkFolder(flowWorkspace(this.service, flow)?.checkout, undefined, {
-        terminal: input.terminal === true,
-      });
+    if (branchActions.has(input.action)) return this.branchOperation(issue, flow, input);
     if (input.action === 'restate-artifact') return this.restateArtifact(flow, input);
     if (input.action === 'stop') return this.stop(flow, input);
     requireThat(!this.flowBuilds.has(issue.id), 'Wait for the flow structure to finish building.');
@@ -1167,6 +1187,18 @@ class IssueFlows {
       return this.view(issue.id);
     }
     return this.dispatchBlockAction(issue, flow, input, catalog);
+  }
+  async branchOperation(issue, flow, input) {
+    if (input.action === 'open-worktree')
+      return openWorkFolder(flowWorkspace(this.service, flow)?.checkout, undefined, {
+        terminal: input.terminal === true,
+      });
+    await this.branchRepairs.action(issue, flow, input);
+    if (input.action === 'branch-repair-approve') {
+      invalidateBlocks(flow, new Set(flow.blocks.filter((block) => block.kind !== 'request').map((block) => block.id)));
+      this.store.save(flow, flow.revision);
+    }
+    return this.view(issue.id);
   }
   async editRequest(issue, flow, input, catalog) {
     requireThat(!issue.closed, 'Reopen this issue before editing its request.');
@@ -2444,6 +2476,7 @@ class IssueFlows {
     return this.view(issue.id);
   }
   close() {
+    this.branchRepairs.close();
     this.overnight.close();
     this.autoplay.clear();
     for (const active of this.active.values()) active.controller.abort();

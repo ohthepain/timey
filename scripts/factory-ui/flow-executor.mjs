@@ -1111,7 +1111,7 @@ function commandResult(service, ctx, result, summary, evidence = []) {
   };
 }
 
-function executeCommand({ command, args, cwd, log, signal, onProgress }) {
+export function executeCommand({ command, args, cwd, log, signal, onProgress }) {
   signal.throwIfAborted();
   return new Promise((resolveResult, reject) => {
     const child = spawn(command, args, {

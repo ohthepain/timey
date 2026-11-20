@@ -1227,7 +1227,10 @@
     );
   }
 
+  const branchRepairUI = window.createBranchRepairUI({ button: $('fix-branch'), action });
+
   function renderEnvironment() {
+    branchRepairUI.update(state.view);
     const environment = state.view?.environment;
     $('environment').hidden = !environment;
     if (!environment) return;

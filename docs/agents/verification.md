@@ -2,6 +2,15 @@
 
 ## Commands and evidence
 
+`node --test scripts/branch-repair.check.mjs` checks isolated repair candidates,
+retained progress, approval, stale source and environment files, tampered patches
+and check evidence, Stop, restart visibility, and bounded provider repair with
+injected model and check responses. It preserves staged and uncommitted edits.
+`node scripts/flow-browser.mjs --branch-repair` drives the real issue-page button,
+red check-failure state, progress after reload, candidate diff, and explicit
+approval in a disposable checkout. It injects the repair worker and does not run
+a live model or repair a production issue.
+
 `node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
 checks per-block defaults, personal/project extensions and explicit skill choices.
 `node scripts/flow-browser.mjs --block-skills` drives the graph skill picker,

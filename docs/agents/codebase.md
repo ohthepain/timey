@@ -672,6 +672,11 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+`branch-repair.mjs` owns issue-page branch repair runs and approval.
+`branch-repair-workspace.mjs` snapshots the source without changing its index and
+applies only an approved patch. `branch-repair-runner.mjs` runs the block prompt
+and Work prerequisite checks in the isolated candidate. `branch-repair-ui.js`
+renders the header button and retained progress and review dialog.
 `flow-ui.js` offers catalog blocks, including user-added Retro blocks; the distinct
 `closure-retro` block remains managed by the issue's closing settings.
 The project landing area has Home, Issues, Discuss and Admin tabs. Issues sits
