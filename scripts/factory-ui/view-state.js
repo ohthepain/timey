@@ -364,6 +364,7 @@
     const saved = interactionState(root, same);
     updateMarkup(root, markup(html), same && !replace);
     views.set(root, { scope });
+    window.FactoryTextControls?.refresh(root);
     restore(root, scope);
     restoreFocus(saved.focus);
     restoreSelection(saved.selection, root);

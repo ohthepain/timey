@@ -10,6 +10,11 @@ blue bro toggle, restoring original text, caret/end insertion and hovered-field
 hotkey routing. It saves `ai-text-controls.png` and `ai-text-controls.json` in its
 evidence directory. The fixture injects model output and speech recognition.
 Live model quality and physical microphone recognition are not measured by it.
+The Factory refresh browser scenario checks that incoming AI text still follows
+the reader at the bottom. View rendering mounts text controls before restoring
+scroll, focus and selection so their layout is included in that restoration.
+The AI-controls scenario recreates its Discuss service before installing its
+provider so earlier browser scenarios cannot supply its response text.
 
 `node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
 merged-issue lock, preserved definitions and attempts, external merge observation,

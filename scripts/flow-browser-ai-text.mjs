@@ -3,6 +3,9 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 
 export async function aiTextBrowserChecks({ page, service, project, poll, screenshot }) {
+  await page.goto('about:blank');
+  service.projectDiscuss?.close();
+  service.projectDiscuss = null;
   const source = 'The synchronization subsystem reconciles concurrent modifications.';
   const simplified = 'The app combines changes made at the same time.';
   const nextSource = 'The persistence layer serializes modifications.';
@@ -126,7 +129,7 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   await page.locator('#discuss-draft').focus();
   await editor.hover();
   await page.keyboard.press('Alt+d');
-  const active = service.projectDiscuss.view().selected;
+  const active = service.projectDiscuss.view(new URL(page.url()).searchParams.get('conversation')).selected;
   const refreshed = service.projectDiscuss.read(active.id);
   refreshed.messages.at(-1).status = 'refreshed';
   service.projectDiscuss.save(refreshed);
