@@ -2,6 +2,15 @@
 
 ## Commands and evidence
 
+`node --test scripts/ai-text-bro.check.mjs` checks bro skill loading, a separate
+read-only rewrite, invalid input and provider failure.
+`node scripts/flow-browser.mjs --ai-text` checks top-right hover controls, real
+clipboard contents, the persistent
+blue bro toggle, restoring original text, caret/end insertion and hovered-field
+hotkey routing. It saves `ai-text-controls.png` and `ai-text-controls.json` in its
+evidence directory. The fixture injects model output and speech recognition.
+Live model quality and physical microphone recognition are not measured by it.
+
 `node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
 merged-issue lock, preserved definitions and attempts, external merge observation,
 restart persistence, editable unmerged/local issues, and historical Fixed acceptance.

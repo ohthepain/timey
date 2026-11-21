@@ -436,6 +436,13 @@ const issueChatUI = (() => {
   function sortedMessages() {
     return [...messages.values()].sort((a, b) => String(a.at).localeCompare(String(b.at)) || a.id.localeCompare(b.id));
   }
+  function markGeneratedMessage(text, entry) {
+    if (entry.actor === 'human') return;
+    if (['user', 'You', 'Original request'].includes(entry.role)) return;
+    text.dataset.aiText = '';
+    text.dataset.aiKey = 'issue-chat-' + current + '-' + entry.id;
+    text.dataset.aiSource = entry.body || '';
+  }
   function messageNode(entry) {
     const item = node('article');
     item.dataset.messageId = entry.id;
@@ -443,6 +450,7 @@ const issueChatUI = (() => {
     item.append(node('strong', entry.role || entry.actor), node('small', ' · ' + date));
     const text = node('p', entry.body);
     text.style.whiteSpace = 'pre-wrap';
+    markGeneratedMessage(text, entry);
     if (entry.skills?.length) {
       const tokens = node('div');
       tokens.className = 'message-skills';

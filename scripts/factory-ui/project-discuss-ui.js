@@ -271,10 +271,14 @@
       if (!events?.length) return '';
       return `<details class="discuss-tool-activity"><summary>Tool activity (${events.length})</summary>${events.map((event) => `<pre>${escape(event.text || event.message || event.summary || JSON.stringify(event))}</pre>`).join('')}</details>`;
     }
+    function aiMessageAttributes(message, user) {
+      if (user) return '';
+      return ` data-ai-text data-ai-key="discuss-${escape(selectedId)}-${escape(message.id)}" data-ai-source="${escape(message.text || message.body || '')}"`;
+    }
     function messageHtml(message) {
       const user = message.role === 'user' || message.role === 'human';
       const model = message.settings?.model;
-      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : message.localNoteId ? '' : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
+      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body"${aiMessageAttributes(message, user)}>${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : message.localNoteId ? '' : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
     }
     function conversationTab(entry) {
       const selected = entry.id === selectedId;
@@ -673,6 +677,12 @@
         error(failure.message);
       }
     });
+    function spokenInsertion(before, text, after) {
+      if (after) return before + text + after;
+      if (!before) return text + after;
+      if (/\s$/.test(before)) return before + text + after;
+      return before + ' ' + text + after;
+    }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     byId('discuss-mic').addEventListener('click', () => {
       const status = byId('discuss-voice-status');
@@ -685,6 +695,9 @@
         return;
       }
       const original = draft.value;
+      const caret = window.FactoryTextControls.selection(draft);
+      const before = original.slice(0, caret.start);
+      const after = original.slice(caret.end);
       const dictation = { conversationId: selectedId, draft: original, finalTranscript: '' };
       const isCurrentDictation = () => selectedId === dictation.conversationId && draft.value === dictation.draft;
       function sendSpokenPrompt() {
@@ -705,7 +718,7 @@
         if (!isCurrentDictation()) return;
         const text = [...event.results].map((result) => result[0].transcript).join(' ');
         dictation.finalTranscript = [...event.results].every((result) => result.isFinal) ? text : '';
-        dictation.draft = [original, text].filter(Boolean).join(' ');
+        dictation.draft = spokenInsertion(before, text, after);
         draft.value = dictation.draft;
         changedDraft();
       };
