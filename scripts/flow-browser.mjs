@@ -483,7 +483,7 @@ try {
     errorRecoveryBrowserChecks({ page, service, project, output })
   );
   await check('Publication with no changes offers Cannot Reproduce closure', () =>
-    noChangesBrowserChecks({ page, service, project, output, root })
+    noChangesBrowserChecks({ page, service, project, output, root, poll })
   );
   await check('The whole sidebar scrolls over every section', async () => {
     const issuePaths = Array.from({ length: 24 }, (_, index) =>

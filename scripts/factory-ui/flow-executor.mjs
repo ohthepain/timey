@@ -636,10 +636,11 @@ function workingTree(workspace) {
   }
 }
 
-function retainCandidateIdentity(definition, retained, workspace, head) {
-  const candidate = workingTree(workspace);
+function retainCandidateIdentity(definition, retained, workspace, head, comparisonBase) {
+  const candidate = { ...workingTree(workspace), base: comparisonBase ?? workspace.base };
   const values = {
-    candidateBase: workspace.base,
+    candidateBase: candidate.base,
+    candidateWorkspaceBase: workspace.base,
     candidateTree: candidate.tree,
     candidateCommit: head,
     candidateUncommitted: candidate.uncommitted,
@@ -942,7 +943,7 @@ async function runModel(service, ctx, owned, options) {
     const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);
     outputExecution?.complete(modelManifest(outputs.at(-1)), retained);
     const head = git(workspace.checkout, 'rev-parse', 'HEAD');
-    const candidate = retainCandidateIdentity(ctx.definition, retained, workspace, head);
+    const candidate = retainCandidateIdentity(ctx.definition, retained, workspace, head, scope.workBase);
     retainWorkCandidate(ctx.definition, retained, workCheck, head);
     return {
       summary: outputs.at(-1).slice(0, 1200),
@@ -960,7 +961,8 @@ async function runModel(service, ctx, owned, options) {
         iterations: rounds,
         head,
         tree: candidate.tree,
-        base: workspace.base,
+        base: candidate.base,
+        workspaceBase: workspace.base,
         commit: head,
         uncommitted: candidate.uncommitted,
         ...workFocusedResult(ctx.block.kind, outputs.at(-1)),
