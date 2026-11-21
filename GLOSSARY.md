@@ -4,6 +4,10 @@ Language used to coordinate work and review changes.
 
 ## Language
 
+**Spoken send command**:
+The person's explicit choice to send a dictated prompt by saying “go” as its
+final word. The command word is excluded from the submitted prompt.
+
 **Local note**:
 A quick project-owned thought or todo saved outside version control. It can be
 discussed in the project conversation or used to prefill an issue. Capture starts
