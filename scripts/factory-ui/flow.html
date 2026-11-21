@@ -60,9 +60,8 @@
           </div>
           <nav class="project-home-menu" aria-label="Project menu">
             <button type="button" data-project-home="home">Home</button>
-            <button type="button" data-project-home="discuss">Discuss</button>
+            <button type="button" data-project-home="issues">Issues</button>
             <button type="button" data-project-home="investigate">Investigate</button>
-            <button type="button" data-project-home="automate">Automate me</button>
           </nav>
           <div class="project-actions-row">
             <button
@@ -448,6 +447,7 @@
           </details>
         </section>
         <section id="project-home" class="project-home" aria-label="Project home" hidden>
+          <p id="home-error" class="home-error" role="alert"></p>
           <div class="project-workspace-tabs" role="tablist" aria-label="Project workspace">
             <button
               id="project-tab-home"
@@ -480,6 +480,16 @@
               Discuss
             </button>
             <button
+              id="project-tab-automate"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-automate"
+              data-project-tab="automate"
+            >
+              Automate me
+            </button>
+            <button
               id="project-tab-admin"
               type="button"
               role="tab"
@@ -508,12 +518,6 @@
                 <p>Explore your project, ask questions, and turn evidence into actionable issues.</p>
                 <button class="primary-button" data-project-home="investigate">Start an investigation</button>
               </article>
-              <article class="home-operation">
-                <span class="home-operation-icon" aria-hidden="true">✦</span>
-                <h2>Automate me</h2>
-                <p>Learn from your project conversations and refine a skill for how you work.</p>
-                <button class="small-button" data-project-home="automate">Run Automate me</button>
-              </article>
             </div>
             <section class="home-activity" aria-label="Project activity">
               <div class="home-section-title">
@@ -532,11 +536,6 @@
                 <p class="muted">Loading saved investigations…</p>
               </div>
             </section>
-            <section class="home-history">
-              <h2>Automate me sessions</h2>
-              <div id="home-automate-sessions" class="home-run-list"></div>
-            </section>
-            <p id="home-error" class="home-error" role="alert"></p>
           </div>
           <section
             id="project-issues"
@@ -554,6 +553,26 @@
             aria-labelledby="project-tab-discuss"
             hidden
           ></section>
+          <section
+            id="project-automate"
+            class="project-home-content"
+            role="tabpanel"
+            aria-labelledby="project-tab-automate"
+            hidden
+          >
+            <div class="home-operations">
+              <article class="home-operation">
+                <span class="home-operation-icon" aria-hidden="true">✦</span>
+                <h2>Automate me</h2>
+                <p>Learn from your project conversations and refine a skill for how you work.</p>
+                <button class="small-button" data-project-home="automate">Run Automate me</button>
+              </article>
+            </div>
+            <section class="home-history">
+              <h2>Automate me sessions</h2>
+              <div id="home-automate-sessions" class="home-run-list"></div>
+            </section>
+          </section>
           <section
             id="project-admin"
             class="project-home-content"

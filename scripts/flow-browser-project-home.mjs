@@ -121,6 +121,7 @@ async function investigate(page, service, calls, screenshot) {
 }
 
 async function automate(page, service, calls, screenshot) {
+  await page.getByRole('tab', { name: 'Automate me', exact: true }).click();
   await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
   const dialog = page.locator('#home-automate-dialog');
   await dialog.waitFor({ state: 'visible' });
