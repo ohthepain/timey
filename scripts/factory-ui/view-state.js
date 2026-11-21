@@ -37,6 +37,7 @@
     for (const name of [
       'id',
       'data-view-key',
+      'data-ai-key',
       'data-discuss-message',
       'data-message-id',
       'data-attempt-id',
@@ -192,6 +193,11 @@
 
   function patch(current, next) {
     if (current.nodeType !== Node.ELEMENT_NODE) return patchText(current, next);
+    if (window.FactoryTextControls?.preserve(current, next)) return;
+    patchElement(current, next);
+  }
+
+  function patchElement(current, next) {
     const changedValue = current.defaultValue !== next.defaultValue;
     const changedCheck = current.defaultChecked !== next.defaultChecked;
     if (typeof next.onclick === 'function') current.onclick = next.onclick;
@@ -358,6 +364,7 @@
     const saved = interactionState(root, same);
     updateMarkup(root, markup(html), same && !replace);
     views.set(root, { scope });
+    window.FactoryTextControls?.refresh(root);
     restore(root, scope);
     restoreFocus(saved.focus);
     restoreSelection(saved.selection, root);

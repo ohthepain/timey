@@ -201,6 +201,7 @@
       remember();
     }
     async function createDiscussion(report, saved) {
+      const draft = saved.draft;
       const view = await post('report-discuss-action', { action: 'create', reportId: report.id });
       if (selected?.id !== report.id) return;
       chat = window.createProjectDiscussUI({
@@ -216,7 +217,7 @@
           post('report-discuss-action', { ...input, conversationId: view.selected.id, reportId: report.id }),
       });
       await chat.setVisible(true);
-      chat.setDraft(saved.draft);
+      chat.setDraft(draft);
     }
     const clickActions = [
       ['data-report-open', (button) => open(button.dataset.reportOpen)],

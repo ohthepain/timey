@@ -138,7 +138,7 @@ const coordinatorUI = (() => {
       (thread?.messages || [])
         .map(
           (m) =>
-            `<article><strong>${esc(m.role)}</strong>${m.issueId ? ' · ' + issueLink(data, m.issueId) : ''}<pre>${esc(m.text)}</pre></article>`
+            `<article><strong>${esc(m.role)}</strong>${m.issueId ? ' · ' + issueLink(data, m.issueId) : ''}<pre${m.role === 'user' ? '' : ` data-ai-text data-ai-source="${esc(m.text)}"`}>${esc(m.text)}</pre></article>`
         )
         .join(''),
       'coordinator-messages:' + selected
