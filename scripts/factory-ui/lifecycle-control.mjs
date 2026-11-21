@@ -1,4 +1,5 @@
-import { canResumeLifecycle, isRetriableLifecycleFailure, stopLifecycle } from './lifecycle-stop.mjs';
+import { isRetriableLifecycleFailure, stopLifecycle } from './lifecycle-stop.mjs';
+import { canResumeLifecycle } from './lifecycle-stop.mjs';
 import { randomUUID } from 'node:crypto';
 import { readQueue } from './data.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
@@ -7,9 +8,11 @@ import { loadLifecycles, saveLifecycle } from './lifecycle-store.mjs';
 import { runLifecycle } from './lifecycle-loop.mjs';
 import { blockedHumanInput } from './lifecycle-human.mjs';
 import { respondLifecycle } from './lifecycle-input.mjs';
+import { requireIndependentIssue } from './issue-group.mjs';
 
 export function startLifecycle(service, input) {
   service.ownServer();
+  requireIndependentIssue(service.root, input.issueId);
   const queue = readQueue(service.root);
   progressIssue(queue, input.issueId, input.state);
   requireThat(
@@ -43,6 +46,7 @@ export function startLifecycle(service, input) {
   return { issueId: input.issueId };
 }
 function launchLifecycle(service, record) {
+  requireThat(!service.sharedIssues, 'Use the issue strategy controls to claim and run a shared issue.');
   requireThat(!service.lifecycleTasks.has(record.issueId), 'Progress is already running for this issue.');
   saveLifecycle(service, record, {
     status: 'running',
@@ -54,7 +58,10 @@ function launchLifecycle(service, record) {
   const task = Promise.resolve()
     .then(() => runLifecycle(service, record))
     .catch((error) => stopLifecycleError(service, record, error))
-    .finally(() => service.lifecycleTasks.delete(record.issueId));
+    .finally(() => {
+      service.lifecycleTasks.delete(record.issueId);
+      service.issueChats?.resumePending(record.issueId);
+    });
   service.lifecycleTasks.set(record.issueId, task);
 }
 export async function answerLifecycle(service, input) {

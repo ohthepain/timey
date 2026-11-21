@@ -1,0 +1,593 @@
+import {
+  constants,
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  unlinkSync,
+} from 'node:fs';
+import { join } from 'node:path';
+import { digest, readJson, requireThat, writeJson } from './common.mjs';
+import { formatIssueReport } from './issue-report-format.mjs';
+import {
+  deletePendingIssueReport,
+  formatArchivedIssue,
+  moveStoredIssue,
+  storedIssuePath,
+  updateStoredIssueMetadata,
+} from './issue-report-storage.mjs';
+import { createSharedIssueTransport } from './shared-issue-transport.mjs';
+import { createSharedIssueClaims } from './shared-issue-claims.mjs';
+import { sharedIssueQueueConfig } from './shared-issue-config.mjs';
+import { createSharedIssuePublication } from './shared-issue-publication.mjs';
+import { copySharedIssueFile, fetchSharedIssueTarget, syncSharedIssueFiles } from './shared-issue-sync.mjs';
+import { flowOwnsIssue } from './flow-ownership.mjs';
+import { investigationReport } from './investigation-records.mjs';
+
+const archiveSource = (record) => record.baseLocation || 'closed';
+
+function withSharedProgress(report, status) {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/;
+  return report.replace(frontmatter, (_, fields) => {
+    const update = new Date().toISOString();
+    const retained = fields.replace(/^shared_progress:.*\r?\n?/m, '').replace(/^updated:.*$/m, 'updated: ' + update);
+    return `---\n${retained}\nshared_progress: ${status || 'unknown'}\n---`;
+  });
+}
+
+export function createSharedIssueQueue(service, options = {}) {
+  if (service.reviewMode === 'preview') return null;
+  const root = service.root;
+  const queueConfig = sharedIssueQueueConfig(root);
+  if (!queueConfig) return null;
+  const transport = createSharedIssueTransport(root, queueConfig.remote);
+  const config = { ...queueConfig, transport };
+  const claims = createSharedIssueClaims({ root, ...config, pushDirect: options.pushClaim });
+  const publication = createSharedIssuePublication({ root, ...config, ...options });
+  const directory = join(root, '.issues/shared-queue');
+  mkdirSync(directory, { recursive: true });
+  const syncState = join(directory, 'target-files.json');
+  let remoteClaims = new Map();
+  let lastRefresh = 0;
+  let syncWarning = null;
+  let backgroundRefresh;
+  let refreshGeneration = 0;
+
+  function receiptPath(id) {
+    requireThat(/^\d[\w-]*$/.test(id), 'Select a valid issue.');
+    return join(directory, id + '.json');
+  }
+  function receipt(id) {
+    const path = receiptPath(id);
+    return existsSync(path) ? readJson(path) : null;
+  }
+  function save(record, fields) {
+    Object.assign(record, fields);
+    writeJson(receiptPath(record.id), record);
+    return record;
+  }
+  function localReport(id, location = 'open') {
+    return readFileSync(storedIssuePath(root, id, location), 'utf8');
+  }
+  function sameReport(id, location, content) {
+    const path = storedIssuePath(root, id, location);
+    return existsSync(path) && lstatSync(path).isFile() && readFileSync(path, 'utf8') === content;
+  }
+  function completeArchive(record) {
+    const location = archiveSource(record);
+    const closed = storedIssuePath(root, record.id, location);
+    const hasClosed = existsSync(closed);
+    requireThat(!hasClosed || sameReport(record.id, location, record.base), 'The local report changed.');
+    formatArchivedIssue(root, record.id, record.base);
+    if (hasClosed) unlinkSync(closed);
+  }
+  function completeLocation(record) {
+    if (record.location === undefined || record.location === record.baseLocation) return;
+    if (record.storageAction === 'archive') return completeArchive(record);
+    if (record.storageAction === 'delete-proposal') {
+      if (existsSync(storedIssuePath(root, record.id)))
+        deletePendingIssueReport(root, { id: record.id, content: record.base, state: 'needs-approval' });
+      service.flows?.removePendingFlow(record.id);
+      return;
+    }
+    const from = record.storageAction === 'restore' ? 'archive' : record.baseLocation;
+    if (!from) return;
+    if (sameReport(record.id, record.location, record.report) && !existsSync(storedIssuePath(root, record.id, from)))
+      return;
+    requireThat(sameReport(record.id, from, record.report), 'The local report changed while awaiting review.');
+    moveStoredIssue(root, record.id, from, record.location);
+  }
+  function active(id) {
+    return (
+      flowOwnsIssue(service, id) ||
+      service.lifecycleTasks.has(id) ||
+      service.issueChats.tasks?.has(id) ||
+      service.store.runs.some((run) => run.issueId === id && service.store.connected.has(run.id))
+    );
+  }
+  function release(id, claim) {
+    claims.release(claim);
+    if (remoteClaims.get(id)?.oid === claim.oid) remoteClaims.delete(id);
+  }
+  function publishConfirmed(record, result) {
+    if (result.number) publication.confirmMerged(record.id);
+    completeLocation(record);
+    const own = claims.own(record.id);
+    if (own && record.claim?.oid === own.oid) finishPublishedClaim(record, result, own);
+    const saved = save(record, { status: 'published', url: result.url, error: null });
+    if (record.location === 'closed' && service.flows?.closurePending(record.id))
+      queueMicrotask(() => service.flows?.resumeClosure(record.id));
+    return saved;
+  }
+  function finishPublishedClaim(record, result, claim) {
+    const receipt = result.atomicRelease;
+    if (confirmedAtomicRelease(receipt, result, claim)) {
+      claims.forgetReleased(claim);
+      if (remoteClaims.get(record.id)?.oid === claim.oid) remoteClaims.delete(record.id);
+    } else release(record.id, claim);
+  }
+  function confirmedAtomicRelease(receipt, result, claim) {
+    if (!receipt) return false;
+    return [
+      receipt.commit === result.mergeCommit,
+      receipt.releasedClaim?.issueId === claim.issueId,
+      receipt.releasedClaim?.oid === claim.oid,
+    ].every(Boolean);
+  }
+  function reconcile(record, revision) {
+    if (record.status !== 'review' || active(record.id)) return;
+    const result = publication.inspect(record.id, revision);
+    if (result?.status === 'landed') publishConfirmed(record, result);
+  }
+  function refresh(force = false) {
+    if (!force && Date.now() - lastRefresh < 30_000) return syncWarning;
+    lastRefresh = Date.now();
+    refreshGeneration++;
+    try {
+      applyRefresh(claims.list());
+    } catch {
+      refreshFailed();
+    }
+    return syncWarning;
+  }
+
+  function refreshInBackground(wait = false) {
+    if (!backgroundRefresh && Date.now() - lastRefresh >= 30_000) backgroundRefresh = startRefresh();
+    return wait ? Promise.resolve(backgroundRefresh).then(() => syncWarning) : syncWarning;
+  }
+
+  async function startRefresh() {
+    const generation = ++refreshGeneration;
+    lastRefresh = Date.now();
+    try {
+      const [found, revision] = await Promise.all([claims.listAsync(), fetchSharedIssueTarget(root, config)]);
+      if (refreshGeneration === generation) applyRefresh(found, revision);
+    } catch {
+      if (refreshGeneration === generation) refreshFailed();
+    } finally {
+      backgroundRefresh = null;
+    }
+  }
+
+  function refreshFailed() {
+    syncWarning = 'Could not refresh the shared queue. The last observed queue is shown.';
+  }
+
+  function applyRefresh(found, revision) {
+    remoteClaims = found;
+    for (const file of readdirSync(directory).filter((name) => /^\d.*\.json$/.test(name)))
+      reconcileReceipt(receipt(file.slice(0, -5)), revision);
+    const conflicts = syncSharedIssueFiles(root, config, syncState, active, revision);
+    syncWarning = conflicts.length
+      ? 'Shared queue changes need reconciliation for ' + conflicts.join(', ') + '.'
+      : null;
+  }
+
+  function reconcileReceipt(record, revision) {
+    try {
+      reconcile(record, revision);
+    } catch {
+      save(record, {
+        status: 'failed',
+        error: 'Could not reconcile the report PR or release its claim. Review it before retrying.',
+      });
+    }
+  }
+  function baseline(id, location = 'open') {
+    const key = (location === 'closed' ? 'closed/' : '') + id + '.md';
+    return existsSync(syncState) ? readJson(syncState)[key]?.hash : undefined;
+  }
+  function requireClaimAvailable(id) {
+    const pending = receipt(id);
+    requireThat(
+      !pending || pending.status === 'published',
+      'Publish or reconcile the pending issue update before starting.'
+    );
+  }
+  function acquire(issue, allowDraft = false, restoring = false, storageAction, flowBlock) {
+    return acquireTarget(issue, () => publication.readTarget(issue.id), {
+      allowDraft,
+      restoring,
+      storageAction,
+      flowBlock,
+    });
+  }
+  function acquireTarget(issue, readInitial, { allowDraft, restoring, storageAction, flowBlock }) {
+    requireClaimAvailable(issue.id);
+    const initial = readInitial();
+    requireThat(
+      restoring ? initial.report === null : initialReportMatches(issue, initial, allowDraft),
+      'The shared issue changed or is unpublished. Refresh the shared queue before starting.'
+    );
+    const claim = claims.acquire(issue.id);
+    remoteClaims.set(issue.id, claim);
+    let current;
+    try {
+      current = publication.readTarget(issue.id);
+      requireThat(
+        current.report === initial.report && current.location === initial.location,
+        'The shared issue changed while it was being claimed. Refresh the shared queue before starting.'
+      );
+    } catch (error) {
+      release(issue.id, claim);
+      throw error;
+    }
+    const context = {
+      claim,
+      base: initial.report,
+      baseLocation: initial.location,
+      ...archiveBatch(storageAction, current),
+    };
+    save({ id: issue.id, ...context, storageAction, flowBlock }, { status: 'claimed' });
+    return context;
+  }
+  function archiveBatch(action, target) {
+    return config.direct && action === 'archive' ? { batchHead: target.head } : {};
+  }
+  function initialReportMatches(issue, initial, allowDraft) {
+    return (
+      initial.report !== null &&
+      (initial.report === issue.content ||
+        (allowDraft && baseline(issue.id, initial.location) === digest(initial.report)))
+    );
+  }
+  function acquireForApproval(issue) {
+    const proposal = receipt(issue.id);
+    if (proposal?.base === null && proposal.location === 'open') {
+      reconcileReceipt(proposal);
+      requireThat(proposal.status !== 'review', 'Merge the proposal’s queue PR before approving this issue.');
+      requireThat(proposal.status === 'published', 'Refresh the proposal’s queue PR before approving this issue.');
+    }
+    return acquire(issue, true);
+  }
+  function failedInitialProposal(pending) {
+    if (!pending) return false;
+    return [pending.status === 'failed', pending.base === null, pending.location === 'open', !pending.claim].every(
+      Boolean
+    );
+  }
+  function moveFolder(issue, folderId) {
+    const pending = receipt(issue.id);
+    if (failedInitialProposal(pending)) {
+      requireThat(
+        [!active(issue.id), !claims.own(issue.id), !remoteClaims.has(issue.id)].every(Boolean),
+        'Wait for this issue’s active operation to finish before moving it.'
+      );
+      requireThat(pending.report === issue.content, 'The pending report changed. Refresh before moving this issue.');
+      requireThat(
+        publication.readTarget(issue.id).report === null,
+        'The proposal is already shared. Reconcile its publication before moving this issue.'
+      );
+      updateStoredIssueMetadata(root, issue, { folder_id: folderId });
+      save(pending, { report: localReport(issue.id) });
+      return;
+    }
+    if (pending) reconcileReceipt(pending);
+    const context = acquire(issue, true);
+    updateStoredIssueMetadata(root, issue, { folder_id: folderId });
+    checkpoint(issue.id, 'Issue folder assignment changed', context);
+  }
+  function flowBlockReceipt(id, blockId) {
+    const pending = receipt(id);
+    if (pending && pending.status === 'claimed' && pending.flowBlock === blockId) return pending;
+  }
+  function acquireFlowBlock(issue, blockId, continuing) {
+    const pending = continuing ? flowBlockReceipt(issue.id, blockId) : undefined;
+    if (!pending) return acquire(issue, false, false, undefined, blockId).claim;
+    const claim = claims.verifyOwn(issue.id);
+    requireThat(claim, 'Reconcile the interrupted shared issue claim.');
+    requireThat(claim.oid === pending.claim.oid, 'The interrupted shared issue claim changed.');
+    return claim;
+  }
+  function releaseFlowBlock(claim) {
+    const pending = receipt(claim.issueId);
+    requireThat(pending, 'The saved flow block claim is missing.');
+    requireThat(
+      pending.status === 'claimed' && pending.flowBlock && pending.claim.oid === claim.oid,
+      'The saved flow block claim changed.'
+    );
+    release(claim.issueId, claim);
+    save(pending, { status: 'published' });
+  }
+  function checkpointClaim(record) {
+    return config.direct ? record.claim : undefined;
+  }
+  function publish(record, reprepare = false) {
+    try {
+      const publishReport = reprepare ? publication.reprepare : publication.publish;
+      const result = publishReport({
+        issueId: record.id,
+        base: { report: record.base, location: record.baseLocation ?? (record.base === null ? null : 'open') },
+        location: record.location === undefined ? 'open' : record.location,
+        report: record.report,
+        reason: record.reason,
+        claim: record.claim,
+        releaseClaim: checkpointClaim(record),
+        batchHead: record.batchHead,
+      });
+      if (result.status === 'landed') return publishConfirmed(record, result);
+      return save(record, { status: 'review', url: result.url, error: null });
+    } catch (error) {
+      return save(record, { status: 'failed', error: error.message });
+    }
+  }
+  function checkpoint(
+    id,
+    reason,
+    context = { base: null },
+    report = localReport(id, context.baseLocation || 'open'),
+    location = context.baseLocation || 'open',
+    storageAction
+  ) {
+    const previous = receipt(id);
+    if (
+      previous &&
+      previous.status !== 'published' &&
+      !(previous.status === 'claimed' && previous.claim?.oid === context.claim?.oid)
+    ) {
+      if (previous.reason === reason && previous.report === report) return previous;
+      throw Error('A different shared queue update is already pending.');
+    }
+    return publish(save({ id, reason, report, ...context, location, storageAction }, { status: 'preparing' }));
+  }
+  function capture(id, reason) {
+    if (receipt(id)) return;
+    return checkpoint(id, reason);
+  }
+  function acquireGroupClosure(issue, reason) {
+    const operation = `group-close:${reason}`;
+    const pending = flowBlockReceipt(issue.id, operation);
+    if (!pending) return acquire(issue, true, false, undefined, operation);
+    return {
+      claim: acquireFlowBlock(issue, operation, true),
+      base: pending.base,
+      baseLocation: pending.baseLocation,
+    };
+  }
+  function publishGroupClosure(issue, reason, context) {
+    const pending = receipt(issue.id);
+    if (context || pending?.flowBlock === `group-close:${reason}`) {
+      const binding = context ?? acquireGroupClosure(issue, reason);
+      return publicState(checkpoint(issue.id, reason, binding, undefined, 'closed'));
+    }
+    if (pending?.reason === reason && pending.location === 'closed' && ['failed', 'preparing'].includes(pending.status))
+      return publicState(publish(pending, true));
+    return publicState(pending);
+  }
+  function finish(id, context, run, record) {
+    const previous = localReport(id);
+    const pr = record.work?.readiness?.url;
+    const outcome = String(record.status || run.status).replace(/[^a-z-]/g, '');
+    const note =
+      '\n\n## Progress checkpoint\n\n' +
+      `Run \`${run.id}\` ended with status **${outcome}**.` +
+      (typeof pr === 'string' && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(pr)
+        ? ` Code PR: ${pr}.`
+        : '') +
+      '\n';
+    const report = formatIssueReport(withSharedProgress(previous, outcome).trimEnd() + note);
+    copySharedIssueFile(join(root, '.issues', id + '.md'), report);
+    checkpoint(id, 'Progress ended', context, report);
+  }
+  function retry(id) {
+    requireThat(!active(id), 'Wait for the current run to stop before retrying publication.');
+    const record = receipt(id);
+    requireThat(
+      record && ['failed', 'preparing', 'review'].includes(record.status),
+      'There is no pending report to retry.'
+    );
+    return publicState(publish(record, true));
+  }
+  function handoff(id) {
+    requireThat(!active(id), 'Stop the runner before handing off an issue.');
+    const record = service.lifecycleRuns[id];
+    const url = record?.work?.readiness?.url;
+    requireThat(
+      typeof url === 'string' && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(url),
+      'Publish the retained work as a code PR before handing it off.'
+    );
+    const current = localReport(id);
+    const context = acquire({ id, content: current }, true);
+    const report = withSharedProgress(current, 'handed-off').trimEnd() + `\n\n## Handoff\n\nRetained work: ${url}.\n`;
+    copySharedIssueFile(join(root, '.issues', id + '.md'), report);
+    return publicState(checkpoint(id, 'Explicit handoff', context, report));
+  }
+  function publishDraft(id) {
+    requireThat(!active(id), 'Stop the runner before publishing a report update.');
+    const content = localReport(id);
+    requireThat(baseline(id) && baseline(id) !== digest(content), 'There is no unpublished report update.');
+    const context = acquire({ id, content }, true);
+    return publicState(checkpoint(id, 'Explicit report update', context, content));
+  }
+  function moveStorage(id, action, content) {
+    const previous = receipt(id);
+    if (previous?.storageAction === action && previous.status !== 'published')
+      return previous.status === 'review'
+        ? publicState(previous)
+        : previous.status === 'claimed'
+          ? recover(id)
+          : retry(id);
+    const live = publication.readTarget(id);
+    if (action === 'archive' && live.report === null) return null;
+    requireThat(
+      action === 'restore' || live.location === 'closed' || investigationReport(root, id, content),
+      'Close the shared issue before archiving it.'
+    );
+    const context = acquireTarget({ id, content }, () => live, {
+      allowDraft: false,
+      restoring: action === 'restore',
+      storageAction: action,
+    });
+    return saveStorageCheckpoint(id, action, content, context);
+  }
+  function saveStorageCheckpoint(id, action, content, context) {
+    if (action === 'archive') {
+      const archive = storedIssuePath(root, id, 'archive');
+      mkdirSync(join(root, '.issues/archive'), { recursive: true });
+      if (!existsSync(archive))
+        copyFileSync(storedIssuePath(root, id, archiveSource(context)), archive, constants.COPYFILE_EXCL);
+      requireThat(sameReport(id, 'archive', content), 'An archive copy already exists with different content.');
+    }
+    return publicState(
+      checkpoint(
+        id,
+        action === 'archive' ? 'Archive issue report' : 'Restore issue report',
+        context,
+        action === 'archive' ? null : content,
+        action === 'archive' ? null : investigationReport(root, id, content) ? 'open' : 'closed',
+        action
+      )
+    );
+  }
+  function storageStatus(id) {
+    const record = receipt(id);
+    return record?.storageAction ? publicState(record) : null;
+  }
+  function deleteProposal(issue) {
+    const previous = receipt(issue.id);
+    if (previous?.storageAction !== 'delete-proposal' || previous.status === 'published') {
+      const context = acquire(issue, false, false, 'delete-proposal');
+      return checkpointProposalDeletion(issue.id, context);
+    }
+    if (previous.status === 'review') return publicState(previous);
+    if (previous.status === 'claimed') return recover(issue.id);
+    return retry(issue.id);
+  }
+  function checkpointProposalDeletion(id, context) {
+    return publicState(checkpoint(id, 'Delete unapproved issue', context, null, null, 'delete-proposal'));
+  }
+  function recover(id) {
+    requireThat(!active(id), 'Wait for the current run to stop before reconciling its claim.');
+    const claim = claims.own(id);
+    requireThat(claim, 'This checkout has no claim to recover.');
+    const saved = receipt(id);
+    requireThat(!saved || ['published', 'claimed'].includes(saved.status), 'Resolve the pending report update first.');
+    const live = publication.readTarget(id);
+    if (!claims.verifyOwn(id)) {
+      release(id, claim);
+      if (saved?.status === 'claimed') save(saved, { status: 'published' });
+      return { status: 'released' };
+    }
+    if (saved?.status === 'claimed' && saved.storageAction) {
+      const action = saved.storageAction;
+      requireThat(
+        live.report === saved.base && live.location === saved.baseLocation,
+        'The shared report changed before recovery.'
+      );
+      if (action === 'delete-proposal') return checkpointProposalDeletion(id, { ...saved, claim });
+      const source = action === 'archive' ? archiveSource(saved) : 'archive';
+      return saveStorageCheckpoint(id, action, localReport(id, source), {
+        claim,
+        base: saved.base,
+        baseLocation: saved.baseLocation,
+      });
+    }
+    const base = saved?.status === 'claimed' ? saved.base : live.report;
+    const location = saved?.baseLocation || live.location;
+    requireThat(
+      live.report !== null && live.report === base,
+      'The claimed report changed on the target. Reconcile it before recovery.'
+    );
+    if (saved?.status !== 'claimed')
+      requireThat(
+        localReport(id, location) === live.report,
+        'The interrupted claim has no saved base and the local report differs.'
+      );
+    const report =
+      localReport(id, location).trimEnd() +
+      '\n\n## Progress checkpoint\n\nAn interrupted run was reconciled by the operator.\n';
+    copySharedIssueFile(storedIssuePath(root, id, location), report);
+    return publicState(checkpoint(id, 'Interrupted run recovered', { claim, base, baseLocation: location }, report));
+  }
+  function confirm(id) {
+    requireThat(!active(id), 'Stop the runner before confirming the reviewed merge.');
+    const record = receipt(id);
+    requireThat(
+      record && ['failed', 'review', 'preparing'].includes(record.status),
+      'There is no pending report to reconcile.'
+    );
+    const result = publication.confirmMerged(id);
+    const live = publication.readTarget(id);
+    const source = record.storageAction === 'restore' ? 'archive' : record.baseLocation || 'open';
+    if (
+      record.storageAction !== 'archive' &&
+      sameReport(id, source, record.report) &&
+      live.report !== null &&
+      live.report !== record.report
+    ) {
+      copySharedIssueFile(storedIssuePath(root, id, source), live.report);
+      save(record, { report: live.report });
+    }
+    return publicState(publishConfirmed(record, result));
+  }
+  function publicState(record) {
+    return record ? { status: record.status, url: record.url, error: record.error } : null;
+  }
+  function view(id) {
+    const own = claims.own(id);
+    const pending = receipt(id);
+    const running = active(id);
+    const idle = !running && !own && !remoteClaims.has(id) && (!pending || pending.status === 'published');
+    const location = existsSync(storedIssuePath(root, id, 'closed')) ? 'closed' : 'open';
+    const base = baseline(id, location);
+    return {
+      claimed: Boolean(own || remoteClaims.has(id)),
+      local: Boolean(own),
+      active: running,
+      published: Boolean(base),
+      canHandoff: idle && Boolean(service.lifecycleRuns[id]?.work?.readiness?.url),
+      canPublishDraft: idle && Boolean(base && base !== digest(localReport(id, location))),
+      checkpoint: publicState(pending),
+    };
+  }
+  return {
+    close() {
+      refreshGeneration++;
+      transport.close();
+    },
+    branch: config.separateBranch,
+    acquire,
+    acquireForApproval,
+    moveFolder,
+    acquireGroupClosure,
+    acquireFlowBlock,
+    releaseFlowBlock,
+    capture,
+    checkpoint,
+    publishGroupClosure,
+    finish,
+    refresh,
+    refreshInBackground,
+    retry,
+    recover,
+    handoff,
+    confirm,
+    publishDraft,
+    moveStorage,
+    storageStatus,
+    deleteProposal,
+    view,
+  };
+}

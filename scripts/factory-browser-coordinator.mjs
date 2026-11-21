@@ -8,20 +8,9 @@ export default async function coordinatorBrowserChecks(page) {
     { id: 'old', messages: [{ role: 'Coordinator', text: 'Earlier retained conversation' }], output: [] },
     { id: 'current', messages: [], output: [{ text: 'Reading saved work <script>danger</script>' }] },
   ];
-  await page.route('**/api/queue?**', async (route) => {
-    const response = await route.fetch();
-    const data = await response.json();
-    data.coordinator = {
-      active,
-      paused,
-      reason: paused ? 'Stopped. Workers are still running.' : '',
-      threads,
-      workers: [{ id: 'worker', issueId: 'b', summary: 'Worker still running' }],
-      waiting: active ? [{ issueId: 'a', reason: 'The coordinator is reviewing Older urgent issue.' }] : [],
-      pending: 0,
-    };
-    await route.fulfill({ json: data });
-  });
+  const state = () => ({ active, paused, threads });
+  await page.route('**/api/queue', (route) => coordinatorQueueRoute(route, state()));
+  await page.route('**/api/issue?issue=*', (route) => coordinatorIssueRoute(route, state()));
   await page.route('**/api/coordinator-*', async (route) => {
     const action = route.request().url().split('/api/coordinator-')[1];
     requests.push({ action, body: route.request().postDataJSON() });
@@ -37,7 +26,7 @@ export default async function coordinatorBrowserChecks(page) {
   await page.locator('#coordinator-strip').filter({ hasText: 'Older urgent issue' }).waitFor();
   await page.goto(new URL('/#/issue/a', page.url()).href);
   await page.waitForFunction(() => document.getElementById('coordinator-strip').hidden);
-  await page.getByRole('link', { name: 'Discuss queue', exact: true }).click();
+  await page.getByRole('link', { name: 'Coordinator', exact: true }).click();
   await page.getByRole('heading', { name: 'Coordinator', exact: true }).waitFor();
   await page.getByLabel('Coordinator live output').filter({ hasText: 'Reading saved work' }).waitFor();
   if (await page.locator('#coordinator-output script').count()) throw Error('Output was interpreted as HTML.');

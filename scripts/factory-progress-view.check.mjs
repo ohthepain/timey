@@ -1,0 +1,299 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
+import { join } from 'node:path';
+import vm from 'node:vm';
+import { gitFixture } from './git-fixture.mjs';
+import { outputHistory } from './factory-ui/output-history.mjs';
+import { advanceOperationTiming, startOperationTiming } from './factory-ui/operation-timing.mjs';
+
+const context = vm.createContext({});
+vm.runInContext(
+  readFileSync('scripts/factory-ui/issue-progress-ui.js', 'utf8') + '\nglobalThis.view = issueProgressUI;',
+  context
+);
+const { derive } = context.view;
+const issue = { id: 'one', created: '2026-11-01', strategy: { status: 'queued', active: false } };
+const run = {
+  id: 'work',
+  issueId: 'one',
+  kind: 'issue-work',
+  created: '2026-11-01',
+  status: 'running',
+  connected: true,
+  output: [],
+};
+function view(changes = {}, runs = [], extra = {}) {
+  return derive({ ...issue, ...changes }, { runs, actions: [], ...extra });
+}
+
+test('untouched issues differ from disconnected running records and quiet active work', () => {
+  assert.equal(view().status, 'not started');
+  assert.equal(view({}, [{ ...run, connected: false }]).status, 'progress unavailable');
+  assert.equal(view({}, [run]).status, 'running');
+});
+test('blocking input wins over active work; prose never supplies approval or passes', () => {
+  const result = view({ lifecycle: { input: { type: 'questions', questions: [{ question: 'Which scope?' }] } } }, [
+    { ...run, summary: 'Plan approved. Checks passed.' },
+  ]);
+  assert.equal(result.status, 'waiting for you');
+  assert.equal(result.running, true);
+  assert.equal(result.milestones.includes('Plan approved'), false);
+  assert.equal(
+    result.milestones.some((m) => m.startsWith('Checks passed')),
+    false
+  );
+});
+test('connected new work replaces an old failed controller', () => {
+  assert.equal(
+    view({ lifecycle: { status: 'failed', summary: 'Old failure' }, strategy: { status: 'blocked' } }, [run]).status,
+    'running'
+  );
+});
+test('Continue suppresses old failure and questions until new evidence', () => {
+  const result = derive(
+    { ...issue, lifecycle: { status: 'failed', input: { type: 'scope' } } },
+    { runs: [], actions: [] },
+    { message: 'Request sent; waiting for updated progress.' }
+  );
+  assert.equal(result.status, 'running');
+  assert.equal(result.step, 'Request sent; waiting for updated progress');
+  assert.equal(result.command, null);
+});
+test('finish lines distinguish publication, merge and issue acceptance', () => {
+  assert.equal(
+    view({ strategy: { status: 'handed-off' }, lifecycle: { work: {} } }).step,
+    'Full Stop complete; PR ready for review'
+  );
+  assert.equal(view({ strategy: { status: 'merged' } }).step, 'Full Send complete; PR merged');
+  assert.match(view({ strategy: { status: 'merged' } }).next, /acceptance remains separate/);
+  const mergeReady = view({ strategy: { status: 'ready-to-merge', summary: 'Waiting for the Merge button.' } });
+  assert.equal(mergeReady.status, 'ready to merge');
+  assert.equal(mergeReady.step, 'Full Send complete; PR ready to merge');
+  assert.match(mergeReady.next, /GitHub approval and required checks are rechecked/);
+  assert.equal(view({ lifecycle: { status: 'finished', deliveryHandoff: true } }).step, 'Draft PR handoff complete');
+});
+test('Progress retains a valid PR link after closure and omits it when no matching PR exists', () => {
+  const savedPR = {
+    pr: 42,
+    repository: 'ohthepain/timey',
+    status: 'merged',
+  };
+  const merged = view({ strategy: savedPR }).pullRequest;
+  assert.equal(merged.url, 'https://github.com/ohthepain/timey/pull/42');
+  assert.equal(merged.number, 42);
+  const failed = view({ strategy: { ...savedPR, status: 'failed' } }).pullRequest;
+  assert.equal(failed.url, 'https://github.com/ohthepain/timey/pull/42');
+  assert.equal(failed.number, 42);
+  assert.equal(view({ strategy: { status: 'running', pr: null, repository: savedPR.repository } }).pullRequest, null);
+  assert.equal(view({ strategy: { ...savedPR, pr: null } }).pullRequest, null);
+});
+test('retries mark earlier validated checks as superseded', () => {
+  const prior = { ...run, id: 'prior', created: '2026-10-30', connected: false, result: { checked: { head: 'old' } } };
+  const result = view({}, [prior, run]);
+  assert.ok(result.milestones.includes('Checks passed on an earlier attempt (superseded)'));
+  assert.ok(!result.milestones.includes('Checks passed for the recorded candidate'));
+});
+test('verification exposes command identity and exact exit result, never stdout guesses', () => {
+  const command = { kind: 'command', command: 'pnpm test', status: 'completed', exitCode: 1, text: 'PASS' };
+  const result = view({}, [{ ...run, status: 'checking', output: [command] }]);
+  assert.equal(result.step, 'Running verification');
+  assert.equal(result.command.exitCode, 1);
+});
+test('blocked progress points to the failed command even when later commands succeeded', () => {
+  const result = view({ strategy: { status: 'blocked', active: false } }, [
+    {
+      ...run,
+      connected: false,
+      status: 'blocked',
+      output: [
+        {
+          kind: 'command',
+          command: 'pnpm run test:factory',
+          status: 'completed',
+          exitCode: 1,
+          text: 'failure details',
+        },
+        { kind: 'command', command: 'git status --short', status: 'completed', exitCode: 0, text: 'clean' },
+      ],
+    },
+  ]);
+  assert.equal(result.command.command, 'pnpm run test:factory');
+  assert.equal(result.step, 'Command failed');
+  assert.match(result.explanation, /automated checks for the factory/);
+  assert.match(result.next, /Review the command output/);
+});
+test('blocked progress does not present a successful command as the cause', () => {
+  const result = view({ strategy: { status: 'blocked', active: false, summary: 'An internal check stopped.' } }, [
+    {
+      ...run,
+      connected: false,
+      status: 'blocked',
+      output: [{ kind: 'command', command: 'pnpm run verify', status: 'completed', exitCode: 0 }],
+    },
+  ]);
+  assert.equal(result.command, null);
+  assert.equal(result.commandNotice, 'No failed shell command was recorded.');
+  assert.match(result.explanation, /internal check/);
+});
+test('pull request check explains conflicting saved facts without assigning blame', () => {
+  const summary = 'The server owns PR publication. Return null for a new PR or the already saved PR number.';
+  const result = view({ strategy: { status: 'failed', active: false, pr: null } }, [
+    { ...run, connected: false, status: 'failed', summary, result: { pr: 37 }, output: [] },
+  ]);
+  assert.equal(result.step, 'Checking pull request details');
+  assert.match(result.explanation, /work response named PR #37/);
+  assert.match(result.explanation, /no PR number saved/);
+  assert.match(result.explanation, /does not show who created/);
+  assert.match(result.next, /Check the issue branch and matching pull request/);
+  assert.match(result.diagnostics, /Factory check:/);
+  assert.equal(result.command, null);
+});
+test('capture grilling displays the actual outstanding round without granting implementation', () => {
+  const conversation = {
+    issueId: 'one',
+    messages: [
+      { id: 'capture-grill-1', actor: 'human', kind: 'comment' },
+      { id: 'reply:capture-grill-1', actor: 'agent', kind: 'reply', body: 'Q1: Keep drafts? Recommended: yes.' },
+    ],
+  };
+  assert.equal(view({}, [], { conversation }).status, 'waiting for you');
+  conversation.messages.push({ id: 'answer', actor: 'human', kind: 'comment', body: 'yes' });
+  assert.notEqual(view({}, [], { conversation }).status, 'waiting for you');
+});
+test('connection failure overrides saved state without claiming a worker failed', () => {
+  const result = derive(issue, { runs: [run], actions: [] }, null, true);
+  assert.equal(result.status, 'progress unavailable');
+  assert.equal(result.lastUpdate, run.created);
+});
+test('retained history pages losslessly across large Unicode records and live appends', (t) => {
+  const { root } = gitFixture(t, 'progress-output-');
+  mkdirSync(join(root, 'logs'));
+  const store = { directory: join(root, 'logs'), runs: [{ id: 'one' }] };
+  const event = (id, text) => ({ method: 'item/completed', params: { item: { id, type: 'agentMessage', text } } });
+  const records = Array.from({ length: 12 }, (_, i) => event(String(i), 'å'.repeat(i === 5 ? 80000 : 12000)));
+  const path = join(store.directory, 'one.jsonl');
+  writeFileSync(path, records.map((e) => JSON.stringify(e) + '\n').join(''));
+  let page = outputHistory(store, 'one');
+  let events = page.events;
+  appendFileSync(path, JSON.stringify(event('later', 'new')) + '\n');
+  while (page.before) {
+    page = outputHistory(store, 'one', page.before);
+    events = [...page.events, ...events];
+  }
+  assert.deepEqual(events, records);
+  assert.throws(() => outputHistory(store, '../no'), /no longer exists/);
+  assert.throws(() => outputHistory(store, 'one', 5), /boundary/);
+});
+test('history excludes private reasoning and redacts retained public events', (t) => {
+  const { root } = gitFixture(t, 'progress-private-');
+  const store = { directory: root, runs: [{ id: 'one' }] };
+  writeFileSync(
+    join(root, 'one.jsonl'),
+    [
+      { method: 'item/completed', params: { item: { type: 'reasoning', text: 'private' } } },
+      { method: 'item/completed', params: { item: { type: 'agentMessage', text: 'api_key=hidden-secret' } } },
+      {
+        method: 'item/autoApprovalReview/completed',
+        params: {
+          reviewId: 'review',
+          review: { status: 'denied', rationale: 'Public refusal', reasoning: 'private-review' },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed', items: [{ type: 'reasoning', text: 'private-turn' }] } },
+      },
+    ]
+      .map((e) => JSON.stringify(e) + '\n')
+      .join('')
+  );
+  const result = outputHistory(store, 'one');
+  assert.equal(result.events.length, 3);
+  assert.equal(result.events[0].params.item.text, 'api_key=[redacted]');
+  assert.doesNotMatch(JSON.stringify(result), /private-review|private-turn/);
+  assert.match(JSON.stringify(result), /Public refusal/);
+});
+
+test('same strategy run completion keeps the named finish line even when run timestamp is newer', () => {
+  const result = view(
+    {
+      lifecycle: { status: 'handed-off', updated: '2026-11-01T10:00:00Z', work: { runId: 'work' } },
+      strategy: { status: 'handed-off', runId: 'work' },
+    },
+    [{ ...run, connected: false, status: 'completed', updated: '2026-11-01T10:00:01Z' }]
+  );
+  assert.equal(result.step, 'Full Stop complete; PR ready for review');
+});
+
+test('historical milestones use human stage names and live activity supplies the latest timestamp', () => {
+  const result = view(
+    { lifecycle_history: [{ state: 'internal-stage', outcome: 'completed' }] },
+    [{ ...run, health: { lastActivityAt: '2026-11-01T11:00:00Z' } }],
+    { lifecycle: [{ state: 'internal-stage', name: 'Investigation' }] }
+  );
+  assert.ok(result.milestones.includes('Investigation completed (earlier work)'));
+  assert.ok(!result.milestones.some((entry) => entry.includes('internal-stage')));
+  assert.equal(result.lastUpdate, '2026-11-01T11:00:00Z');
+});
+
+test('issue operation timing sums elapsed phases and keeps the active phase ticking through waits', () => {
+  const started = Date.parse('2026-11-05T12:00:00.000Z');
+  const timed = { ...run, status: 'preparing', timing: undefined };
+  startOperationTiming(timed, new Date(started).toISOString());
+
+  advanceOperationTiming(timed, 'running', new Date(started + 10_000).toISOString());
+  timed.status = 'running';
+  const waiting = derive(issue, { runs: [{ ...timed, connected: true }], actions: [] }, null, false, started + 30_000);
+  assert.equal(waiting.step, 'Working on the issue');
+  assert.equal(waiting.operationTime.value, 20_000);
+  assert.equal(waiting.totalOperationTime.value, 30_000);
+
+  advanceOperationTiming(timed, 'checking', new Date(started + 30_000).toISOString());
+  timed.status = 'checking';
+  const checking = derive(issue, { runs: [{ ...timed, connected: true }], actions: [] }, null, false, started + 35_000);
+  assert.equal(checking.step, 'Running verification');
+  assert.equal(checking.operationTime.value, 5_000);
+  assert.equal(checking.totalOperationTime.value, 35_000);
+
+  advanceOperationTiming(timed, 'completed', new Date(started + 40_000).toISOString());
+  timed.status = 'completed';
+  const finished = derive(
+    { ...issue, strategy: { status: 'completed' } },
+    { runs: [{ ...timed, connected: false }], actions: [] },
+    null,
+    false,
+    started + 50_000
+  );
+  assert.equal(finished.totalOperationTime.value, 40_000);
+  assert.equal(finished.totalOperationTime.startedAt, null);
+  assert.equal(finished.operationTime.value, 10_000);
+});
+
+test('progress timer formatting stays compact and old runs remain untimed', () => {
+  assert.equal(context.view.formatDuration(59_000), '59s');
+  assert.equal(context.view.formatDuration(62_000), '1m 02s');
+  assert.equal(context.view.formatDuration(3_661_000), '1h 1m');
+  assert.equal(view({}, [run]).totalOperationTime, undefined);
+});
+
+test('Continue acknowledgment retires only for its accepted run, not late output from older work', () => {
+  const html = readFileSync('scripts/factory-ui/index.html', 'utf8');
+  const source = html.slice(
+    html.indexOf('      function progressFeedback('),
+    html.indexOf('      function progressSummary(')
+  );
+  const request = { strategy: true, pending: false, expectedRunId: 'new-run', previousBasis: 'old-output' };
+  const requests = new Map([['one', request]]);
+  const data = { runs: [{ id: 'old-run' }] };
+  const feedback = new Function('progressRequests', 'data', 'progressBasis', source + ';return progressFeedback;')(
+    requests,
+    data,
+    () => 'late-old-output'
+  );
+  const selected = { id: 'one', strategy: { runId: 'old-run' } };
+  assert.equal(feedback(selected), request);
+  data.runs.push({ id: 'new-run' });
+  assert.equal(feedback(selected), null);
+  assert.equal(requests.has('one'), false);
+});

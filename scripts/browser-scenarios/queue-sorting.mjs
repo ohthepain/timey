@@ -9,7 +9,7 @@ export default async function sortingBrowserChecks(page) {
   const check = async (expected, label) => {
     const actual = await page
       .locator('#issues tr td:first-child > a')
-      .evaluateAll((es) => es.map((e) => decodeURIComponent(e.hash.slice(8))));
+      .evaluateAll((es) => es.map((e) => e.closest('tr').dataset.issueRow));
     if (JSON.stringify(actual) !== JSON.stringify(expected)) throw Error(label + JSON.stringify(actual));
     results.push(label);
   };
@@ -37,11 +37,11 @@ export default async function sortingBrowserChecks(page) {
   await page.locator('h1').click();
   await page.request.get(new URL('/api/fixture-update', page.url()).href);
   await page.waitForFunction(
-    () => document.querySelector('#issues tr td:first-child > a')?.getAttribute('href') === '#/issue/a'
+    () => document.querySelector('#issues tr td:first-child > a')?.getAttribute('href') === '#/issue/2'
   );
   await check(['a', 'b', 'c', 'x'], 'polling reorders fresh data');
   await page.locator('#reverse-order').check();
-  await page.getByRole('link', { name: 'Newer low issue', exact: true }).click();
+  await page.locator('[data-issue-row="a"] a').click();
   await page.getByRole('link', { name: 'Factory', exact: true }).click();
   await page.locator('#sort-field').waitFor();
   if (

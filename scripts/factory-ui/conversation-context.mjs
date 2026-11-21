@@ -5,7 +5,11 @@ import { conversationTimeline } from './conversation-view.mjs';
 import { conversationFiles } from './conversation-store.mjs';
 
 export function conversationContext(service, issueId, queue = readQueue(service.root)) {
-  const issue = queue.issues.find((entry) => entry.id === issueId);
+  let issue = queue.issues.find((entry) => entry.id === issueId);
+  if (!issue) {
+    queue = readQueue(service.root, { location: 'closed', issueId });
+    issue = queue.issues[0];
+  }
   if (!issue) return null;
   const timeline = conversationTimeline(service, queue, issue);
   const files = conversationFiles(service.root, issueId);

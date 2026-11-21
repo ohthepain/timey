@@ -1,3 +1,7 @@
+import { defaultIssueFolder, initializeFolderSettings, requireIssueFolder } from './issue-folder-settings.mjs';
+import { storedIssuePath } from './issue-report-storage.mjs';
+import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
+import { readModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { clarificationLifecycle } from './clarify-policy.mjs';
 import { startCaptureGrilling } from './capture-grilling.mjs';
 import { randomBytes } from 'node:crypto';
@@ -8,10 +12,19 @@ import { z } from 'zod';
 import { assessCapture, captureAssessment } from './capture-assessment.mjs';
 import { captureRoute, validateCaptureLifecycle, captureLifecycle } from './capture-routing.mjs';
 import { readQueue } from './data.mjs';
+import { queueIssueNumbers } from './issue-numbers.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
 
 const requestSchema = z
-  .object({ requestId: z.uuid(), description: z.string().min(1).max(24000), grill: z.boolean().default(false) })
+  .object({
+    requestId: z.uuid(),
+    folder: z.string().trim().min(1).max(4096).optional(),
+    description: z.string().min(1).max(24000),
+    grill: z.boolean().default(false),
+    go: z.boolean().default(false),
+    strategy: z.enum(['full-stop', 'full-send']).default('full-stop'),
+    model: z.string().optional(),
+  })
   .strict();
 const receiptSchema = z
   .object({
@@ -53,18 +66,37 @@ export function createCaptures(service, options = {}) {
     const input = requestSchema.parse(value);
     requireThat(input.description.trim(), 'Description is required.');
     guard();
+    requireThat(
+      !existsSync(join(service.root, '.issues/factory.lock')),
+      'Queue lock exists. Wait for its owner before creating an issue.'
+    );
+    initializeFolderSettings(service.root);
+    input.folder ||= defaultIssueFolder(service.root).name;
+    requireIssueFolder(service.root, input.folder);
+    validateModel(service.root, input.model);
     const pending = tasks.get(input.requestId);
     if (pending) {
       requireThat(
-        pending.description === input.description && pending.grill === input.grill,
+        pending.identity === captureIdentity(input),
         'This submission identity belongs to another description.'
       );
       return pending.promise;
     }
     const promise = perform(input)
+      .then((result) => {
+        if (service.sharedIssues)
+          for (const issue of result.issues) {
+            const saved = service.sharedIssues.checkpoint(issue.id, 'Issue created');
+            issue.publication = { status: saved.status, url: saved.url, error: saved.error };
+          }
+        if (input.model)
+          for (const issue of result.issues)
+            saveIssueModelSettings(service, { issueId: issue.id, model: input.model, effort: '' });
+        return result;
+      })
       .then((result) => (input.grill ? startCaptureGrilling(service, input, result) : result))
       .finally(() => tasks.delete(input.requestId));
-    tasks.set(input.requestId, { description: input.description, grill: input.grill, promise });
+    tasks.set(input.requestId, { identity: captureIdentity(input), promise });
     return promise;
   }
   async function perform(input) {
@@ -72,7 +104,7 @@ export function createCaptures(service, options = {}) {
     const file = join(directory, input.requestId + '.json');
     const hash = captureHash(input);
     const previous = readReceipt(file, hash);
-    if (previous?.complete) return response(previous);
+    if (previous?.complete) return response(previous, service.root);
     const before = captureQueue(service.root);
     validateCaptureLifecycle(before.lifecycle);
     const basis = policyBasis(service.root);
@@ -80,7 +112,7 @@ export function createCaptures(service, options = {}) {
     guard();
     return locked(service.root, () => {
       const receipt = readReceipt(file, hash);
-      if (receipt?.complete) return response(receipt);
+      if (receipt?.complete) return response(receipt, service.root);
       requireThat(
         policyBasis(service.root) === (receipt?.basis || basis),
         'Capture policy changed. Restore it or submit a new draft after reviewing the change.'
@@ -100,7 +132,7 @@ export function createCaptures(service, options = {}) {
       }
       saved.complete = true;
       writeJson(file, saved);
-      return response(saved);
+      return response(saved, service.root);
     });
   }
   return {
@@ -164,7 +196,9 @@ function allocate(queue, input, assessment, basis, random) {
       updated: at,
       grill_later: false,
       autonomy: 'ask',
+      folder_id: requireIssueFolder(queue.root, input.folder).id,
       category: proposal.category,
+      capture_intent: { grill: input.grill, go: input.go, strategy: input.strategy },
       lifecycle_history: route.skipped.map((s) => ({
         ...s,
         outcome: 'skipped',
@@ -177,18 +211,18 @@ function allocate(queue, input, assessment, basis, random) {
     const content =
       '---\n' +
       stringify(metadata, { aliasDuplicateObjects: false }) +
-      '---\n\n## Original request\n\n' +
-      input.description +
+      '---\n\n' +
+      originalRequestSection(input.description) +
       '\n\n## Relevant original wording\n\n' +
       proposal.excerpt +
       '\n\n## Routing\n\n' +
       proposal.reason +
       '\n\nReproduction: ' +
       proposal.reproduction +
-      '. Saving captures only; no work was started.\n\n## Verification intent\n\n' +
+      '. Capturing saves issues before starting any selected follow-up action.\n\n## Verification intent\n\n' +
       proposal.verification +
       '\n';
-    return { id, title: proposal.title, state: route.state, content };
+    return { id, title: proposal.title, state: route.state, content: formatIssueReport(content) };
   });
   return { version: 1, requestId: input.requestId, hash: captureHash(input), basis, reports, complete: false };
 }
@@ -197,7 +231,11 @@ function allocateId(root, at, ids, random) {
     const suffix = random();
     requireThat(/^[a-f0-9]{16}$/.test(suffix), 'Invalid capture identifier source.');
     const id = at.replace(/[-:.Z]/g, '') + '-' + suffix;
-    if (ids.has(id) || existsSync(join(root, '.issues', id + '.md'))) continue;
+    if (
+      ids.has(id) ||
+      ['open', 'closed', 'archive'].some((location) => existsSync(storedIssuePath(root, id, location)))
+    )
+      continue;
     ids.add(id);
     return id;
   }
@@ -212,10 +250,14 @@ function publishExclusive(path, content) {
     unlinkSync(temp);
   }
 }
-function response(receipt) {
+function response(receipt, root) {
+  const numbers = queueIssueNumbers(
+    root,
+    receipt.reports.map((report) => report.id)
+  );
   return {
     requestId: receipt.requestId,
-    issues: receipt.reports.map(({ id, title, state }) => ({ id, title, state })),
+    issues: receipt.reports.map(({ id, title, state }) => ({ id, title, state, issueNumber: numbers[id] })),
   };
 }
 
@@ -226,5 +268,16 @@ function captureQueue(root) {
 }
 
 function captureHash(input) {
-  return digest(input.grill ? JSON.stringify([input.description, true]) : input.description);
+  return digest(captureIdentity(input));
+}
+
+function captureIdentity(input) {
+  return JSON.stringify([input.description, input.folder, input.grill, input.go, input.strategy, input.model || null]);
+}
+
+function validateModel(root, model) {
+  requireThat(
+    !model || readModelSettings(root).models.some((item) => item.id === model),
+    'Choose one of the listed models.'
+  );
 }

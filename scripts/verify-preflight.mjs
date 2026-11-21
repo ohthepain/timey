@@ -18,10 +18,14 @@ export async function listenerPreflight(createListener = createServer) {
     server.listen(0, '127.0.0.1', () => server.close(resolve));
   });
 }
+function dependencyError(message) {
+  return Object.assign(Error(message), { code: 'PREFLIGHT_DEPENDENCIES' });
+}
+
 export function dependencyPreflight(root, snapshot, workspaces) {
   const installed = join(root, 'node_modules/.pnpm/lock.yaml');
   if (!existsSync(installed))
-    throw Error(
+    throw dependencyError(
       `Execution preflight: installed dependency lock missing: ${installed}. Run pnpm install --frozen-lockfile in this checkout.`
     );
   // pnpm 12 may prepend a package-manager lock as the first YAML document.
@@ -30,14 +34,31 @@ export function dependencyPreflight(root, snapshot, workspaces) {
     .filter(Boolean)
     .at(-1);
   if (wanted !== readFileSync(installed, 'utf8'))
-    throw Error(
+    throw dependencyError(
       'Execution preflight: installed dependencies do not match the snapshot lockfile. Run pnpm install --frozen-lockfile in this checkout.'
     );
   for (const workspace of workspaces) {
     const path = join(root, workspace, 'node_modules');
     if (!existsSync(path))
-      throw Error(
+      throw dependencyError(
         `Execution preflight: workspace dependencies missing: ${path}. Run pnpm install --frozen-lockfile in this checkout.`
       );
   }
+}
+export function workspacePackages(directory) {
+  const file = join(directory, 'pnpm-workspace.yaml');
+  if (!existsSync(file)) return [];
+  const packages = [];
+  let inPackages = false;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (/^packages:\s*$/.test(line)) {
+      inPackages = true;
+      continue;
+    }
+    if (!inPackages) continue;
+    if (/^\S/.test(line)) break;
+    const match = line.match(/^\s+-\s+['"]?([^'"#\s]+)['"]?\s*$/);
+    if (match) packages.push(match[1]);
+  }
+  return packages;
 }

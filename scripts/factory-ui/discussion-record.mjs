@@ -1,3 +1,4 @@
+import { appendMessage } from './conversation-store.mjs';
 import { readQueue } from './data.mjs';
 import { progressBasis } from './next-action.mjs';
 import { retainAnswer, saveLifecycle } from './lifecycle-store.mjs';
@@ -41,9 +42,27 @@ export function recordDiscussion(service, queue, issue, intent, continueWork = f
     [],
     null
   );
+  recordGeneralDecision(service, queue, issue, intent);
   refreshGrillingAssessment(service, issue, intent.stage);
   if (continueWork) return continueAfterGrilling(service, issue, result.stage_grilling);
   return { recorded: true };
+}
+
+function recordGeneralDecision(service, queue, issue, intent) {
+  if (!intent.stage)
+    appendMessage(service.root, issue.id, {
+      id: 'reviewed-decision:' + digest(JSON.stringify([issue.id, intent.hash, queue.head, issue.content])),
+      actor: 'factory',
+      role: 'Factory',
+      kind: 'reviewed-decision',
+      body:
+        'You reviewed and recorded this discussion output. This does not approve implementation, merge or acceptance.\n' +
+        intent.text,
+      source: {
+        revision: queue.head,
+        evidence: [{ path: join(service.root, '.issues', issue.id + '.md'), label: 'Recorded decision' }],
+      },
+    });
 }
 
 function stageGrillingResult(queue, intent) {

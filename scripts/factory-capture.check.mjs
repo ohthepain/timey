@@ -3,16 +3,16 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { parse } from 'yaml';
 import { captureFixture, proposal } from './factory-capture-fixture.mjs';
 import { createCaptures } from './factory-ui/issue-capture.mjs';
-import { createFactoryServer } from './factory-ui/http.mjs';
+import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { captureRoute } from './factory-ui/capture-routing.mjs';
 import { readQueue } from './factory-ui/data.mjs';
+import { defaultIssueFolder } from './factory-ui/issue-folder-settings.mjs';
 
-const input = (description = 'Rename heading to Issues') => ({ requestId: randomUUID(), description });
+const input = (description = 'Rename heading to Issues') => ({ requestId: randomUUID(), description, folder: 'Inbox' });
 const reports = (root) => readdirSync(join(root, '.issues')).filter((f) => /^\d.*\.md$/.test(f));
 const bytes = (root, file) => readFileSync(join(root, '.issues', file), 'utf8');
 function report(root, id) {
@@ -29,6 +29,27 @@ function forbidWork(service) {
       throw Error('Unexpected ledger work: ' + name);
     };
 }
+
+test('capture rejects invalid explicit folders and uses the project default when no destination is supplied', async (t) => {
+  const { root, service } = captureFixture(t);
+  let calls = 0;
+  service.captures = createCaptures(service, {
+    assess: async (description) => {
+      calls++;
+      return { issues: [proposal(description)] };
+    },
+  });
+  for (const folder of [null, '', 'Missing folder'])
+    await assert.rejects(service.captures.save({ ...input(), folder }));
+  assert.equal(calls, 0);
+  assert.equal(reports(root).length, 1);
+  const request = input();
+  delete request.folder;
+  const saved = await service.captures.save(request);
+  assert.equal(calls, 1);
+  assert.equal(saved.issues.length, 1);
+  assert.equal(report(root, saved.issues[0].id).meta.folder_id, defaultIssueFolder(root).id);
+});
 
 test('capture preserves exact original text, existing reports, metadata, distinct outcomes and individual skips without work', async (t) => {
   const { root, service } = captureFixture(t);
@@ -70,6 +91,30 @@ test('capture preserves exact original text, existing reports, metadata, distinc
   assert.equal(existsSync(join(root, '.issues/factory-ui/lifecycle.json')), false);
 });
 
+test('capture saves independent Grill, Go and Merge intent before grilling without starting work', async (t) => {
+  const { root, service } = captureFixture(t);
+  mkdirSync(join(root, '.agents/skills/grilling'), { recursive: true });
+  writeFileSync(join(root, '.agents/skills/grilling/SKILL.md'), 'Ask useful questions.\n');
+  forbidWork(service);
+  service.issueChats = { send: async () => ({ repeated: false }), close() {} };
+  service.captures = createCaptures(service, { assess: async (text) => ({ issues: [proposal(text)] }) });
+  const created = await service.captures.save({
+    ...input('Make the capture dialog playful.'),
+    grill: true,
+    go: true,
+    strategy: 'full-send',
+  });
+  const saved = report(root, created.issues[0].id);
+  assert.deepEqual(saved.meta.capture_intent, { grill: true, go: true, strategy: 'full-send' });
+  assert.equal(created.grilling[0].started, true);
+  assert.equal(service.store.runs.length, 0);
+  assert.equal(service.api.inspect().registry.actions.length, 0);
+  assert.equal(
+    readQueue(root).issues.find((issue) => issue.id === created.issues[0].id).capture_intent.strategy,
+    'full-send'
+  );
+});
+
 test('semantic grouping and bug/clarification/prototype routing preserve the assessor decisions', async (t) => {
   const { root, service } = captureFixture(t);
   for (const [description, role, state] of [
@@ -82,6 +127,30 @@ test('semantic grouping and bug/clarification/prototype routing preserve the ass
     assert.equal(result.issues.length, 1);
     assert.equal(report(root, result.issues[0].id).meta.state, state);
   }
+});
+
+test('capture accepts a valid lifecycle with no Clarify role and keeps remaining transitions connected', () => {
+  const stages = [
+    ['ready-for-repro', 'to-do', 'prototype'],
+    ['ready-to-prototype', 'prototype', 'implement'],
+    ['ready-to-fix', 'implement', 'verify'],
+    ['ready-to-verify', 'verify', 'commit'],
+    ['ready-for-commit', 'commit', 'final'],
+    ['ready-to-close', 'final', 'closed'],
+    ['closed', 'closed', '—'],
+  ].map(([role, state, next]) => ({ role, state, next }));
+  const route = captureRoute(stages, proposal('Make managing old issues easier.'));
+  assert.equal(route.state, 'implement');
+  assert.deepEqual(
+    route.skipped.map((item) => item.state),
+    ['to-do', 'prototype']
+  );
+  const clarified = captureRoute(stages, proposal('Make managing old issues easier.', 'ready-for-grilling'));
+  assert.equal(clarified.state, 'prototype');
+  assert.deepEqual(
+    clarified.skipped.map((item) => item.state),
+    ['to-do']
+  );
 });
 
 test('invalid requests/output and model failures publish no reports and can retry', async (t) => {
@@ -201,7 +270,7 @@ test('queue lock, policy change during assessment and preview reject without new
   const { root, service } = captureFixture(t);
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
-  await assert.rejects(service.captures.save(input()), /Queue lock/);
+  await assert.rejects(service.captures.save(input()), /[Qq]ueue (?:lock|operation)/);
   assert.equal(existsSync(lock), true);
   rmSync(lock, { recursive: true });
   service.captures = createCaptures(service, {
@@ -230,13 +299,7 @@ test('custom stages are retained; malformed lifecycle and unjustified investigat
 test('real HTTP guards, pause/drain, capture and replay leave work untouched', async (t) => {
   const { root, service } = captureFixture(t);
   forbidWork(service);
-  const server = createFactoryServer(service);
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  const page = await fetch(url),
-    cookie = page.headers.get('set-cookie').split(';')[0];
+  const { url, cookie } = await startFactoryHttp(t, service);
   const request = input('<script>data</script>');
   const headers = { cookie, origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' };
   const post = (extra = {}, body = request) =>
@@ -348,4 +411,16 @@ test('custom entry stages remain first and unknown disconnected lifecycle rows a
   assert.deepEqual(captured.meta.lifecycle_history, []);
   writeFileSync(path, original + '\n| unknown-role | unknown-state | closed | Invalid |');
   await assert.rejects(service.captures.save(input()), /Unknown lifecycle role/);
+});
+
+test('capture persists the chosen work model, rejects unknown models and binds retries to that choice', async (t) => {
+  const { service, root } = captureFixture(t);
+  const { readIssueModelSettings } = await import('./factory-ui/model-settings.mjs');
+  service.captures = createCaptures(service, { assess: async (text) => ({ issues: [proposal(text)] }) });
+  const submission = { ...input(), model: 'gpt-6-astra' };
+  const saved = await service.captures.save(submission);
+  assert.equal(readIssueModelSettings(root, saved.issues[0].id).effectiveModel, 'gpt-6-astra');
+  assert.deepEqual(await service.captures.save(submission), saved);
+  await assert.rejects(service.captures.save({ ...submission, model: 'gpt-6-luna' }), /another description/);
+  await assert.rejects(service.captures.save({ ...input(), model: 'unknown' }), /listed models/);
 });

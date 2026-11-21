@@ -54,6 +54,7 @@ function fixture(t) {
     execFileSync(process.execPath, [script, ...args], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
   const queueBytes = () =>
     readdirSync(join(root, '.issues'))
+      .filter((name) => name !== 'issue-numbers.json')
       .sort()
       .map((name) => [name, readFileSync(join(root, '.issues', name), 'utf8')]);
   return { root, run, queueBytes };
@@ -74,6 +75,8 @@ test('queue-wide and targeted decisions preserve queue bytes and existing worker
   assert.equal(all.focus_issue_ids.length, 3);
   const selected = JSON.parse(run('20261023T120000000-abc1', '20261023T120000000-d', '20261023T120000000-abc1'));
   assert.deepEqual(selected.focus_issue_ids, ['20261023T120000000-abc1', '20261023T120000000-def1']);
+  const byNumber = JSON.parse(run('#2'));
+  assert.deepEqual(byNumber.focus_issue_ids, ['20261023T120000000-abc2']);
   assert.equal(selected.reports.length, 3);
   assert.equal(selected.registry.actions[0].status, 'running');
   assert.deepEqual(queueBytes(), before);

@@ -7,7 +7,6 @@ import {
   readFileSync,
   symlinkSync,
   writeFileSync,
-  rmSync,
   existsSync,
   readdirSync,
 } from 'node:fs';
@@ -32,7 +31,12 @@ async function fixture(t) {
     if (serverPort) await waitFor(() => portReleased(serverPort), 'test server shutdown');
   });
   const f = deliveryFixture(t);
+  writeFileSync(
+    join(f.queue.root, '.issues/20261025-one.md'),
+    '---\nid: 20261025-one\ntitle: Actual issue\nstate: verify\n---\nActual issue\n'
+  );
   cpSync(resolve('scripts'), join(f.source.root, 'scripts'), { recursive: true });
+  cpSync(resolve('factory'), join(f.source.root, 'factory'), { recursive: true });
   writeFileSync(join(f.source.root, '.gitignore'), '.issues/\nnode_modules\n');
   writeFileSync(join(f.source.root, 'package.json'), '{"type":"module"}\n');
   symlinkSync(resolve('node_modules'), join(f.source.root, 'node_modules'), 'dir');
@@ -99,6 +103,13 @@ test('restart replaces a changed installed source using saved evidence and verif
   assert.equal((await readRuntime(f.url)).sourceChanged, true);
   const result = await restartFactory(f.options);
   assert.equal(result.status, 'ready');
+  assert.deepEqual(
+    result.readiness.http.filter((entry) => entry.phase === 'queue'),
+    [
+      { phase: 'queue', path: '/api/flow', event: 'request' },
+      { phase: 'queue', path: '/api/flow', event: 'response', status: 200, ok: true },
+    ]
+  );
   assert.notEqual(result.pid, f.child.pid);
   const runtime = await readRuntime(f.url);
   assert.equal(runtime.pid, result.pid);
@@ -108,19 +119,16 @@ test('restart replaces a changed installed source using saved evidence and verif
   assert.equal(JSON.parse(readFileSync(result.receipt)).status, 'ready');
 });
 
-test('dirty source or stale verification fails before pausing or stopping the server', async (t) => {
+test('restart runs the current working tree without requiring clean or saved verification', async (t) => {
   const f = await fixture(t);
   const path = join(f.source.root, 'uncommitted.js');
   writeFileSync(path, 'keep me');
-  await assert.rejects(restartFactory(f.options), /uncommitted changes were left untouched/);
+  const result = await restartFactory({ ...f.options, verification: undefined });
+  assert.equal(result.status, 'ready');
   assert.equal(readFileSync(path, 'utf8'), 'keep me');
-  rmSync(path);
-  const summary = JSON.parse(readFileSync(f.verification));
-  summary.snapshot_tree = 'wrong';
-  writeFileSync(f.verification, JSON.stringify(summary));
-  await assert.rejects(restartFactory(f.options), /exact candidate tree/);
   const runtime = await readRuntime(f.url);
-  assert.equal(runtime.pid, f.child.pid);
+  assert.equal(runtime.pid, result.pid);
+  assert.equal(runtime.sourceChanged, true);
   assert.equal(runtime.server.phase, 'idle');
 });
 

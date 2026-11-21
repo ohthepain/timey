@@ -25,11 +25,15 @@ export function writeJson(path, value) {
   writeFileSync(temp, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
   renameSync(temp, path);
 }
-export function runLogged(root, command, args, log, onProgress = () => {}) {
+export function runLogged(root, command, args, log, onProgress = () => {}, environment = {}) {
   mkdirSync(join(root, '.issues/evidence'), { recursive: true });
   writeFileSync(log, '', { mode: 0o600 });
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: root, env: cleanEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, {
+      cwd: root,
+      env: { ...cleanEnvironment(), ...environment },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let output = '';
     const collect = (data) => {
       output += data;

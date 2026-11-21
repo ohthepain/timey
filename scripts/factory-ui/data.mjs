@@ -4,9 +4,14 @@ import { readPriorities, priorityView } from './priorities.mjs';
 import { closureReasons } from './closure-reasons.mjs';
 import { issueInputs } from '../factory-inputs.mjs';
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { factory } from '../factory-ledger.mjs';
 import { digest, git, requireThat } from './common.mjs';
+import { readImplementationOrder } from './implementation-order.mjs';
+import { queueReportPaths, sharedIssueQueueEnabled } from './shared-issue-config.mjs';
+import { queueIssueNumbers } from './issue-numbers.mjs';
+import { listStoredIssues } from './issue-report-storage.mjs';
+import { readIssueFolders } from './issue-folders.mjs';
 
 const names = {
   'ready-for-grilling': 'Clarify',
@@ -25,24 +30,58 @@ function lifecycle(root) {
     .filter((c) => names[c[1]] || c[1] === 'custom')
     .map((c) => ({ role: c[1], state: c[2], next: c[3], exit: c[4], name: names[c[1]] || c[2] }));
 }
+export function closedIssueState(root) {
+  return existsSync(join(root, '.issues/triage-labels.md'))
+    ? lifecycle(root).find((stage) => stage.role === 'closed')?.state
+    : 'closed';
+}
 function references(content, heading, ids) {
   const section = content.match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'))?.[1] || '';
   return ids.filter((id) => section.includes(id));
 }
+export const issueDependencies = (content, ids) => references(content, 'Blocked by', ids);
 function relationships(report, ids) {
   return {
     parent: references(report.content, 'Parent', ids),
-    depends: references(report.content, 'Blocked by', ids),
+    depends: issueDependencies(report.content, ids),
     related: references(report.content, 'Related(?: issues)?', ids),
   };
 }
-export function readQueue(project) {
+export function readQueue(project, { location = 'open', issueId } = {}) {
   const root = realpathSync(project);
-  const inspection = factory(root).inspect();
+  const inspection = factory(root).inspect({ location, issueId });
   const priorities = readPriorities(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8'));
   const projected = clarificationLifecycle(root, lifecycle(root));
   const stages = projected.stages,
     ids = inspection.reports.map((r) => r.metadata.id);
+  const issueNumbers = queueIssueNumbers(root, ids);
+  const linkIds = [
+    ...new Set([
+      ...ids,
+      ...['open', 'closed', 'archive']
+        .filter((other) => other !== location || issueId)
+        .flatMap((other) => listStoredIssues(root, other).map((path) => basename(path, '.md'))),
+    ]),
+  ];
+  const issues = inspection.reports.map((report) => ({
+    ...report.metadata,
+    reportLocation: location === 'open' ? undefined : location,
+    issueNumber: issueNumbers[report.metadata.id],
+    ...(projected.aliases[report.metadata.state]
+      ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
+      : {}),
+    priorityInfo: priorityView(report.metadata, priorities),
+    content: report.content,
+    links: relationships(report, linkIds),
+    stage:
+      stages.find((s) => s.state === (projected.aliases[report.metadata.state] || report.metadata.state))?.name ||
+      report.metadata.state,
+  }));
+  const issueFolders = readIssueFolders(root, issues);
+  const order = readImplementationOrder(root, issues),
+    ranks = new Map(order.map((id, index) => [id, index]));
+  for (const issue of issues) issue.implementationOrder = ranks.get(issue.id);
+  const orderBasis = digest(JSON.stringify({ issueIds: ids.slice().sort(), order }));
   return {
     root,
     head: inspection.snapshot.head,
@@ -51,21 +90,20 @@ export function readQueue(project) {
     lifecycleAliases: projected.aliases,
     priorities,
     closureReasons: closureReasons(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8')),
-    issues: inspection.reports.map((report) => ({
-      ...report.metadata,
-      ...(projected.aliases[report.metadata.state]
-        ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
-        : {}),
-      priorityInfo: priorityView(report.metadata, priorities),
-      content: report.content,
-      links: relationships(report, ids),
-      stage:
-        stages.find((s) => s.state === (projected.aliases[report.metadata.state] || report.metadata.state))?.name ||
-        report.metadata.state,
-    })),
+    implementationOrder: order,
+    implementationOrderBasis: orderBasis,
+    issueFolders: issueFolders.folders,
+    issueFolderBasis: issueFolders.basis,
+    issues,
     actions: inspection.registry?.actions || [],
     registryPresent: inspection.registry !== null,
-    sourceClean: !git(root, 'status', '--porcelain', '--untracked-files=all'),
+    sourceClean: !git(
+      root,
+      'status',
+      '--porcelain',
+      '--untracked-files=all',
+      ...(sharedIssueQueueEnabled(root) ? ['--', '.', ...queueReportPaths(true)] : [])
+    ),
   };
 }
 export function currentAction(project, id) {
@@ -90,6 +128,8 @@ export function describeLaunch(queue, action) {
   return launchProblem(queue, action)?.message || null;
 }
 export function launchProblem(queue, action) {
+  if (queue.issues.some((issue) => issue.state === 'needs-approval' && action.issues.includes(issue.id)))
+    return { code: 'needs-approval', message: 'Approve this issue before starting work.' };
   if (!queue.registryPresent)
     return {
       code: 'registry-missing',

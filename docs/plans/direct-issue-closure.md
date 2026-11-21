@@ -21,6 +21,9 @@ change what constitutes a passed check or grant acceptance to a strategy worker.
   become passing checks because the person clicks Close.
 - Show the precise outstanding requirement when closure cannot proceed. Do not
   route the person through Progress, the coordinator or an AI review to explain it.
+- For an incomplete strategy, show its saved status, failure summary and remaining
+  blockers in the closure error, including failed required checks. Closing with
+  another reason preserves that incomplete strategy and does not accept a fix.
 - Active issue work must finish or be stopped explicitly before closure. Closing
   does not silently cancel work, merge, publish, deploy or delete a branch/chat.
 - Other configured closure reasons preserve unfinished work and failed checks

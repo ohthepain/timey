@@ -45,7 +45,10 @@ Clarify can execute focused diagnostics with read-only source access before
 implementation approval. Working plan adjustments are compared with the approved
 outcome and scope; the original human approval remains the authority.
 
-The Create issue dialog also offers an off-by-default **Grill me after creation**
-switch. Selecting it saves the issues first, routes them to Clarify and starts
-grilling in each saved issue conversation. Capture retries use stable message
-identities and never grant implementation approval.
+The Create issue dialog offers independent Grill, Go and Merge checkboxes, all off
+by default. Grill saves the issues first, routes them to Clarify and starts grilling
+in each saved issue conversation. When Grill and Go are both selected, Go is held
+until the person answers the grilling questions and approves a plan; the selected
+Full Stop or Full Send strategy is retained for their explicit Continue action.
+Capture retries use stable message identities and never grant implementation-plan
+approval.

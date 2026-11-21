@@ -1,17 +1,18 @@
-import { constants, openSync, closeSync, fstatSync, readFileSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { constants, openSync, closeSync, existsSync, fstatSync, readFileSync, realpathSync } from 'node:fs';
+import { relative } from 'node:path';
+import { storedIssuePath } from './issue-report-storage.mjs';
 import { parse } from 'yaml';
 import { requireThat } from './common.mjs';
 
 // An issue ID is the only browser input; reports belong to the authoritative queue.
-export function readSavedReport(project, id) {
+export function readSavedReport(project, id, location) {
   requireThat(typeof id === 'string' && /^[\w-]+$/.test(id), 'Choose a valid saved issue ID.');
   let descriptor;
   try {
-    const root = realpathSync(project),
-      directory = join(root, '.issues'),
-      file = join(directory, id + '.md');
-    requireThat(realpathSync(directory) === directory, 'The saved report must be inside this project’s issue folder.');
+    const root = realpathSync(project);
+    const flat = storedIssuePath(root, id);
+    const selected = location ?? (existsSync(flat) ? 'open' : 'closed');
+    const file = storedIssuePath(root, id, selected);
     requireThat(
       realpathSync(file) === file,
       'The saved report must be inside this project’s issue folder and cannot be a symlink.'
@@ -24,7 +25,7 @@ export function readSavedReport(project, id) {
       frontmatter && parse(frontmatter[1])?.id === id,
       'The saved report does not belong to the selected issue.'
     );
-    return { path: '.issues/' + id + '.md', content };
+    return { path: relative(root, file), content };
   } catch (error) {
     if (error.code === 'ENOENT')
       throw Error('The saved issue report is missing. Refresh the issue page and try again.');

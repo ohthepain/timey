@@ -9,8 +9,15 @@ branch carry the work without role assignments, routes or stage transitions.
 Existing work stays intact and is adopted only when idle. Starting records exact
 scope and destination consent. Required checks, real permissions, acceptance and
 closure stay distinct. Full Stop never merges or enables automatic merging.
-Failures retain their evidence and require manual attention; changed conditions
-never launch another recovery. Queue order is priority, then oldest eligible issue.
+Necessary technical blockers are repaired within the active strategy under the
+[approved repair policy](../plans/autonomous-blocker-repair.md): fetch/merge the
+target, resolve conflicts, repair inherited tests/formatting and enforce new Fallow
+findings including warnings. Server verification and PR-readiness failures return
+to the same owner with real logs. Changed candidates receive independent checks.
+Three failed approaches, unchanged/repeated repairs, persistent infrastructure
+failure, uncertain operations and actual permission/human boundaries stop with
+evidence. Inactive work never revives because conditions changed. Queue order is
+priority, then oldest eligible issue.
 The issue page exposes **Continue issue** whenever no work is running, including
 before any work starts and after a blocked attempt. It starts the same issue system
 prompt immediately, retaining the existing conversation and checkout for that prompt

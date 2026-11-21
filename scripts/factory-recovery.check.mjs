@@ -14,11 +14,14 @@ test('failed candidate is retained across callers; explicit retry, changed input
   const fixture = gitFixture(t, 'factory-failed-check-');
   const root = realpathSync(fixture.root),
     git = fixture.git;
+  const lock = 'lockfileVersion: 9.0\n';
   writeFileSync(join(root, '.gitignore'), '.issues/\nnode_modules/\n');
+  writeFileSync(join(root, 'pnpm-lock.yaml'), lock);
   git('add', '.');
   git('commit', '-qm', 'fixture');
   const base = git('rev-parse', 'HEAD');
-  mkdirSync(join(root, 'node_modules'));
+  mkdirSync(join(root, 'node_modules/.pnpm'), { recursive: true });
+  writeFileSync(join(root, 'node_modules/.pnpm/lock.yaml'), lock);
   writeFileSync(join(root, 'node_modules/.modules.yaml'), 'fixture dependencies');
   const evidence = join(root, '.issues/evidence');
   const checked = await fixtureDeliveryCheck(root, base, evidence);

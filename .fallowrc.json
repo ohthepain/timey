@@ -1,15 +1,107 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
   "entry": ["src/routes/**/*.{ts,tsx}", "src/router.tsx", "src/start.ts"],
-  "ignorePatterns": [".output/**", "src/routeTree.gen.ts"],
+  "ignorePatterns": [".output/**", "src/routeTree.gen.ts", ".agents/**"],
+  "production": {
+    "health": true,
+    "dupes": true
+  },
+  "duplicates": {
+    "ignore": ["**/*.test.ts", "**/*.test.tsx", "scripts/**/*.check.mjs", "scripts/**/*fixture*.mjs"]
+  },
+  "health": {
+    "ignore": ["**/*.test.ts", "**/*.test.tsx", "scripts/**/*.check.mjs", "scripts/**/*fixture*.mjs"],
+    "thresholdOverrides": [
+      {
+        "files": ["scripts/factory-ui/block-catalog.mjs"],
+        "maxCyclomatic": 70,
+        "maxCognitive": 45,
+        "maxCrap": 10000,
+        "reason": "Block markdown compiler for the flow catalog"
+      },
+      {
+        "files": ["scripts/factory-ui/flow-executor.mjs"],
+        "maxCyclomatic": 55,
+        "maxCognitive": 45,
+        "maxCrap": 10000,
+        "reason": "Flow worker orchestration"
+      },
+      {
+        "files": ["scripts/factory-ui/flow-service.mjs"],
+        "maxCyclomatic": 35,
+        "maxCognitive": 30,
+        "maxCrap": 10000,
+        "reason": "Flow HTTP and action surface"
+      },
+      {
+        "files": ["scripts/factory-ui/flow-ui.js"],
+        "maxCyclomatic": 30,
+        "maxCognitive": 40,
+        "maxCrap": 10000,
+        "reason": "Flow client UI"
+      },
+      {
+        "files": ["scripts/factory-ui/flow-block-data.mjs"],
+        "maxCyclomatic": 25,
+        "maxCognitive": 20,
+        "maxCrap": 10000,
+        "reason": "Flow block persistence helpers"
+      },
+      {
+        "files": ["scripts/factory-ui/view-command.mjs"],
+        "maxCyclomatic": 20,
+        "maxCognitive": 18,
+        "maxCrap": 10000,
+        "reason": "View command runner"
+      },
+      {
+        "files": ["scripts/factory-ui/view-sources.mjs"],
+        "maxCyclomatic": 25,
+        "maxCognitive": 20,
+        "maxCrap": 10000,
+        "reason": "UI source registry"
+      },
+      {
+        "files": ["scripts/factory-ui/flow-store.mjs"],
+        "maxCyclomatic": 25,
+        "maxCognitive": 20,
+        "maxCrap": 10000,
+        "reason": "Flow store"
+      },
+      {
+        "files": ["scripts/factory-ui/view-inspection.js"],
+        "maxCyclomatic": 25,
+        "maxCognitive": 20,
+        "maxCrap": 10000,
+        "reason": "Flow source inspection UI"
+      },
+      {
+        "files": [
+          "scripts/verify-preflight.mjs",
+          "scripts/factory-ui/issue-chat-runtime.mjs",
+          "scripts/factory-ui/flow-delivery.mjs",
+          "scripts/factory.mjs"
+        ],
+        "maxCrap": 10000,
+        "reason": "Factory runtime helpers without Istanbul coverage"
+      }
+    ]
+  },
   "audit": {
     "gate": "new-only"
   },
   "ignoreCommandEntries": ["node"],
+  "ignoreDependencies": ["@timey/local-issues"],
   "framework": [
     {
       "name": "factory-tooling",
-      "entryPoints": ["scripts/*.mjs", "scripts/factory-ui/*-ui.js"],
+      "entryPoints": [
+        "scripts/*.mjs",
+        "scripts/factory-ui/*-ui.js",
+        "scripts/factory-ui/view-inspection.js",
+        "scripts/factory-ui/flow.css",
+        "scripts/factory-ui/project-home.css"
+      ],
       "entryPointRole": "support",
       "toolingDependencies": ["fallow", "yaml", "@timey/local-issues"],
       "detection": {

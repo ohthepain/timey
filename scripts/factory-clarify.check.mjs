@@ -1,12 +1,14 @@
+import { conversationMessages } from './factory-ui/conversation-store.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { captureFixture, proposal, captureStages } from './factory-capture-fixture.mjs';
 import { clarificationLifecycle } from './factory-ui/clarify-policy.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { progressBasis } from './factory-ui/next-action.mjs';
 import { sameStage } from './factory-ui/lifecycle-runs.mjs';
+import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { createCaptures } from './factory-ui/issue-capture.mjs';
 import { captureRoute } from './factory-ui/capture-routing.mjs';
 import { createIssueChats } from './factory-ui/issue-chat.mjs';
@@ -180,8 +182,13 @@ test('technical plan adaptations retain actual human approval and reuse their de
 test('capture grilling is explicit, follows durable creation, survives retries and starts no implementation', async (t) => {
   const f = fixture(t);
   let replies = 0;
+  const skillPath = join(f.root, '.agents/skills/grilling/SKILL.md');
+  mkdirSync(join(f.root, '.agents/skills/grilling'), { recursive: true });
+  writeFileSync(skillPath, 'Ask useful questions.');
   f.service.issueChats.close();
   f.service.issueChats = createIssueChats(f.service, () => ({
+    ready: async () => {},
+    call: async () => ({ data: [{ skills: [{ name: 'grilling', path: skillPath, enabled: true }] }] }),
     attach: async (_root, _state, retain) => {
       retain({ threadId: 'issue-chat' });
       return 'issue-chat';
@@ -196,7 +203,8 @@ test('capture grilling is explicit, follows durable creation, survives retries a
   f.service.captures = createCaptures(f.service, {
     assess: async (description) => ({ issues: [proposal(description)] }),
   });
-  const input = { requestId: randomUUID(), description: 'Improve Save', grill: true };
+  createIssueFolderSettings(f.root, 'Inbox');
+  const input = { requestId: randomUUID(), description: 'Improve Save', grill: true, folder: 'Inbox' };
   const created = await f.service.captures.save(input);
   assert.equal(created.issues[0].state, 'backlog');
   assert.equal(created.grilling[0].started, true);
@@ -204,6 +212,14 @@ test('capture grilling is explicit, follows durable creation, survives retries a
   assert.equal(replies, 1);
   const repeated = await f.service.captures.save(input);
   assert.equal(repeated.grilling[0].repeated, true);
+  const messages = conversationMessages(f.root, created.issues[0].id);
+  const starts = messages.filter((message) => message.kind === 'grilling-start');
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].source.stage.state, 'backlog');
+  assert.equal(starts[0].source.skill.path, realpathSync(skillPath));
+  assert.equal(messages.find((message) => message.id === 'capture-grill-' + input.requestId).actor, 'factory');
+  const review = f.service.discussions.open({ issueId: created.issues[0].id }, 'capture-review');
+  assert.equal(review.stage.state, 'backlog');
   assert.equal(replies, 1);
   assert.equal(f.service.lifecycleTasks.size, 0);
   assert.equal(f.service.api.inspect().registry.actions.length, 0);

@@ -11,6 +11,18 @@ const clean = () => ({
   dead_code: { workspace_diagnostics: [] },
 });
 const result = (audit = clean(), stderr = '') => ({ status: 0, stdout: JSON.stringify(audit), stderr });
+test('enforced strategy audits reject new warnings but retain inherited-only findings', () => {
+  const audit = clean();
+  audit.attribution = { gate: 'new-only', complexity_introduced: 1 };
+  audit.verdict = 'warn';
+  assert.equal(assessAudit(result(audit), ['source.js'], { warningsAsErrors: true }).passed, false);
+  audit.verdict = 'pass';
+  audit.attribution.complexity_introduced = 0;
+  audit.summary.complexity_findings = 10;
+  assert.equal(assessAudit(result(audit), ['source.js'], { warningsAsErrors: true }).passed, true);
+  audit.complexity = { findings: [{ introduced: true, effective_severity: 'warn' }] };
+  assert.equal(assessAudit(result(audit), ['source.js'], { warningsAsErrors: true }).passed, false);
+});
 test('checkpoints follow Fallow verdict and stderr, not raw introduced counts', () => {
   assert.equal(assessAudit(result()).passed, true);
   const warn = clean();

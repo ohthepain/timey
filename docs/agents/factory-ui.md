@@ -1,9 +1,140 @@
 # Local factory UI
 
+The gear beside **Flow** opens **Project settings**. It edits tracked execution
+defaults in root `folder.md` and displays the human-input rules from the project
+adapter and the contents of `.issues/triage-labels.md`.
+There is no policy preset selector. The lifecycle file defines saved states,
+transitions, priorities, and closure reasons; it does not define the adapter's
+human-input policy.
+
+If the lifecycle file is missing, settings offers a preview and an explicit
+**Initialize lifecycle configuration** action using the bundled template. Restore
+the original file instead if the project used custom states. Initialization
+creates only the missing file, preserves reports and existing configuration, and
+starts no work. Retry a blocked flow step explicitly after setup. Read-only blocks
+remain available while the lifecycle file is missing.
+
+The default page opens **Project home**, with rolling seven-day issue statistics,
+saved investigation and Automate me sessions, and controls for both operations.
+The project menu keeps these operations accessible while viewing issues or folders.
+Investigations always cover the project and use a selected branch, defaulting to
+the branch in Project settings. Optional discussion retains goals and codebase
+questions in the Investigation issue; **Run** retains findings and automatically
+creates actionable follow-ups needing approval. The issue-folder selector files
+those follow-ups and does not limit investigation scope.
+
+**Automate me** runs the installed PStack skill through a guided Codex conversation.
+History defaults to four weeks with an editable duration and uses only available
+project conversations. Review the proposed skill and destination before **Apply**.
+Choose project-local or personal storage, with optional activation as the project's
+default for future work. Both operations save progress and provide Stop and Retry.
+Opening or refreshing Project home starts neither operation. See the
+[project home design](../plans/project-home.md).
+
+Selecting an issue opens its [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
+Understand uses a read-only checkout. Factory retains the final response as its
+Block response artifact; the agent does not need filesystem write access to save
+that response. Missing historical evidence remains a reported gap. Retro follow-ups
+retain the source issue and receive a sanitized snapshot of its saved attempts.
+It shows issue folders, a downward block graph, and a block inspector. Issue names
+include their numbers and wrap. The **Worktree** menu appears in the branch status
+row. Its tooltip says whether a worktree has yet to be created or was deleted.
+**Open** opens it in Finder. **Update** merges the configured target branch into
+the worktree and shows progress while it runs. When an update needs to merge
+destination changes, it commits local work before merging. **Delete** requires
+a clean worktree and asks for confirmation before removing the managed worktree
+and local branch. Drag the sidebar’s right edge or focus the resize
+handle and use the arrow keys to change its width. The inspector also resizes from
+its left edge. Its left arrow widens it and its right arrow narrows it. Home and
+End choose the minimum and maximum width for either panel. The browser remembers
+both widths and keeps enough room for the graph. In the narrow stacked layout,
+the inspector follows the graph's width and its resize handle is hidden.
+Opening an unattempted issue aligns Starting point with the graph viewport's top.
+Starting point includes a Git branch selector. It lists local and cached remote
+branches by latest commit date, newest first. Branches sharing a commit remain
+separate options. Selecting a branch saves its exact starting commit for this
+issue. New issues snapshot the configured delivery branch's current commit. The
+selector locks when work starts or a checkout exists. Selecting a branch leaves
+the project's checkout in place.
+
+Select a folder name to see its issues and actions in the center column. The
+triangle beside the name shows or hides the sidebar rows. It points down when
+expanded and right when collapsed. Choose a
+selection strategy to see suggested issues and the reasons for selecting them.
+Adjust the selection before grouping issues or starting overnight work. **Find
+issues to add** can scan another folder or the open queue. Review the proposed
+moves or choose automatic approval for that scan. To keep an issue out of future
+folder moves, enable **Prevent moves into folders** on its Request block.
+
+**Group into one** previews a master issue with the selected requests. Creating
+it leaves the original issues linked and assigns their work to the master.
+**Work All Night** starts the reviewed list and prepares verified PRs for you to
+merge. The folder shows the run report and the next action for issues that paused.
+See the [folder design](../plans/issue-folder-strategies.md) for the master issue's
+acceptance and detachment rules.
+
+Destination uses the issue's resolved target branch by default. Starting point
+remains a separate choice. Open the destination picker to list
+branches on the configured GitHub remote, labeled with the configured remote
+name (for example, `origin/main`). Selecting a branch pins it. Choose
+**Follow starting branch** to restore the default. A local starting branch matches
+the configured remote by name. A starting branch from another remote requires an
+explicit destination. Older issues with a PR use its GitHub base. Destination
+locks when the issue has a PR. If GitHub reports a changed base, accept that base
+in Destination before running Publish or Merge.
+
+The issue number appears in smaller text to the left of the title in the center
+column. Use the pencil next to the title to rename the issue. Play publishes when the
+candidate and destination checks pass. When running Publish directly,
+review the title, source and destination branches, verified commit, and exact PR
+description. The description contains Goal, Requested proof, and Original wording
+from Request, with empty sections omitted. On later runs, Publish shows pending
+title and commit changes and preserves the existing GitHub description. A
+matching title and commit show **PR is up to date** with the link. **Confirm
+current PR** completes Publish using the existing PR.
+The PR menu beside Worktree and Close shows the PR number. **Open** opens the
+pull request. **Approve** opens the GitHub review page, where you submit the
+approval using the GitHub account signed in to your browser.
+The Worktree menu's **Open Terminal** option opens macOS Terminal in the
+selected issue's checkout.
+Closed issues open with Destination aligned at the bottom. Other issues center
+their running or most recently attempted block within the content's scroll range.
+The graph has 16 pixels of edge room. Column scrolling stays local, with native
+bounce where supported and no pull-to-refresh. Selecting a block scrolls only enough to reveal it. The
+circular plus button adds a step. The issue header's Play/Pause button runs the
+route one eligible block at a time. A confirmation link appears in the header
+when Play reaches a protected block. The Run, Retry, Recover, or Stop button
+beside the selected block's name controls that block individually.
+`/classic` retains the strategy and legacy queue
+controls documented below. Flow observation can show reports before lifecycle configuration
+is restored, but editable work and protected operations still require the actual
+project policy, human input, credentials, and retained evidence.
+
+The Artifacts tab shows the selected block’s latest run. Expand **Previous
+artifacts** to see the surviving files for an earlier run. **Inspect** opens the
+raw text. Turn on **Restate** for a version that follows the bro skill’s
+plain-language guidance.
+
+The Details tab shows declared **Inputs** first. Each input can use a Manual
+value or a matching upstream **Source**; unique Markdown source matches are
+selected by default. **Outputs** are read-only fields from the latest run, while
+earlier results remain in attempt history. The collapsed **System prompt** section
+lets a block use prompt text or one of the skills allowed by its Markdown. Block
+Markdown can type fields as `text`, `long text`, `number`, `boolean`, `choice`,
+`filename`, or `url`; untyped fields use text controls. Choice options are JSON
+arrays. Filename inputs choose repository files and save relative paths; URL
+outputs open only valid HTTP(S) links.
+
+Every button provides clear feedback when activated. Show immediate progress for
+asynchronous operations, then report success or failure. Use a popup or toast for
+operations that run outside the block graph, such as updating a worktree. Keep
+block execution progress in its block.
+
 Run `pnpm run factory:ui -- --project /absolute/path/to/timey` from a checkout
-containing this adapter. Open the printed loopback URL. The project must already
-have its local issue queue and factory registry; the UI never initializes or
-replaces either. The selected checkout owns the issue records and delivery configuration, so choose the
+containing this adapter. Open the printed loopback URL. Classic controls require
+an existing local issue queue and factory registry. Project settings can initialize
+only a missing lifecycle file; it does not replace reports or create a registry.
+The selected checkout owns the issue records and delivery configuration, so choose the
 authoritative project rather than an old worker checkout. In live mode the
 server uses browser assets and the restart entry from the installed adapter
 checkout. Updating code uses managed deployment with exact passing verification,
@@ -12,13 +143,21 @@ source; the external restart command below can install an already verified check
 Use `--port NUMBER` only when a fixed local port is needed.
 
 The queue and issue screens read actual reports and the dispatch ledger through
-the existing factory helper. Each queue refresh projects saved run history once
+the existing factory helper. The issue page polls an issue endpoint that returns only the selected report, its assignments, and its runs. The queue page fetches the queue separately. Each queue refresh projects saved run history once
 and reuses that projection for lifecycle availability; dispatch still reads current
 history and applies its guards. No history projection is cached across requests. Refreshing and filtering are read-only. Lifecycle
 stages come from the configured role mapping. Human input remains separate from
 stage, worker completion and code integration. Links use the report's Parent,
 Blocked by and Related sections; reverse links are computed from those explicit
 references. Reports are displayed as escaped text, never executable HTML.
+
+The queue toolbar has an icon-only **Refresh queue** button beside the settings
+and create controls. It requests the current queue data and redraws the view in
+place, without reloading the browser page.
+
+Below the issue table, the queue shows the latest saved evaluation's decision and
+next action. Earlier evaluations and the full diagnostics for the latest one are
+inside the collapsed **History and diagnostics** disclosure.
 
 Under the issue number, the issue screen shows the working checkout's current
 branch and short HEAD commit, with the full hash available on hover. It uses
@@ -27,22 +166,148 @@ worker checkout. Detached or unavailable checkouts and issues without assigned
 work are labeled explicitly. Only the selected issue's Git identity is read
 on refresh; the running server's branch is never substituted.
 
-The issue screen shows every configured lifecycle stage as a numbered expandable
-step. The current stage opens by default. Saved assignments and worker results
-appear under their matching stage; worker commits and manual integration have
-separate steps. Opening a step does not advance the issue. Stage expansion is
-preserved while live results refresh. Earlier stages are not marked complete
-merely because the issue currently sits later in the lifecycle. Saved timestamps
-and report notes provide history where it exists; missing historical transitions
-are not reconstructed. Unmatched assignment kinds stay visible under Other work.
-New lifecycle stages use the same step layout without requiring another screen.
+The issue screen shows configured lifecycle history as numbered expandable steps,
+except Prototype, Implement, Verify, Commit and Final review. Their saved report
+events and assignments remain unchanged, but they are omitted from the issue's
+step list and queue filters. Issues currently in one of those states remain in the
+queue, display a generic queued status, and do not offer lifecycle Progress
+controls. Strategy controls remain the active work path. Opening a visible step
+does not advance the issue. Stage expansion is preserved while live results
+refresh. Earlier visible stages are not marked complete merely because the issue
+currently sits later in the lifecycle. Saved timestamps and report notes provide
+history where it exists; missing historical transitions are not reconstructed.
+Unmatched assignment kinds stay visible under Other work.
+
+### Files and issue folders
+
+The entire left column scrolls together, including the project menu, local notes,
+Files and Issues. Its resize handle stays at the column edge while scrolling.
+
+The sidebar shows the installation's flow and skill folders and the
+project's `user/` directory. Use the plus icon on a writable folder row to
+create a subfolder. Drop an outside folder onto the sidebar to browse it
+in place. Files under `user/` are editable. Use **Install project skill** on
+`user/skills/<name>/SKILL.md` to make the skill visible to Codex. Custom flow
+definitions live in `user/flow/definitions/`.
+
+On the project page, open **Admin → Prune worktrees** to review stale Git
+worktree records and their local branches. The button opens a preview. Check the
+comparison branch and the selected entries before applying the batch. A branch
+whose tip is outside that history requires explicit selection. Entries used by
+open issues or whose checkout directories still exist are kept. The results
+show what was removed, skipped, or failed.
+
+**Admin → Preview remote branches** lists branches from the configured GitHub
+delivery repository. A branch qualifies when its exact tip is already in the
+delivery branch's history. Squash-merged branches may still have a different tip.
+Factory keeps protected branches, branches used by open pull requests on either
+side, the default and delivery branches, the shared issue queue, and the standard
+`main`, `master`, and `dev` branches. Select the branches you want to remove,
+review their names, and confirm the batch. Factory rechecks the live GitHub
+state and submits only the still eligible branches, with their reviewed commit
+IDs. Refresh the preview if GitHub does not confirm the outcome.
+
+**Admin → Preview local branches** starts from local Git branches. The
+comparison defaults to the configured delivery branch when available. You can
+choose another local or remote-tracking branch; the comparison uses the locally
+known commit. Factory keeps branches named by worktrees, including missing
+checkouts, and branches referenced by open or unarchived closed issues. A
+reference from an archived issue alone does not prevent cleanup. Factory
+also keeps project and comparison branches, and checks protection for the configured
+GitHub repository. Select eligible
+branches, review their names, then confirm. Factory rechecks the reviewed tips
+and references before deleting local refs.
+
+**Admin → Preview archived issues** lists archived reports for permanent
+deletion. Select one or more reports and optionally select eligible local
+branches under each one. Branch selection starts off. Review the exact reports
+and branches before confirming. Factory keeps reports that were restored or
+changed after preview, and keeps branches that fail the local cleanup checks.
+The results show report and branch outcomes separately. This deletes the local
+archive copy and selected branches; separate issue cleanup owns worktrees and
+conversation data. The issue's display number remains reserved.
+
+To use `$prune-worktrees` from Codex in another Factory project, copy the
+bundled `System / skills / prune-worktrees` folder into the project's
+`user/skills/`, then use **Install project skill** on its `SKILL.md`. The skill
+uses the live project's Admin preview and confirmation.
+
+Folder rows share their triangle, type, color, and spacing. Issue folder names
+are italic. Click a folder name to open its landing page. Its triangle expands
+the contents. A folder without `folder.md` shows its name, **System folder**, and
+**Create folder.md** when it belongs to the project. Installed and external
+directories remain browsing-only. Finder and Delete use adjacent icon buttons.
+Deleting confirms a move of the real directory and its contents to macOS Trash.
+Installed folders use the same action and identify their role in Factory in the
+confirmation. Move assigned issues out of a folder and its subfolders before
+deleting it. Choose a replacement before deleting the default issue folder.
+
+Create `folder.md` in a project-owned sidebar directory to enable issue actions.
+A subfolder created inside an issue folder receives its own settings file.
+Use **Move existing issue folders** to convert virtual folders and
+store assignments on the issue reports. **Issues** lists open issue folders
+directly, including configured project folders, followed by the
+**Closed** and **Archived** collections. Each folder shows its
+assigned issues and count. Expand or collapse it with the arrow, select its name
+to open its actions, or use its plus button to create an issue there. Drag an
+open issue onto a folder heading to move it. Every issue belongs to a folder.
+The New issue dialog uses the project's default issue folder. A folder's plus
+button explicitly chooses that folder. Older reports without an assignment belong to
+**Inbox**. The destination expands after the move. Issue move restrictions
+and active-work checks still apply. See the
+[sidebar folder design](../plans/factory-sidebar-folders.md) for the planned
+report storage migration.
+
+### Folder settings
+
+Root `folder.md` stores version-controlled project defaults. Each issue folder's
+`folder.md` can override any inherited field listed in the installed
+`factory/system/folder.md` reference. Missing fields and `default` follow actual
+parent folders, then the project, then Factory's built-in fallback. The page shows
+the resolved value and its source. The reference is excluded from folder discovery.
+
+**Is default folder** appears first and never inherits. Exactly one issue folder
+is the default for creation without an explicit destination. Zero or multiple
+defaults show an error. The magic wand lists missing fields and preserves all
+existing fields, comments, and Markdown when adding them. A red wand explains
+invalid settings and previews proposed corrections. Unsafe syntax opens for editing.
+
+The issue list switches between **Open** and **Closed**. The top checkbox selects
+the displayed results. Text Search matches displayed issues; AI Search sends the
+natural-language query and all folder issues in the chosen view through a prompt,
+independent of checkbox selection or earlier text filtering. It returns explanations
+without changing issue records or selection.
+
+**Start all** and **Archive all** preview checked issues and report each outcome.
+Subset selections use **Start selected** or **Archive selected**. Starting uses each
+issue's Play flow and preserves its eligibility checks and confirmation stops.
+Grouping requires each selected issue's PR target to match the folder's resolved
+default target. Copying a selection strategy creates an editable file beneath
+`user/selection-strategies/` and selects that copy without changing the built-in.
 
 ## Queue sorting
 
-The queue defaults to latest progress first. The sort selector also offers lifecycle
+The queue defaults to merged issues, then running issues, then queued issues. Other
+statuses follow in saved implementation order; ties within each named group also
+use that order. Select Implementation order to drag rows and change the persisted
+order in `.issues/implementation-order.json`; the scheduler selects the earliest
+eligible issue in that saved order, regardless of priority. Hidden rows retain their
+positions when dragging within a filtered view. New issues are appended after saved
+entries using configured priority, age and ID as the default order. Priority labels
+and other views are unchanged.
+
+The issue sidebar also groups reports into user-named folders. Folder assignments
+are stored in the ignored `.issues/issue-folders.json` file, separate from report
+content and lifecycle state. Drag a sidebar issue handle onto a folder to move it;
+drop it on another folder to change the assignment. Select a folder to reorder its issues
+with Implementation order. The ordering is shared with the queue's implementation
+order, and hidden issues keep their positions during a folder-scoped reorder.
+
+The sort selector also offers implementation order, latest progress first, lifecycle
 progress, creation time, completion time and required human input. Direction is a
 toggle: a downward triangle means descending and an upward triangle means ascending.
-New modes start highest/newest/required first. Missing dates stay last
+The status and implementation orders have fixed directions. Other modes start
+highest/newest/required first. Missing dates stay last
 in both directions, with ascending issue ID breaking ties. Filters and sorting
 remain selected during live refreshes.
 
@@ -52,8 +317,8 @@ includes saved stage events, worker activity and results within a stage. Polling
 creates no activity timestamp. Completion uses recorded entry into Final review,
 excluding closure without a fix. Missing historical dates remain unknown. Human
 input includes actionable requests, connected approvals and final acceptance;
-deferred requests and future prerequisites do not count. Sorting is presentation
-only and does not change readiness or grant authority.
+deferred requests and future prerequisites do not count. Alternate sorts are
+presentation only and do not change readiness or grant authority.
 
 Human-input sorting uses the shared reader's current availability and deferral
 overlays, including revision-bound readiness prerequisites. Deferred or upcoming
@@ -63,18 +328,19 @@ Final acceptance is projected from recorded finished work, not a stage name alon
 
 ## Model and effort preferences
 
-The issue queue's gear opens project-local defaults for model and reasoning
-effort. Defaults start at GPT-6 Luna and medium. The model selector offers Luna,
+The issue queue's gear edits tracked project defaults in root `folder.md` for
+model and reasoning effort. Built-in defaults start at GPT-6 Luna and medium. The model selector offers Luna,
 GPT-6.1 Sol, GPT-6.1 Terra and GPT-6 Astra with brief practical descriptions;
 effort choices are low, medium, high and max. The issue page has separate model
-and effort selectors. An unset issue choice follows the current default, while an
-explicit choice remains fixed if defaults change. Preferences are stored in the
-ignored `.issues/model-settings.json` file so changing them does not dirty source
-or interfere with worker dispatch.
+and effort selectors. An unset issue choice follows its folder's inherited setting
+until work starts; explicit choices remain fixed if defaults change. Legacy local
+defaults migrate into the project file. Explicit legacy issue overrides remain in
+`.issues/model-settings.json` and are preserved.
 
 These preferences are read when a new Codex thread starts. Resuming an existing
-thread keeps its original model and effort. `model-settings.mjs` validates and
-stores preferences; `codex.mjs` passes the effective model and reasoning effort
+thread keeps its original model and effort. Started Flow work retains its resolved
+settings snapshot. `model-settings.mjs` validates preferences against the settings
+reference; `codex.mjs` passes the effective model and reasoning effort
 to `thread/start`. New threads retain the existing sandbox and approval policy.
 
 Descriptions follow the current [OpenAI model-selection guidance](https://developers.openai.com/api/docs/guides/model-selection).
@@ -106,7 +372,7 @@ checks connected work for this issue, including grouped assignments, before reta
 any answer or approval. Work on other issues does not block saving the response.
 Background updates deferred during form editing or an open dialog remain pending
 and render once that interaction ends, even if later polls return unchanged data.
-Temporary chat keeps its existing DOM and draft while lifecycle questions update.
+Issue chat keeps its existing DOM and draft while lifecycle questions update.
 Read-only Clarify questions are bound to the selected report, lifecycle and linked
 plan contents. An unrelated source commit does not discard those questions. Results
 that advance a stage or reuse implementation approval retain their source guards.
@@ -535,9 +801,51 @@ The live factory task log is administrative context. If completing a review chan
 it, final acceptance retains its current contents and earlier hash separately;
 unchanged source, plan, behavioral evidence and no outstanding work are still required.
 
-Close issue records explicit acceptance and closes in one tap, without a
-confirmation dialog. The button disables during the request and the screen refreshes
-after success. Reopen keeps its confirmation and optional reason.
+A blocked or failed stopped action exposes **Cancel** in the action menu. Cancel
+retains its checkout, conversation, failure summary and registry history while
+preventing that action from being restarted. Shared actions remain available while
+another linked issue is open. Repeated cancellation is safe, and stale or running
+actions cannot be cancelled through this control.
+
+Accept fix and close appears after the issue reaches final review or its saved
+strategy/checklist records completed work. It also appears for an inactive blocked
+or cancelled strategy with a saved PR, so the server can reconcile a merged PR before
+acceptance. Both closure paths show a confirmation
+with the exact remote/local branches, issue workspace path and estimated storage,
+and linked issue chats. Already deleted resources and failed lookups remain disabled
+and distinguishable. Unmerged work is unchecked by default; dirty, shared and active
+resources are preserved. Workspace safety appears as soon as its identity is checked;
+branch checks run independently, and the size estimate never delays selection or cleanup. The server
+rechecks each selected resource immediately before acting and records per-resource
+results outside the workspace. Issue closure
+still completes if cleanup fails; the issue then shows Cleanup incomplete and a
+bounded Retry cleanup action. Eligible idle chats associated with the issue are
+archived when the issue workspace is removed; the workspace row states how many
+linked chats it will archive. There is no separate chat cleanup choice. Active or
+unknown chats prevent workspace removal. Factory loads saved, unloaded chats to
+check whether they are idle. Local conversation transcripts are
+stored inside the issue workspace so they are removed with it. Native Codex chats
+remain app-managed and archiving them is not reported as disk savings.
+
+**Delete worktree** is beside the working branch on the issue page, next to **Open work folder**. Open work folder opens the issue checkout when one is available and stays disabled otherwise. Confirming Delete worktree
+removes the issue's managed work folder and local branch. The server preserves
+dirty or shared worktrees and blocks removal while issue work or chat is active.
+The action is available independently of closure and leaves the remote branch
+and issue report in place. An older disconnected strategy attempt does not block cleanup after a newer attempt supersedes it.
+
+Before Fixed acceptance, a blocked or cancelled strategy with a saved PR is reconciled
+against GitHub. The factory requires that the saved branch's PR is merged into the
+configured target, that the target still contains the merge, and that PR checks pass.
+It retains a durable receipt without restarting the worker; ordinary Fixed acceptance
+still requires the user's explicit action. If a saved recovery receipt points to a
+missing observation file, the factory checks the same PR again and rebuilds that file
+before applying the existing acceptance checks.
+When individual cleanup results are recorded, each failed or preserved resource
+has its own retry button; retrying one item leaves the other results intact. If
+cleanup failed before any resource result was recorded, the page explains that
+no individual resource failure was identified. The overall retry remains
+available alongside per-resource retries.
+Reopen keeps its confirmation and optional reason.
 
 Older issues already at Final review can be accepted without backfilling stage
 history when the registry records integration and both worker and checked
@@ -558,11 +866,13 @@ This path does not prove a self-healing exercise or any other unperformed test.
 Those limits remain in the result for final acceptance. It cannot change source,
 registry entries, other reports or human check outcomes, and never closes the issue.
 
-The queue lists each lifecycle role with a checkbox and the number of issues in that
-role that match the current search. Every role starts selected except Closed. Clearing
-a role hides its issues; selecting Closed shows closed issues. Search text applies when
-Return is pressed, and also as the text changes. Search, role, and sort choices survive
-live refreshes while the page is open.
+The queue lists visible lifecycle roles with a checkbox and the number of issues in
+that role that match the current search. Prototype, Implement, Verify, Commit and
+Final review have no filters; their issues remain included unless another visible
+filter hides them. Every visible role starts selected except Closed. Clearing a role
+hides its issues; selecting Closed shows closed issues. Search text applies when
+Return is pressed, and also as the text changes. Search, role, and sort choices
+survive live refreshes while the page is open.
 Filtering is read-only; issue links and saved reports remain available.
 
 ## Live worker status
@@ -737,8 +1047,8 @@ request/issue-answer keys preserve that feedback across redraws, preventing a
 stale approval from being submitted twice. Failed requests show an alert beside
 each copy of that exact request's control and restore it for explicit retry.
 The alert survives redraws and clears on retry or a replacement request. An
-expired page session explains that a reload is needed; no write is automatically
-replayed after reconnecting. Negative replies and answers use Sending…/Sent…
+expired page session asks for a manual reload when the server is responding.
+Negative replies and answers use Sending…/Sent…
 instead of claiming approval. This feedback changes no permission or acceptance
 rules.
 
@@ -768,113 +1078,92 @@ recovery changes neither integration approval nor acceptance policy.
 
 ## Persistent issue conversation
 
-The issue's **Chat** is its persistent interactive conversation. Joined output and
-full-width input retain the inset up-arrow; Enter sends and Shift+Enter adds a line.
-Opening or refreshing reads history without starting a model turn. Reloads,
-navigation and server restarts preserve sent messages. Each issue has its own
-conversation and native conversational thread. Earlier expired temporary chats
-cannot be imported; their surviving explicitly recorded outputs remain in reports.
-Legacy temporary endpoints remain available only for older clients.
+**Issue thread** retains the conversation from capture through closure. Capture
+grilling, **Grill me**, **Discuss this step**, implementation, retrospective and
+ordinary history questions use the same native Codex thread. Opening or refreshing
+reads history without starting a turn. Earlier expired temporary chats cannot be
+recovered; their explicitly recorded outputs remain in reports.
 
-Human messages are retained under `.issues/conversations/ISSUE_ID/messages.jsonl`;
-`chat.json` keeps the conversational model's identity and response status. The
-conversation also projects actual role results, stage outcomes and original human
-answer receipts from their existing owners. It preserves source IDs and labels
-worker results as claims rather than verification. Pagination bounds polling;
-old history remains available through Earlier messages. Model turns receive a
-bounded recent context and `context.json` with the complete selected-issue timeline
-and current report, available to later roles and retrospective review. Comments
-and provider responses are persistent local records and go to the configured model
-provider under the account's policies. This is a deliberate retention change from
-the former temporary chat; sent messages no longer expire or disappear on reload.
+The timeline includes the original request, reviewed decisions, work reports,
+confirmed verification, GitHub merge, local target update and closure. Factory
+events link to their evidence and preserve stable identities across reloads.
+Conversation text and worker claims do not establish verification or approval.
+GitHub merge and local target update are separate events. Independent reviewers
+keep their own context and return sourced findings.
 
-The composer distinguishes **Comment**, **Request revision**, and **Reply and
-continue**. Comments save during implementation and become available on subsequent
-role turns; they do not interrupt an already executing instruction. A revision
-request marks the plan for reconsideration, revokes approval reuse and asks active
-Progress to pause at its next checkpoint. Progress then reviews the saved feedback;
-implementation approval must be supplied for the resulting plan. It does not erase
-existing questions or invent new implementation authority.
+`messages.jsonl`, `chat.json` and `queue.json` live under the issue conversation
+directory. Before a checkout exists this is `.issues/conversations/ISSUE_ID` in
+the project; normal checkout setup moves it into the managed issue workspace.
+`context.json` supplies the same complete timeline to skill-driven work and history
+queries. A bounded recent context accompanies each turn, with the full history
+linked for older details. Sent prompts and responses survive navigation and restart.
 
-Pending questions and exact plan/candidate controls appear within the same chat.
-Reply and continue uses the current question identity and original answer handler.
-Stale replies remain unsent; comments never masquerade as answers. Plan and
-integration approvals retain their exact candidate/plan checks, and closure remains
-an explicit final decision. Implementation stays in isolated worker checkouts;
-independent review stays in separate read-only chats and checks raw proof. Those
-roles receive the selected issue conversation as context, never expanded permission.
+The composer offers discussion/history, work in the issue checkout, revision
+feedback and the existing reply-and-continue action. Discussion works before a
+checkout exists. The first editable request prepares the normal issue checkout;
+editable turns use normal Codex permission requests. Typed requests never replace
+explicit Factory plan, merge or acceptance controls. Revision feedback retains its
+existing plan-reconsideration rules.
 
-**Stop** cancels only the issue assistant's current response for the selected issue.
-It preserves saved messages, earlier output and received partial text, and leaves
-queued comments available for their normal responses. It never stops lifecycle
-Progress or workers, answers questions or grants approval. A stale Stop cannot
-cancel a newer response; a response that finishes first is retained normally.
-Connection or cancellation failures remain visible so you can refresh and retry.
+Typing `/` opens enabled skills. Selected skills remain attached to a prompt while
+queued, edited, dispatched or steered. **Send** starts a turn when the issue is
+available; otherwise it saves the prompt above the composer. Waiting prompts offer
+**Edit**, **Remove** and **Steer**. Editing preserves position. Resume drains user
+prompts in FIFO order before automatic Factory work continues through its existing
+guards. Controls bind to the selected issue and prompt revision so competing tabs
+cannot edit or dispatch a claimed entry twice.
 
-Message IDs make transport retries idempotent. Responses are serialized per issue,
-while comments can continue arriving. A failed response retains the user message
-and displays an error; an uncertain native startup is not silently replaced. A
-known chat reconnects only after checking that its native state is idle. The chat
-assistant has read-only context access and cannot grant permissions or dispatch
-workflow actions. Execution details remain expandable under lifecycle progress.
+To recover waiting prompts after a restart, Factory discovers issue IDs from the
+open report filenames and uses one saved progress read to locate their prompt
+queues. It checks the current queue again before dispatching a prompt.
 
-## Temporary issue discussion
+**Pause** lets the current turn or operation finish and holds subsequent prompts
+and Factory work. **Stop** interrupts a confirmed cancellable turn or operation,
+retains partial output and checkout edits, and holds later work until **Resume**.
+During merge the control reads **Pause after this operation**; an already sent
+GitHub request must be reconciled. The active server operation remains visible and
+Send remains available while it runs. After restart, an operation owned by the
+previous server is shown as uncertain with Stop disabled. It remains held for
+its owner to reconcile; Resume never replays an unconfirmed operation.
 
-Each issue has a collapsed **Chat** toggle above its lifecycle. The borderless
-toggle opens joined conversation output and full-width input; an inset circular
-up-arrow sends. Enter sends; Shift+Enter adds a line. Opening starts no model turn.
-Sending starts a dedicated ephemeral process in an empty workspace, separate from
-coordinator/worker recovery and RunStore. Its context contains the selected report
-and lifecycle policy, not other reports or saved chats. Proposed skips remain
-revisable plans, never historical outcomes or permission.
+Queue state distinguishes waiting, preparing, dispatching, accepted and uncertain
+outcomes. Stable native client message IDs identify receipts after reconnect;
+a lost response is reconciled before another attempt. Steer targets only the
+confirmed active turn and removes the waiting prompt only after acknowledgement.
+If the turn finishes first, the prompt stays queued. The installed Codex transport
+cannot reliably observe or steer an active writer owned by another native
+connection: Factory holds that queue and displays the ownership limitation. It
+does not treat a stale terminal snapshot as proof that the foreign writer finished.
 
-Discussion stays in page/server memory. It is excluded from generic draft storage
-and saved factory activity. Navigation, reload, End chat, 15-minute inactivity,
-the one-hour lifetime and shutdown clear it and stop its process. Server expiry
-bounds cleanup if a page-close request is lost. **Temporary chat** discloses these
-limits and contains End chat and the optional grilling control. Messages still go
-to the configured model provider under the account's policies; local ephemeral
-handling does not establish zero provider retention. The dedicated runtime uses
-the configured default OpenAI model/login. Custom providers/profiles fail closed.
+Thread titles retain their role and active, waiting or archiveable status. Merge
+alone never makes a thread archiveable while acceptance remains outstanding.
 
-Select conversation text to reveal **Record selected text…**. Review the exact
-text, selected issue and stated effect, then click **Record this text on the issue**.
-A short-lived one-use token binds that selection to its session and current
-issue/policy/source. Recording rechecks ownership and human-input guards and uses
-the existing locked report append. It labels output human-approved and possibly
-model-written, never human testimony, completed grilling, workflow approval or
-acceptance. No transcript, context bundle or session identity is saved. Work on
-another issue does not block conversation or recording; an active operation on
-the selected issue blocks recording only. Integration also blocks recording.
-After recording changes context, start a new chat for further questions.
+## Reviewing issue discussion
 
-Every configured lifecycle stage offers **Discuss this step**. It opens the temporary
-chat and starts the installed `grilling` skill through a native skill input. An exact hash-checked copy is registered in
-the isolated runtime’s temporary skill directory and verified through `skills/list`;
-it is removed with that runtime. No unrelated skills or tools are enabled. The
-chat names the selected stage, including earlier or future stages, without moving
-the issue. The skill asks numbered rounds of currently answerable design questions;
-project facts come from supplied context and missing evidence remains explicit.
-The temporary runtime retains its existing no-tools/read-only policy. Grilling
-cannot launch workers or perform the technical work being discussed.
+**Review decisions** opens the review panel within Issue thread. Its model turns
+use the saved conversation and ordinary skill mechanism. **Discuss this step**
+and **Grill me** retain the selected stage without advancing it. They queue behind
+active work. Closing the panel does not delete the conversation.
 
-**Review grilling results…** drafts decisions, unresolved questions and selected
-exact quotes from actual user messages. The preview names the issue and stage.
-**Save to [step]** confirms and appends only that reviewed package to the selected
-stage and report. The transcript, runtime identity and unselected user text are
-not saved. Saved interviews appear under their selected stage, without inventing
-missing stage history. Confirmation of discussion results is separate from
-implementation-plan approval, test evidence and final acceptance.
+**Review grilling results** drafts decisions, unresolved questions and exact quotes
+from actual saved human answers. Reopening restores the interview's stage and
+supports answers sent through the main composer. Generated interview instructions
+and model output are not human testimony. Review the issue, selected stage and
+quoted answers before **Save to [step]**. The existing guarded action records only
+that reviewed package; it does not approve implementation, pass tests or accept
+an issue. Select output in the panel to use **Record selected text** for a general
+reviewed note. Review tokens remain short-lived and bound to current inputs.
 
-**Save and continue** is offered only for the current unfinished stage when the
-summary has no open questions. It saves first, then invokes the usual lifecycle
-controller with fresh inputs. Clarify answers are reassessed against their actual
-exit condition; no stage advances merely because an interview ran. Existing human
-requests, exact-plan and integration approvals remain required. If continuation
-fails, the saved results remain and the UI reports that continuation stopped.
-Saving ends the temporary interview; start a new one to use the updated context.
-Stage/issue/source changes, additional answers, expiry and duplicate confirmations
-invalidate pending summary actions. Typed chat instructions never mutate work.
+**Save and continue** is available only for the current unfinished lifecycle stage
+with no open questions and no issue strategy. It saves first, then invokes the
+normal controller with fresh guards. A failed continuation leaves saved results
+intact. Changed inputs invalidate pending confirmations.
+
+**Run retro** invokes the installed `retro` skill with the same lifecycle history for open and closed issues.
+Its request and result remain in Issue thread. Recommendations begin unchecked;
+only selected choices enter the normal capture flow with stable submission IDs. **View retro recommendations** reopens the latest saved result for filing after a reload or timeout.
+An ordinary question such as “What did you do?” uses the same history when no
+named history-query skill is installed.
 
 ## Open a site for Verify
 
@@ -961,7 +1250,9 @@ Verification and commit operations continue to require current source checks.
 Run `pnpm factory:restart` from the selected checkout. It defaults to this checkout,
 this project and `http://127.0.0.1:52995`. It starts the current working folder as-is,
 including uncommitted WIP, and never runs tests, pulls code, merges branches or accepts
-an issue.
+an issue. Both `pnpm factory:restart` and its alias `pnpm factory:reset` load
+`.env` from the current working directory before starting; the replacement server
+inherits those environment settings. The `.env` file must exist.
 
 ```sh
 pnpm factory:restart
@@ -971,7 +1262,7 @@ pnpm factory:restart --checkout /absolute/checkout --project /absolute/project -
 The external launcher permits changed installed source, pauses new actions, waits
 for existing work/approvals/chats/locks to drain, verifies process ownership and
 rechecks the candidate before stopping only the identified old PID with SIGTERM.
-It then verifies the replacement's HTML, authenticated queue, PID and commit hash.
+It then verifies the replacement's HTML, authenticated Flow issue list, PID and commit hash.
 `--timeout MS` bounds each waiting phase (default 30000). Busy work is never force
 killed. Issue work paused at an action boundary stays saved for explicit Continue.
 
@@ -1076,12 +1367,33 @@ normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
 
+The running-action count includes saved actions still marked preparing, running,
+or checking. This includes interrupted preparations that block a server update.
+In Flow and Classic, the count opens the same **Action list**. It shows those actions,
+connected work, active cleanup, and recent stopped
+work that can be resumed or skipped. Completed and incomplete
+cleanup results are available on the issue page. The open list refreshes when
+the running count changes. Each entry shows its saved issue and current
+details, links to the issue and that run's output, and
+Stop, Restart, Skip, Pause issue and Steer controls. Stop interrupts an
+interruptible current response while retaining its saved work. Pause asks the
+issue to finish its current action before stopping later work; it does not
+interrupt the current response. Steer sends text to the exact active turn.
+Restart is available for stopped or failed work and continues its saved issue
+strategy or worker assignment within the existing scope. Skip cancels a stopped
+or interruptible worker assignment while retaining its checkout and conversation;
+it is disabled for an issue strategy whose approved checks and delivery would be
+discarded. Unavailable controls explain why they cannot run in the current state.
+For a disconnected strategy still preparing with no worker thread, use **Cancel**
+to cancel that exact attempt. Factory keeps its history and any checkout. If a
+newer attempt owns the issue, its progress stays in place.
+
 **Restart server** in the header uses the same restart path as deployment and
 maintenance: it drains current work, permission replies, temporary chats and
 coordinator locks before handing the installed listener to a replacement on the
 same port. It installs no build. Saved chats, pending questions and progress
-remain in the project, and the browser reconnects without erasing drafts. The
-button is hidden on preview copies and while a restart is already in progress.
+remain in the project. The button is hidden on preview copies and while a restart
+is already in progress.
 
 The header displays the last four characters of the server's reported startup
 commit, with the full hash and source path in its tooltip. Unknown revisions
@@ -1094,7 +1406,9 @@ connector above them. Every square still links to its expanded issue step.
 
 ## Closing without completing the work
 
-Every open issue has **Close with reason…** above its chat. Choose a reason and
+An open, approved issue has **Close** beside **Worktree** in Flow and
+**Close with reason…** above its chat in Classic. Both buttons open the closure
+dialog. Choose a reason and
 optionally add details or the duplicate issue ID. The project’s editable
 `.issues/triage-labels.md` defines the reasons in a Closed reasons table with
 ID, Label and Meaning columns. Older projects use the standard reasons until
@@ -1106,9 +1420,24 @@ must finish first. Accepting the issue as Fixed still requires that outstanding
 result to be reviewed. The report records the reason, label, time and optional
 details, and the page shows them after closure. Reopening preserves the decision
 in history.
-Changed reports or reason lists invalidate an open decision; duplicate submissions
-cannot close twice. This explicit user disposition is separate from automatic
-Progress, which still cannot close issues.
+Changed reports or reason lists invalidate an open decision. In Flow, manual
+Close records the decision, runs the opted-in Retro, then starts Cleanup.
+Turn on auto-close in Request to record Fixed after Factory confirms its own
+merge and the existing acceptance requirements pass. Each branch requires its
+own deletion choice. In shared queue mode, Cleanup waits for the reviewed
+closure to reach the shared queue.
+
+Create issue offers **Run a retro** and **Needs approval**. Both start unchecked.
+Retro files follow-ups in **Retro items** as **Needs approval**. **Approve**
+keeps the item in its folder and restores normal controls. **Delete** removes
+the proposal with one click. [Issue retros](../plans/issue-retros.md)
+
+When an open issue has a saved strategy PR and checkout, **Verify this commit again**
+appears beside **Close with reason…**. It reruns the required local checks against
+the exact displayed commit, even if that unchanged commit was checked before, then
+confirms the linked PR's current head, checks and target. It changes no code, does
+not restart the worker, and never merges or closes the issue. A failed or mismatched
+check remains visible and continues to block Fixed acceptance.
 
 ## Issue priorities
 
@@ -1131,6 +1460,45 @@ or acceptance and start no work. Existing queue ordering is retained.
 Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-issue
 review, publication, recovery and server-enforced merge gates. New delivery uses
 one PR per complete issue. Historical records retain their original meaning.
+
+Explicit issue strategies inspect the saved branch, checkout, starting commit and
+configured target before owner work and again before PR publication. A new issue
+fetches its configured remote target before creating the dedicated branch, so
+unpublished commits and unsaved files in the coordinator checkout stay there and
+are excluded by default. The start instruction can intentionally include committed
+work with one line per full commit SHA and a reason; the server cherry-picks only
+those authorized commits and retains a source-to-branch revision record. Existing
+issue checkouts keep their saved branch and base; dirty existing checkouts stop
+with exact path evidence and are preserved.
+
+Before a Continue starts another owner turn, it searches GitHub for the unique PR
+matching the saved issue branch and target. This recovers a missing or stale saved
+PR number and checks an existing delivery before asking for more implementation.
+The PR must match the configured repository, branch and target, and its head and
+merged tree must match verified evidence. Missing verification is run on the
+existing candidate; unchanged saved checks are reused. Multiple matches,
+mismatched identity or changed content stop recovery without inferring acceptance,
+replacing a PR, or weakening the required checks. A verified manual merge is
+recorded as delivered while human acceptance remains separate.
+
+If saved verification is stale or incomplete, the issue screen's **Verify this
+commit again** action explicitly reruns local checks for the current saved PR
+commit, bypassing cached pass or failure evidence. It then rechecks GitHub readiness
+and stores fresh evidence on the existing strategy run. This path starts no worker
+and makes no branch or PR changes; it does not bypass any check or human acceptance.
+
+Full Send leaves a separate **Merge PR** control after verification. Selecting it
+rechecks GitHub readiness against the exact saved head. Flow **Merge** follows the
+same readiness rules, with its own local **Verify** result. GitHub decides which
+reviews and checks are required. Factory reports required review or check blockers
+when GitHub identifies them. Once the
+gates pass, the server creates a merge commit so Git recognizes the issue branch
+as merged. If the repository disables merge commits, the action stops. Progress
+records the GitHub merge before attempting to update local `dev`. That update runs
+only when the project checkout is clean
+and already on `dev`, using fast-forward only. If local work exists or the update
+cannot complete, Progress retains the confirmed GitHub result and explains the
+local update outcome. Merge does not close the issue or start cleanup.
 
 ## Create an issue from the list
 
@@ -1303,15 +1671,56 @@ focused checks before plan approval, with source kept read-only. Approval still
 belongs to the user and covers intended outcome and scope. Ordinary commits do
 not restart the interview; technical plan changes can stay within that approval.
 
-Create issue offers **Grill me after creation**, off by default. With it selected,
-the server first saves all reports, then sends an explicit grilling request to
-each saved issue conversation. A single saved issue opens automatically; when
-capture separates multiple issues, the first opens and the toast links to all of
-them. Stable conversation message IDs prevent duplicate grilling on capture retry
+Create issue presents three independently selectable, initially unchecked actions
+in this order: orange **Grill me**, green **Go**, and blue **Merge**. Small inline
+illustrations identify the grill, green traffic light and merge path. One **Create
+issues** button submits the selection; without an action selected it only captures.
+Go starts the selected strategy after durable creation. Grill saves first and then
+sends an explicit grilling request to each issue conversation. When Grill and Go
+are both selected, it starts grilling and records the requested strategy on each
+report; the issue page keeps that strategy selected for Continue after the user
+answers and approves a plan. Work does not start during capture in this case.
+Merge remains selectable with Grill and chooses Full Send; otherwise Go uses Full
+Stop. Stable conversation message IDs prevent duplicate grilling on capture retry
 or server restart. Conversation failures leave the issue saved and report the
-problem. This option starts discussion, not lifecycle execution or implementation.
+problem. Grilling starts discussion, not lifecycle execution or implementation.
 
-### Stopped progress and issue output
+### Progress tab and issue output
+
+The issue opens on **Progress**, beside **Issue output** and **Issue thread**. Tab selection remains stable while viewing the issue. Progress
+shows the current operation, what is happening, confirmed milestones, next action
+and status. It derives these from existing operation, question, approval and
+conversation records plus public output events; it saves no independent workflow
+record. Issue thread holds both work and discussion, with a separate decision-review panel.
+
+Blocking questions and permissions take precedence, with concurrent work still
+visible. Progress reuses the existing answer controls, freshness checks and drafts.
+An explicit capture-grilling or grilling-skill conversation can show its latest
+question round verbatim with a reply sent through the existing comment handler;
+this never starts implementation. Plan and candidate approvals retain their own
+controls. Prose alone never establishes approval or passed verification.
+
+Continue immediately shows **Request sent; waiting for updated progress**, hiding
+old questions and status until updated records/output arrive. A failed request
+shows that it could not be confirmed and asks for a refresh before retrying. New
+active work outranks old failures. Completed operations name their finish line;
+publication, merge, issue acceptance and closure remain distinct. Earlier confirmed
+milestones remain visible, with superseded candidate checks labelled explicitly.
+
+Statuses are running, waiting for you, blocked, failed, complete, not started and
+progress unavailable. Flow and Classic show **Waiting for server…** alongside
+the last known update when a read-only health check gets no response or times
+out. When Factory responds to the health check again, the browser reloads the
+same URL, including the selected issue. Any interrupted action stays out of
+the reconnect sequence. Check saved progress before retrying it. Quiet output
+alone proves neither failure nor blockage. Verification shows the current command
+and exit result when available, otherwise **Running verification** without invented
+check names. Issue output keeps its recent public diagnostic stream and offers
+**Load retained output history** to page backward through saved public events across
+runs. Full retained events load only on demand, retain redaction and exclude private
+reasoning; runs without a retained log remain unavailable rather than fabricated.
+
+### Stopped progress
 
 Retryable stops retain their concrete failure reason and show the next saved
 action separately. A retry being available does not mean work is running. A
@@ -1336,12 +1745,14 @@ controls remain available for explicitly selected routes.
 
 ## Coordinator view
 
-Open **Coordinator** from the header, queue, issue page or a waiting explanation.
+Open **Coordinator** from the shared header or **Discuss queue** from the queue page.
+**Issue queue** on that page returns to the queue.
 The dedicated page shows the shared queue conversation, sanitized live output,
 active issue and operation, waiting work and workers still running. The compact
 full-width strip beneath the header shows only the issue and basic operation; on
 an issue page it appears only during coordination for that issue and disappears
-automatically. Page reads and refreshes start no work.
+automatically. Issue refreshes include review activity without loading the
+coordinator conversation or its output. Page reads and refreshes start no work.
 
 The server manages one read-only coordinator conversation that selects the next
 eligible issue from compact queue facts. Its result contains only an issue ID and
@@ -1424,3 +1835,117 @@ but retain the previous plan and receipt in approval history. Reassessment that
 returns no replacement plan retains that plan for review rather than failing with
 “no plan to approve”. A historical missing plan can be recovered only from the
 original human plan-approval receipt, with its content hash and issue identity checked.
+
+## Factory GitHub App credentials
+
+Run `pnpm factory:setup -- --project /absolute/project` to configure GitHub App
+credentials in that project's `.env`. The installer preserves existing values,
+prompts for missing App and installation IDs and a PEM file path, and copies the
+key into `.env` with escaped newlines. It validates the PEM before writing,
+restricts a written `.env` to owner access, and adds `.env` to `.gitignore`.
+It never prints the key. Running it again validates existing credentials without
+rewriting them. Edit `.env` directly when replacing configured values.
+
+Factory reads these three credentials directly from the owning project's `.env`
+without exporting them to worker process environments. Exported environment
+variables take precedence. Normal launches and restarts need no `--env-file`
+flag. Skill `requirements.json` is tracked configuration and never stores secrets.
+
+The existing compatibility path for server-owned issue strategy operations is `.issues/github-app.json` in the
+owning project (this directory is excluded from Git):
+
+```json
+{
+  "appId": 123456,
+  "repository": "owner/repo",
+  "privateKeyPath": "/absolute/private/location/factory.pem"
+}
+```
+
+For a deployed server, the same credentials may be supplied as environment
+secrets instead of a local configuration file:
+`TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID`,
+`TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY`, and
+`TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID`. The private key may be a PEM value
+with escaped newlines. The client ID is not used for installation API
+authentication. Environment settings take precedence over the local file and a
+partial or invalid set stops authentication rather than falling back to a
+personal `gh` login.
+
+Keep the private key outside the repository. No client secret or permanent token
+is needed. The server discovers the installation, limits tokens to the configured
+repository and refreshes them before expiry. It passes the token only to the
+strategy provider's GitHub CLI calls; personal Git/SourceTree credentials and
+worker publication are unchanged. Installation authentication does not use
+`gh auth login` or the user identity endpoint. A configured app failure stops
+rather than falling back to personal credentials.
+
+Give the app Contents and Pull requests read/write, Checks, Commit statuses,
+Actions and Administration read-only, and install only on the intended repository.
+Grant PR-only bypass of review rules, and no bypass of the separate strict CI
+ruleset requiring the existing GitHub Actions `test` check. Owner bypass can remain
+for personal direct pushes. Reload through `pnpm factory:restart` after changing
+credentials; restarting never retries an issue automatically.
+
+## New-issue dialog
+
+The [visual direction](design.md) begins with issue capture. Users can choose a
+model for new issue work, Save for later, or Go to capture and immediately start
+each resulting issue. Merge off chooses Full Stop; Merge on chooses Full Send
+with existing protected merge checks. Grilling disables Go and remains available
+through Save. Failed starts retain saved issues and direct users to their status
+and Continue control rather than repeating capture.
+
+## Shared issue queue
+
+In [shared queue mode](../plans/shared-issue-queue.md), the issue strategy claims an issue on the remote before starting and keeps the claim until Factory confirms the report checkpoint on the queue branch. Timey publishes new checkpoints directly using its GitHub App. Use the issue page to retry publication or reconcile an interrupted claim. Queue pull requests already in progress retain their existing merge and confirmation controls. Legacy assignment launches are unavailable in this mode.
+
+## Skill choices in blocks and chat
+
+The `# Skill list` in each bundled block Markdown defines its skill choices.
+Project `user/flow/extensions/blocks/<type>.md` and personal
+`~/.config/timey/flow/extensions/blocks/<type>.md` add to that list.
+`XDG_CONFIG_HOME` replaces `~/.config` when set. Existing project Markdown
+overrides can still replace the bundled list. Work defaults to `poteto-mode`;
+explicit selections, including No skill, remain unchanged.
+
+Click a block's skill label to choose a skill. **Add skill…** opens its project
+Markdown extension. For example:
+
+```markdown
+# Skill list
+
+- my-installed-skill
+- [team-work](https://example.com/team/SKILL.md)
+- [local-work](../../../skills/local-work/SKILL.md)
+```
+
+Local links resolve relative to the Markdown file. A link declares a source; it
+does not fetch or execute it. Use **Set up skills** to request installation through
+Project Discuss. You can also put raw block instructions under `# System prompt`
+in the extension. Opening the editor or changing a selection starts no block.
+
+Chat grilling uses `factory/system/chat/grilling.md`, with additive project
+`user/chat/grilling.md` and personal `~/.config/timey/chat/grilling.md` extensions.
+Its selector offers the same Add skill and setup actions. No Grilling is a
+built-in choice with no skill dependency and always appears last.
+
+Installed custom skills live in `user/skills/<name>/SKILL.md`. Required collection
+sources remain in `user/skills/requirements.json`; selector options come from
+Markdown rather than a parallel JSON list. Refresh after editing a list.
+
+Closure resolves issue type from its declared input, the current Request fields,
+then the saved flow type shown by the Request selector. Invalidated derived fields
+do not erase that saved type. Candidate verification, retained proof, and merged
+PR identity checks still apply before Fixed acceptance.
+
+When Run a retro is enabled, Retro is a planned closure block. It uses the normal
+block status and solid outline before it starts. Saved suggested Retro blocks
+are normalized without replacing their selected skill or attempt history. During
+closure the saved closure decision controls whether Retro remains enabled.
+
+Saving changed Your words invalidates Request and all subsequent blocks, across
+all lanes, before clarification runs. This includes Work and any retained
+verification, publication or merge results, even if clarification derives the
+same goal and proof criteria. Attempts and evidence stay in history. Rerunning
+unchanged wording keeps the existing criteria-based invalidation behavior.

@@ -1,5 +1,7 @@
 test*.csv
 node_modules
+/.local-notes/
+.pnpm-store
 
 .DS_Store
 .cache
@@ -32,3 +34,11 @@ coverage/
 /blob-report/
 /playwright/.cache/
 .vitest/
+
+# Issue reports and their display numbers are synced from the queue branch.
+/.issues/**
+!/.issues/triage-labels.md
+!/.issues/preferences.json
+/.issues/evidence/
+/.issues/issue-work/
+

@@ -45,7 +45,7 @@ test('one primary issue chat is reused across checkouts while active or uncertai
   const second = f.service.store.add({ id: 'second' }, 'worker', f.base);
   assert.equal(await issueWorkChat(f.service, second, f.issueId, '/new-checkout'), 'primary');
   assert.equal(starts, 1);
-  assert.deepEqual(names, ['Sort the queue', 'Updated issue title']);
+  assert.deepEqual(names, ['Execute: #1 Sort the queue · active', 'Execute: #1 Updated issue title · active']);
   assert.equal(resumes[0][1], '/new-checkout');
   const third = f.service.store.add({ id: 'third' }, 'worker', f.base);
   await assert.rejects(issueWorkChat(f.service, third, f.issueId, f.root), /still working/);
@@ -127,7 +127,7 @@ test('loading a saved chat still refuses busy or uncertain native state', async 
 
 test('unchanged positive scope checks are reused, but changes to scope or approval evidence are not', async (t) => {
   const f = await setup(t),
-    { checkLifecycleScope } = await import('./factory-ui/lifecycle-review.mjs');
+    { checkLifecycleScope } = await import('./factory-ui/lifecycle-scope.mjs');
   let turns = 0;
   f.service.codex.start = async () => 'primary';
   f.service.codex.ready = async () => {};

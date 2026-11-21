@@ -1,3 +1,5 @@
+import { exportIssueReports } from './factory-ui/issue-storage-export.mjs';
+import { migrateClosedIssues } from './factory-ui/issue-report-storage.mjs';
 import { IssueDelivery } from './issue-delivery.mjs';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -7,10 +9,14 @@ import { decisionView, listIssues } from './factory-interface.mjs';
 import { factory, readFactoryRegistry } from './factory-ledger.mjs';
 import { statusOutput } from './factory-status.mjs';
 import { readRuntime } from './factory-ui/runtime.mjs';
+import { runViewCommand } from './factory-ui/view-command.mjs';
 export { factory };
 
 export async function runCommand(project, argv, delivery = new IssueDelivery(project)) {
   const [command, ...args] = argv;
+  if (command === 'ui') return runViewCommand(project, args);
+  if (command === 'issue-storage-export') return exportIssueReports(project, args[0]);
+  if (command === 'issue-storage-migrate') return migrateClosedIssues(project);
   if (command === 'issue-delivery') {
     const [kind, issueId, path] = args;
     if (kind === 'inspect') return delivery.inspect(issueId);
@@ -49,7 +55,7 @@ export async function runCommand(project, argv, delivery = new IssueDelivery(pro
     ['complete', () => recordIssueWork(project, command, args[0])],
     ['record-checks', () => recordIssueWork(project, command, args[0])],
   ]);
-  return commands.has(command) ? commands.get(command)() : decisionView(api.inspect(), argv);
+  return commands.has(command) ? commands.get(command)() : decisionView(api.inspect(), argv, project);
 }
 function recordIssueWork(project, operation, path) {
   const helper = fileURLToPath(new URL('./factory-record.mjs', import.meta.url));

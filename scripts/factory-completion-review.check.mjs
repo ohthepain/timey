@@ -216,7 +216,19 @@ test('the PR card has Continue instead of an upload, and publication retries do 
         target: 'dev',
         candidate: 'saved',
         targetRevision: 'base',
-        contributions: [],
+      },
+    })
+  );
+  assert.match(dom.window.document.body.textContent, /0 retained contribution\(s\)/);
+  assert.doesNotThrow(() =>
+    render({
+      id: 'one',
+      issueDelivery: {
+        state: 'collecting',
+        source: 'issue/one',
+        target: 'dev',
+        candidate: 'saved',
+        targetRevision: 'base',
       },
     })
   );

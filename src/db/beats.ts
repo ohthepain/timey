@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import { beatNotes, beats, type DomainBeat, type DomainBeatNote } from '../../domain/schema';
+import { beatNotes, beats, type DomainBeatNote } from '../../domain/schema';
 import type { DomainDb } from '~/config/db';
 
 export function contentNotes(notes: DomainBeatNote[]) {
@@ -15,5 +15,3 @@ export async function loadContentBeat(db: DomainDb, id: string) {
     .where(and(eq(beatNotes.beatId, id), isNull(beatNotes.performanceId)));
   return { ...beat, beatNotes: notes };
 }
-
-export type ContentBeat = DomainBeat & { beatNotes: DomainBeatNote[] };
