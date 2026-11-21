@@ -231,8 +231,8 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   );
   assert.equal(calls.at(-1).text, 'Continue after failure');
 
-  const history = service.projectDiscuss.read(attachedConversation);
-  const template = history.messages.at(-1);
+  const template = service.projectDiscuss.read(attachedConversation).messages.at(-1);
+  const history = (await service.projectDiscuss.action({ action: 'create' })).selected;
   history.messages = Array.from({ length: 40 }, (_, index) => ({
     ...template,
     id: 'scroll-history-' + index,
@@ -243,7 +243,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   const historyImageUrl = new URL('/discuss-history.svg', page.url()).href;
   history.messages.at(-1).text += `\n\n![Delayed history diagram](${historyImageUrl})`;
   service.projectDiscuss.save(history);
-  const scrollEvidence = { conversationId: attachedConversation, observations: [] };
+  const scrollEvidence = { conversationId: history.id, observations: [] };
   const proofPath = join(dirname(project), 'project-discuss-scroll.json');
   const scrollMetrics = () =>
     page.locator('#discuss-messages').evaluate((log) => {
@@ -294,7 +294,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     }
     await route.fulfill({ response });
   });
-  await page.reload();
+  await page.goto('/?projectTab=discuss&conversation=' + history.id);
   await page.locator('#discuss-messages').waitFor({ state: 'attached' });
   assert.equal(await page.locator('#discuss-messages .discuss-message').count(), 0);
   initialHistory.resolve();
@@ -306,13 +306,13 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     (loaded) => loaded,
     'Delayed history image did not finish rendering.'
   );
-  await assertOpenedAtBottom('Reload after delayed history and image');
+  await assertOpenedAtBottom('First opening after delayed history and image');
   await page.unroute(/\/api\/project-discuss(?:\?|$)/);
   await page.locator('#discuss-messages').hover();
   await page.mouse.wheel(0, -1000);
   await poll(scrollMetrics, (metrics) => metrics.bottomDistance > 500, 'Could not scroll to older messages.');
   const olderPosition = await recordScroll('Reading older messages');
-  const updated = service.projectDiscuss.read(attachedConversation);
+  const updated = service.projectDiscuss.read(history.id);
   updated.messages.at(-1).text += '\n\nRefreshed latest message';
   service.projectDiscuss.save(updated);
   await page.locator('#discuss-messages').getByText('Refreshed latest message', { exact: true }).waitFor();
@@ -322,7 +322,12 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(refreshedPosition.latestVisible, false);
   await page.locator('#project-tab-home').click();
   await page.locator('#project-tab-discuss').click();
-  await assertOpenedAtBottom('Returning to Discuss');
+  await poll(
+    scrollMetrics,
+    (metrics) => Math.abs(metrics.scrollTop - olderPosition.scrollTop) < 2,
+    'Returning to Discuss lost the reading position.'
+  );
+  await recordScroll('Returning to Discuss preserves reading position');
   await page.unroute(historyImageUrl);
   const lateImage = Promise.withResolvers();
   await page.route(historyImageUrl, async (route) => {
@@ -334,7 +339,13 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('[data-discuss-message="scroll-history-39"]').waitFor();
-  await assertOpenedAtBottom('Opening while image is pending');
+  await poll(
+    scrollMetrics,
+    (metrics) =>
+      Math.abs(metrics.scrollTop - Math.min(olderPosition.scrollTop, metrics.scrollHeight - metrics.clientHeight)) < 2,
+    'Reload while an image is pending lost the saved reading position.'
+  );
+  await recordScroll('Reload preserves reading position while image is pending');
   await page.locator('#discuss-messages').hover();
   await page.mouse.wheel(0, -1000);
   await poll(scrollMetrics, (metrics) => metrics.bottomDistance > 500, 'Could not scroll during image loading.');

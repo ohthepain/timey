@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ProjectHome } from './factory-ui/project-home.mjs';
 import { digest, git } from './factory-ui/common.mjs';
@@ -159,6 +159,8 @@ async function automate(page, service, calls, screenshot) {
 }
 
 export async function projectHomeBrowserChecks({ page, service, screenshot }) {
+  const labels = join(service.root, '.issues/triage-labels.md');
+  if (!existsSync(labels)) copyFileSync(new URL('../.issues/triage-labels.md', import.meta.url), labels);
   const calls = { investigations: 0, automate: 0 };
   configureHome(service, calls);
   await page.goto('/');

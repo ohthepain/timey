@@ -236,6 +236,7 @@ const issueChatUI = (() => {
     latest = data;
     selectIssue(id);
     slot.replaceWith(panel);
+    window.timeyView.track(draft, 'issue-chat-editor:' + id);
     update(selectedConversation(data, id), inputHtml);
     restoreChatFocus();
     if (viewBeforeRender) {
@@ -268,7 +269,15 @@ const issueChatUI = (() => {
     if (current && draft) {
       drafts.set(current, draft.value);
       skillDrafts.set(current, skillComposer.skills());
+      window.timeyView.write('issue-chat-draft:' + current, { text: draft.value, skills: skillComposer.skills() });
+      window.timeyView.remember(draft);
+      window.timeyView.remember(log);
     }
+  }
+  function initialDraft(id) {
+    const saved = window.timeyView.read('issue-chat-draft:' + id, { text: '', skills: [] });
+    if (!skillDrafts.has(id)) skillDrafts.set(id, saved.skills);
+    return drafts.get(id) ?? saved.text;
   }
   function build(id) {
     const section = node('section');
@@ -304,9 +313,9 @@ const issueChatUI = (() => {
     draft.placeholder = 'Message this issue…';
     draft.rows = 3;
     draft.maxLength = 12000;
-    draft.value = drafts.get(id) || '';
+    draft.value = initialDraft(id);
     draft.oninput = () => {
-      drafts.set(id, draft.value);
+      remember();
       requestId = null;
     };
     const send = node('button');
@@ -419,9 +428,10 @@ const issueChatUI = (() => {
     const signature = JSON.stringify([...messages.values()]);
     if (signature === renderedMessages) return;
     renderedMessages = signature;
-    log.replaceChildren();
-    for (const entry of sortedMessages()) log.append(messageNode(entry));
-    if (!messages.size) log.append(node('p', 'Messages and lifecycle results will appear here.'));
+    const content = document.createDocumentFragment();
+    for (const entry of sortedMessages()) content.append(messageNode(entry));
+    if (!messages.size) content.append(node('p', 'Messages and lifecycle results will appear here.'));
+    window.timeyView.render(log, content, 'issue-chat-history:' + current);
   }
   function sortedMessages() {
     return [...messages.values()].sort((a, b) => String(a.at).localeCompare(String(b.at)) || a.id.localeCompare(b.id));
@@ -683,6 +693,7 @@ const issueChatUI = (() => {
   function acceptedMessage(input, result) {
     drafts.set(input.issueId, '');
     skillDrafts.delete(input.issueId);
+    window.timeyView.write('issue-chat-draft:' + input.issueId, { text: '', skills: [] });
     if (current !== input.issueId) return;
     if (editing) {
       finishEdit();
@@ -714,29 +725,10 @@ const issueChatUI = (() => {
     }
   }
   function captureSelection() {
-    const selection = window.getSelection();
-    if (!selection?.rangeCount || !log.contains(selection.anchorNode) || !log.contains(selection.focusNode))
-      return null;
-    const offset = (node, end) => {
-      const range = document.createRange();
-      range.selectNodeContents(log);
-      range.setEnd(node, end);
-      return range.toString().length;
-    };
-    return [offset(selection.anchorNode, selection.anchorOffset), offset(selection.focusNode, selection.focusOffset)];
+    return window.timeyView.captureSelection(log);
   }
   function restoreSelection(saved) {
-    if (!saved) return;
-    const point = (offset) => {
-      const walker = document.createTreeWalker(log, NodeFilter.SHOW_TEXT);
-      let node;
-      while ((node = walker.nextNode())) {
-        if (offset <= node.length) return [node, offset];
-        offset -= node.length;
-      }
-      return [log, log.childNodes.length];
-    };
-    window.getSelection().setBaseAndExtent(...point(saved[0]), ...point(saved[1]));
+    window.timeyView.restoreSelection(saved, log);
   }
   function beforeRender() {
     focusedBeforeRender = panel?.contains(document.activeElement) ? document.activeElement : null;

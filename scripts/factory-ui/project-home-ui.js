@@ -116,7 +116,7 @@
         )
         .join('');
       const content = markup || '<p class="muted">No saved sessions yet.</p>';
-      if ($(id).innerHTML !== content) $(id).innerHTML = content;
+      window.timeyView.render($(id), content, 'home-runs:' + id);
     }
     function renderHome() {
       const { project, stats } = state.data;
@@ -183,17 +183,17 @@
       $('home-investigation-reusable').checked = false;
     }
 
-    function renderMessages(id, messages) {
+    function renderMessages(id, messages, sessionId) {
       const markup = (messages || [])
         .map(
           ({ role, text, content }) =>
             `<article data-home-message><strong>${role === 'user' ? 'You' : 'Assistant'}</strong><div>${escape(text || content)}</div></article>`
         )
         .join('');
-      if ($(id).innerHTML !== markup) {
-        $(id).innerHTML = markup;
-        $(id).scrollTop = $(id).scrollHeight;
-      }
+      const scope = 'home-messages:' + id + ':' + sessionId;
+      const first = !window.timeyView.read(scope);
+      window.timeyView.render($(id), markup, scope);
+      if (first) $(id).scrollTop = $(id).scrollHeight;
     }
 
     function operationStatus(kind, session) {
@@ -252,7 +252,7 @@
     function renderAutomate(fillDraft = false) {
       const session = state.automate;
       setRunButtons('automate', session);
-      renderMessages('home-automate-messages', session.messages);
+      renderMessages('home-automate-messages', session.messages, session.id);
       automateReplyControls(session);
       $('home-automate-coverage').textContent = coverageText(session.history);
       $('home-automate-review').hidden = !session.draft;

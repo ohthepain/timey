@@ -51,24 +51,28 @@
         repair.step ||
         'Repair checks that prevent work on this issue branch.';
     }
+    function repairError(repair) {
+      if (repair.error) return repair.error;
+      if (repair.status === 'stale')
+        return 'The issue or repair candidate changed. Start a fresh check before approval.';
+      if (repair.status === 'interrupted')
+        return 'The worker is no longer connected. Its candidate and logs are retained. Confirm the old worker has stopped before allowing a retry.';
+      return '';
+    }
     function renderDetails(repair) {
-      const status = repair.status;
-      find('status').textContent = statusMessage(repair);
-      find('timing').textContent = repair.startedAt
-        ? `${repair.branch || ''} · ${Math.max(0, Math.floor(((repair.endedAt ? Date.parse(repair.endedAt) : Date.now()) - Date.parse(repair.startedAt)) / 1000))}s elapsed${repair.lastActiveAt ? ' · Last activity ' + new Date(repair.lastActiveAt).toLocaleTimeString() : ''}`
-        : '';
-      find('error').textContent =
-        repair.error ||
-        (status === 'stale'
-          ? 'The issue or repair candidate changed. Start a fresh check before approval.'
-          : status === 'interrupted'
-            ? 'The worker is no longer connected. Its candidate and logs are retained. Confirm the old worker has stopped before allowing a retry.'
-            : '');
+      window.timeyView.text(find('status'), statusMessage(repair));
+      window.timeyView.text(
+        find('timing'),
+        repair.startedAt
+          ? `${repair.branch || ''} · ${Math.max(0, Math.floor(((repair.endedAt ? Date.parse(repair.endedAt) : Date.now()) - Date.parse(repair.startedAt)) / 1000))}s elapsed${repair.lastActiveAt ? ' · Last activity ' + new Date(repair.lastActiveAt).toLocaleTimeString() : ''}`
+          : ''
+      );
+      window.timeyView.text(find('error'), repairError(repair));
       find('error').hidden = !find('error').textContent;
-      find('output').textContent = repair.output || 'No output collected yet.';
-      find('review').hidden = status !== 'ready';
-      find('diff').textContent = repair.diff || '';
-      find('checks').textContent = (repair.checks || []).map(({ label }) => label).join('\n');
+      window.timeyView.text(find('output'), repair.output || 'No output collected yet.');
+      find('review').hidden = repair.status !== 'ready';
+      window.timeyView.text(find('diff'), repair.diff || '');
+      window.timeyView.text(find('checks'), (repair.checks || []).map(({ label }) => label).join('\n'));
     }
     function renderActions(repair, ineligible) {
       const status = repair.status;

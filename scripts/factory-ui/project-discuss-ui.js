@@ -64,6 +64,7 @@
     const draft = byId('discuss-draft');
     const form = byId('discuss-form');
     const log = byId('discuss-messages');
+    const view = window.timeyView;
     let openingScroll = null;
     for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown'])
       log.addEventListener(
@@ -112,7 +113,7 @@
       skills: skillComposer.skills(),
     });
     function error(message) {
-      byId('discuss-error').textContent = message || '';
+      view.text(byId('discuss-error'), message || '');
       byId('discuss-error').hidden = !message;
     }
     function localKey(id) {
@@ -128,6 +129,8 @@
     }
     function remember() {
       if (!selectedId) return;
+      view.remember(log);
+      view.remember(draft);
       const value = { text: draft.value, attachments, skills: skillComposer.skills() };
       localDrafts.set(selectedId, value);
       try {
@@ -273,15 +276,24 @@
       const model = message.settings?.model;
       return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : message.localNoteId ? '' : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
     }
+    function conversationTab(entry) {
+      const selected = entry.id === selectedId;
+      const title = entry.title || 'New conversation';
+      return `<div class="discuss-conversation-tab" role="tab" tabindex="${selected ? '0' : '-1'}" aria-selected="${selected}" aria-controls="discuss-messages" data-discuss-conversation="${escape(entry.id)}" title="${escape(title)}"><span>${escape(title)}</span><button type="button" class="discuss-tab-close" data-discuss-close="${escape(entry.id)}" aria-label="Close ${escape(title)}" title="Close chat">×</button></div>`;
+    }
+    function renderConversationTabs() {
+      view.render(
+        byId('discuss-conversation-tabs'),
+        (data?.conversations || []).map(conversationTab).join(''),
+        'discuss-tabs'
+      );
+    }
     function render() {
       const current = session();
+      const scope = 'discuss:' + selectedId;
+      view.track(draft, scope + ':draft');
       const selectedSettings = editId ? settings() : desiredSettings || current?.settings;
-      byId('discuss-conversation-tabs').innerHTML = (data?.conversations || [])
-        .map(
-          (entry) =>
-            `<div class="discuss-conversation-tab" role="tab" tabindex="${entry.id === current?.id ? '0' : '-1'}" aria-selected="${entry.id === current?.id}" aria-controls="discuss-messages" data-discuss-conversation="${escape(entry.id)}" title="${escape(entry.title || 'New conversation')}"><span>${escape(entry.title || 'New conversation')}</span><button type="button" class="discuss-tab-close" data-discuss-close="${escape(entry.id)}" aria-label="Close ${escape(entry.title || 'chat')}" title="Close chat">×</button></div>`
-        )
-        .join('');
+      renderConversationTabs();
       choices(
         'discuss-model',
         (data?.models || []).map((entry) => ({ value: entry.id, label: entry.name || entry.id })),
@@ -307,21 +319,27 @@
           )
           .join('') ||
         '<div class="discuss-empty"><h2>What would you like to work on?</h2><p>Ask about the codebase, choose a skill with /, or request a project action.</p></div>';
-      if (log.innerHTML !== html) {
-        log.innerHTML = html;
-      }
-      byId('discuss-queue').innerHTML = (current?.queue || [])
-        .filter((entry) => !['completed', 'removed', 'failed', 'interrupted'].includes(entry.status))
-        .map(
-          (entry) =>
-            `<div class="discuss-queued"><span>${escape(entry.text)}</span><small>${escape(entry.settings?.model || '')} · ${escape(entry.settings?.effort || '')}</small><button type="button" class="small-button" data-discuss-queue-edit="${escape(entry.id)}">Edit queued</button><button type="button" class="small-button" data-discuss-queue-remove="${escape(entry.id)}">Remove</button><button type="button" class="small-button" data-discuss-steer="${escape(entry.id)}"${!running(current?.status) ? ' disabled' : ''}>Steer</button></div>`
-        )
-        .join('');
+      restoreOpeningScroll(scope);
+      view.render(log, html, scope);
+      view.render(
+        byId('discuss-queue'),
+        (current?.queue || [])
+          .filter((entry) => !['completed', 'removed', 'failed', 'interrupted'].includes(entry.status))
+          .map(
+            (entry) =>
+              `<div class="discuss-queued"><span>${escape(entry.text)}</span><small>${escape(entry.settings?.model || '')} · ${escape(entry.settings?.effort || '')}</small><button type="button" class="small-button" data-discuss-queue-edit="${escape(entry.id)}">Edit queued</button><button type="button" class="small-button" data-discuss-queue-remove="${escape(entry.id)}">Remove</button><button type="button" class="small-button" data-discuss-steer="${escape(entry.id)}"${!running(current?.status) ? ' disabled' : ''}>Steer</button></div>`
+          )
+          .join(''),
+        'discuss-queue:' + selectedId
+      );
       renderApprovals(current?.approvals || []);
       renderAttachments();
       renderSuggestion();
       updateControls();
       scrollOpeningHistory();
+    }
+    function restoreOpeningScroll(scope) {
+      if (view.read(scope)?.root?.follow === false) openingScroll = null;
     }
     function scrollOpeningHistory() {
       if (!openingScroll || !visible || !session()) return;
@@ -347,7 +365,11 @@
       });
     }
     function renderAttachments() {
-      byId('discuss-draft-attachments').innerHTML = attachments.map((file) => attachmentHtml(file, true)).join('');
+      view.render(
+        byId('discuss-draft-attachments'),
+        attachments.map((file) => attachmentHtml(file, true)).join(''),
+        'discuss-attachments:' + selectedId
+      );
     }
     function renderSuggestion() {
       const suggestion =
@@ -382,23 +404,27 @@
     }
     function renderApprovals(approvals) {
       const holder = byId('discuss-approvals');
-      const key = JSON.stringify(approvals);
+      const key = JSON.stringify([selectedId, approvals]);
       if (holder.dataset.basis === key) return;
       holder.dataset.basis = key;
-      holder.innerHTML = approvals
-        .map((approval) => {
-          const params = approval.params || approval;
-          const questions = params.questions || [];
-          const id = approval.requestId || approval.id;
-          if (questions.length)
-            return `<form class="discuss-approval" data-discuss-answer="${escape(id)}"><h3>Your input is needed</h3>${questions.map((question) => `<label>${escape(question.question || question.header)}<input data-discuss-question="${escape(question.id)}" required></label>`).join('')}<button class="primary-button" type="submit">Answer</button></form>`;
-          const options = approval.options || [
-            { id: 'allow', label: 'Allow once' },
-            { id: 'decline', label: 'Decline' },
-          ];
-          return `<section class="discuss-approval"><h3>Permission requested</h3><pre>${escape(params.reason || params.command || JSON.stringify(params))}</pre>${options.map((option) => `<button type="button" class="small-button" data-discuss-approval="${escape(id)}" data-decision="${escape(option.id)}">${escape(option.label)}</button>`).join('')}</section>`;
-        })
-        .join('');
+      view.render(
+        holder,
+        approvals
+          .map((approval) => {
+            const params = approval.params || approval;
+            const questions = params.questions || [];
+            const id = approval.requestId || approval.id;
+            if (questions.length)
+              return `<form class="discuss-approval" data-view-key="${escape(id)}" data-discuss-answer="${escape(id)}"><h3>Your input is needed</h3>${questions.map((question) => `<label>${escape(question.question || question.header)}<input data-discuss-question="${escape(question.id)}" required></label>`).join('')}<button class="primary-button" type="submit">Answer</button></form>`;
+            const options = approval.options || [
+              { id: 'allow', label: 'Allow once' },
+              { id: 'decline', label: 'Decline' },
+            ];
+            return `<section class="discuss-approval" data-view-key="${escape(id)}"><h3>Permission requested</h3><pre>${escape(params.reason || params.command || JSON.stringify(params))}</pre>${options.map((option) => `<button type="button" class="small-button" data-discuss-approval="${escape(id)}" data-decision="${escape(option.id)}">${escape(option.label)}</button>`).join('')}</section>`;
+          })
+          .join(''),
+        'discuss-approvals:' + selectedId
+      );
     }
     async function create() {
       if (creating) return null;
@@ -698,7 +724,6 @@
       setVisible(value) {
         const was = visible;
         visible = value;
-        root.hidden = !value;
         if (value && !was) {
           openingScroll = {};
           void refresh(true);
@@ -709,6 +734,7 @@
           remember();
           void saveDraft();
         }
+        root.hidden = !value;
       },
       refresh,
     };

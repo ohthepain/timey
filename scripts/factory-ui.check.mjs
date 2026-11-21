@@ -3610,7 +3610,8 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
     .join('\n')
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/coordinator-ui.js'), 'utf8') +
+    readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/coordinator-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') +
       '\n' +
@@ -3628,7 +3629,8 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
       '\n' +
       readFileSync(resolve('scripts/factory-ui/issue-closure-ui.js'), 'utf8') +
       '\n' +
-      readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+      (readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+        readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8')) +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\n' +

@@ -2135,6 +2135,7 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
+    <script src="/view-state.js"></script>
     <script src="/issue-capture-ui.js"></script>
     <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
@@ -2231,6 +2232,7 @@
             !$('model-settings').open &&
             !$('plan').open &&
             !document.querySelector(':popover-open') &&
+            !document.defaultView.timeyView.dragging($('app')) &&
             (!document.activeElement.matches('input,textarea,select') ||
               document.activeElement.closest('[data-temporary]'))
           ) {
@@ -4361,7 +4363,7 @@
         const issue = data?.issues.find((entry) => entry.id === issueRoute().id);
         const summary = $('issue-progress-summary');
         if (!issue || !summary) return;
-        summary.innerHTML = progressSummary(issue);
+        window.timeyView.render(summary, progressSummary(issue), 'classic-summary:' + issue.id);
         setProgressRefreshButtons(manualRefreshPending);
         updateProgressTimers();
         // Keep a focused answer intact. Full refresh reconciles request identity safely.
@@ -4693,9 +4695,9 @@
       const viewMemory = {
         route: null,
         expanded: loadExpanded(),
-        fields: new Map(),
-        scrolls: new Map(),
-        positions: new Map(),
+        fields: new Map(Object.entries(window.timeyView.read('classic-fields', {}))),
+        scrolls: new Map(Object.entries(window.timeyView.read('classic-scrolls', {}))),
+        positions: new Map(Object.entries(window.timeyView.read('classic-positions', {}))),
         logs: new Map(),
         focus: null,
       };
@@ -4760,6 +4762,9 @@
             }
           : null;
         rememberOutput();
+        window.timeyView.write('classic-fields', Object.fromEntries(viewMemory.fields));
+        window.timeyView.write('classic-scrolls', Object.fromEntries(viewMemory.scrolls));
+        window.timeyView.write('classic-positions', Object.fromEntries(viewMemory.positions));
         try {
           localStorage.setItem('factory-expanded-v2', JSON.stringify(viewMemory.expanded));
         } catch {}
@@ -4807,6 +4812,7 @@
         window.scrollTo(0, viewMemory.positions.get(location.hash) || 0);
         bindOutput();
       }
+      window.addEventListener('pagehide', rememberView);
       function rememberOutput() {
         const output = $('live-output');
         if (output)
@@ -4851,7 +4857,7 @@
         const text = activityText(issue) || outputStatus(issue);
         if (output.rawOutput !== text) {
           output.rawOutput = text;
-          output.innerHTML = fileLinkUI.html(text);
+          window.timeyView.render(output, fileLinkUI.html(text), 'classic-output:' + issueId);
           output.querySelectorAll('[data-open-file]').forEach((button) => {
             button.onclick = () =>
               openShownFile(button.dataset.openFile).catch((error) => ($('error').textContent = error.message));
@@ -4875,7 +4881,7 @@
         const storage = issueStorageLocation();
         if (storage) {
           issueChatUI.mount(null, data, request, refresh);
-          $('app').innerHTML = storedIssuesPage(storage);
+          window.timeyView.render($('app'), storedIssuesPage(storage), location.hash, true);
           bindStoredIssues(storage);
           return;
         }
@@ -4899,11 +4905,16 @@
               `<section class="issue-workspace-content">${issueDetails}</section>`
             : ''
           : `<section class="issue-workspace-content">${issueDetails}</section>`;
-        $('app').innerHTML = wideSidebar
-          ? `<div class="issue-workspace${hasProjectIssueDetail ? ' has-project-issue-detail' : ''}">${issueSidebar(route.id)}${issuePane}</div>`
-          : route.id
-            ? issue(route.id)
-            : queue();
+        window.timeyView.render(
+          $('app'),
+          wideSidebar
+            ? `<div class="issue-workspace${hasProjectIssueDetail ? ' has-project-issue-detail' : ''}">${issueSidebar(route.id)}${issuePane}</div>`
+            : route.id
+              ? issue(route.id)
+              : queue(),
+          location.hash,
+          true
+        );
         bindProjectIssueSelection();
         if (projectIssuesEmbed) {
           bindProjectIssueResizer();
