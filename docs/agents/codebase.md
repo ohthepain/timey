@@ -438,7 +438,13 @@ status only. Each artifact keeps its originating event and attempt reference.
 `flow-source-evidence.mjs` supplies follow-ups with their explicit source
 issue's saved report and ordered attempts from coordinator storage. It retains a
 sanitized input snapshot and verifies GitHub response artifact digests before
-including them. Investigation follow-ups select their recorded `source_attempt`;
+including them. Snapshots larger than 64,000 characters are supplied to the model
+as a path and digest with instructions to read the retained JSON. This keeps
+source history out of the provider's text input limit without discarding it.
+Retry replaces a conversation only when retained evidence confirms its oversized
+first input was rejected with no accepted receipt or model output; other failed
+conversations retain their existing recovery guards.
+Investigation follow-ups select their recorded `source_attempt`;
 Retro follow-ups retain the complete available attempt history. Workers do not
 need the source queue copied into their checkout.
 `issue-prompt-queue.mjs` owns durable prompt identities, revisions and attempt

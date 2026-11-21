@@ -24,6 +24,7 @@ import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { readModelSettings } from './model-settings.mjs';
 import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { retainSourceIssueEvidence } from './flow-source-evidence.mjs';
+import { rejectedOversizedAttempt } from './flow-reconciliation.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import {
   deleteIssueWorktree,
@@ -739,15 +740,18 @@ async function runModel(service, ctx, owned, options) {
   );
   const recover =
     previous &&
+    !rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) &&
     (savedBlock?.threadId
       ? savedBlock
       : { threadId: state.threadId || service.lifecycleRuns[ctx.issue.id]?.workThreadId });
   const last = ctx.block.attempts?.findLast((attempt) => attempt.id !== ctx.attempt.id);
-  const binding = ctx.continuing && !last?.invalidatedAt && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
+  const rejected = last && rejectedOversizedAttempt(service, ctx.flow, ctx.block, last, savedBlock);
+  const binding =
+    ctx.continuing && !last?.invalidatedAt && !rejected && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
   service.issueChats?.release(ctx.issue.id);
   const folder = evidenceDirectory(service, ctx);
   const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
-  if (source) ctx = { ...ctx, sourceEvidence: source.value };
+  if (source) ctx = { ...ctx, sourceEvidence: source.promptValue };
   const outputPath = join(folder, options.repair ? 'repair-' + options.repair.round + '.txt' : 'output.txt');
   let liveText = '';
   const progress = modelCommandProgress(ctx);
@@ -845,7 +849,7 @@ async function runModel(service, ctx, owned, options) {
   try {
     ctx.signal.throwIfAborted();
     requireThat(
-      !previous || recover?.threadId,
+      !previous || rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) || recover?.threadId,
       'Recover the original Codex conversation before continuing this block.'
     );
     if (recover?.threadId && recover.threadId !== binding.threadId) {

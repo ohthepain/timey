@@ -1954,3 +1954,50 @@ test('oversized input is rejected before dispatch and does not retain uncertain 
   assert.equal(connection.turns.size, 0);
   assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'idle');
 });
+
+test('large source issue history reaches Work by retained file reference without exceeding the input limit', async (t) => {
+  const { maximumTextInputLength } = await import('./factory-ui/codex-input.mjs');
+  const f = fixture(t);
+  f.issue.source_issue = 'large-source';
+  mkdirSync(join(f.root, '.issues/closed'), { recursive: true });
+  const report = 'Full source evidence.\n'.repeat(60000);
+  writeFileSync(
+    join(f.root, '.issues/closed/large-source.md'),
+    '---\nid: large-source\ntitle: Large source\nstate: closed\n---\n' + report
+  );
+  const result = await f.run('work');
+  const prompt = f.calls.find(({ method }) => method === 'turn').prompt;
+  assert.ok(prompt.length < maximumTextInputLength, `Work input contains ${prompt.length} characters`);
+  const input = JSON.parse(prompt);
+  assert.equal(input.sourceIssue.issueId, 'large-source');
+  const reference = input.sourceIssue.evidence;
+  const bytes = readFileSync(reference.path, 'utf8');
+  assert.equal(digest(bytes), reference.sha256);
+  assert.ok(JSON.parse(bytes).report.includes(report.trim()));
+  assert.equal(result.evidence.find(({ key }) => key === 'sourceIssue').path, reference.path);
+});
+
+test('Retry replaces a conversation whose oversized first input was never accepted', async (t) => {
+  const { maximumTextInputLength, oversizedTextInputMessage } = await import('./factory-ui/codex-input.mjs');
+  const { appendMessage } = await import('./factory-ui/conversation-store.mjs');
+  const f = fixture(t);
+  await f.run('understand');
+  const state = conversationState(f.root, f.issue.id);
+  delete state.flowBlocks['block-understand'].flowReceipt;
+  const { saveConversationState } = await import('./factory-ui/conversation-store.mjs');
+  saveConversationState(f.root, f.issue.id, state);
+  appendMessage(f.root, f.issue.id, {
+    id: 'flow-request-rejected',
+    kind: 'flow-block-request',
+    blockId: 'block-understand',
+    body: 'x'.repeat(maximumTextInputLength + 1),
+  });
+  f.connection.resume = () => assert.fail('The rejected first turn has no persisted conversation to resume.');
+  await f.run('understand', {
+    continuing: true,
+    attempts: [
+      { id: 'rejected', status: 'blocked', summary: oversizedTextInputMessage, output: 'Running understand block.' },
+    ],
+  });
+  assert.equal(f.calls.filter(({ method }) => method === 'start').length, 2);
+});

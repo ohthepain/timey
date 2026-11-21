@@ -8,6 +8,13 @@ checks recovery of retained oversized rejections, refusal when a receipt exists
 or the request cannot be confirmed, and rejection of new oversized input before
 provider dispatch.
 
+`node --test --test-name-pattern='large source issue history|retained source publication|Retry replaces' scripts/flow-executor.check.mjs`
+checks small inline source context and large source history supplied by file
+reference. The large-history fixture exceeds the provider limit before the fix;
+the bounded request retains the full report in a file with a matching digest.
+The Retry scenario verifies a new conversation is created for a confirmed
+rejected first input instead of resuming a thread with no persisted history.
+
 ## Commands and evidence
 
 `node scripts/flow-browser.mjs --investigation-reports` checks retained report
