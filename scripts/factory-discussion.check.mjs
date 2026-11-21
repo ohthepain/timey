@@ -199,7 +199,14 @@ test('temporary discussion lists enabled skills and invokes selected skills with
     };
   };
   const skills = await f.discussion.skills(f.input, f.owner);
-  assert.deepEqual(skills.map(({ name }) => name).sort(), ['archive', 'local-note', 'sample', 'skill-installer']);
+  assert.deepEqual(skills.map(({ name }) => name).sort(), [
+    'archive',
+    'create-issues',
+    'generate-report',
+    'local-note',
+    'sample',
+    'skill-installer',
+  ]);
   assert.deepEqual(
     skills.filter(({ source }) => source !== 'Factory'),
     [

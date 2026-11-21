@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ProjectHome } from './factory-ui/project-home.mjs';
+import { InvestigationOutputs } from './factory-ui/investigation-outputs.mjs';
+import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 import { digest, git } from './factory-ui/common.mjs';
 
 const draft = `---\nname: fixture-mode\ndescription: Work in the fixture user's style when explicitly selected.\ndisable-model-invocation: true\n---\n\nKeep responses concise. Verify changed behavior.\n`;
@@ -15,10 +17,66 @@ const proposal = {
   verification: 'An invalid operation returns a useful error without writing source.',
 };
 
+function browserReport(service, ctx) {
+  const path = join(service.root, '.issues/browser-report-' + ctx.attempt.id + '.md');
+  writeFileSync(
+    path,
+    '# Investigation report\n\n## Executive summary\n\n' + findings + '\n\n## Recommendations\n\nValidate the boundary.'
+  );
+  const report = new InvestigationReports(service.root).publish({
+    source: ctx.attempt.investigationSource,
+    attemptId: ctx.attempt.id,
+    publicationId: ctx.attempt.publicationId,
+    workspace: service.root,
+    title: 'Validation investigation',
+    report: path,
+    additionalFindings: 'A report observation.',
+    inspectedRevisions: [ctx.flow.startingPoint.commit],
+  });
+  return {
+    output: 'Published report.',
+    summary: 'Published report.',
+    evidence: [],
+    artifacts: {
+      values: {
+        reportId: report.id,
+        additionalFindings: report.additionalFindings,
+        inspectedRevisions: report.inspectedRevisions,
+      },
+      files: {},
+    },
+  };
+}
+async function browserIssues(service, ctx) {
+  const saved = await new InvestigationOutputs(service.flows).createIssues({
+    source: ctx.attempt.investigationSource,
+    items: [
+      {
+        ...proposal,
+        title: proposal.title + ' for ' + ctx.attempt.investigationSource.issueId,
+        key: 'validation-boundary',
+      },
+    ],
+  });
+  return {
+    output: 'Saved actionable work.',
+    summary: 'Saved actionable work.',
+    evidence: [],
+    artifacts: { values: { issues: saved.items.map(({ key, result }) => ({ key, ...result })) }, files: {} },
+  };
+}
+function isInvestigationOperation(ctx) {
+  return (
+    ctx.flow.routeType === 'investigation' &&
+    ['understand', 'investigate', 'generate-report', 'create-issues'].includes(ctx.block.kind)
+  );
+}
 function configureHome(service, calls) {
   const original = service.flows.executor.run.bind(service.flows.executor);
   service.flows.executor.run = async (ctx) => {
-    if (!ctx.flow.projectInvestigation) return original(ctx);
+    if (!isInvestigationOperation(ctx)) return original(ctx);
+    if (ctx.block.kind === 'generate-report') return browserReport(service, ctx);
+    if (ctx.block.kind === 'create-issues') return browserIssues(service, ctx);
     calls.investigations++;
     const path = join(service.root, '.issues/factory-ui/flow-evidence', ctx.attempt.id, 'response.txt');
     mkdirSync(join(path, '..'), { recursive: true });
@@ -59,7 +117,21 @@ function configureHome(service, calls) {
   });
 }
 
-async function investigate(page, service, calls, screenshot) {
+async function runInvestigationBlock(page, service, issueId, kind, poll) {
+  const block = service.flows.read(service.flows.selected(issueId)).blocks.find((entry) => entry.kind === kind);
+  await page.locator('#graph [data-block="' + block.id + '"]').click();
+  await page.locator('#run-block[data-action="start"]').click();
+  return poll(
+    () =>
+      service.flows
+        .read(service.flows.selected(issueId))
+        .blocks.find(({ id }) => id === block.id)
+        .attempts.at(-1),
+    (attempt) => attempt?.status === 'completed',
+    kind + ' did not complete.'
+  );
+}
+async function investigate(page, service, calls, screenshot, poll) {
   await page.getByRole('button', { name: 'Start an investigation', exact: true }).click();
   const dialog = page.locator('#home-investigation-dialog');
   await dialog.waitFor({ state: 'visible' });
@@ -69,55 +141,68 @@ async function investigate(page, service, calls, screenshot) {
   await dialog.locator('#home-investigation-prompt').fill('Investigate validation across the project.');
   await dialog.locator('#home-investigation-instructions').fill('Prioritize clear boundaries.');
   await dialog.locator('#home-investigation-reusable').check();
-  assert.equal(await dialog.getByRole('button', { name: 'Run investigation', exact: true }).count(), 0);
   await dialog.getByRole('button', { name: 'Create investigation', exact: true }).click();
-  const investigation = page.locator('#investigation-page');
-  await investigation.waitFor({ state: 'visible' });
-  await page.locator('#investigation-prompt').waitFor();
+  await page.locator('#graph-scroll:not([hidden])').waitFor();
+  await page.locator('#graph [data-block="generate-report"]').waitFor();
   assert.equal(calls.investigations, 0, 'Creation starts no model work.');
-  assert.equal(await page.locator('#close-with-reason').isVisible(), false);
-  assert.equal(await page.locator('#worktree-menu').isVisible(), false);
-  await investigation.getByRole('button', { name: 'Run investigation', exact: true }).click();
-  await page.locator('#investigation-status').getByText('Latest investigation completed.', { exact: true }).waitFor();
-  assert.equal(calls.investigations, 1);
+  assert.equal(await page.locator('#investigation-page').isVisible(), false);
+  assert.equal(await page.locator('#issue-playback').isVisible(), true);
   const issueId = new URL(page.url()).searchParams.get('issue');
   const owner = service.projectHome.investigations;
+  const inquiry = await runInvestigationBlock(page, service, issueId, 'investigate', poll);
+  assert.equal(calls.investigations, 1);
+  const issueOutput = await runInvestigationBlock(page, service, issueId, 'create-issues', poll);
+  assert.equal(issueOutput.investigationSource.attemptId, inquiry.id);
+  assert.deepEqual(issueOutput.supplementalFindings, []);
+  const reportOutput = await runInvestigationBlock(page, service, issueId, 'generate-report', poll);
+  const reports = new InvestigationReports(service.root);
+  assert.equal(reports.list().filter((entry) => entry.source.issueId === issueId).length, 1);
+  assert.equal(reportOutput.investigationSource.attemptId, inquiry.id);
   const first = owner.issueView(issueId);
   assert.equal(first.runs.length, 1);
   assert.equal(first.runs[0].issues[0].state, 'needs-approval');
-  assert.equal(first.runs[0].revision, service.flows.read(service.flows.selected(issueId)).startingPoint.commit);
-  await screenshot('investigation-first-result');
-  await investigation.getByRole('button', { name: 'Run again', exact: true }).click();
-  await page.locator('#investigation-status').getByText('Latest investigation completed.', { exact: true }).waitFor();
-  await page.locator('#investigation-runs-label').getByText('Runs (2)', { exact: true }).waitFor();
+  await screenshot('investigation-independent-outputs');
+  await page.locator('[data-investigation-again]').click();
+  await poll(
+    () => owner.issueView(issueId),
+    (view) => view.runs.length === 2 && !view.active,
+    'Run again did not finish the inquiry and included outputs.'
+  );
   assert.equal(calls.investigations, 2);
+  assert.equal(reports.list().filter((entry) => entry.source.issueId === issueId).length, 2);
   assert.equal(
     service.flows.issues().filter(({ source_issue }) => source_issue === issueId).length,
     1,
-    'Repeats do not duplicate issues.'
+    'Matching work remains linked without duplicate issue creation.'
   );
-  await page.locator('#investigation-runs-label').click();
-  await page.locator('[data-investigation-run]').last().click();
-  await page.locator('#investigation-result-panel').getByText('Created this run', { exact: false }).waitFor();
   await screenshot('investigation-run-history');
   await page.reload();
-  await investigation.waitFor({ state: 'visible' });
-  await page.locator('#investigation-runs-label').getByText('Runs (2)', { exact: true }).waitFor();
+  await page.locator('#graph [data-block="generate-report"]').waitFor();
   assert.equal(calls.investigations, 2, 'Reload starts no investigation.');
-  await page.locator('#investigation-archive').click();
-  await page.locator('#investigation-status').getByText('Archived', { exact: true }).waitFor();
+  page.once('dialog', (confirmation) => void confirmation.accept());
+  await page.locator('[data-investigation-archive]').click();
+  await poll(() => owner.issueView(issueId).archived, Boolean, 'The investigation was not archived.');
   assert.equal(owner.issueView(issueId).runs.length, 2);
-  await page.getByRole('button', { name: 'Restore', exact: true }).click();
-  await page.locator('#investigation-status').getByText('Latest investigation completed.', { exact: true }).waitFor();
-  assert.equal(owner.issueView(issueId).reusable, true);
-  assert.equal(await page.locator('#issue-playback').isVisible(), false);
-  await page.locator('#investigation-reusable').uncheck();
-  await page.getByRole('button', { name: 'Save investigation settings', exact: true }).click();
-  await page.locator('#issue-subtitle').getByText('One-time', { exact: true }).waitFor();
-  assert.equal(await page.locator('#investigation-run').isDisabled(), true);
-  assert.equal(await page.locator('#close-with-reason').isVisible(), false);
-  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  assert.equal(
+    reports.list().filter((entry) => entry.source.issueId === issueId).length,
+    2,
+    'Archival preserves retained reports.'
+  );
+  await page.goto('/');
   await page.locator('#project-home:not([hidden])').waitFor();
+}
+async function prepareHome(page, service) {
+  const labels = join(service.root, '.issues/triage-labels.md');
+  if (!existsSync(labels)) copyFileSync(new URL('../.issues/triage-labels.md', import.meta.url), labels);
+  const calls = { investigations: 0, automate: 0 };
+  configureHome(service, calls);
+  await page.goto('/');
+  return calls;
+}
+export async function investigationFlowsBrowserChecks({ page, service, screenshot, poll }) {
+  const calls = await prepareHome(page, service);
+  await page.locator('#home-title').waitFor();
+  await investigate(page, service, calls, screenshot, poll);
 }
 
 async function automate(page, service, calls, screenshot) {
@@ -159,12 +244,8 @@ async function automate(page, service, calls, screenshot) {
   await page.setViewportSize({ width: 1440, height: 960 });
 }
 
-export async function projectHomeBrowserChecks({ page, service, screenshot }) {
-  const labels = join(service.root, '.issues/triage-labels.md');
-  if (!existsSync(labels)) copyFileSync(new URL('../.issues/triage-labels.md', import.meta.url), labels);
-  const calls = { investigations: 0, automate: 0 };
-  configureHome(service, calls);
-  await page.goto('/');
+export async function projectHomeBrowserChecks({ page, service, screenshot, poll }) {
+  const calls = await prepareHome(page, service);
   await page.locator('#home-title').getByText(service.root.split('/').at(-1), { exact: true }).waitFor();
   assert.equal(calls.investigations, 0);
   assert.equal(calls.automate, 0);
@@ -175,7 +256,7 @@ export async function projectHomeBrowserChecks({ page, service, screenshot }) {
   await cleanRemoteBranches(page, screenshot);
   await cleanLocalBranches(page, service, screenshot);
   await deleteArchivedReports(page, service, screenshot);
-  await investigate(page, service, calls, screenshot);
+  await investigate(page, service, calls, screenshot, poll);
   await automate(page, service, calls, screenshot);
 }
 

@@ -561,7 +561,7 @@ function investigationClosureArtifact(ctx, workspace) {
     'Reconcile active or uncertain blocks before accepting this investigation.'
   );
   const attempt = upstreamBlocks(ctx.block, ctx.flow.blocks)
-    .filter((block) => ['understand', 'advice', 'playbook'].includes(block.kind))
+    .filter((block) => ['understand', 'investigate', 'advice', 'playbook'].includes(block.kind))
     .map(latestCurrentAttempt)
     .findLast(
       (attempt) =>
@@ -572,16 +572,16 @@ function investigationClosureArtifact(ctx, workspace) {
     );
   requireThat(
     attempt?.output?.trim() && attempt.evidence?.length,
-    'Complete an Understand or advisory block for this exact investigation checkout before closing.'
+    'Complete an Investigate, Understand, or advisory block for this exact investigation checkout before closing.'
   );
   const evidence = attempt.evidence.map((proof) => {
     requireThat(
       typeof proof.path === 'string' && /^[a-f0-9]{64}$/.test(proof.sha256 || ''),
-      'Investigation output has no recorded immutable digest. Run its Understand or advisory block again.'
+      'Investigation output has no recorded immutable digest. Run its inquiry or advisory block again.'
     );
     requireThat(
       existsSync(proof.path) && digest(readFileSync(proof.path)) === proof.sha256,
-      'Retained investigation evidence changed or is missing. Run its Understand or advisory block again.'
+      'Retained investigation evidence changed or is missing. Run its inquiry or advisory block again.'
     );
     return { path: proof.path, sha256: proof.sha256 };
   });

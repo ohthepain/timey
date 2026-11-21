@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { digest, requireThat } from './common.mjs';
+import { inquiryKinds, investigationOutputKinds, investigationAttempts } from './investigation-flow.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 import { projectIssueRecords } from './project-home-stats.mjs';
 
@@ -60,9 +61,13 @@ export function investigationIssueView(owner, issueId) {
   requireThat(isInvestigation(issue, flow), 'Choose an investigation issue.');
   const sessions = [...owner.sessions.values()].filter((entry) => entry.issueId === issue.id);
   const reports = projectIssueRecords(owner.service.root);
-  const runs = [...flow.blocks, ...(flow.retiredBlocks || [])]
-    .filter(({ kind }) => kind === 'understand')
-    .flatMap((block) => block.attempts.map((attempt) => runView(attempt, block, sessions, reports)))
+  const runs = investigationAttempts(flow, inquiryKinds)
+    .map(({ block, attempt }) => ({
+      ...runView(attempt, block, sessions, reports),
+      outputAttempts: investigationAttempts(flow, investigationOutputKinds)
+        .filter((entry) => entry.attempt.investigationSource?.attemptId === attempt.id)
+        .map((entry) => ({ ...entry.attempt, blockId: entry.block.id, kind: entry.block.kind })),
+    }))
     .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
   return {
     issueId: issue.id,

@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 export async function projectNavigationBrowserChecks({ page, screenshot }) {
   await page.goto('/');
   const menu = page.getByRole('navigation', { name: 'Project menu' });
-  assert.deepEqual(await menu.getByRole('button').allTextContents(), ['Home', 'Issues', 'Investigate']);
+  assert.deepEqual(await menu.getByRole('button').allTextContents(), [
+    'Home',
+    'Issues',
+    'Discuss',
+    'Reports',
+    'Investigate',
+  ]);
   await page.getByRole('tab', { name: 'Automate me', exact: true }).click();
   const panel = page.getByRole('tabpanel', { name: 'Automate me', exact: true });
   await panel.waitFor({ state: 'visible' });

@@ -637,7 +637,7 @@ test('Stop control retains the draft, binds the displayed response and shows can
   ]);
   assert.equal(draft.value, 'Unsent draft');
   assert.equal(stop.disabled, false);
-  assert.match(dom.window.document.querySelector('[role="status"]').textContent, /Cancellation unavailable/);
+  assert.match(dom.window.document.querySelector('.discussion-status').textContent, /Cancellation unavailable/);
   const mount = () => {
     dom.window.chatTest.beforeRender();
     dom.window.document.body.innerHTML = '<div id="issue-chat-slot"></div>';
@@ -650,20 +650,20 @@ test('Stop control retains the draft, binds the displayed response and shows can
   };
   mount();
   assert.match(
-    dom.window.document.querySelector('[role="status"]').textContent,
+    dom.window.document.querySelector('.discussion-status').textContent,
     /Cancellation unavailable/,
     'The failure remains visible while its original response is still running'
   );
   data.conversation = { issueId: 'one', responseId: null, connected: false, status: 'idle' };
   mount();
   assert.equal(stop.hidden, true);
-  assert.equal(dom.window.document.querySelector('[role="status"]').textContent, '');
+  assert.equal(dom.window.document.querySelector('.discussion-status').textContent, '');
   data.conversation = { issueId: 'one', responseId: 'next-response', connected: true };
   mount();
   assert.equal(stop.hidden, false);
   assert.equal(stop.dataset.responseId, 'next-response');
-  assert.doesNotMatch(dom.window.document.querySelector('[role="status"]').textContent, /Cancellation unavailable/);
-  assert.match(dom.window.document.querySelector('[role="status"]').textContent, /assistant is responding/);
+  assert.doesNotMatch(dom.window.document.querySelector('.discussion-status').textContent, /Cancellation unavailable/);
+  assert.match(dom.window.document.querySelector('.discussion-status').textContent, /assistant is responding/);
 });
 
 test('Stop HTTP route keeps session, manual-action and preview guards and leaves workflow execution untouched', async (t) => {
@@ -1295,7 +1295,11 @@ test('discussion thread resumes for work in its real managed checkout despite im
   const checkout = f.service.lifecycleRuns[issueId].chatCheckout.checkout;
   assert.notEqual(realpathSync(checkout), realpathSync(f.queue.root));
   assert.equal(conversationState(f.queue.root, issueId).threadId, originalThread);
-  assert.deepEqual(resumed, [[originalThread, checkout, 'workspace-write']]);
+  assert.deepEqual(
+    resumed.map((args) => args.slice(0, 3)),
+    [[originalThread, checkout, 'workspace-write']]
+  );
+  assert.match(resumed[0][3], /registered project and issue tools/);
   const work = f.calls.find((call) => call.prompt?.includes('Latest request: Edit in the managed checkout'));
   assert.equal(work.id, originalThread);
   assert.equal(work.root, checkout);

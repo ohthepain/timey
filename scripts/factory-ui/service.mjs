@@ -1,3 +1,4 @@
+import { sharedChatTools } from './shared-chat-tools.mjs';
 import { factoryOperation } from './issue-operation.mjs';
 import { strategyView, prepareIssueChatCheckout } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
@@ -99,6 +100,13 @@ function selectedClosedIssues(root, queue, id) {
   return readQueue(root, { location: 'closed', issueId: id }).issues;
 }
 
+function projectCodexConnection(service) {
+  return new CodexConnection({
+    onEvent: (message) => service.store.event(message),
+    mcpTools: () => sharedChatTools(service),
+  });
+}
+
 export class FactoryUI {
   constructor(project, options = {}) {
     this.reviewMode = options.preview ? 'preview' : 'live';
@@ -121,7 +129,7 @@ export class FactoryUI {
     this.lifecycleTasks = new Map();
     this.issueCleanupTasks = new Map();
     cleanupActionRecords(this.root, true);
-    this.codex = new CodexConnection({ onEvent: (message) => this.store.event(message) });
+    this.codex = projectCodexConnection(this);
     this.coordinator = createCoordinator(this, options.coordinatorConnection, (id) =>
       this.continueCoordinatorIssue(id)
     );

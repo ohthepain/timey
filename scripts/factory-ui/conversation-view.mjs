@@ -97,6 +97,7 @@ export function conversationPage(service, queue, issue, before = '') {
     hasSavedRetro: timeline.some((message) => message.kind === 'retro-result'),
     cursor: messages[0]?.id,
     status: state.status,
+    sharedToolsUnavailable: state.sharedToolsUnavailable,
     responseId: service.issueChats?.active.get(issue.id)?.messageId || null,
     connected: chatConnected(service, issue.id),
     transcript: conversationFiles(service.root, issue.id).log,
