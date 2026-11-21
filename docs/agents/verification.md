@@ -34,7 +34,13 @@ stops before pushing or creating a PR, including already delivered candidates an
 empty commits. `node scripts/flow-browser.mjs --no-changes` drives the no-change
 Publish preview, Cannot Reproduce suggestion, cancellation and explicit closure
 in a disposable project. It saves `no-changes-close-offer.png`; no live issue is
-closed and no GitHub publication occurs.
+closed and no GitHub publication occurs. The scenario uses its own cleanup executor
+and waits for completed cleanup before restoring the shared browser executor, so
+later scenarios retain their execution counts and first-work behavior. It also
+restores Git configuration so its synthetic origin does not affect later remote
+and worktree checks.
+The missing-lifecycle browser scenario removes the disposable project's lifecycle
+file before opening settings, even when earlier scenarios initialized it.
 
 `node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
 merged-issue lock, preserved definitions and attempts, external merge observation,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
 import { writeBrowserIssue } from './flow-browser-fixture.mjs';
@@ -21,6 +21,8 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
   const publish = flow.blocks.find((block) => block.kind === 'publish');
   publish.after = [];
   service.flows.store.save(flow, flow.revision);
+  const gitConfigPath = join(project, '.git/config');
+  const gitConfig = readFileSync(gitConfigPath);
   if (!git(project, 'remote').split('\n').includes('origin'))
     git(project, 'remote', 'add', 'origin', 'git@github.com:test/fixture.git');
   git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');
@@ -28,6 +30,17 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
   const previousBranches = provider.gh;
   provider.gh = async () => `dev\t${head}`;
   const screen = await page.context().newPage();
+  const executor = service.flows.executor;
+  const cleanups = [];
+  service.flows.executor = {
+    async run({ issue, block }) {
+      assert.equal(issue.id, id);
+      assert.equal(block.kind, 'cleanup');
+      cleanups.push(block.id);
+      return { summary: 'No-changes fixture cleanup completed.' };
+    },
+    close() {},
+  };
   try {
     await screen.goto('/?issue=' + id);
     await screen.locator(`[data-block="${publish.id}"]`).click();
@@ -49,13 +62,20 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
     await screen.locator('#confirm-issue-closure:not(:disabled)').click();
     await screen.locator('#issue-closure-dialog').waitFor({ state: 'hidden' });
     await screen.locator('#close-with-reason').waitFor({ state: 'hidden' });
+    await service.flows.closureTasks.get(id);
     assert.equal(service.flows.selected(id).closure.reason, 'cannot-reproduce');
+    const cleanup = service.flows.read(service.flows.selected(id)).blocks.find((block) => block.kind === 'cleanup');
+    assert.deepEqual(cleanups, [cleanup.id]);
+    assert.equal(cleanup.attempts.at(-1).status, 'completed');
     assert.equal(
       service.flows.read(service.flows.selected(id)).blocks.find((block) => block.id === publish.id).attempts.length,
       0
     );
   } finally {
+    await service.flows.closureTasks.get(id);
+    service.flows.executor = executor;
     provider.gh = previousBranches;
+    writeFileSync(gitConfigPath, gitConfig);
     await screen.close();
   }
 }

@@ -736,6 +736,7 @@ try {
   });
   await check('Project settings explain missing configuration and initialize it only on request', async () => {
     const labels = join(project, '.issues/triage-labels.md');
+    rmSync(labels, { force: true });
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
     await page.getByText('Lifecycle configuration is missing.', { exact: true }).waitFor();
     await screenshot('project-settings-missing');
