@@ -9,6 +9,28 @@ async function preferences(page) {
   return response.json();
 }
 
+async function rejectedSettingsAction({ page, logs }, endpoint, action, method = 'POST') {
+  const start = logs.console.length;
+  const matches = (entry) =>
+    entry.type === 'error' &&
+    entry.location?.url.endsWith('/api/' + endpoint) &&
+    entry.text === 'Failed to load resource: the server responded with a status of 400 (Bad Request)';
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (entry) => new URL(entry.url()).pathname === '/api/' + endpoint && entry.request().method() === method
+    ),
+    page.waitForEvent('console', (message) =>
+      matches({ type: message.type(), text: message.text(), location: message.location() })
+    ),
+    action(),
+  ]);
+  assert.equal(response.status(), 400, await response.text());
+  const index = logs.console.findIndex((entry, index) => index >= start && matches(entry));
+  assert.ok(index >= start, 'The rejected Settings action records its expected console error.');
+  logs.console.splice(index, 1);
+  return response;
+}
+
 async function settingsPage(page, name) {
   await page.goto('/?settings=' + name);
   const dialog = page.locator('#project-settings-dialog');
@@ -174,7 +196,7 @@ async function saveHotkeys(page, dialog, poll, expected, message) {
   );
 }
 
-async function checkHotkeyDrafts({ page, poll, observations }) {
+async function checkHotkeyDrafts({ page, logs, poll, observations }) {
   const before = await preferences(page);
   const dialog = await settingsPage(page, 'hotkeys');
   const note = dialog.locator('[name="newNote"]');
@@ -182,11 +204,13 @@ async function checkHotkeyDrafts({ page, poll, observations }) {
   await note.waitFor();
   await note.fill('Ctrl+Alt+K');
   await issue.fill('Ctrl+Alt+K');
-  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await rejectedSettingsAction({ page, logs }, 'project-preferences', () =>
+    dialog.getByRole('button', { name: 'Save', exact: true }).click()
+  );
   await page.locator('#project-settings-error:not([hidden])').waitFor();
   assert.deepEqual((await preferences(page)).hotkeys.values, before.hotkeys.values);
   await choosePage(page, 'prompts');
-  await unsavedChoice(page, 'Save');
+  await rejectedSettingsAction({ page, logs }, 'project-preferences', () => unsavedChoice(page, 'Save'));
   assert.equal(new URL(page.url()).searchParams.get('settings'), 'hotkeys');
   assert.equal(await note.inputValue(), 'Ctrl+Alt+K', 'Failed save keeps the draft and current page.');
   await issue.fill('Ctrl+Alt+J');
@@ -382,7 +406,7 @@ async function checkDefaultsAndSources({ page, project, poll, observations }) {
   });
 }
 
-async function checkMaintenanceHandoff({ page, project, observations }) {
+async function checkMaintenanceHandoff({ page, project, logs, observations }) {
   const operations = [
     ['Prune Worktrees', 'admin-prune', 'project-worktree-cleanup', 'apply'],
     ['Clean up remote branches', 'admin-branches', 'project-remote-branch-cleanup', 'review-button'],
@@ -394,8 +418,14 @@ async function checkMaintenanceHandoff({ page, project, observations }) {
     const deliveryPath = join(project, '.issues/issue-delivery-config.json');
     const delivery = readFileSync(deliveryPath);
     rmSync(deliveryPath);
-    const preview = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/' + endpoint);
-    await dialog.getByRole('button', { name: label, exact: true }).click();
+    const action = () => dialog.getByRole('button', { name: label, exact: true }).click();
+    const preview =
+      endpoint === 'project-remote-branch-cleanup'
+        ? rejectedSettingsAction({ page, logs }, endpoint, action, 'GET')
+        : Promise.all([
+            page.waitForResponse((response) => new URL(response.url()).pathname === '/api/' + endpoint),
+            action(),
+          ]).then(([response]) => response);
     await page.locator('#' + prefix + '-dialog').waitFor({ state: 'visible' });
     const response = await preview;
     writeFileSync(deliveryPath, delivery);
@@ -412,7 +442,16 @@ async function checkMaintenanceHandoff({ page, project, observations }) {
   }
 }
 
-export async function projectSettingsBrowserChecks({ page, project, service, poll, screenshot, output, candidate }) {
+export async function projectSettingsBrowserChecks({
+  page,
+  project,
+  service,
+  logs,
+  poll,
+  screenshot,
+  output,
+  candidate,
+}) {
   const observations = [];
   let passed = false;
   const skillsDirectory = join(project, 'user/skills');
@@ -427,7 +466,7 @@ export async function projectSettingsBrowserChecks({ page, project, service, pol
     skills: async () => [{ name: 'settings-fixture-skill', description: 'Installed fixture skill', source: 'Project' }],
   };
   initializeFolderSettings(project);
-  const scope = { page, project, service, poll, screenshot, output, observations };
+  const scope = { page, project, service, logs, poll, screenshot, output, observations };
   await page.addInitScript(() => {
     window.settingsSpeech = [];
     window.SpeechRecognition = class {

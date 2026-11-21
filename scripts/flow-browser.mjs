@@ -590,7 +590,7 @@ try {
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check(settingsCheck, () =>
     withQueueConfiguration({ page, project, root }, () =>
-      projectSettingsBrowserChecks({ page, project, service, poll, screenshot, output, candidate })
+      projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
     )
   );
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
@@ -749,15 +749,22 @@ try {
     const labels = join(project, '.issues/triage-labels.md');
     rmSync(labels, { force: true });
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByText('Lifecycle configuration is missing.', { exact: true }).waitFor();
+    const settings = page.locator('#project-settings-dialog');
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    const initialize = settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true });
+    const openFile = settings.getByRole('button', { name: 'Open file', exact: true });
+    await initialize.waitFor();
+    assert.equal(await openFile.isDisabled(), true);
     await screenshot('project-settings-missing');
     assert.equal(logs.execution.length, 0);
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     assert.throws(() => readFileSync(labels), /ENOENT/);
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await initialize.click();
+    await poll(() => openFile.isEnabled(), Boolean, 'Initialized lifecycle file did not become available.');
+    assert.equal(await initialize.count(), 0);
     const saved = readFileSync(labels, 'utf8');
     assert.match(saved, /ready-to-close/);
     assert.equal(logs.execution.length, 0);
@@ -765,7 +772,9 @@ try {
     await page.keyboard.press('Escape');
     await page.reload();
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await poll(() => openFile.isEnabled(), Boolean, 'Saved lifecycle file did not remain available.');
+    assert.equal(await initialize.count(), 0);
     assert.equal(readFileSync(labels, 'utf8'), saved);
     await screenshot('project-settings-configured');
     await page.keyboard.press('Escape');

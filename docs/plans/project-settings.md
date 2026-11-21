@@ -64,6 +64,11 @@ Run the required formatting and Fallow checkpoint before these checks.
 - `node scripts/flow-browser.mjs --project-settings` exercises actual browser
   navigation, drafts, explicit saves, hotkey changes and sources. It saves
   `project-settings-proof.json` and screenshots in its reported evidence directory.
+  Run it with `--sidebar-labels` to check that expected validation errors do not
+  fail later scenarios. Each deliberate rejection checks its HTTP 400 response
+  and consumes one matching console entry; unexpected console errors still fail.
+  The aggregate browser checks also verify project defaults and explicit lifecycle
+  initialization through the Settings Issues and Issue Lifecycle pages.
 
 GitHub authentication is simulated in focused backend tests. Browser proof uses
 a temporary project and deterministic skill discovery. A live configured GitHub
