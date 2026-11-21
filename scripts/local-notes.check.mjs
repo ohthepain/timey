@@ -37,6 +37,31 @@ test('captures are literal, local, durable and shared by the project worktrees',
   assert.equal(output.notes[0].text, 'CLI capture');
 });
 
+test('linked note display numbers follow the registry without changing saved notes or edit basis', (t) => {
+  const { root } = gitFixture(t, 'local-note-numbers-');
+  const notes = new LocalNotes(root);
+  const created = notes.action({ action: 'create', text: 'Linked thought' }).notes[0];
+  notes.link(created.id, 'linked-issue', notes.view().basis);
+  const before = notes.view();
+  const saved = readFileSync(notes.path, 'utf8');
+  assert.equal(existsSync(join(root, '.issues/issue-numbers.json')), false);
+  assert.equal(before.issueNumbers['linked-issue'], undefined);
+  mkdirSync(join(root, '.issues'), { recursive: true });
+  writeFileSync(
+    join(root, '.issues/issue-numbers.json'),
+    JSON.stringify({
+      version: 1,
+      next: 183,
+      issues: { 'linked-issue': 182 },
+    })
+  );
+  assert.equal(notes.view().issueNumbers['linked-issue'], 182);
+  assert.equal(notes.view().basis, before.basis);
+  assert.equal(readFileSync(notes.path, 'utf8'), saved);
+  notes.action({ action: 'edit', id: created.id, text: 'Still editable', basis: before.basis });
+  assert.equal(notes.get(created.id).text, 'Still editable');
+});
+
 test('edits, completion, ordering and deletion preserve other notes and reject stale writes', (t) => {
   const { root } = gitFixture(t, 'local-notes-edits-');
   const notes = new LocalNotes(root);
