@@ -150,7 +150,9 @@ authentication and validation failures stop immediately. An uncertain merge
 request is reconciled against GitHub before another guarded request. Retry
 preserves the checkout and retained verification, including across another
 network failure; matching candidate, target, inputs and proof are still required
-for reuse. Changed candidates or inputs require verification again.
+for reuse. A shared issue claim release failure retains the block outcome,
+original summary and verification, and records its cleanup error separately.
+Ownership remains uncertain until the claim is reconciled. Changed candidates or inputs require verification again.
 
 Merge fetches Destination and merges its current revision into the issue branch.
 It verifies the issue commit against that destination revision using the local

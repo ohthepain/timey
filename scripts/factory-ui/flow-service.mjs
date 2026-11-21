@@ -2230,8 +2230,10 @@ class IssueFlows {
           queue.releaseFlowBlock(claim);
         } catch (error) {
           this.changeAttempt(issue, blockId, attemptId, (current) => {
+            const message = redactValue(error.message);
+            current.claimReleaseFailure = { status: current.status, summary: current.summary, message };
+            current.summary += '\nShared issue claim release failed: ' + message;
             current.status = 'uncertain';
-            current.summary = error.message;
             outcome = current;
           });
         }
