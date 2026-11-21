@@ -185,11 +185,38 @@ export async function investigationReportsBrowserChecks({ page, service, project
   });
   const scroll = await page.locator('.report-reading').evaluate((node) => node.scrollTop);
   await page.locator('[data-report-all]').click();
+  const restoringDiscussion = Promise.withResolvers();
+  const releaseDiscussion = Promise.withResolvers();
+  const resumedDiscussion = Promise.withResolvers();
+  const discussionRoute = /\/api\/report-discuss\?/;
+  await page.route(discussionRoute, async (route) => {
+    restoringDiscussion.resolve();
+    await releaseDiscussion.promise;
+    await route.continue();
+    resumedDiscussion.resolve();
+  });
   await page.locator('[data-report-open="' + first.id + '"]').click();
+  await restoringDiscussion.promise;
+  await page.locator('.report-reading').evaluate((node) => node.dispatchEvent(new Event('scroll')));
+  releaseDiscussion.resolve();
+  await resumedDiscussion.promise;
+  await page.unroute(discussionRoute);
   await poll(
     () => page.locator('#report-discuss-draft').inputValue(),
     (value) => value === 'Saved report-specific draft',
     'Report draft did not restore.'
+  );
+  writeFileSync(
+    join(output, 'report-draft-restore.json'),
+    JSON.stringify(
+      {
+        reportId: first.id,
+        restoredDraft: await page.locator('#report-discuss-draft').inputValue(),
+        scrollDuringDiscussionLoad: true,
+      },
+      null,
+      2
+    ) + '\n'
   );
   assert.ok(
     Math.abs((await page.locator('.report-reading').evaluate((node) => node.scrollTop)) - scroll) < 4,

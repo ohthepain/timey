@@ -2,6 +2,11 @@
 
 ## Commands and evidence
 
+`node scripts/flow-browser.mjs --investigation-reports` checks retained report
+reading and discussion. Its draft-restoration regression holds the discussion
+response and dispatches a reader scroll before releasing it. The reopened draft
+must retain its text; `report-draft-restore.json` records the observed value.
+
 `node --test scripts/ai-text-bro.check.mjs` checks bro skill loading, a separate
 read-only rewrite, invalid input and provider failure.
 `node scripts/flow-browser.mjs --ai-text` checks top-right hover controls, real
