@@ -67,7 +67,6 @@ function normalizedHotkeys(values) {
   const normalized = Object.fromEntries(
     Object.entries(values).map(([key, value]) => [key, normalizeFactoryHotkey(value)])
   );
-  requireThat(!normalized.dictateCold, 'Define Dictate COLD behavior before assigning its hotkey.');
   const bound = Object.values(normalized).filter(Boolean);
   requireThat(
     new Set(bound).size === bound.length,

@@ -61,10 +61,14 @@ test('hotkey saves normalize aliases, block duplicates atomically and reject sta
   assert.equal(normalizeFactoryHotkey('option + control + n'), 'Ctrl+Alt+N');
   assert.throws(() => f.save({ hotkeys: { newIssue: 'Option+n' } }), /distinct/);
   assert.equal(readProjectPreferences(f.root).revision, initial.revision);
-  assert.throws(() => f.save({ hotkeys: { dictateCold: 'Alt+C' } }), /Define Dictate COLD behavior/);
+  assert.throws(() => f.save({ hotkeys: { dictateCold: 'Alt+D' } }), /distinct/);
   assert.equal(readProjectPreferences(f.root).revision, initial.revision);
-  const saved = f.save({ hotkeys: { newIssue: 'ctrl+shift+i' }, prompts: { project: 'A project override' } });
+  const saved = f.save({
+    hotkeys: { newIssue: 'ctrl+shift+i', dictateCold: 'Alt+C' },
+    prompts: { project: 'A project override' },
+  });
   assert.equal(saved.hotkeys.values.newIssue, 'Ctrl+Shift+I');
+  assert.equal(saved.hotkeys.values.dictateCold, 'Alt+C');
   assert.throws(
     () => saveProjectPreferences(f.service, { revision: initial.revision, hotkeys: initial.hotkeys.defaults }),
     /changed/
@@ -101,6 +105,7 @@ test('browser hotkey matching reads saved configuration and changes only after a
   assert.equal(window.FactoryHotkeys.matches(event, 'newIssue'), true);
   assert.equal(window.FactoryHotkeys.matches({ ...event, altKey: true }, 'newIssue'), false);
   assert.equal(window.FactoryHotkeys.matches({ ...event, repeat: true }, 'newIssue'), false);
+  assert.equal(window.FactoryHotkeys.matches({ ...event, repeat: true }, 'newIssue', true), true);
   const values = f.save({ hotkeys: { newIssue: 'Ctrl+Shift+I' } }).hotkeys.values;
   assert.equal(window.FactoryHotkeys.matches(event, 'newIssue'), true);
   window.FactoryHotkeys.apply(values);

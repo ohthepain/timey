@@ -45,11 +45,13 @@ before navigation completes. Validation failures and Cancel retain the draft.
 Restore actions also remain drafts until Save. Concurrent saved edits are checked
 using configuration revisions. Browser unload uses its native unsaved-change guard.
 
-Hotkeys stores project bindings for Dictate HOT, New Note and New Issue. Defaults
+Hotkeys stores project bindings for Dictate HOT, Dictate COLD, New Note and New Issue. Defaults
 reflect the existing Alt+D dictation, Alt+N note capture and N issue capture.
-Duplicate combinations are rejected after normalization. Dictate COLD is unbound
-and read-only while its behavior awaits a product decision. No working COLD action
-is claimed. The implementation remains incomplete until that distinction is agreed.
+Duplicate combinations are rejected after normalization. Dictate HOT records while
+the shortcut is held and stops when the key or a modifier is released, or the
+window loses focus. Dictate COLD toggles recording on each press and is unbound by
+default. Both shortcuts use the hovered text or focused editable field. Microphone
+availability and permission remain controlled by the browser.
 
 ## Focused verification
 

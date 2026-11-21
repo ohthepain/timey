@@ -137,12 +137,12 @@
         .join('')}${saveButton}</form>`;
     }
     function renderHotkeys() {
-      return `<p>Use combinations such as Alt+D or Ctrl+Shift+N. Leave a binding empty to disable it. Duplicate Factory hotkeys cannot be saved.</p><p id="cold-hotkey-help">Dictate COLD is unbound. Its behavior needs to be defined before assigning a shortcut.</p><form data-settings-form>${Object.entries(
+      return `<p>Use combinations such as Alt+D or Ctrl+Shift+N. Leave a binding empty to disable it. Duplicate Factory hotkeys cannot be saved.</p><p>Hold Dictate HOT to record, then release to stop. Press Dictate COLD to start recording and press it again to stop.</p><form data-settings-form>${Object.entries(
         hotkeyNames
       )
         .map(
           ([key, label]) =>
-            `<label class="field">${label}<input name="${key}" autocomplete="off" value="${esc(data.hotkeys.values[key])}"${key === 'dictateCold' ? ' readonly aria-describedby="cold-hotkey-help"' : ''} /></label>`
+            `<label class="field">${label}<input name="${key}" autocomplete="off" value="${esc(data.hotkeys.values[key])}" /></label>`
         )
         .join(
           ''

@@ -128,7 +128,8 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   assert.equal(await editor.inputValue(), caretValue);
   await page.locator('#discuss-draft').focus();
   await editor.hover();
-  await page.keyboard.press('Alt+d');
+  await page.keyboard.down('Alt');
+  await page.keyboard.down('d');
   const active = service.projectDiscuss.view(new URL(page.url()).searchParams.get('conversation')).selected;
   const refreshed = service.projectDiscuss.read(active.id);
   refreshed.messages.at(-1).status = 'refreshed';
@@ -138,6 +139,8 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
     .getByText('refreshed', { exact: false })
     .waitFor();
   await speech('hover ');
+  await page.keyboard.up('d');
+  await page.keyboard.up('Alt');
   assert.ok((await editor.inputValue()).includes('hover '));
   assert.equal(await page.locator('#discuss-draft').inputValue(), 'Project draft stays here');
   const proof = {
@@ -223,8 +226,11 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
     node.setSelectionRange(0, 0);
   });
   await reply.hover();
-  await page.keyboard.press('Alt+d');
+  await page.keyboard.down('Alt');
+  await page.keyboard.down('d');
   await speech('Hovered ');
+  await page.keyboard.up('d');
+  await page.keyboard.up('Alt');
   assert.equal(await reply.inputValue(), 'Hovered Other field');
   assert.equal(await draftField.inputValue(), source);
   proof.homeHoveredField = await reply.inputValue();

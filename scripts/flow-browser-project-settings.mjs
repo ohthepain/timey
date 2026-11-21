@@ -190,12 +190,17 @@ async function checkHotkeyDrafts({ page, poll, observations }) {
   assert.equal(new URL(page.url()).searchParams.get('settings'), 'hotkeys');
   assert.equal(await note.inputValue(), 'Ctrl+Alt+K', 'Failed save keeps the draft and current page.');
   await issue.fill('Ctrl+Alt+J');
+  await dialog.locator('[name="dictateHot"]').fill('Ctrl+Alt+H');
+  await dialog.locator('[name="dictateCold"]').fill('Ctrl+Alt+C');
   assert.equal(await issue.inputValue(), 'Ctrl+Alt+J');
   await saveHotkeys(page, dialog, poll, 'Ctrl+Alt+K', 'The edited hotkey did not persist.');
   await dialog.getByRole('button', { name: 'Close project settings', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   await page.keyboard.press('Control+Alt+K');
   await page.locator('#local-note-editor').waitFor({ state: 'visible' });
+  await checkDictationShortcuts(page, observations);
+  await checkUnmodifiedHold(page, observations);
+  await checkUnmodifiedToggle(page, observations);
   await page.locator('#local-note-edit-cancel').click();
   await page.keyboard.press('Control+Alt+J');
   await page.locator('#capture-dialog').waitFor({ state: 'visible' });
@@ -213,6 +218,106 @@ async function checkHotkeyDrafts({ page, poll, observations }) {
     check: 'Duplicate hotkeys block saving and navigation; restored defaults persist only after Save',
     passed: true,
   });
+}
+
+async function checkDictationShortcuts(page, observations) {
+  const field = page.locator('#local-note-edit-text');
+  await field.fill('Draft ');
+  await field.focus();
+  await field.hover();
+  await page.keyboard.down('Control');
+  await page.keyboard.down('Alt');
+  await page.keyboard.down('h');
+  const speech = () =>
+    page.evaluate(() => window.settingsSpeech.map(({ continuous, stopped }) => ({ continuous, stopped })));
+  assert.deepEqual(await speech(), [{ continuous: true, stopped: false }]);
+  await page.keyboard.down('h');
+  assert.equal((await speech()).length, 1, 'Repeating a held shortcut must not toggle recording.');
+  await page.evaluate(() => window.settingsSpeech.at(-1).onresult({ results: [[{ transcript: 'held words' }]] }));
+  assert.equal(await field.inputValue(), 'Draft held words');
+  await page.keyboard.up('h');
+  assert.equal((await speech())[0].stopped, true, 'HOT stops on primary key release.');
+  await page.keyboard.down('h');
+  await page.keyboard.up('Alt');
+  assert.equal((await speech())[1].stopped, true, 'HOT stops when a modifier is released first.');
+  await page.keyboard.up('h');
+  await page.keyboard.up('Control');
+  await page.keyboard.down('Control');
+  await page.keyboard.down('Alt');
+  await page.keyboard.down('h');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  assert.equal((await speech())[2].stopped, true, 'HOT stops when the window loses focus.');
+  await page.keyboard.up('h');
+  await page.keyboard.up('Alt');
+  await page.keyboard.up('Control');
+  await page.keyboard.press('Control+Alt+C');
+  assert.equal((await speech())[3].stopped, false, 'COLD keeps recording after key release.');
+  await page.evaluate(() => window.settingsSpeech.at(-1).onresult({ results: [[{ transcript: ' toggled words' }]] }));
+  assert.equal(await field.inputValue(), 'Draft held words toggled words');
+  await page.keyboard.press('Control+Alt+C');
+  assert.equal((await speech())[3].stopped, true, 'COLD stops on its next press.');
+  await page.keyboard.press('Control+Alt+C');
+  assert.equal((await speech()).length, 5, 'COLD can start another session.');
+  await page.keyboard.press('Control+Alt+C');
+  observations.push({
+    check: 'Saved HOT holds until key release, modifier release or blur; saved COLD toggles and inserts speech',
+    recognition: 'Injected browser speech recognition; no live microphone used',
+    sessions: await speech(),
+    draft: await field.inputValue(),
+    passed: true,
+  });
+}
+
+async function saveDictationShortcut(page, name, value) {
+  const before = await preferences(page);
+  const saved = await page.request.post('/api/project-preferences', {
+    headers: { 'X-Factory-Action': 'manual', Origin: new URL(page.url()).origin },
+    data: { revision: before.revision, hotkeys: { [name]: value } },
+  });
+  assert.equal(saved.status(), 200, await saved.text());
+  await page.evaluate(() => window.FactoryHotkeys.refresh());
+}
+
+async function checkUnmodifiedHold(page, observations) {
+  await saveDictationShortcut(page, 'dictateHot', 'H');
+  const field = page.locator('#local-note-edit-text');
+  await field.fill('Held draft');
+  await field.focus();
+  await page.keyboard.down('h');
+  await page.keyboard.down('h');
+  await page.keyboard.down('Shift');
+  await page.keyboard.up('Shift');
+  assert.equal(
+    await page.evaluate(() => window.settingsSpeech.at(-1).stopped),
+    false,
+    'Unrelated modifier release preserves HOT.'
+  );
+  assert.equal(await field.inputValue(), 'Held draft', 'Repeated HOT keydowns must not type into the draft.');
+  await page.evaluate(() => window.settingsSpeech.at(-1).onresult({ results: [[{ transcript: ' speech' }]] }));
+  assert.equal(await field.inputValue(), 'Held draft speech');
+  await page.keyboard.up('h');
+  assert.equal(await page.evaluate(() => window.settingsSpeech.at(-1).stopped), true);
+  observations.push({
+    check: 'Unmodified saved HOT consumes repeats and ignores unrelated modifier release',
+    passed: true,
+  });
+}
+
+async function checkUnmodifiedToggle(page, observations) {
+  await saveDictationShortcut(page, 'dictateCold', 'C');
+  const field = page.locator('#local-note-edit-text');
+  await field.fill('Toggle draft');
+  await field.focus();
+  await page.keyboard.down('c');
+  await page.keyboard.down('c');
+  assert.equal(await field.inputValue(), 'Toggle draft', 'Repeated COLD keydowns must not type into the draft.');
+  await page.keyboard.up('c');
+  assert.equal(await page.evaluate(() => window.settingsSpeech.at(-1).stopped), false);
+  await page.evaluate(() => window.settingsSpeech.at(-1).onresult({ results: [[{ transcript: ' speech' }]] }));
+  assert.equal(await field.inputValue(), 'Toggle draft speech');
+  await page.keyboard.press('c');
+  assert.equal(await page.evaluate(() => window.settingsSpeech.at(-1).stopped), true);
+  observations.push({ check: 'Unmodified saved COLD consumes repeats and toggles on distinct presses', passed: true });
 }
 
 async function checkDefaultsAndSources({ page, project, poll, observations }) {
@@ -277,6 +382,36 @@ async function checkDefaultsAndSources({ page, project, poll, observations }) {
   });
 }
 
+async function checkMaintenanceHandoff({ page, project, observations }) {
+  const operations = [
+    ['Prune Worktrees', 'admin-prune', 'project-worktree-cleanup', 'apply'],
+    ['Clean up remote branches', 'admin-branches', 'project-remote-branch-cleanup', 'review-button'],
+    ['Clean up local branches', 'admin-branches', 'project-local-branch-cleanup', 'review-button'],
+    ['Delete archived issues', 'admin-archive', 'project-archive-deletion', 'review-button'],
+  ];
+  for (const [label, prefix, endpoint, guard] of operations) {
+    const dialog = await settingsPage(page, 'git');
+    const deliveryPath = join(project, '.issues/issue-delivery-config.json');
+    const delivery = readFileSync(deliveryPath);
+    rmSync(deliveryPath);
+    const preview = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/' + endpoint);
+    await dialog.getByRole('button', { name: label, exact: true }).click();
+    await page.locator('#' + prefix + '-dialog').waitFor({ state: 'visible' });
+    const response = await preview;
+    writeFileSync(deliveryPath, delivery);
+    if (endpoint === 'project-remote-branch-cleanup') {
+      assert.equal(response.status(), 400, 'Unconfigured GitHub cleanup retains its existing configuration guard.');
+      await page
+        .locator('#' + prefix + '-error')
+        .filter({ hasText: 'Configure' })
+        .waitFor();
+    } else assert.equal(response.status(), 200, await response.text());
+    assert.equal(await page.locator('#' + prefix + '-' + guard).isDisabled(), true);
+    await page.locator('#' + prefix + '-close').click();
+    observations.push({ check: 'Settings opens guarded Admin preview', operation: label, passed: true });
+  }
+}
+
 export async function projectSettingsBrowserChecks({ page, project, service, poll, screenshot, output, candidate }) {
   const observations = [];
   let passed = false;
@@ -293,12 +428,26 @@ export async function projectSettingsBrowserChecks({ page, project, service, pol
   };
   initializeFolderSettings(project);
   const scope = { page, project, service, poll, screenshot, output, observations };
+  await page.addInitScript(() => {
+    window.settingsSpeech = [];
+    window.SpeechRecognition = class {
+      start() {
+        this.stopped = false;
+        window.settingsSpeech.push(this);
+      }
+      stop() {
+        this.stopped = true;
+        this.onend?.();
+      }
+    };
+  });
   try {
     await checkCreateDefaults(scope);
     await checkDirectPages(scope);
     await checkPromptDrafts(scope);
     await checkHotkeyDrafts(scope);
     await checkDefaultsAndSources(scope);
+    await checkMaintenanceHandoff(scope);
     await settingsPage(page, 'skills');
     await page.getByText('Settings fixture library', { exact: false }).waitFor();
     await page.getByText('missing-fixture-skill', { exact: false }).waitFor();

@@ -10,8 +10,8 @@
     const typed = event.key === ' ' ? 'Space' : event.key;
     return [event.code === keyCode(key), typed?.toUpperCase() === key.toUpperCase()].some(Boolean);
   }
-  function matches(event, action) {
-    if ([event.repeat, event.isComposing, !bindings[action]].some(Boolean)) return false;
+  function matches(event, action, includeRepeats = false) {
+    if ([event.repeat && !includeRepeats, event.isComposing, !bindings[action]].some(Boolean)) return false;
     const tokens = bindings[action].split('+');
     const key = tokens.pop();
     const modifiersMatch = Object.entries(modifiers).every(
