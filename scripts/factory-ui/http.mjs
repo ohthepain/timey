@@ -435,6 +435,7 @@ async function read(service, request, response, owner) {
     '/api/sidebar-files': () => new SidebarFiles(service.root).index(),
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
+    '/api/capture-grilling-skills': () => readClarificationSkills(service.root).filter((item) => item.kind === 'skill'),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/project-home': () => projectHome(service).view(),
     '/api/local-notes': () => new LocalNotes(service.root).view(),
