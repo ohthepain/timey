@@ -42,7 +42,9 @@ person can revise the description and settings before creation. Creation uses
 the ordinary issue flow and does not start its work. After creation, the note's
 project conversation contains a response linking to the issue and offering
 **Delete original note**. The note remains until that action is chosen, and a
-retained note links back to the issue.
+retained note links back to the issue. The sidebar link includes its display
+number, such as **Open issue #182**, from the project issue-number registry.
+Notes keep the stable issue ID as their stored link.
 
 ## Verification
 

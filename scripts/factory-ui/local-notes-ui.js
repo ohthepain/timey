@@ -20,7 +20,7 @@
   const editor = document.getElementById('local-note-editor');
   const editText = document.getElementById('local-note-edit-text');
   const sentences = new Intl.Segmenter(undefined, { granularity: 'sentence' });
-  let current = { notes: [], basis: '' };
+  let current = { notes: [], basis: '', issueNumbers: {} };
   let busy = false;
   let editing = null;
   let captureId = null;
@@ -44,8 +44,13 @@
     if (!response.ok) throw Error(result.error || 'Could not save local notes.');
     return result;
   }
+  function issueLinkLabel(issueId) {
+    const number = current.issueNumbers[issueId];
+    return number == null ? 'Open issue' : `Open issue #${number}`;
+  }
   function render(value) {
-    if (current.basis === value.basis) return;
+    if (current.basis === value.basis && JSON.stringify(current.issueNumbers) === JSON.stringify(value.issueNumbers))
+      return;
     current = value;
     const expanded = new Set([...list.querySelectorAll('details[open]')].map((node) => node.dataset.note));
     list.innerHTML = current.notes
@@ -58,7 +63,7 @@
       <button type="button" class="small-button" data-note-action="up" data-note="${note.id}" aria-label="Move note up"${index === 0 ? ' disabled' : ''}>↑</button>
       <button type="button" class="small-button" data-note-action="down" data-note="${note.id}" aria-label="Move note down"${index === current.notes.length - 1 ? ' disabled' : ''}>↓</button>
       <button type="button" class="small-button" data-note-action="delete" data-note="${note.id}">Delete</button></div></details>
-      ${note.issueId ? `<a class="local-note-issue" href="/?issue=${encodeURIComponent(note.issueId)}">Open issue</a>` : ''}</li>`
+      ${note.issueId ? `<a class="local-note-issue" href="/?issue=${encodeURIComponent(note.issueId)}">${escape(issueLinkLabel(note.issueId))}</a>` : ''}</li>`
       )
       .join('');
   }

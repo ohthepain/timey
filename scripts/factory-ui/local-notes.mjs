@@ -12,6 +12,7 @@ import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { digest, git, requireThat, writeJson } from './common.mjs';
+import { savedIssueNumbers } from './issue-numbers.mjs';
 
 const noteText = z
   .string()
@@ -66,7 +67,12 @@ export class LocalNotes {
   }
   view() {
     const notes = this.read();
-    return { notes, basis: digest(JSON.stringify(notes)) };
+    const linkedIds = notes.flatMap((entry) => (entry.issueId ? [entry.issueId] : []));
+    return {
+      notes,
+      basis: digest(JSON.stringify(notes)),
+      issueNumbers: linkedIds.length ? savedIssueNumbers(this.root, linkedIds) : {},
+    };
   }
   get(id) {
     const found = this.read().find((entry) => entry.id === id);
