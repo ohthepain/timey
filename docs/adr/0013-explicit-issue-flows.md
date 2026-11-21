@@ -152,7 +152,13 @@ preserves the checkout and retained verification, including across another
 network failure; matching candidate, target, inputs and proof are still required
 for reuse. A shared issue claim release failure retains the block outcome,
 original summary and verification, and records its cleanup error separately.
-Ownership remains uncertain until the claim is reconciled. Changed candidates or inputs require verification again.
+Ownership remains uncertain until the claim is reconciled. Explicit block recovery
+checks the retained claim against the remote queue. If its release already
+landed, it reconciles the stale local receipt and reacquires through the normal
+claim and report checks. A competing claim or failed remote read still blocks
+execution. Recovery can reuse matching verification from before an intervening
+claim-acquisition failure; explicit invalidation still prevents reuse. Changed
+candidates or inputs require verification again.
 
 Merge fetches Destination and merges its current revision into the issue branch.
 It verifies the issue commit against that destination revision using the local

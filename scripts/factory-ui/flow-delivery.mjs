@@ -108,6 +108,15 @@ export function flowVerificationHead(block) {
   return verification?.uncommitted ? undefined : verification?.head;
 }
 
+export function retainedBlockVerification(block, attemptId) {
+  const previous = block.attempts?.findLast(
+    (attempt) => attempt.id !== attemptId && (attempt.invalidatedAt || blockVerification(block, attempt))
+  );
+  if (!previous) return undefined;
+  if (previous.invalidatedAt) return undefined;
+  return blockVerification(block, previous);
+}
+
 export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const candidate = committedCandidate(workspace);
   const base = options.verificationBase;
@@ -115,10 +124,9 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const getInput = options.verificationInput || flowVerificationInput;
   const inputs = base ? [getInput(ctx, workspace.checkout, base)] : [];
   if (mergeChecks?.scope === 'default') inputs.push(getInput(ctx, workspace.checkout, base, 'full'));
-  const previous = ctx.block.attempts?.filter((attempt) => attempt.id !== ctx.attempt?.id).at(-1);
   const checks = [
     options.verification,
-    previous?.invalidatedAt ? undefined : blockVerification(ctx.block, previous ?? {}),
+    retainedBlockVerification(ctx.block, ctx.attempt?.id),
     ...upstreamBlocks(ctx.block, ctx.flow.blocks)
       .toReversed()
       .map((block) => blockVerification(block)),

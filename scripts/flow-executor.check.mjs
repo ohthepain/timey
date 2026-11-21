@@ -1911,3 +1911,26 @@ test('Merge retains the original merge error when outcome inspection also fails'
   });
   assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
 });
+
+for (const invalidated of [false, true]) {
+  test(
+    'Merge recovery retains verification through failed claim attempts and respects invalidation: ' + invalidated,
+    async (t) => {
+      const f = mergeFixture(t);
+      await f.run('understand');
+      const prepared = await f.run('merge', humanFirstMerge);
+      await f.run('merge', {
+        attempts: [
+          approvalAttempt(prepared),
+          {
+            id: 'failed-claim',
+            status: 'blocked',
+            summary: 'Reconcile the interrupted shared issue claim.',
+            ...(invalidated ? { invalidatedAt: '2026-11-21T00:00:00Z' } : {}),
+          },
+        ],
+      });
+      assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, invalidated ? 2 : 1);
+    }
+  );
+}

@@ -13,6 +13,7 @@ import {
   ensureFlowVerification,
   flowDeliveryProvider,
   lookupFlowPR,
+  retainedBlockVerification,
   verifiedFlowCandidate,
 } from './flow-delivery.mjs';
 import { blockerKey, permissionFailure, repairableBlocker } from './strategy-repair.mjs';
@@ -250,14 +251,8 @@ async function prepareMergeCheckout(state, workspace, invoke) {
   state.started = true;
 }
 
-function retainedMergeVerification(ctx) {
-  const previous = ctx.block.attempts?.filter((attempt) => attempt.id !== ctx.attempt.id).at(-1);
-  if (previous?.invalidatedAt) return undefined;
-  return previous?.result?.verification;
-}
-
 function mergeVerification(ctx, state) {
-  return state.checked?.verification ?? retainedMergeVerification(ctx);
+  return state.checked?.verification ?? retainedBlockVerification(ctx.block, ctx.attempt.id);
 }
 
 async function waitForMergeChecks(ctx, state, error, options) {

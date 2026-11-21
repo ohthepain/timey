@@ -824,6 +824,8 @@ Direct checkpoints publish report updates and the exact owned claim's deletion
 in one queue commit. Publication retains a commit-bound acknowledgment and still
 confirms the resulting commit and its exact claim removal before clearing local claim metadata. Missing or
 interrupted acknowledgments use the existing remote release and recovery path.
+`shared-issue-queue.mjs` reconciles a released flow claim during explicit block
+recovery and reacquires through the existing ownership and report guards.
 `issue-folder-drag-ui.js` handles issue drag events in the Issues sidebar.
 The sidebar uses the existing revision-checked `folder` action to save moves,
 including assignments to configured project folders. `flow-browser-issue-folders.mjs`

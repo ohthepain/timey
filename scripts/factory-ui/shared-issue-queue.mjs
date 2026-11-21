@@ -297,9 +297,18 @@ export function createSharedIssueQueue(service, options = {}) {
     const pending = continuing ? flowBlockReceipt(issue.id, blockId) : undefined;
     if (!pending) return acquire(issue, false, false, undefined, blockId).claim;
     const claim = claims.verifyOwn(issue.id);
-    requireThat(claim, 'Reconcile the interrupted shared issue claim.');
-    requireThat(claim.oid === pending.claim.oid, 'The interrupted shared issue claim changed.');
-    return claim;
+    if (claim) {
+      requireThat(claim.oid === pending.claim.oid, 'The interrupted shared issue claim changed.');
+      return claim;
+    }
+    reconcileReleasedFlowClaim(issue.id, pending);
+    return acquire(issue, false, false, undefined, blockId).claim;
+  }
+  function reconcileReleasedFlowClaim(id, pending) {
+    const local = claims.own(id);
+    requireThat(!local || local.oid === pending.claim.oid, 'The interrupted shared issue claim changed.');
+    if (local) release(id, local);
+    save(pending, { status: 'published' });
   }
   function releaseFlowBlock(claim) {
     const pending = receipt(claim.issueId);
