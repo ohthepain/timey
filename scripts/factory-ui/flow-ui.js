@@ -743,8 +743,9 @@
         id: 'blocked-status-issues',
         name: 'Blocked',
         matches: (issue) =>
+          issue.state !== 'needs-approval' &&
           issue.status !== 'running' &&
-          (['blocked', 'need-input', 'needs-approval'].includes(issue.status) || issue.waitingForApproval),
+          (['blocked', 'need-input'].includes(issue.status) || issue.waitingForApproval),
       },
     ].map(({ id, name, matches }) => {
       const members = issues.filter((issue) => !issue.paused && issue.status !== 'closed' && matches(issue));

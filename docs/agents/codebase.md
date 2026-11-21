@@ -32,7 +32,8 @@ share the store. See the [local notes design](../plans/local-notes.md).
 
 The Flow sidebar's In progress and Blocked pseudo-folders derive membership from
 its project index in `scripts/factory-ui/flow-ui.js`. In progress contains running
-issues. Blocked contains blocked, interrupted and approval-waiting issues. Explicit
+issues. Blocked contains blocked, interrupted and confirmation-waiting issues,
+excluding unapproved issues. Explicit
 Pause excludes an issue from both collections until execution resumes. This pause
 marker shares the existing in-memory autoplay lifetime and resets on server restart.
 The collections never write issue folder assignments.

@@ -101,9 +101,15 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
     await page.goto('/');
     await expectMembers('in-progress-issues', [fixtures[0].id]);
     const initialBlocked = fixtures
-      .filter(({ key }) => ['blocked', 'input', 'approval', 'confirmation', 'uncertain'].includes(key))
+      .filter(({ key }) => ['blocked', 'input', 'confirmation', 'uncertain'].includes(key))
       .map(({ id }) => id);
     await expectMembers('blocked-status-issues', initialBlocked);
+    const approval = fixtures.find(({ key }) => key === 'approval');
+    assert.equal(await page.locator('#open-issues [data-issue="' + approval.id + '"]').count(), 1);
+    assert.equal(
+      await page.locator('#blocked-status-issues .folder-count').textContent(),
+      String(initialBlocked.length)
+    );
     const order = await page.locator('#issue-list').evaluate((node) => [...node.children].map((child) => child.id));
     assert.deepEqual(order.slice(0, 3), ['in-progress-issues', 'blocked-status-issues', 'open-issues']);
     assert.equal(await page.locator('#issue-list [data-issue="' + foreignId + '"]').count(), 0);
@@ -150,6 +156,7 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
           reportBytesUnchanged: true,
           directStartClearsPause: true,
           pausedExcluded: [paused.id, running.id],
+          unapprovedExcluded: approval.id,
           foreignIssueExcluded: foreignId,
           sidebarOrder: order,
         },
