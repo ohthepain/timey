@@ -4,6 +4,21 @@ import { digest, requireThat } from './common.mjs';
 export const inquiryKinds = new Set(['understand', 'investigate']);
 export const investigationOutputKinds = new Set(['generate-report', 'create-issues']);
 
+function legacyGeneratedPrompt(block) {
+  const { systemPrompt = '' } = block.attempts.at(-1) ?? {};
+  return [
+    /^(Run the agreed whole-project investigation\.|This turn is a preliminary investigation conversation\.)/.test(
+      block.prompt
+    ),
+    String(systemPrompt).endsWith('\n\n' + block.prompt),
+  ].every(Boolean);
+}
+
+export function isManagedInvestigationPrompt(block) {
+  if (block.investigationPromptSha256) return block.investigationPromptSha256 === digest(block.prompt);
+  return legacyGeneratedPrompt(block);
+}
+
 export function investigationAttempts(flow, kinds) {
   return flow.blocks
     .concat(flow.retiredBlocks ?? [])

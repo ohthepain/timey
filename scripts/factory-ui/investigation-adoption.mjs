@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { inquiryKinds, investigationAttempts } from './investigation-flow.mjs';
+import { inquiryKinds, investigationAttempts, isManagedInvestigationPrompt } from './investigation-flow.mjs';
 
 function savedRecords(directory, pattern) {
   if (!existsSync(directory)) return [];
@@ -52,9 +52,7 @@ function standardLinks(block, requestId, original) {
 }
 function managedPrompt(flow, block) {
   if (!flow.projectInvestigation) return false;
-  return /^(Run the agreed whole-project investigation\.|This turn is a preliminary investigation conversation\.)/.test(
-    block.prompt
-  );
+  return isManagedInvestigationPrompt(block);
 }
 function standardInquiry(block, request, catalog, managed) {
   const original = catalog.find(({ id }) => id === 'understand');

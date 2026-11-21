@@ -1,7 +1,8 @@
-import { requireThat } from './common.mjs';
+import { requireThat, digest } from './common.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 import {
   inquiryKinds,
+  isManagedInvestigationPrompt,
   investigationOutputKinds,
   successfulInvestigationSource,
   successfulReportFindings,
@@ -116,7 +117,10 @@ export function attachInvestigationAttempt(flow, issue, block, input, attempt) {
   attachOutputDetails(attempt);
 }
 export function configureInvestigationInquiry(flow, block, session, prompt) {
-  if (!block.prompt || flow.projectInvestigation) block.prompt = prompt;
+  if (!block.prompt || isManagedInvestigationPrompt(block)) {
+    block.prompt = prompt;
+    block.investigationPromptSha256 = digest(prompt);
+  }
   session.flowOutputs = [
     block.kind === 'investigate',
     flow.investigationLayout === 2,

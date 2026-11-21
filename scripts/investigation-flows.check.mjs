@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { gitFixture } from './git-fixture.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
+import { createProjectDiscussTools } from './factory-ui/project-discuss-tools.mjs';
+import { moveIssueStorage } from './factory-ui/issue-storage-actions.mjs';
 import { makeBlock } from './factory-ui/flow-store.mjs';
 import { ProjectInvestigations } from './factory-ui/project-investigations.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
@@ -498,3 +500,89 @@ for (const historicalFlowOutputs of [undefined, false]) {
     }
   );
 }
+
+test('removing Generate report keeps Create Issues runnable from the completed inquiry', async (t) => {
+  const f = await fixture(t);
+  const inquiry = await f.run('investigate');
+  const current = f.flow();
+  const report = current.blocks.find(({ kind }) => kind === 'generate-report');
+  await f.flows.action({ action: 'remove', issueId: f.issueId, blockId: report.id, revision: current.revision });
+  const issues = await f.run('create-issues');
+  assert.equal(issues.status, 'completed');
+  assert.equal(issues.investigationSource.attemptId, inquiry.id);
+  assert.deepEqual(issues.supplementalFindings, []);
+});
+
+test('approval of a saved investigation follow-up leaves it idle', async (t) => {
+  const f = await fixture(t);
+  const inquiry = await f.run('investigate');
+  const captured = await f.flows.capture({
+    requestId: randomUUID(),
+    description: 'Repair the observed parser boundary',
+    type: 'bug',
+    needsApproval: true,
+    sourceIssue: f.issueId,
+    sourceAttempt: inquiry.id,
+  });
+  const id = captured.issue.id;
+  const before = f.calls.length;
+  const view = await f.flows.view(id);
+  await f.flows.action({ action: 'approve-issue', issueId: id, revision: view.flow.revision });
+  assert.equal(f.flows.selected(id).state, 'backlog');
+  assert.equal(f.calls.length, before);
+  assert.ok(f.flows.read(f.flows.selected(id)).blocks.every(({ attempts }) => attempts.length === 0));
+  assert.equal(f.flows.active.has(id), false);
+});
+
+test('report follow-up creation from an archived investigation uses guarded approval without restoration or inquiry', async (t) => {
+  const f = await fixture(t);
+  const inquiry = await f.run('investigate');
+  await moveIssueStorage(f.service, { action: 'archive', issueIds: [f.issueId] });
+  const calls = f.calls.length;
+  const tools = createProjectDiscussTools(f.service, {
+    flows: () => f.flows,
+    reportContext: () => ({
+      reportId: 'retained-report',
+      outputAttemptId: 'retained-output',
+      source: { issueId: f.issueId, attemptId: inquiry.id },
+    }),
+  });
+  const saved = await tools.invoke('issue_create', {
+    requestId: randomUUID(),
+    description: 'Repair uncovered archived investigation work',
+    type: 'bug',
+    needsApproval: false,
+  });
+  const child = f.flows.selected(saved.issueId);
+  assert.equal(child.state, 'needs-approval');
+  assert.equal(child.source_issue, f.issueId);
+  assert.equal(child.source_attempt, inquiry.id);
+  assert.equal(f.flows.selected(f.issueId).location, 'archive');
+  assert.equal(f.calls.length, calls);
+  assert.ok(f.flows.read(child).blocks.every(({ attempts }) => attempts.length === 0));
+});
+
+test('Run again preserves custom inquiry prompts across successive reusable runs', async (t) => {
+  const f = await fixture(t);
+  const { ProjectInvestigations } = await import('./factory-ui/project-investigations.mjs');
+  const owner = new ProjectInvestigations(f.service, f.flows);
+  t.after(() => owner.close());
+  const current = f.flow();
+  const inquiry = current.blocks.find(({ kind }) => kind === 'investigate');
+  await f.flows.action({
+    action: 'update',
+    issueId: f.issueId,
+    blockId: inquiry.id,
+    revision: current.revision,
+    changes: { prompt: 'Inspect only the custom parser boundary.' },
+  });
+  for (let run = 0; run < 2; run++) {
+    const saved = await owner.action({ action: 'investigation-run', requestId: randomUUID(), issueId: f.issueId });
+    await owner.active.get(saved.session.id)?.task;
+    assert.equal(owner.selected(saved.session.id).status, 'completed');
+  }
+  assert.deepEqual(
+    f.calls.filter(({ block }) => block.kind === 'investigate').map(({ block }) => block.prompt),
+    ['Inspect only the custom parser boundary.', 'Inspect only the custom parser boundary.']
+  );
+});

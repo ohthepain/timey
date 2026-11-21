@@ -210,3 +210,29 @@ test('snapshot output tools cannot publish or retain files from the original unc
   assert.equal(retained.evidence[0].status, 'unavailable');
   assert.equal(readFileSync(join(f.root, 'source.txt'), 'utf8'), 'Unsaved project edits.\n');
 });
+
+test('an output inspects newer committed code while retaining the exact original inquiry provenance', async (t) => {
+  let newer;
+  const f = fixture(t, async ({ cwd, connection }) => {
+    assert.equal(readFileSync(join(cwd, 'source.txt'), 'utf8'), 'Newer committed source.\n');
+    saveReport(cwd);
+    await connection.blockTools.invoke('report_publish', {
+      title: 'New revision report',
+      report: 'outputs/report.md',
+      inspectedRevisions: [newer],
+    });
+    return manifest({ values: { reportTitle: 'New revision report' } });
+  });
+  writeFileSync(join(f.root, 'source.txt'), 'Newer committed source.\n');
+  f.git('add', 'source.txt');
+  f.git('commit', '-qm', 'Newer output inspection revision');
+  newer = f.git('rev-parse', 'HEAD');
+  writeFileSync(join(f.root, 'source.txt'), 'Uncommitted current edit.\n');
+  const result = await f.run('newer-output-attempt');
+  const report = f.reports.read(result.artifacts.values.reportId);
+  assert.equal(report.source.revision, f.revision);
+  assert.equal(report.source.attemptId, 'inquiry-attempt');
+  assert.deepEqual(report.inspectedRevisions, [newer]);
+  assert.equal(result.result.head, newer);
+  assert.equal(readFileSync(join(f.root, 'source.txt'), 'utf8'), 'Uncommitted current edit.\n');
+});
