@@ -1373,9 +1373,8 @@ class IssueFlows {
     requireThat(!issue.closed && !issueHasActiveWork(this.service, issue.id), 'Choose an idle, open issue.');
     const folder = requireIssueFolder(this.service.root, name);
     if (flow.folder === name && issue.folder_id === folder.id) return;
-    const shared = this.service.sharedIssues?.acquireForApproval(issue);
-    updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder.id });
-    if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment changed', shared);
+    if (this.service.sharedIssues) this.service.sharedIssues.moveFolder(issue, folder.id);
+    else updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder.id });
     flow.folder = name;
     this.store.save(flow, flow.revision);
   }

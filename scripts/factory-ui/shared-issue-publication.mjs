@@ -440,20 +440,36 @@ export function createSharedIssuePublication({
     });
   }
 
+  function defaultReportLocation(report) {
+    return report === null ? null : 'open';
+  }
+
+  function publicationBase(base) {
+    if (typeof base !== 'object' || base === null) return { report: base, location: defaultReportLocation(base) };
+    return { report: base.report, location: base.location ?? defaultReportLocation(base.report) };
+  }
+
   function publish(
     { issueId, base, report, reason, location = 'open', claim, releaseClaim, batchHead },
     refresh = false
   ) {
     const candidate = requestedReport(report, location);
-    const expected =
-      typeof base === 'object' && base !== null
-        ? { report: base.report, location: base.location ?? (base.report === null ? null : 'open') }
-        : { report: base, location: base === null ? null : 'open' };
+    const expected = publicationBase(base);
     requestedBase(issueId, expected, releaseClaim);
     validateBatchHead(batchHead, releaseClaim);
     return withPublicationLock(issueId, (path) => {
       const live = publicationTarget(issueId, batchHead, refresh);
-      let record = publicationRecord({ issueId, candidate, expected, reason, live, path, releaseClaim, claim });
+      let record = publicationRecord({
+        issueId,
+        candidate,
+        expected,
+        reason,
+        live,
+        path,
+        releaseClaim,
+        claim,
+        refresh,
+      });
       if (record.status === 'landed') {
         if (record.direct) writeJson(path, record);
         return record;
@@ -483,17 +499,26 @@ export function createSharedIssuePublication({
     };
   }
 
-  function publicationRecord({ issueId, candidate, expected, reason, live, path, releaseClaim, claim }) {
+  function replaceableProposal(previous, expected, live, claim, releaseClaim) {
+    return [previous.direct, expected.report === null, live.report === null, !claim, !releaseClaim].every(Boolean);
+  }
+  function reusePendingProposal({ previous, issueId, candidate, expected, live, claim, releaseClaim, refresh }) {
+    const sameBase = sameReport(readReport(git('rev-parse', `${previous.commit}^`), issueId), expected);
+    if (sameBase && sameReport(readReport(previous.commit, issueId), candidate)) return true;
+    requireThat(
+      [refresh, sameBase, replaceableProposal(previous, expected, live, claim, releaseClaim)].every(Boolean),
+      'A different report checkpoint is already pending.'
+    );
+    return false;
+  }
+  function publicationRecord({ issueId, candidate, expected, reason, live, path, releaseClaim, claim, refresh }) {
     const previous = readPending(issueId);
     const status = previous && inspectTarget(previous, live);
-    if (status?.status === 'pending') {
-      requireThat(
-        sameReport(readReport(previous.commit, issueId), candidate) &&
-          sameReport(readReport(git('rev-parse', `${previous.commit}^`), issueId), expected),
-        'A different report checkpoint is already pending.'
-      );
+    if (
+      status?.status === 'pending' &&
+      reusePendingProposal({ previous, issueId, candidate, expected, live, claim, releaseClaim, refresh })
+    )
       return previous;
-    }
     if (
       status &&
       (!releaseClaim || previous.releaseClaim?.oid === releaseClaim.oid) &&

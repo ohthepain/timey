@@ -16,6 +16,7 @@ import {
   formatArchivedIssue,
   moveStoredIssue,
   storedIssuePath,
+  updateStoredIssueMetadata,
 } from './issue-report-storage.mjs';
 import { createSharedIssueTransport } from './shared-issue-transport.mjs';
 import { createSharedIssueClaims } from './shared-issue-claims.mjs';
@@ -260,6 +261,33 @@ export function createSharedIssueQueue(service, options = {}) {
       requireThat(proposal.status === 'published', 'Refresh the proposal’s queue PR before approving this issue.');
     }
     return acquire(issue, true);
+  }
+  function failedInitialProposal(pending) {
+    if (!pending) return false;
+    return [pending.status === 'failed', pending.base === null, pending.location === 'open', !pending.claim].every(
+      Boolean
+    );
+  }
+  function moveFolder(issue, folderId) {
+    const pending = receipt(issue.id);
+    if (failedInitialProposal(pending)) {
+      requireThat(
+        [!active(issue.id), !claims.own(issue.id), !remoteClaims.has(issue.id)].every(Boolean),
+        'Wait for this issue’s active operation to finish before moving it.'
+      );
+      requireThat(pending.report === issue.content, 'The pending report changed. Refresh before moving this issue.');
+      requireThat(
+        publication.readTarget(issue.id).report === null,
+        'The proposal is already shared. Reconcile its publication before moving this issue.'
+      );
+      updateStoredIssueMetadata(root, issue, { folder_id: folderId });
+      save(pending, { report: localReport(issue.id) });
+      return;
+    }
+    if (pending) reconcileReceipt(pending);
+    const context = acquire(issue, true);
+    updateStoredIssueMetadata(root, issue, { folder_id: folderId });
+    checkpoint(issue.id, 'Issue folder assignment changed', context);
   }
   function flowBlockReceipt(id, blockId) {
     const pending = receipt(id);
@@ -542,6 +570,7 @@ export function createSharedIssueQueue(service, options = {}) {
     branch: config.separateBranch,
     acquire,
     acquireForApproval,
+    moveFolder,
     acquireGroupClosure,
     acquireFlowBlock,
     releaseFlowBlock,

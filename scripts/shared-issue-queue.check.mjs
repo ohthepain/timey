@@ -329,6 +329,73 @@ test('Flow can approve a Retro item as soon as its proposal PR lands', async (t)
   assert.equal(flows.active.has(issueId), false);
 });
 
+test('moving an unpublished proposal retains its failed publication and retries the new folder', async (t) => {
+  const { remote, first, second } = fixture(t);
+  writeFileSync(
+    join(first, 'factory.config.json'),
+    JSON.stringify({ sharedIssueQueue: true, sharedIssueQueueBranch: 'issue-queue', sharedIssueQueueDirect: true })
+  );
+  let failPush = true;
+  let pushes = 0;
+  const runner = queue(first);
+  runner.queue.close();
+  runner.queue = createSharedIssueQueue(runner.service, {
+    pushDirect(commit, target, _, head) {
+      pushes++;
+      if (failPush) throw Error('Queue push failed.');
+      git(first, 'push', `--force-with-lease=${target}:${head}`, 'origin', `${commit}:${target}`);
+    },
+    pushClaim: (commit, target, _, head) =>
+      git(first, 'push', `--force-with-lease=${target}:${head}`, 'origin', `${commit}:${target}`),
+  });
+  runner.service.sharedIssues = runner.queue;
+  const flows = createIssueFlows(runner.service, {
+    executor: { run: () => assert.fail('Folder move started work.'), close() {} },
+  });
+  runner.service.flows = flows;
+  t.after(() => {
+    flows.close();
+    runner.queue.close();
+  });
+  await flows.fileRetroItems([
+    {
+      requestId: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+      title: 'Move the unpublished proposal',
+      description: 'Keep folder organization available after a queue push fails.',
+      reason: 'Organization is independent of approval.',
+      verification: 'Move the issue and retry publication.',
+    },
+  ]);
+  const proposal = (await flows.view()).issues.find((issue) => issue.title === 'Move the unpublished proposal');
+  const id = proposal.id;
+  assert.equal(runner.queue.view(id).checkpoint.status, 'failed');
+  const error = runner.queue.view(id).checkpoint.error;
+  await flows.action({ action: 'create-folder', name: 'Review later' });
+  const attempts = pushes;
+  const moved = await flows.action({
+    action: 'folder',
+    issueId: id,
+    revision: flows.read(flows.selected(id)).revision,
+    folder: 'Review later',
+  });
+  assert.equal(moved.flow.folder, 'Review later');
+  assert.equal(moved.issue.state, 'needs-approval');
+  assert.equal(pushes, attempts, 'Moving must not retry a failed publication.');
+  assert.equal(runner.queue.view(id).checkpoint.status, 'failed');
+  assert.equal(runner.queue.view(id).checkpoint.error, error);
+  const contents = readFileSync(join(first, `.issues/${id}.md`), 'utf8');
+  const pending = JSON.parse(readFileSync(join(first, `.issues/shared-queue/${id}.json`), 'utf8'));
+  assert.equal(pending.report, contents);
+  failPush = false;
+  const retried = runner.queue.retry(id);
+  assert.equal(retried.status, 'published', JSON.stringify(retried));
+  assert.equal(git(remote, 'show', `issue-queue:.issues/${id}.md`), contents.trim());
+  const observer = queue(second);
+  t.after(() => observer.queue.close());
+  observer.queue.refresh(true);
+  assert.equal(readFileSync(join(second, `.issues/${id}.md`), 'utf8'), contents);
+});
+
 test('two Flow clones share the separate branch without advancing code', async (t) => {
   const { remote, first, second } = fixture(t, false, true);
   const head = git(remote, 'rev-parse', 'dev');
