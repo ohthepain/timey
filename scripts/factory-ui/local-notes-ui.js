@@ -19,6 +19,7 @@
   const status = document.getElementById('local-note-status');
   const editor = document.getElementById('local-note-editor');
   const editText = document.getElementById('local-note-edit-text');
+  const sentences = new Intl.Segmenter(undefined, { granularity: 'sentence' });
   let current = { notes: [], basis: '' };
   let busy = false;
   let editing = null;
@@ -50,7 +51,7 @@
     list.innerHTML = current.notes
       .map(
         (note, index) => `<li class="local-note${note.done ? ' is-done' : ''}" data-note-id="${note.id}">
-      <div class="local-note-row"><input type="checkbox" data-note-complete="${note.id}" aria-label="Complete note: ${escape(note.text)}"${note.done ? ' checked' : ''}><button type="button" class="local-note-title" data-note-edit="${note.id}">${escape(note.text)}</button></div>
+      <div class="local-note-row"><input type="checkbox" data-note-complete="${note.id}" aria-label="Complete note: ${escape(note.text)}"${note.done ? ' checked' : ''}><button type="button" class="local-note-title" data-note-edit="${note.id}">${escape([...sentences.segment(note.text)][0].segment.trim())}</button></div>
       <details data-note="${note.id}"${expanded.has(note.id) ? ' open' : ''}><summary>Actions</summary><div class="local-note-actions">
       <button type="button" class="small-button" data-note-action="discuss" data-note="${note.id}">Discuss</button>
       <button type="button" class="small-button" data-note-action="issue" data-note="${note.id}">Turn into issue</button>

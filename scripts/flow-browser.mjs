@@ -2147,11 +2147,25 @@ try {
       },
     ];
     flow.autoClose = false;
-    flow.destination = { ...flow.destination, pr: 17, url: 'https://github.com/test/fixture/pull/17' };
+    flow.destination = { ...flow.destination, branch: 'dev', pr: 17, url: 'https://github.com/test/fixture/pull/17' };
     service.flows.store.save(flow, flow.revision);
     let approved = false;
     let calls = 0;
     const run = executor.run;
+    const provider = service.flows.deliveryOptions.provider;
+    const inspect = provider.inspect;
+    provider.inspect = async (number) => {
+      assert.equal(number, 17);
+      const repo = { full_name: deliveryConfig.repository };
+      return {
+        number,
+        html_url: flow.destination.url,
+        state: 'open',
+        merged_at: null,
+        head: { ref: 'fixture-review', sha: 'fixture-head', repo },
+        base: { ref: 'dev', repo },
+      };
+    };
     executor.run = async (ctx) => {
       if (ctx.issue.id !== id) return run(ctx);
       calls++;
@@ -2232,6 +2246,8 @@ try {
       assert.equal(await page.locator('#issue-input-actions').isVisible(), false);
     } finally {
       executor.run = run;
+      if (inspect) provider.inspect = inspect;
+      else delete provider.inspect;
     }
     if (issueId) await page.goto('/?issue=' + issueId);
   });
