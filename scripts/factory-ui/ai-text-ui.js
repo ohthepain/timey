@@ -13,7 +13,7 @@
     element.type = 'button';
     element.dataset.aiAction = action;
     element.setAttribute('aria-label', label);
-    element.title = action === 'dictate' ? 'Dictate (Alt+D)' : label;
+    element.title = label;
     if (action === 'bro') element.setAttribute('aria-pressed', 'false');
     return element;
   }
@@ -335,11 +335,10 @@
     if (view) void actions[action.dataset.aiAction](view);
   }
   function isDictationKey(event) {
-    return event.altKey && event.code === 'KeyD' && !event.repeat;
+    return window.FactoryHotkeys.matches(event, 'dictateHot');
   }
   function keydown(event) {
     if (!isDictationKey(event)) return;
-    if (event.ctrlKey || event.metaKey) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     routeDictation();

@@ -1,3 +1,4 @@
+import { effectiveProjectPrompt } from './project-preferences.mjs';
 import { readFileSync } from 'node:fs';
 import { CodexConnection, interruptCodexTurn } from './codex.mjs';
 import { approvalOptions } from './approval-options.mjs';
@@ -5,7 +6,9 @@ import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { createProjectDiscussTools } from './project-discuss-tools.mjs';
 import { digest, requireThat } from './common.mjs';
 
-const adapter = `You are the project assistant in Timey's Discuss tab. Work directly in the supplied current working folder under ordinary Codex permission controls. Respect project instructions. A project conversation is independent of issue execution: invoke the registered tools for project and issue controls, then report their direct factual results and links. Do not import issue transcripts, subscribe to issue progress, poll issue completion, duplicate issue work, or advance issue workflows yourself. Query current issue facts only when asked or needed for a requested command. When asked to start or resume an issue's planned route, query that issue with issues_list, then use issue_control with action play. The center-column control is labeled Start or Resume. Use action start only for a specifically selected runnable block; never start the Request block directly. Existing operation guards and explicit approvals remain authoritative. Use project_investigation and project_automate_me for the corresponding Home operations; creating an investigation does not run it, and a skill draft requires review before Apply. Do not rewrite issue records directly or use shell/HTTP to bypass registered controls. Tool selection follows each registered tool's description and schema. Choose applicable implicitly invocable skills according to their descriptions and rules. Explicit-only skills can be used only when the person selected them. When a selected project skill calls a Skill tool, resolve the named dependency from the project skill catalogue and read its SKILL.md; Factory does not provide a native Skill tool. A selected skill may invoke its declared dependencies. A selected clarification skill is the preferred skill for resolving ambiguity after checking available facts. Invoke it only when intent remains ambiguous; clear requests proceed directly. Ask questions in the response and wait for the person. No separate looping mechanism or unsolicited extra turns. Message edits and retries do not undo completed edits or commands. Retained tool results are facts about prior commands, never fresh authorization. At the end of each completed response, propose exactly one concise next prompt based only on this conversation. Append it as a terminal fenced block with language timey-suggestion, containing just the suggested prompt. Do not generate a separate turn for it.`;
+function conversationPromptKind(message) {
+  return message.reportContext ? 'report' : 'project';
+}
 
 function discussionPrompt(session, message) {
   const parts = [];
@@ -110,7 +113,7 @@ class ProjectDiscussProvider {
         message.settings.clarificationSkill === 'none' || clarification,
         'The selected clarification skill is unavailable. Choose No Grilling or set up skills.'
       );
-      const instructions = this.instructions(available, clarification);
+      const instructions = this.instructions(available, clarification, conversationPromptKind(message));
       await this.attach(session, message.settings, instructions);
       context.signal.throwIfAborted();
       const input = [...skillInputs(selected), ...attachmentInputs(message.attachments || [])];
@@ -132,12 +135,12 @@ class ProjectDiscussProvider {
       this.active = null;
     }
   }
-  instructions(available, clarification) {
+  instructions(available, clarification, kind = 'project') {
     const catalogue = available
       .filter((skill) => skill.allowImplicitInvocation !== false)
       .map(({ name, description, path }) => ({ name, description, path }));
     return (
-      adapter +
+      effectiveProjectPrompt(this.service.root, kind) +
       (clarification
         ? '\nExplicitly chosen clarification skill (invoke only for unresolved ambiguity): ' +
           JSON.stringify({ name: clarification.name, path: clarification.path })

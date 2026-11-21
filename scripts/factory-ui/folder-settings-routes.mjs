@@ -6,6 +6,7 @@ import { requireThat } from './common.mjs';
 import { SidebarFiles } from './sidebar-files.mjs';
 import {
   createIssueFolderSettings,
+  initializeFolderSettings,
   readFolderSettings,
   readIssueFolderSettings,
   updateFolderSettings,
@@ -45,10 +46,7 @@ export async function changeFolderSettings(service, input) {
   }
   requireThat(view.canConfigure, 'Choose a project-owned folder for settings.');
   if (input.action === 'create') {
-    requireThat(view.kind === 'plain', 'This folder already has a settings file.');
-    const projectPath = relative(realpathSync(service.root), path).split(sep).join('/');
-    createIssueFolderSettings(service.root, projectPath.startsWith('user/') ? projectPath.slice(5) : '/' + projectPath);
-    return readFolderSettings(service.root, path);
+    return createSettings(service.root, path, view);
   }
   if (input.action === 'repair-preview') return previewFolderRepair(service.root, path);
   const update = { directory: path, revision: input.revision, changes: input.changes || {} };
@@ -58,4 +56,12 @@ export async function changeFolderSettings(service, input) {
     ...update,
     ...(input.action === 'make-default' && { makeDefault: input.makeDefault !== false }),
   });
+}
+
+function createSettings(root, path, view) {
+  requireThat(view.kind === 'plain', 'This folder already has a settings file.');
+  if (path === realpathSync(root)) return initializeFolderSettings(root);
+  const projectPath = relative(realpathSync(root), path).split(sep).join('/');
+  createIssueFolderSettings(root, projectPath.startsWith('user/') ? projectPath.slice(5) : '/' + projectPath);
+  return readFolderSettings(root, path);
 }

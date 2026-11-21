@@ -85,7 +85,6 @@
     };
   }
   let folderSelection = emptyFolderSelection();
-  let projectSettings = null;
   let inspectedFile = null;
   let inspectorRender;
   let folderConfig = null;
@@ -104,65 +103,10 @@
       void load(true);
     },
   });
-  const projectFolderSettingsUI = window.createFolderSettingsUI({
-    container: $('project-folder-settings'),
-    request: json,
-    notify: toast,
-    prefix: 'project-setting',
-    changed: () => {
-      void load(true);
-    },
-  });
+  const projectSettingsUI = window.createProjectSettingsUI({ request: json, changed: () => void load(true) });
 
   function folderLocation() {
     return state.fileFolder ? { root: state.fileFolder.root, path: state.fileFolder.path } : { folder: state.folder };
-  }
-
-  function renderProjectSettings(settings) {
-    projectSettings = settings;
-    const lifecycle = settings.lifecycle;
-    const policy = settings.humanInputPolicy;
-    $('project-settings-content').innerHTML =
-      `<p class="muted">${escape(settings.project)}</p><h3>Human input</h3><p>The factory checks required human input before dependent work.${policy.require_explicit_acceptance ? ' Closing a fixed issue requires your explicit acceptance.' : ''}${!policy.manual_checks_before_commit ? ' Local progress commits can keep outstanding human checks recorded.' : ''}</p><p class="muted">These rules come from the project adapter. There is no policy preset to select here. Each issue keeps its own requests and approvals.</p><h3>Lifecycle configuration</h3><p>${lifecycle.present ? 'Lifecycle configuration is present.' : 'Lifecycle configuration is missing.'}</p><p>${lifecycle.present ? 'The saved configuration is shown below. Each operation still checks its required human input.' : 'Editable work and verification need this configuration. Initialize the standard lifecycle below. If this project previously used custom states, restore its original configuration instead.'}</p><details><summary>${lifecycle.present ? 'View configuration' : 'Preview standard configuration'}</summary><pre>${escape(lifecycle.content)}</pre></details><p class="muted">${escape(lifecycle.path)}</p>`;
-    $('initialize-lifecycle').hidden = lifecycle.present;
-  }
-
-  async function openProjectSettings() {
-    projectSettings = null;
-    projectFolderSettingsUI.setLocation({ project: true });
-    if (projectFolderSettingsUI.value())
-      void projectFolderSettingsUI.refresh().catch((failure) => showError(failure.message));
-    $('project-settings-error').hidden = true;
-    $('project-settings-content').textContent = 'Loading project settings…';
-    $('initialize-lifecycle').hidden = true;
-    $('project-settings-dialog').showModal();
-    try {
-      renderProjectSettings(await json('/api/project-settings'));
-    } catch (error) {
-      $('project-settings-error').textContent = error.message;
-      $('project-settings-error').hidden = false;
-    }
-  }
-
-  async function initializeLifecycle() {
-    if (!projectSettings || $('initialize-lifecycle').disabled) return;
-    $('initialize-lifecycle').disabled = true;
-    $('project-settings-error').hidden = true;
-    try {
-      renderProjectSettings(
-        await json('/api/project-settings-initialize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
-          body: JSON.stringify({ digest: projectSettings.lifecycle.digest }),
-        })
-      );
-      toast('Lifecycle configuration saved. Retry the blocked step when ready.');
-    } catch (error) {
-      $('project-settings-error').textContent = error.message;
-      $('project-settings-error').hidden = false;
-    } finally {
-      $('initialize-lifecycle').disabled = false;
-    }
   }
 
   function escape(value) {
@@ -3399,8 +3343,7 @@
     )
       void action('cancel-confirmation', { blockId: review.blockId });
   });
-  $('project-settings').addEventListener('click', openProjectSettings);
-  $('initialize-lifecycle').addEventListener('click', initializeLifecycle);
+  $('project-settings').addEventListener('click', () => projectSettingsUI.open());
   $('empty-new-issue').addEventListener('click', openCapture);
   const closureModal = $('issue-closure-dialog');
   const closureFields = $('issue-closure-fields');
@@ -3712,10 +3655,7 @@
       return;
     }
     if (
-      event.key.toLowerCase() !== 'n' ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.altKey ||
+      !window.FactoryHotkeys.matches(event, 'newIssue') ||
       event.target.closest('input, textarea, select, [contenteditable="true"]') ||
       document.querySelector('dialog[open]')
     )

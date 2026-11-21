@@ -155,13 +155,7 @@
   document.getElementById('local-note-edit-cancel').onclick = () => editor.close();
   document.getElementById('local-note-quick').onclick = () => openEditor();
   document.addEventListener('keydown', (event) => {
-    if (
-      event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      event.key.toLowerCase() === 'n' &&
-      !document.querySelector('dialog[open]')
-    ) {
+    if (window.FactoryHotkeys.matches(event, 'newNote') && !document.querySelector('dialog[open]')) {
       event.preventDefault();
       openEditor();
     }
