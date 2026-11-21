@@ -17,6 +17,12 @@ rejected first input instead of resuming a thread with no persisted history.
 
 ## Commands and evidence
 
+`node --test scripts/factory-server-control.check.mjs` checks that No new actions
+allows chat requests across issue, project, report, temporary, and coordinator
+conversations while work dispatch stays paused. Its HTTP Discuss regression
+sends and drains queued prompts through an injected provider with the switch on
+and another action running. It starts no live model work.
+
 `node scripts/flow-browser.mjs --investigation-reports` checks retained report
 reading and discussion. Its draft-restoration regression holds the discussion
 response and dispatches a reader scroll before releasing it. The reopened draft

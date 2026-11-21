@@ -14,6 +14,8 @@ Publish a retained report from completed investigation findings.
 
 Use the selected skill to investigate and publish a report from the supplied source run. The skill chooses how to save its original report and evidence. Return the saved report file, title, additional findings, inspected revisions, and source references. Timey retains an immutable copy after successful publication. Retry recovers the same publication identity; deliberate generation creates a new dated report. Do not create issues or modify project code.
 
+Write it like a blog post. Void using jargon and speak coherently. State everything simply and concisely, like one human talking to another.
+
 Only successfully completed report attempts automatically pass additional findings to Create Issues. Retain the original run and identify any newer inspected revision. Missing evidence must be reported as unavailable or unverified, without hiding the report.
 
 End with a flow-result JSON fence using files.report and values.reportTitle, additionalFindings, inspectedRevisions. File paths must be inside the saved checkout. Cite actual evidence.

@@ -25,6 +25,25 @@ const finishing = new Set([
   '/api/discussion-commit',
   '/api/discussion-end',
 ]);
+const chatRoutes = new Set([
+  '/api/native-chat-prepare',
+  '/api/discussion-open',
+  '/api/discussion-turn',
+  '/api/discussion-skills',
+  '/api/discussion-retro',
+  '/api/coordinator-send',
+  '/api/coordinator-stop',
+  '/api/coordinator-fresh',
+]);
+const chatActions = new Set(['create', 'send', 'retry', 'resume', 'steer', 'close']);
+function isChatRequest(path, input) {
+  return (
+    chatRoutes.has(path) ||
+    (['/api/project-discuss-action', '/api/report-discuss-action'].includes(path) && chatActions.has(input.action)) ||
+    (path === '/api/project-home-action' &&
+      ['investigation-discuss', 'automate-start', 'automate-message', 'automate-retry'].includes(input.action))
+  );
+}
 export function serverControl(service, restart) {
   let phase = 'idle',
     error = null,
@@ -96,7 +115,7 @@ export function serverControl(service, restart) {
   }
   function allow(path, input = {}) {
     requireThat(
-      phase === 'idle' || finishing.has(path),
+      phase === 'idle' || finishing.has(path) || (phase === 'paused' && isChatRequest(path, input)),
       'New work is paused. Turn off No new actions to start more work.'
     );
     requireThat(
