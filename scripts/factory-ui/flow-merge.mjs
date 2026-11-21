@@ -1,3 +1,4 @@
+import { mergeGitHubProvider, inspectMergeOutcome } from './flow-merge-github.mjs';
 import { verificationFailureKey } from './flow-repair-evidence.mjs';
 import { retainGitHubFailure } from './flow-ci-evidence.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
@@ -152,7 +153,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
       },
     });
   } catch (error) {
-    const actual = await provider.inspect(pr.number);
+    const actual = await inspectMergeOutcome(provider, pr.number, error);
     if (!actual.merged_at) {
       if (
         actual.base?.ref === pr.base.ref &&
@@ -193,11 +194,34 @@ async function retainFailedChecks(provider, error, head, checkout, onProgress) {
   await retainGitHubFailure(provider, error, head, checkout);
 }
 
+async function readMergeReadiness(ctx, workspace, provider, pr, state) {
+  try {
+    ctx.onProgress('Checking GitHub PR readiness before local verification.\n', true);
+    const readiness = await provider.ready(pr, workspace.branch, pr.head.sha, {
+      waitForChecks: state.pushed === pr.head.sha,
+    });
+    return { readiness };
+  } catch (readinessError) {
+    if (!['STRATEGY_PENDING', 'target-outdated', 'target-conflict', 'ci-failure'].includes(readinessError.code))
+      throw readinessError;
+    return { readinessError };
+  }
+}
+
+async function requireObservedChecks(ctx, workspace, provider, error, head) {
+  if (!error) return;
+  if (['target-outdated', 'target-conflict'].includes(error.code)) throw pending(error.message);
+  await retainFailedChecks(provider, error, head, workspace.checkout, ctx.onProgress);
+  throw error;
+}
+
 async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
+  const { readiness, readinessError } = await readMergeReadiness(ctx, workspace, provider, pr, state);
   const target = await fetchTarget(ctx, workspace, invoke);
   await synchronize(workspace, target, invoke);
   const head = headOf(workspace);
   const verificationOptions = { ...options, verificationBase: target };
+  if (head === pr.head.sha) await requireObservedChecks(ctx, workspace, provider, readinessError, head);
   await verifyMergeCandidate(service, ctx, workspace, head, verificationOptions, state);
   if (pr.head.sha !== head) {
     if (state.pushed === head && state.previousHead === pr.head.sha)
@@ -215,16 +239,6 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
     state.deadline = Date.now() + state.workflow.checkTimeoutSeconds * 1000;
     throw pending('Pushed the verified commit. Waiting for GitHub checks.');
   }
-  let readiness;
-  try {
-    ctx.onProgress('Checking GitHub PR readiness.\n', true);
-    readiness = await provider.ready(pr, workspace.branch, head, { waitForChecks: state.pushed === head });
-  } catch (error) {
-    if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
-    if (['target-outdated', 'target-conflict'].includes(error.code)) throw pending(error.message);
-    await retainFailedChecks(provider, error, head, workspace.checkout, ctx.onProgress);
-    throw error;
-  }
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
   if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
   return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, verificationOptions, state);
@@ -236,13 +250,42 @@ async function prepareMergeCheckout(state, workspace, invoke) {
   state.started = true;
 }
 
+function retainedMergeVerification(ctx) {
+  const previous = ctx.block.attempts?.filter((attempt) => attempt.id !== ctx.attempt.id).at(-1);
+  if (previous?.invalidatedAt) return undefined;
+  return previous?.result?.verification;
+}
+
+function mergeVerification(ctx, state) {
+  return state.checked?.verification ?? retainedMergeVerification(ctx);
+}
+
+async function waitForMergeChecks(ctx, state, error, options) {
+  state.deadline ??= Date.now() + state.workflow.checkTimeoutSeconds * 1000;
+  requireThat(Date.now() < state.deadline, 'GitHub checks did not finish in time. ' + error.message);
+  ctx.onProgress(error.message + '\n', true);
+  await (options.mergeDelay ?? delay)(state.workflow.pollSeconds * 1000, undefined, { signal: ctx.signal });
+}
+
+function retainMergeFailure(error, ctx, state, pr) {
+  error.deliveryVerification = mergeVerification(ctx, state);
+  if (error.humanInput) error.humanInput = { ...error.humanInput, url: pr?.html_url };
+}
+
 export async function mergeFlowPR(service, ctx, workspace, folder, options) {
   const workflow = ctx.definition?.mergeWorkflow;
   requireThat(workflow, 'The Merge block needs workflow settings in its Markdown definition.');
-  const provider = flowDeliveryProvider(service, ctx, workspace, options);
+  const provider = mergeGitHubProvider(flowDeliveryProvider(service, ctx, workspace, options), ctx, options);
   const log = join(folder, 'merge.log');
   const invoke = (command, args) =>
-    options.execute({ command, args, cwd: workspace.checkout, log, signal: ctx.signal, onProgress: ctx.onProgress });
+    options.execute({
+      command,
+      args,
+      cwd: workspace.checkout,
+      log,
+      signal: ctx.signal,
+      onProgress: ctx.onProgress,
+    });
   const state = {
     folder,
     workflow,
@@ -255,10 +298,11 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
     ...state.evidence,
     ...(existsSync(log) ? [{ key: 'log', path: log, label: 'Target fetch and merge output' }] : []),
   ];
-  const initial = await lookupFlowPR(provider, workspace.branch, ctx.flow.destination?.pr);
-  requireThat(initial, missingMergePR(workspace.branch));
-  let pr = initial;
+  let pr;
   try {
+    pr = await lookupFlowPR(provider, workspace.branch, ctx.flow.destination?.pr);
+    requireThat(pr, missingMergePR(workspace.branch));
+    const number = pr.number;
     for (;;) {
       ctx.signal.throwIfAborted();
       requireThat(
@@ -284,20 +328,14 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
         if (outcome) return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
       } catch (error) {
         if (error.code !== 'STRATEGY_PENDING') await repairCandidate(ctx, workspace, error, options, state);
-        else {
-          state.deadline ??= Date.now() + workflow.checkTimeoutSeconds * 1000;
-          requireThat(Date.now() < state.deadline, 'GitHub checks did not finish in time. ' + error.message);
-          ctx.onProgress(error.message + '\n', true);
-          await (options.mergeDelay ?? delay)(workflow.pollSeconds * 1000, undefined, { signal: ctx.signal });
-        }
+        else await waitForMergeChecks(ctx, state, error, options);
       }
-      pr = await lookupFlowPR(provider, workspace.branch, initial.number);
+      pr = await lookupFlowPR(provider, workspace.branch, number);
       requireThat(pr, 'The existing PR is no longer available.');
     }
   } catch (error) {
     error.evidence = [...evidence(), ...(error.evidence ?? [])];
-    error.deliveryVerification = state.checked?.verification;
-    if (error.humanInput) error.humanInput = { ...error.humanInput, url: pr.html_url };
+    retainMergeFailure(error, ctx, state, pr);
     throw error;
   }
 }

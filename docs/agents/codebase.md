@@ -890,7 +890,9 @@ update aborts a pending merge before fetching and retains the other Git-operatio
 guards. `flow-merge-state.mjs` reads the pending local merge for the header
 control, whose explicit abort action is guarded by the flow service.
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, budgets recovery per blocker, stops repeated failing source trees, waits for GitHub checks, and binds approval to the exact issue commit
-and target revision.
+and target revision. `flow-merge-github.mjs` bounds transient GitHub observation
+and merge retries, reconciling uncertain writes before repeating them. Merge
+checks GitHub first and retains matching verification across request failures.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
 request from retained attempts, including legacy review blockers. Flow views and
 sidebar rows expose it separately from execution status; the UI offers explicit
