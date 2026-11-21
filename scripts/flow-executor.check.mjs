@@ -279,6 +279,23 @@ test('an explicit work block makes one model turn and records its managed checko
   assert.ok(f.progress.includes('Observed progress.'));
 });
 
+test('Work retains passing combined Flow browser scenarios as focused Merge checks', async (t) => {
+  const f = fixture(t);
+  const focusedTests = [
+    [
+      'node',
+      'scripts/flow-browser.mjs',
+      '--project-discuss',
+      '--project-issues',
+      '--local-notes',
+      '--issue-status-folders',
+    ],
+  ];
+  f.connection.turn = async () => '```flow-result\n' + JSON.stringify({ focusedTests }) + '\n```';
+  const result = await f.run('work');
+  assert.deepEqual(result.result.focusedTests, focusedTests);
+});
+
 test('Work and Retry distinguish implementation from an earlier idle issue capture', async (t) => {
   const f = fixture(t);
   const details = [
