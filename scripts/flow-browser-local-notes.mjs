@@ -124,11 +124,33 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   await field.fill('Draft survives reload');
   await page.reload();
   assert.equal(await field.inputValue(), 'Draft survives reload');
+  const sentenceNotes = [
+    { text: 'Practice at 2.5 bpm. Keep the second sentence hidden.', preview: 'Practice at 2.5 bpm.' },
+    { text: 'Ready to rehearse? Keep this sentence hidden.', preview: 'Ready to rehearse?' },
+    { text: '"Keep the beat!" This sentence stays in the editor.', preview: '"Keep the beat!"' },
+    { text: '<Count> & listen.\nKeep this next line hidden.', preview: '<Count> & listen.' },
+  ];
+  for (const note of sentenceNotes) {
+    await field.fill(note.text);
+    await field.press('Enter');
+    await page.getByRole('button', { name: note.preview, exact: true }).waitFor();
+  }
+  await page.reload();
+  for (const note of sentenceNotes) {
+    const button = page.getByRole('button', { name: note.preview, exact: true });
+    await button.waitFor();
+    assert.equal(await button.textContent(), note.preview);
+    await button.click();
+    assert.equal(await page.locator('#local-note-edit-text').inputValue(), note.text);
+    await page.locator('#local-note-edit-cancel').click();
+  }
+  await screenshot('local-notes-first-sentences');
   return [
     'Inline and shortcut capture persist across reloads',
     'Edit, completion and order are retained',
     'Discuss prepares quietly and only Send starts a reply',
     'Issue creation is prefilled and links back before optional deletion',
     'Unsaved capture draft survives reload',
+    'Multi-sentence notes show only their first sentence and retain the full text in the editor',
   ];
 }
