@@ -54,8 +54,10 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await page.addInitScript(() => {
     window.SpeechRecognition = class {
       start() {
+        window.discussSpeechRecognition = this;
+        if (window.manualDiscussDictation) return;
         setTimeout(() => {
-          this.onresult?.({ results: [[{ transcript: 'dictated words' }]] });
+          this.onresult?.({ results: [Object.assign([{ transcript: 'dictated words' }], { isFinal: true })] });
           this.onend?.();
         }, 30);
       }
@@ -230,6 +232,145 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'New message remained queued after failure'
   );
   assert.equal(calls.at(-1).text, 'Continue after failure');
+
+  const dictationEvidence = { recognizer: 'Injected browser speech recognition', observations: [] };
+  const dictationProofPath = join(dirname(project), 'project-discuss-dictation.json');
+  async function speechResult(transcript, isFinal = true) {
+    await page.evaluate(
+      ({ transcript, isFinal }) => {
+        window.discussSpeechRecognition.onresult({
+          results: [Object.assign([{ transcript }], { isFinal })],
+        });
+      },
+      { transcript, isFinal }
+    );
+  }
+  async function dictate(text, { interim = null, original = '', beforeEnd = null } = {}) {
+    await page.locator('#discuss-draft').fill(original);
+    await page.evaluate(() => {
+      window.manualDiscussDictation = true;
+    });
+    const before = calls.length;
+    await page.locator('#discuss-mic').click();
+    if (interim !== null) {
+      await speechResult(interim, false);
+      assert.equal(calls.length, before, 'An interim spoken command must not send.');
+      assert.equal(await page.locator('#discuss-draft').inputValue(), original + (original ? ' ' : '') + interim);
+    }
+    await speechResult(text);
+    if (beforeEnd) await beforeEnd();
+    await page.evaluate(() => window.discussSpeechRecognition.onend());
+    await page.locator('#discuss-mic[aria-label="Start dictation"]').waitFor();
+    return before;
+  }
+  async function recordDictation(text, before) {
+    const observation = {
+      dictated: text,
+      manualSend: false,
+      submitted: calls.slice(before).map((message) => message.text),
+      draft: await page.locator('#discuss-draft').inputValue(),
+      status: await page.locator('#discuss-voice-status').textContent(),
+    };
+    dictationEvidence.observations.push(observation);
+    writeFileSync(dictationProofPath, JSON.stringify(dictationEvidence, null, 2) + '\n');
+    return observation;
+  }
+  const spokenSendBefore = await dictate('Explain this code go', { interim: 'Explain this code go' });
+  await poll(
+    () => calls.length,
+    (count) => count === spokenSendBefore + 1,
+    'The final spoken go did not automatically submit.'
+  );
+  await poll(
+    () => attachedSession().status,
+    (status) => status === 'idle',
+    'The spoken prompt did not finish.'
+  );
+  assert.deepEqual((await recordDictation('Explain this code go', spokenSendBefore)).submitted, ['Explain this code']);
+  for (const [text, expectedDraft] of [
+    ['go', ''],
+    ['Explain go in this code', 'Explain go in this code'],
+    ['Explain this codego', 'Explain this codego'],
+  ]) {
+    const before = await dictate(text);
+    await poll(
+      () => attachedSession().draft.text,
+      (draft) => draft === expectedDraft,
+      'The unsent dictated draft was not saved.'
+    );
+    const observation = await recordDictation(text, before);
+    assert.deepEqual(observation.submitted, [], 'Only a final command with a nonempty prompt may send.');
+    assert.equal(observation.draft, expectedDraft);
+  }
+  const interimBefore = await dictate('Explain go in this code', { interim: 'Explain go' });
+  await poll(
+    () => attachedSession().draft.text,
+    (draft) => draft === 'Explain go in this code',
+    'The revised final transcript was not saved.'
+  );
+  assert.deepEqual((await recordDictation('Explain go in this code after interim go', interimBefore)).submitted, []);
+  const existingDraftBefore = await dictate('GO.', { original: 'Explain the existing draft' });
+  await poll(
+    () => calls.length,
+    (count) => count === existingDraftBefore + 1,
+    'The spoken command did not submit the existing draft.'
+  );
+  await poll(
+    () => attachedSession().status,
+    (status) => status === 'idle',
+    'The existing draft response did not finish.'
+  );
+  assert.deepEqual((await recordDictation('GO. after an existing draft', existingDraftBefore)).submitted, [
+    'Explain the existing draft',
+  ]);
+  const whitespaceBefore = await dictate('go', { original: '   ' });
+  await poll(
+    () => attachedSession().draft.text,
+    (draft) => draft === '',
+    'The empty spoken command was not removed.'
+  );
+  assert.deepEqual((await recordDictation('go after whitespace', whitespaceBefore)).submitted, []);
+
+  const editedBefore = await dictate('Explain this code go', {
+    beforeEnd: async () => {
+      await page.locator('#discuss-draft').fill('Edited prompt go');
+      await speechResult('Late transcript go');
+    },
+  });
+  await poll(
+    () => attachedSession().draft.text,
+    (draft) => draft === 'Edited prompt go',
+    'A late speech result overwrote the edited draft.'
+  );
+  const editedObservation = await recordDictation('Final go followed by a manual draft edit', editedBefore);
+  assert.deepEqual(editedObservation.submitted, [], 'Dictation must not submit a manually edited draft.');
+  assert.equal(editedObservation.draft, 'Edited prompt go');
+  const switchedBefore = await dictate('Explain this code go', {
+    beforeEnd: async () => {
+      await page.locator(`[data-discuss-conversation="${first.id}"]`).click();
+      await poll(
+        () => new URL(page.url()).searchParams.get('conversation'),
+        (id) => id === first.id,
+        'The conversation did not switch during dictation.'
+      );
+      await page.locator('#discuss-draft').fill('Other conversation go');
+      await speechResult('Late transcript go');
+    },
+  });
+  await poll(
+    () => service.projectDiscuss.read(first.id).draft.text,
+    (draft) => draft === 'Other conversation go',
+    'A late speech result overwrote another conversation draft.'
+  );
+  const switchedObservation = await recordDictation('Final go followed by a conversation switch', switchedBefore);
+  assert.deepEqual(switchedObservation.submitted, [], 'Dictation must not submit another conversation draft.');
+  assert.equal(switchedObservation.draft, 'Other conversation go');
+  await page.locator(`[data-discuss-conversation="${attachedConversation}"]`).click();
+  await poll(
+    () => new URL(page.url()).searchParams.get('conversation'),
+    (id) => id === attachedConversation,
+    'The dictation conversation did not reopen.'
+  );
 
   const template = service.projectDiscuss.read(attachedConversation).messages.at(-1);
   const history = (await service.projectDiscuss.action({ action: 'create' })).selected;

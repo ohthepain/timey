@@ -685,15 +685,32 @@
         return;
       }
       const original = draft.value;
+      const dictation = { conversationId: selectedId, draft: original, finalTranscript: '' };
+      const isCurrentDictation = () => selectedId === dictation.conversationId && draft.value === dictation.draft;
+      function sendSpokenPrompt() {
+        if (!isCurrentDictation()) return;
+        if (!/(?:^|\s)go[.!?]*\s*$/i.test(dictation.finalTranscript)) return;
+        dictation.finalTranscript = '';
+        draft.value = draft.value.replace(/(?:^|\s)go[.!?]*\s*$/i, '').trimEnd();
+        changedDraft();
+        status.textContent = 'Dictation finished. There is no prompt to send.';
+        if (!draft.value.trim()) return;
+        status.textContent = 'Dictation finished. Sending your prompt.';
+        form.requestSubmit();
+      }
       recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.onresult = (event) => {
+        if (!isCurrentDictation()) return;
         const text = [...event.results].map((result) => result[0].transcript).join(' ');
-        draft.value = original + (original && text ? ' ' : '') + text;
+        dictation.finalTranscript = [...event.results].every((result) => result.isFinal) ? text : '';
+        dictation.draft = [original, text].filter(Boolean).join(' ');
+        draft.value = dictation.draft;
         changedDraft();
       };
       recognition.onerror = (event) => {
+        dictation.finalTranscript = '';
         status.textContent = 'Dictation failed: ' + event.error + '. Your draft is preserved; retry or type.';
       };
       recognition.onend = () => {
@@ -702,6 +719,7 @@
           '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg>';
         byId('discuss-mic').setAttribute('aria-label', 'Start dictation');
         byId('discuss-mic').title = 'Dictate';
+        sendSpokenPrompt();
         if (status.textContent === 'Listening…')
           status.textContent = 'Dictation finished. Edit the text before sending.';
       };

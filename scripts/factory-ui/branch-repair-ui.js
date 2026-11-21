@@ -12,13 +12,14 @@
     passed: 'Branch Checks Passed',
     applied: 'Branch Fix Applied',
   };
-  window.createBranchRepairUI = ({ button, action }) => {
+  window.createBranchRepairUI = ({ button, action, isBusy }) => {
     const dialog = document.getElementById('branch-repair-dialog');
     let view;
     let issueId;
     let pending = false;
     const find = (name) => dialog.querySelector(`[data-repair-${name}]`);
     const busy = (status) => ['running', 'stopping'].includes(status);
+    const actionIsPending = () => pending || isBusy();
     function render() {
       const repair = view?.branchRepair || { status: 'idle' };
       const status = repair.status;
@@ -29,11 +30,12 @@
         view?.issue?.state === 'needs-approval' ||
         view?.grouping?.master;
       button.hidden = !view?.issue || view.flow?.routeType === 'investigation';
-      button.disabled = Boolean(pending || (ineligible && !busy(status)));
+      const actionPending = actionIsPending();
+      button.disabled = Boolean(actionPending || (ineligible && !busy(status)));
       button.dataset.repairState = status;
       renderButton(repair);
       renderDetails(repair);
-      renderActions(repair, ineligible);
+      renderActions(repair, ineligible, actionPending);
     }
     function renderButton(repair) {
       const status = repair.status;
@@ -74,15 +76,15 @@
       window.timeyView.text(find('diff'), repair.diff || '');
       window.timeyView.text(find('checks'), (repair.checks || []).map(({ label }) => label).join('\n'));
     }
-    function renderActions(repair, ineligible) {
+    function renderActions(repair, ineligible, actionPending) {
       const status = repair.status;
       find('command').hidden = busy(status) || status === 'interrupted';
       find('command').textContent = commandLabel(repair);
-      find('command').disabled = Boolean(ineligible || pending);
+      find('command').disabled = Boolean(ineligible || actionPending);
       find('stop').hidden = !busy(status);
-      find('stop').disabled = status === 'stopping' || pending;
+      find('stop').disabled = status === 'stopping' || actionPending;
       find('reconcile').hidden = status !== 'interrupted';
-      find('reconcile').disabled = pending;
+      find('reconcile').disabled = actionPending;
     }
     function statusMessage(repair) {
       return [
@@ -105,7 +107,7 @@
       return repair.status === 'ready' ? 'branch-repair-approve' : 'branch-repair-start';
     }
     async function perform(command) {
-      if (pending || view?.issue?.id !== issueId) return;
+      if (actionIsPending() || view?.issue?.id !== issueId) return;
       pending = true;
       render();
       try {
