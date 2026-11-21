@@ -12,7 +12,7 @@ import { listStoredIssues } from './issue-report-storage.mjs';
 
 const finishLine = 'Verified, merge-ready pull requests';
 const protectionOnly = new Set(['close', 'retro', 'cleanup', 'delete-worktree']);
-const inspectionActions = new Set(['open-block', 'comment', 'open-worktree', 'stop']);
+const inspectionActions = new Set(['open-block', 'comment', 'open-worktree', 'stop', 'branch-repair-stop']);
 const end = (row, status, summary, nextAction) => Object.assign(row, { status, summary, nextAction });
 const identity = ({ issue, flow }) => digest(JSON.stringify([issue.content, flow.revision]));
 const publicIssue = ({ id, title, issueNumber }) => ({ id, title, issueNumber });

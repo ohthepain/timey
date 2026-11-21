@@ -1,5 +1,6 @@
 const serverControlUI = (() => {
   let actionRequest = 0;
+  let renderedActions = null;
   let waitingForServer = false;
   let state = null,
     busy = false,
@@ -44,7 +45,7 @@ const serverControlUI = (() => {
   }
   function show(value, request) {
     const element = panel();
-    refreshOpenActions(value, request);
+    refreshOpenActions(request);
     state = value;
     const count = element.querySelector('[data-server-count]');
     if (count) count.textContent = counts(state);
@@ -109,9 +110,9 @@ const serverControlUI = (() => {
       new CustomEvent('factory-actions-paused', { detail: requestedPause ?? state.phase !== 'idle' })
     );
   }
-  function refreshOpenActions(value, request) {
+  function refreshOpenActions(request) {
     const dialog = actionsDialog();
-    if (dialog.open && state?.actions !== value.actions) loadActions(dialog, request);
+    if (dialog.open) loadActions(dialog, request);
   }
   function loadActions(dialog, request) {
     const current = ++actionRequest;
@@ -128,13 +129,16 @@ const serverControlUI = (() => {
     const dialog = actionsDialog();
     const list = dialog.querySelector('[data-server-action-list]');
     const empty = dialog.querySelector('[data-actions-empty]');
+    empty.textContent = items.length
+      ? 'Current work stays on its issue. Stop cancels the current action; Pause lets it finish and prevents later work on that issue.'
+      : 'No issue-linked actions are running.';
+    const signature = JSON.stringify(items);
+    if (signature === renderedActions) return;
+    renderedActions = signature;
     const drafts = new Map(
       [...list.querySelectorAll('[data-steer-text]')].map((field) => [field.dataset.steerText, field.value])
     );
     list.replaceChildren();
-    empty.textContent = items.length
-      ? 'Current work stays on its issue. Stop cancels the current action; Pause lets it finish and prevents later work on that issue.'
-      : 'No issue-linked actions are running.';
     for (const item of items) list.append(actionCard(item, request, drafts));
   }
   function actionCard(item, request, drafts) {
@@ -175,11 +179,16 @@ const serverControlUI = (() => {
       link.textContent = `Issue: ${issue.title}${issue.issueNumber ? ` (#${issue.issueNumber})` : ''}`;
       links.append(link, document.createTextNode(' '));
     }
-    const output = document.createElement('a');
-    output.href = `${flowWorkspace ? '/classic' : ''}#/issue/${encodeURIComponent(item.issues[0].id)}?run=${encodeURIComponent(item.id)}`;
-    output.textContent = 'Action output';
-    links.append(output);
+    links.append(actionOutputLink(item, flowWorkspace));
     return links;
+  }
+  function actionOutputLink(item, flowWorkspace) {
+    const output = document.createElement('a');
+    output.href =
+      item.outputHref ||
+      `${flowWorkspace ? '/classic' : ''}#/issue/${encodeURIComponent(item.issues[0].id)}?run=${encodeURIComponent(item.id)}`;
+    output.textContent = 'Action output';
+    return output;
   }
   function actionControls(item, request, drafts) {
     const controls = document.createElement('div');

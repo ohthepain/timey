@@ -333,6 +333,41 @@ test('unmerged or mismatched delivery cannot supply a closure artifact', async (
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
 });
 
+function retainMergedCandidate(f) {
+  const verification = f.ctx.flow.blocks[0].attempts[0].result;
+  f.ctx.flow.blocks.push({
+    kind: 'merge',
+    attempts: [
+      {
+        status: 'completed',
+        invalidatedAt: '2026-11-20T22:36:01Z',
+        result: { pr: 17, head: f.input.revision, revision: 'merge-revision', verification },
+      },
+    ],
+  });
+  writeFileSync(join(f.source.root, 'after-merge.txt'), 'Later checkout work\n');
+  f.source.git('add', 'after-merge.txt');
+  f.source.git('commit', '-qm', 'Later unrelated work');
+}
+
+test('Close accepts the retained merged candidate after its checkout advances', async (t) => {
+  const f = fixture(t);
+  retainMergedCandidate(f);
+  await f.close();
+  assert.equal(readQueue(f.root, { location: 'closed', issueId: f.ctx.issue.id }).issues[0].state, 'closed');
+  assert.equal(JSON.parse(readFileSync(join(f.folder, 'merged-delivery.json'), 'utf8')).head, f.input.revision);
+  assert.deepEqual(f.calls, []);
+});
+
+test('Close still rejects changed original proof after the merged checkout advances', async (t) => {
+  const f = fixture(t);
+  retainMergedCandidate(f);
+  const checked = f.ctx.flow.blocks[0].attempts[0].result;
+  writeFileSync(checked.proof[0].path, 'Changed original evidence\n');
+  await assert.rejects(f.close(), /verification evidence changed/);
+  assert.equal(readQueue(f.root).issues[0].state, 'verify');
+});
+
 for (const changed of ['summary', 'command'])
   test(`changed ${changed} proof blocks flow acceptance`, async (t) => {
     const f = fixture(t);

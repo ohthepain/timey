@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { requireThat, writeJson } from './common.mjs';
 import { readModelSettings } from './model-settings.mjs';
 import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
+import { LocalNotes } from './local-notes.mjs';
 
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
@@ -220,6 +221,42 @@ export class ProjectDiscuss {
       createdAt: stamp(),
     };
   }
+  async prepareNote(note) {
+    const value = await this.action({ action: 'create', requestId: 'local-note-' + note.id });
+    const id = value.selected.id;
+    this.change(id, (session) => {
+      if (!session.noteContext || session.noteContext.text !== note.text) {
+        const initial = !session.noteContext;
+        session.noteContext = { ...session.noteContext, id: note.id, text: note.text };
+        session.title = 'Note: ' + note.text.split('\n')[0].slice(0, 72);
+        session.messages.push({
+          ...this.envelope(session, {
+            text:
+              'We are discussing this local note:\n\n' +
+              note.text +
+              '\n\nContext prepared. Wait for my first prompt before answering.',
+          }),
+          status: 'context',
+        });
+        if (initial) session.draft.text = 'Help me think through this note and identify a useful next step.';
+      }
+      if (note.issueId && !session.messages.some((message) => message.id === 'issue-' + note.issueId)) {
+        session.messages.push({
+          id: 'issue-' + note.issueId,
+          role: 'assistant',
+          status: 'completed',
+          createdAt: stamp(),
+          text:
+            'Created [the new issue](/?issue=' +
+            encodeURIComponent(note.issueId) +
+            '). We can continue discussing it here. Would you like to delete the original note?',
+          localNoteId: note.id,
+        });
+        session.noteContext.issueId = note.issueId;
+      }
+    });
+    return this.view(id);
+  }
   async action(input) {
     requireThat(!this.closed && this.service.reviewMode !== 'preview', 'Open the live project to use Discuss.');
     this.service.ownServer();
@@ -256,7 +293,19 @@ export class ProjectDiscuss {
     }
     const id = checkedId(input.conversationId);
     let session = this.read(id);
-    if (operation === 'close') {
+    if (operation === 'delete-note') {
+      requireThat(
+        session.messages.some((message) => message.localNoteId === input.noteId),
+        'Choose the original note offered in this conversation.'
+      );
+      const notes = new LocalNotes(this.service.root);
+      const current = notes.view();
+      if (current.notes.some((note) => note.id === input.noteId))
+        notes.action({ action: 'delete', id: input.noteId, basis: current.basis });
+      this.change(id, (saved) => {
+        for (const message of saved.messages) if (message.localNoteId === input.noteId) message.localNoteDeleted = true;
+      });
+    } else if (operation === 'close') {
       requireThat(!session.closedAt, 'This project conversation is already closed.');
       this.change(id, (s) => {
         s.closedAt = stamp();

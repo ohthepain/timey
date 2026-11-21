@@ -4,6 +4,11 @@ Language used to coordinate work and review changes.
 
 ## Language
 
+**Local note**:
+A quick project-owned thought or todo saved outside version control. It can be
+discussed in the project conversation or used to prefill an issue. Capture starts
+no work, and issue creation retains the note until the person deletes it.
+
 **Clarify**:
 The issue stage that brings human intent and available technical evidence together
 to establish enough understanding to begin useful work. Remaining technical
@@ -185,7 +190,8 @@ and report and cannot start work independently while attached.
 
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
-A claim can remain held while the run's outcome is being published.
+A claim can remain held while the run's outcome is being published. Shared
+claims are records on the dedicated issue queue branch, separate from source revisions.
 
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one
@@ -240,6 +246,10 @@ master issue as Fixed.
 **Issue cleanup**:
 Removal of a closed issue's worktree and any selected local or remote issue
 branches. Incomplete cleanup can be retried while the issue stays closed.
+
+**Worktree deletion**:
+Removal of an issue's local checkout, independent of its status or closure sequence.
+It discards uncommitted files and preserves the issue, branches, conversations, and retained evidence.
 
 **Issue archive**:
 A retained collection of issues outside the active views. Archiving preserves
@@ -304,6 +314,13 @@ from its own Details, the issue and upstream blocks. An edit invalidates the
 edited block and its connected successors. Details types each input and Artifacts
 types each output. An input uses either a manual value or a linked upstream
 output; the inspector shows inputs before read-only latest outputs.
+
+**Merged issue**:
+An issue whose PR has a successful Merge receipt or a retained GitHub merge
+observation. Its issue settings and work flow are read-only, including historical
+attempts and block definitions. Close and its Retro/Cleanup sequence remain
+available. Restarting work requires a future reopen operation; merged-issue
+reopening is deferred. See [ADR 0020](docs/adr/0020-freeze-merged-issues.md).
 
 **Request block**:
 The required first block and owner of Your words and the derived request fields. Saving the wording

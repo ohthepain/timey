@@ -1,3 +1,4 @@
+import { requireUnmergedIssue } from './merged-issue.mjs';
 import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { decisionBasis, retainAcceptedResult } from './recorded-result.mjs';
 import { existsSync } from 'node:fs';
@@ -80,6 +81,7 @@ export function decideIssue(
 }
 
 function validateGroupDecision(root, issue, kind, flowGroupClosure) {
+  if (kind === 'reopen') requireUnmergedIssue(root, issue.id);
   requireIndependentIssue(root, issue.id);
   const grouped = kind === 'close' && groupChildren(issue).length > 0;
   requireThat(!grouped || flowGroupClosure, 'Use the Flow workspace to close a master with attached sub-issues.');

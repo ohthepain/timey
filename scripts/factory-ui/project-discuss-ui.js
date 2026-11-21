@@ -63,6 +63,16 @@
       <form id="discuss-form" class="discuss-composer"><p id="discuss-editing" class="muted" hidden></p><div id="discuss-draft-attachments" class="discuss-attachments"></div><div class="discuss-draft-wrap"><textarea id="discuss-draft" aria-label="Message project" rows="3" maxlength="64000" placeholder="Ask about your project, or type / to choose a skill…"></textarea><span id="discuss-suggestion" class="discuss-suggestion" aria-hidden="true"></span></div><div class="discuss-composer-actions"><div><div class="discuss-toolbar"><label><span class="visually-hidden">Clarification skill</span><select id="discuss-clarification" aria-label="Clarification skill"></select></label><label><span class="visually-hidden">Model</span><select id="discuss-model" aria-label="Discuss model"></select></label><label><span class="visually-hidden">Effort</span><select id="discuss-effort" aria-label="Discuss effort"></select></label><button id="discuss-refresh-skills" class="small-button" type="button">Refresh skills</button><label class="discuss-icon-control" title="Attach files"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 8.5 4.1-4.1a2.1 2.1 0 0 1 3 3l-5.7 5.7a3.3 3.3 0 0 1-4.7-4.7l5.5-5.5"/></svg><span class="visually-hidden">Attach files</span><input id="discuss-files" type="file" multiple hidden></label><button id="discuss-mic" class="discuss-icon-control" type="button" aria-label="Start dictation" title="Dictate"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg></button></div><span id="discuss-voice-status" class="muted" role="status"></span></div><div><button id="discuss-cancel-edit" class="small-button" type="button" hidden>Cancel edit</button><button id="discuss-resume" class="small-button" type="button" hidden>Resume</button><button id="discuss-send" class="discuss-send-button" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg></button></div></div></form><p id="discuss-status" class="visually-hidden" role="status"></p>`;
     const draft = byId('discuss-draft');
     const form = byId('discuss-form');
+    const log = byId('discuss-messages');
+    let openingScroll = null;
+    for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown'])
+      log.addEventListener(
+        event,
+        () => {
+          openingScroll = null;
+        },
+        { passive: true }
+      );
     let draftSave = Promise.resolve();
     let settingsSave = Promise.resolve();
     let actionSave = Promise.resolve();
@@ -261,7 +271,7 @@
     function messageHtml(message) {
       const user = message.role === 'user' || message.role === 'human';
       const model = message.settings?.model;
-      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
+      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : message.localNoteId ? '' : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
     }
     function render() {
       const current = session();
@@ -286,9 +296,16 @@
         selectedSettings?.effort || data?.defaults?.effort
       );
       clarificationSelect.update(data?.clarificationSkills || [], selectedSettings?.clarificationSkill || 'none');
-      const log = byId('discuss-messages');
       const html =
-        (current?.messages || []).map(messageHtml).join('') ||
+        (current?.messages || [])
+          .map(
+            (message) =>
+              messageHtml(message) +
+              (message.localNoteId
+                ? `<div class="discuss-note-offer">${message.localNoteDeleted ? 'Original note deleted.' : `<button type="button" class="small-button" data-discuss-delete-note="${escape(message.localNoteId)}">Delete original note</button>`}</div>`
+                : '')
+          )
+          .join('') ||
         '<div class="discuss-empty"><h2>What would you like to work on?</h2><p>Ask about the codebase, choose a skill with /, or request a project action.</p></div>';
       if (log.innerHTML !== html) {
         log.innerHTML = html;
@@ -304,6 +321,30 @@
       renderAttachments();
       renderSuggestion();
       updateControls();
+      scrollOpeningHistory();
+    }
+    function scrollOpeningHistory() {
+      if (!openingScroll || !visible || !session()) return;
+      const opening = {};
+      openingScroll = opening;
+      log.scrollTop = log.scrollHeight;
+      const images = [...log.querySelectorAll('img')].filter((image) => !image.complete);
+      Promise.all(images.map(waitForImage)).then(() => {
+        if (openingScroll !== opening) return;
+        log.scrollTop = log.scrollHeight;
+        openingScroll = null;
+      });
+    }
+    function waitForImage(image) {
+      return new Promise((resolve) => {
+        const settled = () => {
+          image.removeEventListener('load', settled);
+          image.removeEventListener('error', settled);
+          resolve();
+        };
+        image.addEventListener('load', settled);
+        image.addEventListener('error', settled);
+      });
     }
     function renderAttachments() {
       byId('discuss-draft-attachments').innerHTML = attachments.map((file) => attachmentHtml(file, true)).join('');
@@ -508,6 +549,11 @@
     root.addEventListener('click', async (event) => {
       const button = event.target.closest('button');
       if (!button) return;
+      if (button.dataset.discussDeleteNote) {
+        await action('delete-note', { noteId: button.dataset.discussDeleteNote });
+        void window.localNotesUI?.refresh();
+        return;
+      }
       const messages = session()?.messages || [];
       if (button.hasAttribute('data-discuss-copy-code')) {
         await navigator.clipboard.writeText(button.parentElement.querySelector('code').textContent);
@@ -654,10 +700,12 @@
         visible = value;
         root.hidden = !value;
         if (value && !was) {
+          openingScroll = {};
           void refresh(true);
           void discoverSkills().catch((failure) => error(failure.message));
         }
         if (!value && was) {
+          openingScroll = null;
           remember();
           void saveDraft();
         }

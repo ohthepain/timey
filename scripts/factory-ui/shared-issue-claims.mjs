@@ -1,63 +1,29 @@
-import { execFile, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
-import { promisify } from 'node:util';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { cleanEnvironment, git, requireThat } from './common.mjs';
+import { requireThat, writeJson } from './common.mjs';
+import { createSharedIssueGit } from './shared-issue-git.mjs';
+import { queueClaimPath, readQueueClaim } from './shared-issue-paths.mjs';
 
-const executeAsync = promisify(execFile);
-const namespace = 'refs/heads/claims/';
-const issuePattern = /^[a-zA-Z0-9_-]{1,100}$/;
-const oidPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
-
-function claimRef(issueId) {
-  requireThat(typeof issueId === 'string' && issuePattern.test(issueId), 'Select a valid issue.');
-  return namespace + issueId;
-}
-
-export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev', transport }) {
-  requireThat(typeof remote === 'string' && /^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(remote), 'Invalid queue remote.');
-  const targetRef = `refs/heads/${target}`;
-  git(root, 'check-ref-format', targetRef);
-  requireThat(!targetRef.startsWith(namespace), 'Queue target cannot be a claim branch.');
+export function createSharedIssueClaims({ root, remote = 'origin', target = 'issue-queue', ...options }) {
+  const queue = createSharedIssueGit({ root, remote, target, ...options });
   const directory = join(root, '.issues', 'shared-issue-claims');
-
-  function execute(args, input) {
-    return execFileSync('git', ['-C', root, ...args], {
-      encoding: 'utf8',
-      env: { ...cleanEnvironment(), ...transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
-      stdio: 'pipe',
-      timeout: 30000,
-      maxBuffer: 8 * 1024 * 1024,
-      input,
-    });
-  }
-
-  function refs(pattern) {
-    const output = execute(['ls-remote', '--heads', '--', remote, pattern]).trim();
-    return output ? output.split('\n').map((line) => line.split('\t')) : [];
-  }
-
-  function remoteOid(ref) {
-    return refs(ref).find(([, name]) => name === ref)?.[0] ?? null;
-  }
-
+  const at = (head, id) => readQueueClaim(queue.execute, head, id);
   function recordPath(issueId) {
-    claimRef(issueId);
+    queueClaimPath(issueId);
     return join(directory, `${issueId}.json`);
   }
-
   function own(issueId) {
-    const path = recordPath(issueId);
     try {
-      const claim = JSON.parse(readFileSync(path, 'utf8'));
+      const claim = JSON.parse(readFileSync(recordPath(issueId), 'utf8'));
+      requireThat(claim.version === 2, 'Reconcile the legacy remote claim with the previous runner before upgrading.');
       requireThat(
         claim.issueId === issueId &&
           claim.remote === remote &&
-          typeof claim.oid === 'string' &&
-          oidPattern.test(claim.oid),
-        'The saved issue claim is invalid or belongs to a different remote.'
+          claim.target === target &&
+          /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(claim.oid),
+        'The saved issue claim is invalid or belongs to a different queue.'
       );
       return claim;
     } catch (error) {
@@ -65,7 +31,6 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
       throw error;
     }
   }
-
   function locked(issueId, operation) {
     const path = recordPath(issueId);
     const lock = path + '.lock';
@@ -82,131 +47,110 @@ export function createSharedIssueClaims({ root, remote = 'origin', target = 'dev
       rmdirSync(lock);
     }
   }
-
   function acquire(issueId) {
-    const ref = claimRef(issueId);
     return locked(issueId, (path) => {
       requireThat(!own(issueId), 'This checkout already has a claim record. Reconcile it before starting again.');
-      const identity = { issueId, attemptId: randomUUID(), runner: hostname(), remote };
-      const tree = execute(['mktree'], '').trim();
-      const oid = execute([
-        '-c',
-        'user.name=Timey Factory',
-        '-c',
-        'user.email=factory@timey.invalid',
-        'commit-tree',
-        tree,
-        '-m',
-        JSON.stringify(identity),
-      ]).trim();
-      const claim = { ...identity, oid };
+      requireThat(
+        !queue.legacyClaims(),
+        'Legacy remote claims remain. Stop old runners and reconcile their claims before upgrading.'
+      );
+      const identity = { version: 2, issueId, attemptId: randomUUID(), runner: hostname(), remote, target };
+      const content = JSON.stringify(identity) + '\n';
+      const claim = { ...identity, oid: queue.execute(['hash-object', '-w', '--stdin'], content).trim() };
       writeFileSync(path, JSON.stringify(claim) + '\n', { flag: 'wx', mode: 0o600 });
-
-      try {
-        execute([
-          'push',
-          '--no-follow-tags',
-          '--recurse-submodules=no',
-          `--force-with-lease=${ref}:`,
-          '--',
-          remote,
-          `${oid}:${ref}`,
-        ]);
-        return claim;
-      } catch {
-        const current = remoteOid(ref);
-        if (current === oid) return claim;
-        if (current) {
-          rmSync(path);
-          throw Error('Another run already claims this issue.');
-        }
-        throw Error('Could not confirm remote claim creation. Reconcile the saved claim before retrying.');
+      let head = queue.fetch();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        assertAvailable(head, issueId, path);
+        const commit = queue.commit(head, [[queueClaimPath(issueId), content]], `Claim issue ${issueId}`);
+        writeJson(path, { ...claim, commit });
+        const next = pushAndRead(commit, head);
+        if (at(next, issueId)?.oid === claim.oid) return claim;
+        requireThat(
+          next !== head,
+          'Could not confirm remote claim creation. Reconcile the saved claim before retrying.'
+        );
+        const published = queue.execute(['merge-base', commit, next]).trim() === commit;
+        requireThat(!published, 'The published claim changed. Reconcile it before starting work.');
+        head = next;
       }
+      throw Error('The shared queue kept changing. Reconcile the saved claim before retrying.');
     });
   }
-
+  function assertAvailable(head, issueId, path) {
+    if (!at(head, issueId)) return;
+    rmSync(path);
+    throw Error('Another run already claims this issue.');
+  }
+  function pushAndRead(commit, head) {
+    try {
+      queue.push(commit, head);
+    } catch {}
+    return queue.fetch();
+  }
+  function isOwned(head, claim) {
+    return at(head, claim.issueId)?.oid === claim.oid;
+  }
   function verifyOwn(issueId) {
     const claim = own(issueId);
-    return claim && remoteOid(claimRef(issueId)) === claim.oid ? claim : null;
+    return claim && isOwned(queue.fetch(), claim) ? claim : null;
   }
-
   function release(claim) {
-    const { issueId, oid } = claim;
-    const ref = claimRef(issueId);
-    return locked(issueId, (path) => {
-      requireThat(own(issueId)?.oid === oid && oidPattern.test(oid), 'The saved issue claim does not match this run.');
-      try {
-        execute([
-          'push',
-          '--no-follow-tags',
-          '--recurse-submodules=no',
-          `--force-with-lease=${ref}:${oid}`,
-          '--',
-          remote,
-          `:${ref}`,
-        ]);
-      } catch {
+    return locked(claim.issueId, (path) => {
+      assertLocalClaim(claim, 'The saved issue claim does not match this run.');
+      let head = queue.fetch();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!isOwned(head, claim)) break;
+        const commit = queue.commit(head, [[queueClaimPath(claim.issueId), null]], `Release issue ${claim.issueId}`);
+        const next = pushAndRead(commit, head);
         requireThat(
-          remoteOid(ref) !== oid,
+          next !== head || !isOwned(next, claim),
           'Could not release the remote claim. Its record was retained for recovery.'
         );
+        head = next;
       }
+      requireThat(!isOwned(head, claim), 'The shared queue kept changing. Its claim was retained for recovery.');
       rmSync(path);
       return true;
     });
   }
-
+  function assertLocalClaim(claim, message) {
+    requireThat(own(claim.issueId)?.oid === claim.oid, message);
+  }
   function forgetReleased(claim) {
     return locked(claim.issueId, (path) => {
-      requireThat(own(claim.issueId)?.oid === claim.oid, 'The saved issue claim does not match the atomic release.');
+      assertLocalClaim(claim, 'The saved issue claim does not match the atomic release.');
       rmSync(path);
       return true;
     });
   }
-
-  function list() {
-    return parseClaims(refs(namespace + '*'));
-  }
-
-  async function listAsync() {
-    const { stdout } = await executeAsync('git', ['ls-remote', '--heads', '--', remote, namespace + '*'], {
-      cwd: root,
-      env: { ...cleanEnvironment(), ...transport?.environment(), GIT_TERMINAL_PROMPT: '0' },
-      timeout: 30000,
-      maxBuffer: 8 * 1024 * 1024,
-    });
-    return parseClaims(
-      stdout
-        .trim()
-        .split('\n')
-        .map((line) => line.split('\t'))
-    );
-  }
-
-  function parseClaims(entries) {
+  function claimsAt(head) {
+    const entries = queue.execute(['ls-tree', '-r', head, '--', '.issues/claims/']).trim();
     return new Map(
-      entries.filter(validClaim).map(([oid, ref]) => {
-        const issueId = ref.slice(namespace.length);
-        return [issueId, { issueId, oid }];
-      })
+      entries
+        ? entries.split('\n').map((entry) => {
+            const id = entry.split('\t')[1]?.match(/^\.issues\/claims\/([\w-]+)\.json$/)?.[1];
+            requireThat(id, 'The shared claim directory contains an invalid entry.');
+            return [id, at(head, id)];
+          })
+        : []
     );
   }
-
-  function validClaim([oid, ref]) {
-    return ref?.startsWith(namespace) && oidPattern.test(oid) && issuePattern.test(ref.slice(namespace.length));
+  function list() {
+    return claimsAt(queue.fetch());
   }
-
+  async function listAsync() {
+    return claimsAt(await queue.fetchAsync());
+  }
   function readTargetReport(issueId) {
-    claimRef(issueId);
-    const fetched = `refs/remotes/${remote}/${target}`;
-    execute(['fetch', '--no-tags', '--no-write-fetch-head', '--', remote, `+${targetRef}:${fetched}`]);
-    const revision = git(root, 'rev-parse', '--verify', fetched);
-    const path = `.issues/${issueId}.md`;
-    const entry = git(root, 'ls-tree', revision, '--', path);
-    if (!entry) return null;
-    requireThat(entry.startsWith('100644 blob '), 'The target issue report must be a regular Markdown file.');
-    return execute(['show', `${revision}:${path}`]);
+    queueClaimPath(issueId);
+    const head = queue.fetch();
+    for (const path of [`.issues/${issueId}.md`, `.issues/closed/${issueId}.md`]) {
+      const entry = queue.execute(['ls-tree', head, '--', path]).trim();
+      if (!entry) continue;
+      requireThat(entry.startsWith('100644 blob '), 'The target issue report must be a regular Markdown file.');
+      return queue.execute(['show', `${head}:${path}`]);
+    }
+    return null;
   }
-
   return { acquire, own, verifyOwn, recover: verifyOwn, release, forgetReleased, list, listAsync, readTargetReport };
 }

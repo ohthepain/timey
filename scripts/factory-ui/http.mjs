@@ -49,6 +49,8 @@ import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs'
 import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
 import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
 import { ProjectDiscuss, readClarificationSkills } from './project-discuss.mjs';
+import { LocalNotes } from './local-notes.mjs';
+import { localNoteAction } from './local-note-routes.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   deleteIssueWorktree,
@@ -141,17 +143,61 @@ function requireClassicIdle(service, path, value) {
 }
 
 const pauseSafeActions = {
-  '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
-  '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop'],
+  '/api/local-notes-action': ['create', 'edit', 'complete', 'delete', 'move', 'discuss', 'link'],
+  '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued', 'delete-note'],
+  '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop', 'branch-repair-stop'],
   '/api/project-home-action': ['investigation-stop', 'automate-stop'],
 };
 function mayFinishWhilePaused(path, value) {
   return pauseSafeActions[path]?.includes(value.action);
 }
 
+const mergedReadRoutes = new Set([
+  '/api/flow-action',
+  '/api/issue-cleanup-preview',
+  '/api/issue-cleanup-identities',
+  '/api/issue-cleanup-resource',
+  '/api/issue-cleanup-workspace-size',
+  '/api/issue-report-reveal',
+  '/api/issue-work-folder-open',
+  '/api/issue-storage-open-folder',
+  '/api/issue-chat-stop',
+  '/api/issue-strategy-stop',
+  '/api/lifecycle-pause',
+  '/api/shared-queue-retry',
+  '/api/shared-queue-confirm',
+  '/api/shared-queue-recover',
+]);
+function preservesMergedIssue(path, value) {
+  return mergedReadRoutes.has(path) || (path === '/api/issue-decision' && value.kind === 'close');
+}
+function savedMutationIssueIds(root, value) {
+  return [...new Set([value.issueId, value.input?.issueId, ...(value.issueIds || [])].filter(Boolean))].filter(
+    (issueId) =>
+      typeof issueId === 'string' &&
+      /^[\w-]+$/.test(issueId) &&
+      existsSync(join(root, '.issues/flows', issueId, 'flow.json'))
+  );
+}
+function closedIssueCleanup(workflow, path, issueId) {
+  return (
+    ['/api/issue-cleanup-retry', '/api/issue-worktree-delete', '/api/issue-storage-move'].includes(path) &&
+    workflow.selected(issueId).closed
+  );
+}
+async function requireEditableMutation(service, path, value) {
+  if (preservesMergedIssue(path, value)) return;
+  for (const issueId of savedMutationIssueIds(service.root, value)) {
+    const workflow = flows(service);
+    if (closedIssueCleanup(workflow, path, issueId)) continue;
+    await workflow.requireEditableIssue(issueId);
+  }
+}
+
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
   requireClassicIdle(service, path, value);
+  await requireEditableMutation(service, path, value);
   if (!mayFinishWhilePaused(path, value)) service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
@@ -173,6 +219,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
     '/api/project-home-action': () => projectHome(service).action(value),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).apply(value),
@@ -391,6 +438,7 @@ async function read(service, request, response, owner) {
     '/api/capture-grilling-skills': () => readClarificationSkills(service.root).filter((item) => item.kind === 'skill'),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/project-home': () => projectHome(service).view(),
+    '/api/local-notes': () => new LocalNotes(service.root).view(),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).preview(url.searchParams.get('ref')),
     '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).preview(),
     '/api/project-local-branch-cleanup': () => localBranchCleanup(service).preview(url.searchParams.get('ref')),
@@ -447,7 +495,9 @@ async function read(service, request, response, owner) {
     '/api/issue-closure': () =>
       issueClosureContext(service, issue(selectedIssue), url.searchParams.get('kind') === 'reopen'),
     '/api/queue': () =>
-      selectedIssue ? issueResponse(service, owner, issue(selectedIssue)) : queueResponse(service.snapshot(owner)),
+      selectedIssue
+        ? issueResponse(service, owner, issue(selectedIssue))
+        : queueResponse(service.snapshot(owner, { includeClosed: url.searchParams.get('includeClosed') === 'true' })),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
@@ -529,10 +579,13 @@ function readResource(service, request, response, owner) {
     return response.end();
   }
   const scripts = {
+    '/local-notes-ui.js': 'local-notes-ui.js',
+    '/local-notes.css': 'local-notes.css',
     '/project-discuss-ui.js': 'project-discuss-ui.js',
     '/skill-select.js': 'skill-select.js',
     '/project-discuss.css': 'project-discuss.css',
     '/flow-ui.js': 'flow-ui.js',
+    '/branch-repair-ui.js': 'branch-repair-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
     '/project-admin-ui.js': 'project-admin-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',

@@ -1,3 +1,6 @@
+import { verificationFailureKey } from './flow-repair-evidence.mjs';
+import { retainGitHubFailure } from './flow-ci-evidence.mjs';
+import { abortPendingMerge } from './flow-update-branch.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -11,7 +14,7 @@ import {
   lookupFlowPR,
   verifiedFlowCandidate,
 } from './flow-delivery.mjs';
-import { permissionFailure, repairableBlocker } from './strategy-repair.mjs';
+import { blockerKey, permissionFailure, repairableBlocker } from './strategy-repair.mjs';
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 
@@ -74,23 +77,32 @@ function repairableMergeFailure(error) {
   );
 }
 
+function reserveRepair(error, tree, state) {
+  const key = blockerKey({ code: error.code, message: error.message, blockerKey: verificationFailureKey(error) });
+  const blocker = state.blockers.get(key) || { attempts: 0, trees: new Set() };
+  requireThat(
+    blocker.attempts < state.workflow.repairAttempts,
+    'Stopped after ' + blocker.attempts + ' repair attempts for the same blocker. ' + error.message
+  );
+  requireThat(
+    !blocker.trees.has(tree),
+    'Merge repair returned to the same failing candidate without progress. ' + error.message
+  );
+  blocker.attempts++;
+  blocker.trees.add(tree);
+  state.blockers.set(key, blocker);
+  return blocker.attempts;
+}
+
 async function repairCandidate(ctx, workspace, error, options, state) {
-  if (
-    ctx.signal.aborted ||
-    !repairableMergeFailure(error) ||
-    permissionFailure(error) ||
-    state.repairs >= state.workflow.repairAttempts
-  )
-    throw error;
+  if (ctx.signal.aborted || !repairableMergeFailure(error) || permissionFailure(error)) throw error;
   const before = headOf(workspace);
   const tree = treeOf(workspace);
+  const attempt = reserveRepair(error, tree, state);
   const conflict = error.code === 'target-conflict';
   state.evidence.push(...(error.evidence ?? []));
   state.repairs += 1;
-  ctx.onProgress(
-    'Repairing the Merge candidate (' + state.repairs + '/' + state.workflow.repairAttempts + ').\n',
-    true
-  );
+  ctx.onProgress('Repairing this Merge blocker (' + attempt + '/' + state.workflow.repairAttempts + ').\n', true);
   const repair = await options.repair(error, state.repairs);
   state.evidence.push(...(repair.evidence ?? []));
   requireThat(repair.status !== 'blocked', repair.summary);
@@ -175,6 +187,12 @@ async function verifyMergeCandidate(service, ctx, workspace, head, options, stat
   }
 }
 
+async function retainFailedChecks(provider, error, head, checkout, onProgress) {
+  if (error.code !== 'ci-failure') return;
+  onProgress('Reading the failed GitHub check output before repair.\n', true);
+  await retainGitHubFailure(provider, error, head, checkout);
+}
+
 async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
   const target = await fetchTarget(ctx, workspace, invoke);
   await synchronize(workspace, target, invoke);
@@ -204,11 +222,18 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   } catch (error) {
     if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
     if (['target-outdated', 'target-conflict'].includes(error.code)) throw pending(error.message);
+    await retainFailedChecks(provider, error, head, workspace.checkout, ctx.onProgress);
     throw error;
   }
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
   if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
   return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, verificationOptions, state);
+}
+
+async function prepareMergeCheckout(state, workspace, invoke) {
+  if (state.started) return;
+  await abortPendingMerge(workspace, invoke);
+  state.started = true;
 }
 
 export async function mergeFlowPR(service, ctx, workspace, folder, options) {
@@ -223,6 +248,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
     workflow,
     prepareOnly: ctx.input?.prepareMerge === true,
     repairs: 0,
+    blockers: new Map(),
     evidence: [],
   };
   const evidence = () => [
@@ -252,6 +278,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
       assertFlowRemote(workspace, deliveryTarget(ctx.flow).remote, provider.config.repository, 'fetch');
       await assertPublicationIdle(provider, pr, workspace.branch);
       service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'implement', workspace.base);
+      await prepareMergeCheckout(state, workspace, invoke);
       try {
         const outcome = await advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state);
         if (outcome) return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };

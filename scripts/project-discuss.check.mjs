@@ -1,3 +1,4 @@
+import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
@@ -221,4 +222,28 @@ test('Add skill opens the chat Markdown extension without creating or starting a
   assert.deepEqual(opened, [join(f.root, 'user/chat/grilling.md')]);
   assert.match(readFileSync(opened[0], 'utf8'), /# Skill list/);
   assert.equal(f.calls.length, 0);
+});
+
+test('the Notes browser handoff saves an outgoing Discuss draft before replacing its model fixture', async (t) => {
+  const f = fixture(t);
+  const session = (await f.discuss.action({ action: 'create', settings: { model: 'model-b' } })).selected;
+  f.service.projectDiscuss = f.discuss;
+  f.service.projectDiscussOptions = f.options;
+  const navigated = Error('Outgoing page navigation completed');
+  const page = {
+    locator() {
+      return { isVisible: async () => false };
+    },
+    async goto() {
+      const discuss = (f.service.projectDiscuss ||= new ProjectDiscuss(f.service, f.service.projectDiscussOptions));
+      await discuss.action({ action: 'settings', conversationId: session.id, settings: { skills: [] } });
+      await discuss.action({ action: 'draft', conversationId: session.id, draft: { text: 'Outgoing draft' } });
+      throw navigated;
+    },
+  };
+  await assert.rejects(
+    localNotesBrowserChecks({ page, project: f.root, service: f.service }),
+    (error) => error === navigated
+  );
+  assert.equal(f.discuss.view(session.id).selected.draft.text, 'Outgoing draft');
 });

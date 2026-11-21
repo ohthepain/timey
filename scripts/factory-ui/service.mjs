@@ -93,6 +93,12 @@ async function recoverWorkerTurn(service, run, error) {
   return recoverWorkerText(service, run, error);
 }
 
+function selectedClosedIssues(root, queue, id) {
+  if (!id || !/^[\w-]+$/.test(id)) return [];
+  if (queue.issues.some((issue) => issue.id === id)) return [];
+  return readQueue(root, { location: 'closed', issueId: id }).issues;
+}
+
 export class FactoryUI {
   constructor(project, options = {}) {
     this.reviewMode = options.preview ? 'preview' : 'live';
@@ -155,7 +161,7 @@ export class FactoryUI {
     this.factoryApi ||= factory(this.root);
     return this.factoryApi;
   }
-  snapshot(owner = null, { includeCoordinatorDiscussion = true, selectedIssue = null } = {}) {
+  snapshot(owner = null, { includeCoordinatorDiscussion = true, selectedIssue = null, includeClosed = false } = {}) {
     if (!this.serverLock) this.store.reload();
     let sharedQueueWarning = this.sharedQueueStartupWarning;
     if (this.sharedIssues) {
@@ -167,10 +173,11 @@ export class FactoryUI {
       }
     }
     const queue = readQueue(this.root);
-    if (selectedIssue && /^[\w-]+$/.test(selectedIssue) && !queue.issues.some((issue) => issue.id === selectedIssue)) {
-      const closed = readQueue(this.root, { location: 'closed', issueId: selectedIssue });
-      queue.issues.push(...closed.issues);
-    }
+    const closed = includeClosed
+      ? readQueue(this.root, { location: 'closed' }).issues
+      : selectedClosedIssues(this.root, queue, selectedIssue);
+    const existing = new Set(queue.issues.map((issue) => issue.id));
+    queue.issues.push(...closed.filter((issue) => !existing.has(issue.id)));
     const runs = this.store.list(this.permissionRequests());
     const issues = selectedIssue ? queue.issues.filter((issue) => issue.id === selectedIssue) : queue.issues;
     const humanInputs = queueHumanInputReader({ ...queue, issues });
@@ -178,7 +185,7 @@ export class FactoryUI {
       ...queue,
       sharedQueueEnabled: Boolean(this.sharedIssues),
       sharedQueueWarning,
-      modelSettings: readModelSettings(this.root),
+      modelSettings: readModelSettings(this.root, { initialize: false }),
       coordinator: includeCoordinatorDiscussion
         ? this.coordinator.view()
         : redactValue(this.coordinator.reviewActivity()),

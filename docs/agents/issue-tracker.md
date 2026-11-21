@@ -23,7 +23,9 @@ Keep specs and working plans under `docs/plans/`; link them from reports.
 Record durable terminology and architecture decisions using
 `docs/agents/domain.md`.
 
-The queue is local by default. In [shared queue mode](../plans/shared-issue-queue.md), reports and display numbers are tracked on a dedicated queue branch. Timey publishes new report updates as direct commits using its GitHub App. Workspaces and runtime files stay local. The [Closed issues and Archive design](../plans/archive-closed-issues.md) describes the separate views and local migration.
+The queue is local by default. In [shared queue mode](../plans/shared-issue-queue.md), reports, lifecycle statuses, display numbers, and claim records are tracked on
+a dedicated queue branch. Source commits exclude those records and queue refresh
+does not advance source workspaces. Timey publishes new report updates as direct commits using its GitHub App. Workspaces and runtime files stay local. The [Closed issues and Archive design](../plans/archive-closed-issues.md) describes the separate views and local migration.
 
 ## Clarification and lifecycle roles
 

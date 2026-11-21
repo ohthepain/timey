@@ -7,9 +7,11 @@ import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createSharedIssueQueue } from './factory-ui/shared-issue-queue.mjs';
 import { createSharedIssueClaims } from './factory-ui/shared-issue-claims.mjs';
+import { createSharedIssueGit } from './factory-ui/shared-issue-git.mjs';
+import { queueClaimPath } from './factory-ui/shared-issue-paths.mjs';
 
 const id = '20261111T165430736-ca3555165563420b';
-const claimRef = 'refs/heads/claims/' + id;
+const claimPath = queueClaimPath(id);
 const target = 'refs/heads/issue-queue';
 const content = `---\nid: ${id}\ntitle: Atomic archive\nstate: closed\n---\n\n# Closed report\n`;
 const git = (root, ...args) =>
@@ -38,9 +40,21 @@ function fixture(t, behavior = {}) {
     join(root, '.issues/issue-delivery-config.json'),
     JSON.stringify({ provider: 'github', remote: 'origin', target: 'dev', repository: 'example/timey' })
   );
-  git(root, 'add', '.');
+  writeFileSync(join(root, '.gitignore'), '/.issues/**\n');
+  writeFileSync(join(root, 'app.txt'), 'Source code\n');
+  git(root, 'add', 'factory.config.json', '.gitignore', 'app.txt');
   git(root, 'commit', '-qm', 'Seed queue');
-  git(root, 'push', '-q', 'origin', 'dev', `HEAD:${target}`);
+  git(root, 'push', '-q', 'origin', 'dev');
+  const writer = createSharedIssueGit({ root });
+  const seed = writer.commit(
+    git(root, 'rev-parse', 'HEAD'),
+    [
+      [behavior.investigation ? `.issues/${id}.md` : `.issues/closed/${id}.md`, report],
+      ['.issues/issue-numbers.json', readFileSync(join(root, '.issues/issue-numbers.json'), 'utf8')],
+    ],
+    'Seed metadata'
+  );
+  git(root, 'push', '-q', 'origin', `${seed}:${target}`);
   const pushes = [];
   const service = {
     root,
@@ -50,6 +64,8 @@ function fixture(t, behavior = {}) {
     store: { runs: [], connected: new Map() },
   };
   const queue = createSharedIssueQueue(service, {
+    pushClaim: (commit, destination, _, head) =>
+      git(root, 'push', `--force-with-lease=${destination}:${head}`, 'origin', `${commit}:${destination}`),
     pushDirect(commit, destination, claim, expectedHead) {
       pushes.push({ commit, destination, claim, expectedHead });
       if (!claim) {
@@ -57,16 +73,7 @@ function fixture(t, behavior = {}) {
         return { commit };
       }
       behavior.before?.({ root, remote, commit, claim, pushes });
-      git(
-        root,
-        'push',
-        '--atomic',
-        `--force-with-lease=${claimRef}:${claim.oid}`,
-        `--force-with-lease=${destination}:${expectedHead}`,
-        'origin',
-        `${commit}:${destination}`,
-        `:${claimRef}`
-      );
+      git(root, 'push', `--force-with-lease=${destination}:${expectedHead}`, 'origin', `${commit}:${destination}`);
       behavior.after?.({ root, remote, commit, claim, pushes });
       return behavior.receipt === false ? undefined : { commit, releasedClaim: claim };
     },
@@ -81,7 +88,7 @@ test('direct archive atomically publishes and forgets only its local claim', (t)
   assert.equal(result.status, 'published');
   assert.equal(pushes.length, 1);
   assert.equal(git(remote, 'rev-parse', target), pushes[0].commit);
-  assert.equal(git(remote, 'for-each-ref', claimRef), '');
+  assert.equal(git(remote, 'ls-tree', target, claimPath), '');
   assert.equal(queue.view(id).claimed, false);
   assert.equal(existsSync(join(root, '.issues/closed', id + '.md')), false);
   assert.equal(readFileSync(join(root, '.issues/archive', id + '.md'), 'utf8'), content);
@@ -93,26 +100,27 @@ test('direct archive atomically publishes and forgets only its local claim', (t)
 
 test('atomic archive rejects a replaced claim without publishing the removal', (t) => {
   const { root, remote, queue } = fixture(t, {
-    before({ remote }) {
-      git(remote, 'update-ref', claimRef, git(remote, 'rev-parse', 'dev'));
+    before({ root }) {
+      replaceClaim(root);
     },
   });
   const before = git(remote, 'rev-parse', target);
   assert.equal(queue.moveStorage(id, 'archive', content).status, 'failed');
-  assert.equal(git(remote, 'rev-parse', target), before);
-  assert.equal(git(remote, 'rev-parse', claimRef), git(remote, 'rev-parse', 'dev'));
+  assert.notEqual(git(remote, 'rev-parse', target), before);
+  assert.match(git(remote, 'show', `${target}:${claimPath}`), /replacement/);
+  assert.equal(git(remote, 'show', `${target}:.issues/closed/${id}.md`), content.trim());
   assert.equal(readFileSync(join(root, '.issues/closed', id + '.md'), 'utf8'), content);
   assert.equal(queue.view(id).local, true);
 });
 
 test('atomic archive preserves a replacement remote claim created after publication', (t) => {
   const { root, remote, queue } = fixture(t, {
-    after({ remote }) {
-      git(remote, 'update-ref', claimRef, git(remote, 'rev-parse', 'dev'));
+    after({ root }) {
+      replaceClaim(root);
     },
   });
   assert.equal(queue.moveStorage(id, 'archive', content).status, 'published');
-  assert.equal(git(remote, 'rev-parse', claimRef), git(remote, 'rev-parse', 'dev'));
+  assert.match(git(remote, 'show', `${target}:${claimPath}`), /replacement/);
   assert.equal(createSharedIssueClaims({ root }).own(id), null);
 });
 
@@ -123,17 +131,17 @@ test('a lost atomic acknowledgment uses normal claim reconciliation', (t) => {
     },
   });
   assert.equal(queue.moveStorage(id, 'archive', content).status, 'published');
-  assert.equal(git(remote, 'for-each-ref', claimRef), '');
+  assert.equal(git(remote, 'ls-tree', target, claimPath), '');
   assert.equal(createSharedIssueClaims({ root }).own(id), null);
   const publication = JSON.parse(readFileSync(join(root, '.issues/shared-publication', id + '.json')));
-  assert.equal(publication.atomicRelease, undefined);
+  assert.equal(publication.atomicRelease.commit, publication.commit);
 });
 
 test('atomic archive retries an unrelated target change without releasing the claim early', (t) => {
   const { root, remote, queue, pushes } = fixture(t, {
     before({ root, remote, pushes }) {
       if (pushes.length !== 1) return;
-      const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+      const tree = git(remote, 'rev-parse', `${target}^{tree}`);
       const commit = git(root, 'commit-tree', tree, '-p', git(remote, 'rev-parse', target), '-m', 'Other queue update');
       git(root, 'push', 'origin', `${commit}:${target}`);
     },
@@ -152,7 +160,7 @@ test('archive resumes after interruption before local cleanup using the persiste
     },
   });
   assert.equal(queue.moveStorage(id, 'archive', content).status, 'failed');
-  assert.equal(git(remote, 'for-each-ref', claimRef), '');
+  assert.equal(git(remote, 'ls-tree', target, claimPath), '');
   assert.ok(createSharedIssueClaims({ root }).own(id));
   writeFileSync(join(root, '.issues/archive', id + '.md'), content);
   assert.equal(queue.retry(id).status, 'published');
@@ -195,9 +203,16 @@ registerHooks({load(url, context, next) {
     : next(url, context);
 }});`
   );
-  git(root, 'rm', '.issues/closed/' + id + '.md');
-  git(root, 'commit', '-qm', 'Archive fixture');
-  const commit = git(root, 'rev-parse', 'HEAD');
+  const writer = createSharedIssueGit({ root });
+  const head = writer.fetch();
+  const commit = writer.commit(
+    head,
+    [
+      [`.issues/closed/${id}.md`, null],
+      [claimPath, null],
+    ],
+    'Archive fixture'
+  );
   const helper = fileURLToPath(new URL('./factory-ui/shared-issue-app-push.mjs', import.meta.url));
   const output = execFileSync(process.execPath, ['--import', pathToFileURL(preload).href, helper], {
     cwd: root,
@@ -214,7 +229,7 @@ registerHooks({load(url, context, next) {
   assert.deepEqual(JSON.parse(output), { commit, releasedClaim: { issueId: id, oid: claim.oid } });
   assert.equal(output.includes('private-fixture-token'), false);
   assert.equal(git(remote, 'rev-parse', target), commit);
-  assert.equal(git(remote, 'for-each-ref', claimRef), '');
+  assert.equal(git(remote, 'ls-tree', target, claimPath), '');
   assert.throws(
     () =>
       execFileSync(process.execPath, ['--import', pathToFileURL(preload).href, helper], {
@@ -238,96 +253,78 @@ registerHooks({load(url, context, next) {
     /directly extend/
   );
   assert.equal(git(remote, 'rev-parse', target), commit);
+  writeFileSync(join(root, 'app.txt'), 'Unexpected source change.\n');
+  git(root, 'add', 'app.txt');
+  const unsafe = git(root, 'commit-tree', git(root, 'write-tree'), '-p', commit, '-m', 'Unexpected code');
+  const blocked = (targetRef) =>
+    execFileSync(process.execPath, ['--import', pathToFileURL(preload).href, helper], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PATH: tools + ':' + process.env.PATH,
+        ATOMIC_TEST_REMOTE: remote,
+        ATOMIC_TEST_GIT: realGit,
+      },
+      input: JSON.stringify({ repository: 'example/timey', targetRef, commit: unsafe, expectedHead: commit }),
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  assert.throws(() => blocked(target), /only change issue metadata/);
+  assert.throws(() => blocked('refs/heads/dev'), /configured dedicated issue queue/);
+  assert.equal(git(remote, 'rev-parse', target), commit);
   owner.forgetReleased(claim);
 });
 
-function traceGit(t) {
-  const directory = mkdtempSync(join(tmpdir(), 'archive-batch-trace-'));
-  const previous = process.env.GIT_TRACE;
-  process.env.GIT_TRACE = join(directory, 'git.trace');
-  t.after(() => {
-    if (previous === undefined) delete process.env.GIT_TRACE;
-    else process.env.GIT_TRACE = previous;
-    rmSync(directory, { recursive: true, force: true });
-  });
+function replaceClaim(root) {
+  const writer = createSharedIssueGit({ root });
+  const head = writer.fetch();
+  const value =
+    JSON.stringify({
+      version: 2,
+      issueId: id,
+      attemptId: 'replacement',
+      runner: 'Fixture',
+      remote: 'origin',
+      target: 'issue-queue',
+    }) + '\n';
+  writer.push(writer.commit(head, [[claimPath, value]], 'Replace stopped owner'), head);
 }
 
-function tracedFetches(action) {
-  const path = process.env.GIT_TRACE;
-  const previous = process.env.GIT_TRACE;
-  const offset = existsSync(path) ? readFileSync(path, 'utf8').length : 0;
-  process.env.GIT_TRACE = path;
-  try {
-    action();
-  } finally {
-    if (previous === undefined) delete process.env.GIT_TRACE;
-    else process.env.GIT_TRACE = previous;
-  }
-  return readFileSync(path, 'utf8')
-    .slice(offset)
-    .split('\n')
-    .filter((line) => /built-in: git fetch /.test(line)).length;
-}
-
-test('a direct archive batches from its verified claim snapshot with three total fetches', (t) => {
-  traceGit(t);
-  const { root, queue, pushes } = fixture(t);
-  const fetches = tracedFetches(() => assert.equal(queue.moveStorage(id, 'archive', content).status, 'published'));
-  assert.equal(fetches, 3);
-  assert.equal(pushes[0].expectedHead, git(root, 'rev-parse', `${pushes[0].commit}^`));
-});
-
-test('a target rewind rejects a stale batch even when its commit would otherwise fast-forward', (t) => {
-  let original;
-  let advanced;
-  const { root, remote, queue, pushes } = fixture(t, {
-    before({ remote, pushes, claim }) {
-      if (pushes.length === 1) git(remote, 'update-ref', target, original);
-      else assert.equal(git(remote, 'rev-parse', claimRef), claim.oid);
-    },
-  });
-  original = git(remote, 'rev-parse', target);
-  advanced = git(root, 'commit-tree', git(root, 'rev-parse', 'HEAD^{tree}'), '-p', original, '-m', 'Advanced queue');
-  git(root, 'push', 'origin', `${advanced}:${target}`);
+test('a status checkpoint and claim release leave source HEAD, index, and dirty work unchanged', (t) => {
+  const { root, remote, queue, pushes } = fixture(t);
+  const before = git(root, 'rev-parse', 'HEAD');
+  writeFileSync(join(root, 'app.txt'), 'Staged source\n');
+  git(root, 'add', 'app.txt');
+  writeFileSync(join(root, 'app.txt'), 'Unstaged source\n');
+  const index = git(root, 'write-tree');
+  const status = git(root, 'status', '--porcelain');
   assert.equal(queue.moveStorage(id, 'archive', content).status, 'published');
-  assert.equal(pushes.length, 2);
-  assert.equal(pushes[0].expectedHead, advanced);
-  assert.equal(pushes[1].expectedHead, original);
-  assert.equal(git(remote, 'rev-parse', target), pushes[1].commit);
+  assert.equal(pushes.length, 1);
+  assert.equal(git(root, 'rev-parse', 'HEAD'), before);
+  assert.equal(git(remote, 'rev-parse', 'dev'), before);
+  assert.equal(git(root, 'write-tree'), index);
+  assert.equal(git(root, 'status', '--porcelain'), status);
+  assert.equal(readFileSync(join(root, 'app.txt'), 'utf8'), 'Unstaged source\n');
+  assert.equal(git(remote, 'for-each-ref', 'refs/heads/claims'), '');
 });
 
-test('a changed selected report rejects the batch and retains the changed remote report', (t) => {
+test('a changed selected report rejects publication and retains its claim', (t) => {
   let changed;
   const { root, remote, queue, pushes } = fixture(t, {
-    before({ root, remote, pushes }) {
+    before({ root, pushes }) {
       if (pushes.length !== 1) return;
-      writeFileSync(join(root, '.issues/closed', id + '.md'), content + 'Changed remotely.\n');
-      git(root, 'add', '.issues/closed/' + id + '.md');
-      git(root, 'commit', '-qm', 'Change selected report');
-      changed = git(root, 'rev-parse', 'HEAD');
-      git(root, 'push', 'origin', `${changed}:${target}`);
-      writeFileSync(join(root, '.issues/closed', id + '.md'), content);
+      const writer = createSharedIssueGit({ root });
+      const head = writer.fetch();
+      changed = writer.commit(head, [[`.issues/closed/${id}.md`, content + 'Changed remotely.\n']], 'Change report');
+      writer.push(changed, head);
     },
   });
   assert.equal(queue.moveStorage(id, 'archive', content).status, 'failed');
   assert.equal(pushes.length, 1);
   assert.equal(git(remote, 'rev-parse', target), changed);
   assert.match(git(remote, 'show', `${target}:.issues/closed/${id}.md`), /Changed remotely/);
+  assert.ok(git(remote, 'ls-tree', target, claimPath));
   assert.equal(readFileSync(join(root, '.issues/closed', id + '.md'), 'utf8'), content);
-  assert.equal(git(remote, 'rev-parse', claimRef), pushes[0].claim.oid);
-});
-
-test('an explicit archive retry fetches fresh state instead of reusing its saved batch head', (t) => {
-  traceGit(t);
-  const { root, queue } = fixture(t, {
-    after({ root }) {
-      writeFileSync(join(root, '.issues/archive', id + '.md'), content + 'Conflicting copy.\n');
-    },
-  });
-  assert.equal(queue.moveStorage(id, 'archive', content).status, 'failed');
-  writeFileSync(join(root, '.issues/archive', id + '.md'), content);
-  const fetches = tracedFetches(() => assert.equal(queue.retry(id).status, 'published'));
-  assert.equal(fetches, 1);
 });
 
 test('a direct investigation archive removes its open report atomically without closure', (t) => {
@@ -335,7 +332,7 @@ test('a direct investigation archive removes its open report atomically without 
   assert.equal(queue.moveStorage(id, 'archive', report).status, 'published');
   assert.equal(existsSync(join(root, '.issues', id + '.md')), false);
   assert.equal(readFileSync(join(root, '.issues/archive', id + '.md'), 'utf8'), report);
-  assert.equal(git(remote, 'for-each-ref', claimRef), '');
+  assert.equal(git(remote, 'ls-tree', target, claimPath), '');
   assert.equal(git(remote, 'ls-tree', target, '.issues/closed/'), '');
   assert.equal(queue.moveStorage(id, 'restore', report).status, 'published');
   assert.equal(readFileSync(join(root, '.issues', id + '.md'), 'utf8'), report);

@@ -210,7 +210,7 @@
   position: relative;
   max-width: 82%;
   padding: 20px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: none;
   margin: 10px 0;
 }
 .discuss-message.user {

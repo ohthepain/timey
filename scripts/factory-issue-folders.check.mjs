@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { assignIssueFolder, createIssueFolder, readIssueFolders } from './factory-ui/issue-folders.mjs';
@@ -17,6 +17,7 @@ test('issue folders persist separately from report content and reject stale orga
   const empty = readIssueFolders(root, issues);
   assert.equal(empty.folders[0].name, 'Inbox');
   assert.equal(issues[0].folderId, empty.folders[0].id);
+  assert.equal(existsSync(join(root, 'user/Inbox/folder.md')), false, 'Reading folders must not change source files.');
   const created = createIssueFolder(root, issues, { name: 'Sprint', basis: empty.basis });
   assert.equal(created.folder.name, 'Sprint');
   const assigned = assignIssueFolder(root, issues, {

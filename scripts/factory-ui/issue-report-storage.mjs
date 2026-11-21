@@ -1,3 +1,4 @@
+import { requireUnmergedIssue } from './merged-issue.mjs';
 import {
   linkSync,
   lstatSync,
@@ -137,6 +138,7 @@ export function renameStoredIssue(root, issue, title) {
 }
 
 export function updateStoredIssueMetadata(root, issue, changes) {
+  requireUnmergedIssue(root, issue.id);
   const path = storedIssuePath(root, issue.id, issue.location);
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);

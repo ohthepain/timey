@@ -34,7 +34,10 @@ local changes to test the starting commit.
 
 Fix the causes of failures that block implementation. Preserve the behavior and
 coverage protected by each check. Do not disable checks, relax thresholds, add
-ignores, or regenerate baselines merely to make a check pass. Run focused tests
+ignores, or regenerate baselines merely to make a check pass. Correct missing or
+incorrect analyzer inputs when actual source consumers demonstrate the mistake.
+Keep the checks enabled and prove both that the used code passes and that an
+actually unused item still fails. Run focused tests
 for changed behavior when needed. Rerun the selected blocking checks after repairs.
 Stop after three unsuccessful repair rounds, or earlier when repair stops making
 progress. Report the remaining failure and any decision needed to continue.

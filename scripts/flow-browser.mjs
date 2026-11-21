@@ -1,3 +1,8 @@
+import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
+import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
+import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
+import { browserScenarioSelected } from './browser-scenario-policy.mjs';
+import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
 import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
 import assert from 'node:assert/strict';
 import {
@@ -34,10 +39,15 @@ import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
+import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
+import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
-  process.env.TIMEY_FLOW_BROWSER_OUTPUT || join(root, '.issues/evidence/flow-browser-' + randomUUID())
+  process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
+    (process.env.TIMEY_BROWSER_OUTPUT && join(process.env.TIMEY_BROWSER_OUTPUT, 'flow')) ||
+    join(root, '.issues/evidence/flow-browser-' + randomUUID())
 );
 const project = join(output, 'project');
 mkdirSync(output, { recursive: true });
@@ -74,6 +84,8 @@ const assets = [
   'project-home-ui.js',
   'project-discuss-ui.js',
   'project-discuss.css',
+  'local-notes-ui.js',
+  'local-notes.css',
   'issue-chat-ui.js',
   'investigation-issue-ui.js',
   'project-home.css',
@@ -103,6 +115,7 @@ const discussCheck = 'Project Discuss retains independent conversations, setting
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const mergeSettingsCheck = 'Request saves the regression choice and the block palette hides Verify';
+const pendingResponses = [];
 const logs = {
   console: [],
   pageErrors: [],
@@ -116,6 +129,7 @@ const logs = {
 };
 const playbackIssueId = '20261116-playback-fixture';
 const playbackWork = Promise.withResolvers();
+const holdFirstWork = (number, block) => number === 1 && block.kind !== 'cleanup';
 let firstWorkProgress;
 const service = new FactoryUI(project);
 const deliveryConfig = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
@@ -135,7 +149,7 @@ const executor = {
     onStep('pnpm test');
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
     if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
-    if (number === 1) {
+    if (holdFirstWork(number, block)) {
       firstWorkProgress = { onProgress, onStep };
       await new Promise((_, reject) => {
         if (signal.aborted) return reject(Error('Stopped by the user.'));
@@ -223,11 +237,36 @@ function unexpectedConsoleErrors(entries) {
     );
   });
 }
+function connectionRecoveryIssue() {
+  const id = '20261120-connection-recovery-fixture';
+  if (!existsSync(join(project, '.issues/triage-labels.md')))
+    copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
+  writeFileSync(
+    join(project, '.issues', id + '.md'),
+    `---\nid: ${id}\ntitle: Reconnect the selected issue\nstate: backlog\n---\n\nKeep the selected issue after reconnecting.\n`
+  );
+  return id;
+}
 function checkExcluded(name) {
+  if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
+    ['--actions-menu', 'Actions menu lists two running Flow blocks'],
+    ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
+    ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
+    [
+      '--connection-recovery',
+      'Flow and Classic reload the selected issue after a lost connection without replaying the click',
+    ],
+    ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
+    ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
+    ['--local-notes', 'Local notes capture and handoff preserve flow'],
+    ['--sidebar-labels', 'Issues and Local notes use matching text styles'],
+    ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
     ['--investigation-followups', followupsCheck],
+    ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
     ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
@@ -235,7 +274,8 @@ function checkExcluded(name) {
     ['--human-input', humanInputCheck],
     ['--merge-settings', mergeSettingsCheck],
   ];
-  return selections.some(([flag, selected]) => process.argv.includes(flag) && name !== selected);
+  const selected = selections.filter(([flag]) => process.argv.includes(flag));
+  return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
 }
 
 async function check(name, run) {
@@ -305,6 +345,35 @@ async function block(id) {
 }
 async function screenshot(name) {
   await page.screenshot({ path: join(output, name + '.png'), fullPage: true });
+  if (name === 'project-discuss') {
+    const entries = await page.locator('.discuss-message').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        return {
+          id: node.dataset.discussMessage,
+          classes: node.className,
+          borderTopStyle: style.borderTopStyle,
+          borderTopWidth: style.borderTopWidth,
+          borderBottomStyle: style.borderBottomStyle,
+          borderBottomWidth: style.borderBottomWidth,
+        };
+      })
+    );
+    writeFileSync(
+      join(output, name + '-styles.json'),
+      JSON.stringify(
+        {
+          sourceCommit: git(root, 'rev-parse', 'HEAD'),
+          sourceStatus: git(root, 'status', '--porcelain'),
+          observedAt: new Date().toISOString(),
+          selector: '.discuss-message',
+          entries,
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  }
 }
 async function selectedGeometry() {
   return page.evaluate(() => {
@@ -315,6 +384,9 @@ async function selectedGeometry() {
     const centered = scroll.scrollTop + rect.top + rect.height / 2 - bounds.top - scroll.clientHeight / 2;
     return {
       blockId: card.dataset.block,
+      top: rect.top - bounds.top,
+      bottom: rect.bottom - bounds.top,
+      viewportHeight: scroll.clientHeight,
       scrollTop: scroll.scrollTop,
       centerOffset: rect.top + rect.height / 2 - bounds.top - scroll.clientHeight / 2,
       expectedCenter: Math.max(0, Math.min(scroll.scrollHeight - scroll.clientHeight, centered)),
@@ -362,10 +434,160 @@ try {
       failure.error?.errorText === 'net::ERR_ABORTED';
     logs[cancelledRead ? 'cancelledReads' : 'failedRequests'].push(failure);
   });
-  page.on('response', (response) =>
-    logs.responses.push({ path: new URL(response.url()).pathname, status: response.status() })
+  page.on('response', (response) => {
+    const entry = { path: new URL(response.url()).pathname, status: response.status() };
+    logs.responses.push(entry);
+    if (response.status() >= 400)
+      pendingResponses.push(
+        response
+          .text()
+          .then((body) => {
+            entry.body = body.slice(0, 4000);
+            entry.request = response.request().postData();
+          })
+          .catch((error) => {
+            entry.body = error.message;
+          })
+      );
+  });
+  await check('Successful refresh clears rejected branch update errors', () =>
+    errorRecoveryBrowserChecks({ page, service, project, output })
+  );
+  await check('The whole sidebar scrolls over every section', async () => {
+    const issuePaths = Array.from({ length: 24 }, (_, index) =>
+      join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
+    );
+    issuePaths.forEach((path, index) =>
+      writeFileSync(
+        path,
+        `---\nid: 20261120-sidebar-overflow-${index}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`
+      )
+    );
+    await page.goto('/');
+    await page.locator('#sidebar-file-tree details').first().waitFor();
+    await page.evaluate(() => {
+      const notes = document.getElementById('local-note-list');
+      const files = document.getElementById('sidebar-file-tree');
+      for (let index = 0; index < 24; index++) {
+        const note = document.createElement('li');
+        note.className = 'local-note';
+        note.textContent = 'Overflowing local note ' + index;
+        notes.append(note);
+        const file = document.createElement('button');
+        file.className = 'sidebar-file-link';
+        file.textContent = 'Overflowing file ' + index + '.md';
+        files.append(file);
+      }
+    });
+    await page.locator('#issue-list [data-issue="20261120-sidebar-overflow-0"]').waitFor();
+    const observations = [];
+    for (const viewport of [
+      { width: 1440, height: 720 },
+      { width: 760, height: 600 },
+    ]) {
+      await page.setViewportSize(viewport);
+      for (const section of ['.project-home-menu', '#local-note-list', '#sidebar-file-tree', '#issue-list']) {
+        const target = page.locator(section);
+        await target.scrollIntoViewIfNeeded();
+        const bounds = await target.boundingBox();
+        const sidebar = await page.locator('.sidebar').boundingBox();
+        const y = Math.max(sidebar.y + 5, Math.min(bounds.y + 12, sidebar.y + sidebar.height - 20));
+        const x = bounds.x + Math.min(bounds.width / 2, 70);
+        assert.ok(
+          await target.evaluate((node, point) => node.contains(document.elementFromPoint(point.x, point.y)), { x, y }),
+          'Wheel pointer must be over ' + section
+        );
+        await page.mouse.move(x, y);
+        await screenshot('sidebar-scroll-' + viewport.width + '-' + section.replace(/[^a-z]/g, ''));
+        const before = await page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top);
+        await page.mouse.wheel(0, 160);
+        await poll(
+          () => page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top),
+          (top) => top < before - 20,
+          'Wheel over ' + section + ' must move content outside that section'
+        );
+        observations.push({
+          viewport,
+          section,
+          before,
+          after: await page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top),
+        });
+      }
+      const footer = page.locator('.sidebar-footer');
+      await footer.scrollIntoViewIfNeeded();
+      assert.ok(await footer.isVisible());
+      const resizer = await page.locator('#sidebar-resizer').boundingBox();
+      assert.ok(resizer.y <= 1 && resizer.height >= 590, 'Sidebar resize handle must remain at the column edge');
+      await page.locator('#sidebar-resizer').focus();
+      const widthBefore = (await page.locator('.sidebar').boundingBox()).width;
+      await page.keyboard.press('ArrowRight');
+      assert.ok(
+        (await page.locator('.sidebar').boundingBox()).width > widthBefore,
+        'Sidebar remains resizable after scrolling'
+      );
+      await screenshot('sidebar-scroll-' + viewport.width);
+    }
+    writeFileSync(join(output, 'sidebar-scroll.json'), JSON.stringify({ candidate, observations }, null, 2));
+    issuePaths.forEach((path) => rmSync(path));
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.reload();
+  });
+  await check('Closed issue selections archive together and issue links open the normal view', () =>
+    projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check('Issues and Local notes use matching text styles', async () => {
+    const configuration = ['triage-labels.md', 'preferences.json'].map((file) => {
+      const path = join(project, '.issues', file);
+      return { path, content: existsSync(path) ? readFileSync(path) : null };
+    });
+    copyFileSync(join(root, '.issues/triage-labels.md'), configuration[0].path);
+    writeFileSync(configuration[1].path, '{"commit":true}');
+    try {
+      await page.goto('/');
+      const issues = page.locator('.sidebar-issues-link');
+      const notes = page.locator('#local-notes > header > h2');
+      await issues.waitFor();
+      await notes.waitFor();
+      const textStyle = (node) => {
+        const style = getComputedStyle(node);
+        return Object.fromEntries(
+          [
+            'fontFamily',
+            'fontSize',
+            'fontWeight',
+            'fontStyle',
+            'lineHeight',
+            'letterSpacing',
+            'textTransform',
+            'color',
+          ].map((property) => [property, style[property]])
+        );
+      };
+      const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
+      await screenshot('sidebar-labels');
+      writeFileSync(
+        join(output, 'sidebar-labels-styles.json'),
+        JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
+      );
+      assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
+      await issues.click();
+      await page.locator('#project-issues').waitFor();
+      const frame = page.frameLocator('#project-issues iframe');
+      await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
+      assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+    } finally {
+      await page.goto('about:blank');
+      for (const { path, content } of configuration) {
+        if (content === null) rmSync(path);
+        else writeFileSync(path, content);
+      }
+    }
+  });
+  await check('Local notes capture and handoff preserve flow', async () => {
+    await localNotesBrowserChecks({ page, project, service, poll, screenshot });
+    assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+  });
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );
@@ -544,6 +766,19 @@ try {
     assert.equal(logs.execution.length, 0);
   });
   await check('Issue folders retain every issue and accept drags between folders', async () => {
+    if (!issueId) {
+      await service.flows.action({ action: 'create-folder', name: 'Browser folder' });
+      const captured = await service.flows.action({
+        action: 'capture',
+        requestId: randomUUID(),
+        description,
+        folder: 'Browser folder',
+      });
+      issueId = captured.issue.id;
+      worktreeIssueId = issueId;
+      await page.goto('/?issue=' + issueId);
+      await page.locator('#request-form').waitFor();
+    }
     await flowIssueFoldersBrowserChecks(page, issueId, 'Browser folder');
     await screenshot('issue-folder-drag');
     await page.goto('/?issue=' + issueId);
@@ -1095,15 +1330,17 @@ try {
     const viewport = await page.locator('#graph-scroll').boundingBox();
     assert.ok(bounds.y < viewport.y - 20, 'The test card must be clipped before selection.');
     await page.mouse.click(bounds.x + bounds.width / 2, viewport.y + 20);
-    await poll(
+    const after = await poll(
       selectedGeometry,
-      (value) => value.scrollTop < clipped.scrollTop - 20,
-      'The clipped card was not revealed.'
+      (value) =>
+        value.blockId === workId &&
+        value.scrollTop < clipped.scrollTop - 20 &&
+        value.top >= -1 &&
+        value.bottom <= value.viewportHeight + 1,
+      'The clipped card was not fully revealed.'
     );
-    const revealed = await target.evaluate((node) => node.getBoundingClientRect().toJSON());
-    const after = await selectedGeometry();
-    assert.ok(revealed.y >= viewport.y - 1);
-    assert.ok(revealed.y + revealed.height <= viewport.y + viewport.height + 1);
+    assert.ok(after.top >= -1);
+    assert.ok(after.bottom <= after.viewportHeight + 1);
     assert.ok(clipped.scrollTop - after.scrollTop <= 55, 'The card moved further than necessary.');
     await page.setViewportSize({ width: 1440, height: 960 });
   });
@@ -1230,6 +1467,8 @@ try {
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
       'The running block was not centered within its content bounds on reload.'
     );
+    assert.equal(await page.locator('#target-update-menu').isDisabled(), true);
+    assert.equal(await page.locator('#worktree-menu option[value="update"]').isDisabled(), true);
     await screenshot('work-running-desktop');
     await clickAction(page.locator('[data-action="stop"]'));
     const stopped = await poll(
@@ -1469,7 +1708,10 @@ try {
     await targetMenu.selectOption('update');
     await page.locator('#target-update-progress').waitFor();
     release.resolve();
-    await page.getByText('Updated the issue branch from the starting branch.', { exact: true }).waitFor();
+    await page
+      .locator('#toast')
+      .getByText('Updated the issue branch from the starting branch.', { exact: true })
+      .waitFor();
     await page.unroute('**/api/flow-action');
     await targetMenu.waitFor({ state: 'hidden' });
     const finished = (await view()).flow.blocks;
@@ -1997,6 +2239,9 @@ try {
     }
     if (issueId) await page.goto('/?issue=' + issueId);
   });
+  await check('Branch repair progress survives reload and requires candidate approval', async () => {
+    await branchRepairBrowserChecks({ page, service, project, poll, screenshot });
+  });
   await check('Block skill choices preserve defaults and offer missing-skill setup', async () => {
     await blockSkillsBrowserChecks({ page, service, project, poll });
   });
@@ -2047,6 +2292,7 @@ try {
   await check(
     'Flow and Classic reload the selected issue after a lost connection without replaying the click',
     async () => {
+      issueId = connectionRecoveryIssue();
       const helperDir = '.agents/skills/issues/scripts';
       mkdirSync(join(project, helperDir), { recursive: true });
       for (const file of ['human-input.mjs', 'human-input-version.json']) {
@@ -2072,11 +2318,14 @@ try {
         assert.equal(await waiting.isVisible(), false);
         assert.equal(page.url(), url);
         await page.reload();
-        await toggle.waitFor();
+        await page.locator('#server-actions-dialog').waitFor({ state: 'attached' });
         if (await toggle.isChecked()) await toggle.uncheck();
+        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
 
         const release = Promise.withResolvers();
+        const pauseReceived = Promise.withResolvers();
         await page.route('**/api/health', async (route) => {
+          await pauseReceived.promise;
           if (screen.path.startsWith('/classic')) await release.promise;
           await route.abort().catch(() => {});
         });
@@ -2086,8 +2335,11 @@ try {
           const response = await route.fetch();
           assert.equal(response.status(), 200);
           await route.abort();
+          pauseReceived.resolve();
         });
-        await toggle.check();
+        const pauseRequest = page.waitForRequest('**/api/server-pause');
+        await toggle.click();
+        await pauseRequest;
         await waiting.waitFor();
         assert.equal(page.url(), url);
         assert.equal(clicks, 1);
@@ -2136,6 +2388,15 @@ try {
     await screenshot('starting-branch-moved');
   });
   await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
+  await check('Pending local merges are visible and can be aborted', () =>
+    mergeStateBrowserChecks({ page, project, service, screenshot })
+  );
+  await check('Actions menu lists two running Flow blocks', () =>
+    actionsMenuBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check('Merged issues preserve history and expose only closure controls', () =>
+    mergedIssueBrowserChecks({ page, project, service, screenshot, output, poll })
+  );
   passed = true;
 } catch (error) {
   failure = error.stack;
@@ -2143,6 +2404,7 @@ try {
   if (page) await screenshot('failure').catch(() => {});
   process.exitCode = 1;
 } finally {
+  await Promise.all(pendingResponses);
   await browser?.close();
   server.closeAllConnections();
   if (server.listening) await new Promise((done) => server.close(done));

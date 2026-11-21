@@ -9,7 +9,7 @@ export function sharedIssueQueueEnabled(root) {
 
 function sharedIssueQueueBranch(root, deliveryBranch) {
   const { sharedIssueQueueBranch: branch } = readJson(join(root, 'factory.config.json'));
-  if (branch === undefined) return undefined;
+  requireThat(branch !== undefined, 'Configure a dedicated sharedIssueQueueBranch before starting shared work.');
   requireThat(typeof branch === 'string', 'Use a Git branch name for the shared issue queue.');
   requireThat(
     /^(?!(?:claims|queue-updates)\/)[a-zA-Z0-9][\w./-]*$/.test(branch) && branch !== deliveryBranch,
@@ -32,7 +32,7 @@ export function sharedIssueQueueConfig(root) {
   const branch = sharedIssueQueueBranch(root, config.target);
   return {
     ...config,
-    target: branch ?? config.target,
+    target: branch,
     separateBranch: branch,
     direct: directPublication(root, branch),
     requireReview: reviewRequired(root, branch),
@@ -62,5 +62,13 @@ function validateDeliveryConfig(config) {
   requireThat(
     config.provider === 'github' && names.every(([value, pattern]) => typeof value === 'string' && pattern.test(value)),
     'The shared queue requires a configured GitHub repository, remote and target branch.'
+  );
+}
+
+export function queueMetadataPath(path) {
+  return (
+    path === '.issues/issue-numbers.json' ||
+    /^\.issues\/(?:closed\/)?\d[\w-]*\.md$/.test(path) ||
+    /^\.issues\/claims\/[a-zA-Z0-9_-]{1,100}\.json$/.test(path)
   );
 }
