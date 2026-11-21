@@ -44,12 +44,16 @@
       const node = root.querySelector('[data-report-error]');
       if (node) node.textContent = failure.message;
     }
+    function missingLocalEvidence(path) {
+      if (/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(path)) return null;
+      return { status: 'unavailable' };
+    }
     function retainedLinks(report) {
       const evidence = new Map(report.evidence.map((item, index) => [item.original, { ...item, index }]));
       return report.content.replace(/(!?\[[^\]]*\])\(([^)]+)\)/g, (match, label, path) => {
-        const item = evidence.get(path);
+        const item = evidence.get(path) ?? missingLocalEvidence(path);
         if (!item) return match;
-        if (item.status !== 'verified') return label.replace(/^!/, '') + ' [evidence ' + item.status + ']';
+        if (item.status !== 'verified') return label.replace(/^!?\[|\]$/g, '') + ' [evidence ' + item.status + ']';
         return label + '(/api/report-evidence?report=' + encodeURIComponent(report.id) + '&item=' + item.index + ')';
       });
     }

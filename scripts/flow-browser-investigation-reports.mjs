@@ -205,6 +205,8 @@ export async function investigationReportsBrowserChecks({ page, service, project
   await page.locator('[data-report-run]').selectOption(second.id);
   assert.equal(calls.length, 1, 'Leaving a report cancels pending dictated submission.');
   await page.locator('[data-evidence-status="unavailable"]').waitFor();
+  await page.locator('.report-content').getByText('Evidence diagram [evidence unavailable]', { exact: true }).waitFor();
+  assert.equal(await page.locator('.report-content img').count(), 0, 'Unretained local images are marked unavailable.');
   await page.locator('[data-report-discuss]').click();
   await page.locator('#report-discuss-draft').fill('Question about the second run');
   await page.locator('#report-discuss-send').click();
