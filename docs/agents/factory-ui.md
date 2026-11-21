@@ -1675,6 +1675,9 @@ Create issue presents three independently selectable, initially unchecked action
 in this order: orange **Grill me**, green **Go**, and blue **Merge**. Small inline
 illustrations identify the grill, green traffic light and merge path. One **Create
 issues** button submits the selection; without an action selected it only captures.
+Enabling Grill me reveals a Grilling skill dropdown from the configured chat grilling list.
+The selected skill is retained in the draft, creation request and report capture intent,
+and is explicitly sent to the new issue conversation.
 Go starts the selected strategy after durable creation. Grill saves first and then
 sends an explicit grilling request to each issue conversation. When Grill and Go
 are both selected, it starts grilling and records the requested strategy on each
