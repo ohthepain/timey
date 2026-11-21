@@ -1,7 +1,8 @@
 # Investigation flows and reports
 
 The user confirmed the product decisions below on 2026-11-21 through the
-wayfinder discussion. This is a design brief, not implementation approval.
+wayfinder discussion. This brief records the agreed scope. The user's subsequent
+explicit Start of its implementation issue authorizes work within that scope.
 The completed planning decisions are indexed in the
 [draft wayfinder map](investigation-reports-wayfinder.md).
 
@@ -61,7 +62,10 @@ those behaviors must be called out during implementation planning.
 The user approved all five planning decisions below. No product questions remain
 on this map. The design is ready for a separate implementation effort, with
 responsibilities and acceptance scenarios recorded at the end of this brief.
-Implementation and production skill authoring have not been authorized here.
+Planning originally ended before implementation authorization. The user has since
+explicitly started the implementation issue, authorizing the agreed work and
+production skill authoring through its existing workflow. Historical planning
+notes do not impose a further permission requirement.
 
 ## Implementation issue
 
@@ -71,9 +75,12 @@ Feature in Inbox. It contains the agreed implementation scope, verification
 requirements, and references to this brief and the prototype. Capture started
 no block and created no implementation worktree.
 
-The issue records that the planning artifacts remain local and uncommitted and
-must be available before an isolated implementation launch. Creating the issue
-does not grant authorization to start it.
+The initial capture described the planning artifacts as local and uncommitted.
+That was historical handoff context, not a permission gate. The user subsequently
+started the issue. Its implementation may recover the agreed artifacts from the
+supplied destination revision into the saved checkout through normal branch
+synchronization, preserving unrelated work. The original capture-only restriction
+was corrected after it caused Work to request redundant authorization.
 
 ## Reading and discussing a report
 
