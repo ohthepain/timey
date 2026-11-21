@@ -60,7 +60,10 @@ selection, Tab acceptance, downloading retained attachment copies, queued edits 
 It also checks opening a long conversation after delayed history and image loading,
 reloads, returning to Discuss, and preserving manual scrolling through a polling
 rerender. It retains those observations in `project-discuss-scroll.json`. Dictation
-uses an injected speech recognizer in this scenario. Real dictation requires
+uses an injected speech recognizer in this scenario. The spoken send checks
+verify automatic submission without the final "go", no submission for "go" alone,
+and no automatic submission for "go" in the middle. They retain the observed
+provider submissions in `project-discuss-dictation.json`. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
 The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.

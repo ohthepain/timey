@@ -737,7 +737,9 @@ Issue activity is not streamed back into Discuss.
 `project-discuss-ui.js` and
 `project-discuss.css` own the composer, single-visible-conversation history,
 horizontal conversation tabs, message alignment and hover actions, settings,
-attachments, dictation, and suggested prompts. The composer overlays the bottom
+attachments, dictation, and suggested prompts. Dictation recognizes the final
+[spoken send command](../../GLOSSARY.md#language) and submits through the existing
+composer form after removing it. The composer overlays the bottom
 of the scrollable history with enough trailing space to keep the final message
 visible. Opening Discuss scrolls the loaded history to the bottom, including after
 initial images settle. Interacting with the history cancels that opening scroll;
