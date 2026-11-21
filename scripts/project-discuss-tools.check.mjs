@@ -284,3 +284,29 @@ test('project-owned skills override host skills with the same name', async (t) =
   assert.equal(selected[0].source, 'Project');
   assert.match(skillInputs(selected)[0].text, /Project instructions/);
 });
+
+test('report discussion follow-ups retain source provenance and require approval without starting the source', async (t) => {
+  const f = fixture(t);
+  const report = {
+    reportId: 'retained-report',
+    source: { issueId: 'archived-investigation', attemptId: 'original-inquiry' },
+    outputAttemptId: 'original-output',
+  };
+  const tools = createProjectDiscussTools(f.service, { flows: () => f.flows, reportContext: () => report });
+  const result = await tools.invoke('issue_create', {
+    description: 'Fix the uncovered parser error',
+    requestId: 'report-followup',
+    needsApproval: false,
+  });
+  assert.equal(result.issueId, '20261118-test');
+  const captured = f.calls.find((call) => call?.requestId === 'report-followup');
+  assert.equal(captured.needsApproval, true);
+  assert.equal(captured.sourceIssue, 'archived-investigation');
+  assert.equal(captured.sourceAttempt, 'original-inquiry');
+  assert.match(captured.description, /retained-report/);
+  assert.equal(
+    f.calls.filter((call) => call?.action).length,
+    0,
+    'Creation neither restores nor runs the investigation.'
+  );
+});

@@ -11,6 +11,20 @@ const id = z
   .string()
   .regex(/^[\w-]+$/)
   .max(200);
+function capturedIssue(input, options) {
+  const report = options.reportContext?.();
+  const requestId = input.requestId || randomUUID();
+  if (!report) return { ...input, requestId };
+  return {
+    ...input,
+    requestId,
+    needsApproval: true,
+    sourceIssue: report.source.issueId,
+    sourceAttempt: report.source.attemptId,
+    description:
+      input.description + '\n\n## Source report\n' + report.reportId + '\nOutput attempt: ' + report.outputAttemptId,
+  };
+}
 const homeActions = {
   project_investigation: {
     description:
@@ -143,8 +157,7 @@ export function createProjectDiscussTools(service, options = {}) {
         })
         .strict(),
       path: '/api/flow-action',
-      run: async (input) =>
-        receipt(await flows().capture({ ...input, requestId: input.requestId || randomUUID() }), 'created'),
+      run: async (input) => receipt(await flows().capture(capturedIssue(input, options)), 'created'),
     },
     issue_edit: {
       description:

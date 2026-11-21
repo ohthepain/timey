@@ -49,7 +49,7 @@
   align-items: center;
   padding-bottom: 8px;
 }
-#discuss-conversation-tabs {
+[id$='discuss-conversation-tabs'] {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -317,7 +317,7 @@
 .discuss-draft-wrap {
   position: relative;
 }
-#discuss-draft {
+[id$='discuss-draft'] {
   display: block;
   position: relative;
   width: 100%;

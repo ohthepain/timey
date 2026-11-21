@@ -1,3 +1,86 @@
+window.timeyEscapeHTML = (value) =>
+  String(value ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+  );
+window.timeyChatSendIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg>';
+window.createChatDictation = ({ button, draft, status, getConversationId, changed, submit }) => {
+  let recognition = null;
+  let disposed = false;
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  button.addEventListener('click', () => {
+    if (!SpeechRecognition) {
+      status.textContent = 'Dictation is unavailable in this browser. You can keep typing.';
+      return;
+    }
+    if (recognition) {
+      recognition.stop();
+      return;
+    }
+    const original = draft.value;
+    const dictation = { conversationId: getConversationId(), draft: original, finalTranscript: '' };
+    const isCurrentDictation = () =>
+      !disposed && getConversationId() === dictation.conversationId && draft.value === dictation.draft;
+    function sendSpokenPrompt() {
+      if (!isCurrentDictation()) return;
+      if (!/(?:^|\s)go[.!?]*\s*$/i.test(dictation.finalTranscript)) return;
+      dictation.finalTranscript = '';
+      draft.value = draft.value.replace(/(?:^|\s)go[.!?]*\s*$/i, '').trimEnd();
+      changed();
+      status.textContent = 'Dictation finished. There is no prompt to send.';
+      if (!draft.value.trim()) return;
+      status.textContent = 'Dictation finished. Sending your prompt.';
+      submit();
+    }
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      if (!isCurrentDictation()) return;
+      const text = [...event.results].map((result) => result[0].transcript).join(' ');
+      dictation.finalTranscript = [...event.results].every((result) => result.isFinal) ? text : '';
+      dictation.draft = [original, text].filter(Boolean).join(' ');
+      draft.value = dictation.draft;
+      changed();
+    };
+    recognition.onerror = (event) => {
+      dictation.finalTranscript = '';
+      status.textContent = 'Dictation failed: ' + event.error + '. Your draft is preserved; retry or type.';
+    };
+    recognition.onend = () => {
+      recognition = null;
+      button.innerHTML =
+        '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg>';
+      button.setAttribute('aria-label', 'Start dictation');
+      button.title = 'Dictate';
+      sendSpokenPrompt();
+      if (status.textContent === 'Listening…') status.textContent = 'Dictation finished. Edit the text before sending.';
+    };
+    try {
+      recognition.start();
+      status.textContent = 'Listening…';
+      button.innerHTML =
+        '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>';
+      button.setAttribute('aria-label', 'Stop dictation');
+      button.title = 'Stop dictation';
+    } catch (failure) {
+      recognition = null;
+      status.textContent = 'Dictation could not start. Your draft is preserved. ' + failure.message;
+    }
+  });
+  return {
+    stop() {
+      disposed = true;
+      recognition?.stop();
+    },
+  };
+};
+
+window.chatMessageMarkup = ({ id, user, label, meta = '', content = '', tail = '' }) => {
+  const escape = window.timeyEscapeHTML;
+  return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(id)}"><div class="discuss-message-heading"><strong>${escape(label || (user ? 'You' : 'Assistant'))}</strong><span class="muted">${escape(meta)}</span></div><div class="discuss-message-body">${content}</div>${tail}</article>`;
+};
+
 window.createSkillComposer = function createSkillComposer(form, draft, load) {
   const selector = document.createElement('div');
   selector.className = 'skill-selector';
@@ -321,10 +404,9 @@ const issueChatUI = (() => {
     const send = node('button');
     sendButton = send;
     send.type = 'submit';
-    send.className = 'discussion-send';
+    send.className = 'discussion-send discuss-send-button';
     send.setAttribute('aria-label', 'Send message');
-    send.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+    send.innerHTML = window.timeyChatSendIcon;
     form.onsubmit = (event) => {
       event.preventDefault();
       if (event.isTrusted) void submit();
@@ -350,7 +432,24 @@ const issueChatUI = (() => {
     cancelEdit.onclick = finishEdit;
     const actions = node('div');
     actions.className = 'issue-composer-actions';
-    actions.append(pause, stop, cancelEdit, send);
+    const mic = node('button');
+    mic.type = 'button';
+    mic.className = 'discuss-icon-control';
+    mic.setAttribute('aria-label', 'Start dictation');
+    mic.innerHTML =
+      '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg>';
+    const voice = node('span');
+    voice.className = 'muted';
+    voice.setAttribute('role', 'status');
+    window.createChatDictation({
+      button: mic,
+      draft,
+      status: voice,
+      getConversationId: () => current,
+      changed: () => draft.dispatchEvent(new Event('input')),
+      submit: () => form.requestSubmit(),
+    });
+    actions.append(mic, voice, pause, stop, cancelEdit, send);
     form.append(draft, actions);
     skillComposer = createSkillComposer(form, draft, () =>
       api('issue-chat-skills?issue=' + encodeURIComponent(current))
@@ -436,13 +535,24 @@ const issueChatUI = (() => {
   function sortedMessages() {
     return [...messages.values()].sort((a, b) => String(a.at).localeCompare(String(b.at)) || a.id.localeCompare(b.id));
   }
-  function messageNode(entry) {
-    const item = node('article');
-    item.dataset.messageId = entry.id;
+  function issueMessageEnvelope(entry) {
     const date = entry.at ? new Date(entry.at).toLocaleString() : 'Date not recorded';
-    item.append(node('strong', entry.role || entry.actor), node('small', ' · ' + date));
     const text = node('p', entry.body);
     text.style.whiteSpace = 'pre-wrap';
+    const holder = node('div');
+    holder.innerHTML = window.chatMessageMarkup({
+      id: entry.id,
+      user: entry.actor === 'human',
+      label: entry.role || entry.actor,
+      meta: date,
+      content: text.outerHTML,
+    });
+    const item = holder.firstElementChild;
+    item.dataset.messageId = entry.id;
+    return item;
+  }
+  function messageNode(entry) {
+    const item = issueMessageEnvelope(entry);
     if (entry.skills?.length) {
       const tokens = node('div');
       tokens.className = 'message-skills';
@@ -453,7 +563,6 @@ const issueChatUI = (() => {
       }
       item.append(tokens);
     }
-    item.append(text);
     appendSources(item, entry.source);
     if (entry.status) item.append(node('small', entry.status));
     return item;
@@ -549,7 +658,7 @@ const issueChatUI = (() => {
     editing = null;
     previousDraft = null;
     cancelEdit.hidden = true;
-    sendButton.textContent = 'Send';
+    sendButton.innerHTML = window.timeyChatSendIcon;
     sendButton.setAttribute('aria-label', 'Send message');
     requestId = null;
   }
@@ -613,7 +722,7 @@ const issueChatUI = (() => {
     if (conversation.connected) return 'The issue assistant is responding. You can keep leaving comments.';
     if (['responding', 'attention'].includes(conversation.status))
       return 'The previous response stopped. Your messages are saved; send another message to reconnect.';
-    return '';
+    return conversation.sharedToolsUnavailable || '';
   }
   function responseStatus(conversation) {
     const error = stopErrors.get(current);

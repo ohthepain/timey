@@ -4,7 +4,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 
 function discussFixture(t) {
-  const dom = new JSDOM('<div id="project-discuss"></div>', {
+  const dom = new JSDOM(readFileSync(new URL('./factory-ui/flow.html', import.meta.url), 'utf8'), {
     url: 'http://localhost/?projectTab=discuss',
     runScripts: 'outside-only',
   });

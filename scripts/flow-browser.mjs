@@ -1,3 +1,4 @@
+import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
@@ -39,7 +40,7 @@ import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
-import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
+import { projectHomeBrowserChecks, investigationFlowsBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
 import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
@@ -87,11 +88,14 @@ const assets = [
   'investigation-followups-ui.js',
   'project-home-ui.js',
   'project-discuss-ui.js',
+  'project-reports-ui.js',
+  'project-reports.css',
   'project-discuss.css',
   'local-notes-ui.js',
   'local-notes.css',
   'issue-chat-ui.js',
   'investigation-issue-ui.js',
+  'investigation-flow-controls-ui.js',
   'project-home.css',
   'issue-closure-ui.js',
   'server-control-ui.js',
@@ -116,6 +120,8 @@ const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
 const navigationCheck = 'Project navigation exposes Home Issues Investigate and an Automate me tab';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
+const reportsCheck = 'Investigation reports retain content, reading state and shared discussion';
+const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
@@ -272,6 +278,8 @@ function checkExcluded(name) {
     ['--project-home', homeCheck],
     ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
+    ['--investigation-reports', reportsCheck],
+    ['--investigation-flows', investigationFlowsCheck],
     ['--interface-state', interfaceStateCheck],
     ['--investigation-followups', followupsCheck],
     ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
@@ -545,6 +553,14 @@ try {
   );
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
+  );
+  await check(reportsCheck, () =>
+    investigationReportsBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check(investigationFlowsCheck, () =>
+    withQueueConfiguration({ page, project, root }, () =>
+      investigationFlowsBrowserChecks({ page, service, poll, screenshot })
+    )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
@@ -1907,12 +1923,12 @@ try {
     flow.workspace = { checkout: checkoutRoot, branch, base };
     flow.startingPoint = { ref: 'refs/heads/dev', name: 'dev', commit: base };
     flow.blocks[0].data.fields = { type: 'investigation' };
-    const understand = flow.blocks.find(({ kind }) => kind === 'understand');
+    const inquiry = flow.blocks.find(({ kind }) => kind === 'investigate');
     const path = join(project, '.issues', 'manual-fixed-evidence.txt');
     const output = 'The project serves the saved issue flow.';
     writeFileSync(path, output);
-    understand.attempts.push({
-      id: 'fixture-understand',
+    inquiry.attempts.push({
+      id: 'fixture-investigate',
       status: 'completed',
       startedAt: '2026-11-16T12:00:00Z',
       output,
@@ -1923,7 +1939,8 @@ try {
     const executionCount = logs.execution.length;
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
-    assert.equal(await page.locator('#investigation-run').count(), 1);
+    await page.locator('#graph [data-block="' + inquiry.id + '"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#investigation-page').isVisible(), false);
     const flowView = await view();
     const closure = await page.request.get('/api/issue-closure?issue=' + encodeURIComponent(issueId));
     assert.equal(closure.status(), 200);
@@ -2406,7 +2423,7 @@ try {
     assert.equal(git(checkout, 'show', 'HEAD:saved-edit.txt'), 'Keep this local edit.');
     await screenshot('starting-branch-moved');
   });
-  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
+  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, poll, screenshot }));
   await check('Pending local merges are visible and can be aborted', () =>
     mergeStateBrowserChecks({ page, project, service, screenshot })
   );

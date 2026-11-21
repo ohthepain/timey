@@ -100,7 +100,9 @@
         "scripts/factory-ui/*-ui.js",
         "scripts/factory-ui/view-inspection.js",
         "scripts/factory-ui/flow.css",
-        "scripts/factory-ui/project-home.css"
+        "scripts/factory-ui/project-home.css",
+        "scripts/factory-ui/project-discuss.css",
+        "scripts/factory-ui/project-reports.css"
       ],
       "entryPointRole": "support",
       "toolingDependencies": ["fallow", "yaml", "@timey/local-issues"],

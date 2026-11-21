@@ -9,6 +9,7 @@ import { requireThat, writeJson } from './common.mjs';
 import { readModelSettings } from './model-settings.mjs';
 import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
 import { LocalNotes } from './local-notes.mjs';
+import { retainReportConversation } from './report-conversation.mjs';
 
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
@@ -44,6 +45,15 @@ function text(value, empty = false) {
     'Enter a message of up to 100,000 characters.'
   );
   return value;
+}
+function containsMessage(session, id) {
+  return [...session.messages, ...session.queue].some((message) => message.id === id);
+}
+function discussionOwnerMatches(session, ownership) {
+  return JSON.stringify(session.ownership) === JSON.stringify(ownership);
+}
+function reportMessageContext(input) {
+  return input.reportContext ? { reportContext: copy(input.reportContext) } : {};
 }
 function publicEvent(event) {
   if (event.method === 'item/agentMessage/delta' || event.method === 'ui/transportPhase') return null;
@@ -184,9 +194,14 @@ export class ProjectDiscuss {
     }
     return result;
   }
-  view(id) {
-    const sessions = this.records();
-    const requested = id ? this.read(id) : null;
+  readOwned(id, ownership) {
+    const session = this.read(id);
+    requireThat(discussionOwnerMatches(session, ownership), 'Choose a conversation belonging to this workspace.');
+    return session;
+  }
+  view(id, ownership) {
+    const sessions = this.records().filter((session) => discussionOwnerMatches(session, ownership));
+    const requested = id ? this.readOwned(id, ownership) : null;
     const selected = requested && !requested.closedAt ? requested : sessions[0];
     return {
       conversations: sessions.map(({ id, title, status, updatedAt }) => ({ id, title, status, updatedAt })),
@@ -218,6 +233,7 @@ export class ProjectDiscuss {
       settings: this.settings(input.settings, session.settings),
       attachments: this.attachments(session.id, input.attachments || []),
       status: 'queued',
+      ...reportMessageContext(input),
       createdAt: stamp(),
     };
   }
@@ -257,7 +273,40 @@ export class ProjectDiscuss {
     });
     return this.view(id);
   }
-  async action(input) {
+  createSession(requestId, input, context) {
+    const ownership = context.ownership;
+    return {
+      id: randomUUID(),
+      requestId,
+      ...(ownership ? { ownership } : {}),
+      title: ownership ? 'Investigation discussion' : 'New conversation',
+      createdAt: stamp(),
+      updatedAt: stamp(),
+      status: 'idle',
+      settings: this.settings(input.settings),
+      draft: { text: '', attachments: [] },
+      messages: context.messages || [],
+      queue: [],
+      approvals: [],
+      paused: false,
+      activeMessageId: null,
+    };
+  }
+  create(input, context) {
+    const ownership = context.ownership;
+    const resultView = (id) => this.view(id, ownership);
+    const requestId = checkedId(input.requestId || randomUUID());
+    const existing = this.records().find(
+      (session) => session.requestId === requestId && discussionOwnerMatches(session, ownership)
+    );
+    if (existing) return resultView(existing.id);
+    const session = this.createSession(requestId, input, context);
+    this.save(session);
+    return resultView(session.id);
+  }
+  async action(input, context = {}) {
+    const ownership = context.ownership;
+    const resultView = (id) => this.view(id, ownership);
     requireThat(!this.closed && this.service.reviewMode !== 'preview', 'Open the live project to use Discuss.');
     this.service.ownServer();
     const operation = input.action;
@@ -267,32 +316,11 @@ export class ProjectDiscuss {
       const path = ensureSkillExtension(join(this.service.root, 'user/chat/grilling.md'));
       if (this.options.openFile) await this.options.openFile(path);
       else await promisify(execFile)('/usr/bin/open', [path]);
-      return this.view(input.conversationId || undefined);
+      return resultView(input.conversationId || undefined);
     }
-    if (operation === 'create') {
-      const requestId = checkedId(input.requestId || randomUUID());
-      const existing = this.records().find((session) => session.requestId === requestId);
-      if (existing) return this.view(existing.id);
-      const session = {
-        id: randomUUID(),
-        requestId,
-        title: 'New conversation',
-        createdAt: stamp(),
-        updatedAt: stamp(),
-        status: 'idle',
-        settings: this.settings(input.settings),
-        draft: { text: '', attachments: [] },
-        messages: [],
-        queue: [],
-        approvals: [],
-        paused: false,
-        activeMessageId: null,
-      };
-      this.save(session);
-      return this.view(session.id);
-    }
+    if (operation === 'create') return this.create(input, context);
     const id = checkedId(input.conversationId);
-    let session = this.read(id);
+    let session = this.readOwned(id, ownership);
     if (operation === 'delete-note') {
       requireThat(
         session.messages.some((message) => message.localNoteId === input.noteId),
@@ -310,7 +338,7 @@ export class ProjectDiscuss {
       this.change(id, (s) => {
         s.closedAt = stamp();
       });
-      return this.view(input.returnTo ? checkedId(input.returnTo) : undefined);
+      return resultView(input.returnTo ? checkedId(input.returnTo) : undefined);
     } else if (operation === 'settings')
       this.change(id, (s) => {
         s.settings = this.settings(input.settings, s.settings);
@@ -324,8 +352,8 @@ export class ProjectDiscuss {
       });
     else if (operation === 'send') {
       const clientId = checkedId(input.clientId || randomUUID());
-      if (!session.messages.some((m) => m.id === clientId) && !session.queue.some((m) => m.id === clientId)) {
-        const message = this.envelope(session, { ...input, clientId });
+      if (!containsMessage(session, clientId)) {
+        const message = this.envelope(session, { ...input, clientId, reportContext: context.reportContext });
         this.change(id, (s) => {
           if (s.title === 'New conversation') s.title = message.text.slice(0, 80) || 'Attached files';
           const failed =
@@ -343,7 +371,12 @@ export class ProjectDiscuss {
     } else if (operation === 'edit-queued') {
       const previous = session.queue.find((m) => m.id === input.messageId);
       requireThat(previous, 'That message has already started or was removed.');
-      const next = this.envelope(session, { ...previous, ...input, clientId: previous.id });
+      const next = this.envelope(session, {
+        ...previous,
+        ...input,
+        clientId: previous.id,
+        reportContext: previous.reportContext,
+      });
       this.change(id, (s) => {
         s.queue[s.queue.findIndex((m) => m.id === previous.id)] = next;
       });
@@ -362,7 +395,7 @@ export class ProjectDiscuss {
         selected?.role === 'assistant' ? session.messages.find((m) => m.id === selected.replyTo) : selected;
       requireThat(original?.role === 'user', 'Choose the message to retry.');
       const clientId = checkedId(input.clientId || randomUUID());
-      if (!session.messages.some((m) => m.id === clientId) && !session.queue.some((m) => m.id === clientId))
+      if (!containsMessage(session, clientId))
         this.change(id, (s) => {
           for (const m of s.messages) if (m.status === 'running') m.status = 'interrupted';
           s.queue.unshift({
@@ -413,7 +446,7 @@ export class ProjectDiscuss {
         s.approvals = s.approvals.filter((a) => a.requestId !== input.requestId);
       });
     } else throw Error('Unknown project conversation operation.');
-    return this.view(id);
+    return resultView(id);
   }
   dispatch(id) {
     const session = this.read(id);
@@ -441,6 +474,7 @@ export class ProjectDiscuss {
         id: responseId,
         role: 'assistant',
         replyTo: message.id,
+        ...(message.reportContext ? { reportContext: copy(message.reportContext) } : {}),
         text: '',
         status: 'running',
         settings: copy(message.settings),
@@ -489,6 +523,7 @@ export class ProjectDiscuss {
         s.approvals = [];
         s.status = s.paused ? 'paused' : 'idle';
       });
+      retainReportConversation(this.service.root, this.read(id));
     }
   }
   close() {

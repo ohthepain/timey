@@ -7,12 +7,28 @@
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
   const busy = (session) => ['running', 'starting', 'stopping'].includes(session?.status);
+  function saveProjectTab(tab) {
+    const url = new URL(location.href);
+    if (tab !== 'home') url.searchParams.set('projectTab', tab);
+    else url.searchParams.delete('projectTab');
+    history.replaceState(null, '', url);
+  }
+  function updateChatVisibility(visible, projectTab, discuss, reports) {
+    const chats = new Map([
+      ['discuss', discuss],
+      ['reports', reports],
+    ]);
+    for (const [tab, chat] of chats) chat.setVisible(visible && projectTab === tab);
+  }
   window.createProjectHomeUI = ({ request, post, navigateHome, changed }) => {
     const discuss = window.createProjectDiscussUI({ request, post });
+    const reports = window.createProjectReportsUI({ request, post });
     window.createProjectAdminUI({ request, post });
     const tabs = document.querySelectorAll('[role="tab"][data-project-tab]');
     const requestedTab = new URL(location.href).searchParams.get('projectTab');
-    let projectTab = ['issues', 'discuss', 'automate', 'admin'].includes(requestedTab) ? requestedTab : 'home';
+    let projectTab = ['issues', 'reports', 'discuss', 'automate', 'admin'].includes(requestedTab)
+      ? requestedTab
+      : 'home';
     const state = {
       visible: false,
       data: null,
@@ -32,19 +48,16 @@
 
     function selectProjectTab(tab) {
       projectTab = tab;
-      const url = new URL(location.href);
-      if (tab !== 'home') url.searchParams.set('projectTab', tab);
-      else url.searchParams.delete('projectTab');
-      history.replaceState(null, '', url);
+      saveProjectTab(tab);
       $('project-home').dataset.projectTab = tab;
       document.querySelector('.workspace').dataset.projectHomeTab = tab;
-      document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', tab === 'discuss');
+      document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', ['discuss', 'reports'].includes(tab));
       $('project-home-content').hidden = tab !== 'home';
       $('project-issues').hidden = tab !== 'issues';
       $('project-admin').hidden = tab !== 'admin';
       $('project-automate').hidden = tab !== 'automate';
+      updateChatVisibility(state.visible, projectTab, discuss, reports);
       for (const button of tabs) button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
-      discuss.setVisible(state.visible && tab === 'discuss');
       loadIssuesFrame();
     }
     for (const button of tabs) button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
@@ -345,7 +358,7 @@
     }
     function projectNavigation(button) {
       const route = button.dataset.projectHome;
-      if (['home', 'issues', 'discuss'].includes(route)) {
+      if (['home', 'issues', 'discuss', 'reports'].includes(route)) {
         navigateHome();
         selectProjectTab(route);
         void refresh();
@@ -431,7 +444,7 @@
         const wasVisible = state.visible;
         state.visible = value;
         $('project-home').hidden = !value;
-        discuss.setVisible(value && projectTab === 'discuss');
+        updateChatVisibility(state.visible, projectTab, discuss, reports);
         loadIssuesFrame();
         if (value && !wasVisible) void refresh();
       },

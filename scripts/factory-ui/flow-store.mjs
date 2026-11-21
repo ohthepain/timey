@@ -1,5 +1,6 @@
 import { blockDefinitionId, missingMergePR, requestBlock, withoutTarget } from './flow-block-data.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
+import { inquiryKinds, investigationOutputKinds } from './investigation-flow.mjs';
 import { bundledFlow } from './flow-definitions.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -148,6 +149,26 @@ function migrateUpdateBranch(flow) {
   }
 }
 
+function canRetainBlock(before, node) {
+  if (!before) return false;
+  return blockDefinitionId(before) === node.block || (inquiryKinds.has(before.kind) && node.block === 'investigate');
+}
+function routeBlock(before, node, catalog) {
+  const block = canRetainBlock(before, node) ? { ...before } : makeBlock(node.block, [], node.suggested, catalog);
+  if (block.kind === 'understand' && node.block === 'investigate') {
+    const entry = catalog.find(({ id }) => id === 'investigate');
+    Object.assign(block, {
+      legacyKind: block.kind,
+      kind: 'investigate',
+      label: entry.label,
+      definitionChecksum: entry.checksum,
+      declaredDetails: entry.details,
+      declaredArtifacts: entry.artifacts,
+    });
+    delete block.definition;
+  }
+  return block;
+}
 export function rebuildRoute(flow, type, definition, nodes, catalog) {
   const current = new Map(flow.blocks.filter((block) => block.flowKey).map((block) => [block.flowKey, block]));
   const taken = new Set([...flow.blocks, ...(flow.retiredBlocks ?? [])].map((block) => block.id));
@@ -155,10 +176,7 @@ export function rebuildRoute(flow, type, definition, nodes, catalog) {
   const retained = new Set();
   const blocks = nodes.map((node) => {
     const before = current.get(node.id);
-    const block =
-      before && blockDefinitionId(before) === node.block
-        ? { ...before }
-        : makeBlock(node.block, [], node.suggested, catalog);
+    const block = routeBlock(before, node, catalog);
     if (before?.id === block.id) retained.add(block.id);
     else if (!taken.has(node.id)) block.id = node.id;
     taken.add(block.id);
@@ -259,11 +277,17 @@ export function editFlow(flow, input, catalog) {
       );
       const added = makeBlock(input.kind, at ? [next.blocks[at - 1].id] : [], false, catalog);
       added.lane = validLane(input.lane ?? (input.kind === 'update-branch' ? next.blocks[at]?.lane : 0) ?? 0);
-      added.after = laneDependencies(next.blocks, at, added.lane);
+      added.after = blockDependencies(next, added, at);
       next.blocks.splice(at, 0, added);
       const following = next.blocks[at + 1];
       if (input.kind === 'update-branch') linkPreWorkUpdate(next.blocks);
-      else if (following && !following.attempts.length && following.lane === added.lane) following.after = [added.id];
+      else if (
+        following &&
+        !following.attempts.length &&
+        following.lane === added.lane &&
+        !independentOutput(next, following)
+      )
+        following.after = [added.id];
     },
     update() {
       requireEditable(block);
@@ -313,7 +337,7 @@ export function editFlow(flow, input, catalog) {
           'Supply a valid edit checklist.'
         );
       Object.assign(block, values);
-      if ('lane' in values) block.after = laneDependencies(next.blocks, next.blocks.indexOf(block), block.lane);
+      if ('lane' in values) block.after = blockDependencies(next, block, next.blocks.indexOf(block));
     },
     move() {
       requireEditable(block);
@@ -327,7 +351,7 @@ export function editFlow(flow, input, catalog) {
       requireEditable(next.blocks[to]);
       [next.blocks[at], next.blocks[to]] = [next.blocks[to], next.blocks[at]];
       next.blocks.forEach((item, index) => {
-        item.after = laneDependencies(next.blocks, index, item.lane);
+        item.after = blockDependencies(next, item, index);
       });
     },
     remove() {
@@ -392,6 +416,16 @@ function requireEditable(block) {
   requireThat(block, 'Choose a saved block.');
 }
 
+function independentOutput(flow, block) {
+  return flow.routeType === 'investigation' && investigationOutputKinds.has(block.kind);
+}
+function blockDependencies(flow, block, index) {
+  if (independentOutput(flow, block)) {
+    const inquiry = flow.blocks.slice(0, index).findLast(({ kind }) => inquiryKinds.has(kind)) ?? flow.blocks[0];
+    return [inquiry.id];
+  }
+  return laneDependencies(flow.blocks, index, block.lane);
+}
 function laneDependencies(blocks, index, lane) {
   const previous = blocks.slice(0, index).findLast((item) => item.lane === lane && !item.suggested) || blocks[0];
   return previous && index > 0 ? [previous.id] : [];
