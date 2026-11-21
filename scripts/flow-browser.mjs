@@ -325,11 +325,11 @@ async function clickAction(locator) {
   return value;
 }
 async function selectBlock(id) {
-  const locator = page.locator('[data-block="' + id + '"]');
+  const locator = page.locator('.block-card[data-block="' + id + '"]');
   if ((await locator.getAttribute('aria-pressed')) === 'true') return;
   await page.evaluate((blockId) => {
     const scroll = document.getElementById('graph-scroll');
-    const card = document.querySelector('[data-block="' + blockId + '"]');
+    const card = document.querySelector('.block-card[data-block="' + blockId + '"]');
     if (scroll && card) {
       const bounds = scroll.getBoundingClientRect();
       const rect = card.getBoundingClientRect();
@@ -339,9 +339,9 @@ async function selectBlock(id) {
   try {
     await locator.click({ timeout: 2500 });
   } catch {
-    await page.evaluate((blockId) => document.querySelector('[data-block="' + blockId + '"]')?.click(), id);
+    await page.evaluate((blockId) => document.querySelector('.block-card[data-block="' + blockId + '"]')?.click(), id);
   }
-  await page.locator('[data-block="' + id + '"][aria-pressed="true"]').waitFor();
+  await page.locator('.block-card[data-block="' + id + '"][aria-pressed="true"]').waitFor();
 }
 async function block(id) {
   await selectBlock(id);
@@ -1851,6 +1851,9 @@ try {
     assert.equal(paused.autoplay.mode, 'paused');
     await page.waitForFunction(() => document.getElementById('issue-playback').disabled);
     await noNewActions.uncheck();
+    assert.equal((await view()).autoplay.mode, 'paused');
+    assert.equal((await view()).flow.blocks.find(({ id }) => id === verify.id).attempts.length, 0);
+    await clickAction(page.getByRole('button', { name: 'Resume issue' }));
     await block('request');
     await page.locator('#issue-results-message').filter({ hasText: 'Flow complete' }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Close issue' }).textContent(), 'Close');
@@ -1868,7 +1871,7 @@ try {
     assert.deepEqual(logs.pageErrors, []);
   });
   await check('The issue header closes with a reason and runs only Cleanup by default', async () => {
-    const close = page.getByRole('button', { name: 'Close', exact: true });
+    const close = page.getByRole('button', { name: 'Close issue', exact: true });
     assert.equal(await page.locator('#worktree-hint + #close-with-reason').count(), 1);
     const dialog = page.getByRole('dialog', { name: 'Close this issue' });
     const executionCount = logs.execution.length;

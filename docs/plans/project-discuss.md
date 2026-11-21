@@ -27,12 +27,11 @@ authorizes this documentation update; it does not authorize implementation.
   skills.
 - Model, effort, and skill changes apply to subsequent messages. Running and
   already-queued messages retain the settings submitted with them.
-- Voice input is dictation into editable composer text. The person chooses when
-  to send it, including by saying “go” as the final word of a dictated prompt.
-  This spoken send command authorizes submission without a separate manual Send
-  action. Remove the final command word “go” before submitting the prompt.
-  If the remaining prompt is empty or whitespace only, send nothing.
-  Live spoken conversation is outside the initial scope.
+- Voice input is dictation into editable composer text. A final spoken word "go"
+  is an explicit send command. Remove it and submit the remaining prompt
+  automatically, unless that prompt is empty or whitespace only. A "go" in the
+  middle of the dictation does not send. Otherwise the person chooses when to
+  send. Live spoken conversation is outside the initial scope.
 - Retain the transcribed text and discard the dictation recording after
   transcription. On dictation failure, preserve the existing draft and offer
   retry or typing.

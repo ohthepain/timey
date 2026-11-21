@@ -7,6 +7,8 @@ Language used to coordinate work and review changes.
 **Spoken send command**:
 The person's explicit choice to send a dictated prompt by saying “go” as its
 final word. Every chat excludes the command word from the submitted prompt.
+An empty or whitespace-only prompt sends nothing. A "go" in the middle of the
+dictation is ordinary prompt text.
 
 **Local note**:
 A quick project-owned thought or todo saved outside version control. It can be

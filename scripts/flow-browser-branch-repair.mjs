@@ -41,6 +41,24 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     writeFileSync(join(run.checkout, 'branch-fix.txt'), 'Checked repair\n');
     retain({ checks: [{ label: 'Formatting and Fallow passed' }] });
   };
+  let openingBlock = false;
+  const opening = Promise.withResolvers();
+  const openingHandled = Promise.withResolvers();
+  const holdOpeningBlock = async (route) => {
+    const input = route.request().postDataJSON();
+    if (input.action === 'open-block' && input.issueId === id) {
+      openingBlock = true;
+      await opening.promise;
+      try {
+        await route.continue();
+      } finally {
+        openingHandled.resolve();
+      }
+      return;
+    }
+    await route.continue();
+  };
+  await page.route('**/api/flow-action', holdOpeningBlock);
   try {
     await page.goto('/?issue=' + id);
     const button = page.locator('#fix-branch');
@@ -50,6 +68,11 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
       (value) => value === 'broken',
       'Blocking check did not mark Fix Branch red'
     );
+    await poll(() => openingBlock, Boolean, 'The initial inspector check did not start');
+    assert.equal(await button.isDisabled(), true, 'Fix Branch must wait for the pending inspector check');
+    opening.resolve();
+    if (openingBlock) await openingHandled.promise;
+    await page.unroute('**/api/flow-action', holdOpeningBlock);
     await button.click();
     const dialog = page.locator('#branch-repair-dialog');
     assert.match(await dialog.locator('[data-repair-status]').textContent(), /Fallow failed/);
@@ -128,6 +151,9 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     await screenshot('branch-conflict-recovered');
     await dialog.locator('[data-repair-close]').click();
   } finally {
+    opening.resolve();
+    if (openingBlock) await openingHandled.promise;
+    await page.unroute('**/api/flow-action', holdOpeningBlock);
     release();
     repairs.run = original;
     service.flows.executor = originalExecutor;
