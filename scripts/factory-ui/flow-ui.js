@@ -200,7 +200,12 @@
     const attempt = latest(block);
     if (attempt?.invalidatedAt && !runningStatuses.has(attempt.status) && attempt.status !== 'uncertain')
       return 'invalidated';
-    return attempt?.status || (block?.suggested ? 'suggested' : 'ready');
+    return attempt?.status || blockDefaultStatus(block);
+  }
+
+  function blockDefaultStatus(block) {
+    if (block?.historicallyCompleted) return 'completed';
+    return block?.suggested ? 'suggested' : 'ready';
   }
 
   function routeComplete(blocks) {
@@ -220,7 +225,7 @@
     const playing = ['playing', 'waiting'].includes(state.view?.autoplay?.mode);
     if (playing) return 'pause';
     if (!issue || location === 'archive' || state.view?.grouping?.master) return 'hidden';
-    if (routeComplete(blocks)) return closed ? 'archive' : 'close';
+    if (routeComplete(blocks)) return closed || state.view.flow.routeType === 'investigation' ? 'archive' : 'close';
     if (closed || issue.readOnly) return 'hidden';
     return blocks.some((block) => block.attempts?.length) ? 'resume' : 'start';
   }
@@ -361,6 +366,12 @@
     changed: () => load(true),
   });
   const investigationUI = window.createInvestigationIssueUI({ request: json, post, changed: () => load(true) });
+  const investigationControls = window.createInvestigationFlowControls({
+    request: json,
+    post,
+    changed: () => load(true),
+    archive: archiveIssueWithUiState,
+  });
 
   function investigationActions(block) {
     if (block?.kind !== 'understand' || status(block) !== 'completed') return '';
@@ -595,7 +606,12 @@
     }
     const routeAction = playbackAction(state.view?.flow?.blocks || []);
     $('close-with-reason').hidden =
-      !issue || closed || pending || Boolean(state.view?.grouping?.master) || routeAction === 'close';
+      !issue ||
+      state.view?.flow?.routeType === 'investigation' ||
+      closed ||
+      pending ||
+      Boolean(state.view?.grouping?.master) ||
+      routeAction === 'close';
     $('close-with-reason').disabled = busy;
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
@@ -1869,6 +1885,28 @@
     }</section>`;
   }
 
+  const investigationRunSelection = new Map();
+  const investigationRunKey = (block) => state.issueId + '/' + block.id;
+  function inquiryRunOptions(block) {
+    if (!['understand', 'investigate'].includes(block.kind)) return [];
+    return block.attempts.filter(
+      (attempt) => attempt.status === 'completed' && attempt.investigation?.mode !== 'discussion'
+    );
+  }
+  function investigationSourcePicker(block) {
+    if (!['generate-report', 'create-issues'].includes(block.kind)) return '';
+    const selected = investigationRunSelection.get(investigationRunKey(block));
+    const runs = state.view.flow.blocks.concat(state.view.flow.retiredBlocks || []).flatMap(inquiryRunOptions);
+    return `<label class="field">Source investigation run<select data-investigation-source="${escape(block.id)}"><option value="">Latest current completed run</option>${runs.map((attempt, index) => `<option value="${escape(attempt.id)}"${selected === attempt.id ? ' selected' : ''}>Run ${index + 1} · ${escape(date(attempt.startedAt))}</option>`).join('')}</select><small>Choose retained findings for the next output run.</small></label>`;
+  }
+  document.addEventListener('change', (event) => {
+    if (!event.target.hasAttribute('data-investigation-source')) return;
+    investigationRunSelection.set(state.issueId + '/' + event.target.dataset.investigationSource, event.target.value);
+  });
+  function investigationRunInput(block) {
+    return { investigationRunId: investigationRunSelection.get(investigationRunKey(block)) || undefined };
+  }
+
   function declaredDetails(block, editable = false) {
     const fields = (block.details || []).filter((detail) => !detail.derived);
     if (!fields.length) return '';
@@ -2092,7 +2130,7 @@
       return `<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;
     const locked = state.pending ? ' disabled' : '';
     const sections = {
-      settings: `<form id="block-form">${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
+      settings: `<form id="block-form">${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
       progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map(attemptCard).join('')}</details>` : ''}</section>`,
       sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button></div></section>`,
       notes: comments(block),
@@ -2102,9 +2140,20 @@
     );
   }
 
+  function conversationMessage(message) {
+    const producer = state.view.flow.blocks.find((entry) => entry.id === message.blockId);
+    return window.chatMessageMarkup({
+      id: message.id,
+      user: message.actor === 'human',
+      label: message.role || message.actor,
+      meta: [producer?.label, date(message.at)].filter(Boolean).join(' · '),
+      content: `<p class="message-body">${escape(message.body)}</p>`,
+    });
+  }
+
   function renderConversation(block) {
     const messages = state.view?.conversation || [];
-    return `<p class="conversation-context">This issue’s conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map((message) => `<article class="message"><div class="message-meta"><span class="message-author">${escape(message.actor || message.role || 'Factory')}${message.blockId ? ` · ${escape(state.view.flow.blocks.find((entry) => entry.id === message.blockId)?.label || 'Block')}` : ''}</span><time>${escape(date(message.at))}</time></div><p class="message-body">${escape(message.body)}</p></article>`).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
+    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map(conversationMessage).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
   }
 
   function renderArtifacts(block, artifacts) {
@@ -2317,23 +2366,13 @@
 
   function renderInvestigationPage() {
     if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') return;
+    investigationControls.render(state.view);
     const investigation = state.view?.flow?.routeType === 'investigation';
-    investigationUI.show(investigation ? state.issueId : null);
-    $('app').dataset.investigation = investigation ? 'open' : 'closed';
+    investigationUI.show(null);
+    $('app').dataset.investigation = 'closed';
     if (investigation) {
       $('issue-type-label').textContent = 'Investigation ·';
       $('issue-subtitle').textContent = state.view.issue.reusable ? 'Reusable' : 'One-time';
-      for (const id of [
-        'graph-scroll',
-        'environment',
-        'issue-playback',
-        'issue-flow-picker',
-        'rebuild-flow',
-        'issue-grouping',
-      ]) {
-        if ($(id)) $(id).hidden = true;
-      }
-      document.querySelector('.inspector').hidden = true;
       $('flow-view-title').textContent = 'Investigation';
     }
   }
@@ -2689,6 +2728,7 @@
     }
     const result = await action(block.kind === 'request' ? 'run-request' : name, {
       blockId: block.id,
+      ...investigationRunInput(block),
       ...(confirmed ? { confirmed: true } : {}),
       ...(approval ? { mergeToken: approval.token } : {}),
     });

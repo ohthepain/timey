@@ -1295,7 +1295,11 @@ test('discussion thread resumes for work in its real managed checkout despite im
   const checkout = f.service.lifecycleRuns[issueId].chatCheckout.checkout;
   assert.notEqual(realpathSync(checkout), realpathSync(f.queue.root));
   assert.equal(conversationState(f.queue.root, issueId).threadId, originalThread);
-  assert.deepEqual(resumed, [[originalThread, checkout, 'workspace-write']]);
+  assert.deepEqual(
+    resumed.map((args) => args.slice(0, 3)),
+    [[originalThread, checkout, 'workspace-write']]
+  );
+  assert.match(resumed[0][3], /registered project and issue tools/);
   const work = f.calls.find((call) => call.prompt?.includes('Latest request: Edit in the managed checkout'));
   assert.equal(work.id, originalThread);
   assert.equal(work.root, checkout);

@@ -6,19 +6,44 @@ class IssueChatConnection extends CodexConnection {
     return interruptCodexTurn(this, threadId);
   }
   request(message) {
+    if (message.method === 'item/tool/call' && this.blockTools) {
+      Promise.resolve()
+        .then(async () => {
+          const params = message.params;
+          const turn = this.turns.get(params.threadId);
+          requireThat(turn, 'This output turn is no longer running.');
+          const started = await turn.started;
+          requireThat(started.turn.id === params.turnId, 'This tool belongs to another output turn.');
+          return this.blockTools.invoke(params.tool, params.arguments, params);
+        })
+        .then(
+          (value) =>
+            this.send({
+              id: message.id,
+              result: { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(value) }] },
+            }),
+          (error) =>
+            this.send({
+              id: message.id,
+              result: { success: false, contentItems: [{ type: 'inputText', text: error.message }] },
+            })
+        );
+      return;
+    }
     if (this.issueChatSandboxes?.get(message.params?.threadId) === 'workspace-write') return super.request(message);
     this.send({
       id: message.id,
       error: { code: -32601, message: 'This discussion turn is read-only. Use Work on issue for editable work.' },
     });
   }
-  attach(cwd, state, retain, sandbox = 'read-only') {
-    return attachIssueChat(this, cwd, state, retain, sandbox);
+  attach(cwd, state, retain, ...options) {
+    return attachIssueChat(this, cwd, state, retain, ...options);
   }
 }
 
-export async function attachIssueChat(connection, cwd, state, retain, sandbox = 'read-only', instructions) {
+export async function attachIssueChat(connection, cwd, state, retain, sandbox = 'read-only', instructions, tools) {
   requireNativeRegistration(state);
+  connection.blockTools = tools;
   connection.issueChatSandboxes ||= new Map();
   if (state.threadId) {
     await resumeChatSandbox(connection, state.threadId, cwd, sandbox, instructions);
@@ -35,7 +60,7 @@ export async function attachIssueChat(connection, cwd, state, retain, sandbox = 
     cwd,
     sandbox,
     (startup) => retain({ startup, threadId: startup.threadId }),
-    ...(instructions === undefined ? [] : [null, cwd, instructions])
+    ...(instructions === undefined && !tools ? [] : [null, cwd, instructions, tools?.definitions])
   );
   connection.issueChatSandboxes.set(threadId, sandbox);
   return threadId;

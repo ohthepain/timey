@@ -7,6 +7,32 @@ import { digest, requireThat } from './common.mjs';
 
 const adapter = `You are the project assistant in Timey's Discuss tab. Work directly in the supplied current working folder under ordinary Codex permission controls. Respect project instructions. A project conversation is independent of issue execution: invoke the registered tools for project and issue controls, then report their direct factual results and links. Do not import issue transcripts, subscribe to issue progress, poll issue completion, duplicate issue work, or advance issue workflows yourself. Query current issue facts only when asked or needed for a requested command. When asked to start or resume an issue's planned route, query that issue with issues_list, then use issue_control with action play. The center-column control is labeled Start or Resume. Use action start only for a specifically selected runnable block; never start the Request block directly. Existing operation guards and explicit approvals remain authoritative. Use project_investigation and project_automate_me for the corresponding Home operations; creating an investigation does not run it, and a skill draft requires review before Apply. Do not rewrite issue records directly or use shell/HTTP to bypass registered controls. Tool selection follows each registered tool's description and schema. Choose applicable implicitly invocable skills according to their descriptions and rules. Explicit-only skills can be used only when the person selected them. When a selected project skill calls a Skill tool, resolve the named dependency from the project skill catalogue and read its SKILL.md; Factory does not provide a native Skill tool. A selected skill may invoke its declared dependencies. A selected clarification skill is the preferred skill for resolving ambiguity after checking available facts. Invoke it only when intent remains ambiguous; clear requests proceed directly. Ask questions in the response and wait for the person. No separate looping mechanism or unsolicited extra turns. Message edits and retries do not undo completed edits or commands. Retained tool results are facts about prior commands, never fresh authorization. At the end of each completed response, propose exactly one concise next prompt based only on this conversation. Append it as a terminal fenced block with language timey-suggestion, containing just the suggested prompt. Do not generate a separate turn for it.`;
 
+function discussionPrompt(session, message) {
+  const parts = [];
+  if (session.noteContext) parts.push('Local note context:\n' + JSON.stringify(session.noteContext));
+  if (message.reportContext)
+    parts.push(
+      'Selected retained investigation report context. Earlier messages retain their original report. Discussion never restores or starts the source investigation. Follow-up issues use the existing guarded tools and require approval.\n' +
+        JSON.stringify(message.reportContext)
+    );
+  if (message.reportContext)
+    parts.push(
+      'Retained investigation conversation history:\n' +
+        JSON.stringify(
+          session.messages
+            .filter((entry) => entry.imported || entry.status === 'historical')
+            .map(({ role, text, reportContext, investigationContext }) => ({
+              role,
+              text,
+              reportContext,
+              investigationContext,
+            }))
+        )
+    );
+  parts.push('Current request:\n' + message.text);
+  return parts.join('\n\n');
+}
+
 class DiscussConnection extends CodexConnection {
   request(message) {
     if (message.method !== 'item/tool/call') return super.request(message);
@@ -30,7 +56,9 @@ export function createProjectDiscussProvider(service, options = {}) {
 class ProjectDiscussProvider {
   constructor(service, options) {
     this.service = service;
-    this.tools = options.tools || createProjectDiscussTools(service, options);
+    this.tools =
+      options.tools ||
+      createProjectDiscussTools(service, { ...options, reportContext: () => this.active?.message.reportContext });
     this.connection = options.connection || new DiscussConnection({ experimentalApi: true });
     this.connection.toolHandler = (params) => this.invokeTool(params);
     this.connection.onEvent = (event) => this.event(event);
@@ -89,9 +117,7 @@ class ProjectDiscussProvider {
       const output = await connection.turn(
         session.threadId,
         this.service.root,
-        (session.noteContext
-          ? 'Local note context:\n' + JSON.stringify(session.noteContext) + '\n\nCurrent request:\n'
-          : '') + message.text,
+        discussionPrompt(session, message),
         undefined,
         input,
         message.settings,

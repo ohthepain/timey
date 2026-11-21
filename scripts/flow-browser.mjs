@@ -1,3 +1,4 @@
+import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
@@ -37,7 +38,7 @@ import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mj
 import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.mjs';
 import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
-import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
+import { projectHomeBrowserChecks, investigationFlowsBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
 import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
@@ -85,11 +86,14 @@ const assets = [
   'investigation-followups-ui.js',
   'project-home-ui.js',
   'project-discuss-ui.js',
+  'project-reports-ui.js',
+  'project-reports.css',
   'project-discuss.css',
   'local-notes-ui.js',
   'local-notes.css',
   'issue-chat-ui.js',
   'investigation-issue-ui.js',
+  'investigation-flow-controls-ui.js',
   'project-home.css',
   'issue-closure-ui.js',
   'server-control-ui.js',
@@ -113,6 +117,8 @@ const folderSettingsCheck = 'Folder settings inherit, repair, search and act on 
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
+const reportsCheck = 'Investigation reports retain content, reading state and shared discussion';
+const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
@@ -268,6 +274,8 @@ function checkExcluded(name) {
     ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
+    ['--investigation-reports', reportsCheck],
+    ['--investigation-flows', investigationFlowsCheck],
     ['--interface-state', interfaceStateCheck],
     ['--investigation-followups', followupsCheck],
     ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
@@ -539,6 +547,10 @@ try {
   await check('Closed issue selections archive together and issue links open the normal view', () =>
     projectIssuesBrowserChecks({ page, project, root, output })
   );
+  await check(reportsCheck, () =>
+    investigationReportsBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check(investigationFlowsCheck, () => investigationFlowsBrowserChecks({ page, service, poll, screenshot }));
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', async () => {
@@ -2411,7 +2423,7 @@ try {
     assert.equal(git(checkout, 'show', 'HEAD:saved-edit.txt'), 'Keep this local edit.');
     await screenshot('starting-branch-moved');
   });
-  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
+  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, poll, screenshot }));
   await check('Pending local merges are visible and can be aborted', () =>
     mergeStateBrowserChecks({ page, project, service, screenshot })
   );

@@ -49,6 +49,8 @@ import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs'
 import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
 import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
 import { ProjectDiscuss, readClarificationSkills } from './project-discuss.mjs';
+import { InvestigationReports } from './investigation-reports.mjs';
+import { reportDiscussionView, reportDiscussionAction } from './report-discussion.mjs';
 import { LocalNotes } from './local-notes.mjs';
 import { localNoteAction } from './local-note-routes.mjs';
 import { controlServerAction } from './server-action.mjs';
@@ -61,12 +63,11 @@ import {
   startIssueCleanupRetry,
 } from './issue-cleanup.mjs';
 async function body(request) {
-  const limit =
-    request.url === '/api/project-discuss-action'
-      ? 12000000
-      : request.url === '/api/sidebar-files-action'
-        ? 800000
-        : 65536;
+  const limit = ['/api/project-discuss-action', '/api/report-discuss-action'].includes(request.url)
+    ? 12000000
+    : request.url === '/api/sidebar-files-action'
+      ? 800000
+      : 65536;
   request.setEncoding('utf8');
   let text = '';
   for await (const chunk of request) {
@@ -145,6 +146,7 @@ function requireClassicIdle(service, path, value) {
 const pauseSafeActions = {
   '/api/local-notes-action': ['create', 'edit', 'complete', 'delete', 'move', 'discuss', 'link'],
   '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued', 'delete-note'],
+  '/api/report-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
   '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop', 'branch-repair-stop'],
   '/api/project-home-action': ['investigation-stop', 'automate-stop'],
 };
@@ -194,6 +196,11 @@ async function requireEditableMutation(service, path, value) {
   }
 }
 
+function reportChatAction(service, value) {
+  const report = new InvestigationReports(service.root).read(value.reportId);
+  return reportDiscussionAction(projectDiscuss(service), projectHome(service).investigations, report, value);
+}
+
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
   requireClassicIdle(service, path, value);
@@ -221,6 +228,7 @@ async function mutation(service, path, value, owner) {
   const routes = {
     '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
+    '/api/report-discuss-action': () => reportChatAction(service, value),
     '/api/project-home-action': () => projectHome(service).action(value),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).apply(value),
     '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).apply(value),
@@ -374,6 +382,7 @@ async function mutation(service, path, value, owner) {
 }
 export function createFactoryServer(service, options = {}) {
   service.serverControl = serverControl(service, options.restart);
+  service.sharedChatToolOptions = { flows: () => flows(service), home: () => projectHome(service) };
   const token = randomBytes(32).toString('hex');
   const server = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
@@ -438,6 +447,18 @@ async function read(service, request, response, owner) {
     '/api/capture-grilling-skills': () => readClarificationSkills(service.root).filter((item) => item.kind === 'skill'),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/project-home': () => projectHome(service).view(),
+    '/api/investigation-reports': () => {
+      const reports = new InvestigationReports(service.root);
+      const id = url.searchParams.get('report');
+      if (!id) return { reports: reports.list() };
+      const report = reports.read(id);
+      return { report, reports: reports.list().filter((entry) => entry.source.issueId === report.source.issueId) };
+    },
+    '/api/report-discuss': () =>
+      reportDiscussionView(
+        projectDiscuss(service),
+        new InvestigationReports(service.root).read(url.searchParams.get('report'))
+      ),
     '/api/local-notes': () => new LocalNotes(service.root).view(),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).preview(url.searchParams.get('ref')),
     '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).preview(),
@@ -554,11 +575,43 @@ async function temporaryAction(action) {
   }
 }
 
+function reportEvidenceContentType(original) {
+  const extension = /\.([a-z]+)$/i.exec(original || '')?.[1].toLowerCase();
+  return (
+    { svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' }[extension] ||
+    'text/plain; charset=utf-8'
+  );
+}
+
+function readReportEvidence(service, request, response) {
+  const url = new URL(request.url, 'http://localhost');
+  const report = new InvestigationReports(service.root).read(url.searchParams.get('report'));
+  const index = Number(url.searchParams.get('item'));
+  requireThat(Number.isInteger(index) && index >= 0, 'Choose retained report evidence.');
+  const item = report.evidence[index];
+  requireThat(item, 'Choose retained report evidence.');
+  requireThat(item.status === 'verified', 'This report evidence is unavailable or unverified.');
+  const type = reportEvidenceContentType(item.original);
+  response.setHeader('Content-Type', type);
+  response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  return response.end(readFileSync(item.path));
+}
+
+const resourceReaders = new Map([
+  ['/api/report-evidence', readReportEvidence],
+  [
+    '/node_modules/markdown-it/dist/markdown-it.min.js',
+    (_service, _request, response) => {
+      response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+      return response.end(readFileSync(createRequire(import.meta.url).resolve('markdown-it/dist/markdown-it.min.js')));
+    },
+  ],
+]);
+
 function readResource(service, request, response, owner) {
-  if (request.url === '/node_modules/markdown-it/dist/markdown-it.min.js') {
-    response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-    return response.end(readFileSync(createRequire(import.meta.url).resolve('markdown-it/dist/markdown-it.min.js')));
-  }
+  const resource = resourceReaders.get(request.url.split('?')[0]);
+  if (resource) return resource(service, request, response);
   if (request.url.startsWith('/api/project-discuss-attachment?')) {
     const url = new URL(request.url, 'http://localhost');
     const file = projectDiscuss(service).attachment(
@@ -583,6 +636,8 @@ function readResource(service, request, response, owner) {
     '/local-notes-ui.js': 'local-notes-ui.js',
     '/local-notes.css': 'local-notes.css',
     '/project-discuss-ui.js': 'project-discuss-ui.js',
+    '/project-reports-ui.js': 'project-reports-ui.js',
+    '/project-reports.css': 'project-reports.css',
     '/skill-select.js': 'skill-select.js',
     '/project-discuss.css': 'project-discuss.css',
     '/flow-ui.js': 'flow-ui.js',
@@ -590,6 +645,7 @@ function readResource(service, request, response, owner) {
     '/project-home-ui.js': 'project-home-ui.js',
     '/project-admin-ui.js': 'project-admin-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',
+    '/investigation-flow-controls-ui.js': 'investigation-flow-controls-ui.js',
     '/project-home.css': 'project-home.css',
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
     '/sidebar-files-ui.js': 'sidebar-files-ui.js',

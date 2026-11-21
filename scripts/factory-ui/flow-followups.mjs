@@ -48,7 +48,7 @@ function sourceSnapshot(flows, { issueId, blockId }) {
   };
 }
 
-function proposalDescription(item, source) {
+export function investigationProposalDescription(item, source) {
   return [
     item.title,
     item.description,
@@ -188,7 +188,7 @@ export class FlowFollowups {
           needsApproval: true,
           sourceIssue: source.issueId,
           sourceAttempt: source.attemptId,
-          description: proposalDescription(draft, source),
+          description: investigationProposalDescription(draft, source),
         });
         proposal.result = { issueId: result.issue?.id ?? result.issueId, deleted: result.deleted === true };
         delete proposal.error;

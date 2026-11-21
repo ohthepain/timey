@@ -130,5 +130,23 @@
     "color": "neutral",
     "order": 20,
     "defaultSkill": null
+  },
+  "investigate": {
+    "label": "Investigate",
+    "color": "yellow",
+    "order": 3,
+    "defaultSkill": null
+  },
+  "generate-report": {
+    "label": "Generate report",
+    "color": "yellow",
+    "order": 3,
+    "defaultSkill": "generate-report"
+  },
+  "create-issues": {
+    "label": "Create Issues",
+    "color": "yellow",
+    "order": 3,
+    "defaultSkill": "create-issues"
   }
 }

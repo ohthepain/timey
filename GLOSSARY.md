@@ -295,7 +295,14 @@ An output-only rerun remains part of that investigation run.
 **Investigation report**:
 A published presentation of one investigation run's findings, evidence, and
 recommendations. It retains its identity and content when the investigation runs
-again or is archived.
+again or is archived. Each deliberate generation is a dated publication. Retry
+recovers the same publication identity. Timey retains its own content and evidence
+copies after a skill saves the originals.
+
+**Output attempt**:
+One execution of Generate report or Create Issues, attached to its original
+investigation run. It records saved results and any additional inspected revisions.
+Retry retains its publication and finding identities.
 
 **Retro item**:
 A follow-up issue proposed by a retro that retains its originating issue for

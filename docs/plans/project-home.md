@@ -33,8 +33,10 @@ implementation evidence remain below.
   prompt; additional user instructions are included in the investigation.
 - An optional conversation helps refine the goals through grilling and questions
   about the codebase. The person explicitly chooses when to run the investigation.
-- Completed investigations automatically create actionable follow-up issues marked
-  **Needs approval**. Approval leaves them idle until explicitly started.
+- The ordinary investigation route contains Investigate, Generate report, and
+  Create Issues after Request. Either output is optional and independently
+  runnable from completed findings. Create Issues saves actionable uncovered work
+  as **Needs approval**. Approval leaves it idle until explicitly started.
 - Each generated follow-up requires a concrete finding, supporting evidence, a
   bounded improvement, and a way to verify it. Generation checks existing issues
   for the same work. An investigation can produce no new issues; uncertain
@@ -42,9 +44,9 @@ implementation evidence remain below.
 - Follow-ups use the project's current default issue folder unless a destination
   is chosen for that run. Overrides do not carry forward. The investigation's own
   filing folder is independent.
-- Automatic follow-up creation applies only to investigations started through
-  this project operation. Other investigations retain reviewed creation.
-  Retries preserve earlier outcomes and do not duplicate created follow-ups.
+- Output blocks use selectable skills and retain the source investigation run.
+  Retries preserve earlier saved outcomes and do not duplicate reports or issues.
+  A deliberate new report generation creates another dated publication.
 - Project home also offers a button to run PStack's **automate-me** skill.
   It opens a guided conversation that examines working habits, asks questions,
   and drafts or updates the user's personal `-mode` skill. The person reviews
@@ -97,8 +99,10 @@ Shared archive/restore retains report freshness and claim/publication safeguards
 ## Existing foundations
 
 - Project home extends the existing Flow page and sidebar.
-- The default Investigation flow is Request → Understand.
-  Understand supports a custom prompt and retains read-only investigation results.
+- The default investigation flow is Request → Investigate → Generate report →
+  Create Issues. Historical Understand attempts retain their original identities.
+  The [reports design](investigation-reports.md) supersedes the earlier coupled
+  execution and automatic follow-up policy recorded below.
 - [Investigation follow-ups](investigation-follow-ups.md) currently use reviewed
   creation. Project-home investigations need an explicit automatic-creation
   policy; other investigations retain their current workflow.
