@@ -1368,8 +1368,11 @@ human acceptance.
 
 The header counts running actions and open temporary chats. **No new actions** is
 an on/off switch. Turning it on blocks new work and requests that coordinators
-pause after their current action. Existing work can finish, permission replies
-and saving/ending a temporary chat remain available. Turning it off restores
+pause after their current action. All chats remain available, including opening
+conversations, sending and queuing prompts, retrying responses, and steering.
+Existing work can finish, permission replies and saving/ending a temporary chat
+remain available. A requested server restart still drains work before restarting
+and blocks new chat responses during that handoff. Turning the switch off restores
 normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.

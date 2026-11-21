@@ -2913,7 +2913,7 @@
       }
       function projectIssueArchiveButton() {
         if (!closedProjectIssueSelection()) return '';
-        return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive all'}</button></div>`;
+        return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive selected'}</button></div>`;
       }
       function projectIssueArchiveControls(embedded) {
         if (!embedded) return '';

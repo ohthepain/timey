@@ -74,6 +74,69 @@ async function checkDirectStart(service, paused, running, expectMembers) {
   }
 }
 
+async function checkStatusCarets(page, screenshot, output, poll) {
+  const regularCaret = page.locator('.sidebar-files .folder-disclosure').first();
+  const caretStyle = (element) => {
+    const style = getComputedStyle(element, '::before');
+    return {
+      content: style.content,
+      clipPath: style.clipPath,
+      width: style.width,
+      height: style.height,
+      transform: style.transform,
+    };
+  };
+  await regularCaret.waitFor();
+  if ((await regularCaret.getAttribute('aria-expanded')) === 'true') await regularCaret.click();
+  await poll(
+    () => regularCaret.getAttribute('aria-expanded'),
+    (value) => value === 'false',
+    'Regular folder collapsed'
+  );
+  const collapsedCaret = await regularCaret.evaluate(caretStyle);
+  await regularCaret.click();
+  await poll(
+    () => regularCaret.getAttribute('aria-expanded'),
+    (value) => value === 'true',
+    'Regular folder expanded'
+  );
+  const expandedCaret = await regularCaret.evaluate(caretStyle);
+  assert.notEqual(collapsedCaret.transform, expandedCaret.transform);
+  const carets = [];
+  for (const id of ['in-progress-issues', 'blocked-status-issues']) {
+    const collection = page.locator('#' + id);
+    const summary = collection.locator('summary');
+    assert.notEqual(await collection.getAttribute('open'), null);
+    await summary.click();
+    await poll(
+      () => collection.getAttribute('open'),
+      (value) => value === null,
+      id + ' collapsed'
+    );
+    assert.equal(await collection.getAttribute('open'), null);
+    const collapsed = await summary.evaluate(caretStyle);
+    await screenshot(id + '-collapsed');
+    await summary.click();
+    await poll(
+      () => collection.getAttribute('open'),
+      (value) => value !== null,
+      id + ' expanded'
+    );
+    assert.notEqual(await collection.getAttribute('open'), null);
+    const expanded = await summary.evaluate(caretStyle);
+    carets.push({ id, collapsed, expanded });
+    await screenshot(id + '-expanded');
+  }
+  writeFileSync(
+    join(output, 'issue-status-carets.json'),
+    JSON.stringify({ collapsedCaret, expandedCaret, carets }, null, 2) + '\n'
+  );
+  for (const caret of carets) {
+    assert.deepEqual(caret.collapsed, collapsedCaret, caret.id + ' must use the regular collapsed caret.');
+    assert.deepEqual(caret.expanded, expandedCaret, caret.id + ' must use the regular expanded caret.');
+  }
+}
+
 export async function issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root }) {
   const { folders, fixtures, reports } = createFixtures(project, service);
   async function members(id) {
@@ -131,9 +194,7 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
       'blocked-status-issues',
       initialBlocked.filter((id) => id !== fixtures[1].id)
     );
-    await page.locator('#blocked-status-issues summary').click();
-    assert.equal(await page.locator('#blocked-status-issues').getAttribute('open'), null);
-    await page.locator('#blocked-status-issues summary').click();
+    await checkStatusCarets(page, screenshot, output, poll);
     await screenshot('issue-status-folders');
     const assignments = fixtures.map(({ id }) => ({
       id,
