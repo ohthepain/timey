@@ -2,6 +2,13 @@
 
 ## Commands and evidence
 
+`node --test scripts/flow-delivery.check.mjs` checks that no-change publication
+stops before pushing or creating a PR, including already delivered candidates and
+empty commits. `node scripts/flow-browser.mjs --no-changes` drives the no-change
+Publish preview, Cannot Reproduce suggestion, cancellation and explicit closure
+in a disposable project. It saves `no-changes-close-offer.png`; no live issue is
+closed and no GitHub publication occurs.
+
 `node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
 merged-issue lock, preserved definitions and attempts, external merge observation,
 restart persistence, editable unmerged/local issues, and historical Fixed acceptance.

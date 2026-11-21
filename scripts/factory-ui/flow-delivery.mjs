@@ -234,6 +234,26 @@ function publicationBlocker(pr, identity, target) {
   return null;
 }
 
+function noChangesPublication(workspace, target, head, pr) {
+  if (pr) return null;
+  let base;
+  try {
+    base = git(workspace.checkout, 'merge-base', target, head);
+  } catch {
+    return {
+      status: 'blocked',
+      message: 'Refresh the destination branch locally before comparing the issue changes for publication.',
+    };
+  }
+  if (git(workspace.checkout, 'diff', '--name-only', base, head)) return null;
+  return {
+    status: 'blocked',
+    message:
+      'No changes to publish against the destination. You can close this issue as Cannot Reproduce or keep it open for more work.',
+    suggestedResolution: 'cannot-reproduce',
+  };
+}
+
 export async function prepareFlowPublication(service, ctx, workspace, options = {}) {
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   const { branch: target, remote } = deliveryTarget(ctx.flow);
@@ -255,6 +275,8 @@ export async function prepareFlowPublication(service, ctx, workspace, options = 
     throw Error('Couldn’t check branches. Retry Publish when GitHub is available.');
   });
   if (!branches.has(target)) return blocked('Branch unavailable. Choose another destination before publishing.');
+  const noChanges = noChangesPublication(workspace, branches.get(target), candidate.head, pr);
+  if (noChanges) return { preview: noChanges };
   if (service.sharedIssues) {
     const tracking = `refs/remotes/${remote}/${target}`;
     const base = git(workspace.checkout, 'merge-base', tracking, candidate.head);

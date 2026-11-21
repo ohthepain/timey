@@ -87,6 +87,14 @@ Time waiting for human input is excluded. If a runner disappears, its last saved
 the attempt for timing.
 
 The controller owns flow writes. The executor owns one bounded block.
+Before creating a PR, Publish compares the committed candidate with the current
+GitHub destination. When there are no source changes to publish, it stops before
+pushing and offers the existing close dialog with Cannot Reproduce selected.
+The person can confirm closure or keep the issue open for more work. This does
+not imply acceptance or automatically close an issue. Existing PR updates retain
+their normal publication behavior. If the current destination commit is not
+available locally, Update Branch is required before comparison.
+
 Work formats issue changes and checks Fallow before running focused tests. It
 selects relevant tests from the changed behavior and Requested Proof, and adds a
 focused test when existing tests cannot demonstrate the behavior. A failure that
