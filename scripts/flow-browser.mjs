@@ -601,7 +601,7 @@ try {
     })
   );
   await check('Local notes capture and handoff preserve flow', async () => {
-    await localNotesBrowserChecks({ page, project, service, poll, screenshot });
+    await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
     assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
   });
   await check(folderSettingsCheck, () =>
