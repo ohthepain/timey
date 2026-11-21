@@ -582,7 +582,7 @@ test('an uncommitted verification survives its unchanged commit and expires when
   );
 });
 
-function investigationFixture(t) {
+function investigationFixture(t, kind = 'understand') {
   const f = fixture(t);
   unlinkSync(join(f.root, '.issues/issue-delivery-config.json'));
   const output = 'The subsystem reads saved blocks and starts only the requested block.\n';
@@ -593,7 +593,7 @@ function investigationFixture(t) {
   f.ctx.flow.target.base = f.workspace.base;
   f.ctx.flow.blocks = [
     {
-      kind: 'understand',
+      kind,
       attempts: [
         {
           status: 'completed',
@@ -615,20 +615,21 @@ function investigationFixture(t) {
   return { ...f, understanding: f.ctx.flow.blocks[0].attempts[0] };
 }
 
-test('read-only investigation acceptance uses the canonical writer with retained output and no PR claims', async (t) => {
-  const f = investigationFixture(t);
-  await f.close();
-  const issue = readQueue(f.root, {
-    location: 'closed',
-    issueId: f.ctx.issue.id,
-  }).issues[0];
-  assert.equal(issue.state, 'closed');
-  assert.equal(issue.accepted_result.revision, f.workspace.base);
-  assert.equal(issue.accepted_result.verification_rerun, false);
-  assert.equal(issue.accepted_result.evidence.length, 1);
-  assert.equal(readFileSync(issue.accepted_result.evidence[0].path, 'utf8'), f.understanding.output);
-  assert.deepEqual(f.calls, []);
-});
+for (const kind of ['understand', 'investigate'])
+  test(`read-only ${kind} acceptance uses the canonical writer with retained output and no PR claims`, async (t) => {
+    const f = investigationFixture(t, kind);
+    await f.close();
+    const issue = readQueue(f.root, {
+      location: 'closed',
+      issueId: f.ctx.issue.id,
+    }).issues[0];
+    assert.equal(issue.state, 'closed');
+    assert.equal(issue.accepted_result.revision, f.workspace.base);
+    assert.equal(issue.accepted_result.verification_rerun, false);
+    assert.equal(issue.accepted_result.evidence.length, 1);
+    assert.equal(readFileSync(issue.accepted_result.evidence[0].path, 'utf8'), f.understanding.output);
+    assert.deepEqual(f.calls, []);
+  });
 
 for (const change of ['dirty', 'committed', 'branch', 'saved-base'])
   test(`investigation closure rejects ${change} source context`, async (t) => {

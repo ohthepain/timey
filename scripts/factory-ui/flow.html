@@ -8,12 +8,14 @@
     <link rel="stylesheet" href="/flow.css" />
     <link rel="stylesheet" href="/project-home.css" />
     <link rel="stylesheet" href="/project-discuss.css" />
+    <link rel="stylesheet" href="/project-reports.css" />
     <link rel="stylesheet" href="/local-notes.css" />
     <script src="/view-state.js" defer></script>
     <script src="/issue-chat-ui.js" defer></script>
     <script src="../../node_modules/markdown-it/dist/markdown-it.min.js" defer></script>
     <script src="/skill-select.js" defer></script>
     <script src="/project-discuss-ui.js" defer></script>
+    <script src="/project-reports-ui.js" defer></script>
     <script src="/server-control-ui.js" defer></script>
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/issue-folder-drag-ui.js" defer></script>
@@ -22,6 +24,7 @@
     <script src="/project-admin-ui.js" defer></script>
     <script src="/project-home-ui.js" defer></script>
     <script src="/investigation-issue-ui.js" defer></script>
+    <script src="/investigation-flow-controls-ui.js" defer></script>
     <script src="/branch-repair-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/local-notes-ui.js" defer></script>
@@ -61,6 +64,8 @@
           <nav class="project-home-menu" aria-label="Project menu">
             <button type="button" data-project-home="home">Home</button>
             <button type="button" data-project-home="issues">Issues</button>
+            <button type="button" data-project-home="discuss">Discuss</button>
+            <button type="button" data-project-home="reports">Reports</button>
             <button type="button" data-project-home="investigate">Investigate</button>
           </nav>
           <div class="project-actions-row">
@@ -470,6 +475,16 @@
               Issues
             </button>
             <button
+              id="project-tab-reports"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-reports"
+              data-project-tab="reports"
+            >
+              Reports
+            </button>
+            <button
               id="project-tab-discuss"
               type="button"
               role="tab"
@@ -546,6 +561,13 @@
           >
             <iframe title="Project issues" data-src="/classic?embed=project-issues#queue"></iframe>
           </section>
+          <section
+            id="project-reports"
+            class="project-reports"
+            role="tabpanel"
+            aria-labelledby="project-tab-reports"
+            hidden
+          ></section>
           <section
             id="project-discuss"
             class="project-discuss"
@@ -1181,5 +1203,140 @@
         ><button class="small-button" type="button" data-repair-close>Close</button>
       </footer>
     </dialog>
+    <template id="shared-discuss-template"
+      ><div class="discuss-conversations">
+        <div id="discuss-conversation-tabs" role="tablist" aria-label="Project conversations"></div>
+        <button id="discuss-new" class="small-button" type="button">New chat</button>
+      </div>
+      <p id="discuss-error" class="inline-error" role="alert" hidden></p>
+      <div id="discuss-messages" class="discuss-messages" role="log" aria-label="Project conversation messages"></div>
+      <div id="discuss-approvals" class="discuss-approvals"></div>
+      <div id="discuss-queue" class="discuss-queue" aria-label="Queued messages"></div>
+      <form id="discuss-form" class="discuss-composer">
+        <p id="discuss-editing" class="muted" hidden></p>
+        <div id="discuss-draft-attachments" class="discuss-attachments"></div>
+        <div class="discuss-draft-wrap">
+          <textarea
+            id="discuss-draft"
+            aria-label="Message project"
+            rows="3"
+            maxlength="64000"
+            placeholder="Ask about your project, or type / to choose a skill…"
+          ></textarea
+          ><span id="discuss-suggestion" class="discuss-suggestion" aria-hidden="true"></span>
+        </div>
+        <div class="discuss-composer-actions">
+          <div>
+            <div class="discuss-toolbar">
+              <label
+                ><span class="visually-hidden">Clarification skill</span
+                ><select id="discuss-clarification" aria-label="Clarification skill"></select></label
+              ><label
+                ><span class="visually-hidden">Model</span
+                ><select id="discuss-model" aria-label="Discuss model"></select></label
+              ><label
+                ><span class="visually-hidden">Effort</span
+                ><select id="discuss-effort" aria-label="Discuss effort"></select></label
+              ><button id="discuss-refresh-skills" class="small-button" type="button">Refresh skills</button
+              ><label class="discuss-icon-control" title="Attach files"
+                ><svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="m6 8.5 4.1-4.1a2.1 2.1 0 0 1 3 3l-5.7 5.7a3.3 3.3 0 0 1-4.7-4.7l5.5-5.5" /></svg
+                ><span class="visually-hidden">Attach files</span
+                ><input id="discuss-files" type="file" multiple hidden /></label
+              ><button
+                id="discuss-mic"
+                class="discuss-icon-control"
+                type="button"
+                aria-label="Start dictation"
+                title="Dictate"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="6" y="2" width="4" height="8" rx="2" />
+                  <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4" />
+                </svg>
+              </button>
+            </div>
+            <span id="discuss-voice-status" class="muted" role="status"></span>
+          </div>
+          <div>
+            <button id="discuss-cancel-edit" class="small-button" type="button" hidden>Cancel edit</button
+            ><button id="discuss-resume" class="small-button" type="button" hidden>Resume</button
+            ><button
+              id="discuss-send"
+              class="discuss-send-button"
+              type="submit"
+              aria-label="Send message"
+              title="Send message"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" /></svg>
+            </button>
+          </div>
+        </div>
+      </form>
+      <p id="discuss-status" class="visually-hidden" role="status"></p
+    ></template>
+    <template id="report-reader-template">
+      <header class="report-toolbar">
+        <button type="button" class="small-button" data-report-all>All reports</button
+        ><a class="small-button" href="{{investigationHref}}">Open investigation</a
+        ><label
+          >Run<select data-report-run aria-label="Investigation run">
+            {{runs}}
+          </select></label
+        ><button type="button" class="small-button" data-report-discuss>{{discussLabel}}</button>
+      </header>
+      <p data-report-error role="alert"></p>
+      <div class="report-workspace">
+        <article class="report-reading" aria-label="Investigation report">
+          <header>
+            <p class="muted">{{publishedAt}} · Run {{runNumber}}</p>
+            <h1>{{title}}</h1>
+            <p class="report-source">Source revision <code>{{revision}}</code></p>
+          </header>
+          <div class="report-content">{{content}}</div>
+          <section class="report-evidence" aria-label="Retained evidence">
+            <h2>Evidence</h2>
+            {{evidence}}
+          </section>
+        </article>
+        <div
+          class="report-divider"
+          role="separator"
+          tabindex="0"
+          aria-label="Resize report and discussion"
+          aria-orientation="horizontal"
+          aria-valuemin="20"
+          aria-valuemax="80"
+        ></div>
+        <section class="report-discussion-panel" aria-label="Report discussion">
+          <div class="report-prompts">
+            <button type="button" data-report-prompt="Explain the most important finding in this report.">
+              Explain the findings</button
+            ><button type="button" data-report-prompt="Which recommendations should we act on first?">
+              Prioritize recommendations</button
+            ><button
+              type="button"
+              data-report-prompt="Create approval-needed follow-up issues for uncovered work in this report, linking matching existing issues."
+            >
+              Create follow-up issues
+            </button>
+          </div>
+          <div id="report-discussion" class="project-discuss"></div>
+        </section>
+      </div>
+    </template>
+    <template id="report-library-template"
+      ><header class="reports-heading">
+        <h1>Reports</h1>
+        <p>Retained findings and recommendations from your investigations.</p>
+      </header>
+      <p data-report-error role="alert"></p>
+      <div class="report-library">{{items}}</div></template
+    >
+    <template id="report-library-item-template"
+      ><button type="button" class="report-library-item" data-report-open="{{id}}">
+        <strong>{{title}}</strong><time>{{publishedAt}}</time>
+      </button></template
+    >
   </body>
 </html>

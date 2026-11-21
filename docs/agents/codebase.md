@@ -37,10 +37,13 @@ The default Flow page opens **Project home** when no issue or folder is selected
 `scripts/factory-ui/project-home.mjs` composes project statistics, investigations,
 and Automate me behind the authenticated project-home routes in `http.mjs`.
 `project-home-ui.js` owns the home page, create-only investigation dialog, and
-Automate me tab and dialog. Its tab controller also handles the sidebar Home
-and Issues links. `project-investigations.mjs` owns issue-bound runs and automatic
-approval-needed follow-ups. `investigation-issue-ui.js` owns the common issue page;
-`investigation-history.mjs` projects retained runs and linked current issue states.
+Automate me tab and dialog. Its tab controller also handles the sidebar Home,
+Issues, Discuss, and Reports links. `project-investigations.mjs` owns reusable inquiry settings
+and runs. `flow-ui.js` renders the ordinary investigation workspace;
+`investigation-flow-controls-ui.js` supplies its reusable settings and direct
+archive controls. `investigation-history.mjs` projects retained runs and linked
+current issue states. Legacy custom layouts retain their original execution path
+until explicitly rebuilt.
 `investigation-snapshot.mjs` creates temporary detached copies and removes them
 after the executor retains results; it creates no source-project worktrees or
 branches. `investigation-records.mjs` supplies shared classification for Flow and
@@ -758,7 +761,9 @@ reader's position. Expanded activity and editor dimensions also survive these
 updates. New events within an existing message retain its activity expansion.
 Its settings and attachment
 controls share a row with Send. Discuss hides
-the shared Flow footer. The shared skill composer lives in `issue-chat-ui.js`.
+the shared Flow footer. The shared skill composer, message envelope, send icon, and dictation handler
+live in `issue-chat-ui.js`. Project, report, and Classic issue chats reuse these
+controls. Flow conversation entries reuse the same message envelope.
 Open conversation tabs stay in creation order; closing a tab marks its conversation
 closed and retains its saved history.
 `skills.mjs` retains invocation policy and discovers installed
@@ -766,6 +771,23 @@ closed and retains its saved history.
 The factory's `archive` skill submits issue numbers to the existing archive tool
 in one batch. Storage controls resolve numbers from one registry read, deduplicate
 the selection, and retain per-issue outcomes and existing publication safeguards.
+`investigation-execution.mjs` binds output attempts to successful inquiry snapshots.
+`investigation-adoption.mjs` recognizes idle standard legacy layouts and preserves
+original inquiry IDs and saved creation receipts. Execution order uses the saved
+block array. Output dependencies point to the inquiry, so report presentation
+changes do not invalidate issue creation.
+`investigation-reports.mjs` retains immutable publications and evidence under the
+project's ignored runtime directory. Publication identity survives Retry; a new
+explicit generation gets another identity. `investigation-outputs.mjs` owns
+approval-needed issue capture and per-finding receipts shared across skills.
+`investigation-output-execution.mjs` binds these guarded tools to the active output
+and retains returned saved-result references before snapshot cleanup.
+`project-reports-ui.js` owns the Reports library and full-width reader. Its lower
+panel reuses `project-discuss-ui.js`; `report-discussion.mjs` binds that conversation
+to the investigation and copies selected report context into each message.
+Archived inquiry execution stays guarded while retained report discussion remains
+available. `investigation-flow-controls-ui.js` supplies reusable settings, Run again,
+and direct Archive alongside the ordinary graph.
 `flow-followups.mjs` owns reviewed follow-ups from completed Understand results.
 `investigation-proposals.mjs` prepares proposals in a read-only discussion;
 `investigation-followups-ui.js` owns selection and editing. Retained findings bind
@@ -827,7 +849,8 @@ against current issue records. `flow-grouping.mjs` owns master issue grouping.
 and folder strategy selection. `folder-operations.mjs` runs scoped AI searches and
 preview-bound per-issue Start and Archive actions, retaining individual outcomes.
 `flow-overnight.mjs` runs the approved folder selection to the Merge confirmation
-and retains the run report. `flow-block-data.mjs` resolves block addresses, declared inputs and
+and retains the run report. After Request completes, its owning run can adopt
+the clarified route while manual route changes remain blocked. `flow-block-data.mjs` resolves block addresses, declared inputs and
 retained outputs. `flow-request.mjs` derives the Request fields through a
 temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
 Codex conversations and uses the protected operation adapters for delivery. `flow-observer.mjs` reads local Git state and separately cached PR facts.
@@ -889,3 +912,12 @@ configured provider, validates the run's commit, and rewrites command-log paths
 to retained local files. It falls back to failed job output when artifacts are
 unavailable. `flow-repair-evidence.mjs` copies that evidence into the repair
 worker's checkout and derives blocker identities from failed checks and logs.
+
+`shared-chat-tools.mjs` supplies Classic and retained native conversations with the
+project Discuss tool registry. `CodexConnection` starts an authenticated,
+connection-owned `chat-tool-mcp.mjs` adapter before launching app-server. Its CLI
+configuration overrides apply only to that process. They expose the guarded
+registry when an existing thread resumes, preserving its identity and history
+without changing global Codex configuration. Calls require an active native turn;
+closing the connection closes the adapter. Output blocks retain their separate
+dynamic tool registrations. Loading the application starts no conversation or turn.

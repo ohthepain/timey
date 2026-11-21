@@ -10,7 +10,7 @@ export async function flowFollowupsBrowserChecks({ page, service, logs, screensh
   const before = service.flows.issues().length;
   const executions = logs.execution.length;
   await page.goto('/?issue=' + source.issueId);
-  await page.locator('#investigation-page').waitFor({ state: 'visible' });
+  await page.locator('#graph [data-block="' + source.blockId + '"]').click();
   await page.getByRole('button', { name: 'Create follow-up issues', exact: true }).click();
   const dialog = page.locator('#investigation-followups-dialog');
   await dialog.locator('[data-proposal]').first().waitFor();
@@ -38,7 +38,7 @@ export async function flowFollowupsBrowserChecks({ page, service, logs, screensh
   await screenshot('investigation-followups-created');
   await dialog.getByRole('button', { name: 'Close follow-up review' }).click();
   await page.reload();
-  await page.locator('#investigation-page').waitFor({ state: 'visible' });
+  await page.locator('#graph [data-block="' + source.blockId + '"]').click();
   await page.getByRole('button', { name: 'Create follow-up issues', exact: true }).click();
   await dialog.getByRole('link', { name: 'Open issue', exact: true }).waitFor();
   assert.equal(await dialog.locator('[data-proposal]:disabled').count(), 1);

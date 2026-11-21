@@ -1029,10 +1029,10 @@ test('a changed Request type applies its default Markdown flow and preserves ear
     issueId: id,
     revision: view.flow.revision,
     action: 'comment',
-    blockId: view.flow.blocks.find((block) => block.kind === 'understand').id,
+    blockId: view.flow.blocks.find((block) => block.kind === 'investigate').id,
     text: 'Keep the original wording.',
   });
-  assert.equal(view.flow.blocks.find((item) => item.kind === 'understand').comments.length, 1);
+  assert.equal(view.flow.blocks.find((item) => item.kind === 'investigate').comments.length, 1);
   const input = {
     action: 'capture',
     requestId: '00000000-0000-4000-8000-000000000001',
@@ -1862,7 +1862,7 @@ test('Retro reads linked threads in the available provider and reports missing h
   assert.equal(flow.workspace, null);
 });
 
-test('new investigations propose understanding without code delivery or closure blocks', (t) => {
+test('new investigations expose independent outputs without code delivery or closure blocks', (t) => {
   fixture(t);
   const flow = newFlow(
     { id: '20261113-investigation', title: 'Understand the cache', request_type: 'investigation', content: '' },
@@ -1870,7 +1870,7 @@ test('new investigations propose understanding without code delivery or closure 
   );
   assert.deepEqual(
     flow.blocks.map((block) => block.kind),
-    ['request', 'understand']
+    ['request', 'investigate', 'generate-report', 'create-issues']
   );
 });
 

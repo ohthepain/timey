@@ -23,6 +23,8 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     ],
     efforts: ['high', 'low'],
   };
+  service.projectDiscuss?.close();
+  service.projectDiscuss = null;
   service.projectDiscussOptions = {
     modelSettings: () => choices,
     skills: async () => availableSkills,
