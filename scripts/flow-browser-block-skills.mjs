@@ -18,7 +18,7 @@ export async function blockSkillsBrowserChecks({ page, service, project, poll })
   await picker.waitFor();
   assert.match(await picker.textContent(), /poteto-mode/);
   await picker.click();
-  const select = page.getByLabel('Block skill', { exact: true });
+  const select = page.getByRole('dialog').getByLabel('Block skill', { exact: true });
   await poll(
     () => select.locator('option[value="__setup_skills__"]').count(),
     (count) => count === 1,
