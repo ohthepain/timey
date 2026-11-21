@@ -16,28 +16,6 @@
       return '';
     }
   }
-  function expandedMessageIds(log) {
-    return new Set(
-      [...log.querySelectorAll('.discuss-message[data-discuss-message] details.discuss-tool-activity[open]')].map(
-        (details) => details.closest('[data-discuss-message]').dataset.discussMessage
-      )
-    );
-  }
-  function restoreMessages(log, expandedActivity, previousScrollTop, wasAtBottom) {
-    for (const messageId of expandedActivity)
-      log
-        .querySelector(`[data-discuss-message="${CSS.escape(messageId)}"] .discuss-tool-activity`)
-        ?.setAttribute('open', '');
-    log.scrollTop = wasAtBottom ? log.scrollHeight : previousScrollTop;
-  }
-  function replaceMessages(log, html) {
-    if (log.innerHTML === html) return;
-    const previousScrollTop = log.scrollTop;
-    const wasAtBottom = log.scrollHeight - log.clientHeight - log.scrollTop <= 40;
-    const expandedActivity = expandedMessageIds(log);
-    log.innerHTML = html;
-    restoreMessages(log, expandedActivity, previousScrollTop, wasAtBottom);
-  }
   function inline(value) {
     return escape(value)
       .replace(/\[([^\]]+)\]\(([^\s)]+)\)/g, (_, label, href) => {
@@ -85,10 +63,17 @@
       <form id="discuss-form" class="discuss-composer"><p id="discuss-editing" class="muted" hidden></p><div id="discuss-draft-attachments" class="discuss-attachments"></div><div class="discuss-draft-wrap"><textarea id="discuss-draft" aria-label="Message project" rows="3" maxlength="64000" placeholder="Ask about your project, or type / to choose a skill…"></textarea><span id="discuss-suggestion" class="discuss-suggestion" aria-hidden="true"></span></div><div class="discuss-composer-actions"><div><div class="discuss-toolbar"><label><span class="visually-hidden">Clarification skill</span><select id="discuss-clarification" aria-label="Clarification skill"></select></label><label><span class="visually-hidden">Model</span><select id="discuss-model" aria-label="Discuss model"></select></label><label><span class="visually-hidden">Effort</span><select id="discuss-effort" aria-label="Discuss effort"></select></label><button id="discuss-refresh-skills" class="small-button" type="button">Refresh skills</button><label class="discuss-icon-control" title="Attach files"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 8.5 4.1-4.1a2.1 2.1 0 0 1 3 3l-5.7 5.7a3.3 3.3 0 0 1-4.7-4.7l5.5-5.5"/></svg><span class="visually-hidden">Attach files</span><input id="discuss-files" type="file" multiple hidden></label><button id="discuss-mic" class="discuss-icon-control" type="button" aria-label="Start dictation" title="Dictate"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg></button></div><span id="discuss-voice-status" class="muted" role="status"></span></div><div><button id="discuss-cancel-edit" class="small-button" type="button" hidden>Cancel edit</button><button id="discuss-resume" class="small-button" type="button" hidden>Resume</button><button id="discuss-send" class="discuss-send-button" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg></button></div></div></form><p id="discuss-status" class="visually-hidden" role="status"></p>`;
     const draft = byId('discuss-draft');
     const form = byId('discuss-form');
-    const composerObserver = new ResizeObserver(() => {
-      root.style.setProperty('--discuss-composer-height', `${form.getBoundingClientRect().height}px`);
-    });
-    composerObserver.observe(form);
+    const log = byId('discuss-messages');
+    const view = window.timeyView;
+    let openingScroll = null;
+    for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown'])
+      log.addEventListener(
+        event,
+        () => {
+          openingScroll = null;
+        },
+        { passive: true }
+      );
     let draftSave = Promise.resolve();
     let settingsSave = Promise.resolve();
     let actionSave = Promise.resolve();
@@ -108,10 +93,19 @@
       recognition = null;
     const localDrafts = new Map();
     const session = () => data?.selected;
-    const skillComposer = window.createSkillComposer(form, draft, async () => {
+    let setup = null;
+    async function discoverSkills() {
       const value = await request('/api/project-discuss-skills');
+      setup = value.setup;
+      clarificationSelect.discovered(value.skills || value);
       return value.skills || value;
+    }
+    const clarificationSelect = window.createSkillSelect(byId('discuss-clarification'), {
+      onChange: () => void saveSettings(),
+      onSetup: setupSkills,
+      onAdd: () => void action('open-skill-extension'),
     });
+    const skillComposer = window.createSkillComposer(form, draft, discoverSkills);
     const settings = () => ({
       model: byId('discuss-model').value,
       effort: byId('discuss-effort').value,
@@ -119,7 +113,7 @@
       skills: skillComposer.skills(),
     });
     function error(message) {
-      byId('discuss-error').textContent = message || '';
+      view.text(byId('discuss-error'), message || '');
       byId('discuss-error').hidden = !message;
     }
     function localKey(id) {
@@ -135,6 +129,8 @@
     }
     function remember() {
       if (!selectedId) return;
+      view.remember(log);
+      view.remember(draft);
       const value = { text: draft.value, attachments, skills: skillComposer.skills() };
       localDrafts.set(selectedId, value);
       try {
@@ -278,17 +274,26 @@
     function messageHtml(message) {
       const user = message.role === 'user' || message.role === 'human';
       const model = message.settings?.model;
-      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
+      return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(message.id)}"><div class="discuss-message-heading"><strong>${user ? 'You' : 'Assistant'}</strong><span class="muted">${escape(message.status || '')}${model ? ' · ' + escape(model) + ' · ' + escape(capitalize(message.settings.effort)) : ''}</span></div><div class="discuss-message-body">${markdown(message.text || message.body || '')}</div><div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${user ? `<button class="discuss-icon-button" type="button" data-discuss-edit="${escape(message.id)}" aria-label="Edit message" title="Edit message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 11-.7 3 3-.7L13 5.6 10.4 3z"/><path d="m9.7 3.7 2.6 2.6"/></svg></button>` : message.localNoteId ? '' : `<button class="small-button" type="button" data-discuss-retry="${escape(message.replyTo || message.id)}"${running(session()?.status) || pending ? ' disabled' : ''}>Retry</button>`}</div></article>`;
+    }
+    function conversationTab(entry) {
+      const selected = entry.id === selectedId;
+      const title = entry.title || 'New conversation';
+      return `<div class="discuss-conversation-tab" role="tab" tabindex="${selected ? '0' : '-1'}" aria-selected="${selected}" aria-controls="discuss-messages" data-discuss-conversation="${escape(entry.id)}" title="${escape(title)}"><span>${escape(title)}</span><button type="button" class="discuss-tab-close" data-discuss-close="${escape(entry.id)}" aria-label="Close ${escape(title)}" title="Close chat">×</button></div>`;
+    }
+    function renderConversationTabs() {
+      view.render(
+        byId('discuss-conversation-tabs'),
+        (data?.conversations || []).map(conversationTab).join(''),
+        'discuss-tabs'
+      );
     }
     function render() {
       const current = session();
+      const scope = 'discuss:' + selectedId;
+      view.track(draft, scope + ':draft');
       const selectedSettings = editId ? settings() : desiredSettings || current?.settings;
-      byId('discuss-conversation-tabs').innerHTML = (data?.conversations || [])
-        .map(
-          (entry) =>
-            `<div class="discuss-conversation-tab" role="tab" tabindex="${entry.id === current?.id ? '0' : '-1'}" aria-selected="${entry.id === current?.id}" aria-controls="discuss-messages" data-discuss-conversation="${escape(entry.id)}" title="${escape(entry.title || 'New conversation')}"><span>${escape(entry.title || 'New conversation')}</span><button type="button" class="discuss-tab-close" data-discuss-close="${escape(entry.id)}" aria-label="Close ${escape(entry.title || 'chat')}" title="Close chat">×</button></div>`
-        )
-        .join('');
+      renderConversationTabs();
       choices(
         'discuss-model',
         (data?.models || []).map((entry) => ({ value: entry.id, label: entry.name || entry.id })),
@@ -302,30 +307,69 @@
         })),
         selectedSettings?.effort || data?.defaults?.effort
       );
-      choices(
-        'discuss-clarification',
-        (data?.clarificationSkills || []).map((entry) => ({ value: entry.name, label: entry.label || entry.name })),
-        selectedSettings?.clarificationSkill || 'grilling'
-      );
-      const log = byId('discuss-messages');
+      clarificationSelect.update(data?.clarificationSkills || [], selectedSettings?.clarificationSkill || 'none');
       const html =
-        (current?.messages || []).map(messageHtml).join('') ||
+        (current?.messages || [])
+          .map(
+            (message) =>
+              messageHtml(message) +
+              (message.localNoteId
+                ? `<div class="discuss-note-offer">${message.localNoteDeleted ? 'Original note deleted.' : `<button type="button" class="small-button" data-discuss-delete-note="${escape(message.localNoteId)}">Delete original note</button>`}</div>`
+                : '')
+          )
+          .join('') ||
         '<div class="discuss-empty"><h2>What would you like to work on?</h2><p>Ask about the codebase, choose a skill with /, or request a project action.</p></div>';
-      replaceMessages(log, html);
-      byId('discuss-queue').innerHTML = (current?.queue || [])
-        .filter((entry) => !['completed', 'removed', 'failed', 'interrupted'].includes(entry.status))
-        .map(
-          (entry) =>
-            `<div class="discuss-queued"><span>${escape(entry.text)}</span><small>${escape(entry.settings?.model || '')} · ${escape(entry.settings?.effort || '')}</small><button type="button" class="small-button" data-discuss-queue-edit="${escape(entry.id)}">Edit queued</button><button type="button" class="small-button" data-discuss-queue-remove="${escape(entry.id)}">Remove</button><button type="button" class="small-button" data-discuss-steer="${escape(entry.id)}"${!running(current?.status) ? ' disabled' : ''}>Steer</button></div>`
-        )
-        .join('');
+      restoreOpeningScroll(scope);
+      view.render(log, html, scope);
+      view.render(
+        byId('discuss-queue'),
+        (current?.queue || [])
+          .filter((entry) => !['completed', 'removed', 'failed', 'interrupted'].includes(entry.status))
+          .map(
+            (entry) =>
+              `<div class="discuss-queued"><span>${escape(entry.text)}</span><small>${escape(entry.settings?.model || '')} · ${escape(entry.settings?.effort || '')}</small><button type="button" class="small-button" data-discuss-queue-edit="${escape(entry.id)}">Edit queued</button><button type="button" class="small-button" data-discuss-queue-remove="${escape(entry.id)}">Remove</button><button type="button" class="small-button" data-discuss-steer="${escape(entry.id)}"${!running(current?.status) ? ' disabled' : ''}>Steer</button></div>`
+          )
+          .join(''),
+        'discuss-queue:' + selectedId
+      );
       renderApprovals(current?.approvals || []);
       renderAttachments();
       renderSuggestion();
       updateControls();
+      scrollOpeningHistory();
+    }
+    function restoreOpeningScroll(scope) {
+      if (view.read(scope)?.root?.follow === false) openingScroll = null;
+    }
+    function scrollOpeningHistory() {
+      if (!openingScroll || !visible || !session()) return;
+      const opening = {};
+      openingScroll = opening;
+      log.scrollTop = log.scrollHeight;
+      const images = [...log.querySelectorAll('img')].filter((image) => !image.complete);
+      Promise.all(images.map(waitForImage)).then(() => {
+        if (openingScroll !== opening) return;
+        log.scrollTop = log.scrollHeight;
+        openingScroll = null;
+      });
+    }
+    function waitForImage(image) {
+      return new Promise((resolve) => {
+        const settled = () => {
+          image.removeEventListener('load', settled);
+          image.removeEventListener('error', settled);
+          resolve();
+        };
+        image.addEventListener('load', settled);
+        image.addEventListener('error', settled);
+      });
     }
     function renderAttachments() {
-      byId('discuss-draft-attachments').innerHTML = attachments.map((file) => attachmentHtml(file, true)).join('');
+      view.render(
+        byId('discuss-draft-attachments'),
+        attachments.map((file) => attachmentHtml(file, true)).join(''),
+        'discuss-attachments:' + selectedId
+      );
     }
     function renderSuggestion() {
       const suggestion =
@@ -360,23 +404,27 @@
     }
     function renderApprovals(approvals) {
       const holder = byId('discuss-approvals');
-      const key = JSON.stringify(approvals);
+      const key = JSON.stringify([selectedId, approvals]);
       if (holder.dataset.basis === key) return;
       holder.dataset.basis = key;
-      holder.innerHTML = approvals
-        .map((approval) => {
-          const params = approval.params || approval;
-          const questions = params.questions || [];
-          const id = approval.requestId || approval.id;
-          if (questions.length)
-            return `<form class="discuss-approval" data-discuss-answer="${escape(id)}"><h3>Your input is needed</h3>${questions.map((question) => `<label>${escape(question.question || question.header)}<input data-discuss-question="${escape(question.id)}" required></label>`).join('')}<button class="primary-button" type="submit">Answer</button></form>`;
-          const options = approval.options || [
-            { id: 'allow', label: 'Allow once' },
-            { id: 'decline', label: 'Decline' },
-          ];
-          return `<section class="discuss-approval"><h3>Permission requested</h3><pre>${escape(params.reason || params.command || JSON.stringify(params))}</pre>${options.map((option) => `<button type="button" class="small-button" data-discuss-approval="${escape(id)}" data-decision="${escape(option.id)}">${escape(option.label)}</button>`).join('')}</section>`;
-        })
-        .join('');
+      view.render(
+        holder,
+        approvals
+          .map((approval) => {
+            const params = approval.params || approval;
+            const questions = params.questions || [];
+            const id = approval.requestId || approval.id;
+            if (questions.length)
+              return `<form class="discuss-approval" data-view-key="${escape(id)}" data-discuss-answer="${escape(id)}"><h3>Your input is needed</h3>${questions.map((question) => `<label>${escape(question.question || question.header)}<input data-discuss-question="${escape(question.id)}" required></label>`).join('')}<button class="primary-button" type="submit">Answer</button></form>`;
+            const options = approval.options || [
+              { id: 'allow', label: 'Allow once' },
+              { id: 'decline', label: 'Decline' },
+            ];
+            return `<section class="discuss-approval" data-view-key="${escape(id)}"><h3>Permission requested</h3><pre>${escape(params.reason || params.command || JSON.stringify(params))}</pre>${options.map((option) => `<button type="button" class="small-button" data-discuss-approval="${escape(id)}" data-decision="${escape(option.id)}">${escape(option.label)}</button>`).join('')}</section>`;
+          })
+          .join(''),
+        'discuss-approvals:' + selectedId
+      );
     }
     async function create() {
       if (creating) return null;
@@ -483,9 +531,31 @@
       updateUrl();
       await refresh(true);
     });
-    for (const id of ['discuss-model', 'discuss-effort', 'discuss-clarification'])
+    for (const id of ['discuss-model', 'discuss-effort'])
       byId(id).addEventListener('change', () => void saveSettings());
+    async function setupSkills() {
+      try {
+        await discoverSkills();
+        if (!setup?.needed || (!selectedId && !(await create()))) return;
+        await action('send', {
+          clientId: crypto.randomUUID(),
+          text:
+            setup.prompt +
+            '\nAdditional skill sources from the chat grilling Markdown: ' +
+            JSON.stringify(
+              (data?.clarificationSkills || [])
+                .filter((entry) => entry.source)
+                .map(({ name, source }) => ({ name, source }))
+            ),
+          settings: { ...settings(), clarificationSkill: 'none', skills: [] },
+          attachments: [],
+        });
+      } catch (failure) {
+        error(failure.message);
+      }
+    }
     byId('discuss-refresh-skills').addEventListener('click', () => {
+      void discoverSkills().catch((failure) => error(failure.message));
       skillComposer.refresh();
       byId('discuss-status').textContent = 'Skill discovery will refresh when you type /.';
     });
@@ -505,6 +575,11 @@
     root.addEventListener('click', async (event) => {
       const button = event.target.closest('button');
       if (!button) return;
+      if (button.dataset.discussDeleteNote) {
+        await action('delete-note', { noteId: button.dataset.discussDeleteNote });
+        void window.localNotesUI?.refresh();
+        return;
+      }
       const messages = session()?.messages || [];
       if (button.hasAttribute('data-discuss-copy-code')) {
         await navigator.clipboard.writeText(button.parentElement.querySelector('code').textContent);
@@ -610,15 +685,32 @@
         return;
       }
       const original = draft.value;
+      const dictation = { conversationId: selectedId, draft: original, finalTranscript: '' };
+      const isCurrentDictation = () => selectedId === dictation.conversationId && draft.value === dictation.draft;
+      function sendSpokenPrompt() {
+        if (!isCurrentDictation()) return;
+        if (!/(?:^|\s)go[.!?]*\s*$/i.test(dictation.finalTranscript)) return;
+        dictation.finalTranscript = '';
+        draft.value = draft.value.replace(/(?:^|\s)go[.!?]*\s*$/i, '').trimEnd();
+        changedDraft();
+        status.textContent = 'Dictation finished. There is no prompt to send.';
+        if (!draft.value.trim()) return;
+        status.textContent = 'Dictation finished. Sending your prompt.';
+        form.requestSubmit();
+      }
       recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.onresult = (event) => {
+        if (!isCurrentDictation()) return;
         const text = [...event.results].map((result) => result[0].transcript).join(' ');
-        draft.value = original + (original && text ? ' ' : '') + text;
+        dictation.finalTranscript = [...event.results].every((result) => result.isFinal) ? text : '';
+        dictation.draft = [original, text].filter(Boolean).join(' ');
+        draft.value = dictation.draft;
         changedDraft();
       };
       recognition.onerror = (event) => {
+        dictation.finalTranscript = '';
         status.textContent = 'Dictation failed: ' + event.error + '. Your draft is preserved; retry or type.';
       };
       recognition.onend = () => {
@@ -627,6 +719,7 @@
           '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4"/></svg>';
         byId('discuss-mic').setAttribute('aria-label', 'Start dictation');
         byId('discuss-mic').title = 'Dictate';
+        sendSpokenPrompt();
         if (status.textContent === 'Listening…')
           status.textContent = 'Dictation finished. Edit the text before sending.';
       };
@@ -649,12 +742,17 @@
       setVisible(value) {
         const was = visible;
         visible = value;
-        root.hidden = !value;
-        if (value && !was) void refresh(true);
+        if (value && !was) {
+          openingScroll = {};
+          void refresh(true);
+          void discoverSkills().catch((failure) => error(failure.message));
+        }
         if (!value && was) {
+          openingScroll = null;
           remember();
           void saveDraft();
         }
+        root.hidden = !value;
       },
       refresh,
     };

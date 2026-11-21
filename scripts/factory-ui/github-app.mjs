@@ -1,3 +1,4 @@
+import { githubAppEnvironment } from './project-env.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 import { sign } from 'node:crypto';
@@ -160,9 +161,10 @@ function assertAuthenticationResponse(response) {
 }
 
 export function githubAppCredentials(root, repository) {
-  const appId = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID;
-  const privateKey = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY;
-  const installationId = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID;
+  const env = githubAppEnvironment(root);
+  const appId = env.TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID;
+  const privateKey = env.TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY;
+  const installationId = env.TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID;
   if (appId || privateKey || installationId) {
     const parsedAppId = Number(appId);
     const parsedInstallationId = Number(installationId);

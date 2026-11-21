@@ -4,6 +4,7 @@ import { requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { listIssueStorage, moveIssueStorage } from './issue-storage-actions.mjs';
 import { issueTypes } from './flow-definitions.mjs';
+import { LocalNotes, localNoteActionSchema } from './local-notes.mjs';
 
 const text = z.string().max(16000);
 const id = z
@@ -71,6 +72,19 @@ export function createProjectDiscussTools(service, options = {}) {
   const home = () => options.home?.() || service.projectHome;
   const flows = () => options.flows?.() || service.flows;
   const registry = {
+    local_notes: {
+      description: 'Read this project’s private local notes and current edit basis. Reading starts no work.',
+      schema: z.object({}).strict(),
+      run: () => new LocalNotes(service.root).view(),
+    },
+    local_note: {
+      description:
+        'Capture a quick local note verbatim, or edit, complete, delete or move a requested note. Read local_notes before changes and pass its basis. Notes stay local; this creates no issue and starts no work.',
+      schema: localNoteActionSchema,
+      path: '/api/local-notes-action',
+      pauseSafe: true,
+      run: (input) => new LocalNotes(service.root).action(input),
+    },
     project_home: {
       description:
         'Read current project Home configuration and saved investigations/Automate me sessions when needed for a user request. Reading starts no work. Returns current facts, not a subscription.',
@@ -162,7 +176,7 @@ export function createProjectDiscussTools(service, options = {}) {
     },
     issue_control: {
       description:
-        'Invoke an existing issue control when explicitly requested. To start an issue’s planned route, query issues_list for its revision and use action play; Play starts the Request block and continues the saved route through its existing guards. Use action start only for a specifically selected runnable non-Request block, with its blockId from issues_list. Never start the Request block directly. Existing approval, verification and ownership guards apply. Returns a command receipt; use the issue page for later progress. Never duplicate issue execution in this chat.',
+        'Invoke an existing issue control when explicitly requested. To start or resume an issue’s planned route, query issues_list for its revision and use action play; the center-column control is labeled Start or Resume and runs the Request block before continuing the saved route through its existing guards. Use action start only for a specifically selected runnable non-Request block, with its blockId from issues_list. Never start the Request block directly. Existing approval, verification and ownership guards apply. Returns a command receipt; use the issue page for later progress. Never duplicate issue execution in this chat.',
       schema: z
         .object({
           action: z.enum(['play', 'pause', 'start', 'continue', 'stop', 'rename-issue', 'approve-issue']),
@@ -222,7 +236,7 @@ export function createProjectDiscussTools(service, options = {}) {
           'Project preview cannot change the project.'
         );
         service.ownServer();
-        if (!['stop', 'pause', 'investigation-stop', 'automate-stop'].includes(parsed.action))
+        if (!descriptor.pauseSafe && !['stop', 'pause', 'investigation-stop', 'automate-stop'].includes(parsed.action))
           service.serverControl?.allow(descriptor.path, parsed);
       }
       return descriptor.run(parsed);

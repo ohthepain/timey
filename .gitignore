@@ -1,5 +1,6 @@
 test*.csv
 node_modules
+/.local-notes/
 .pnpm-store
 
 .DS_Store
@@ -35,7 +36,9 @@ coverage/
 .vitest/
 
 # Issue reports and their display numbers are synced from the queue branch.
-/.issues/*
+/.issues/**
 !/.issues/triage-labels.md
 !/.issues/preferences.json
+/.issues/evidence/
+/.issues/issue-work/
 

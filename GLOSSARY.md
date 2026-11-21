@@ -4,6 +4,17 @@ Language used to coordinate work and review changes.
 
 ## Language
 
+**Spoken send command**:
+The person's explicit choice to send a dictated prompt by saying “go” as its
+final word. Every chat excludes the command word from the submitted prompt.
+An empty or whitespace-only prompt sends nothing. A "go" in the middle of the
+dictation is ordinary prompt text.
+
+**Local note**:
+A quick project-owned thought or todo saved outside version control. It can be
+discussed in the project conversation or used to prefill an issue. Capture starts
+no work, and issue creation retains the note until the person deletes it.
+
 **Clarify**:
 The issue stage that brings human intent and available technical evidence together
 to establish enough understanding to begin useful work. Remaining technical
@@ -154,6 +165,11 @@ A project folder configured to show assigned issues and issue actions alongside
 its files. Every issue belongs to a folder, and its report lives in the queue.
 _Avoid_: Issue group
 
+**Project Issues view**:
+A project-level view of issues across issue folders, with filtering and bulk
+selection. Folder views use the same issue workspace scoped to one folder.
+_Avoid_: Virtual folder
+
 **System folder**:
 A browsable folder without issue settings. The term describes its issue behavior,
 while installed content describes who owns its files.
@@ -180,7 +196,8 @@ and report and cannot start work independently while attached.
 
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
-A claim can remain held while the run's outcome is being published.
+A claim can remain held while the run's outcome is being published. Shared
+claims are records on the dedicated issue queue branch, separate from source revisions.
 
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one
@@ -236,6 +253,10 @@ master issue as Fixed.
 Removal of a closed issue's worktree and any selected local or remote issue
 branches. Incomplete cleanup can be retried while the issue stays closed.
 
+**Worktree deletion**:
+Removal of an issue's local checkout, independent of its status or closure sequence.
+It discards uncommitted files and preserves the issue, branches, conversations, and retained evidence.
+
 **Issue archive**:
 A retained collection of issues outside the active views. Archiving preserves
 identity and history. Investigations can be archived without being closed.
@@ -267,8 +288,14 @@ An investigation that remains available for additional runs after a completed
 inquiry, with each run retaining its own findings and resulting issues.
 
 **Investigation run**:
-One execution of an investigation against a chosen revision, retaining the
-instructions, settings, findings, evidence, and related issues for that execution.
+One full inquiry and its output-block attempts, retaining the instructions,
+settings, findings, evidence, related issues, and inspected code revisions.
+An output-only rerun remains part of that investigation run.
+
+**Investigation report**:
+A published presentation of one investigation run's findings, evidence, and
+recommendations. It retains its identity and content when the investigation runs
+again or is archived.
 
 **Retro item**:
 A follow-up issue proposed by a retro that retains its originating issue for
@@ -288,8 +315,8 @@ can use it.
 
 **Issue flow**:
 An explicitly controlled graph of blocks for one issue. The graph records the
-planned route. Run starts the selected block. Play starts the route and waits
-for any confirmations along the way.
+planned route. Run starts the selected block. Start or Resume runs the route
+and waits for any confirmations along the way.
 
 **Flow block**:
 One visible request, advisory, work, verification, delivery, or cleanup operation.
@@ -299,6 +326,13 @@ from its own Details, the issue and upstream blocks. An edit invalidates the
 edited block and its connected successors. Details types each input and Artifacts
 types each output. An input uses either a manual value or a linked upstream
 output; the inspector shows inputs before read-only latest outputs.
+
+**Merged issue**:
+An issue whose PR has a successful Merge receipt or a retained GitHub merge
+observation. Its issue settings and work flow are read-only, including historical
+attempts and block definitions. Close and its Retro/Cleanup sequence remain
+available. Restarting work requires a future reopen operation; merged-issue
+reopening is deferred. See [ADR 0020](docs/adr/0020-freeze-merged-issues.md).
 
 **Request block**:
 The required first block and owner of Your words and the derived request fields. Saving the wording
@@ -331,6 +365,10 @@ its content changes.
 **Flow destination**:
 The GitHub branch used as the PR base and by Merge. It follows the
 starting branch until the operator pins a branch or the issue gets a PR.
+
+**Merge verification scope**:
+The set of local checks required for a Merge attempt. The full regression suite
+is an opt-in scope that adds broader regression checks to the default scope.
 
 **Update Branch**:
 The Flow block that fetches the branch recorded in Starting point and brings

@@ -1,8 +1,14 @@
 # Merge block
 
-Sync the target into the issue branch, verify and push each new candidate, then wait for GitHub's required checks before merging the PR.
+At the start of a new Merge run, abort any pending local merge before syncing the target into the issue branch. Verify and push each new candidate, then wait for GitHub's required checks before merging the PR. Do not abort merges created by conflict repair within the same run.
 
 Fetch Destination again before merging. If the target advanced, repeat from the sync step. If a conflict or verification failure needs a decision, or repair stops making progress, pause for input. Under human-first policy, wait for approval of the current PR commit and target revision.
+
+Recover from local and GitHub check failures within the same run. Use the failed run’s retained logs, repair the candidate, verify it, push it, and check GitHub again. Make up to three different repair attempts per distinct blocker. Stop for a required decision, unavailable permission, an unchanged candidate, or a repeated failing source tree.
+
+Use the local verification scope saved in Request when the attempt starts.
+Repeat the focused tests recorded by Work. Local verification commands have a
+15-minute deadline. GitHub's required checks still apply.
 
 # Merge workflow
 

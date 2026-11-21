@@ -6,8 +6,15 @@ import { randomUUID } from 'node:crypto';
 import { cleanEnvironment, digest, readJson, requireThat, writeJson } from './common.mjs';
 
 const execute = promisify(execFile);
-const targetRef = 'refs/timey/shared-issue-target';
-const fetchArgs = ({ remote, target }) => ['fetch', '--no-tags', remote, `+refs/heads/${target}:${targetRef}`];
+const targetRef = 'refs/worktree/timey/shared-issue-target';
+const fetchArgs = ({ remote, target }) => [
+  'fetch',
+  '--no-tags',
+  '--no-write-fetch-head',
+  '--refmap=',
+  remote,
+  `+refs/heads/${target}:${targetRef}`,
+];
 
 export async function fetchSharedIssueTarget(root, config) {
   await execute('git', fetchArgs(config), {
@@ -107,11 +114,18 @@ export function syncSharedIssueFiles(root, config, statePath, isActive, revision
   return conflicts;
 }
 
+function alreadySynced(root, names, targetFiles, previous) {
+  return (
+    names.every((name) => previous[name]?.oid === (targetFiles.get(name) ?? null)) &&
+    names.every((name) => !targetFiles.has(name) || existsSync(join(root, '.issues', name)))
+  );
+}
+
 function syncGroup(root, names, state) {
   const { targetFiles, initial, previous, staged, next } = state;
   const remoteNames = names.filter((name) => targetFiles.has(name));
   if (remoteNames.length > 1) return names.join(' and ');
-  if (names.every((name) => previous[name]?.oid === (targetFiles.get(name) ?? null))) return null;
+  if (alreadySynced(root, names, targetFiles, previous)) return null;
   if (names.some((name) => staged.has(name))) return names.join(' and ');
   const updates = names.map((name) =>
     planFileSync(root, name, targetFiles.get(name), previous[name], initial.get(name))
@@ -125,13 +139,18 @@ function syncGroup(root, names, state) {
   return null;
 }
 
+function expectedLocalHash(local, initial, baseline, blob) {
+  if (local === null && !initial) return null;
+  return baseline ? baseline.hash : hash(blob(initial));
+}
+
 function planFileSync(root, name, oid, baseline, initial) {
   const path = join(root, '.issues', name);
   const local = hash(localFile(path));
   const blob = (id) => (id ? runGit(root, ['cat-file', 'blob', id]) : null);
   const remote = blob(oid);
   const after = hash(remote);
-  const before = baseline ? baseline.hash : hash(blob(initial));
+  const before = expectedLocalHash(local, initial, baseline, blob);
   if (local !== after && local !== before) return null;
   return { name, path, oid: oid ?? null, hash: after, remote, changed: local !== after };
 }

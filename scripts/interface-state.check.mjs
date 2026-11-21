@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import { JSDOM } from 'jsdom';
+
+function discussFixture(t) {
+  const dom = new JSDOM('<div id="project-discuss"></div>', {
+    url: 'http://localhost/?projectTab=discuss',
+    runScripts: 'outside-only',
+  });
+  t.after(() => dom.window.close());
+  const { window } = dom;
+  const load = (name) => window.eval(readFileSync(new URL('./factory-ui/' + name, import.meta.url), 'utf8'));
+  load('view-state.js');
+  load('issue-chat-ui.js');
+  load('skill-select.js');
+  load('project-discuss-ui.js');
+  const selected = {
+    id: 'conversation-a',
+    status: 'idle',
+    settings: {},
+    messages: [
+      { id: 'message-a', role: 'assistant', text: 'An error you can copy.', events: [{ text: 'Tool output' }] },
+    ],
+  };
+  const data = { selected, conversations: [{ id: selected.id }], models: [], efforts: [] };
+  const ui = window.createProjectDiscussUI({
+    request: async (path) => (path.includes('skills') ? [] : structuredClone(data)),
+    post: async () => structuredClone(data),
+  });
+  return { window, selected, ui };
+}
+
+test('Discuss keeps expanded tool activity and highlighted text through unchanged and growing refreshes', async (t) => {
+  const { window, selected, ui } = discussFixture(t);
+  ui.setVisible(true);
+  await new Promise((resolve) => setImmediate(resolve));
+  const activity = window.document.querySelector('.discuss-tool-activity');
+  activity.open = true;
+  const text = window.document.querySelector('.discuss-message-body p').firstChild;
+  const selection = window.getSelection();
+  selection.setBaseAndExtent(text, 3, text, 8);
+  await ui.refresh();
+  assert.equal(window.document.querySelector('.discuss-tool-activity').open, true);
+  assert.equal(selection.toString(), 'error');
+  selected.messages[0].events.push({ text: 'More output' });
+  await ui.refresh();
+  assert.equal(window.document.querySelector('.discuss-tool-activity').open, true);
+  assert.equal(selection.toString(), 'error');
+  window.document.querySelector('.discuss-tool-activity').open = false;
+  selected.messages[0].status = 'completed';
+  await ui.refresh();
+  assert.equal(window.document.querySelector('.discuss-tool-activity').open, false);
+  selected.messages.unshift({ id: 'older-message', role: 'assistant', text: 'Earlier text inserted above.' });
+  await ui.refresh();
+  assert.equal(selection.toString(), 'error', 'Earlier messages must not shift the selected text.');
+  selected.messages = [
+    { id: 'replacement', role: 'assistant', text: 'New activity', events: [{ text: 'New output' }] },
+  ];
+  await ui.refresh();
+  assert.equal(
+    window.document.querySelector('.discuss-tool-activity').open,
+    false,
+    'A new activity must use its own default.'
+  );
+  assert.notEqual(selection.toString(), 'error');
+});

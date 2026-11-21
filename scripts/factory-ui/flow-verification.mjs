@@ -4,16 +4,50 @@ import { fileURLToPath } from 'node:url';
 import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { commandSummary, verificationInput } from './checks.mjs';
-import { deliveryTarget, requestData } from './flow-block-data.mjs';
+import { deliveryTarget, latestCurrentAttempt, requestData, upstreamBlocks } from './flow-block-data.mjs';
+import { mergeCheckPlan } from '../verify-merge-checks.mjs';
 
 export const workVerificationScript = fileURLToPath(new URL('../verify.mjs', import.meta.url));
-function fullVerificationOptions(ctx) {
+function upstreamWorkPlans({ flow, block }) {
+  return upstreamBlocks(block, flow.blocks)
+    .filter(({ kind }) => kind === 'work')
+    .map(latestCurrentAttempt)
+    .filter((attempt) => attempt?.status === 'completed')
+    .map((attempt) => attempt.result?.focusedTests);
+}
+
+export function flowMergeChecks(ctx, scope) {
+  if (ctx.block?.kind !== 'merge') return undefined;
+  const plans = upstreamWorkPlans(ctx);
+  return mergeCheckPlan({
+    scope: scope ?? requestedScope(ctx.flow),
+    focusedRecorded: recordedWorkPlans(plans),
+    focused: [
+      ...new Map(
+        plans
+          .filter(Array.isArray)
+          .flat()
+          .map((command) => [JSON.stringify(command), command])
+      ).values(),
+    ],
+  });
+}
+
+const requestedScope = (flow) => (requestData(flow).fullRegression === true ? 'full' : 'default');
+const recordedWorkPlans = (plans) => plans.length > 0 && plans.every(Array.isArray);
+
+function flowVerificationOptions(ctx, scope) {
   const { goal, requestedProof } = requestData(ctx.flow).fields ?? {};
   const { remote, branch } = deliveryTarget(ctx.flow);
-  return { auditPolicy: 'required', verifier: workVerificationScript, scope: [goal, requestedProof, remote, branch] };
+  return {
+    auditPolicy: 'required',
+    verifier: workVerificationScript,
+    scope: [goal, requestedProof, remote, branch],
+    mergeChecks: flowMergeChecks(ctx, scope),
+  };
 }
-export const flowVerificationInput = (ctx, checkout, base) =>
-  verificationInput(checkout, base, fullVerificationOptions(ctx));
+export const flowVerificationInput = (ctx, checkout, base, scope) =>
+  verificationInput(checkout, base, flowVerificationOptions(ctx, scope));
 
 const dependencyRetryLimit = 3;
 const dependencyRecoveryPath = (checkout) => join(checkout, '.issues/evidence/dependency-recovery.json');
@@ -175,13 +209,13 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
     import { checkCandidate } from ${JSON.stringify(new URL('./checks.mjs', import.meta.url).href)};
     try {
       const result = await checkCandidate(...${args}, {
-        ...${JSON.stringify(fullVerificationOptions(ctx))}, force: ${explicit}, retryFailed: true, allowUncommitted: ${explicit},
+        ...${JSON.stringify(flowVerificationOptions(ctx))}, force: ${explicit}, retryFailed: true, allowUncommitted: ${explicit},
         onProgress: text => process.stdout.write(text)
       });
       console.log('\\nFLOW_RESULT ' + JSON.stringify(result));
     } catch (error) {
       console.log('\\nFLOW_FAILURE ' + JSON.stringify({
-        message: error.message, verificationFailure: error.verificationFailure
+        message: error.message, code: error.code, verificationFailure: error.verificationFailure
       }));
     }
   `;
@@ -190,9 +224,10 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
   const lines = output.split(/\r?\n/);
   const failed = lines.findLast((line) => line.startsWith('FLOW_FAILURE '));
   if (failed) {
-    const { message, verificationFailure } = JSON.parse(failed.slice('FLOW_FAILURE '.length));
+    const { message, code, verificationFailure } = JSON.parse(failed.slice('FLOW_FAILURE '.length));
     throw Object.assign(Error(message), {
       verificationFailure,
+      code,
       evidence: [
         commandLog,
         ...(verificationFailure?.summaries ?? []).map(summaryEvidence),

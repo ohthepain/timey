@@ -7,10 +7,12 @@ import test from 'node:test';
 import { promisify } from 'node:util';
 import { git } from './factory-ui/common.mjs';
 import { createSharedIssueClaims } from './factory-ui/shared-issue-claims.mjs';
+import { createSharedIssueGit } from './factory-ui/shared-issue-git.mjs';
+import { queueClaimPath } from './factory-ui/shared-issue-paths.mjs';
 
 const execute = promisify(execFile);
 const issueId = '20261111T165430736-ca3555165563420b';
-const ref = `refs/heads/claims/${issueId}`;
+const ref = 'refs/heads/issue-queue';
 const report = '---\nstate: backlog\n---\n';
 const claimProgram = `
   import { createSharedIssueClaims } from ${JSON.stringify(new URL('./factory-ui/shared-issue-claims.mjs', import.meta.url).href)};
@@ -28,11 +30,17 @@ function fixture(t) {
   const second = join(base, 'second');
   git(base, 'init', '-q', '--bare', '-b', 'dev', remote);
   git(base, 'clone', '-q', remote, first);
-  mkdirSync(join(first, '.issues'));
-  writeFileSync(join(first, '.issues', issueId + '.md'), report);
-  git(first, 'add', '.issues');
+  writeFileSync(join(first, '.gitignore'), '/.issues/**\n');
+  writeFileSync(join(first, 'app.txt'), 'source\n');
+  git(first, 'add', '.');
   git(first, '-c', 'user.name=Tester', '-c', 'user.email=tester@example.com', 'commit', '-qm', 'Publish issue');
   git(first, 'push', '-q', 'origin', 'dev');
+  const seed = createSharedIssueGit({ root: first }).commit(
+    git(first, 'rev-parse', 'HEAD'),
+    [[`.issues/${issueId}.md`, report]],
+    'Seed metadata'
+  );
+  git(first, 'push', '-q', 'origin', `${seed}:${ref}`);
   git(base, 'clone', '-q', remote, second);
   return { base, remote, first, second };
 }
@@ -66,7 +74,9 @@ test('reconciling a stale local claim leaves a replacement remote claim intact',
   const owner = createSharedIssueClaims({ root: first });
   const observer = createSharedIssueClaims({ root: second });
   const stale = owner.acquire(issueId);
-  git(remote, 'update-ref', '-d', ref, stale.oid);
+  const writer = createSharedIssueGit({ root: first });
+  const head = writer.fetch();
+  writer.push(writer.commit(head, [[queueClaimPath(issueId), null]], 'Reconcile stopped owner'), head);
   const replacement = observer.acquire(issueId);
   assert.equal(owner.verifyOwn(issueId), null);
   assert.equal(owner.release(stale), true);
@@ -115,4 +125,37 @@ exec "$TIMEY_TEST_REAL_GIT" "$@"
   assert.equal((await runWithInterruption(second, 'after', 'release')).stdout, 'true');
   assert.equal(owner.list().has(issueId), false);
   assert.equal(createSharedIssueClaims({ root: second }).own(issueId), null);
+});
+
+test('unrelated claims can race without losing either issue or changing source workspaces', async (t) => {
+  const { remote, first, second } = fixture(t);
+  const otherId = '20261111T165430737-ca3555165563420c';
+  const head = git(first, 'rev-parse', 'HEAD');
+  writeFileSync(join(first, 'app.txt'), 'Staged source\n');
+  git(first, 'add', 'app.txt');
+  writeFileSync(join(first, 'app.txt'), 'Unstaged source\n');
+  const index = git(first, 'write-tree');
+  const status = git(first, 'status', '--porcelain');
+  await Promise.all(
+    [first, second].map((root, i) =>
+      execute(process.execPath, ['--input-type=module', '-e', claimProgram, root, i ? otherId : issueId])
+    )
+  );
+  const observer = createSharedIssueClaims({ root: second });
+  assert.deepEqual([...observer.list().keys()].sort(), [issueId, otherId].sort());
+  assert.equal(git(remote, 'for-each-ref', 'refs/heads/claims/'), '');
+  assert.equal(git(remote, 'rev-parse', 'dev'), head);
+  assert.equal(git(first, 'rev-parse', 'HEAD'), head);
+  assert.equal(git(second, 'rev-parse', 'HEAD'), head);
+  assert.equal(git(first, 'write-tree'), index);
+  assert.equal(git(first, 'status', '--porcelain'), status);
+});
+
+test('legacy remote claims block new ownership rather than creating two claim authorities', (t) => {
+  const { remote, first } = fixture(t);
+  git(remote, 'update-ref', `refs/heads/claims/${issueId}`, git(first, 'rev-parse', 'HEAD'));
+  const owner = createSharedIssueClaims({ root: first });
+  assert.throws(() => owner.acquire(issueId), /Legacy remote claims remain/);
+  assert.equal(owner.own(issueId), null);
+  assert.equal(owner.list().size, 0);
 });

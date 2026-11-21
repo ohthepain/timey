@@ -8,92 +8,134 @@
     <link rel="stylesheet" href="/flow.css" />
     <link rel="stylesheet" href="/project-home.css" />
     <link rel="stylesheet" href="/project-discuss.css" />
+    <link rel="stylesheet" href="/local-notes.css" />
+    <script src="/view-state.js" defer></script>
     <script src="/issue-chat-ui.js" defer></script>
-    <script src="/discuss-markdown.js" defer></script>
+    <script src="../../node_modules/markdown-it/dist/markdown-it.min.js" defer></script>
+    <script src="/skill-select.js" defer></script>
     <script src="/project-discuss-ui.js" defer></script>
     <script src="/server-control-ui.js" defer></script>
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/issue-folder-drag-ui.js" defer></script>
     <script src="/folder-settings-ui.js" defer></script>
     <script src="/investigation-followups-ui.js" defer></script>
+    <script src="/project-admin-ui.js" defer></script>
     <script src="/project-home-ui.js" defer></script>
     <script src="/investigation-issue-ui.js" defer></script>
+    <script src="/branch-repair-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
+    <script src="/local-notes-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
   </head>
   <body>
+    <script>
+      if (new URLSearchParams(location.search).get('embed') === 'project-issue-request')
+        document.documentElement.dataset.projectIssueRequestEmbed = 'true';
+    </script>
     <div id="app" class="workspace">
       <aside class="sidebar" aria-label="Factory sidebar">
-        <div class="project-header">
-          <a class="brand" href="/" aria-label="Project home"
-            ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
-            ><span class="brand-tag">FLOW</span></a
-          >
-          <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
+        <div class="sidebar-content">
+          <div class="project-header">
+            <a class="brand" href="/" aria-label="Project home"
+              ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
+              ><span class="brand-tag">FLOW</span></a
             >
-              <path
-                d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
-              />
-              <circle cx="11" cy="12.5" r="3.5" />
-            </svg>
+            <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
+                />
+                <circle cx="11" cy="12.5" r="3.5" />
+              </svg>
+            </button>
+          </div>
+          <nav class="project-home-menu" aria-label="Project menu">
+            <button type="button" data-project-home="home">Home</button>
+            <button type="button" data-project-home="discuss">Discuss</button>
+            <button type="button" data-project-home="investigate">Investigate</button>
+            <button type="button" data-project-home="automate">Automate me</button>
+          </nav>
+          <div class="project-actions-row">
+            <button
+              class="project-actions"
+              id="project-actions"
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+            >
+              0 actions running
+            </button>
+            <label class="actions-switch" id="flow-actions-switch"
+              ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
+            >
+            <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
+              Restart server
+            </button>
+          </div>
+          <small class="project-actions-message" data-server-message role="status"></small>
+          <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
+          <label class="search-box"
+            ><span aria-hidden="true">⌕</span
+            ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
+          /></label>
+          <section id="local-notes" class="local-notes" aria-label="Local notes">
+            <header class="sidebar-folder-row">
+              <button
+                id="local-notes-toggle"
+                class="icon-button folder-disclosure"
+                type="button"
+                aria-label="Collapse Local notes"
+                aria-expanded="true"
+                aria-controls="local-notes-body"
+              ></button>
+              <h2 class="sidebar-folder-name">Local notes</h2>
+              <button id="local-note-quick" type="button" class="small-button" title="Quick note (Alt+N)">
+                ＋ Note
+              </button>
+            </header>
+            <div id="local-notes-body">
+              <form id="local-note-form">
+                <textarea
+                  id="local-note-text"
+                  aria-label="Quick local note"
+                  placeholder="A thought to keep…"
+                  maxlength="24000"
+                  rows="2"
+                ></textarea
+                ><button type="submit" class="small-button">Save note</button>
+              </form>
+              <ul id="local-note-list" class="local-note-list"></ul>
+              <p id="local-note-status" role="status" aria-live="polite"></p>
+            </div>
+          </section>
+          <section class="sidebar-files" aria-label="Files">
+            <div id="sidebar-file-tree"></div>
+            <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
+          </section>
+          <div class="sidebar-heading">
+            <button class="sidebar-issues-link" type="button" data-open-project-issues>Issues</button
+            ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
+          </div>
+          <button type="button" class="small-button" id="migrate-issue-folders" hidden>
+            Move existing issue folders
           </button>
+          <nav id="issue-list" class="issue-list" aria-label="Issue list">
+            <p class="sidebar-empty">Loading issues…</p>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="connection" id="connection-status"><span class="connection-dot"></span> Connecting</span
+            ><a href="/classic" title="Open the original factory controls">Classic ↗</a>
+          </footer>
         </div>
-        <nav class="project-home-menu" aria-label="Project menu">
-          <button type="button" data-project-home="home">Home</button>
-          <button type="button" data-project-home="discuss">Discuss</button>
-          <button type="button" data-project-home="investigate">Investigate</button>
-          <button type="button" data-project-home="automate">Automate me</button>
-        </nav>
-        <div class="project-actions-row">
-          <button
-            class="project-actions"
-            id="project-actions"
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded="false"
-          >
-            0 actions running
-          </button>
-          <label class="actions-switch" id="flow-actions-switch"
-            ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
-          >
-          <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
-            Restart server
-          </button>
-        </div>
-        <small class="project-actions-message" data-server-message role="status"></small>
-        <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
-        <label class="search-box"
-          ><span aria-hidden="true">⌕</span
-          ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
-        /></label>
-        <section class="sidebar-files" aria-label="Files">
-          <div id="sidebar-file-tree"></div>
-          <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
-        </section>
-        <div class="sidebar-heading">
-          <span>Issues</span
-          ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
-        </div>
-        <button type="button" class="small-button" id="migrate-issue-folders" hidden>
-          Move existing issue folders
-        </button>
-        <nav id="issue-list" class="issue-list" aria-label="Issue list">
-          <p class="sidebar-empty">Loading issues…</p>
-        </nav>
-        <footer class="sidebar-footer">
-          <span class="connection" id="connection-status"><span class="connection-dot"></span> Connecting</span
-          ><a href="/classic" title="Open the original factory controls">Classic ↗</a>
-        </footer>
         <div
           id="sidebar-resizer"
           class="sidebar-resizer"
@@ -149,6 +191,7 @@
                 <p id="issue-settings-error" class="inline-error" role="alert" hidden></p>
               </form>
             </details>
+            <p id="merged-issue-notice" class="detail-copy" role="status" hidden></p>
             <div class="issue-flow-meta">
               <span id="issue-type-label"></span>
               <span id="issue-subtitle"></span>
@@ -164,7 +207,7 @@
             </div>
           </div>
           <div class="issue-playback">
-            <button class="primary-button" id="issue-playback" type="button">▷ Play</button>
+            <button class="primary-button" id="issue-playback" type="button">Start</button>
             <span
               class="closed-issue-indicator"
               id="closed-issue-indicator"
@@ -203,6 +246,18 @@
             <span class="status-icon active-spinner" style="--spinner-color: currentColor" aria-hidden="true"></span>
             Updating branch…
           </span>
+          <button id="fix-branch" class="environment-chip branch-repair-control" type="button" aria-haspopup="dialog">
+            Fix Branch
+          </button>
+          <select
+            id="merge-state-menu"
+            class="environment-chip merge-in-progress"
+            aria-label="Merge in progress"
+            hidden
+          >
+            <option value="" disabled selected>Merge in progress</option>
+            <option value="abort">Abort merge</option>
+          </select>
           <span id="worktree-hint">
             <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
               <option value="" disabled selected>Worktree</option>
@@ -405,6 +460,16 @@
               Home
             </button>
             <button
+              id="project-tab-issues"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-issues"
+              data-project-tab="issues"
+            >
+              Issues
+            </button>
+            <button
               id="project-tab-discuss"
               type="button"
               role="tab"
@@ -413,6 +478,16 @@
               data-project-tab="discuss"
             >
               Discuss
+            </button>
+            <button
+              id="project-tab-admin"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-admin"
+              data-project-tab="admin"
+            >
+              Admin
             </button>
           </div>
           <div
@@ -464,12 +539,138 @@
             <p id="home-error" class="home-error" role="alert"></p>
           </div>
           <section
+            id="project-issues"
+            class="project-issues"
+            role="tabpanel"
+            aria-labelledby="project-tab-issues"
+            hidden
+          >
+            <iframe title="Project issues" data-src="/classic?embed=project-issues#queue"></iframe>
+          </section>
+          <section
             id="project-discuss"
             class="project-discuss"
             role="tabpanel"
             aria-labelledby="project-tab-discuss"
             hidden
           ></section>
+          <section
+            id="project-admin"
+            class="project-home-content"
+            role="tabpanel"
+            aria-labelledby="project-tab-admin"
+            hidden
+          >
+            <div class="home-operations">
+              <article class="home-operation">
+                <h2>Prune worktrees</h2>
+                <p>Review missing Git worktrees and clean up their records and local branches in bulk.</p>
+                <button id="admin-prune-worktrees" class="primary-button" type="button">Prune worktrees</button>
+              </article>
+              <article class="home-operation">
+                <h2>Clean up remote branches</h2>
+                <p>Review remote branches already merged into the delivery branch.</p>
+                <button id="admin-remote-open" class="small-button" type="button">Preview remote branches</button>
+              </article>
+              <article class="home-operation">
+                <h2>Clean up local branches</h2>
+                <p>Review merged local branches unused by worktrees or issues outside the archive.</p>
+                <button id="admin-local-open" class="small-button" type="button">Preview local branches</button>
+              </article>
+              <article class="home-operation">
+                <h2>Delete archived issues</h2>
+                <p>Review archived reports and optionally delete their merged local branches.</p>
+                <button id="admin-archive-open" class="small-button" type="button">Preview archived issues</button>
+              </article>
+            </div>
+            <dialog id="admin-prune-dialog" class="home-dialog" aria-labelledby="admin-prune-title">
+              <header>
+                <h2 id="admin-prune-title" class="home-dialog-title">Prune worktrees</h2>
+                <button id="admin-prune-close" class="small-button" type="button">Close</button>
+              </header>
+              <form id="admin-prune-form">
+                <label>Comparison branch<select id="admin-prune-ref" class="home-field-control"></select></label>
+                <p id="admin-prune-status" class="muted" role="status"></p>
+                <section id="admin-prune-list" aria-label="Worktree cleanup entries"></section>
+                <p id="admin-prune-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-prune-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-prune-apply" class="primary-button" type="submit" disabled>Remove selected</button>
+                </footer>
+              </form>
+            </dialog>
+            <dialog id="admin-branches-dialog" class="home-dialog" aria-labelledby="admin-branches-title">
+              <header>
+                <h2 id="admin-branches-title" class="home-dialog-title">Clean up remote branches</h2>
+                <button id="admin-branches-close" class="small-button" type="button">Close</button>
+              </header>
+              <section>
+                <p id="admin-branches-status" role="status"></p>
+                <div id="admin-branches-preview" hidden>
+                  <label id="admin-branches-comparison" hidden
+                    >Comparison branch
+                    <select id="admin-branches-target" class="home-field-control"></select>
+                  </label>
+                  <label class="home-activate"
+                    ><input id="admin-branches-all" type="checkbox" /> Select all eligible branches</label
+                  >
+                  <div id="admin-branches-eligible"></div>
+                  <details id="admin-branches-kept">
+                    <summary id="admin-branches-kept-title"></summary>
+                    <ul id="admin-branches-kept-list"></ul>
+                  </details>
+                </div>
+                <div id="admin-branches-review" hidden>
+                  <h3>Confirm branch deletion</h3>
+                  <ul id="admin-branches-selected"></ul>
+                </div>
+                <ul id="admin-branches-results" hidden></ul>
+                <p id="admin-branches-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-branches-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-branches-back" class="small-button" type="button" hidden>Back</button>
+                  <button id="admin-branches-review-button" class="primary-button" type="button" disabled>
+                    Review deletion
+                  </button>
+                  <button id="admin-branches-apply" class="primary-button" type="button" hidden>
+                    Delete remote branches
+                  </button>
+                </footer>
+              </section>
+            </dialog>
+            <dialog id="admin-archive-dialog" class="home-dialog" aria-labelledby="admin-archive-title">
+              <header>
+                <h2 id="admin-archive-title" class="home-dialog-title">Delete archived issues</h2>
+                <button id="admin-archive-close" class="small-button" type="button">Close</button>
+              </header>
+              <section>
+                <p id="admin-archive-status" role="status"></p>
+                <section id="admin-archive-preview" aria-label="Archived issues" hidden>
+                  <label class="home-activate"
+                    ><input id="admin-archive-all" type="checkbox" /> Select all eligible issues</label
+                  >
+                  <div id="admin-archive-list"></div>
+                </section>
+                <section id="admin-archive-review" hidden>
+                  <h3>Confirm archive deletion</h3>
+                  <p>Delete these archived reports permanently? Selected local branches are listed under each issue.</p>
+                  <ul id="admin-archive-selected"></ul>
+                </section>
+                <ul id="admin-archive-results" hidden></ul>
+                <p id="admin-archive-error" class="home-error" role="alert"></p>
+                <footer>
+                  <button id="admin-archive-refresh" class="small-button" type="button">Refresh preview</button>
+                  <button id="admin-archive-back" class="small-button" type="button" hidden>Back</button>
+                  <button id="admin-archive-review-button" class="primary-button" type="button" disabled>
+                    Review deletion
+                  </button>
+                  <button id="admin-archive-apply" class="primary-button" type="button" hidden>
+                    Delete selected reports
+                  </button>
+                </footer>
+              </section>
+            </dialog>
+          </section>
         </section>
         <section
           id="graph-scroll"
@@ -547,6 +748,9 @@
         </div>
         <section id="issue-grouping" class="issue-grouping" aria-label="Grouped issues" hidden></section>
         <div class="inspector-body" id="inspector-body" role="tabpanel" aria-labelledby="tab-details">
+          <div class="error-banner request-embed-error" id="request-embed-error" role="alert" hidden>
+            <span id="request-embed-error-message"></span>
+          </div>
           <div class="inspector-empty">
             <span aria-hidden="true">↖</span>
             <p>Select a block to inspect its intent, progress and evidence.</p>
@@ -571,6 +775,17 @@
       <div class="modal-footer">
         <button class="primary-button" type="button" data-followups-create disabled>Create selected issues</button>
       </div>
+    </dialog>
+    <dialog id="local-note-editor" class="modal local-note-modal" aria-labelledby="local-note-editor-heading">
+      <form id="local-note-edit-form">
+        <h2 id="local-note-editor-heading">Quick note</h2>
+        <textarea id="local-note-edit-text" aria-label="Note text" maxlength="24000" required></textarea>
+        <p id="local-note-edit-error" role="alert"></p>
+        <footer>
+          <button id="local-note-edit-cancel" type="button" class="small-button">Cancel</button
+          ><button type="submit" class="small-button">Save note</button>
+        </footer>
+      </form>
     </dialog>
     <dialog id="capture-dialog" class="modal capture-modal">
       <form id="capture-form">
@@ -870,7 +1085,13 @@
         <p id="home-automate-coverage" class="muted"></p>
         <button class="primary-button home-submit" type="submit" id="home-automate-start">Start conversation</button>
       </form>
-      <div id="home-automate-messages" class="home-messages" aria-live="polite"></div>
+      <div
+        id="home-automate-messages"
+        class="home-messages"
+        role="log"
+        aria-label="Automate me conversation"
+        aria-live="polite"
+      ></div>
       <form id="home-automate-reply" hidden>
         <label
           >Your reply<textarea
@@ -916,6 +1137,29 @@
       <footer>
         <button class="small-button" type="button" data-home-command="automate-stop" hidden>Stop</button
         ><button class="small-button" type="button" data-home-command="automate-retry" hidden>Retry</button>
+      </footer>
+    </dialog>
+    <dialog class="modal branch-repair-dialog" id="branch-repair-dialog" aria-labelledby="branch-repair-heading">
+      <h2 id="branch-repair-heading">Fix Branch</h2>
+      <p data-repair-status role="status"></p>
+      <p class="muted" data-repair-timing></p>
+      <p data-repair-error role="alert"></p>
+      <h3>Progress and check output</h3>
+      <pre data-repair-output></pre>
+      <section data-repair-review>
+        <h3>Candidate diff</h3>
+        <pre data-repair-diff></pre>
+        <p class="muted" data-repair-checks></p>
+        <p>
+          Approval applies these repairs to this issue checkout as uncommitted changes. Review and commit them with your
+          issue work.
+        </p>
+      </section>
+      <footer>
+        <button class="primary-button" type="button" data-repair-command></button
+        ><button class="small-button" type="button" data-repair-stop>Stop</button
+        ><button class="small-button" type="button" data-repair-reconcile>Retain interrupted run and allow retry</button
+        ><button class="small-button" type="button" data-repair-close>Close</button>
       </footer>
     </dialog>
   </body>

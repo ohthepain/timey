@@ -58,6 +58,7 @@
         <label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`
       );
       const reason = panel.querySelector('#closure-reason');
+      addRetroChoice(session, reason);
       if (session.decision.cleanupOnly) {
         reason.closest('label').hidden = true;
         panel.querySelector('#reopen-reason').closest('label').hidden = true;
@@ -70,6 +71,22 @@
       panel.insertAdjacentHTML('beforeend', '<fieldset id="cleanup-options"></fieldset>');
       reason.onchange = () => void loadCleanup(session, reason.value, selectedItems());
       void loadCleanup(session, reason.value);
+    }
+
+    function addRetroChoice(session, reason) {
+      if (!session.decision.offerClosureRetro) return;
+      reason
+        .closest('label')
+        .insertAdjacentHTML(
+          'afterend',
+          '<label hidden><input type="checkbox" id="run-closure-retro"> Run Retro before Cleanup</label>'
+        );
+      const retro = panel.querySelector('#run-closure-retro');
+      const updateRetro = () => {
+        retro.closest('label').hidden = reason.value === 'fixed';
+      };
+      reason.addEventListener('change', updateRetro);
+      updateRetro();
     }
 
     async function loadCleanup(session, resolution, selections) {
@@ -143,10 +160,14 @@
     function decision() {
       const resolution = panel.querySelector('#closure-reason').value;
       const selected = [...selectedItems()];
+      const { offerClosureRetro, ...decision } = current.decision;
       return {
-        ...current.decision,
+        ...decision,
         reason: panel.querySelector('#reopen-reason').value,
         resolution,
+        ...(offerClosureRetro && resolution !== 'fixed'
+          ? { runClosureRetro: panel.querySelector('#run-closure-retro').checked }
+          : {}),
         cleanup: current.resources
           ? {
               basis: null,

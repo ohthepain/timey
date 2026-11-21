@@ -77,6 +77,29 @@ p {
   grid-template-columns: var(--sidebar-width, 242px) minmax(380px, 1fr) var(--inspector-width, 390px);
   overflow: hidden;
 }
+html[data-project-issue-request-embed='true'],
+html[data-project-issue-request-embed='true'] body {
+  height: 100%;
+  overflow: hidden;
+}
+html[data-project-issue-request-embed='true'] #app.workspace {
+  height: 100dvh;
+  grid-template-columns: minmax(0, 1fr);
+}
+html[data-project-issue-request-embed='true'] .sidebar,
+html[data-project-issue-request-embed='true'] .flow-main,
+html[data-project-issue-request-embed='true'] .inspector-resizer {
+  display: none;
+}
+html[data-project-issue-request-embed='true'] .inspector {
+  grid-column: 1;
+  border: 0;
+}
+html[data-project-issue-request-embed='true'] .request-embed-error {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
 .sidebar {
   position: relative;
   min-width: 0;
@@ -85,7 +108,7 @@ p {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 25px 14px 0;
+  --sidebar-padding-top: 25px;
 }
 .sidebar-resizer,
 .inspector-resizer {
@@ -251,6 +274,19 @@ kbd {
   font-size: 11px;
   margin-bottom: 10px;
 }
+.sidebar-issues-link {
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.sidebar-issues-link:hover,
+.sidebar-issues-link:focus-visible {
+  color: #ddd;
+  text-decoration: underline;
+}
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -269,8 +305,8 @@ kbd {
   color: #eee;
 }
 .issue-list {
-  flex: 1;
-  overflow: auto;
+  flex: 1 0 auto;
+  overflow: visible;
   padding-bottom: 20px;
 }
 .issue-row {
@@ -1033,6 +1069,15 @@ kbd {
   margin-bottom: 13px;
   color: #666;
 }
+.request-merge-branch {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.request-merge-branch small {
+  color: var(--muted);
+  font-size: 10px;
+}
 .section-label {
   color: #8e8e8e;
   font-size: 9px;
@@ -1626,8 +1671,8 @@ kbd {
     grid-template-columns: var(--sidebar-width, 205px) minmax(310px, 1fr) var(--inspector-width, 335px);
   }
   .sidebar {
-    padding-left: 10px;
-    padding-right: 10px;
+    --sidebar-padding-left: 10px;
+    --sidebar-padding-right: 10px;
   }
   .graph {
     padding-left: 22px;
@@ -1721,9 +1766,9 @@ kbd {
     grid-template-rows: 55dvh minmax(270px, 45dvh);
   }
   .sidebar {
-    padding-left: 6px;
-    padding-right: 6px;
-    padding-top: 18px;
+    --sidebar-padding-left: 6px;
+    --sidebar-padding-right: 6px;
+    --sidebar-padding-top: 18px;
   }
   .brand {
     font-size: 13px;
@@ -2151,16 +2196,16 @@ kbd {
 }
 
 .sidebar-files {
-  max-height: 44%;
+  max-height: none;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   margin-bottom: 8px;
 }
 
 #sidebar-file-tree {
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
 }
 
 [data-collection] > summary::before {
@@ -2363,4 +2408,71 @@ kbd {
 #folder-bulk-results li,
 #folder-bulk-preview li {
   padding: 4px 0;
+}
+
+.branch-repair-control {
+  background: transparent;
+}
+.branch-repair-control:where([data-repair-state='broken']),
+.branch-repair-control:where([data-repair-state='failed']),
+.branch-repair-control:where([data-repair-state='interrupted']) {
+  color: #f28b82;
+  border-color: currentColor;
+}
+.branch-repair-control:where([data-repair-state='ready']) {
+  color: var(--green);
+  border-color: currentColor;
+}
+.branch-repair-dialog {
+  width: min(860px, 90vw);
+  max-height: 85vh;
+  overflow: auto;
+}
+.branch-repair-dialog h3 {
+  margin: 20px 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.branch-repair-dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 35vh;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.branch-repair-dialog footer {
+  margin-top: 24px;
+  justify-content: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.environment .merge-in-progress {
+  color: #f28b82;
+  border-color: currentColor;
+  background: #302020;
+}
+
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sidebar-padding-top) var(--sidebar-padding-right, 14px) 0 var(--sidebar-padding-left, 14px);
+}
+.sidebar-content > * {
+  flex-shrink: 0;
+}
+
+.sidebar-issues-link {
+  font-size: 12px;
+  line-height: 20px;
 }

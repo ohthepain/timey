@@ -1,3 +1,4 @@
+import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { deliveryTarget } from './flow-block-data.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -32,7 +33,7 @@ export function flowWorkspace(service, flow) {
 }
 export function createFlowObserver(service, options = {}) {
   const remote = new Map();
-  async function observe(flow) {
+  async function observe(flow, { refresh = false } = {}) {
     const workspace = flowWorkspace(service, flow);
     const checkout = workspace?.checkout;
     const root = checkout && existsSync(checkout) ? checkout : service.root;
@@ -60,6 +61,7 @@ export function createFlowObserver(service, options = {}) {
       targetRevision: target,
       localTargetRevision: targetState?.localRevision,
     });
+    observePendingMerge(checkout, result);
     const failures = queries.filter((entry) => entry.status === 'rejected');
     if (failures.length) result.error = failures.map((entry) => entry.reason.message).join('\n');
     await observeStartingBranch(root, flow, result).catch(() => {});
@@ -81,17 +83,22 @@ export function createFlowObserver(service, options = {}) {
       workspace?.pr ||
       record?.work?.pr;
     if (Number.isSafeInteger(number) || workspace?.branch) {
-      const cached = remote.get(flow.issueId);
-      if (!cached?.pending && (!cached || Date.now() - cached.checkedAt > 15000))
-        refreshPR(flow, number, workspace?.branch, cached);
+      await observePR(flow, number, workspace?.branch, refresh);
       Object.assign(result, remote.get(flow.issueId)?.value || {});
     }
     return result;
   }
+  async function observePR(flow, number, branch, refresh) {
+    const cached = remote.get(flow.issueId);
+    if (refresh) {
+      await cached?.promise;
+      await refreshPR(flow, number, branch, remote.get(flow.issueId));
+    } else if (expiredObservation(cached)) refreshPR(flow, number, branch, cached);
+  }
   function refreshPR(flow, number, branch, previous) {
     const cache = { checkedAt: Date.now(), pending: true, value: previous?.value || {} };
     remote.set(flow.issueId, cache);
-    Promise.resolve()
+    cache.promise = Promise.resolve()
       .then(async () => {
         const configPath = join(service.root, '.issues/issue-delivery-config.json');
         if (!existsSync(configPath)) return;
@@ -103,7 +110,7 @@ export function createFlowObserver(service, options = {}) {
           return;
         }
         cache.value = {
-          pr: { ...flowPRLink(pr), title: pr.title, head: pr.head?.sha },
+          pr: { ...flowPRLink(pr), title: pr.title, head: pr.head?.sha, revision: pr.merge_commit_sha },
           remoteObservedAt: new Date().toISOString(),
         };
       })
@@ -113,8 +120,13 @@ export function createFlowObserver(service, options = {}) {
       .finally(() => {
         cache.pending = false;
       });
+    return cache.promise;
   }
   return { observe };
+}
+function expiredObservation(cached) {
+  if (!cached) return true;
+  return !cached.pending && Date.now() - cached.checkedAt > 15000;
 }
 async function observeStartingBranch(root, flow, result) {
   if (!result.worktreeExists) return;
@@ -134,4 +146,12 @@ async function resolveTarget(root, target) {
       `Target ${target.branch} is unavailable. Fetch it with Git or edit the project delivery configuration.`
     );
   return { revision: remote || local, localRevision: local };
+}
+
+function observePendingMerge(checkout, result) {
+  try {
+    result.merge = pendingIssueMerge(checkout);
+  } catch (error) {
+    result.error = error.message;
+  }
 }

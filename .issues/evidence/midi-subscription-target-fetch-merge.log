@@ -1,0 +1,4 @@
+Target fetch: not run in this repair operation.
+Target merge: not run in this repair operation.
+Reason: this block repairs the failed verification in the saved issue checkout; Factory owns publication, verification, and protected GitHub merge.
+No target fetch or merge output was produced.

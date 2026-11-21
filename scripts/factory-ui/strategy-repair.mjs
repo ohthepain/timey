@@ -71,7 +71,7 @@ function mayRetryInfrastructure(error, retry) {
   return infrastructureFailure(error) && retry < blockerRepairPolicy.infrastructureRetries;
 }
 
-function blockerKey(error) {
+export function blockerKey(error) {
   const stable = (error.blockerKey || error.message)
     .replace(/\b[a-f0-9]{7,64}\b/gi, '<revision>')
     .replace(/(?:\/(?:[^\s:]+\/)*[^\s:]+)|\b\d+\b/g, '<location>');

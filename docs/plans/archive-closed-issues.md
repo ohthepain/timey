@@ -33,6 +33,10 @@ For a shared closed report, the proposed flow saves the local archive copy first
 
 - Offer an Archive action per report and an Archive selected action in the Closed issues view.
 - Provide a local Archive view with Restore to closed. Reopening is a separate explicit action.
+- Admin can permanently delete reviewed local archive copies in one batch. A
+  person can also select eligible local branches associated with those reports.
+  This operation preserves display numbers and leaves issue worktree and
+  conversation cleanup to their existing controls.
 - Use a human-reviewed PR when closure moves a tracked report or archiving removes one. In a local queue, apply both moves directly.
 - Choose which closed reports should stay local in the Closed issues view before publishing the initial import. Use `pnpm factory issue-storage-export /path/to/local-review-checkout` to regenerate the candidate after archiving. The export copies the open and closed reports and the display-number registry. Archived issue numbers stay reserved.
 

@@ -1,3 +1,4 @@
+import { mergedDelivery } from './merged-issue.mjs';
 import { readFileSync } from 'node:fs';
 import { digest } from './common.mjs';
 
@@ -8,13 +9,15 @@ export const requestData = (flow) =>
 export function deliveryTarget(flow) {
   const target = flow.target;
   if (flow.destination?.branch) return { ...target, branch: flow.destination.branch };
-  if (flow.resolvedBranch) return { ...target, branch: flow.resolvedBranch };
   const ref = flow.startingPoint?.ref;
-  if (!ref) return target;
-  const local = 'refs/heads/';
-  const remote = `refs/remotes/${target.remote}/`;
-  const prefix = ref.startsWith(local) ? local : ref.startsWith(remote) ? remote : null;
-  return { ...target, branch: prefix ? ref.slice(prefix.length) : null };
+  if (ref) {
+    const local = 'refs/heads/';
+    const remote = `refs/remotes/${target.remote}/`;
+    const prefix = ref.startsWith(local) ? local : ref.startsWith(remote) ? remote : null;
+    return { ...target, branch: prefix ? ref.slice(prefix.length) : null };
+  }
+  if (flow.resolvedBranch) return { ...target, branch: flow.resolvedBranch };
+  return target;
 }
 export const startingPoint = (flow) => flow.startingPoint;
 export const missingMergePR = (branch) => 'No PR exists for ' + branch + '. Publish the issue PR first.';
@@ -35,6 +38,7 @@ export function latestCurrentAttempt(block) {
 }
 
 export function invalidateBlocks(flow, seeds, cascade = true) {
+  if (mergedDelivery(flow)) return new Set();
   const affected = new Set(seeds);
   const at = new Date().toISOString();
   for (const block of flow.blocks) {

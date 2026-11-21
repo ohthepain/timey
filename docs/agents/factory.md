@@ -131,7 +131,7 @@ Read [operating rules](operating.md) for ownership, launch and integration polic
 The default browser page opens [Project home](../plans/project-home.md) in the
 [explicit flow workspace](../adr/0013-explicit-issue-flows.md). Its project menu
 offers Investigate and Automate me. Selecting an issue opens its existing flow.
-Its blocks can run individually or through the issue's Play control. The
+Its blocks can run individually or through the issue's Start/Resume control. The
 `/classic` page retains the strategy and lifecycle adapter described below.
 Refreshing either page starts no new work.
 

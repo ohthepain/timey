@@ -1,4 +1,5 @@
-import { createIssueFolderSettings, ensureInboxFolder, readIssueFolderSettings } from './issue-folder-settings.mjs';
+import { requireUnmergedIssue } from './merged-issue.mjs';
+import { createIssueFolderSettings, inboxFolderId, readIssueFolderSettings } from './issue-folder-settings.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { digest, readJson, requireThat, writeJson } from './common.mjs';
@@ -34,10 +35,20 @@ function folderBasis(issues, saved) {
   return digest(JSON.stringify({ issueIds: [...currentIds].sort(), folders: saved.folders, assignments }));
 }
 
+function inboxView(configured) {
+  return (
+    configured.find((folder) => folder.id === inboxFolderId || folder.name === 'Inbox') || {
+      id: inboxFolderId,
+      name: 'Inbox',
+    }
+  );
+}
+
 export function readIssueFolders(root, issues) {
   const saved = savedFolders(root);
-  const inbox = ensureInboxFolder(root);
-  const folders = [...readIssueFolderSettings(root), ...saved.folders].filter(
+  const configured = readIssueFolderSettings(root);
+  const inbox = inboxView(configured);
+  const folders = [inbox, ...configured, ...saved.folders].filter(
     (folder, index, all) => all.findIndex((entry) => entry.id === folder.id) === index
   );
   const folderIds = new Set(folders.map((folder) => folder.id));
@@ -75,6 +86,7 @@ export function createIssueFolder(root, issues, input) {
 }
 
 export function assignIssueFolder(root, issues, input) {
+  requireUnmergedIssue(root, input.issueId);
   const saved = savedFolders(root);
   requireThat(input.basis === folderBasis(issues, saved), 'The issue folders changed. Refresh before moving an issue.');
   requireThat(

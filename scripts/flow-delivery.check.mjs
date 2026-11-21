@@ -333,6 +333,41 @@ test('unmerged or mismatched delivery cannot supply a closure artifact', async (
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
 });
 
+function retainMergedCandidate(f) {
+  const verification = f.ctx.flow.blocks[0].attempts[0].result;
+  f.ctx.flow.blocks.push({
+    kind: 'merge',
+    attempts: [
+      {
+        status: 'completed',
+        invalidatedAt: '2026-11-20T22:36:01Z',
+        result: { pr: 17, head: f.input.revision, revision: 'merge-revision', verification },
+      },
+    ],
+  });
+  writeFileSync(join(f.source.root, 'after-merge.txt'), 'Later checkout work\n');
+  f.source.git('add', 'after-merge.txt');
+  f.source.git('commit', '-qm', 'Later unrelated work');
+}
+
+test('Close accepts the retained merged candidate after its checkout advances', async (t) => {
+  const f = fixture(t);
+  retainMergedCandidate(f);
+  await f.close();
+  assert.equal(readQueue(f.root, { location: 'closed', issueId: f.ctx.issue.id }).issues[0].state, 'closed');
+  assert.equal(JSON.parse(readFileSync(join(f.folder, 'merged-delivery.json'), 'utf8')).head, f.input.revision);
+  assert.deepEqual(f.calls, []);
+});
+
+test('Close still rejects changed original proof after the merged checkout advances', async (t) => {
+  const f = fixture(t);
+  retainMergedCandidate(f);
+  const checked = f.ctx.flow.blocks[0].attempts[0].result;
+  writeFileSync(checked.proof[0].path, 'Changed original evidence\n');
+  await assert.rejects(f.close(), /verification evidence changed/);
+  assert.equal(readQueue(f.root).issues[0].state, 'verify');
+});
+
 for (const changed of ['summary', 'command'])
   test(`changed ${changed} proof blocks flow acceptance`, async (t) => {
     const f = fixture(t);
@@ -359,7 +394,7 @@ test('publication uses a confirmed exact-head non-force push and the mandatory A
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
 });
 
-test('publication authorized by Play creates the PR without a preview confirmation', async (t) => {
+test('publication authorized by starting the route creates the PR without a preview confirmation', async (t) => {
   const f = fixture(t);
   f.ctx.input = { automaticPublication: true };
   const result = await publishFlowPR(f.service, f.ctx, f.workspace, f.folder, f.options);
@@ -543,7 +578,7 @@ test('an uncommitted verification survives its unchanged commit and expires when
   f.source.git('commit', '-m', 'Change candidate content');
   assert.throws(
     () => verifiedFlowCandidate(f.ctx, f.workspace, { validateSummary: () => {} }),
-    /Run an explicit Verify block/
+    /Required independent verification and step evidence is missing/
   );
 });
 
@@ -658,4 +693,18 @@ test('investigation closure still requires explicit acceptance', async (t) => {
   const f = investigationFixture(t);
   f.ctx.input.confirmed = false;
   await assert.rejects(f.close(), /Accept the recorded result explicitly/);
+});
+
+test('closure uses the selected flow type when derived Request fields were invalidated', async (t) => {
+  const f = fixture(t);
+  f.ctx.flow.routeType = 'bug';
+  f.ctx.flow.blocks.unshift({
+    id: 'request',
+    kind: 'request',
+    data: { wording: 'Fix the bug', fields: null },
+    attempts: [],
+  });
+  f.ctx.details = { type: undefined };
+  const result = await flowClosureArtifact(f.service, f.ctx, f.workspace, f.folder, f.options);
+  assert.equal(result.revision, f.input.revision);
 });

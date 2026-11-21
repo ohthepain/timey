@@ -75,6 +75,7 @@ export default async function issueFoldersBrowserChecks(page) {
   await page.getByRole('button', { name: /New folder/ }).click();
   await page.getByLabel('Folder name', { exact: true }).fill('Next sprint');
   await page.getByRole('button', { name: 'Save folder', exact: true }).click();
+  await page.locator('[data-issue-folder-drop="folder-2"]').waitFor();
   await dropIssue('b', '[data-issue-folder-drop="folder-2"]');
   await page.waitForFunction(() => data.issues.find((issue) => issue.id === 'b').folderId === 'folder-2');
   const result = await page.evaluate(() => ({

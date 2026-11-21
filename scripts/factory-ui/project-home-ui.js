@@ -9,7 +9,10 @@
   const busy = (session) => ['running', 'starting', 'stopping'].includes(session?.status);
   window.createProjectHomeUI = ({ request, post, navigateHome, changed }) => {
     const discuss = window.createProjectDiscussUI({ request, post });
-    let projectTab = new URL(location.href).searchParams.get('projectTab') === 'discuss' ? 'discuss' : 'home';
+    window.createProjectAdminUI({ request, post });
+    const tabs = document.querySelectorAll('[role="tab"][data-project-tab]');
+    const requestedTab = new URL(location.href).searchParams.get('projectTab');
+    let projectTab = ['issues', 'discuss', 'admin'].includes(requestedTab) ? requestedTab : 'home';
     const state = {
       visible: false,
       data: null,
@@ -21,22 +24,53 @@
       submissions: new Map(),
     };
 
+    function loadIssuesFrame() {
+      if (!state.visible || projectTab !== 'issues') return;
+      const frame = document.querySelector('#project-issues iframe');
+      if (frame && !frame.hasAttribute('src')) frame.src = frame.dataset.src;
+    }
+
     function selectProjectTab(tab) {
       projectTab = tab;
       const url = new URL(location.href);
-      if (tab === 'discuss') url.searchParams.set('projectTab', tab);
+      if (tab !== 'home') url.searchParams.set('projectTab', tab);
       else url.searchParams.delete('projectTab');
       history.replaceState(null, '', url);
       $('project-home').dataset.projectTab = tab;
+      document.querySelector('.workspace').dataset.projectHomeTab = tab;
       document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', tab === 'discuss');
       $('project-home-content').hidden = tab !== 'home';
-      for (const button of document.querySelectorAll('[data-project-tab]'))
-        button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
+      $('project-issues').hidden = tab !== 'issues';
+      $('project-admin').hidden = tab !== 'admin';
+      for (const button of tabs) button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
       discuss.setVisible(state.visible && tab === 'discuss');
+      loadIssuesFrame();
     }
-    for (const button of document.querySelectorAll('[data-project-tab]'))
-      button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
+    for (const button of tabs) button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
     selectProjectTab(projectTab);
+
+    function syncIssueDetailWidth() {
+      const frame = document.querySelector('#project-issues iframe');
+      const workspace = document.querySelector('.workspace');
+      if (!frame?.contentDocument || !workspace) return;
+      const configuredWidth = getComputedStyle(workspace).getPropertyValue('--inspector-width').trim();
+      const responsiveWidth = window.innerWidth <= 1180 ? '335px' : window.innerWidth >= 1650 ? '435px' : '390px';
+      frame.contentDocument.documentElement.style.setProperty(
+        '--project-issue-detail-width',
+        localStorage.getItem('factory.project-issues.detail-width') || configuredWidth || responsiveWidth
+      );
+    }
+    const issuesFrame = document.querySelector('#project-issues iframe');
+    issuesFrame?.addEventListener('load', syncIssueDetailWidth);
+    syncIssueDetailWidth();
+    window.addEventListener('resize', syncIssueDetailWidth);
+    const workspace = document.querySelector('.workspace');
+    if (workspace && window.MutationObserver) {
+      new MutationObserver(syncIssueDetailWidth).observe(workspace, {
+        attributes: true,
+        attributeFilter: ['style'],
+      });
+    }
 
     function investigationSessions() {
       return state.data?.investigations || [];
@@ -82,7 +116,7 @@
         )
         .join('');
       const content = markup || '<p class="muted">No saved sessions yet.</p>';
-      if ($(id).innerHTML !== content) $(id).innerHTML = content;
+      window.timeyView.render($(id), content, 'home-runs:' + id);
     }
     function renderHome() {
       const { project, stats } = state.data;
@@ -149,17 +183,17 @@
       $('home-investigation-reusable').checked = false;
     }
 
-    function renderMessages(id, messages) {
+    function renderMessages(id, messages, sessionId) {
       const markup = (messages || [])
         .map(
           ({ role, text, content }) =>
             `<article data-home-message><strong>${role === 'user' ? 'You' : 'Assistant'}</strong><div>${escape(text || content)}</div></article>`
         )
         .join('');
-      if ($(id).innerHTML !== markup) {
-        $(id).innerHTML = markup;
-        $(id).scrollTop = $(id).scrollHeight;
-      }
+      const scope = 'home-messages:' + id + ':' + sessionId;
+      const first = !window.timeyView.read(scope);
+      window.timeyView.render($(id), markup, scope);
+      if (first) $(id).scrollTop = $(id).scrollHeight;
     }
 
     function operationStatus(kind, session) {
@@ -218,7 +252,7 @@
     function renderAutomate(fillDraft = false) {
       const session = state.automate;
       setRunButtons('automate', session);
-      renderMessages('home-automate-messages', session.messages);
+      renderMessages('home-automate-messages', session.messages, session.id);
       automateReplyControls(session);
       $('home-automate-coverage').textContent = coverageText(session.history);
       $('home-automate-review').hidden = !session.draft;
@@ -397,7 +431,12 @@
         state.visible = value;
         $('project-home').hidden = !value;
         discuss.setVisible(value && projectTab === 'discuss');
+        loadIssuesFrame();
         if (value && !wasVisible) void refresh();
+      },
+      openIssuesTab() {
+        navigateHome();
+        selectProjectTab('issues');
       },
       refresh,
     };

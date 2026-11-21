@@ -2,6 +2,7 @@ import { listenerPreflight, dependencyPreflight, workspacePackages } from './ver
 import { formatArgs, formattingFiles } from './format-files.mjs';
 import { fallowAuditScope } from './verify-scope.mjs';
 import { runVerificationProcess } from './verify-process.mjs';
+import { factoryCheckCommand, focusedCheckName, mergeCheckPlan, mergeCheckTimeoutMs } from './verify-merge-checks.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   cpSync,
@@ -24,6 +25,9 @@ import { assessAudit } from './audit-result.mjs';
 // Analyze an exported snapshot: unstaged edits cannot mask a staged audit finding,
 // and the pre-pilot recorder tests cannot write CSV files into the user's checkout.
 const args = process.argv.slice(2);
+const mergeIndex = args.indexOf('--merge-checks');
+const mergeChecks = mergeIndex < 0 ? null : mergeCheckPlan(JSON.parse(args[mergeIndex + 1]));
+const timeoutMs = mergeCheckTimeoutMs;
 const staged = args.includes('--staged');
 const auditOnly = args.includes('--audit-only');
 const workChecks = args.includes('--work-checks');
@@ -57,6 +61,7 @@ const report = {
   startedAt: new Date().toISOString(),
   phases: [],
   checks: [],
+  ...(mergeChecks ? { mergeChecks } : {}),
 };
 let failure = false;
 const cancellation = new AbortController();
@@ -124,6 +129,7 @@ function recordCheck(name, command, result) {
     pid: result.pid,
     startedAt: result.startedAt,
     finishedAt: result.finishedAt,
+    timedOut: result.timedOut,
   });
   console.log(`${details.passed ? 'PASS' : 'FAIL'} ${name}: ${log}`);
   if (!details.passed) {
@@ -145,13 +151,15 @@ async function run(name, command, commandArgs) {
   if (cancellation.signal.aborted) throw Error('Verification cancelled. No remaining checks were started.');
   const startedAt = new Date().toISOString();
   report.phases.push({ name, startedAt });
-  console.log(`START ${name}`);
+  console.log(`START ${name}: ${[command, ...commandArgs].join(' ')}`);
   const result = await runVerificationProcess(
     command,
     commandArgs,
     {
       cwd: snapshot,
       signal: cancellation.signal,
+      streamOutput: true,
+      timeoutMs,
       encoding: 'utf8',
       env:
         name === 'browser'
@@ -165,6 +173,32 @@ async function run(name, command, commandArgs) {
     finishedAt: new Date().toISOString(),
     passed: report.checks.at(-1).passed,
   });
+  if (result.timedOut)
+    throw Error(
+      `${name} timed out after 15 minutes: ${[command, ...commandArgs].join(' ')}. See its verification log.`
+    );
+}
+
+async function runFocusedChecks() {
+  if (!mergeChecks.focused.length) {
+    console.log(
+      mergeChecks.focusedRecorded
+        ? 'Work recorded that no focused tests apply.'
+        : 'No focused tests were recorded by Work.'
+    );
+    return;
+  }
+  for (const [index, [command, ...args]] of mergeChecks.focused.entries()) {
+    requireFlowBrowserScenario(command, args);
+    await run(focusedCheckName(index), command, args);
+  }
+}
+
+function requireFlowBrowserScenario(command, [script, flag]) {
+  if (command !== 'node' || script !== 'scripts/flow-browser.mjs') return;
+  const fixture = readFileSync(join(snapshot, script), 'utf8');
+  const scenarios = [...fixture.matchAll(/\[\s*(['"])(--[\w-]+)\1,/g)].map((match) => match[2]);
+  if (!scenarios.includes(flag)) throw Error('Work recorded an unknown focused Flow browser scenario: ' + flag);
 }
 function copySourceFile(name) {
   const source = join(root, name),
@@ -258,8 +292,13 @@ try {
     report.phases.push(preflight);
     await listenerPreflight();
     Object.assign(preflight, { passed: true, finishedAt: new Date().toISOString() });
+    if (mergeChecks) {
+      console.log(`Merge verification scope: ${mergeChecks.scope}`);
+      await runFocusedChecks();
+    }
     await run('browser', 'pnpm', ['run', 'test:browser']);
-    await run('factory', 'pnpm', ['run', 'test:factory']);
+    const [factory, ...factoryArgs] = factoryCheckCommand(mergeChecks?.scope);
+    await run('factory', factory, factoryArgs);
     await run('typecheck', bin('tsc'), ['--noEmit']);
     await run('tests', bin('vp'), ['test', 'run']);
     await run('build', 'pnpm', ['run', 'build']);

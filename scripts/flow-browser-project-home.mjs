@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ProjectHome } from './factory-ui/project-home.mjs';
-import { digest } from './factory-ui/common.mjs';
+import { digest, git } from './factory-ui/common.mjs';
 
 const draft = `---\nname: fixture-mode\ndescription: Work in the fixture user's style when explicitly selected.\ndisable-model-invocation: true\n---\n\nKeep responses concise. Verify changed behavior.\n`;
 const findings =
@@ -159,6 +159,8 @@ async function automate(page, service, calls, screenshot) {
 }
 
 export async function projectHomeBrowserChecks({ page, service, screenshot }) {
+  const labels = join(service.root, '.issues/triage-labels.md');
+  if (!existsSync(labels)) copyFileSync(new URL('../.issues/triage-labels.md', import.meta.url), labels);
   const calls = { investigations: 0, automate: 0 };
   configureHome(service, calls);
   await page.goto('/');
@@ -168,6 +170,140 @@ export async function projectHomeBrowserChecks({ page, service, screenshot }) {
   await page.locator('#home-title').click();
   assert.equal(await page.locator('#home-investigation-dialog').isVisible(), false);
   await screenshot('project-home');
+  await pruneWorktrees(page, service, screenshot);
+  await cleanRemoteBranches(page, screenshot);
+  await cleanLocalBranches(page, service, screenshot);
+  await deleteArchivedReports(page, service, screenshot);
   await investigate(page, service, calls, screenshot);
   await automate(page, service, calls, screenshot);
+}
+
+async function deleteArchivedReports(page, { root }, screenshot) {
+  const id = '20261118-archive-fixture';
+  const title = 'Disposable archived issue';
+  const branch = `codex/issue-${id}`;
+  const archive = join(root, '.issues/archive');
+  mkdirSync(archive, { recursive: true });
+  const report = join(archive, id + '.md');
+  writeFileSync(report, `---\nid: ${id}\ntitle: ${title}\nstate: closed\n---\nDisposable archive record.\n`);
+  git(root, 'branch', branch, 'dev');
+  await page.getByRole('tab', { name: 'Admin' }).click();
+  await page.getByRole('button', { name: 'Preview archived issues' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Delete archived issues' });
+  const choice = dialog.getByRole('checkbox', { name: title, exact: true });
+  await choice.check();
+  const branchChoice = dialog.getByRole('checkbox', { name: `Also delete local branch ${branch}` });
+  assert.equal(await branchChoice.isChecked(), false);
+  await branchChoice.check();
+  await dialog.getByRole('button', { name: 'Review deletion' }).click();
+  await dialog.getByRole('heading', { name: 'Confirm archive deletion' }).waitFor();
+  assert.match(readFileSync(report, 'utf8'), /Disposable archive record/);
+  assert.equal(git(root, 'branch', '--format=%(refname:short)', '--list', branch), branch);
+  await screenshot('project-admin-archive-deletion-confirmation');
+  await dialog.getByRole('button', { name: 'Permanently delete 1 archived issue' }).click();
+  await dialog.getByText(`${branch} · deleted`).waitFor();
+  assert.equal(git(root, 'branch', '--list', branch), '');
+  assert.throws(() => readFileSync(report), /ENOENT/);
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('tab', { name: 'Home' }).click();
+}
+
+async function cleanRemoteBranches(page, screenshot) {
+  const endpoint = '**/api/project-remote-branch-cleanup';
+  const requests = [];
+  await page.route(endpoint, async (route) => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({
+        json: {
+          id: 'reviewed-preview',
+          repository: 'fixture/timey',
+          target: 'dev',
+          readOnly: false,
+          entries: [
+            { name: 'merged-one' },
+            { name: 'merged-two' },
+            { name: 'still-open', reason: 'Used by an open pull request.' },
+          ],
+        },
+      });
+    }
+    requests.push(route.request().postDataJSON());
+    return route.fulfill({
+      json: {
+        results: [
+          { name: 'merged-one', status: 'deleted' },
+          { name: 'merged-two', status: 'deleted' },
+        ],
+      },
+    });
+  });
+  await page.getByRole('tab', { name: 'Admin' }).click();
+  await page.getByRole('button', { name: 'Preview remote branches' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Clean up remote branches' });
+  await dialog.getByText('fixture/timey · merged into dev · 2 eligible').waitFor();
+  assert.equal(await dialog.getByRole('button', { name: 'Review deletion' }).isDisabled(), true);
+  await dialog.getByText('Branches kept (1)').click();
+  await dialog.getByText('still-open · Used by an open pull request.').waitFor();
+  await dialog.getByRole('checkbox', { name: 'Select all eligible branches' }).check();
+  await dialog.getByRole('button', { name: 'Review deletion' }).click();
+  await dialog.getByRole('heading', { name: 'Confirm branch deletion' }).waitFor();
+  assert.deepEqual(requests, []);
+  await screenshot('project-admin-remote-branch-confirmation');
+  await dialog.getByRole('button', { name: 'Delete 2 remote branches' }).click();
+  await dialog.getByText('merged-two · deleted').waitFor();
+  assert.deepEqual(requests, [{ id: 'reviewed-preview', selected: ['merged-one', 'merged-two'] }]);
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('tab', { name: 'Home' }).click();
+  await page.unroute(endpoint);
+}
+
+async function cleanLocalBranches(page, service, screenshot) {
+  const { root } = service;
+  const { repository } = JSON.parse(readFileSync(join(root, '.issues/issue-delivery-config.json'), 'utf8'));
+  service.localBranchCleanupOptions = {
+    provider: () => ({
+      gh: async (args) =>
+        args.includes(`repos/${repository}`)
+          ? JSON.stringify({ full_name: repository, node_id: 'fixture', default_branch: 'dev' })
+          : JSON.stringify([[]]),
+    }),
+  };
+  const branch = 'admin-unused-local';
+  git(root, 'branch', branch, 'dev');
+  await page.getByRole('tab', { name: 'Admin' }).click();
+  await page.getByRole('button', { name: 'Preview local branches' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Clean up local branches' });
+  await dialog.getByRole('checkbox', { name: branch, exact: true }).check();
+  await dialog.getByRole('button', { name: 'Review deletion' }).click();
+  await dialog.getByRole('heading', { name: 'Confirm branch deletion' }).waitFor();
+  assert.equal(git(root, 'branch', '--format=%(refname:short)', '--list', branch), branch);
+  await screenshot('project-admin-local-branch-confirmation');
+  await dialog.getByRole('button', { name: 'Delete 1 local branch' }).click();
+  await dialog.getByText(`${branch} · deleted`).waitFor();
+  assert.equal(git(root, 'branch', '--list', branch), '');
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('tab', { name: 'Home' }).click();
+}
+
+async function pruneWorktrees(page, { root }, screenshot) {
+  const checkout = join(root, 'missing checkout');
+  const branch = 'admin-worktree-fixture';
+  git(root, 'worktree', 'add', '-b', branch, checkout, 'dev');
+  rmSync(checkout, { recursive: true });
+  await page.getByRole('tab', { name: 'Admin' }).click();
+  await page.reload();
+  await page.getByRole('button', { name: 'Prune worktrees' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Prune worktrees' });
+  const branchChoice = dialog.getByRole('checkbox', { name: `Delete local branch ${branch}`, exact: true });
+  await dialog.getByLabel('Comparison branch').selectOption('refs/heads/dev');
+  await branchChoice.waitFor();
+  assert.equal(await branchChoice.isChecked(), true);
+  assert.match(git(root, 'worktree', 'list', '--porcelain'), /missing checkout/);
+  await screenshot('project-admin-worktree-preview');
+  await dialog.getByRole('button', { name: 'Remove 1 worktree record and 1 branch' }).click();
+  await dialog.getByText(`Worktree record removed. Deleted ${branch}.`).waitFor();
+  assert.equal(git(root, 'branch', '--list', branch), '');
+  assert.doesNotMatch(git(root, 'worktree', 'list', '--porcelain'), /missing checkout/);
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('tab', { name: 'Home' }).click();
 }

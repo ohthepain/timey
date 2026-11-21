@@ -191,8 +191,8 @@
 .discuss-messages {
   flex: 1;
   overflow: auto;
-  min-height: 100px;
-  padding: 0 12px calc(var(--discuss-composer-height, 150px) + 30px) 0;
+  min-height: 0;
+  padding-right: 12px;
   overscroll-behavior: contain;
 }
 .discuss-empty {
@@ -210,7 +210,7 @@
   position: relative;
   max-width: 82%;
   padding: 20px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: none;
   margin: 10px 0;
 }
 .discuss-message.user {
@@ -305,11 +305,10 @@
   stroke-linejoin: round;
 }
 .discuss-composer {
-  position: absolute;
+  position: relative;
+  flex-shrink: 0;
   z-index: 2;
-  bottom: 12px;
-  left: 0;
-  right: 0;
+  margin-bottom: 12px;
   border: 1px solid #4b4b4b;
   border-radius: 11px;
   padding: 14px;

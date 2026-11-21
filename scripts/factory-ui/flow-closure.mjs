@@ -2,14 +2,21 @@ import { makeBlock } from './flow-store.mjs';
 import { requestBlock } from './flow-block-data.mjs';
 
 export function setRetroBlock(flow, catalog) {
-  const current = flow.blocks.find((block) => block.kind === 'retro');
-  if (requestBlock(flow).data.runRetro) return current || addRetro(flow, catalog);
+  const current = flow.blocks.find((block) => block.id === 'closure-retro');
+  const enabled = flow.closing ? flow.closing.retro : requestBlock(flow).data.runRetro;
+  if (enabled) {
+    if (current) {
+      current.suggested = false;
+      return current;
+    }
+    return addRetro(flow, catalog);
+  }
   if (current) retireRetro(flow, current);
 }
 
 function addRetro(flow, catalog) {
   const close = flow.blocks.find((block) => block.kind === 'close');
-  const retro = makeBlock('retro', close ? [close.id] : [], true, catalog);
+  const retro = makeBlock('retro', close ? [close.id] : [], false, catalog);
   retro.id = 'closure-retro';
   flow.blocks.push(retro);
 }
@@ -23,7 +30,7 @@ function retireRetro(flow, retro) {
 }
 
 function closureBlock(flow, catalog, kind, after = []) {
-  const saved = flow.blocks.find((block) => block.kind === kind);
+  const saved = flow.blocks.find((block) => (kind === 'retro' ? block.id === 'closure-retro' : block.kind === kind));
   if (saved) return saved;
   const block = makeBlock(kind, after, false, catalog);
   flow.blocks.push(block);

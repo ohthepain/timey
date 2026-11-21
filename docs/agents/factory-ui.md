@@ -84,8 +84,8 @@ locks when the issue has a PR. If GitHub reports a changed base, accept that bas
 in Destination before running Publish or Merge.
 
 The issue number appears in smaller text to the left of the title in the center
-column. Use the pencil next to the title to rename the issue. Play publishes when the
-candidate and destination checks pass. When running Publish directly,
+column. Use the pencil next to the title to rename the issue. **Start** or **Resume**
+runs the route; Publish runs when the candidate and destination checks pass. When running Publish directly,
 review the title, source and destination branches, verified commit, and exact PR
 description. The description contains Goal, Requested proof, and Original wording
 from Request, with empty sections omitted. On later runs, Publish shows pending
@@ -101,9 +101,9 @@ Closed issues open with Destination aligned at the bottom. Other issues center
 their running or most recently attempted block within the content's scroll range.
 The graph has 16 pixels of edge room. Column scrolling stays local, with native
 bounce where supported and no pull-to-refresh. Selecting a block scrolls only enough to reveal it. The
-circular plus button adds a step. The issue header's Play/Pause button runs the
-route one eligible block at a time. A confirmation link appears in the header
-when Play reaches a protected block. The Run, Retry, Recover, or Stop button
+circular plus button adds a step. The center-column Start/Resume/Pause control runs
+the route one eligible block at a time. A confirmation link appears in the header
+when the route reaches a protected block. The Run, Retry, Recover, or Stop button
 beside the selected block's name controls that block individually.
 `/classic` retains the strategy and legacy queue
 controls documented below. Flow observation can show reports before lifecycle configuration
@@ -180,12 +180,57 @@ Unmatched assignment kinds stay visible under Other work.
 
 ### Files and issue folders
 
+The entire left column scrolls together, including the project menu, local notes,
+Files and Issues. Its resize handle stays at the column edge while scrolling.
+
 The sidebar shows the installation's flow and skill folders and the
 project's `user/` directory. Use the plus icon on a writable folder row to
 create a subfolder. Drop an outside folder onto the sidebar to browse it
 in place. Files under `user/` are editable. Use **Install project skill** on
 `user/skills/<name>/SKILL.md` to make the skill visible to Codex. Custom flow
 definitions live in `user/flow/definitions/`.
+
+On the project page, open **Admin → Prune worktrees** to review stale Git
+worktree records and their local branches. The button opens a preview. Check the
+comparison branch and the selected entries before applying the batch. A branch
+whose tip is outside that history requires explicit selection. Entries used by
+open issues or whose checkout directories still exist are kept. The results
+show what was removed, skipped, or failed.
+
+**Admin → Preview remote branches** lists branches from the configured GitHub
+delivery repository. A branch qualifies when its exact tip is already in the
+delivery branch's history. Squash-merged branches may still have a different tip.
+Factory keeps protected branches, branches used by open pull requests on either
+side, the default and delivery branches, the shared issue queue, and the standard
+`main`, `master`, and `dev` branches. Select the branches you want to remove,
+review their names, and confirm the batch. Factory rechecks the live GitHub
+state and submits only the still eligible branches, with their reviewed commit
+IDs. Refresh the preview if GitHub does not confirm the outcome.
+
+**Admin → Preview local branches** starts from local Git branches. The
+comparison defaults to the configured delivery branch when available. You can
+choose another local or remote-tracking branch; the comparison uses the locally
+known commit. Factory keeps branches named by worktrees, including missing
+checkouts, and branches referenced by open or unarchived closed issues. A
+reference from an archived issue alone does not prevent cleanup. Factory
+also keeps project and comparison branches, and checks protection for the configured
+GitHub repository. Select eligible
+branches, review their names, then confirm. Factory rechecks the reviewed tips
+and references before deleting local refs.
+
+**Admin → Preview archived issues** lists archived reports for permanent
+deletion. Select one or more reports and optionally select eligible local
+branches under each one. Branch selection starts off. Review the exact reports
+and branches before confirming. Factory keeps reports that were restored or
+changed after preview, and keeps branches that fail the local cleanup checks.
+The results show report and branch outcomes separately. This deletes the local
+archive copy and selected branches; separate issue cleanup owns worktrees and
+conversation data. The issue's display number remains reserved.
+
+To use `$prune-worktrees` from Codex in another Factory project, copy the
+bundled `System / skills / prune-worktrees` folder into the project's
+`user/skills/`, then use **Install project skill** on its `SKILL.md`. The skill
+uses the live project's Admin preview and confirmation.
 
 Folder rows share their triangle, type, color, and spacing. Issue folder names
 are italic. Click a folder name to open its landing page. Its triangle expands
@@ -235,7 +280,7 @@ without changing issue records or selection.
 
 **Start all** and **Archive all** preview checked issues and report each outcome.
 Subset selections use **Start selected** or **Archive selected**. Starting uses each
-issue's Play flow and preserves its eligibility checks and confirmation stops.
+issue's saved route and preserves its eligibility checks and confirmation stops.
 Grouping requires each selected issue's PR target to match the folder's resolved
 default target. Copying a selection strategy creates an editable file beneath
 `user/selection-strategies/` and selects that copy without changing the built-in.
@@ -1282,7 +1327,7 @@ a spinner during actual activity. Hover or focus any square for its explanation.
 A yellow speech bubble above the current square marks a pending lifecycle question
 or connected worker approval, including the final acceptance decision. The bubble and square are one keyboard control that
 opens the existing issue question. Waiting for input shows idle play, while an
-actual error keeps its orange square. Play uses the issue screen's existing
+actual error keeps its orange square. The action uses the issue screen's existing
 Progress flow, including its plan consent and human guards; it grants no extra
 authority. Historical squares are informational. Every role block also links to
 that issue with the selected step expanded, focused and scrolled into view. This
@@ -1630,6 +1675,9 @@ Create issue presents three independently selectable, initially unchecked action
 in this order: orange **Grill me**, green **Go**, and blue **Merge**. Small inline
 illustrations identify the grill, green traffic light and merge path. One **Create
 issues** button submits the selection; without an action selected it only captures.
+Enabling Grill me reveals a Grilling skill dropdown from the configured chat grilling list.
+The selected skill is retained in the draft, creation request and report capture intent,
+and is explicitly sent to the new issue conversation.
 Go starts the selected strategy after durable creation. Grill saves first and then
 sends an explicit grilling request to each issue conversation. When Grill and Go
 are both selected, it starts grilling and records the requested strategy on each
@@ -1793,7 +1841,20 @@ original human plan-approval receipt, with its content hash and issue identity c
 
 ## Factory GitHub App credentials
 
-Server-owned issue strategy operations may use `.issues/github-app.json` in the
+Run `pnpm factory:setup -- --project /absolute/project` to configure GitHub App
+credentials in that project's `.env`. The installer preserves existing values,
+prompts for missing App and installation IDs and a PEM file path, and copies the
+key into `.env` with escaped newlines. It validates the PEM before writing,
+restricts a written `.env` to owner access, and adds `.env` to `.gitignore`.
+It never prints the key. Running it again validates existing credentials without
+rewriting them. Edit `.env` directly when replacing configured values.
+
+Factory reads these three credentials directly from the owning project's `.env`
+without exporting them to worker process environments. Exported environment
+variables take precedence. Normal launches and restarts need no `--env-file`
+flag. Skill `requirements.json` is tracked configuration and never stores secrets.
+
+The existing compatibility path for server-owned issue strategy operations is `.issues/github-app.json` in the
 owning project (this directory is excluded from Git):
 
 ```json
@@ -1841,3 +1902,53 @@ and Continue control rather than repeating capture.
 ## Shared issue queue
 
 In [shared queue mode](../plans/shared-issue-queue.md), the issue strategy claims an issue on the remote before starting and keeps the claim until Factory confirms the report checkpoint on the queue branch. Timey publishes new checkpoints directly using its GitHub App. Use the issue page to retry publication or reconcile an interrupted claim. Queue pull requests already in progress retain their existing merge and confirmation controls. Legacy assignment launches are unavailable in this mode.
+
+## Skill choices in blocks and chat
+
+The `# Skill list` in each bundled block Markdown defines its skill choices.
+Project `user/flow/extensions/blocks/<type>.md` and personal
+`~/.config/timey/flow/extensions/blocks/<type>.md` add to that list.
+`XDG_CONFIG_HOME` replaces `~/.config` when set. Existing project Markdown
+overrides can still replace the bundled list. Work defaults to `poteto-mode`;
+explicit selections, including No skill, remain unchanged.
+
+Click a block's skill label to choose a skill. **Add skill…** opens its project
+Markdown extension. For example:
+
+```markdown
+# Skill list
+
+- my-installed-skill
+- [team-work](https://example.com/team/SKILL.md)
+- [local-work](../../../skills/local-work/SKILL.md)
+```
+
+Local links resolve relative to the Markdown file. A link declares a source; it
+does not fetch or execute it. Use **Set up skills** to request installation through
+Project Discuss. You can also put raw block instructions under `# System prompt`
+in the extension. Opening the editor or changing a selection starts no block.
+
+Chat grilling uses `factory/system/chat/grilling.md`, with additive project
+`user/chat/grilling.md` and personal `~/.config/timey/chat/grilling.md` extensions.
+Its selector offers the same Add skill and setup actions. No Grilling is a
+built-in choice with no skill dependency and always appears last.
+
+Installed custom skills live in `user/skills/<name>/SKILL.md`. Required collection
+sources remain in `user/skills/requirements.json`; selector options come from
+Markdown rather than a parallel JSON list. Refresh after editing a list.
+
+Closure resolves issue type from its declared input, the current Request fields,
+then the saved flow type shown by the Request selector. Invalidated derived fields
+do not erase that saved type. Candidate verification, retained proof, and merged
+PR identity checks still apply before Fixed acceptance.
+
+When Run a retro is enabled, Retro is a planned closure block. It uses the normal
+block status and solid outline before it starts. Saved suggested Retro blocks
+are normalized without replacing their selected skill or attempt history. During
+closure the saved closure decision controls whether Retro remains enabled.
+
+Saving changed Your words invalidates Request and all subsequent blocks, across
+all lanes, before clarification runs. This includes Work and any retained
+verification, publication or merge results, even if clarification derives the
+same goal and proof criteria. Attempts and evidence stay in history. Rerunning
+unchanged wording keeps the existing criteria-based invalidation behavior.

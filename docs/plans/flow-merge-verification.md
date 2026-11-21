@@ -2,13 +2,32 @@
 
 Delivery behavior for the [explicit issue flow](../adr/0013-explicit-issue-flows.md).
 
+## Agreed local regression setting
+
+Request will have an editable **Run full regression suite** checkbox. It defaults
+to off for new issues and existing requests with no saved choice. Merge reads
+the setting at the start of each attempt. Editing the setting does not change
+checks already in flight.
+
+The default local run includes the change's focused checks, all Vitest tests,
+the Playwright fixture, Flow browser checks, and a small named set of Factory
+checks. Relevant Factory tests can also run as focused checks. Formatting,
+Fallow, type checking, and the build remain required. The full Factory suite
+requires opting in. The local setting leaves existing GitHub CI and branch
+protection in place.
+
+Verify is hidden when adding blocks or generating new flow structures. Existing
+Verify blocks and their retained evidence remain usable. Both Merge scopes run
+each local verification command with a 15-minute deadline. A timeout stops
+preparation and identifies the command in the retained result.
+
 ## The default route
 
-The standard delivery flow goes from **Request** through **Work**, **Publish PR**, **Merge**, and **Close**. **Verify** remains available as a standalone block for an explicit checkpoint. [Standard delivery definition](../../factory/system/flow/definitions/delivery.md)
+The standard delivery flow goes from **Request** through **Work**, **Publish PR**, **Merge**, and **Close**. [Standard delivery definition](../../factory/system/flow/definitions/delivery.md)
 
-- **Work** runs its own checks and repairs failures within the approved issue scope.
-- **Publish PR** reuses valid independent Verify evidence for the exact issue commit. If the evidence is missing or stale, Publish PR runs the independent checks and records the result before pushing.
-- **Merge** reuses valid independent evidence while the issue commit is unchanged. A new commit needs fresh evidence before Merge pushes it to the existing PR.
+- **Work** runs its own checks and records the focused commands to repeat, or records that no focused check applies.
+- **Publish PR** prepares and publishes a clean committed candidate. Merge owns the independent local verification.
+- **Merge** reuses evidence only for the matching candidate and destination with the focused commands and suite required for this attempt. Full evidence can cover a default attempt with the same inputs. Default evidence cannot cover a full attempt. A changed candidate requires fresh evidence before it is pushed by Merge.
 
 ## The Merge loop
 

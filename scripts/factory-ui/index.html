@@ -1862,9 +1862,237 @@
           animation: none;
         }
       }
+      html[data-project-issues-embed='true'],
+      html[data-project-issues-embed='true'] body {
+        height: 100%;
+        overflow: hidden;
+      }
+      html[data-project-issues-embed='true'] body > header {
+        display: none;
+      }
+      html[data-project-issues-embed='true'] main {
+        width: 100%;
+        max-width: none;
+        height: 100%;
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+      }
+      html[data-project-issues-embed='true'] #app {
+        height: 100%;
+      }
+      html[data-project-issues-embed='true'] .issue-workspace {
+        height: 100%;
+        min-height: 0;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+        gap: 0;
+      }
+      html[data-project-issues-embed='true'] [data-project-issue-mode][aria-pressed='true'] {
+        background: #3a3a3a;
+        border-color: #828282;
+        font-weight: 600;
+      }
+      html[data-project-issues-embed='true'] #queue-direction:disabled {
+        display: none;
+      }
+      html[data-project-issues-embed='true'] .issue-workspace.has-project-issue-detail {
+        grid-template-columns: minmax(0, 1fr) 8px var(--project-issue-detail-width, 335px);
+      }
+      html[data-project-issues-embed='true'] .issue-workspace-content {
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+      html[data-project-issues-embed='true'] .project-issue-resizer {
+        position: relative;
+        cursor: col-resize;
+        touch-action: none;
+      }
+      html[data-project-issues-embed='true'] .project-issue-resizer::after {
+        position: absolute;
+        inset: 0 3px;
+        content: '';
+        background: transparent;
+      }
+      html[data-project-issues-embed='true'] .project-issue-resizer:hover::after,
+      html[data-project-issues-embed='true'] .project-issue-resizer:focus-visible::after {
+        background: #8599b2;
+      }
+      html[data-project-issues-embed='true'] .project-issue-select-all {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      html[data-project-issues-embed='true'] .project-issue-select-all-row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr);
+        align-items: center;
+        gap: 4px;
+        padding: 0 0 6px;
+        border-bottom: 1px solid #2c2c2c;
+      }
+      html[data-project-issues-embed='true'] .project-issue-select-all-row input {
+        justify-self: center;
+      }
+      html[data-project-issues-embed='true'] .project-issue-select-all-row input,
+      html[data-project-issues-embed='true'] .project-issue-select {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        accent-color: #76b78d;
+      }
+      html[data-project-issues-embed='true'] .project-issue-request-frame {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: 420px;
+        border: 0;
+        background: #1d1d1d;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar {
+        display: block;
+        position: relative;
+        top: auto;
+        max-height: 100%;
+      }
+      html[data-project-issues-embed='true'] body {
+        background: #161616;
+        color: #dfdfdf;
+        font:
+          13px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        color-scheme: dark;
+      }
+      html[data-project-issues-embed='true'] a {
+        color: inherit;
+      }
+      html[data-project-issues-embed='true'] button,
+      html[data-project-issues-embed='true'] input,
+      html[data-project-issues-embed='true'] select,
+      html[data-project-issues-embed='true'] textarea {
+        border-color: #373737;
+        background: #202020;
+        color: #dfdfdf;
+      }
+      html[data-project-issues-embed='true'] .role-filter {
+        color: #dfdfdf;
+        background: #242424;
+        border: 1px solid #454545;
+      }
+      html[data-project-issues-embed='true'] .role-filter:has(input:checked) {
+        background: #3a3a3a;
+        border-color: #828282;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar {
+        border-color: #2c2c2c;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar h2 {
+        font:
+          600 16px/1.4 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar-link {
+        border-top: 1px solid #2c2c2c;
+        border-radius: 0;
+        padding: 10px 8px;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar-link:hover,
+      html[data-project-issues-embed='true'] .issue-sidebar-link[aria-current='page'] {
+        background: #282828;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar-link small,
+      html[data-project-issues-embed='true'] .issue-sidebar-empty,
+      html[data-project-issues-embed='true'] small,
+      html[data-project-issues-embed='true'] .muted {
+        color: #8d8d8d;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar-item.has-selector {
+        grid-template-columns: 22px minmax(0, 1fr);
+        align-items: start;
+      }
+      html[data-project-issues-embed='true'] .project-issue-select {
+        justify-self: center;
+        margin-top: 12px;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar-item[draggable='true'] {
+        cursor: grab;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar-item.is-dragged {
+        opacity: 0.55;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar-item.drop-before {
+        border-top: 2px solid #76b78d;
+      }
+      html[data-project-issues-embed='true'] .issue-sidebar-item.drop-after {
+        border-bottom: 2px solid #76b78d;
+      }
+      html[data-project-issues-embed='true'] .project-issue-bulk-selection {
+        min-width: 0;
+        height: 100%;
+        padding: 18px;
+        border-left: 1px solid #2c2c2c;
+      }
+      html[data-project-issues-embed='true'] .project-issue-bulk-selection h2 {
+        font:
+          600 18px/1.4 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+      html[data-project-issues-embed='true'] .project-issue-bulk-fields {
+        display: grid;
+        gap: 12px;
+        margin: 20px 0;
+      }
+      html[data-project-issues-embed='true'] .project-issue-bulk-field {
+        display: grid;
+        gap: 5px;
+        font-weight: 600;
+      }
+      html[data-project-issues-embed='true'] .project-issue-bulk-field select {
+        width: 100%;
+        min-width: 0;
+      }
+      html[data-project-issues-embed='true'] .project-issue-bulk-field small,
+      html[data-project-issues-embed='true'] .project-issue-bulk-results {
+        color: #a4a4a4;
+        font-weight: 400;
+      }
+      html[data-project-issues-embed='true'] .project-issue-bulk-results {
+        max-height: 40%;
+        margin-top: 16px;
+        overflow: auto;
+        font-size: 12px;
+      }
+      html[data-project-issues-embed='true'] .card,
+      html[data-project-issues-embed='true'] .issue-chat-panel,
+      html[data-project-issues-embed='true'] .discussion-output {
+        border-color: #373737;
+        background: #1c1d1d;
+        color: #dfdfdf;
+      }
+      html[data-project-issues-embed='true'] .issue-title h1 {
+        font:
+          600 24px/1.25 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        letter-spacing: 0;
+      }
     </style>
   </head>
   <body>
+    <script>
+      if (new URLSearchParams(location.search).get('embed') === 'project-issues')
+        document.documentElement.dataset.projectIssuesEmbed = 'true';
+    </script>
     <div id="source-change-banner" role="alert" hidden>
       Source code changed on disk since this page loaded. Reload to see the latest version.
     </div>
@@ -1907,6 +2135,7 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
+    <script src="/view-state.js"></script>
     <script src="/issue-capture-ui.js"></script>
     <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
@@ -1960,6 +2189,10 @@
         if (!response.ok) throw Error(result.error);
         return result;
       }
+      function issueQueueEndpoint(issueId, embedded) {
+        if (embedded) return 'queue?includeClosed=true';
+        return issueId ? 'issue?issue=' + encodeURIComponent(issueId) : 'queue';
+      }
       async function refresh() {
         if (refreshing || serverControlUI.isWaitingForServer()) return;
         refreshing = true;
@@ -1967,15 +2200,19 @@
         try {
           const previous = JSON.stringify(data);
           const issueId = issueRoute().id || '';
+          const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
           const storage = issueStorageLocation();
           const [snapshot, runtime, conversation, stored] = await Promise.all([
-            request(issueId ? 'issue?issue=' + encodeURIComponent(issueId) : 'queue'),
+            request(issueQueueEndpoint(issueId, projectIssuesEmbed)),
             request('runtime'),
-            issueId ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
+            issueId && !projectIssuesEmbed ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
             storage ? loadStoredIssues(storage) : null,
           ]);
           if (location.hash !== requestedRoute || serverControlUI.isWaitingForServer()) return;
-          data = { ...snapshot, conversation };
+          data = {
+            ...snapshot,
+            conversation,
+          };
           progressUnavailable = false;
           $('connection-banner').hidden = true;
           $('connection').hidden = false;
@@ -1995,6 +2232,7 @@
             !$('model-settings').open &&
             !$('plan').open &&
             !document.querySelector(':popover-open') &&
+            !document.defaultView.timeyView.dragging($('app')) &&
             (!document.activeElement.matches('input,textarea,select') ||
               document.activeElement.closest('[data-temporary]'))
           ) {
@@ -2504,6 +2742,19 @@
       }
       let queueRouteMessage = '';
       const queueFilters = { search: '', roles: new Map(), sort: 'statusOrder', direction: 'desc', folderId: 'all' };
+      const selectedProjectIssueIds = new Set();
+      let projectIssueMode = localStorage.getItem('factory.project-issues.mode') === 'closed' ? 'closed' : 'open';
+      const projectIssueArchive = { saving: false, feedback: '' };
+      const projectIssueBulk = {
+        idsKey: '',
+        loading: false,
+        views: null,
+        branches: [],
+        error: '',
+        draft: {},
+        saving: false,
+        results: null,
+      };
       function closedIssueState(state) {
         return data.lifecycle.some((stage) => stage.role === 'closed' && stage.state === state);
       }
@@ -2517,12 +2768,22 @@
       function roleCount(stage) {
         return data.issues.filter((issue) => issue.state === stage.state && matchesQueueSearch(issue)).length;
       }
+      function embeddedIssueRoleSelected(issue) {
+        if (projectIssueMode === 'closed') return closedIssueState(issue.state);
+        if (closedIssueState(issue.state)) return false;
+        const stage = data.lifecycle.find((item) => item.state === issue.state);
+        return !stage || roleSelected(stage);
+      }
+      function issueRoleSelected(issue) {
+        if (document.documentElement.dataset.projectIssuesEmbed === 'true') return embeddedIssueRoleSelected(issue);
+        const stage = data.lifecycle.find((item) => item.state === issue.state);
+        return !stage || roleSelected(stage);
+      }
       function queueIssues() {
         return queueSortUI.sort(
           data.issues.filter((issue) => {
-            const stage = data.lifecycle.find((item) => item.state === issue.state);
             const folderMatches = queueFilters.folderId === 'all' || issue.folderId === queueFilters.folderId;
-            return (!stage || roleSelected(stage)) && matchesQueueSearch(issue) && folderMatches;
+            return issueRoleSelected(issue) && matchesQueueSearch(issue) && folderMatches;
           }),
           queueFilters
         );
@@ -2562,6 +2823,7 @@
           }
           $('issues').innerHTML = rows(queueIssues());
           queueLifecycleUI.restore($('issues'));
+          bindProjectIssueSelection();
           bindPriorities();
           bindImplementationOrder();
           refreshRoleCounts();
@@ -2586,7 +2848,7 @@
       }
       function roleFilters() {
         return data.lifecycle
-          .filter(visibleLifecycleStage)
+          .filter(selectableLifecycleStage)
           .map((stage) => {
             const selected = roleSelected(stage);
             return `<label class="role-filter"><input type="checkbox" data-role-filter="${esc(stage.state)}" aria-label="${esc(stage.name)}" ${selected ? 'checked' : ''}>${esc(stage.name)} <b>${roleCount(stage)}</b></label>`;
@@ -2630,22 +2892,345 @@
       function queueRefreshButton() {
         return '<button class="queue-refresh-button" type="button" data-queue-refresh aria-label="Refresh queue" title="Refresh queue"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"></path><path d="M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2"></path></svg></button>';
       }
+      function selectedProjectIssues() {
+        return data.issues.filter((issue) => selectedProjectIssueIds.has(issue.id));
+      }
+      function closedProjectIssueSelection() {
+        const issues = selectedProjectIssues();
+        return issues.length > 0 && issues.every((issue) => closedIssueState(issue.state));
+      }
+      function projectIssueDetailsVisible(route) {
+        if (closedProjectIssueSelection()) return false;
+        return selectedProjectIssueIds.size > 0 || Boolean(route.id);
+      }
+      function projectIssueLinkAttributes(issue, embedded) {
+        if (embedded) return `href="/?issue=${encodeURIComponent(issue.id)}" target="_top"`;
+        return `href="#/issue/${encodeURIComponent(issue.issueNumber)}"`;
+      }
+      function projectIssueArchiveButton() {
+        if (!closedProjectIssueSelection()) return '';
+        return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive all'}</button></div>`;
+      }
+      function projectIssueArchiveControls(embedded) {
+        if (!embedded) return '';
+        return `${projectIssueArchiveButton()}<p role="status" aria-live="polite">${esc(projectIssueArchive.feedback)}</p>`;
+      }
+      function applyProjectIssueArchive(results) {
+        projectIssueArchive.feedback = storageFeedback('closed', results);
+        for (const item of results) if (!item.error) selectedProjectIssueIds.delete(item.id);
+        updateProjectIssueRoute();
+      }
+      function bindProjectIssueArchive() {
+        const button = document.querySelector('[data-archive-project-issues]');
+        if (button) button.onclick = () => void archiveSelectedProjectIssues();
+      }
+      async function archiveSelectedProjectIssues() {
+        if (projectIssueArchive.saving || !closedProjectIssueSelection()) return;
+        const issueIds = selectedProjectIssues().map((issue) => issue.id);
+        projectIssueArchive.saving = true;
+        projectIssueArchive.feedback = '';
+        render();
+        try {
+          const result = await request('issue-storage-move', { action: 'archive', issueIds });
+          applyProjectIssueArchive(result.results);
+          await refresh();
+        } catch (error) {
+          projectIssueArchive.feedback = error.message;
+        } finally {
+          projectIssueArchive.saving = false;
+          render();
+        }
+      }
+      function loadProjectIssueSelection() {
+        if (closedProjectIssueSelection()) return;
+        const issues = selectedProjectIssues();
+        if (issues.length) void ensureProjectIssueBulk(issues);
+      }
+      function issueSidebarStatus(issue) {
+        if (closedIssueState(issue.state)) return 'Closed';
+        return [issue.strategy?.status, issue.stage, 'queued'].find(Boolean);
+      }
+      function projectIssueModeControls(embedded) {
+        if (!embedded) return '';
+        return `<div class="toolbar" role="group" aria-label="Issue status">${['open', 'closed'].map((mode) => `<button type="button" data-project-issue-mode="${mode}" class="${projectIssueMode === mode ? 'primary' : ''}" aria-pressed="${projectIssueMode === mode}">${mode === 'open' ? 'Open' : 'Closed'}</button>`).join('')}</div>`;
+      }
+      function bindProjectIssueModes() {
+        document.querySelectorAll('[data-project-issue-mode]').forEach((button) => {
+          button.onclick = () => {
+            projectIssueMode = button.dataset.projectIssueMode;
+            localStorage.setItem('factory.project-issues.mode', projectIssueMode);
+            selectedProjectIssueIds.clear();
+            projectIssueArchive.feedback = '';
+            updateProjectIssueRoute();
+          };
+        });
+      }
+      function issueRoleControls(embedded) {
+        if (embedded && projectIssueMode === 'closed') return '';
+        return `<details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details>`;
+      }
+      function selectableLifecycleStage(stage) {
+        if (!visibleLifecycleStage(stage)) return false;
+        if (document.documentElement.dataset.projectIssuesEmbed !== 'true') return true;
+        return stage.role !== 'closed';
+      }
       function issueSidebar(selectedId) {
+        const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
         const issues = queueIssues();
-        const heading = selectedId ? 'Issues' : 'Issue queue';
+        const heading = projectIssuesEmbed || selectedId ? 'Issues' : 'Issue queue';
+        const allVisibleSelected = issues.length > 0 && issues.every((issue) => selectedProjectIssueIds.has(issue.id));
         const folderButton = (id, label, count, drop = false) =>
           `<button type="button" class="issue-sidebar-folder" data-issue-folder-select="${esc(id)}"${drop ? ` data-issue-folder-drop="${esc(id)}"` : ''} aria-current="${String(queueFilters.folderId === id)}"><span>${esc(label)}</span><small>${count}</small></button>`;
-        const folderMarkup = `<nav class="issue-sidebar-folders" aria-label="Issue folders">${folderButton('all', 'All issues', data.issues.length)}${(data.issueFolders || []).map((folder) => folderButton(folder.id, folder.name, data.issues.filter((issue) => issue.folderId === folder.id).length, true)).join('')}<button type="button" class="issue-sidebar-folder" data-create-issue-folder>+ New folder</button><form data-issue-folder-form hidden><label>Folder name<input data-issue-folder-name maxlength="60" required></label><button type="submit">Save folder</button></form></nav>`;
-        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions"><button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button></span></div>${folderMarkup}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div><details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details></div>${
+        const folderMarkup = projectIssuesEmbed
+          ? ''
+          : `<nav class="issue-sidebar-folders" aria-label="Issue folders">${folderButton('all', 'All issues', data.issues.length)}${(data.issueFolders || []).map((folder) => folderButton(folder.id, folder.name, data.issues.filter((issue) => issue.folderId === folder.id).length, true)).join('')}<button type="button" class="issue-sidebar-folder" data-create-issue-folder>+ New folder</button><form data-issue-folder-form hidden><label>Folder name<input data-issue-folder-name maxlength="60" required></label><button type="submit">Save folder</button></form></nav>`;
+        const headingActions = projectIssuesEmbed
+          ? queueRefreshButton()
+          : `<button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button>`;
+        return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions">${headingActions}</span></div>${folderMarkup}${projectIssueModeControls(projectIssuesEmbed)}${projectIssueArchiveControls(projectIssuesEmbed)}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div>${issueRoleControls(projectIssuesEmbed)}</div>${
           issues.length
-            ? `<nav aria-label="Issues">${issues
+            ? `<nav aria-label="Issues">${projectIssuesEmbed ? `<label class="project-issue-select-all-row"><input type="checkbox" data-select-visible-issues ${allVisibleSelected ? 'checked' : ''}><span class="project-issue-select-all">Select all</span></label>` : ''}${issues
                 .map(
                   (item) =>
-                    `<div class="issue-sidebar-item has-drag-handle" data-issue-row="${esc(item.id)}"><button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to organize ${esc(item.title || 'Untitled issue')}" title="Drag to move or reorder">⠿</button><a class="issue-sidebar-link" href="#/issue/${encodeURIComponent(item.issueNumber)}" aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(item.strategy?.status || item.stage || 'queued')}</small></a></div>`
+                    `<div class="issue-sidebar-item${projectIssuesEmbed ? ' has-selector' : ' has-drag-handle'}" data-issue-row="${esc(item.id)}"${projectIssuesEmbed && queueFilters.sort === 'implementationOrder' ? ' draggable="true"' : ''}>${projectIssuesEmbed ? `<input class="project-issue-select" type="checkbox" data-select-issue="${esc(item.id)}" aria-label="Select #${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" ${selectedProjectIssueIds.has(item.id) ? 'checked' : ''}>` : `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to organize ${esc(item.title || 'Untitled issue')}" title="Drag to move or reorder">⠿</button>`}<a class="issue-sidebar-link" ${projectIssueLinkAttributes(item, projectIssuesEmbed)} aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(issueSidebarStatus(item))}</small></a></div>`
                 )
                 .join('')}</nav>`
             : '<p class="issue-sidebar-empty">No issues yet.</p>'
         }</aside>`;
+      }
+      function projectIssueRequestFrame(issueId) {
+        const issue = data.issues.find((entry) => entry.id === issueId);
+        return `<iframe class="project-issue-request-frame" title="Request block for ${esc(issue?.title || 'selected issue')}" src="/?embed=project-issue-request&amp;issue=${encodeURIComponent(issueId)}"></iframe>`;
+      }
+      function bindProjectIssueSelection() {
+        if (document.documentElement.dataset.projectIssuesEmbed !== 'true') return;
+        bindProjectIssueModes();
+        bindProjectIssueArchive();
+        const visibleIssues = queueIssues();
+        const selectAll = document.querySelector('[data-select-visible-issues]');
+        if (selectAll) {
+          const selectedCount = visibleIssues.filter((issue) => selectedProjectIssueIds.has(issue.id)).length;
+          selectAll.indeterminate = selectedCount > 0 && selectedCount < visibleIssues.length;
+          selectAll.onchange = () => {
+            for (const issue of visibleIssues) {
+              if (selectAll.checked) selectedProjectIssueIds.add(issue.id);
+              else selectedProjectIssueIds.delete(issue.id);
+            }
+            updateProjectIssueRoute();
+          };
+        }
+        document.querySelectorAll('[data-select-issue]').forEach((checkbox) => {
+          checkbox.onchange = () => {
+            if (checkbox.checked) selectedProjectIssueIds.add(checkbox.dataset.selectIssue);
+            else selectedProjectIssueIds.delete(checkbox.dataset.selectIssue);
+            updateProjectIssueRoute();
+          };
+        });
+      }
+      function projectIssueBulkKey(ids) {
+        return [...ids].sort().join(',');
+      }
+      function commonProjectIssueValue(values) {
+        return values.every((value) => value === values[0]) ? values[0] : '__mixed__';
+      }
+      async function ensureProjectIssueBulk(issues) {
+        const key = projectIssueBulkKey(issues.map((issue) => issue.id));
+        if (
+          projectIssueBulk.idsKey === key &&
+          (projectIssueBulk.views || projectIssueBulk.loading || projectIssueBulk.error)
+        )
+          return;
+        Object.assign(projectIssueBulk, {
+          idsKey: key,
+          loading: true,
+          views: null,
+          branches: [],
+          error: '',
+          draft: {},
+          saving: false,
+          results: null,
+        });
+        try {
+          const views = await Promise.all(issues.map((issue) => request(`flow?issue=${encodeURIComponent(issue.id)}`)));
+          let branches = [];
+          const branchResult = await request('flow-action', {
+            issueId: issues[0].id,
+            action: 'destination-branches',
+            revision: views[0].flow.revision,
+          });
+          if (!branchResult.branchesUnavailable) branches = branchResult.branches || [];
+          if (projectIssueBulk.idsKey !== key) return;
+          Object.assign(projectIssueBulk, { views, branches, loading: false });
+        } catch (error) {
+          if (projectIssueBulk.idsKey !== key) return;
+          Object.assign(projectIssueBulk, { loading: false, error: error.message });
+        }
+        render();
+      }
+      function projectIssueBulkField(field, label, value, options, disabled = false, help = '') {
+        const current = Object.hasOwn(projectIssueBulk.draft, field) ? projectIssueBulk.draft[field] : '__keep__';
+        const toDisplay = (entry) =>
+          field === 'targetBranch' && (entry === '' || entry === null) ? '__default__' : String(entry);
+        const selectedValue =
+          current === '__keep__' ? (value === '__mixed__' ? '__mixed__' : toDisplay(value)) : toDisplay(current);
+        const optionMarkup = options
+          .map(
+            ([optionValue, optionLabel]) =>
+              `<option value="${esc(optionValue)}" ${String(optionValue) === selectedValue ? 'selected' : ''}>${esc(optionLabel)}</option>`
+          )
+          .join('');
+        const mixed =
+          value === '__mixed__'
+            ? `<option value="__mixed__" ${selectedValue === '__mixed__' ? 'selected' : ''}>Mixed</option>`
+            : '';
+        return `<label class="project-issue-bulk-field">${esc(label)}<select data-project-issue-bulk-field="${esc(field)}" ${disabled ? 'disabled' : ''}>${mixed}<option value="__keep__" ${selectedValue === '__keep__' ? 'selected' : ''}>${value === '__mixed__' ? 'Keep mixed values' : 'No change'}</option>${optionMarkup}</select>${help ? `<small>${esc(help)}</small>` : ''}</label>`;
+      }
+      function projectIssueBulkEditor(ids) {
+        const issues = ids.map((id) => data.issues.find((issue) => issue.id === id)).filter(Boolean);
+        const projectIssueBulkResults = projectIssueBulk.results
+          ? `<section class="project-issue-bulk-results" role="status"><h3>Save results</h3><ul>${projectIssueBulk.results
+              .map((result) => {
+                const issue = data.issues.find((entry) => entry.id === result.issueId);
+                const label = `#${issue?.issueNumber ?? ''} ${issue?.title || result.issueId}`.trim();
+                return `<li><strong>${esc(label)}:</strong> ${result.applied.length ? `saved ${esc(result.applied.join(', '))}` : 'no fields saved'}${result.errors.length ? `<ul>${result.errors.map((error) => `<li>${esc(error)}</li>`).join('')}</ul>` : ''}</li>`;
+              })
+              .join('')}</ul></section>`
+          : '';
+        if (projectIssueBulk.loading || !projectIssueBulk.views)
+          return `<section class="project-issue-bulk-selection"><h2>${ids.length} issues selected</h2><p>${esc(projectIssueBulk.error || 'Loading shared issue settings…')}</p></section>`;
+        const views = projectIssueBulk.views;
+        const folders = commonProjectIssueValue(issues.map((issue) => issue.folderId));
+        const priorities = commonProjectIssueValue(issues.map((issue) => issue.priorityInfo?.id));
+        const currentBranches = views.map((view) => view.destination.branch || '');
+        const branches = commonProjectIssueValue(currentBranches);
+        const branchOptions = [...new Set([...projectIssueBulk.branches, ...currentBranches.filter(Boolean)])];
+        const allBranchEditable = views.every((view) => !view.destination.locked);
+        const investigation = views.every(
+          (view) => view.issues.find((entry) => entry.id === view.issue.id)?.type === 'investigation'
+        );
+        const reusable = commonProjectIssueValue(views.map((view) => view.issue.reusable === true));
+        const retro = commonProjectIssueValue(
+          views.map((view) => view.flow.blocks.find((block) => block.kind === 'request')?.data.runRetro === true)
+        );
+        const saveEnabled = Object.keys(projectIssueBulk.draft).length > 0 && !projectIssueBulk.saving;
+        return `<section class="project-issue-bulk-selection"><h2>${ids.length} issues selected</h2><p>Edit shared fields across the selection.</p>${projectIssueBulk.error ? `<p role="alert">${esc(projectIssueBulk.error)}</p>` : ''}<div class="project-issue-bulk-fields">${projectIssueBulkField(
+          'folderId',
+          'Folder',
+          folders,
+          data.issueFolders.map((folder) => [folder.id, folder.name])
+        )}${projectIssueBulkField(
+          'priorityId',
+          'Priority',
+          priorities,
+          data.priorities.map((priority) => [priority.id, priority.name])
+        )}${projectIssueBulkField('targetBranch', 'Target branch', branches, [['__default__', 'Follow project default'], ...branchOptions.map((branch) => [branch, branch])], !allBranchEditable, allBranchEditable ? 'Sets the pull request destination branch.' : 'Locked because at least one selected issue already has a pull request.')}${
+          investigation
+            ? projectIssueBulkField('reusable', 'Reusable', reusable === '__mixed__' ? reusable : String(reusable), [
+                ['true', 'On'],
+                ['false', 'Off'],
+              ])
+            : ''
+        }${projectIssueBulkField('runRetro', 'Retro', retro === '__mixed__' ? retro : String(retro), [
+          ['true', 'On'],
+          ['false', 'Off'],
+        ])}</div><button type="button" class="primary" data-save-project-issue-bulk ${saveEnabled ? '' : 'disabled'} ${projectIssueBulk.saving || !saveEnabled ? 'disabled' : ''}>${projectIssueBulk.saving ? 'Saving…' : 'Save changes'}</button>${projectIssueBulkResults}</section>`;
+      }
+      function bindProjectIssueBulkEditor() {
+        document.querySelectorAll('[data-project-issue-bulk-field]').forEach((select) => {
+          const field = select.dataset.projectIssueBulkField;
+          const draft = projectIssueBulk.draft[field];
+          select.value = Object.hasOwn(projectIssueBulk.draft, field)
+            ? field === 'targetBranch' && draft === null
+              ? '__default__'
+              : String(draft)
+            : select.querySelector('option[selected]')?.value || '__keep__';
+          select.onchange = () => {
+            const field = select.dataset.projectIssueBulkField;
+            const value = select.value;
+            if (value === '__keep__' || value === '__mixed__') delete projectIssueBulk.draft[field];
+            else if (field === 'targetBranch') projectIssueBulk.draft[field] = value === '__default__' ? null : value;
+            else if (['reusable', 'runRetro'].includes(field)) projectIssueBulk.draft[field] = value === 'true';
+            else projectIssueBulk.draft[field] = value;
+            const button = document.querySelector('[data-save-project-issue-bulk]');
+            if (button) button.disabled = Object.keys(projectIssueBulk.draft).length === 0 || projectIssueBulk.saving;
+          };
+        });
+        const save = document.querySelector('[data-save-project-issue-bulk]');
+        if (save)
+          save.onclick = async () => {
+            if (!Object.keys(projectIssueBulk.draft).length || projectIssueBulk.saving) return;
+            projectIssueBulk.saving = true;
+            render();
+            try {
+              const result = await request('project-issues-bulk-edit', {
+                issueIds: [...selectedProjectIssueIds],
+                changes: { ...projectIssueBulk.draft },
+              });
+              projectIssueBulk.results = result.results;
+              projectIssueBulk.draft = {};
+              projectIssueBulk.views = null;
+              projectIssueBulk.loading = false;
+              await refresh();
+            } catch (error) {
+              projectIssueBulk.error = error.message;
+            } finally {
+              projectIssueBulk.saving = false;
+              render();
+            }
+          };
+      }
+      function updateProjectIssueRoute() {
+        const selected = [...selectedProjectIssueIds];
+        if (selected.length === 1) location.hash = `#/issue/${encodeURIComponent(selected[0])}`;
+        else location.hash = '#queue';
+        render();
+      }
+      function setProjectIssueDetailWidth(workspace, separator, width) {
+        const minimum = 280;
+        const maximum = Math.max(minimum, Math.min(680, workspace.clientWidth - 320));
+        const next = Math.round(Math.max(minimum, Math.min(maximum, width)));
+        document.documentElement.style.setProperty('--project-issue-detail-width', `${next}px`);
+        separator.setAttribute('aria-valuemin', String(minimum));
+        separator.setAttribute('aria-valuemax', String(maximum));
+        separator.setAttribute('aria-valuenow', String(next));
+        localStorage.setItem('factory.project-issues.detail-width', `${next}px`);
+      }
+      function bindProjectIssueResizer() {
+        const separator = document.querySelector('[data-project-issue-resizer]');
+        const workspace = separator?.closest('.issue-workspace');
+        if (!separator || !workspace || separator.dataset.bound) return;
+        separator.dataset.bound = 'true';
+        const currentWidth = () =>
+          Number.parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--project-issue-detail-width')
+          ) || 335;
+        separator.addEventListener('pointerdown', (event) => {
+          event.preventDefault();
+          separator.setPointerCapture(event.pointerId);
+          const resize = (pointerEvent) =>
+            setProjectIssueDetailWidth(
+              workspace,
+              separator,
+              workspace.getBoundingClientRect().right - pointerEvent.clientX
+            );
+          const finish = () => {
+            separator.removeEventListener('pointermove', resize);
+            separator.removeEventListener('pointerup', finish);
+            separator.removeEventListener('pointercancel', finish);
+          };
+          separator.addEventListener('pointermove', resize);
+          separator.addEventListener('pointerup', finish, { once: true });
+          separator.addEventListener('pointercancel', finish, { once: true });
+        });
+        separator.addEventListener('keydown', (event) => {
+          const width = currentWidth();
+          const next = { ArrowLeft: width + 16, ArrowRight: width - 16, Home: 280, End: workspace.clientWidth - 320 }[
+            event.key
+          ];
+          if (next === undefined) return;
+          event.preventDefault();
+          setProjectIssueDetailWidth(workspace, separator, next);
+        });
       }
       const priorityPending = new Set();
       function priorityControls(issue) {
@@ -2693,6 +3278,21 @@
           };
           handle.ondragend = clearDragFeedback;
         });
+        if (document.documentElement.dataset.projectIssuesEmbed === 'true') {
+          document.querySelectorAll('.issue-sidebar-item[data-issue-row]').forEach((row) => {
+            row.ondragstart = (event) => {
+              if (queueFilters.sort !== 'implementationOrder' || event.target.closest('input')) {
+                event.preventDefault();
+                return;
+              }
+              draggedId = row.dataset.issueRow;
+              event.dataTransfer?.setData('text/plain', draggedId);
+              if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+              row.classList.add('is-dragged');
+            };
+            row.ondragend = clearDragFeedback;
+          });
+        }
         document.querySelectorAll('[data-issue-folder-drop]').forEach((folder) => {
           folder.ondragover = (event) => {
             if (!draggedId) return;
@@ -3763,7 +4363,7 @@
         const issue = data?.issues.find((entry) => entry.id === issueRoute().id);
         const summary = $('issue-progress-summary');
         if (!issue || !summary) return;
-        summary.innerHTML = progressSummary(issue);
+        window.timeyView.render(summary, progressSummary(issue), 'classic-summary:' + issue.id);
         setProgressRefreshButtons(manualRefreshPending);
         updateProgressTimers();
         // Keep a focused answer intact. Full refresh reconciles request identity safely.
@@ -4095,9 +4695,9 @@
       const viewMemory = {
         route: null,
         expanded: loadExpanded(),
-        fields: new Map(),
-        scrolls: new Map(),
-        positions: new Map(),
+        fields: new Map(Object.entries(window.timeyView.read('classic-fields', {}))),
+        scrolls: new Map(Object.entries(window.timeyView.read('classic-scrolls', {}))),
+        positions: new Map(Object.entries(window.timeyView.read('classic-positions', {}))),
         logs: new Map(),
         focus: null,
       };
@@ -4162,6 +4762,9 @@
             }
           : null;
         rememberOutput();
+        window.timeyView.write('classic-fields', Object.fromEntries(viewMemory.fields));
+        window.timeyView.write('classic-scrolls', Object.fromEntries(viewMemory.scrolls));
+        window.timeyView.write('classic-positions', Object.fromEntries(viewMemory.positions));
         try {
           localStorage.setItem('factory-expanded-v2', JSON.stringify(viewMemory.expanded));
         } catch {}
@@ -4209,6 +4812,7 @@
         window.scrollTo(0, viewMemory.positions.get(location.hash) || 0);
         bindOutput();
       }
+      window.addEventListener('pagehide', rememberView);
       function rememberOutput() {
         const output = $('live-output');
         if (output)
@@ -4253,7 +4857,7 @@
         const text = activityText(issue) || outputStatus(issue);
         if (output.rawOutput !== text) {
           output.rawOutput = text;
-          output.innerHTML = fileLinkUI.html(text);
+          window.timeyView.render(output, fileLinkUI.html(text), 'classic-output:' + issueId);
           output.querySelectorAll('[data-open-file]').forEach((button) => {
             button.onclick = () =>
               openShownFile(button.dataset.openFile).catch((error) => ($('error').textContent = error.message));
@@ -4277,16 +4881,46 @@
         const storage = issueStorageLocation();
         if (storage) {
           issueChatUI.mount(null, data, request, refresh);
-          $('app').innerHTML = storedIssuesPage(storage);
+          window.timeyView.render($('app'), storedIssuesPage(storage), location.hash, true);
           bindStoredIssues(storage);
           return;
         }
-        const wideSidebar = !data.issueScoped && window.matchMedia?.('(min-width: 1000px)').matches;
-        $('app').innerHTML = wideSidebar
-          ? `<div class="issue-workspace">${issueSidebar(route.id)}<section class="issue-workspace-content">${route.id ? issue(route.id, false) : '<p class="issue-empty-selection">Please select an issue.</p>'}</section></div>`
-          : route.id
-            ? issue(route.id)
-            : queue();
+        const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
+        const hasProjectIssueDetail = projectIssuesEmbed && projectIssueDetailsVisible(route);
+        const wideSidebar =
+          projectIssuesEmbed || (!data.issueScoped && window.matchMedia?.('(min-width: 1000px)').matches);
+        const issueDetails =
+          hasProjectIssueDetail && selectedProjectIssueIds.size > 0
+            ? projectIssueBulkEditor([...selectedProjectIssueIds])
+            : route.id
+              ? projectIssuesEmbed
+                ? projectIssueRequestFrame(route.id)
+                : issue(route.id, false)
+              : projectIssuesEmbed
+                ? '<p class="issue-empty-selection">Select an issue to see its details.</p>'
+                : '<p class="issue-empty-selection">Please select an issue.</p>';
+        const issuePane = projectIssuesEmbed
+          ? hasProjectIssueDetail
+            ? '<div class="project-issue-resizer" role="separator" aria-label="Resize issue detail column" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="680" aria-valuenow="335" tabindex="0" data-project-issue-resizer></div>' +
+              `<section class="issue-workspace-content">${issueDetails}</section>`
+            : ''
+          : `<section class="issue-workspace-content">${issueDetails}</section>`;
+        window.timeyView.render(
+          $('app'),
+          wideSidebar
+            ? `<div class="issue-workspace${hasProjectIssueDetail ? ' has-project-issue-detail' : ''}">${issueSidebar(route.id)}${issuePane}</div>`
+            : route.id
+              ? issue(route.id)
+              : queue(),
+          location.hash,
+          true
+        );
+        bindProjectIssueSelection();
+        if (projectIssuesEmbed) {
+          bindProjectIssueResizer();
+          bindProjectIssueBulkEditor();
+          loadProjectIssueSelection();
+        }
         if (route.run && route.id) {
           const selected = data.issues.find((entry) => entry.id === route.id);
           const output = selected && focusedRunOutput(selected);
@@ -4981,6 +5615,11 @@
       );
       window.onhashchange = () => {
         focusedStageRoute = null;
+        if (document.documentElement.dataset.projectIssuesEmbed === 'true') {
+          render();
+          refreshPending = false;
+          return;
+        }
         refreshPending = true;
         void refresh();
       };

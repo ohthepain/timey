@@ -1,3 +1,4 @@
+import { requireUnmergedIssue } from './merged-issue.mjs';
 import {
   linkSync,
   lstatSync,
@@ -137,6 +138,7 @@ export function renameStoredIssue(root, issue, title) {
 }
 
 export function updateStoredIssueMetadata(root, issue, changes) {
+  requireUnmergedIssue(root, issue.id);
   const path = storedIssuePath(root, issue.id, issue.location);
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
@@ -169,6 +171,24 @@ export function deletePendingIssueReport(root, issue) {
     requireThat(reportFile(path), 'The issue report is missing.');
     assertExpectedReport(path, issue.id, issue.content);
     requireThat(issue.state === 'needs-approval', 'Only an issue awaiting approval can be deleted here.');
+    unlinkSync(path);
+  } finally {
+    rmdirSync(lock);
+  }
+}
+
+export function deleteArchivedIssueReport(root, id, expectedContent) {
+  const path = storedIssuePath(root, id, 'archive');
+  const lock = join(root, '.issues/factory.lock');
+  mkdirSync(lock);
+  try {
+    requireThat(reportFile(path), 'The archived issue report is missing.');
+    requireThat(
+      !['open', 'closed'].some((location) => stat(storedIssuePath(root, id, location))),
+      'An open or closed copy of the issue exists.'
+    );
+    requireThat(!git(root, 'ls-files', '--cached', '--', path), 'The archived report is tracked by Git.');
+    assertExpectedReport(path, id, expectedContent);
     unlinkSync(path);
   } finally {
     rmdirSync(lock);

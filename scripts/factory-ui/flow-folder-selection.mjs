@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mergedDelivery } from './merged-issue.mjs';
 import { redactValue } from './activity.mjs';
 import { digest, requireThat } from './common.mjs';
 import { issueDependencies } from './data.mjs';
@@ -18,6 +19,12 @@ function candidateData({ issue, flow }, knownIds) {
     proof: request.fields?.requestedProof,
     dependsOn: issueDependencies(issue.content, knownIds),
   };
+}
+
+function hasBlockHistory(flow) {
+  return [...flow.blocks, ...(flow.retiredBlocks ?? [])].some(
+    (block) => block.kind !== 'request' && block.attempts.length
+  );
 }
 
 async function suggest(prompt, candidates, members) {
@@ -82,15 +89,14 @@ export class FlowFolderSelection {
     const service = this.flows.service;
     return (
       !issue.closed &&
+      !mergedDelivery(flow) &&
       !['in-progress', 'in-review', 'ready-for-commit', 'resolved'].includes(issue.state) &&
       !flowWorkspace(service, flow) &&
       !flow.closing &&
       !['playing', 'waiting'].includes(this.flows.autoplay.get(issue.id)?.mode) &&
       !service.issueChats?.active?.has(issue.id) &&
       !issueHasActiveWork(service, issue.id) &&
-      ![...flow.blocks, ...(flow.retiredBlocks ?? [])].some(
-        (block) => block.kind !== 'request' && block.attempts.length
-      ) &&
+      !hasBlockHistory(flow) &&
       !service.store.runs.some((run) => run.issueId === issue.id && run.kind === 'issue-work')
     );
   }

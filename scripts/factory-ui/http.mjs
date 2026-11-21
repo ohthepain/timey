@@ -1,3 +1,4 @@
+import { skillSetup } from './required-skills.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -8,6 +9,7 @@ import { prepareIssueDelivery, startIssueDelivery } from './issue-delivery.mjs';
 import { changePriority } from './issue-priority.mjs';
 import { changeImplementationOrder } from './implementation-order-route.mjs';
 import { assignIssueFolder, createIssueFolder } from './issue-folders.mjs';
+import { editProjectIssues } from './project-issues-bulk.mjs';
 import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
@@ -42,7 +44,13 @@ import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs'
 import { defaultIssueFolder } from './issue-folder-settings.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './project-settings.mjs';
 import { ProjectHome } from './project-home.mjs';
-import { ProjectDiscuss } from './project-discuss.mjs';
+import { ProjectWorktreeCleanup } from './project-worktree-cleanup.mjs';
+import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs';
+import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
+import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
+import { ProjectDiscuss, readClarificationSkills } from './project-discuss.mjs';
+import { LocalNotes } from './local-notes.mjs';
+import { localNoteAction } from './local-note-routes.mjs';
 import { controlServerAction } from './server-action.mjs';
 import {
   deleteIssueWorktree,
@@ -135,17 +143,61 @@ function requireClassicIdle(service, path, value) {
 }
 
 const pauseSafeActions = {
-  '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
-  '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop'],
+  '/api/local-notes-action': ['create', 'edit', 'complete', 'delete', 'move', 'discuss', 'link'],
+  '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued', 'delete-note'],
+  '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop', 'branch-repair-stop'],
   '/api/project-home-action': ['investigation-stop', 'automate-stop'],
 };
 function mayFinishWhilePaused(path, value) {
   return pauseSafeActions[path]?.includes(value.action);
 }
 
+const mergedReadRoutes = new Set([
+  '/api/flow-action',
+  '/api/issue-cleanup-preview',
+  '/api/issue-cleanup-identities',
+  '/api/issue-cleanup-resource',
+  '/api/issue-cleanup-workspace-size',
+  '/api/issue-report-reveal',
+  '/api/issue-work-folder-open',
+  '/api/issue-storage-open-folder',
+  '/api/issue-chat-stop',
+  '/api/issue-strategy-stop',
+  '/api/lifecycle-pause',
+  '/api/shared-queue-retry',
+  '/api/shared-queue-confirm',
+  '/api/shared-queue-recover',
+]);
+function preservesMergedIssue(path, value) {
+  return mergedReadRoutes.has(path) || (path === '/api/issue-decision' && value.kind === 'close');
+}
+function savedMutationIssueIds(root, value) {
+  return [...new Set([value.issueId, value.input?.issueId, ...(value.issueIds || [])].filter(Boolean))].filter(
+    (issueId) =>
+      typeof issueId === 'string' &&
+      /^[\w-]+$/.test(issueId) &&
+      existsSync(join(root, '.issues/flows', issueId, 'flow.json'))
+  );
+}
+function closedIssueCleanup(workflow, path, issueId) {
+  return (
+    ['/api/issue-cleanup-retry', '/api/issue-worktree-delete', '/api/issue-storage-move'].includes(path) &&
+    workflow.selected(issueId).closed
+  );
+}
+async function requireEditableMutation(service, path, value) {
+  if (preservesMergedIssue(path, value)) return;
+  for (const issueId of savedMutationIssueIds(service.root, value)) {
+    const workflow = flows(service);
+    if (closedIssueCleanup(workflow, path, issueId)) continue;
+    await workflow.requireEditableIssue(issueId);
+  }
+}
+
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
   requireClassicIdle(service, path, value);
+  await requireEditableMutation(service, path, value);
   if (!mayFinishWhilePaused(path, value)) service.serverControl?.allow(path, value);
   const discussionRoutes = {
     '/api/site-review-open': () => service.siteReviews.open(value, owner),
@@ -167,8 +219,13 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
     '/api/project-home-action': () => projectHome(service).action(value),
+    '/api/project-worktree-cleanup': () => worktreeCleanup(service).apply(value),
+    '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).apply(value),
+    '/api/project-local-branch-cleanup': () => localBranchCleanup(service).apply(value),
+    '/api/project-archive-deletion': () => archiveDeletion(service).apply(value),
     '/api/folder-settings': () => changeFolderSettings(service, value),
     '/api/folder-strategies': () => {
       service.ownServer();
@@ -280,6 +337,7 @@ async function mutation(service, path, value, owner) {
     '/api/lifecycle-pause': () => service.pauseLifecycle(value),
     '/api/approve-review-file': () => service.approveReviewFile(value),
     '/api/issue-priority': () => changePriority(service, value),
+    '/api/project-issues-bulk-edit': () => editProjectIssues(service, value, projectHome(service)),
     '/api/implementation-order': () => changeImplementationOrder(service, value),
     '/api/issue-folder-create': () => {
       service.ownServer();
@@ -320,9 +378,12 @@ export function createFactoryServer(service, options = {}) {
   const server = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
+    const projectIssueEmbed = request.method === 'GET' && request.url.startsWith('/classic?embed=project-issues');
+    const projectIssueRequestEmbed =
+      request.method === 'GET' && request.url.startsWith('/?embed=project-issue-request');
     response.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+      `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors ${projectIssueEmbed || projectIssueRequestEmbed ? "'self'" : "'none'"}; base-uri 'none'; form-action 'self'`
     );
     try {
       requireThat(request.headers.host === `127.0.0.1:${server.address().port}`, 'Use the local factory address.');
@@ -374,10 +435,28 @@ async function read(service, request, response, owner) {
     '/api/sidebar-files': () => new SidebarFiles(service.root).index(),
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
+    '/api/capture-grilling-skills': () => readClarificationSkills(service.root).filter((item) => item.kind === 'skill'),
     '/api/project-settings': () => readProjectSettings(service.root),
     '/api/project-home': () => projectHome(service).view(),
+    '/api/local-notes': () => new LocalNotes(service.root).view(),
+    '/api/project-worktree-cleanup': () => worktreeCleanup(service).preview(url.searchParams.get('ref')),
+    '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).preview(),
+    '/api/project-local-branch-cleanup': () => localBranchCleanup(service).preview(url.searchParams.get('ref')),
+    '/api/project-archive-deletion': () => archiveDeletion(service).preview(),
     '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
-    '/api/project-discuss-skills': async () => ({ skills: await projectDiscuss(service).skills() }),
+    '/api/project-discuss-skills': async () => {
+      const skills = await projectDiscuss(service).skills();
+      const choices = readClarificationSkills(service.root);
+      return {
+        skills,
+        setup: skillSetup(
+          skills,
+          choices.filter((entry) => entry.kind === 'skill').map((entry) => entry.skill),
+          service.root,
+          Object.fromEntries(choices.filter((entry) => entry.source).map((entry) => [entry.name, entry.source]))
+        ),
+      };
+    },
     '/api/investigation': () =>
       projectHome(service).investigations.issueView(new URL(request.url, 'http://localhost').searchParams.get('issue')),
     '/api/ui-sources': () => ({ ...viewSources(service).update(), editable: service.reviewMode !== 'preview' }),
@@ -390,7 +469,10 @@ async function read(service, request, response, owner) {
         return { folder: null, error: error.message };
       }
     },
-    '/api/flow': () => flows(service).view(issue(selectedIssue)),
+    '/api/flow': () =>
+      flows(service).view(issue(selectedIssue), {
+        requestOnly: url.searchParams.get('view') === 'request',
+      }),
     '/api/flow-files': () => flows(service).files(issue(selectedIssue)),
     '/api/flow-file': () => flows(service).file(issue(selectedIssue), url.searchParams.get('path')),
     '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
@@ -413,7 +495,9 @@ async function read(service, request, response, owner) {
     '/api/issue-closure': () =>
       issueClosureContext(service, issue(selectedIssue), url.searchParams.get('kind') === 'reopen'),
     '/api/queue': () =>
-      selectedIssue ? issueResponse(service, owner, issue(selectedIssue)) : queueResponse(service.snapshot(owner)),
+      selectedIssue
+        ? issueResponse(service, owner, issue(selectedIssue))
+        : queueResponse(service.snapshot(owner, { includeClosed: url.searchParams.get('includeClosed') === 'true' })),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
@@ -471,7 +555,7 @@ async function temporaryAction(action) {
 }
 
 function readResource(service, request, response, owner) {
-  if (request.url === '/discuss-markdown.js') {
+  if (request.url === '/node_modules/markdown-it/dist/markdown-it.min.js') {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     return response.end(readFileSync(createRequire(import.meta.url).resolve('markdown-it/dist/markdown-it.min.js')));
   }
@@ -495,10 +579,16 @@ function readResource(service, request, response, owner) {
     return response.end();
   }
   const scripts = {
+    '/view-state.js': 'view-state.js',
+    '/local-notes-ui.js': 'local-notes-ui.js',
+    '/local-notes.css': 'local-notes.css',
     '/project-discuss-ui.js': 'project-discuss-ui.js',
+    '/skill-select.js': 'skill-select.js',
     '/project-discuss.css': 'project-discuss.css',
     '/flow-ui.js': 'flow-ui.js',
+    '/branch-repair-ui.js': 'branch-repair-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
+    '/project-admin-ui.js': 'project-admin-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',
     '/project-home.css': 'project-home.css',
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
@@ -543,6 +633,26 @@ function projectHome(service) {
     readOnly,
   });
   return service.projectHome;
+}
+
+function worktreeCleanup(service) {
+  service.projectWorktreeCleanup ||= new ProjectWorktreeCleanup(service);
+  return service.projectWorktreeCleanup;
+}
+
+function remoteBranchCleanup(service) {
+  service.projectRemoteBranchCleanup ||= new ProjectRemoteBranchCleanup(service, service.remoteBranchCleanupOptions);
+  return service.projectRemoteBranchCleanup;
+}
+
+function localBranchCleanup(service) {
+  service.projectLocalBranchCleanup ||= new ProjectLocalBranchCleanup(service, service.localBranchCleanupOptions);
+  return service.projectLocalBranchCleanup;
+}
+
+function archiveDeletion(service) {
+  service.projectArchiveDeletion ||= new ProjectArchiveDeletion(service, localBranchCleanup(service));
+  return service.projectArchiveDeletion;
 }
 
 function projectDiscuss(service) {

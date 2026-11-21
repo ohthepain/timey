@@ -2,6 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
+  const view = window.timeyView;
   const initialSelection = new URL(location.href).searchParams;
   const state = {
     index: { issues: [], folders: [], catalog: [] },
@@ -25,11 +26,11 @@
     tab: 'details',
     search: '',
     draggedIssueId: null,
-    collapsedFolders: new Set(),
-    collapsedCollections: new Set(['closed-issues', 'archived-issues']),
+    collapsedFolders: new Set(view.read('flow-collapsed-folders', [])),
+    collapsedCollections: new Set(view.read('flow-collapsed-collections', ['closed-issues', 'archived-issues'])),
     archivedIssues: null,
     collapsedSearchFolders: new Set(),
-    drafts: new Map(),
+    drafts: new Map(Object.entries(view.read('flow-drafts', {}))),
     repoFiles: new Map(),
     loading: false,
     pending: false,
@@ -202,6 +203,28 @@
     return attempt?.status || (block?.suggested ? 'suggested' : 'ready');
   }
 
+  function routeComplete(blocks) {
+    if (!blocks.length) return false;
+    const closureStart = blocks.findIndex((block) => ['close', 'retro', 'cleanup'].includes(block.kind));
+    const routeBlocks = closureStart < 0 ? blocks : blocks.slice(0, closureStart);
+    return routeBlocks.every(
+      (block) =>
+        status(block) === 'completed' || (block.kind === 'request' && Boolean(block.data?.fields) && !latest(block))
+    );
+  }
+
+  function playbackAction(blocks) {
+    const issue = state.view?.issue;
+    const location = issue?.location;
+    const closed = location === 'closed' || issue?.status === 'closed';
+    const playing = ['playing', 'waiting'].includes(state.view?.autoplay?.mode);
+    if (playing) return 'pause';
+    if (!issue || location === 'archive' || state.view?.grouping?.master) return 'hidden';
+    if (routeComplete(blocks)) return closed ? 'archive' : 'close';
+    if (closed || issue.readOnly) return 'hidden';
+    return blocks.some((block) => block.attempts?.length) ? 'resume' : 'start';
+  }
+
   function isRunning(block) {
     return runningStatuses.has(status(block));
   }
@@ -264,8 +287,13 @@
     return state.drafts.get(draftKey()) || {};
   }
 
+  function persistDrafts() {
+    view.write('flow-drafts', Object.fromEntries(state.drafts));
+  }
+
   function setDraft(name, value) {
     state.drafts.set(draftKey(), { ...draft(), [name]: value });
+    persistDrafts();
     const note = $('draft-note');
     if (note) {
       note.textContent = 'Unsaved changes';
@@ -281,8 +309,13 @@
   function renderErrors() {
     const waiting = serverControlUI.isWaitingForServer();
     const message = waiting ? 'Waiting for server…' : state.error || state.connectionError;
+    if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
+      $('request-embed-error').hidden = !message;
+      view.text($('request-embed-error-message'), message);
+      return;
+    }
     $('error-banner').hidden = !message;
-    $('error-message').textContent = message;
+    view.text($('error-message'), message);
     $('dismiss-error').hidden = waiting;
   }
 
@@ -338,7 +371,10 @@
     state.index = { ...state.index, ...result };
     if (result.flow && result.issue && result.issue.id === state.issueId) {
       state.view = result;
-      if (!result.flow.blocks.some((block) => block.id === state.blockId)) {
+      if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
+        state.blockId = result.flow.blocks.find((block) => block.kind === 'request')?.id || null;
+        state.tab = 'details';
+      } else if (!result.flow.blocks.some((block) => block.id === state.blockId)) {
         state.deleteBlockId = null;
         const attempted = result.flow.blocks
           .filter((block) => latest(block))
@@ -347,7 +383,12 @@
               String(latest(a).endedAt || latest(a).startedAt || '')
             )
           );
+        const savedSelection = view.read('flow-selection:' + state.issueId, {});
+        const savedBlock = result.flow.blocks.find((block) => block.id === savedSelection.blockId);
+        if (savedBlock && ['details', 'conversation', 'artifacts'].includes(savedSelection.tab))
+          state.tab = savedSelection.tab;
         state.blockId =
+          savedBlock?.id ||
           result.flow.blocks.find((block) => isRunning(block))?.id ||
           attempted[0]?.id ||
           result.flow.blocks.find((block) => block.kind === 'request')?.id ||
@@ -378,13 +419,18 @@
     const selected = state.issueId;
     state.loading = true;
     try {
-      const result = await json(`/api/flow${selected ? `?issue=${encodeURIComponent(selected)}` : ''}`, {
+      const query = new URLSearchParams();
+      if (selected) query.set('issue', selected);
+      if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') query.set('view', 'request');
+      const params = query.toString();
+      const result = await json(`/api/flow${params ? `?${params}` : ''}`, {
         signal: controller.signal,
       });
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
       state.connectionError = '';
       $('connection-status').className = 'connection';
       $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · 2s';
+      if (announce) state.error = '';
       applyView(result);
       if (announce) toast('Saved flow refreshed.');
     } catch (error) {
@@ -421,6 +467,10 @@
 
   async function action(name, fields = {}, options = {}) {
     if (state.pending) return null;
+    if (!options.global && state.view?.issue?.readOnly && !state.view.issue.readOnlyActions.includes(name)) {
+      showError(state.view.issue.readOnlyReason);
+      return null;
+    }
     const selected = state.issueId;
     const revision = state.view?.flow?.revision;
     if (!options.global && (!selected || revision == null)) {
@@ -457,9 +507,22 @@
   }
 
   function setBusy(busy) {
+    branchRepairUI.update(state.view);
     $('folder-workspace').inert = busy;
+    const frozenIssue = Boolean(state.view?.issue?.readOnly);
+    document.querySelectorAll('[data-open-palette]').forEach((button) => {
+      button.disabled = busy || frozenIssue;
+    });
+    document.querySelectorAll('[data-skill-picker]').forEach((picker) => {
+      picker.inert = frozenIssue;
+    });
+    $('issue-flow-picker').inert = frozenIssue;
+    $('issue-settings-form').inert = frozenIssue;
+    $('rename-issue-form').inert = frozenIssue;
+    $('rename-issue').disabled = busy || frozenIssue;
     $('issue-grouping').inert = busy;
     const attached = Boolean(state.view?.grouping?.master);
+    const frozen = Boolean(state.view?.issue?.readOnly);
     document
       .querySelectorAll(
         '[data-action], [data-add-kind], #capture-submit, #export-flow-submit, #folder-form button[type="submit"]'
@@ -468,6 +531,9 @@
         const runsBlock = ['start', 'continue'].includes(button.dataset.action);
         button.disabled =
           busy ||
+          (frozen &&
+            (button.dataset.addKind ||
+              (button.dataset.action && !state.view.issue.readOnlyActions.includes(button.dataset.action)))) ||
           (attached && Boolean(button.dataset.action) && !['comment', 'folder'].includes(button.dataset.action)) ||
           (runsBlock && operationPaused(activeBlock())) ||
           (button.id === 'delete-block' && Boolean(blockDeletionReason(activeBlock())));
@@ -475,12 +541,21 @@
     document
       .querySelectorAll('#inspector-body input, #inspector-body select, #inspector-body textarea')
       .forEach((field) => {
-        const closureSetting = ['retro-setting', 'auto-close-setting', 'issue-folder-locked'].includes(field.id);
+        const closureSetting = [
+          'retro-setting',
+          'auto-close-setting',
+          'full-regression-setting',
+          'issue-folder-locked',
+        ].includes(field.id);
         field.disabled =
           busy ||
+          frozen ||
           (attached && Boolean(field.closest('#request-form, #block-form'))) ||
           (closureSetting && state.view?.issue?.status === 'closed');
       });
+    document.querySelectorAll('#inspector-body button[type="submit"]').forEach((button) => {
+      button.disabled = busy || frozen;
+    });
     const runBlock = $('run-block');
     runBlock.disabled =
       busy ||
@@ -497,12 +572,15 @@
       state.view.flow.blocks.some(isRunning);
     updatePlaybackAvailability(busy);
     $('close-publish').disabled = busy;
-    $('move-starting-branch').disabled = busy;
+    $('move-starting-branch').disabled = busy || frozen;
     const startingBranch = $('starting-branch');
     if (startingBranch)
       startingBranch.disabled = busy || !state.view?.startingPointEditable || !state.view.branches?.length;
-    $('target-update-menu').disabled = busy;
+    const branchBusy = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
+    $('target-update-menu').disabled = branchBusy;
+    $('worktree-menu').querySelector('option[value="update"]').disabled = branchBusy;
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
+    $('merge-state-menu').disabled = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);
   }
 
@@ -515,13 +593,16 @@
       $(id).hidden = !pending;
       $(id).disabled = busy;
     }
-    $('close-with-reason').hidden = !issue || closed || pending || Boolean(state.view?.grouping?.master);
+    const routeAction = playbackAction(state.view?.flow?.blocks || []);
+    $('close-with-reason').hidden =
+      !issue || closed || pending || Boolean(state.view?.grouping?.master) || routeAction === 'close';
     $('close-with-reason').disabled = busy;
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
     const archived = issue?.location === 'archive';
     for (const option of $('issue-archive-menu').options)
-      if (['archive', 'reveal', 'reopen'].includes(option.value)) option.hidden = archived;
+      if (['archive', 'reveal', 'reopen'].includes(option.value))
+        option.hidden = archived || (option.value === 'reopen' && issue?.readOnly);
     $('issue-archive-menu').options[0].textContent = archived ? 'Archived issue' : 'Archive';
     const closing = state.view?.flow?.closing;
     const awaiting = closed && closing && !closing.complete && !state.view.closureBusy;
@@ -534,16 +615,24 @@
   function updatePlaybackAvailability(busy) {
     const button = $('issue-playback');
     const playback = state.view?.autoplay;
-    const paused = playback?.mode === 'paused';
-    const closed = state.view?.issue?.status === 'closed';
+    const mode = playbackAction(state.view?.flow?.blocks || []);
+    const issue = state.view?.issue;
+    const routeAction = ['start', 'resume', 'pause'].includes(mode);
+    const closed = issue?.location === 'closed' || issue?.status === 'closed';
+    const showArchive = mode === 'archive';
     const pending = state.view?.issue?.state === 'needs-approval';
-    button.hidden = closed || Boolean(state.view?.grouping?.master);
-    $('closed-issue-indicator').hidden = !closed;
-    button.disabled = busy || !playback || pending || (paused && (state.newActionsPaused || closed));
+    button.hidden = mode === 'hidden';
+    $('closed-issue-indicator').hidden = !closed || showArchive;
+    button.disabled =
+      busy ||
+      !playback ||
+      (routeAction && pending) ||
+      (['start', 'resume'].includes(mode) && (state.newActionsPaused || closed || issue?.readOnly));
+    const unavailableAction = mode === 'close' ? 'close' : mode === 'archive' ? 'archive' : 'start or resume';
     button.title = !playback
-      ? 'Restart the Timey server to use Play'
-      : paused && state.newActionsPaused
-        ? 'Turn off No new actions to play'
+      ? `Restart the Timey server to ${unavailableAction} this issue`
+      : ['start', 'resume'].includes(mode) && state.newActionsPaused
+        ? 'Turn off No new actions to start or resume this issue'
         : '';
   }
 
@@ -612,7 +701,7 @@
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
     const row = (issue) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
     const groups = folders
       .map((folder) => {
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
@@ -630,18 +719,21 @@
       `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
     );
     const collection = (id, name, content) =>
-      `<details id="${id}" class="issue-folder" data-collection${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
+      `<details id="${id}" class="issue-folder" data-collection data-view-controlled-open${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
-    $('issue-list').innerHTML =
+    view.render(
+      $('issue-list'),
       `<div id="open-issues">${groups || empty}</div>` +
-      collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
-      collection(
-        'archived-issues',
-        'Archived',
-        state.archivedIssues
-          ? archive.map(row).join('') || empty
-          : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
-      );
+        collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
+        collection(
+          'archived-issues',
+          'Archived',
+          state.archivedIssues
+            ? archive.map(row).join('') || empty
+            : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
+        ),
+      'flow-sidebar:' + state.index.project
+    );
   }
 
   function canMoveSidebarIssue(id, folder) {
@@ -703,6 +795,8 @@
     }
   }
 
+  window.addEventListener('factory-archive-updated', loadArchive);
+
   $('issue-list').addEventListener('click', (event) => {
     const collection = event.target.closest('summary')?.parentElement;
     if (!collection?.hasAttribute('data-collection')) return;
@@ -711,6 +805,7 @@
       state.collapsedCollections.delete(collection.id);
       if (collection.id === 'archived-issues') void loadArchive();
     }
+    view.write('flow-collapsed-collections', [...state.collapsedCollections]);
   });
 
   function issueLabel(issue) {
@@ -726,7 +821,7 @@
   function updateFolderMarkup(element, html) {
     if (folderMarkup.get(element) === html) return;
     const field = element.contains(document.activeElement) ? document.activeElement : null;
-    element.innerHTML = html;
+    view.render(element, html, 'folder:' + state.folder + ':' + element.id);
     folderMarkup.set(element, html);
     if (field?.id) $(field.id)?.focus({ preventScroll: true });
   }
@@ -1208,11 +1303,21 @@
     );
   }
 
+  const branchRepairUI = window.createBranchRepairUI({
+    button: $('fix-branch'),
+    action,
+    isBusy: () => state.pending,
+  });
+
   function renderEnvironment() {
+    branchRepairUI.update(state.view);
     const environment = state.view?.environment;
     $('environment').hidden = !environment;
     if (!environment) return;
     renderWorktreeHint(environment.worktreeExists);
+    const mergeMenu = $('merge-state-menu');
+    mergeMenu.hidden = !environment.merge;
+    mergeMenu.title = environment.merge?.conflicts.join(', ') || 'A local merge is awaiting completion.';
     const chips = [];
     if (environment.branch)
       chips.push(`<span class="environment-chip" title="Current issue branch">⑂ ${escape(environment.branch)}</span>`);
@@ -1342,7 +1447,7 @@
     $('save-destination').hidden = !branches;
     if (!branches) return;
     $('destination-branch').replaceChildren(
-      new Option(state.view.flow.resolvedBranch ? 'Use issue target setting' : 'Follow starting branch', ''),
+      new Option(state.view.destination.follows ? 'Follow starting branch' : 'Use issue target setting', ''),
       ...(unavailable && !destination.follows
         ? [new Option(destination.branch + ' (unavailable)', destination.branch)]
         : []),
@@ -1440,11 +1545,74 @@
       status: `<span class="block-topline"><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(words(block.kind))}<span class="block-status${isRunning(block) && !attempt?.inputRequestedAt ? ' running' : ''}">${timing || escape(statusText(currentStatus, attempt))}</span></span>`,
       title: `<span class="block-label">${escape(block.label || words(block.kind))}</span>`,
       description: `<span class="block-description">${escape(description)}</span>`,
-      footer: `<span class="block-bottomline"><span>${escape(block.effectiveSkill || block.skill || (block.suggested ? 'Suggested next step' : 'Choose a skill'))}</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
+      footer: `<span class="block-bottomline"><span data-skill-picker="${escape(block.id)}" title="Choose this block’s skill">${escape(block.effectiveSkill || block.skill || 'Choose a skill')} ▾</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
     };
     return (
       '<span class="block-port top"></span>' + Object.values(parts).join('') + '<span class="block-port bottom"></span>'
     );
+  }
+
+  async function openBlockSkillPicker(blockId) {
+    const block = state.view?.flow.blocks.find((item) => item.id === blockId);
+    if (!block || block.readOnly || isRunning(block)) return;
+    const definition = state.index.catalog.find((item) => item.id === (block.definition ?? block.kind));
+    const issueId = state.issueId;
+    const dialog = document.createElement('dialog');
+    dialog.innerHTML =
+      '<h2>Block skill</h2><label class="field">Skill<select aria-label="Block skill"></select></label><p>Available choices and defaults come from this block type. Use Add skill… to edit this block’s user Markdown skill list.</p><form method="dialog"><button>Close</button></form>';
+    document.body.append(dialog);
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    const picker = window.createSkillSelect(dialog.querySelector('select'), {
+      onAdd: async () => {
+        if (state.issueId !== issueId) return dialog.close();
+        await action('open-block-extension', { blockId });
+        dialog.close();
+      },
+      onChange: async (skill) => {
+        if (state.issueId !== issueId) return dialog.close();
+        if (await action('update', { blockId, changes: { skill: skill === 'none' ? null : skill } })) dialog.close();
+      },
+      onSetup: async (names) => {
+        try {
+          const missing = names.filter((name) => !available.skills.some((skill) => skill.name === name));
+          const result = await post('project-discuss-action', { action: 'create', requestId: crypto.randomUUID() });
+          await post('project-discuss-action', {
+            action: 'send',
+            conversationId: result.selected.id,
+            clientId: crypto.randomUUID(),
+            text:
+              'Install these missing block skills for this project: ' +
+              missing.join(', ') +
+              '. Declared skill sources: ' +
+              JSON.stringify(definition?.skillSources || {}) +
+              '. Read user/skills/requirements.json for additional sources. Preserve existing custom skills and verify discovery.',
+            settings: { clarificationSkill: 'none', skills: ['skill-installer'] },
+            attachments: [],
+          });
+          toast('Skill installation requested in Project Discuss.');
+          dialog.close();
+        } catch (error) {
+          showError(error.message);
+        }
+      },
+    });
+    picker.update(
+      [
+        ...(definition?.skills || []).map((name) => ({ kind: 'skill', name, label: name, skill: name })),
+        { kind: 'value', name: 'none', label: 'No skill' },
+      ],
+      block.effectiveSkill || block.skill || 'none'
+    );
+    dialog.querySelector('select').disabled = true;
+    dialog.showModal();
+    let available;
+    try {
+      available = await json('/api/project-discuss-skills');
+      picker.discovered(available.skills);
+      dialog.querySelector('select').disabled = false;
+    } catch (error) {
+      showError(error.message);
+    }
   }
 
   function blockCard(block) {
@@ -1491,8 +1659,11 @@
       'closed',
       state.view.issue.location === 'closed' || state.view.issue.state === 'closed'
     );
-    $('graph').innerHTML =
-      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map((row) => `<div class="graph-row">${row.map(blockCard).join('')}</div>`).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`;
+    view.render(
+      $('graph'),
+      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map((row) => `<div class="graph-row">${row.map(blockCard).join('')}</div>`).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
+      'flow-graph:' + state.issueId
+    );
     $('graph').dataset.issue = state.issueId;
     requestAnimationFrame(() => {
       drawConnections();
@@ -1773,8 +1944,20 @@
     const definition = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
     const open = state.view.issue.status !== 'closed';
     const disabled = open ? '' : ' disabled';
-    const settings = `<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
-    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder" required>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
+    const regression =
+      flow.routeType === 'investigation'
+        ? ''
+        : `<label><input type="checkbox" id="full-regression-setting"${values.fullRegression === true ? ' checked' : ''}${disabled}> Run full regression suite</label>`;
+    const settings = `${regression}<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder" required>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
+  }
+
+  function requestMergeBranch() {
+    const { branch, follows, locked, pr } = state.view.destination || {};
+    const check = destinationChecks.get(state.issueId);
+    const unavailable = branch && check?.branches && !check.branches.includes(branch);
+    const display = branch ? `⑂ ${escape(branch)}` : 'Choose merge branch';
+    return `<section class="detail-section"><div class="section-label">Merge branch</div><div class="request-merge-branch">${locked ? `<span>${display}</span>` : `<button type="button" class="small-button" data-destination-open data-destination-label="Merge branch" aria-label="Choose merge branch">${display}</button>`}<small>${locked ? 'Locked to the pull request' : follows ? destinationFollowLabel() : ''} ${prLink(pr)}</small>${!locked && unavailable ? '<small>Branch unavailable</small>' : ''}${!locked && check?.branchesUnavailable ? '<small>Couldn’t check branches</small>' : ''}</div></section>`;
   }
 
   function skillOptions(block, selected) {
@@ -1817,7 +2000,7 @@
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
+    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
   }
 
   function comments(block) {
@@ -1862,9 +2045,9 @@
     if (prose && !entry) prose.remove();
     else if (prose && entry && prose.innerHTML !== entry.inspectorHtml) {
       prose.dataset.uiSource = entry.id;
-      preserveDisclosures(prose, () => {
-        prose.innerHTML = entry.inspectorHtml;
-      });
+      const scope = JSON.stringify([state.issueId, block.id, 'content']);
+      view.track(prose, scope);
+      view.render(prose, entry.inspectorHtml, scope);
     } else if (state.tab === 'details' && block && !block.readOnly && !prose && entry) {
       renderInspector();
     }
@@ -1959,41 +2142,6 @@
     );
   }
 
-  function preserveDisclosures(container, replace) {
-    const key = (element) =>
-      element.dataset.preserve ?? element.dataset.artifactRun ?? element.querySelector('summary')?.textContent.trim();
-    const saved = new Map([...container.querySelectorAll('details')].map((element) => [key(element), element.open]));
-    replace();
-    for (const element of container.querySelectorAll('details')) {
-      const open = saved.get(key(element));
-      if (open !== undefined) element.open = open;
-    }
-  }
-
-  function preserveEditor(renderBody) {
-    const body = $('inspector-body');
-    const current = document.activeElement;
-    const focused = body.contains(current) && current instanceof HTMLElement;
-    const key = focused ? current.dataset.field || current.id || current.dataset.edit : null;
-    const selection =
-      focused && typeof current.selectionStart === 'number' ? [current.selectionStart, current.selectionEnd] : null;
-    const scroll = body.scrollTop;
-    const outputScroll = body.querySelector('.attempt-output')?.scrollTop;
-    preserveDisclosures(body, renderBody);
-    if (key) {
-      const replacement = [...body.querySelectorAll('[data-field], [id], [data-edit]')].find(
-        (element) => (element.dataset.field || element.id || element.dataset.edit) === key
-      );
-      if (replacement) {
-        replacement.focus({ preventScroll: true });
-        if (selection && replacement.setSelectionRange) replacement.setSelectionRange(...selection);
-      }
-    }
-    body.scrollTop = scroll;
-    if (outputScroll != null && body.querySelector('.attempt-output'))
-      body.querySelector('.attempt-output').scrollTop = outputScroll;
-  }
-
   function renderBlockRunControl(block) {
     const runButton = $('run-block');
     const running = isRunning(block);
@@ -2005,6 +2153,7 @@
     runButton.hidden =
       !block ||
       block.readOnly ||
+      Boolean(state.view.issue.readOnly && !running) ||
       Boolean(state.view.grouping?.master) ||
       Boolean(state.view.flow.request) ||
       state.view.issue.state === 'needs-approval' ||
@@ -2027,6 +2176,7 @@
 
   function blockDeletionReason(block) {
     if (!block) return 'Select a block.';
+    if (state.view?.issue?.readOnly) return 'This merged issue is read-only.';
     if (block.kind === 'request') return 'Request is required for the issue flow.';
     if (block.readOnly) return 'Manage this operation from its original controls.';
     const closing = state.view?.flow.closing;
@@ -2067,24 +2217,20 @@
           : block
             ? blockDetails(block)
             : '<p class="inline-empty">Add a block to begin this issue.</p>';
-    if (inspectorRender?.scope === scope) {
-      if (inspectorRender.html === html) return;
-      preserveEditor(() => {
-        body.innerHTML = html;
-      });
-    } else {
-      body.innerHTML = html;
-      body.scrollTop = 0;
-    }
+    if (inspectorRender?.scope === scope && inspectorRender.html === html) return;
+    view.render(body, html, scope);
+    view.write('flow-selection:' + state.issueId, { blockId: state.blockId, tab: state.tab });
     inspectorRender = { scope, html };
   }
 
   function renderPlayback(blocks) {
     const playback = state.view?.autoplay;
     const playing = playback?.mode === 'playing' || playback?.mode === 'waiting';
+    const mode = playbackAction(blocks);
     const waiting = blocks.find((block) => playback?.mode === 'waiting' && playback.blockId === block.id);
-    $('issue-playback').textContent = playing ? 'Ⅱ Pause' : '▷ Play';
-    $('issue-playback').setAttribute('aria-label', playing ? 'Pause issue' : 'Play issue');
+    const labels = { start: 'Start', resume: 'Resume', pause: 'Pause', close: 'Close', archive: 'Archive' };
+    $('issue-playback').textContent = labels[mode] || 'Start';
+    $('issue-playback').setAttribute('aria-label', labels[mode] ? labels[mode] + ' issue' : 'Start issue');
     const waitingButton = $('waiting-block');
     waitingButton.hidden = !waiting;
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
@@ -2095,7 +2241,7 @@
       : waiting
         ? 'Waiting for confirmation'
         : playing
-          ? 'Playing'
+          ? 'Running'
           : 'Paused';
     const result = state.view?.flow?.closing?.error || input?.message || playback?.reason || '';
     $('issue-results').hidden = !state.view?.issue || !result;
@@ -2126,6 +2272,7 @@
     issueNumber.hidden = issue?.issueNumber == null;
     issueNumber.textContent = issueNumber.hidden ? '' : `#${issue.issueNumber}`;
     $('issue-title').textContent = issue?.title || '';
+    renderMergedIssueNotice(issue);
     if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
     renderFlowPicker();
     renderIssueSettings();
@@ -2161,7 +2308,15 @@
     renderInvestigationPage();
   }
 
+  function renderMergedIssueNotice(issue) {
+    $('merged-issue-notice').hidden = !issue?.readOnly;
+    $('merged-issue-notice').textContent = issue?.readOnly
+      ? 'Merged. This issue is read-only. Close it when ready.'
+      : '';
+  }
+
   function renderInvestigationPage() {
+    if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') return;
     const investigation = state.view?.flow?.routeType === 'investigation';
     investigationUI.show(investigation ? state.issueId : null);
     $('app').dataset.investigation = investigation ? 'open' : 'closed';
@@ -2287,6 +2442,7 @@
   }
 
   function openCapture(folder) {
+    state.captureNote = null;
     const selected =
       typeof folder === 'string'
         ? folder
@@ -2311,7 +2467,7 @@
     if (!state.view) return;
     $('block-palette').innerHTML =
       (state.index.catalog || [])
-        .filter((kind) => !['request', 'retro', 'cleanup'].includes(kind.kind))
+        .filter((kind) => !['request', 'cleanup', 'verify'].includes(kind.kind))
         .map((kind) => {
           const style = blockStyle(kind.id);
           return `<button class="palette-item" style="--block-color:${style.color}" data-add-kind="${escape(kind.id)}"${state.pending ? ' disabled' : ''}><strong><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(kind.label)}</strong><small>${escape(kind.description || style.description)}</small></button>`;
@@ -2345,6 +2501,7 @@
     const result = await action('request', { wording });
     if (!result) return;
     state.drafts.delete(key);
+    persistDrafts();
     renderInspector();
   }
 
@@ -2392,6 +2549,7 @@
     const comment = state.drafts.get(key)?.comment;
     state.drafts.delete(key);
     if (comment) state.drafts.set(key, { comment });
+    persistDrafts();
     toast('Block settings saved.');
     await load(true);
   }
@@ -2544,7 +2702,13 @@
   async function deleteWorktree() {
     const issueId = state.issueId;
     const expected = await action('delete-worktree');
-    if (!expected || state.issueId !== issueId || !confirm(worktreeDeletionPrompt(expected.path))) return;
+    if (!expected || state.issueId !== issueId) return;
+    if (
+      !confirm(
+        `Delete this worktree and discard its uncommitted changes?\n\n${expected.path}\n\nThe issue branch will be kept.`
+      )
+    )
+      return;
     if (await action('delete-worktree', { expected })) toast('Worktree deleted.');
   }
 
@@ -2582,6 +2746,7 @@
     const saved = state.drafts.get(key) || {};
     delete saved.comment;
     state.drafts.set(key, saved);
+    persistDrafts();
     toast('Comment saved.');
     await load(true);
   }
@@ -2791,6 +2956,7 @@
     const collapsedFolders = sidebarCollapsedFolders();
     const expanded = collapsedFolders.delete(folder);
     if (!expanded) collapsedFolders.add(folder);
+    if (!state.search) view.write('flow-collapsed-folders', [...collapsedFolders]);
     button.setAttribute('aria-expanded', String(expanded));
     button.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${folder}`);
     button.closest('.issue-folder').querySelector('.folder-items').hidden = !expanded;
@@ -2821,9 +2987,12 @@
   );
 
   document.addEventListener('click', (event) => {
+    const skillPicker = event.target.closest('[data-skill-picker]');
+    if (skillPicker) return void openBlockSkillPicker(skillPicker.dataset.skillPicker);
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.hasAttribute('data-destination-open')) {
+      $('destination-heading').textContent = button.dataset.destinationLabel || 'Destination branch';
       $('destination-message').textContent = 'Checking branches…';
       for (const id of ['retry-branches', 'destination-choices', 'save-destination']) $(id).hidden = true;
       $('destination-dialog').showModal();
@@ -2834,12 +3003,12 @@
     }
     if (button.dataset.cleanupRetry) return void action('retry-closure', { resourceId: button.dataset.cleanupRetry });
     if (button.dataset.createFolderIssue) return openCapture(button.dataset.createFolderIssue);
+    if (button.hasAttribute('data-open-project-issues')) return projectHome.openIssuesTab();
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
     if (button.dataset.block) {
       state.blockId = button.dataset.block;
       if ($('graph').contains(button)) state.deleteBlockId = state.blockId;
       state.graphScrollIntent = { nodeId: state.blockId, mode: 'reveal' };
-      $('inspector-body').scrollTop = 0;
       renderGraph();
       renderInspector();
       setBusy(state.pending);
@@ -2848,7 +3017,6 @@
     }
     if (button.dataset.tab) {
       state.tab = button.dataset.tab;
-      $('inspector-body').scrollTop = 0;
       renderInspector();
       void checkOpenBlock(true);
       return;
@@ -2920,6 +3088,14 @@
     }
   }
 
+  $('merge-state-menu').addEventListener('change', async (event) => {
+    const operation = event.target.value;
+    event.target.value = '';
+    if (operation === 'abort' && (await action('abort-merge', { merge: state.view.environment.merge }))) {
+      toast('Merge aborted. Saved issue commits are preserved.');
+    }
+  });
+
   $('target-update-menu').addEventListener('change', async (event) => {
     const menu = event.target;
     const operation = menu.value;
@@ -2930,7 +3106,7 @@
 
   document.addEventListener('change', async (event) => {
     const field = event.target;
-    if (['retro-setting', 'auto-close-setting'].includes(field.id)) {
+    if (['retro-setting', 'auto-close-setting', 'full-regression-setting'].includes(field.id)) {
       if (!(await action(field.id, { enabled: field.checked }))) field.checked = !field.checked;
       return;
     }
@@ -2991,6 +3167,7 @@
         const saved = state.drafts.get(key) || {};
         delete saved.folder;
         state.drafts.set(key, saved);
+        persistDrafts();
         return load(true);
       });
     }
@@ -3068,6 +3245,12 @@
   });
 
   window.openFlowCapture = openCapture;
+  window.openFlowCaptureFromNote = (note) => {
+    openCapture();
+    state.captureNote = note;
+    state.captureId = null;
+    $('capture-description').value = note.text;
+  };
   $('new-issue').addEventListener('click', openCapture);
   $('rename-issue').addEventListener('click', () => {
     const form = $('rename-issue-form');
@@ -3164,6 +3347,21 @@
     }
   }
 
+  async function archiveIssueWithUiState(issueId) {
+    if (!issueId || state.pending) return;
+    state.pending = true;
+    setBusy(true);
+    try {
+      await archiveIssue(issueId);
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      state.pending = false;
+      setBusy(false);
+      void load(true);
+    }
+  }
+
   async function reopenIssue(issueId) {
     if (!confirm('Reopen this issue and return it to investigation?')) return;
     const context = await json('/api/issue-closure?kind=reopen&issue=' + encodeURIComponent(issueId));
@@ -3189,10 +3387,10 @@
         ],
       }));
     }
+    if (operation === 'archive') return void archiveIssueWithUiState(issueId);
     state.pending = true;
     setBusy(true);
     try {
-      if (operation === 'archive') await archiveIssue(issueId);
       if (operation === 'reveal') await post('issue-report-reveal', { issueId });
       if (operation === 'reopen') await reopenIssue(issueId);
     } catch (error) {
@@ -3210,6 +3408,7 @@
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
       flowRevision: flow.revision,
+      offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
     }));
   }
   $('close-with-reason').addEventListener('click', openClosure);
@@ -3280,13 +3479,17 @@
     }
   });
   $('issue-playback').addEventListener('click', () => {
-    if (state.view?.autoplay?.mode !== 'paused') return void action('pause');
+    const mode = playbackAction(state.view?.flow?.blocks || []);
+    if (mode === 'pause') return void action('pause');
+    if (mode === 'close') return openClosure();
+    if (mode === 'archive') return void archiveIssueWithUiState(state.view.issue.id);
+    if (!['start', 'resume'].includes(mode)) return;
     const hasDraft = [...state.drafts].some(
       ([key, values]) =>
         key.startsWith(state.issueId + '/') &&
         Object.keys(values).some((field) => !['comment', 'newEdit'].includes(field))
     );
-    if (hasDraft) return showError('Save your block settings before playing. Your drafts are still here.');
+    if (hasDraft) return showError('Save your block settings before starting or resuming. Your drafts are still here.');
     void action('play');
   });
   document.addEventListener('factory-actions-paused', ({ detail }) => {
@@ -3351,6 +3554,16 @@
     $('capture-dialog').close();
     toast('Issue created. Its blocks are ready for you to choose.');
     const id = result.issue?.id || result.issueId;
+    if (id && state.captureNote) {
+      const note = state.captureNote;
+      state.captureNote = null;
+      try {
+        await window.localNotesUI.issueCreated(note, id);
+      } catch (error) {
+        toast('Issue created. Open it from Local notes. Discussion could not be prepared: ' + error.message);
+      }
+      return;
+    }
     if (id) selectIssue(id);
     else await load(true);
   });

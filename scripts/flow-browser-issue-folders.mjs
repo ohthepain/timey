@@ -73,10 +73,11 @@ export async function flowIssueFoldersBrowserChecks(page, issueId, folder) {
     assert.equal(await group(folder).locator('.folder-count').textContent(), '0');
     assert.equal(await group(target).locator('.folder-count').textContent(), '1');
 
-    await sidebar.locator(`[data-folder="${folder}"]`).click();
-    await page.getByRole('heading', { name: folder, exact: true }).waitFor();
+    await page.goto(new URL('/?issue=' + issueId, page.url()).href);
+    await member().waitFor();
     await member().dragTo(group(folder).locator('[data-issue-folder-drop]'));
-    await group(folder).locator(`[data-issue="${issueId}"]`).waitFor();
+    await group(folder).locator(`[data-issue="${issueId}"]`).waitFor({ timeout: 15000 });
+    await group(folder).locator(`button[data-folder="${folder}"]`).click();
     assert.equal(new URL(page.url()).searchParams.get('folder'), folder);
     await page.getByRole('list', { name: 'Issues in this folder', exact: true }).getByRole('link').waitFor();
 

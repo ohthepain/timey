@@ -351,6 +351,12 @@ export function factory(project) {
         instruction: 'Known claims restored; no chats were launched.',
       };
     },
+    issueRecords(locations) {
+      return {
+        reports: locations.flatMap((location) => reports(location)),
+        actions: existsSync(ledger) ? readLedger().actions : [],
+      };
+    },
     inspect({ location = 'open', issueId } = {}) {
       const inspection = {
         project: root,

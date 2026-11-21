@@ -1,3 +1,5 @@
+import { issueTypes } from './flow-definitions.mjs';
+import { mergedDelivery } from './merged-issue.mjs';
 import {
   deliveryTarget,
   latestCurrentAttempt,
@@ -10,7 +12,7 @@ import { join } from 'node:path';
 import { digest, git, requireThat, writeJson } from './common.mjs';
 import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
-import { flowVerificationInput } from './flow-verification.mjs';
+import { flowMergeChecks, flowVerificationInput } from './flow-verification.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
 
@@ -109,7 +111,10 @@ export function flowVerificationHead(block) {
 export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const candidate = committedCandidate(workspace);
   const base = options.verificationBase;
-  const input = base && (options.verificationInput || flowVerificationInput)(ctx, workspace.checkout, base);
+  const mergeChecks = base && flowMergeChecks(ctx);
+  const getInput = options.verificationInput || flowVerificationInput;
+  const inputs = base ? [getInput(ctx, workspace.checkout, base)] : [];
+  if (mergeChecks?.scope === 'default') inputs.push(getInput(ctx, workspace.checkout, base, 'full'));
   const previous = ctx.block.attempts?.filter((attempt) => attempt.id !== ctx.attempt?.id).at(-1);
   const checks = [
     options.verification,
@@ -122,11 +127,11 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
     (checked) =>
       ((!checked?.uncommitted && checked?.head === candidate.head) ||
         (checked?.uncommitted && checked?.tree === candidate.tree)) &&
-      (!base || (input && checked.base === base && checked.input === input))
+      (!base || (checked?.input && checked.base === base && inputs.includes(checked.input)))
   );
   requireThat(
     current.some((checked) => checked.proof?.length >= 2),
-    'Run an explicit Verify block for this exact issue candidate. Required independent verification and step evidence are missing.'
+    'Required independent verification and step evidence is missing for this exact issue candidate.'
   );
   let failure;
   for (const checked of current) {
@@ -136,7 +141,7 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
       return {
         ...candidate,
         verification: checked,
-        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, options),
+        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, { ...options, mergeChecks }),
       };
     } catch (error) {
       failure ??= error;
@@ -161,12 +166,12 @@ function verifyEvidence({ tree, base }, checked, options) {
   }
   for (const proof of checked.proof) {
     const bytes = readFileSync(proof.path);
-    requireThat(
-      digest(bytes) === proof.sha256,
-      'The retained verification evidence changed. Run an explicit Verify block again.'
-    );
+    requireThat(digest(bytes) === proof.sha256, 'The retained verification evidence changed. Run verification again.');
     const summary = JSON.parse(bytes);
-    (options.validateSummary || validateSummary)(summary, base, tree, { auditPolicy: 'required' });
+    (options.validateSummary || validateSummary)(summary, base, tree, {
+      auditPolicy: 'required',
+      mergeChecks: options.mergeChecks,
+    });
     checkpoints.add(summary.checkpoint);
     evidence.push(proof);
     for (const check of summary.checks || []) {
@@ -196,7 +201,7 @@ export async function ensureFlowVerification(service, ctx, workspace, folder, op
     if (!options.verifyCandidate) throw error;
   }
   service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'verify', workspace.base);
-  ctx.onProgress('Running independent Verify checks on the issue commit.\n', true);
+  ctx.onProgress('Running independent verification on the issue commit.\n', true);
   const base = options.verificationBase;
   const { result, evidence } = await options.verifyCandidate(ctx, base ? { ...workspace, base } : workspace, folder);
   ctx.signal.throwIfAborted();
@@ -473,15 +478,30 @@ function deliveryWorkProof(ctx, candidate) {
   };
 }
 
+function closureCandidate(ctx, workspace, options) {
+  const merged = mergedDelivery(ctx.flow);
+  if (!merged?.verification) return verifiedFlowCandidate(ctx, workspace, options);
+  const checked = merged.verification;
+  const tree = git(workspace.checkout, 'rev-parse', `${merged.head}^{tree}`);
+  const base = checked.destinationBase || workspace.base;
+  requireThat(
+    checked.uncommitted || checked.head === merged.head,
+    'The retained verification does not match the merged issue candidate.'
+  );
+  git(workspace.checkout, 'merge-base', '--is-ancestor', base, merged.head);
+  return { head: merged.head, tree, base, evidence: verifyEvidence({ tree, base }, checked, options) };
+}
+
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
-  const type = ctx.details ? ctx.details.type : requestData(ctx.flow).fields?.type;
-  requireThat(type, 'Missing issue type. Refresh Request before closing.');
+  const type = ctx.details?.type ?? requestData(ctx.flow).fields?.type ?? ctx.flow.routeType;
+  requireThat(issueTypes.includes(type), 'Missing issue type. Set the issue type in Request before closing.');
   if (type === 'investigation') return investigationClosureArtifact(ctx, workspace);
-  const candidate = verifiedFlowCandidate(ctx, workspace, options);
+  const candidate = closureCandidate(ctx, workspace, options);
   const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block);
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
-  const pr = await provider.findByBranch(workspace.branch, provider.config.target);
+  const merged = mergedDelivery(ctx.flow);
+  const pr = merged ? { number: merged.pr } : await provider.findByBranch(workspace.branch, provider.config.target);
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
   requireThat(
@@ -491,12 +511,13 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
       delivered.target === deliveryTarget(ctx.flow).branch &&
       delivered.mergedAt &&
       delivered.mergeCommit &&
+      (!merged?.revision || delivered.mergeCommit === merged.revision) &&
       delivered.targetRevision,
     'The merged PR does not match the verified issue candidate and target. Reconcile its delivery before accepting.'
   );
   ctx.signal.throwIfAborted();
   requireThat(
-    verifiedFlowCandidate(ctx, workspace, options).head === candidate.head,
+    closureCandidate(ctx, workspace, options).head === candidate.head,
     'The issue candidate changed while checking its merged PR. Review the current result before accepting.'
   );
   const path = join(folder, 'merged-delivery.json');

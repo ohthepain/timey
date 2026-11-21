@@ -3,12 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { cleanEnvironment, readJson, requireThat, writeJson } from './common.mjs';
 import { ensureIssueNumbers } from './issue-numbers.mjs';
 import { parse } from 'yaml';
-import { z } from 'zod';
 import { investigationReport } from './investigation-records.mjs';
+import { queueClaimPath, readQueueClaim } from './shared-issue-paths.mjs';
+import { createSharedIssueGit, pushSharedIssueCommit } from './shared-issue-git.mjs';
 
 const numbersPath = '.issues/issue-numbers.json';
 const issueIdPattern = /^\d{8}T\d{6}(?:\d{3})?Z?-[a-f0-9]{4,32}$/;
@@ -140,6 +140,7 @@ export function createSharedIssuePublication({
     'Configure a GitHub repository.'
   );
   const targetRef = `refs/heads/${target}`;
+  const queueGit = createSharedIssueGit({ root, remote, target, transport });
   const snapshotRef = 'refs/worktree/timey/shared-issue-publication-target';
   assertPublicationTarget(direct, separateBranch, target);
   const directory = join(root, '.issues/shared-publication');
@@ -224,10 +225,30 @@ export function createSharedIssuePublication({
     assertRemote();
     git('fetch', '--no-tags', '--no-write-fetch-head', '--refmap=', remote, `+${targetRef}:${snapshotRef}`);
     const head = git('rev-parse', '--verify', snapshotRef);
-    return { head, ...readReport(head, issueId), numbers: readPath(head, numbersPath) };
+    return {
+      head,
+      ...readReport(head, issueId),
+      numbers: readPath(head, numbersPath),
+      claim: readQueueClaim((args) => command('git', args), head, issueId),
+    };
   }
 
-  function prepare(issueId, candidate, live) {
+  function validateClaim(live, claim) {
+    if (claim) requireThat(live.claim?.oid === claim.oid, 'The shared issue claim changed before publication.');
+    else requireThat(!live.claim, 'Another run claims this issue. Acquire its claim before publishing.');
+  }
+  function checkpointChanges(issueId, candidate, live, numbers, releaseClaim) {
+    const changes = new Map();
+    if (live.location) changes.set(issuePath(issueId, live.location), null);
+    if (candidate.location) {
+      changes.set(issuePath(issueId, candidate.location), candidate.report);
+      changes.set(numbersPath, numbers);
+    }
+    if (releaseClaim) changes.set(queueClaimPath(issueId), null);
+    return [...changes];
+  }
+  function prepare(issueId, candidate, live, releaseClaim, claim = releaseClaim) {
+    validateClaim(live, claim);
     const temporary = mkdtempSync(join(tmpdir(), 'timey-queue-'));
     try {
       mkdirSync(join(temporary, '.issues'));
@@ -237,35 +258,15 @@ export function createSharedIssuePublication({
           ? numberFor(live.numbers, issueId)
           : ensureIssueNumbers(temporary, [issueId])[issueId];
       requireThat(Number.isSafeInteger(issueNumber), 'The archived report needs an existing display number.');
-      const index = { GIT_INDEX_FILE: join(temporary, 'index') };
-      const indexGit = (...args) => command('git', args, { env: index }).trim();
-      indexGit('read-tree', live.head);
-      updateIndex(indexGit, issueId, candidate, live, temporary);
-      const tree = indexGit('write-tree');
-      const changed = git('diff-tree', '--no-renames', '--no-commit-id', '--name-only', '-r', live.head, tree).split(
-        '\n'
+      const numbers = candidate.location === null ? null : readFileSync(join(temporary, numbersPath), 'utf8');
+      const commit = queueGit.commit(
+        live.head,
+        checkpointChanges(issueId, candidate, live, numbers, releaseClaim),
+        `Update issue report ${issueId}`
       );
-      requireThat(
-        changed.every((path) => checkpointPaths(issueId, live.location, candidate.location).includes(path)),
-        'Queue checkpoint includes unexpected files.'
-      );
-      const commit = git('commit-tree', tree, '-p', live.head, '-m', `Update issue report ${issueId}`);
       return { commit, issueNumber, location: candidate.location, baseLocation: live.location };
     } finally {
       rmSync(temporary, { recursive: true, force: true });
-    }
-  }
-
-  function updateIndex(indexGit, issueId, candidate, live, temporary) {
-    if (live.location && live.location !== candidate.location)
-      indexGit('update-index', '--force-remove', '--', issuePath(issueId, live.location));
-    if (candidate.location === null) return;
-    for (const [path, content] of [
-      [issuePath(issueId, candidate.location), candidate.report],
-      [numbersPath, readFileSync(join(temporary, numbersPath), 'utf8')],
-    ]) {
-      const blob = command('git', ['hash-object', '-w', '--stdin'], { input: content }).trim();
-      indexGit('update-index', '--add', '--cacheinfo', `100644,${blob},${path}`);
     }
   }
 
@@ -377,6 +378,7 @@ export function createSharedIssuePublication({
       ...record,
       status: 'landed',
       mergeCommit: record.commit,
+      atomicRelease: confirmedRelease(record),
       url: `https://github.com/${repository}/commit/${record.commit}`,
     };
   }
@@ -438,17 +440,36 @@ export function createSharedIssuePublication({
     });
   }
 
-  function publish({ issueId, base, report, reason, location = 'open', releaseClaim, batchHead }, refresh = false) {
+  function defaultReportLocation(report) {
+    return report === null ? null : 'open';
+  }
+
+  function publicationBase(base) {
+    if (typeof base !== 'object' || base === null) return { report: base, location: defaultReportLocation(base) };
+    return { report: base.report, location: base.location ?? defaultReportLocation(base.report) };
+  }
+
+  function publish(
+    { issueId, base, report, reason, location = 'open', claim, releaseClaim, batchHead },
+    refresh = false
+  ) {
     const candidate = requestedReport(report, location);
-    const expected =
-      typeof base === 'object' && base !== null
-        ? { report: base.report, location: base.location ?? (base.report === null ? null : 'open') }
-        : { report: base, location: base === null ? null : 'open' };
-    requestedBase(issueId, candidate, expected, releaseClaim);
+    const expected = publicationBase(base);
+    requestedBase(issueId, expected, releaseClaim);
     validateBatchHead(batchHead, releaseClaim);
     return withPublicationLock(issueId, (path) => {
       const live = publicationTarget(issueId, batchHead, refresh);
-      let record = publicationRecord(issueId, candidate, expected, reason, live, path);
+      let record = publicationRecord({
+        issueId,
+        candidate,
+        expected,
+        reason,
+        live,
+        path,
+        releaseClaim,
+        claim,
+        refresh,
+      });
       if (record.status === 'landed') {
         if (record.direct) writeJson(path, record);
         return record;
@@ -470,37 +491,59 @@ export function createSharedIssuePublication({
   function publicationTarget(issueId, head, refresh) {
     if (refresh || head === undefined) return readTarget(issueId);
     assertRemote();
-    return { head, ...readReport(head, issueId), numbers: readPath(head, numbersPath) };
+    return {
+      head,
+      ...readReport(head, issueId),
+      numbers: readPath(head, numbersPath),
+      claim: readQueueClaim((args) => command('git', args), head, issueId),
+    };
   }
 
-  function publicationRecord(issueId, candidate, expected, reason, live, path) {
+  function replaceableProposal(previous, expected, live, claim, releaseClaim) {
+    return [previous.direct, expected.report === null, live.report === null, !claim, !releaseClaim].every(Boolean);
+  }
+  function reusePendingProposal({ previous, issueId, candidate, expected, live, claim, releaseClaim, refresh }) {
+    const sameBase = sameReport(readReport(git('rev-parse', `${previous.commit}^`), issueId), expected);
+    if (sameBase && sameReport(readReport(previous.commit, issueId), candidate)) return true;
+    requireThat(
+      [refresh, sameBase, replaceableProposal(previous, expected, live, claim, releaseClaim)].every(Boolean),
+      'A different report checkpoint is already pending.'
+    );
+    return false;
+  }
+  function publicationRecord({ issueId, candidate, expected, reason, live, path, releaseClaim, claim, refresh }) {
     const previous = readPending(issueId);
     const status = previous && inspectTarget(previous, live);
-    if (status?.status === 'pending') {
-      requireThat(
-        sameReport(readReport(previous.commit, issueId), candidate) &&
-          sameReport(readReport(git('rev-parse', `${previous.commit}^`), issueId), expected),
-        'A different report checkpoint is already pending.'
-      );
+    if (
+      status?.status === 'pending' &&
+      reusePendingProposal({ previous, issueId, candidate, expected, live, claim, releaseClaim, refresh })
+    )
       return previous;
-    }
     if (
       status &&
+      (!releaseClaim || previous.releaseClaim?.oid === releaseClaim.oid) &&
       sameReport(live, candidate) &&
       sameReport(readReport(status.mergeCommit || status.commit, issueId), candidate)
     )
       return status;
     requireThat(sameReport(live, expected), 'The shared report changed. Reconcile it before publishing.');
     const number = numberFor(live.numbers, issueId);
-    if (sameReport(live, candidate) && Number.isSafeInteger(number))
+    if (unchangedCheckpoint(live, candidate, releaseClaim, number))
       return { issueId, status: 'landed', issueNumber: number };
-    assertReportRemoval(
-      candidate,
-      live,
-      candidate.location === null && investigationReport(root, issueId, live.report || '')
-    );
-    const record = {
-      ...prepare(issueId, candidate, live),
+    assertReportRemoval(candidate, live, investigationReport(root, issueId, live.report || ''));
+    const record = newPublicationRecord({ issueId, candidate, live, reason, claim, releaseClaim });
+    writeJson(path, record);
+    return record;
+  }
+
+  function unchangedCheckpoint(live, candidate, releaseClaim, number) {
+    return !releaseClaim && sameReport(live, candidate) && Number.isSafeInteger(number);
+  }
+  function newPublicationRecord({ issueId, candidate, live, reason, claim, releaseClaim }) {
+    return {
+      ...prepare(issueId, candidate, live, releaseClaim, claim),
+      ...(claim && { claim }),
+      ...(releaseClaim && { releaseClaim }),
       issueId,
       reason,
       remote,
@@ -508,8 +551,6 @@ export function createSharedIssuePublication({
       repository,
       ...(direct ? { direct: true } : { branch: `queue-updates/${issueId}-${randomUUID()}` }),
     };
-    writeJson(path, record);
-    return record;
   }
 
   function publishDirect(record, candidate, expected, live, path, releaseClaim) {
@@ -521,7 +562,7 @@ export function createSharedIssuePublication({
       const next = readTarget(record.issueId);
       const landed = inspectTarget(record, next);
       if (landed.status === 'landed') {
-        const confirmed = { ...landed, atomicRelease: releaseReceipt(record, pushed.receipt) };
+        const confirmed = { ...landed, atomicRelease: confirmedRelease(record) };
         writeJson(path, confirmed);
         return confirmed;
       }
@@ -533,73 +574,54 @@ export function createSharedIssuePublication({
 
   function prepareDirectRetry(record, candidate, live, path) {
     if (git('rev-parse', `${record.commit}^`) === live.head) return record;
-    const updated = { ...record, ...prepare(record.issueId, candidate, live) };
+    const updated = { ...record, ...prepare(record.issueId, candidate, live, record.releaseClaim) };
     delete updated.atomicRelease;
     writeJson(path, updated);
     return updated;
   }
 
-  function requestedBase(issueId, candidate, expected, claim) {
+  function requestedBase(issueId, expected, claim) {
     requestedReport(expected.report, expected.location, 'base');
-    validateArchiveRelease(issueId, candidate, expected, claim);
+    validateCheckpointClaim(issueId, claim);
   }
 
-  function validateArchiveRelease(issueId, candidate, expected, claim) {
+  function validateCheckpointClaim(issueId, claim) {
     if (!claim) return;
-    const archive = [
-      direct,
-      candidate.location === null,
-      expected.location === 'closed' ||
-        (expected.location === 'open' && investigationReport(root, issueId, expected.report)),
-    ].every(Boolean);
-    requireThat(archive, 'Atomic claim release is only available for a direct archive.');
-    requireThat(claim.issueId === issueId && objectIdPattern.test(claim.oid), 'Invalid archive claim.');
+    requireThat(direct, 'Atomic claim release requires direct queue publication.');
+    requireThat(
+      claim.version === 2 && claim.issueId === issueId && objectIdPattern.test(claim.oid),
+      'Invalid queue claim.'
+    );
   }
 
-  function releaseReceipt(record, receipt) {
+  function confirmedRelease(record) {
     if (!record.releaseClaim) return undefined;
-    const result = z
-      .object({
-        commit: z.literal(record.commit),
-        releasedClaim: z.object({ issueId: z.literal(record.issueId), oid: z.literal(record.releaseClaim.oid) }),
-      })
-      .safeParse(receipt);
-    return result.success ? result.data : undefined;
+    const parent = git('rev-parse', `${record.commit}^`);
+    const execute = (args) => command('git', args);
+    requireThat(
+      readQueueClaim(execute, parent, record.issueId)?.oid === record.releaseClaim.oid &&
+        readQueueClaim(execute, record.commit, record.issueId) === null,
+      'The queue checkpoint did not release its exact owned claim.'
+    );
+    return { commit: record.commit, releasedClaim: { issueId: record.issueId, oid: record.releaseClaim.oid } };
   }
 
   function attemptDirectPush(record) {
     try {
-      const receipt = (pushDirect ?? pushWithApp)(record.commit, targetRef, record.releaseClaim, archiveParent(record));
+      const receipt = (pushDirect ?? pushWithApp)(
+        record.commit,
+        targetRef,
+        record.releaseClaim,
+        git('rev-parse', `${record.commit}^`)
+      );
       return { receipt, error: Error('Git did not confirm the direct queue push. Retry publication.') };
     } catch (error) {
       return { error };
     }
   }
 
-  function archiveParent(record) {
-    return record.releaseClaim ? git('rev-parse', `${record.commit}^`) : undefined;
-  }
-
-  function parsePushReceipt(output) {
-    return output.trim() ? JSON.parse(output) : undefined;
-  }
-
   function pushWithApp(commit, destination, releaseClaim, expectedHead) {
-    try {
-      const output = command(
-        process.execPath,
-        [fileURLToPath(new URL('./shared-issue-app-push.mjs', import.meta.url))],
-        {
-          input: JSON.stringify({ repository, targetRef: destination, commit, releaseClaim, expectedHead }),
-        }
-      );
-      return parsePushReceipt(output);
-    } catch (error) {
-      if (error.cause?.status === 2) throw Error('Could not authenticate as the Timey Software Factory GitHub App.');
-      throw Error(
-        'The Timey Software Factory GitHub App could not push to the queue branch. Check its GitHub ruleset.'
-      );
-    }
+    return pushSharedIssueCommit(root, { repository, targetRef: destination, commit, releaseClaim, expectedHead });
   }
 
   function pushCheckpoint(record, expected, path, refresh) {
@@ -622,7 +644,7 @@ export function createSharedIssuePublication({
         expectedCommit = existing;
         record = {
           ...record,
-          ...prepare(record.issueId, readReport(record.commit, record.issueId), live),
+          ...prepare(record.issueId, readReport(record.commit, record.issueId), live, undefined, record.claim),
           previousCommit: expectedCommit,
         };
         writeJson(path, record);

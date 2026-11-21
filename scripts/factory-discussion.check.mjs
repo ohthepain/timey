@@ -1,4 +1,5 @@
 import { moveStoredIssue } from './factory-ui/issue-report-storage.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { addPrompt, changePromptQueue } from './factory-ui/issue-prompt-queue.mjs';
 import { appendMessage, conversationMessages } from './factory-ui/conversation-store.mjs';
 import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
@@ -8,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { createDiscussions } from './factory-ui/discussion.mjs';
@@ -16,13 +17,14 @@ import { humanGuard } from './factory-ui/guard.mjs';
 import { digest } from './factory-ui/common.mjs';
 
 function fixture(t) {
-  const { root, git } = gitFixture(t, 'discussion-check-');
-  mkdirSync(join(root, '.issues'));
+  const { root, git } = factoryGitFixture(t, 'discussion-check-');
+  mkdirSync(join(root, '.issues'), { recursive: true });
   mkdirSync(join(root, '.agents/skills/issues/scripts'), { recursive: true });
   for (const name of ['human-input.mjs', 'human-input-version.json'])
     cpSync(resolve('.agents/skills/issues/scripts', name), join(root, '.agents/skills/issues/scripts', name));
   writeFileSync(join(root, '.gitignore'), '.issues/\n');
   writeFileSync(join(root, 'source.js'), 'export const x = 1;\n');
+  initializeFolderSettings(root);
   git('add', '.');
   git('commit', '-qm', 'fixture');
   writeFileSync(
@@ -196,9 +198,22 @@ test('temporary discussion lists enabled skills and invokes selected skills with
       ],
     };
   };
-  assert.deepEqual(await f.discussion.skills(f.input, f.owner), [
-    { name: 'sample', description: 'Sample skill', source: 'Personal', icon: '✦' },
-  ]);
+  const skills = await f.discussion.skills(f.input, f.owner);
+  assert.deepEqual(skills.map(({ name }) => name).sort(), ['archive', 'local-note', 'sample', 'skill-installer']);
+  assert.deepEqual(
+    skills.filter(({ source }) => source !== 'Factory'),
+    [
+      {
+        name: 'sample',
+        description: 'Sample skill',
+        source: 'Personal',
+        displayName: undefined,
+        allowImplicitInvocation: true,
+        icon: '✦',
+      },
+    ]
+  );
+  assert.ok(skills.some(({ name, source }) => name === 'local-note' && source === 'Factory'));
   await f.discussion.turn({ ...f.input, text: '', skills: ['sample'] }, f.owner);
   assert.deepEqual(f.skillCalls[0], [
     {
@@ -206,6 +221,8 @@ test('temporary discussion lists enabled skills and invokes selected skills with
       path: f.skillPath,
       description: 'Sample skill',
       source: 'Personal',
+      displayName: undefined,
+      allowImplicitInvocation: true,
       sha256: (await import('./factory-ui/common.mjs')).digest(readFileSync(f.skillPath)),
     },
   ]);
@@ -467,7 +484,8 @@ test('temporary panel survives redraw without storage, rejects scripted actions 
   t.after(() => dom.window.close());
   const calls = [];
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+    readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\nwindow.chatTest = discussionUI;'
   );
@@ -514,7 +532,8 @@ test('issue detail retro opens the temporary panel and displays unchecked recomm
   });
   t.after(() => dom.window.close());
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+    readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\nwindow.chatTest = discussionUI;'
   );
@@ -684,10 +703,8 @@ test('site review HTTP routes project opening receipts and record feedback witho
     snapshot.issues.find((issue) => issue.id === f.input.issueId).siteReview.checks[0].opened.token,
     receipt.token
   );
-  assert.equal(
-    (await post('decide', { ...request, token: receipt.token, status: 'failed', result: 'Fix spacing.' })).status,
-    200
-  );
+  const decision = await post('decide', { ...request, token: receipt.token, status: 'failed', result: 'Fix spacing.' });
+  assert.equal(decision.status, 200, await decision.text());
 });
 
 test('a completed prototype remains completed when Verify offers the implementation site', async (t) => {
@@ -901,7 +918,8 @@ test('stage button opens the temporary chat with a bound stage and preserves it 
   });
   t.after(() => dom.window.close());
   dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
+    readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\nwindow.chatTest = discussionUI;'
   );
