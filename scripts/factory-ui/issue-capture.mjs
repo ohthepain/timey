@@ -1,3 +1,4 @@
+import { readClarificationSkills } from './project-discuss.mjs';
 import { defaultIssueFolder, initializeFolderSettings, requireIssueFolder } from './issue-folder-settings.mjs';
 import { storedIssuePath } from './issue-report-storage.mjs';
 import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
@@ -21,6 +22,7 @@ const requestSchema = z
     folder: z.string().trim().min(1).max(4096).optional(),
     description: z.string().min(1).max(24000),
     grill: z.boolean().default(false),
+    grillSkill: z.string().min(1).max(128).optional(),
     go: z.boolean().default(false),
     strategy: z.enum(['full-stop', 'full-send']).default('full-stop'),
     model: z.string().optional(),
@@ -74,6 +76,7 @@ export function createCaptures(service, options = {}) {
     input.folder ||= defaultIssueFolder(service.root).name;
     requireIssueFolder(service.root, input.folder);
     validateModel(service.root, input.model);
+    validateGrillingSkill(service.root, input);
     const pending = tasks.get(input.requestId);
     if (pending) {
       requireThat(
@@ -198,7 +201,12 @@ function allocate(queue, input, assessment, basis, random) {
       autonomy: 'ask',
       folder_id: requireIssueFolder(queue.root, input.folder).id,
       category: proposal.category,
-      capture_intent: { grill: input.grill, go: input.go, strategy: input.strategy },
+      capture_intent: {
+        grill: input.grill,
+        go: input.go,
+        strategy: input.strategy,
+        ...(input.grillSkill ? { grillSkill: input.grillSkill } : {}),
+      },
       lifecycle_history: route.skipped.map((s) => ({
         ...s,
         outcome: 'skipped',
@@ -272,12 +280,28 @@ function captureHash(input) {
 }
 
 function captureIdentity(input) {
-  return JSON.stringify([input.description, input.folder, input.grill, input.go, input.strategy, input.model || null]);
+  return JSON.stringify([
+    input.description,
+    input.folder,
+    input.grill,
+    input.go,
+    input.strategy,
+    input.model || null,
+    ...(input.grillSkill ? [input.grillSkill] : []),
+  ]);
 }
 
 function validateModel(root, model) {
   requireThat(
     !model || readModelSettings(root).models.some((item) => item.id === model),
     'Choose one of the listed models.'
+  );
+}
+
+function validateGrillingSkill(root, input) {
+  if (!input.grill || !input.grillSkill) return;
+  requireThat(
+    readClarificationSkills(root).some((item) => item.kind === 'skill' && item.skill === input.grillSkill),
+    'Choose a configured grilling skill.'
   );
 }

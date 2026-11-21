@@ -131,6 +131,7 @@ function captureInput(context) {
     folder: context.dialog.querySelector('#capture-folder').value,
     requestId: context.state.requestId,
     grill: context.grilling.checked,
+    grillSkill: context.dialog.querySelector('#capture-grill-skill').value,
     go: context.go.checked,
     strategy: context.merge.checked ? 'full-send' : 'full-stop',
     model: context.model.value || undefined,
@@ -228,10 +229,31 @@ async function populateCaptureFolders(context) {
   }
 }
 
+async function captureGrillingChoices() {
+  const response = await fetch('/api/capture-grilling-skills', { cache: 'no-store' });
+  if (!response.ok) throw Error('Could not load grilling skills.');
+  return response.json();
+}
+
+async function populateCaptureGrillingSkills(context) {
+  const select = context.dialog.querySelector('#capture-grill-skill');
+  try {
+    const choices = await captureGrillingChoices();
+    const selected = select.dataset.draft || select.value;
+    select.replaceChildren(...choices.map((item) => new Option(item.label, item.skill)));
+    select.value = selected;
+    if (!select.value) select.selectedIndex = 0;
+    delete select.dataset.draft;
+  } catch (error) {
+    context.error.textContent = error.message;
+  }
+}
+
 function openCaptureDialog(context) {
   context.error.textContent = '';
   context.reading = { x: window.scrollX, y: window.scrollY };
   void populateCaptureFolders(context);
+  void populateCaptureGrillingSkills(context);
   context.dialog.showModal();
   context.field.focus();
 }
@@ -248,6 +270,8 @@ function bindCaptureUI(context, send, update, settings) {
 function clearCaptureDraft(context) {
   context.field.value = '';
   context.grilling.checked = false;
+  context.dialog.querySelector('#capture-grill-skill').value = 'grilling';
+  delete context.dialog.querySelector('#capture-grill-skill').dataset.draft;
   context.go.checked = false;
   context.state.requestId = null;
   context.model.value = '';
@@ -299,6 +323,7 @@ const issueCaptureUI = (() => {
       <label class="capture-option capture-option--go"><span class="capture-option-copy"><strong>Go</strong><small>Start work on the issues.</small></span><svg class="capture-illustration" viewBox="0 0 88 64" aria-hidden="true"><rect x="33" y="8" width="22" height="45" rx="8" fill="#f4fff8" stroke="#34734e" stroke-width="3"/><path d="M39 53h10v6H39z" fill="#34734e"/><circle cx="44" cy="19" r="6" fill="#e56c63"/><circle cx="44" cy="32" r="6" fill="#f0bd55"/><circle cx="44" cy="45" r="6" fill="#42b86c"/><path d="m64 30 5 5 10-12" fill="none" stroke="#28985a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><input id="capture-go" type="checkbox" aria-label="Go and start work"></label>
       <label class="capture-option capture-option--merge"><span class="capture-option-copy"><strong>Merge</strong><small id="capture-merge-hint">Full Stop · Leave a merge-ready PR for review.</small></span><svg class="capture-illustration" viewBox="0 0 88 64" aria-hidden="true"><path d="M44 4 72 31 44 59 16 31z" fill="#ffe58c" stroke="#3e64b7" stroke-width="3" stroke-linejoin="round"/><path d="M44 47V29c0-7 5-11 12-11h5m-17 11c0-7-5-11-12-11h-5" fill="none" stroke="#293b69" stroke-width="3.5" stroke-linecap="round"/><path d="m56 13 6 5-6 5m-24-10-6 5 6 5" fill="none" stroke="#293b69" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="44" cy="47" r="3" fill="#e9784f"/></svg><input id="capture-merge" type="checkbox" aria-label="Merge after required checks"></label>
     </div>
+    <label id="capture-grill-skill-field" for="capture-grill-skill" hidden>Grilling skill<select id="capture-grill-skill" aria-label="Grilling skill"><option value="grilling">Grilling</option></select></label>
     <p class="capture-note" id="capture-intent">Create issues only.</p>
     <p id="capture-error" role="alert"></p><p id="capture-status" role="status"></p></section>
     <footer class="capture-footer"><button id="capture-cancel" type="button">Cancel</button><button id="capture-save" type="submit" class="capture-primary">Create issues</button></footer></form>`;
@@ -334,12 +359,15 @@ const issueCaptureUI = (() => {
   const draft = readCaptureDraft();
   field.value = captureDraftText(draft.description);
   grilling.checked = draft.grill === true;
+  dialog.querySelector('#capture-grill-skill').dataset.draft = draft.grillSkill || 'grilling';
   go.checked = draft.go === true;
   state.requestId = captureDraftRequestId(draft.requestId);
   model.dataset.draft = captureDraftText(draft.model);
   dialog.querySelector('#capture-folder').dataset.draft = captureDraftText(draft.folder);
   merge.checked = captureDraftMerge(draft);
   function updateChoices() {
+    dialog.querySelector('#capture-grill-skill-field').hidden = !grilling.checked;
+    dialog.querySelector('#capture-grill-skill').disabled = state.saving || !grilling.checked;
     [grilling, go, merge].forEach((choice) => (choice.disabled = state.saving));
     dialog.querySelector('#capture-merge-hint').textContent = captureStrategyHint(merge.checked);
     dialog.querySelector('#capture-intent').textContent = captureIntentText(grilling.checked, go.checked);

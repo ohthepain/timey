@@ -91,6 +91,37 @@ test('capture preserves exact original text, existing reports, metadata, distinc
   assert.equal(existsSync(join(root, '.issues/factory-ui/lifecycle.json')), false);
 });
 
+test('capture retains the chosen grilling skill and sends it to the created issue', async (t) => {
+  const { root, service } = captureFixture(t);
+  const skillPath = join(root, '.agents/skills/grill-me/SKILL.md');
+  mkdirSync(join(root, '.agents/skills/grill-me'), { recursive: true });
+  writeFileSync(skillPath, 'Ask focused questions.\n');
+  service.codex = {
+    close: () => {},
+    ready: async () => {},
+    call: async () => ({ data: [{ skills: [{ enabled: true, name: 'grill-me', path: skillPath }] }] }),
+  };
+  const sent = [];
+  service.issueChats = {
+    send: async (input) => {
+      sent.push(input);
+      return {};
+    },
+    close() {},
+  };
+  service.captures = createCaptures(service, { assess: async (text) => ({ issues: [proposal(text)] }) });
+  const request = { ...input(), grill: true, grillSkill: 'grill-me' };
+  const result = await service.captures.save(request);
+  assert.equal(result.grilling[0].started, true);
+  assert.equal(report(root, result.issues[0].id).meta.capture_intent.grillSkill, 'grill-me');
+  assert.deepEqual(sent[0].skills, ['grill-me']);
+  await assert.rejects(service.captures.save({ ...request, grillSkill: 'grilling' }), /another description/);
+  await assert.rejects(
+    service.captures.save({ ...input(), grill: true, grillSkill: 'unknown' }),
+    /configured grilling skill/
+  );
+});
+
 test('capture saves independent Grill, Go and Merge intent before grilling without starting work', async (t) => {
   const { root, service } = captureFixture(t);
   mkdirSync(join(root, '.agents/skills/grilling'), { recursive: true });

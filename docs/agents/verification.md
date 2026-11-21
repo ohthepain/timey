@@ -578,3 +578,8 @@ GitHub Actions receives verification stdout/stderr as each child emits it. A
 summary and retained evidence logs remain available after the command exits.
 An already-running GitHub job keeps the verifier from its checked-out revision;
 new streaming behavior requires a run containing the updated verifier.
+
+`node scripts/capture-grilling-browser.mjs` opens the actual Create issue dialog in
+a disposable browser fixture and checks skill selection in the submitted request,
+failed-save retry and retained draft. It saves a screenshot and request JSON under
+`.issues/evidence/`. Provider execution is covered separately from this UI fixture.
