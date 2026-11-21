@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
 import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
-export async function noChangesBrowserChecks({ page, service, project, output, root }) {
+async function finishClosure(flows, id) {
+  await Promise.allSettled([flows.active.get(id)?.task, flows.closureTasks.get(id)]);
+}
+
+export async function noChangesBrowserChecks({ page, service, project, output, root, poll }) {
   const id = '20261121-no-changes-fixture';
-  if (!existsSync(join(project, '.issues/triage-labels.md')))
-    copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
+  const lifecyclePath = join(project, '.issues/triage-labels.md');
+  const lifecycleCreated = !existsSync(lifecyclePath);
+  if (lifecycleCreated) copyFileSync(join(root, '.issues/triage-labels.md'), lifecyclePath);
   writeBrowserIssue(project, { id, title: 'No changes required', body: 'The reported behavior already works.' });
   const issue = service.flows.selected(id);
   const flow = service.flows.read(issue);
@@ -21,12 +26,25 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
   const publish = flow.blocks.find((block) => block.kind === 'publish');
   publish.after = [];
   service.flows.store.save(flow, flow.revision);
+  const gitConfigPath = join(project, '.git/config');
+  const gitConfig = readFileSync(gitConfigPath);
   if (!git(project, 'remote').split('\n').includes('origin'))
     git(project, 'remote', 'add', 'origin', 'git@github.com:test/fixture.git');
   git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');
   const provider = service.flows.deliveryOptions.provider;
   const previousBranches = provider.gh;
   provider.gh = async () => `dev\t${head}`;
+  const previousExecutor = service.flows.executor;
+  const executions = [];
+  service.flows.executor = {
+    async run({ issue, block }) {
+      assert.equal(issue.id, id);
+      assert.equal(block.kind, 'cleanup');
+      executions.push(block.kind);
+      return { summary: 'No-change fixture cleanup completed.' };
+    },
+    close() {},
+  };
   const screen = await page.context().newPage();
   try {
     await screen.goto('/?issue=' + id);
@@ -49,13 +67,26 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
     await screen.locator('#confirm-issue-closure:not(:disabled)').click();
     await screen.locator('#issue-closure-dialog').waitFor({ state: 'hidden' });
     await screen.locator('#close-with-reason').waitFor({ state: 'hidden' });
+    await poll(() => !service.flows.closureBusy(id), Boolean, 'No-change fixture cleanup did not finish.');
+    assert.deepEqual(executions, ['cleanup']);
+    assert.equal(
+      service.flows
+        .read(service.flows.selected(id))
+        .blocks.find((block) => block.kind === 'cleanup')
+        .attempts.at(-1).status,
+      'completed'
+    );
     assert.equal(service.flows.selected(id).closure.reason, 'cannot-reproduce');
     assert.equal(
       service.flows.read(service.flows.selected(id)).blocks.find((block) => block.id === publish.id).attempts.length,
       0
     );
   } finally {
+    await finishClosure(service.flows, id);
+    service.flows.executor = previousExecutor;
     provider.gh = previousBranches;
     await screen.close();
+    writeFileSync(gitConfigPath, gitConfig);
+    if (lifecycleCreated) rmSync(lifecyclePath);
   }
 }

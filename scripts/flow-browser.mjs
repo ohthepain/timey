@@ -483,7 +483,7 @@ try {
     errorRecoveryBrowserChecks({ page, service, project, output })
   );
   await check('Publication with no changes offers Cannot Reproduce closure', () =>
-    noChangesBrowserChecks({ page, service, project, output, root })
+    noChangesBrowserChecks({ page, service, project, output, root, poll })
   );
   await check('The whole sidebar scrolls over every section', async () => {
     const issuePaths = Array.from({ length: 24 }, (_, index) =>
@@ -736,6 +736,7 @@ try {
   });
   await check('Project settings explain missing configuration and initialize it only on request', async () => {
     const labels = join(project, '.issues/triage-labels.md');
+    rmSync(labels, { force: true });
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
     await page.getByText('Lifecycle configuration is missing.', { exact: true }).waitFor();
     await screenshot('project-settings-missing');
