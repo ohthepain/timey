@@ -2,6 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
+  const view = window.timeyView;
   const initialSelection = new URL(location.href).searchParams;
   const state = {
     index: { issues: [], folders: [], catalog: [] },
@@ -25,11 +26,11 @@
     tab: 'details',
     search: '',
     draggedIssueId: null,
-    collapsedFolders: new Set(),
-    collapsedCollections: new Set(['closed-issues', 'archived-issues']),
+    collapsedFolders: new Set(view.read('flow-collapsed-folders', [])),
+    collapsedCollections: new Set(view.read('flow-collapsed-collections', ['closed-issues', 'archived-issues'])),
     archivedIssues: null,
     collapsedSearchFolders: new Set(),
-    drafts: new Map(),
+    drafts: new Map(Object.entries(view.read('flow-drafts', {}))),
     repoFiles: new Map(),
     loading: false,
     pending: false,
@@ -286,8 +287,13 @@
     return state.drafts.get(draftKey()) || {};
   }
 
+  function persistDrafts() {
+    view.write('flow-drafts', Object.fromEntries(state.drafts));
+  }
+
   function setDraft(name, value) {
     state.drafts.set(draftKey(), { ...draft(), [name]: value });
+    persistDrafts();
     const note = $('draft-note');
     if (note) {
       note.textContent = 'Unsaved changes';
@@ -305,11 +311,11 @@
     const message = waiting ? 'Waiting for server…' : state.error || state.connectionError;
     if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
       $('request-embed-error').hidden = !message;
-      $('request-embed-error-message').textContent = message;
+      view.text($('request-embed-error-message'), message);
       return;
     }
     $('error-banner').hidden = !message;
-    $('error-message').textContent = message;
+    view.text($('error-message'), message);
     $('dismiss-error').hidden = waiting;
   }
 
@@ -377,7 +383,12 @@
               String(latest(a).endedAt || latest(a).startedAt || '')
             )
           );
+        const savedSelection = view.read('flow-selection:' + state.issueId, {});
+        const savedBlock = result.flow.blocks.find((block) => block.id === savedSelection.blockId);
+        if (savedBlock && ['details', 'conversation', 'artifacts'].includes(savedSelection.tab))
+          state.tab = savedSelection.tab;
         state.blockId =
+          savedBlock?.id ||
           result.flow.blocks.find((block) => isRunning(block))?.id ||
           attempted[0]?.id ||
           result.flow.blocks.find((block) => block.kind === 'request')?.id ||
@@ -707,18 +718,21 @@
       `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
     );
     const collection = (id, name, content) =>
-      `<details id="${id}" class="issue-folder" data-collection${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
+      `<details id="${id}" class="issue-folder" data-collection data-view-controlled-open${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
-    $('issue-list').innerHTML =
+    view.render(
+      $('issue-list'),
       `<div id="open-issues">${groups || empty}</div>` +
-      collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
-      collection(
-        'archived-issues',
-        'Archived',
-        state.archivedIssues
-          ? archive.map(row).join('') || empty
-          : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
-      );
+        collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
+        collection(
+          'archived-issues',
+          'Archived',
+          state.archivedIssues
+            ? archive.map(row).join('') || empty
+            : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
+        ),
+      'flow-sidebar:' + state.index.project
+    );
   }
 
   function canMoveSidebarIssue(id, folder) {
@@ -790,6 +804,7 @@
       state.collapsedCollections.delete(collection.id);
       if (collection.id === 'archived-issues') void loadArchive();
     }
+    view.write('flow-collapsed-collections', [...state.collapsedCollections]);
   });
 
   function issueLabel(issue) {
@@ -805,7 +820,7 @@
   function updateFolderMarkup(element, html) {
     if (folderMarkup.get(element) === html) return;
     const field = element.contains(document.activeElement) ? document.activeElement : null;
-    element.innerHTML = html;
+    view.render(element, html, 'folder:' + state.folder + ':' + element.id);
     folderMarkup.set(element, html);
     if (field?.id) $(field.id)?.focus({ preventScroll: true });
   }
@@ -1639,8 +1654,11 @@
       'closed',
       state.view.issue.location === 'closed' || state.view.issue.state === 'closed'
     );
-    $('graph').innerHTML =
-      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map((row) => `<div class="graph-row">${row.map(blockCard).join('')}</div>`).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`;
+    view.render(
+      $('graph'),
+      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map((row) => `<div class="graph-row">${row.map(blockCard).join('')}</div>`).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
+      'flow-graph:' + state.issueId
+    );
     $('graph').dataset.issue = state.issueId;
     requestAnimationFrame(() => {
       drawConnections();
@@ -1977,7 +1995,7 @@
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
+    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
   }
 
   function comments(block) {
@@ -2022,9 +2040,9 @@
     if (prose && !entry) prose.remove();
     else if (prose && entry && prose.innerHTML !== entry.inspectorHtml) {
       prose.dataset.uiSource = entry.id;
-      preserveDisclosures(prose, () => {
-        prose.innerHTML = entry.inspectorHtml;
-      });
+      const scope = JSON.stringify([state.issueId, block.id, 'content']);
+      view.track(prose, scope);
+      view.render(prose, entry.inspectorHtml, scope);
     } else if (state.tab === 'details' && block && !block.readOnly && !prose && entry) {
       renderInspector();
     }
@@ -2119,41 +2137,6 @@
     );
   }
 
-  function preserveDisclosures(container, replace) {
-    const key = (element) =>
-      element.dataset.preserve ?? element.dataset.artifactRun ?? element.querySelector('summary')?.textContent.trim();
-    const saved = new Map([...container.querySelectorAll('details')].map((element) => [key(element), element.open]));
-    replace();
-    for (const element of container.querySelectorAll('details')) {
-      const open = saved.get(key(element));
-      if (open !== undefined) element.open = open;
-    }
-  }
-
-  function preserveEditor(renderBody) {
-    const body = $('inspector-body');
-    const current = document.activeElement;
-    const focused = body.contains(current) && current instanceof HTMLElement;
-    const key = focused ? current.dataset.field || current.id || current.dataset.edit : null;
-    const selection =
-      focused && typeof current.selectionStart === 'number' ? [current.selectionStart, current.selectionEnd] : null;
-    const scroll = body.scrollTop;
-    const outputScroll = body.querySelector('.attempt-output')?.scrollTop;
-    preserveDisclosures(body, renderBody);
-    if (key) {
-      const replacement = [...body.querySelectorAll('[data-field], [id], [data-edit]')].find(
-        (element) => (element.dataset.field || element.id || element.dataset.edit) === key
-      );
-      if (replacement) {
-        replacement.focus({ preventScroll: true });
-        if (selection && replacement.setSelectionRange) replacement.setSelectionRange(...selection);
-      }
-    }
-    body.scrollTop = scroll;
-    if (outputScroll != null && body.querySelector('.attempt-output'))
-      body.querySelector('.attempt-output').scrollTop = outputScroll;
-  }
-
   function renderBlockRunControl(block) {
     const runButton = $('run-block');
     const running = isRunning(block);
@@ -2229,15 +2212,9 @@
           : block
             ? blockDetails(block)
             : '<p class="inline-empty">Add a block to begin this issue.</p>';
-    if (inspectorRender?.scope === scope) {
-      if (inspectorRender.html === html) return;
-      preserveEditor(() => {
-        body.innerHTML = html;
-      });
-    } else {
-      body.innerHTML = html;
-      body.scrollTop = 0;
-    }
+    if (inspectorRender?.scope === scope && inspectorRender.html === html) return;
+    view.render(body, html, scope);
+    view.write('flow-selection:' + state.issueId, { blockId: state.blockId, tab: state.tab });
     inspectorRender = { scope, html };
   }
 
@@ -2519,6 +2496,7 @@
     const result = await action('request', { wording });
     if (!result) return;
     state.drafts.delete(key);
+    persistDrafts();
     renderInspector();
   }
 
@@ -2566,6 +2544,7 @@
     const comment = state.drafts.get(key)?.comment;
     state.drafts.delete(key);
     if (comment) state.drafts.set(key, { comment });
+    persistDrafts();
     toast('Block settings saved.');
     await load(true);
   }
@@ -2762,6 +2741,7 @@
     const saved = state.drafts.get(key) || {};
     delete saved.comment;
     state.drafts.set(key, saved);
+    persistDrafts();
     toast('Comment saved.');
     await load(true);
   }
@@ -2971,6 +2951,7 @@
     const collapsedFolders = sidebarCollapsedFolders();
     const expanded = collapsedFolders.delete(folder);
     if (!expanded) collapsedFolders.add(folder);
+    if (!state.search) view.write('flow-collapsed-folders', [...collapsedFolders]);
     button.setAttribute('aria-expanded', String(expanded));
     button.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${folder}`);
     button.closest('.issue-folder').querySelector('.folder-items').hidden = !expanded;
@@ -3023,7 +3004,6 @@
       state.blockId = button.dataset.block;
       if ($('graph').contains(button)) state.deleteBlockId = state.blockId;
       state.graphScrollIntent = { nodeId: state.blockId, mode: 'reveal' };
-      $('inspector-body').scrollTop = 0;
       renderGraph();
       renderInspector();
       setBusy(state.pending);
@@ -3032,7 +3012,6 @@
     }
     if (button.dataset.tab) {
       state.tab = button.dataset.tab;
-      $('inspector-body').scrollTop = 0;
       renderInspector();
       void checkOpenBlock(true);
       return;
@@ -3183,6 +3162,7 @@
         const saved = state.drafts.get(key) || {};
         delete saved.folder;
         state.drafts.set(key, saved);
+        persistDrafts();
         return load(true);
       });
     }

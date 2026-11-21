@@ -9,8 +9,9 @@
     <link rel="stylesheet" href="/project-home.css" />
     <link rel="stylesheet" href="/project-discuss.css" />
     <link rel="stylesheet" href="/local-notes.css" />
+    <script src="/view-state.js" defer></script>
     <script src="/issue-chat-ui.js" defer></script>
-    <script src="/discuss-markdown.js" defer></script>
+    <script src="../../node_modules/markdown-it/dist/markdown-it.min.js" defer></script>
     <script src="/skill-select.js" defer></script>
     <script src="/project-discuss-ui.js" defer></script>
     <script src="/server-control-ui.js" defer></script>
@@ -1084,7 +1085,13 @@
         <p id="home-automate-coverage" class="muted"></p>
         <button class="primary-button home-submit" type="submit" id="home-automate-start">Start conversation</button>
       </form>
-      <div id="home-automate-messages" class="home-messages" aria-live="polite"></div>
+      <div
+        id="home-automate-messages"
+        class="home-messages"
+        role="log"
+        aria-label="Automate me conversation"
+        aria-live="polite"
+      ></div>
       <form id="home-automate-reply" hidden>
         <label
           >Your reply<textarea

@@ -314,6 +314,15 @@ waiting and finished issues are excluded, including active or blocked assignment
 Selection never calls a model. Optional queue discussion still uses the coordinator UI. Selected-issue planning and reviews
 use the issue's owning chat through `reviewIssue` and `lifecycleReview`.
 The browser retains keyed expansion, draft and scroll state around live refreshes.
+`view-state.js` owns keyed DOM reconciliation, matching text selections, and
+same-tab expansion, editor dimensions, and scroll restoration. It defers affected
+renders during pointer gestures. Disclosures whose open state is controlled by
+application state use `data-view-controlled-open`; other disclosures retain the
+person's choice independently of refreshed markup. Flow, Discuss, issue chat,
+investigation results, Automate me messages, and repair output use this boundary.
+Classic retains full replacement and event binding with shared view and selection
+restoration. Draft owners save their text separately and clear it after submission.
+See [the refresh-state plan](../plans/preserve-interface-state.md).
 Conversation state is captured before DOM replacement, including reading position,
 textarea scroll/caret and selected conversation text. Readers at the bottom keep
 following new output; readers above it keep their position. Other issue text panels
@@ -741,9 +750,12 @@ attachments, dictation, and suggested prompts. Dictation recognizes the final
 [spoken send command](../../GLOSSARY.md#language) and submits through the existing
 composer form after removing it. The composer overlays the bottom
 of the scrollable history with enough trailing space to keep the final message
-visible. Opening Discuss scrolls the loaded history to the bottom, including after
-initial images settle. Interacting with the history cancels that opening scroll;
-ordinary polling preserves the reader’s position. Its settings and attachment
+visible. First opening a conversation scrolls the loaded history to the bottom,
+including after initial images settle. Interacting with the history cancels that
+opening scroll. Polling, same-tab reload, and returning to Discuss preserve the
+reader's position. Expanded activity and editor dimensions also survive these
+updates. New events within an existing message retain its activity expansion.
+Its settings and attachment
 controls share a row with Send. Discuss hides
 the shared Flow footer. The shared skill composer lives in `issue-chat-ui.js`.
 Open conversation tabs stay in creation order; closing a tab marks its conversation

@@ -72,6 +72,14 @@ styles and widths, so divider checks can use observed computed styles.
 The production closed issues are reserved for the user's own archive test and
 must not be used by these checks.
 
+`node scripts/flow-browser.mjs --interface-state` checks expanded tool activity,
+editor size, drafts, caret and scroll preservation through polling, same-tab
+navigation, and reload. It drags a real selection across an issue poll and checks
+the copied clipboard text. Different requests and new tabs retain independent
+state. The fixture uses disposable conversations and issues and starts no model
+work. `node --test scripts/interface-state.check.mjs` reproduces the original
+Discuss collapse and checks selection through growing and replaced activity.
+
 `pnpm run test:project-home` checks project investigation capture, selected-branch
 execution, automatic follow-up approval and retry, historical closure statistics,
 project-scoped Automate me history, retained conversations, and reviewed skill

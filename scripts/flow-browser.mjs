@@ -39,6 +39,7 @@ import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
@@ -74,6 +75,7 @@ git(project, 'update-ref', 'refs/remotes/origin/recent', recentBranchCommit);
 git(project, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/recent');
 
 const assets = [
+  'view-state.js',
   'flow.html',
   'flow.css',
   'flow-ui.js',
@@ -112,6 +114,7 @@ const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
+const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const mergeSettingsCheck = 'Request saves the regression choice and the block palette hides Verify';
@@ -265,6 +268,7 @@ function checkExcluded(name) {
     ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
     ['--project-home', homeCheck],
     ['--project-discuss', discussCheck],
+    ['--interface-state', interfaceStateCheck],
     ['--investigation-followups', followupsCheck],
     ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
     ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
@@ -536,6 +540,7 @@ try {
     projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', async () => {
     const configuration = ['triage-labels.md', 'preferences.json'].map((file) => {
       const path = join(project, '.issues', file);

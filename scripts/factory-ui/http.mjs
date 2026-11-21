@@ -555,7 +555,7 @@ async function temporaryAction(action) {
 }
 
 function readResource(service, request, response, owner) {
-  if (request.url === '/discuss-markdown.js') {
+  if (request.url === '/node_modules/markdown-it/dist/markdown-it.min.js') {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     return response.end(readFileSync(createRequire(import.meta.url).resolve('markdown-it/dist/markdown-it.min.js')));
   }
@@ -579,6 +579,7 @@ function readResource(service, request, response, owner) {
     return response.end();
   }
   const scripts = {
+    '/view-state.js': 'view-state.js',
     '/local-notes-ui.js': 'local-notes-ui.js',
     '/local-notes.css': 'local-notes.css',
     '/project-discuss-ui.js': 'project-discuss-ui.js',

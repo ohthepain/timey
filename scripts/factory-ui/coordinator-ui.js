@@ -1,6 +1,6 @@
 // The coordinator view only posts explicit controls; rendering and polling are read-only.
 const coordinatorUI = (() => {
-  let draft = '',
+  let draft = window.timeyView.read('coordinator-draft', ''),
     selected = '',
     request,
     refresh,
@@ -35,8 +35,10 @@ const coordinatorUI = (() => {
       `<section data-view-id="coordinator"><div class="issue-navigation-row"><a href="#/queue">← Issue queue</a></div><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label><input type="checkbox" id="coordinator-show-history"> Show archived conversations</label><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
     const input = document.getElementById('coordinator-message');
     input.value = draft;
+    window.timeyView.track(input, 'coordinator-editor');
     input.oninput = () => {
       draft = input.value;
+      window.timeyView.write('coordinator-draft', draft);
     };
     document.getElementById('coordinator-history').onchange = (event) => {
       selected = event.target.value;
@@ -63,6 +65,7 @@ const coordinatorUI = (() => {
       const result = await request('coordinator-' + (action === 'steer' ? 'send' : action), value);
       if (['send', 'steer'].includes(action)) {
         draft = '';
+        window.timeyView.write('coordinator-draft', '');
         document.getElementById('coordinator-message').value = '';
       }
       if (action === 'fresh') selected = '';
@@ -130,12 +133,16 @@ const coordinatorUI = (() => {
       .join('');
     if (history.innerHTML !== options) history.innerHTML = options;
     const thread = state.threads.find((t) => t.id === selected);
-    document.getElementById('coordinator-messages').innerHTML = (thread?.messages || [])
-      .map(
-        (m) =>
-          `<article><strong>${esc(m.role)}</strong>${m.issueId ? ' · ' + issueLink(data, m.issueId) : ''}<pre>${esc(m.text)}</pre></article>`
-      )
-      .join('');
+    window.timeyView.render(
+      document.getElementById('coordinator-messages'),
+      (thread?.messages || [])
+        .map(
+          (m) =>
+            `<article><strong>${esc(m.role)}</strong>${m.issueId ? ' · ' + issueLink(data, m.issueId) : ''}<pre>${esc(m.text)}</pre></article>`
+        )
+        .join(''),
+      'coordinator-messages:' + selected
+    );
     updateOutput(thread);
   }
   function updateOutput(thread) {
@@ -144,7 +151,7 @@ const coordinatorUI = (() => {
     const text = (thread?.output || [])
       .map((entry) => (entry.command ? entry.command + '\n' + entry.text : entry.text))
       .join('\n\n');
-    if (output.textContent !== text) output.textContent = text;
+    window.timeyView.text(output, text);
     if (follow) output.scrollTop = output.scrollHeight;
   }
   return { mount, update, onPage };

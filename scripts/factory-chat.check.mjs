@@ -229,7 +229,10 @@ test('slash skill selector filters metadata and inserts a removable read-only co
   const dom = new JSDOM('<form><textarea></textarea><button type="submit">Send</button></form>', {
     runScripts: 'outside-only',
   });
-  dom.window.eval(readFileSync(join(process.cwd(), 'scripts/factory-ui/issue-chat-ui.js'), 'utf8'));
+  dom.window.eval(
+    readFileSync(join(process.cwd(), 'scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(join(process.cwd(), 'scripts/factory-ui/issue-chat-ui.js'), 'utf8')
+  );
   const form = dom.window.document.querySelector('form'),
     draft = form.querySelector('textarea'),
     skill = { name: 'practice', description: 'Practice timing', source: 'Personal', icon: '✦' },
@@ -337,7 +340,11 @@ test('persistent chat view escapes text, preserves draft/focus across role updat
     runScripts: 'outside-only',
   });
   t.after(() => dom.window.close());
-  dom.window.eval(readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') + '\nwindow.chatTest=issueChatUI;');
+  dom.window.eval(
+    readFileSync('scripts/factory-ui/view-state.js', 'utf8') +
+      readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') +
+      '\nwindow.chatTest=issueChatUI;'
+  );
   const ui = dom.window.chatTest,
     document = dom.window.document;
   const data = {
@@ -602,7 +609,11 @@ test('native Stop awaits the original start, targets its exact turn and ignores 
 test('Stop control retains the draft, binds the displayed response and shows cancellation failures', async (t) => {
   const dom = new JSDOM('<div id="issue-chat-slot"></div>', { runScripts: 'outside-only' });
   t.after(() => dom.window.close());
-  dom.window.eval(readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') + '\nwindow.chatTest=issueChatUI;');
+  dom.window.eval(
+    readFileSync('scripts/factory-ui/view-state.js', 'utf8') +
+      readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') +
+      '\nwindow.chatTest=issueChatUI;'
+  );
   const data = { issues: [{ id: 'one' }], conversation: { issueId: 'one', responseId: 'current', connected: true } };
   const calls = [];
   dom.window.chatTest.mount(
