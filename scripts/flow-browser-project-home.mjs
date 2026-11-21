@@ -50,7 +50,13 @@ function browserReport(service, ctx) {
 async function browserIssues(service, ctx) {
   const saved = await new InvestigationOutputs(service.flows).createIssues({
     source: ctx.attempt.investigationSource,
-    items: [{ ...proposal, key: 'validation-boundary' }],
+    items: [
+      {
+        ...proposal,
+        title: proposal.title + ' for ' + ctx.attempt.investigationSource.issueId,
+        key: 'validation-boundary',
+      },
+    ],
   });
   return {
     output: 'Saved actionable work.',
@@ -194,6 +200,7 @@ export async function investigationFlowsBrowserChecks({ page, service, screensho
 }
 
 async function automate(page, service, calls, screenshot) {
+  await page.getByRole('tab', { name: 'Automate me', exact: true }).click();
   await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
   const dialog = page.locator('#home-automate-dialog');
   await dialog.waitFor({ state: 'visible' });

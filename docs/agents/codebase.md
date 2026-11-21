@@ -37,7 +37,8 @@ The default Flow page opens **Project home** when no issue or folder is selected
 `scripts/factory-ui/project-home.mjs` composes project statistics, investigations,
 and Automate me behind the authenticated project-home routes in `http.mjs`.
 `project-home-ui.js` owns the home page, create-only investigation dialog, and
-Automate me dialog. `project-investigations.mjs` owns reusable inquiry settings
+Automate me tab and dialog. Its tab controller also handles the sidebar Home,
+Issues, Discuss, and Reports links. `project-investigations.mjs` owns reusable inquiry settings
 and runs. `flow-ui.js` renders the ordinary investigation workspace;
 `investigation-flow-controls-ui.js` supplies its reusable settings and direct
 archive controls. `investigation-history.mjs` projects retained runs and linked
