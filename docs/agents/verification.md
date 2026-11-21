@@ -47,6 +47,8 @@ missing-skill setup option, and saved No skill/skill selections in a disposable 
 `pnpm run test:factory:env` checks project `.env` credential loading, exported
 environment precedence, and idempotent setup that preserves unrelated values and
 rejects invalid PEM input before writing. It uses disposable directories and keys.
+Each test clears and restores the inherited GitHub App environment so the runner's
+credentials cannot replace the fixture values.
 
 `pnpm run test:project-discuss` checks saved project conversations, immutable
 message settings and attachment copies, explicit queue/Stop/Retry behavior,
@@ -97,7 +99,8 @@ the issue banner, independent playback status, and hiding empty results.
 Use `pnpm run test:flow:browser --human-input` for required-review instructions,
 PR links, sidebar and block indicators, persisted requests, explicit Continue,
 and the distinction between human input and technical failure. The fixture
-injects review readiness; it performs no live GitHub review or merge.
+injects review readiness and an open PR response for the merged-issue guard; it
+performs no live GitHub review or merge.
 Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
 repair, search, grouping eligibility, and selected Open or Closed bulk actions.
 The fixture injects AI responses and execution, and uses disposable reports.

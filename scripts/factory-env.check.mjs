@@ -1,11 +1,23 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { setupFactoryEnv } from './factory-setup.mjs';
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { githubAppCredentials } from './factory-ui/github-app.mjs';
+import { githubAppEnvironmentKeys } from './factory-ui/project-env.mjs';
+
+beforeEach((t) => {
+  for (const key of githubAppEnvironmentKeys) {
+    const original = process.env[key];
+    delete process.env[key];
+    t.after(() => {
+      if (original === undefined) delete process.env[key];
+      else process.env[key] = original;
+    });
+  }
+});
 
 test('factory credentials load from the owning project .env without being exported', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'factory-env-'));
@@ -26,11 +38,6 @@ test('exported credentials override project values without changing process.env'
   const root = mkdtempSync(join(tmpdir(), 'factory-env-precedence-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const name = 'TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID';
-  const original = process.env[name];
-  t.after(() => {
-    if (original === undefined) delete process.env[name];
-    else process.env[name] = original;
-  });
   process.env[name] = '999';
   writeFileSync(
     join(root, '.env'),
