@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { BlockCatalog } from './factory-ui/block-catalog.mjs';
+import { blockDetails, definitionMap } from './factory-ui/flow-block-data.mjs';
 import { conversationMessages, conversationState, conversationFiles } from './factory-ui/conversation-store.mjs';
 import { resumeWorkDependencies, runWorkVerification } from './factory-ui/flow-verification.mjs';
 
@@ -1106,6 +1108,54 @@ async function branchUpdateFixture(t, targetFile = 'incoming.txt') {
     },
   };
 }
+
+test('Work preserves distinct bases after Update Branch and a no-change result through Publish inputs', async (t) => {
+  const checkedBases = [];
+  const f = fixture(t, {
+    async verifyWork(_ctx, workspace) {
+      checkedBases.push(workspace.base);
+      return { evidence: [] };
+    },
+  });
+  f.git('remote', 'add', 'origin', f.root);
+  const first = await f.run('work');
+  const originalBase = first.workspace.base;
+  writeFileSync(join(f.root, 'incoming.txt'), 'Incoming change.\n');
+  f.git('add', 'incoming.txt');
+  f.git('commit', '-m', 'Advance destination');
+  const comparisonBase = f.git('rev-parse', 'HEAD');
+  await f.run('update-branch');
+  const beforeWork = f.git('-C', f.flow.workspace.checkout, 'rev-parse', 'HEAD');
+  const worked = await f.run('work');
+  assert.notEqual(comparisonBase, originalBase);
+  assert.equal(worked.result.head, beforeWork, 'Work returns the existing commit without changes.');
+  assert.equal(worked.workspace.base, originalBase);
+  assert.equal(checkedBases.at(-1), comparisonBase);
+  const prompt = JSON.parse(f.calls.filter(({ method }) => method === 'turn').at(-1).prompt);
+  assert.equal(prompt.workComparisonBase, comparisonBase);
+  assert.equal(prompt.destinationRevision, comparisonBase);
+  assert.equal(worked.result.base, comparisonBase);
+  assert.equal(worked.result.workspaceBase, originalBase);
+  assert.equal(worked.artifacts.values.candidateBase, comparisonBase);
+  assert.equal(worked.artifacts.values.candidateWorkspaceBase, originalBase);
+  assert.equal(worked.artifacts.values.candidate, beforeWork);
+  assert.equal(worked.artifacts.values.candidateUncommitted, false);
+  const work = {
+    id: 'work',
+    kind: 'work',
+    label: 'Work',
+    after: [],
+    attempts: [{ ...worked, status: 'completed' }],
+  };
+  const publish = { id: 'publish', kind: 'publish', label: 'Publish PR', after: ['work'], attempts: [] };
+  f.flow.blocks = [work, publish];
+  const definitions = definitionMap(new BlockCatalog(f.root).read().entries);
+  const details = blockDetails(f.flow, f.issue, publish, definitions);
+  assert.equal(details.find(({ key }) => key === 'candidateBase').value, comparisonBase);
+  const workspaceDetail = details.find(({ key }) => key === 'candidateWorkspaceBase');
+  assert.equal(workspaceDetail.value, originalBase);
+  assert.equal(workspaceDetail.label, 'Original workspace base');
+});
 
 test('Update Branch fetches first and silently saves full local changes only when behind', async (t) => {
   const f = await branchUpdateFixture(t);
