@@ -36,7 +36,8 @@ import { FactoryUI } from './factory-ui/service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
 import { issueCleanupIdentities, previewIssueCleanupResource } from './factory-ui/issue-cleanup.mjs';
-import { saveConversationState } from './factory-ui/conversation-store.mjs';
+import { appendMessage, saveConversationState } from './factory-ui/conversation-store.mjs';
+import { maximumTextInputLength, oversizedTextInputMessage } from './factory-ui/codex-input.mjs';
 import { runRetro } from './factory-ui/flow-retro.mjs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -2303,4 +2304,133 @@ test('a shared claim timeout retains the block failure and completed verificatio
     summary: 'Original GitHub request failed',
     message: 'spawnSync git ETIMEDOUT',
   });
+});
+
+test('manual branch update reconciles a disconnected Work only after its provider is observed idle', async (t) => {
+  const { root, id, service } = fixture(t);
+  let providerStatus = 'active';
+  let updates = 0;
+  let reads = 0;
+  let readFailure;
+  const flows = createIssueFlows(service, {
+    deliveryOptions: {
+      createConnection: () => ({
+        async ready() {},
+        async resume(threadId, checkout, sandbox) {
+          assert.equal(threadId, 'original-work');
+          assert.equal(checkout, root);
+          assert.equal(sandbox, 'read-only');
+        },
+        async call(method, params) {
+          assert.equal(method, 'thread/read');
+          assert.equal(params.threadId, 'original-work');
+          reads++;
+          if (readFailure) throw readFailure;
+          return { thread: { status: { type: providerStatus } } };
+        },
+        close() {},
+      }),
+    },
+    executor: executor(async () => {
+      updates++;
+      return { summary: 'Branch updated.' };
+    }),
+  });
+  service.flows = flows;
+  t.after(() => flows.close());
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  flow.workspace = { checkout: root, branch: 'dev', base: 'base' };
+  flow.blocks
+    .find((block) => block.kind === 'work')
+    .attempts.push({
+      id: 'disconnected-work',
+      status: 'uncertain',
+      summary: 'Input exceeds the maximum length of 1048576 characters.',
+    });
+  flows.store.save(flow, flow.revision);
+  saveConversationState(root, id, {
+    version: 1,
+    issueId: id,
+    status: 'idle',
+    flowBlocks: { work: { threadId: 'original-work' } },
+  });
+  const update = () => flows.action({ issueId: id, revision: flows.read(issue).revision, action: 'update-worktree' });
+  flows.active.set(id, { blockId: 'work' });
+  await assert.rejects(update(), /idle open issue/);
+  flows.active.delete(id);
+  assert.equal(reads, 0);
+  await assert.rejects(update(), /still active or uncertain/);
+  assert.equal(updates, 0);
+  assert.equal(flows.read(issue).blocks.find((b) => b.kind === 'work').attempts[0].reconciledAt, undefined);
+  providerStatus = 'idle';
+  readFailure = Error('Provider unavailable.');
+  await assert.rejects(update(), /Provider unavailable/);
+  assert.equal(updates, 0);
+  assert.equal(flows.read(issue).blocks.find((b) => b.kind === 'work').attempts[0].reconciledAt, undefined);
+  readFailure = null;
+  await update();
+  assert.equal(reads, 3);
+  assert.equal(updates, 1);
+  const attempt = flows.read(issue).blocks.find((b) => b.kind === 'work').attempts[0];
+  assert.equal(attempt.status, 'uncertain');
+  assert.match(attempt.summary, /maximum length/);
+  assert.ok(attempt.reconciledAt);
+});
+
+test('manual branch update recovers a retained oversized rejection without inventing a provider turn', async (t) => {
+  const { root, id, service } = fixture(t);
+  let updates = 0;
+  const flows = createIssueFlows(service, {
+    deliveryOptions: {
+      createConnection() {
+        throw Error('No provider history exists.');
+      },
+    },
+    executor: executor(async () => {
+      updates++;
+      return { summary: 'Branch updated.' };
+    }),
+  });
+  service.flows = flows;
+  t.after(() => flows.close());
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  flow.workspace = { checkout: root, branch: 'dev', base: 'base' };
+  flow.blocks
+    .find((block) => block.kind === 'work')
+    .attempts.push({
+      id: 'rejected-work',
+      status: 'uncertain',
+      summary: oversizedTextInputMessage,
+      output: 'Running work block.',
+    });
+  flows.store.save(flow, flow.revision);
+  const state = {
+    version: 1,
+    issueId: id,
+    status: 'attention',
+    flowBlocks: { work: { threadId: 'rejected-thread' } },
+  };
+  saveConversationState(root, id, state);
+  const update = () => flows.action({ issueId: id, revision: flows.read(issue).revision, action: 'update-worktree' });
+  await assert.rejects(update(), /No provider history exists/);
+  appendMessage(root, id, {
+    id: 'flow-request-rejected-work',
+    kind: 'flow-block-request',
+    blockId: 'work',
+    body: 'x'.repeat(maximumTextInputLength + 1),
+  });
+  state.flowBlocks.work.flowReceipt = { attemptId: 'rejected-work', turnId: 'accepted' };
+  saveConversationState(root, id, state);
+  await assert.rejects(update(), /No provider history exists/);
+  assert.equal(updates, 0);
+  delete state.flowBlocks.work.flowReceipt;
+  saveConversationState(root, id, state);
+  await update();
+  assert.equal(updates, 1);
+  const attempt = flows.read(issue).blocks.find((block) => block.kind === 'work').attempts[0];
+  assert.equal(attempt.status, 'uncertain');
+  assert.equal(attempt.summary, oversizedTextInputMessage);
+  assert.ok(attempt.reconciledAt);
 });

@@ -1,5 +1,13 @@
 # Verification
 
+`node --test --test-name-pattern='manual branch update|oversized input' scripts/flow.check.mjs scripts/flow-executor.check.mjs`
+reproduces Update Branch being blocked by an uncertain Work attempt. It checks
+that an active provider blocks the update and a confirmed idle provider permits
+it while retaining the failed attempt and recording reconciliation. It also
+checks recovery of retained oversized rejections, refusal when a receipt exists
+or the request cannot be confirmed, and rejection of new oversized input before
+provider dispatch.
+
 ## Commands and evidence
 
 `node scripts/flow-browser.mjs --investigation-reports` checks retained report

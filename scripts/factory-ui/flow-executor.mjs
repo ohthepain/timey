@@ -968,7 +968,12 @@ async function runModel(service, ctx, owned, options) {
       ...(workspace.temporary ? {} : { workspace }),
     };
   } catch (error) {
-    if (turnDispatched && !terminalObserved && !['failed', 'interrupted', 'completed'].includes(error.terminalStatus))
+    if (
+      turnDispatched &&
+      !error.turnRejected &&
+      !terminalObserved &&
+      !['failed', 'interrupted', 'completed'].includes(error.terminalStatus)
+    )
       error.uncertain = true;
     if (error.input) {
       const requestPath = join(folder, 'input-required.json');
@@ -983,7 +988,7 @@ async function runModel(service, ctx, owned, options) {
     if (partial) writeFileSync(outputPath, partial, { mode: 0o600 });
     retain({
       status:
-        ['interrupted', 'completed', 'failed'].includes(error.terminalStatus) || terminalObserved
+        error.turnRejected || ['interrupted', 'completed', 'failed'].includes(error.terminalStatus) || terminalObserved
           ? 'idle'
           : 'attention',
     });

@@ -235,6 +235,17 @@ when needed. Factory runs the branch update without a second prompt. The Branch
 button runs the action directly and shows a spinner. The action leaves the flow
 graph intact.
 
+If a disconnected block still owns the issue, the manual Branch button checks
+its original provider conversation before updating. A confirmed idle
+conversation releases that ownership. An older oversized-input rejection can
+also release ownership when the retained request exceeds the input limit, the
+failure matches that rejection, and there is no accepted turn receipt or model
+output. The failed attempt and its output remain
+in history with a reconciliation timestamp. Active, missing or uncheckable
+conversations still block the update. This check starts no model turn.
+New oversized inputs fail before dispatch and leave a blocked attempt rather
+than uncertain ownership.
+
 An explicit Update Branch run aborts an existing merge in the managed issue
 checkout before fetching. This discards that merge’s partial resolutions;
 committed issue work remains. Other unfinished Git operations still stop the

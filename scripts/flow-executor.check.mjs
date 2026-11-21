@@ -1934,3 +1934,23 @@ for (const invalidated of [false, true]) {
     }
   );
 }
+
+test('oversized input is rejected before dispatch and does not retain uncertain ownership', async (t) => {
+  const { CodexConnection } = await import('./factory-ui/codex.mjs');
+  const { maximumTextInputLength, oversizedTextInputMessage } = await import('./factory-ui/codex-input.mjs');
+  const f = fixture(t);
+  const connection = new CodexConnection();
+  connection.call = () => assert.fail('Oversized input must never reach turn/start.');
+  f.connection.turn = (...args) => connection.turn(...args);
+  await assert.rejects(
+    f.run('understand', { details: [{ key: 'context', value: 'x'.repeat(maximumTextInputLength + 1) }] }),
+    (error) => {
+      assert.equal(error.message, oversizedTextInputMessage);
+      assert.equal(error.turnRejected, true);
+      assert.notEqual(error.uncertain, true);
+      return true;
+    }
+  );
+  assert.equal(connection.turns.size, 0);
+  assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'idle');
+});

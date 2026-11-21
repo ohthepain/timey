@@ -2,6 +2,7 @@ import { mergedDelivery, mergedIssueMessage, allowsMergedAction, mergedIssueStat
 import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
 import { BranchRepairs } from './branch-repair.mjs';
+import { observeDisconnectedFlow } from './flow-reconciliation.mjs';
 import {
   existsSync,
   mkdirSync,
@@ -1562,25 +1563,42 @@ class IssueFlows {
   async updateWorktree(issue, flow, catalog) {
     const checkout = flowWorkspace(this.service, flow)?.checkout;
     requireThat(checkout && existsSync(checkout), 'This issue has no available worktree.');
+    const scoped = Object.assign(Object.create(this.service), { flowOperationIssueId: issue.id });
     requireThat(
-      !issue.closed && !issueHasActiveWork(this.service, issue.id),
+      !issue.closed &&
+        !this.active.has(issue.id) &&
+        !this.flowBuilds.has(issue.id) &&
+        !this.closureTasks.has(issue.id) &&
+        !issueHasActiveWork(scoped, issue.id),
       'Update the branch of an idle open issue.'
-    );
-    requireThat(
-      !flow.blocks.some((block) => block.attempts.some(unresolvedAttempt)),
-      'Recover the disconnected block before updating the branch.'
     );
     const block = makeBlock('update-branch', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
     const controller = new AbortController();
     const queue = this.service.sharedIssues;
-    const claim = queue?.acquireFlowBlock(issue, block.id, false);
-    this.pauseAutoplay(issue.id, 'Updating the branch manually.');
-    this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
+    let claim;
     let outcome;
+    this.flowBuilds.add(issue.id);
     try {
+      const disconnected = await observeDisconnectedFlow(this.service, flow, this.deliveryOptions.createConnection);
+      controller.signal.throwIfAborted();
+      claim = queue?.acquireFlowBlock(issue, disconnected.at(-1)?.id ?? block.id, disconnected.length > 0);
+      if (disconnected.length) {
+        for (const saved of disconnected)
+          for (const previous of saved.attempts.filter(unresolvedAttempt)) {
+            previous.reconciledAt = new Date().toISOString();
+            previous.reconciliation =
+              'Before manual branch update, the original provider was observed idle or its oversized input was confirmed rejected before acceptance.';
+            if (['running', 'stopping'].includes(previous.status)) previous.status = 'uncertain';
+          }
+        this.store.save(flow, flow.revision);
+      }
+      this.pauseAutoplay(issue.id, 'Updating the branch manually.');
+      this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
+      this.flowBuilds.delete(issue.id);
       outcome = await this.executor.run({ issue, flow, block, attempt, signal: controller.signal });
     } finally {
+      this.flowBuilds.delete(issue.id);
       this.active.delete(issue.id);
       if (claim) queue.releaseFlowBlock(claim);
     }

@@ -65,7 +65,8 @@ export async function runBranchRepair(input, options = {}) {
       if (!failure) return;
     }
   } catch (error) {
-    if (turnPending && !['completed', 'failed', 'interrupted'].includes(error.terminalStatus)) error.uncertain = true;
+    if (turnPending && !error.turnRejected && !['completed', 'failed', 'interrupted'].includes(error.terminalStatus))
+      error.uncertain = true;
     throw error;
   } finally {
     signal.removeEventListener('abort', stop);

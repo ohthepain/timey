@@ -1,6 +1,7 @@
 import { createChatToolMcp } from './chat-tool-mcp.mjs';
 import { approvalReply } from './approval-options.mjs';
 import { turnFailure } from './turn-failure.mjs';
+import { validateTextInput } from './codex-input.mjs';
 import { redactValue } from './activity.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -247,6 +248,7 @@ export class CodexConnection {
     await this.call('thread/unarchive', { threadId });
   }
   async turn(threadId, cwd, prompt, outputSchema, extraInput = [], settings = null, receipt = null) {
+    validateTextInput(prompt);
     requireThat(!this.turns.has(threadId), 'This conversation already has running work.');
     let resolve, reject;
     const completion = new Promise((yes, no) => {
