@@ -665,14 +665,24 @@ for (const installed of ['matching', 'missing', 'stale', 'missing workspace']) {
     function installFixture(checkout, installedLock = lock, installWorkspace = true) {
       mkdirSync(join(checkout, 'node_modules/.pnpm'), { recursive: true });
       writeFileSync(join(checkout, 'node_modules/.pnpm/lock.yaml'), installedLock);
-      if (installWorkspace) mkdirSync(join(checkout, 'packages/example/node_modules'), { recursive: true });
+      if (installWorkspace)
+        mkdirSync(join(checkout, 'packages/example/node_modules'), {
+          recursive: true,
+        });
     }
     const f = fixture(t, {
       async execute(input) {
         executions.push(input);
         writeFileSync(input.log, 'Fixture command result.');
         if (input.command === 'pnpm') return installFixture(input.cwd);
-        return 'FLOW_RESULT ' + JSON.stringify({ head: 'fixture-head', tree: 'fixture-tree', summaries: [] });
+        return (
+          'FLOW_RESULT ' +
+          JSON.stringify({
+            head: 'fixture-head',
+            tree: 'fixture-tree',
+            summaries: [],
+          })
+        );
       },
     });
     // Verify prepares dependencies in an existing managed worktree.
@@ -772,17 +782,28 @@ test('stop reaches explicit command execution and preserves its log', async (t) 
 });
 
 function verificationResult(workspace, folder) {
-  const git = (...args) => execFileSync('git', ['-C', workspace.checkout, ...args], { encoding: 'utf8' }).trim();
+  const git = (...args) =>
+    execFileSync('git', ['-C', workspace.checkout, ...args], {
+      encoding: 'utf8',
+    }).trim();
   mkdirSync(folder, { recursive: true });
   const proof = ['verification', 'step'].map((checkpoint) => {
     const path = join(folder, checkpoint + '.json');
     writeFileSync(path, JSON.stringify({ checkpoint }));
     return { path, sha256: digest(readFileSync(path)) };
   });
-  return { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), base: workspace.base, proof };
+  return {
+    head: git('rev-parse', 'HEAD'),
+    tree: git('rev-parse', 'HEAD^{tree}'),
+    base: workspace.base,
+    proof,
+  };
 }
 
-function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit, onReady, github } = {}) {
+function mergeFixture(
+  t,
+  { merged = false, onWait, repair, beforeVerify, onGit, onReady, onLookup, onMerge, onInspect, github } = {}
+) {
   const verificationInput = () => 'fixture-input';
   const observations = [];
   let publishedHead;
@@ -831,6 +852,7 @@ function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit, 
         return JSON.stringify({ data: { repository: { pullRequest: {} } } });
       },
       async findIssueBranchPR(branch) {
+        await onLookup?.();
         return pullRequest(branch);
       },
       async ready(pr, branch, head) {
@@ -845,12 +867,19 @@ function mergeFixture(t, { merged = false, onWait, repair, beforeVerify, onGit, 
         };
       },
       async inspect() {
+        await onInspect?.();
         return pullRequest();
       },
       async merge(_number, head, { beforeMerge }) {
         await beforeMerge();
+        await onMerge?.(() => {
+          merged = true;
+        });
         observations.push({ operation: 'merge', head });
-        return { revision: 'actual-merge', url: 'https://example.invalid/pr/9' };
+        return {
+          revision: 'actual-merge',
+          url: 'https://example.invalid/pr/9',
+        };
       },
     },
     validateSummary(_summary, _base, _tree, policy) {
@@ -906,14 +935,14 @@ test('Merge verifies an unchanged PR once and requires approval of its exact com
   assert.equal(first.status, 'blocked');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['verify', 'ready']
+    ['ready', 'verify']
   );
   const result = await approveMerge(f, first);
   assert.equal(result.result.revision, 'actual-merge');
   assert.equal(result.workspace.pr, 9);
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['verify', 'ready', 'ready', 'ready', 'merge']
+    ['ready', 'verify', 'ready', 'ready', 'merge']
   );
   assert.equal(f.calls.filter((item) => item.method === 'guard').at(-1).args[2], 'merge');
 });
@@ -930,7 +959,7 @@ test('overnight prepare verifies the PR and stops before automatic merge', async
   assert.equal(result.result.verification.head, result.result.mergeConfirmation.head);
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['verify', 'ready']
+    ['ready', 'verify']
   );
   assert.equal(
     f.calls.some((item) => item.method === 'guard' && item.args[2] === 'merge'),
@@ -951,7 +980,7 @@ test('Merge verifies and pushes each new candidate, then expires approval if the
   assert.equal(first.status, 'blocked');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['verify', 'push', 'verify', 'push', 'ready']
+    ['ready', 'verify', 'push', 'ready', 'verify', 'push', 'ready']
   );
   assert.equal(first.result.mergeConfirmation.target, f.git('rev-parse', 'dev'));
   f.advanceTarget();
@@ -987,7 +1016,7 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
   assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['verify', 'push', 'ready', 'ready', 'merge']
+    ['ready', 'ready', 'verify', 'push', 'ready', 'ready', 'merge']
   );
   assert.equal(issueGit('merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
   assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
@@ -1043,7 +1072,7 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
   assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['verify', 'push', 'ready', 'ready', 'merge']
+    ['ready', 'ready', 'verify', 'push', 'ready', 'ready', 'merge']
   );
 });
 
@@ -1639,7 +1668,7 @@ test('Merge downloads failed GitHub verification evidence, repairs it, verifies,
   const result = await f.run('merge');
   assert.equal(downloads, 1);
   assert.equal(result.result.revision, 'actual-merge');
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 2);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
   assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 1);
 });
 
@@ -1688,7 +1717,197 @@ test('GitHub repair retains failed job output when verification artifacts are un
       return 'AssertionError: CI test failed before evidence upload.';
     },
   };
-  const error = { githubChecks: [{ url: 'https://github.com/test/fixture/actions/runs/77/job/88' }] };
+  const error = {
+    githubChecks: [{ url: 'https://github.com/test/fixture/actions/runs/77/job/88' }],
+  };
   await retainGitHubFailure(provider, error, 'expected', f.root);
   assert.match(readFileSync(error.evidence[0].path, 'utf8'), /CI test failed before evidence upload/);
+});
+
+test('Merge retries temporary readiness failures before running any local checks', async (t) => {
+  let requests = 0;
+  const f = mergeFixture(t, {
+    onReady() {
+      if (++requests < 3)
+        throw Object.assign(Error('GitHub connection reset'), {
+          transient: true,
+        });
+    },
+  });
+  await f.run('understand');
+  const result = await f.run('merge');
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.deepEqual(
+    f.observations.slice(0, 4).map(({ operation }) => operation),
+    ['ready', 'ready', 'ready', 'verify']
+  );
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+});
+
+test('Merge bounds temporary lookup failures and retains the final reason without repairing tests', async (t) => {
+  let requests = 0;
+  const f = mergeFixture(t, {
+    onLookup() {
+      requests++;
+      throw Object.assign(Error('GitHub gateway unavailable HTTP 503'), {
+        transient: true,
+      });
+    },
+  });
+  await f.run('understand');
+  await assert.rejects(f.run('merge'), /GitHub gateway unavailable HTTP 503/);
+  assert.equal(requests, 4);
+  assert.deepEqual(f.observations, []);
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+});
+
+test('Merge Retry checks GitHub first and reuses the previous exact verification', async (t) => {
+  const f = mergeFixture(t);
+  await f.run('understand');
+  const prepared = await f.run('merge', humanFirstMerge);
+  f.observations.length = 0;
+  const result = await approveMerge(f, prepared);
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.deepEqual(
+    f.observations.map(({ operation }) => operation),
+    ['ready', 'ready', 'merge']
+  );
+});
+
+test('Merge retries an uncertain successful merge by inspecting GitHub without another merge request', async (t) => {
+  let merges = 0;
+  const f = mergeFixture(t, {
+    onMerge(markMerged) {
+      merges++;
+      markMerged();
+      throw Object.assign(Error('HTTP 502 after merge'), { transient: true });
+    },
+  });
+  await f.run('understand');
+  const result = await f.run('merge');
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(merges, 1);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+});
+
+for (const transient of [true, false]) {
+  test('Merge retains verification across exhausted or permanent GitHub failures: ' + transient, async (t) => {
+    let failed = false;
+    let requests = 0;
+    const f = mergeFixture(t, {
+      onReady() {
+        requests++;
+        if (failed)
+          throw Object.assign(Error(transient ? 'HTTP 503 upstream unavailable' : 'HTTP 403 forbidden'), { transient });
+      },
+    });
+    await f.run('understand');
+    const prepared = await f.run('merge', humanFirstMerge);
+    failed = true;
+    requests = 0;
+    let retained;
+    await assert.rejects(approveMerge(f, prepared), (error) => {
+      assert.match(error.message, transient ? /HTTP 503/ : /HTTP 403/);
+      retained = error.deliveryVerification;
+      assert.deepEqual(retained, prepared.result.verification);
+      return true;
+    });
+    assert.equal(requests, transient ? 4 : 1);
+    failed = false;
+    const result = await f.run('merge', {
+      attempts: [
+        {
+          id: 'failed',
+          status: 'blocked',
+          result: { verification: retained },
+        },
+      ],
+    });
+    assert.equal(result.result.revision, 'actual-merge');
+    assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+    assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+  });
+}
+
+test('Stop interrupts GitHub retry backoff without checking or repairing tests', async (t) => {
+  const controller = new AbortController();
+  let requests = 0;
+  const f = mergeFixture(t, {
+    onLookup() {
+      requests++;
+      throw Object.assign(Error('HTTP 503'), { transient: true });
+    },
+    onWait() {
+      controller.abort();
+    },
+  });
+  await f.run('understand');
+  await assert.rejects(f.run('merge', { signal: controller.signal }), /aborted/i);
+  assert.equal(requests, 1);
+  assert.deepEqual(f.observations, []);
+});
+
+test('Merge waits for pending GitHub tests without rerunning local verification', async (t) => {
+  let pending = true;
+  const f = mergeFixture(t, {
+    onReady() {
+      if (pending)
+        throw Object.assign(Error('GitHub tests pending'), {
+          code: 'STRATEGY_PENDING',
+        });
+    },
+    onWait() {
+      assert.equal(
+        f.observations.some(({ operation }) => operation === 'verify'),
+        false
+      );
+      pending = false;
+    },
+  });
+  await f.run('understand');
+  assert.equal((await f.run('merge')).result.revision, 'actual-merge');
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+});
+
+test('Merge bounds unsuccessful merge requests while preserving completed verification', async (t) => {
+  let requests = 0;
+  const f = mergeFixture(t, {
+    onMerge() {
+      requests++;
+      throw Object.assign(Error('HTTP 502 merge gateway unavailable'), {
+        transient: true,
+      });
+    },
+  });
+  await f.run('understand');
+  await assert.rejects(f.run('merge'), (error) => {
+    assert.match(error.message, /HTTP 502 merge gateway unavailable/);
+    assert.ok(error.deliveryVerification.proof.length);
+    return true;
+  });
+  assert.equal(requests, 4);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+});
+
+test('Merge retains the original merge error when outcome inspection also fails', async (t) => {
+  let requested = false;
+  const f = mergeFixture(t, {
+    onMerge() {
+      requested = true;
+      throw Error('HTTP 422 merge candidate rejected');
+    },
+    onInspect() {
+      if (requested) throw Object.assign(Error('HTTP 503 outcome lookup unavailable'), { transient: true });
+    },
+  });
+  await f.run('understand');
+  await assert.rejects(f.run('merge'), (error) => {
+    assert.match(error.message, /HTTP 422 merge candidate rejected/);
+    assert.match(error.message, /Merge outcome could not be checked: HTTP 503 outcome lookup unavailable/);
+    assert.ok(error.deliveryVerification.proof.length);
+    return true;
+  });
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
 });

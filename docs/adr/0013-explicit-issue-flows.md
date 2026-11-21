@@ -142,6 +142,16 @@ checkout snapshot. Publish requires a committed candidate. Verification for an
 uncommitted tree can be reused after that same tree is committed; a different tree
 requires verification again.
 
+Merge first checks the existing PR and GitHub readiness. Already merged PRs are
+reconciled without local tests; pending checks wait before tests or repair.
+Temporary GitHub request failures get at most three retries per operation with
+1, 2 and 4 second backoff, retaining the redacted error reason. Permission,
+authentication and validation failures stop immediately. An uncertain merge
+request is reconciled against GitHub before another guarded request. Retry
+preserves the checkout and retained verification, including across another
+network failure; matching candidate, target, inputs and proof are still required
+for reuse. Changed candidates or inputs require verification again.
+
 Merge fetches Destination and merges its current revision into the issue branch.
 It verifies the issue commit against that destination revision using the local
 scope selected in Request at the start of the attempt. The default uses the
