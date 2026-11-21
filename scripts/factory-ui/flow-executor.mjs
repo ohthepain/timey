@@ -536,6 +536,10 @@ function modelPrompt(ctx, options) {
   if (options.branchConflictTask) return options.branchConflictTask;
   if (options.workBase)
     return blockInput(ctx, {
+      workExecution: {
+        issueId: ctx.issue.id,
+        task: 'Implement the saved issue in this checkout. This Work invocation starts implementation of an already-created issue. Capture-only instructions to create an idle issue belong to its earlier creation and are satisfied; use the underlying requested change and its implementation acceptance criteria as the goal and proof. Preserve all product constraints, required human decisions, permission boundaries and later block guards. Issue creation controls and live idle-status checks are not prerequisites for this implementation. If the saved request contains only capture instructions and no underlying change, report the missing scope as human input.',
+      },
       workComparisonBase: options.workBase,
       destinationRevision: options.destinationRevision,
       formatAndAuditCommand: [

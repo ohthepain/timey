@@ -279,6 +279,32 @@ test('an explicit work block makes one model turn and records its managed checko
   assert.ok(f.progress.includes('Observed progress.'));
 });
 
+test('Work and Retry distinguish implementation from an earlier idle issue capture', async (t) => {
+  const f = fixture(t);
+  const details = [
+    { key: 'goal', value: 'Create an idle issue capturing the agreed project Settings design.' },
+    {
+      key: 'constraints',
+      value:
+        'Create the issue only and leave it idle; do not start implementation. Preserve inheritance and keep secrets read-only.',
+    },
+  ];
+  await f.run('work', { details });
+  await f.run('work', { details, continuing: true });
+  const turns = f.calls.filter(({ method }) => method === 'turn');
+  assert.equal(turns.length, 2);
+  for (const turn of turns) {
+    const input = JSON.parse(turn.prompt);
+    assert.equal(input.workExecution.issueId, f.issue.id);
+    assert.match(input.workExecution.task, /Implement the saved issue/);
+    assert.match(input.workExecution.task, /capture-only.*earlier creation/i);
+    assert.match(input.workExecution.task, /Preserve.*product constraints.*human.*permission/i);
+    assert.match(input.workExecution.task, /implementation.*proof/i);
+    assert.deepEqual(input.details, details);
+  }
+  assert.equal(f.calls.filter(({ method }) => method === 'resume').length, 1);
+});
+
 test('a new checkout uses the selected starting commit and retains it when the source branch moves', async (t) => {
   const f = fixture(t);
   const destination = f.git('rev-parse', 'dev');
