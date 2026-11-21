@@ -542,6 +542,8 @@ async function conversationTabOverflowChecks({ page, service, project, screensho
         discussRight: discuss.right,
         tabViewportWidth: strip.clientWidth,
         tabScrollWidth: strip.scrollWidth,
+        scrollbarWidth: getComputedStyle(strip).scrollbarWidth,
+        scrollbarDisplay: getComputedStyle(strip, '::-webkit-scrollbar').display,
         tabs,
       };
     });
@@ -553,6 +555,7 @@ async function conversationTabOverflowChecks({ page, service, project, screensho
       'Many conversation tabs widen Discuss beyond its container.'
     );
     assert.ok(observation.tabScrollWidth > observation.tabViewportWidth, 'The conversation tabs must overflow.');
+    assert.equal(observation.scrollbarWidth, 'none', 'The conversation tabs must hide their scrollbar.');
     assert.ok(
       observation.tabs.every((tab) => tab.visible),
       'Horizontal scrolling must reveal every conversation tab.'
