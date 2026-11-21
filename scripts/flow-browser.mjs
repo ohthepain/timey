@@ -37,6 +37,8 @@ import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mj
 import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.mjs';
 import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
+import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
+import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
 import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
 import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
@@ -112,6 +114,7 @@ const results = [];
 const folderSettingsCheck = 'Folder settings inherit, repair, search and act on selected open or closed issues';
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
+const navigationCheck = 'Project navigation exposes Home Issues Investigate and an Automate me tab';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
@@ -267,6 +270,7 @@ function checkExcluded(name) {
     ['--sidebar-labels', 'Issues and Local notes use matching text styles'],
     ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
     ['--project-home', homeCheck],
+    ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
     ['--interface-state', interfaceStateCheck],
     ['--investigation-followups', followupsCheck],
@@ -539,16 +543,13 @@ try {
   await check('Closed issue selections archive together and issue links open the normal view', () =>
     projectIssuesBrowserChecks({ page, project, root, output })
   );
+  await check(navigationCheck, () =>
+    withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
+  );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
-  await check('Issues and Local notes use matching text styles', async () => {
-    const configuration = ['triage-labels.md', 'preferences.json'].map((file) => {
-      const path = join(project, '.issues', file);
-      return { path, content: existsSync(path) ? readFileSync(path) : null };
-    });
-    copyFileSync(join(root, '.issues/triage-labels.md'), configuration[0].path);
-    writeFileSync(configuration[1].path, '{"commit":true}');
-    try {
+  await check('Issues and Local notes use matching text styles', () =>
+    withQueueConfiguration({ page, project, root }, async () => {
       await page.goto('/');
       const issues = page.locator('.sidebar-issues-link');
       const notes = page.locator('#local-notes > header > h2');
@@ -581,14 +582,8 @@ try {
       const frame = page.frameLocator('#project-issues iframe');
       await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
       assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
-    } finally {
-      await page.goto('about:blank');
-      for (const { path, content } of configuration) {
-        if (content === null) rmSync(path);
-        else writeFileSync(path, content);
-      }
-    }
-  });
+    })
+  );
   await check('Local notes capture and handoff preserve flow', async () => {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot });
     assert.deepEqual(unexpectedConsoleErrors(logs.console), []);

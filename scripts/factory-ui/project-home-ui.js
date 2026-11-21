@@ -12,7 +12,7 @@
     window.createProjectAdminUI({ request, post });
     const tabs = document.querySelectorAll('[role="tab"][data-project-tab]');
     const requestedTab = new URL(location.href).searchParams.get('projectTab');
-    let projectTab = ['issues', 'discuss', 'admin'].includes(requestedTab) ? requestedTab : 'home';
+    let projectTab = ['issues', 'discuss', 'automate', 'admin'].includes(requestedTab) ? requestedTab : 'home';
     const state = {
       visible: false,
       data: null,
@@ -42,6 +42,7 @@
       $('project-home-content').hidden = tab !== 'home';
       $('project-issues').hidden = tab !== 'issues';
       $('project-admin').hidden = tab !== 'admin';
+      $('project-automate').hidden = tab !== 'automate';
       for (const button of tabs) button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
       discuss.setVisible(state.visible && tab === 'discuss');
       loadIssuesFrame();
@@ -344,7 +345,7 @@
     }
     function projectNavigation(button) {
       const route = button.dataset.projectHome;
-      if (route === 'home' || route === 'discuss') {
+      if (['home', 'issues', 'discuss'].includes(route)) {
         navigateHome();
         selectProjectTab(route);
         void refresh();
