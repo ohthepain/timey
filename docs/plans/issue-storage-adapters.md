@@ -1,6 +1,8 @@
 # Alternatives to Git for issue storage
 
-Research and proposal, 20 November 2026. This document proposes a direction. It
+Research and proposal, 20 November 2026. The approved implementation keeps local
+files and follows [ADR 0019](../adr/0019-share-issue-claims-on-the-queue-branch.md).
+The comparison below records the investigation that led to that decision. This document proposes a direction. It
 does not select a new provider or authorize a migration. Provider facts and
 official sources are in the [provider evidence](issue-storage-provider-evidence.md).
 

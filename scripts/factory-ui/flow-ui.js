@@ -434,6 +434,10 @@
 
   async function action(name, fields = {}, options = {}) {
     if (state.pending) return null;
+    if (!options.global && state.view?.issue?.readOnly && !state.view.issue.readOnlyActions.includes(name)) {
+      showError(state.view.issue.readOnlyReason);
+      return null;
+    }
     const selected = state.issueId;
     const revision = state.view?.flow?.revision;
     if (!options.global && (!selected || revision == null)) {
@@ -471,8 +475,20 @@
 
   function setBusy(busy) {
     $('folder-workspace').inert = busy;
+    const frozenIssue = Boolean(state.view?.issue?.readOnly);
+    document.querySelectorAll('[data-open-palette]').forEach((button) => {
+      button.disabled = busy || frozenIssue;
+    });
+    document.querySelectorAll('[data-skill-picker]').forEach((picker) => {
+      picker.inert = frozenIssue;
+    });
+    $('issue-flow-picker').inert = frozenIssue;
+    $('issue-settings-form').inert = frozenIssue;
+    $('rename-issue-form').inert = frozenIssue;
+    $('rename-issue').disabled = busy || frozenIssue;
     $('issue-grouping').inert = busy;
     const attached = Boolean(state.view?.grouping?.master);
+    const frozen = Boolean(state.view?.issue?.readOnly);
     document
       .querySelectorAll(
         '[data-action], [data-add-kind], #capture-submit, #export-flow-submit, #folder-form button[type="submit"]'
@@ -481,6 +497,9 @@
         const runsBlock = ['start', 'continue'].includes(button.dataset.action);
         button.disabled =
           busy ||
+          (frozen &&
+            (button.dataset.addKind ||
+              (button.dataset.action && !state.view.issue.readOnlyActions.includes(button.dataset.action)))) ||
           (attached && Boolean(button.dataset.action) && !['comment', 'folder'].includes(button.dataset.action)) ||
           (runsBlock && operationPaused(activeBlock())) ||
           (button.id === 'delete-block' && Boolean(blockDeletionReason(activeBlock())));
@@ -496,9 +515,13 @@
         ].includes(field.id);
         field.disabled =
           busy ||
+          frozen ||
           (attached && Boolean(field.closest('#request-form, #block-form'))) ||
           (closureSetting && state.view?.issue?.status === 'closed');
       });
+    document.querySelectorAll('#inspector-body button[type="submit"]').forEach((button) => {
+      button.disabled = busy || frozen;
+    });
     const runBlock = $('run-block');
     runBlock.disabled =
       busy ||
@@ -515,15 +538,17 @@
       state.view.flow.blocks.some(isRunning);
     updatePlaybackAvailability(busy);
     $('close-publish').disabled = busy;
-    $('move-starting-branch').disabled = busy;
+    $('move-starting-branch').disabled = busy || frozen;
     const startingBranch = $('starting-branch');
     if (startingBranch)
       startingBranch.disabled = busy || !state.view?.startingPointEditable || !state.view.branches?.length;
-    const branchBusy = busy || Boolean(state.view?.flow?.blocks.some(isRunning));
+    const branchBusy = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     $('target-update-menu').disabled = branchBusy;
     $('worktree-menu').querySelector('option[value="update"]').disabled = branchBusy;
+    $('worktree-menu').querySelector('option[value="delete"]').disabled =
+      frozen && state.view.issue.status !== 'closed';
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
-    $('merge-state-menu').disabled = busy || Boolean(state.view?.flow?.blocks.some(isRunning));
+    $('merge-state-menu').disabled = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);
   }
 
@@ -542,7 +567,8 @@
     $('issue-archive-menu').disabled = busy;
     const archived = issue?.location === 'archive';
     for (const option of $('issue-archive-menu').options)
-      if (['archive', 'reveal', 'reopen'].includes(option.value)) option.hidden = archived;
+      if (['archive', 'reveal', 'reopen'].includes(option.value))
+        option.hidden = archived || (option.value === 'reopen' && issue?.readOnly);
     $('issue-archive-menu').options[0].textContent = archived ? 'Archived issue' : 'Archive';
     const closing = state.view?.flow?.closing;
     const awaiting = closed && closing && !closing.complete && !state.view.closureBusy;
@@ -558,7 +584,7 @@
     const paused = playback?.mode === 'paused';
     const closed = state.view?.issue?.status === 'closed';
     const pending = state.view?.issue?.state === 'needs-approval';
-    button.hidden = closed || Boolean(state.view?.grouping?.master);
+    button.hidden = closed || Boolean(state.view?.issue?.readOnly) || Boolean(state.view?.grouping?.master);
     $('closed-issue-indicator').hidden = !closed;
     button.disabled = busy || !playback || pending || (paused && (state.newActionsPaused || closed));
     button.title = !playback
@@ -633,7 +659,7 @@
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
     const row = (issue) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
     const groups = folders
       .map((folder) => {
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
@@ -2109,6 +2135,7 @@
     runButton.hidden =
       !block ||
       block.readOnly ||
+      Boolean(state.view.issue.readOnly && !running) ||
       Boolean(state.view.grouping?.master) ||
       Boolean(state.view.flow.request) ||
       state.view.issue.state === 'needs-approval' ||
@@ -2131,6 +2158,7 @@
 
   function blockDeletionReason(block) {
     if (!block) return 'Select a block.';
+    if (state.view?.issue?.readOnly) return 'This merged issue is read-only.';
     if (block.kind === 'request') return 'Request is required for the issue flow.';
     if (block.readOnly) return 'Manage this operation from its original controls.';
     const closing = state.view?.flow.closing;
@@ -2230,6 +2258,7 @@
     issueNumber.hidden = issue?.issueNumber == null;
     issueNumber.textContent = issueNumber.hidden ? '' : `#${issue.issueNumber}`;
     $('issue-title').textContent = issue?.title || '';
+    renderMergedIssueNotice(issue);
     if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
     renderFlowPicker();
     renderIssueSettings();
@@ -2263,6 +2292,13 @@
     renderErrors();
     setBusy(state.pending);
     renderInvestigationPage();
+  }
+
+  function renderMergedIssueNotice(issue) {
+    $('merged-issue-notice').hidden = !issue?.readOnly;
+    $('merged-issue-notice').textContent = issue?.readOnly
+      ? 'Merged. This issue is read-only. Close it when ready.'
+      : '';
   }
 
   function renderInvestigationPage() {

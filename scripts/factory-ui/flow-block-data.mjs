@@ -1,3 +1,4 @@
+import { mergedDelivery } from './merged-issue.mjs';
 import { readFileSync } from 'node:fs';
 import { digest } from './common.mjs';
 
@@ -37,6 +38,7 @@ export function latestCurrentAttempt(block) {
 }
 
 export function invalidateBlocks(flow, seeds, cascade = true) {
+  if (mergedDelivery(flow)) return new Set();
   const affected = new Set(seeds);
   const at = new Date().toISOString();
   for (const block of flow.blocks) {

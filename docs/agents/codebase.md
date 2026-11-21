@@ -689,6 +689,11 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+`merged-issue.mjs` identifies retained merged delivery and defines the read-only
+policy. Flow operations and HTTP mutation guards enforce it; metadata helpers
+also reject changes to saved merged issues. The observer refreshes linked PRs
+before edits, and `flow-delivery.mjs` validates retained merge proof for Close.
+See [ADR 0020](../adr/0020-freeze-merged-issues.md).
 `execution-permissions.mjs` supplies native permission guidance for model-run
 checks. `work-progress.mjs` separates bounded unfinished-work continuations from
 check repairs and stops for concrete human, permission or external blockers.
@@ -769,9 +774,18 @@ socket directory.
 `.oxfmtrc.json` owns formatter options for Vite and issue reports.
 `issue-report-format.mjs` passes that file explicitly to the formatter, so report
 writes do not load the application's Vite plugins.
-Direct archives publish report removal and the exact owned claim's deletion in
-one atomic Git push. Publication retains a commit-bound acknowledgment and still
-confirms the resulting commit before clearing local claim metadata. Missing or
+`shared-issue-config.mjs` owns the metadata path allowlist.
+`shared-issue-paths.mjs` validates claim documents and their canonical paths.
+`shared-issue-git.mjs` owns private-index commits, App pushes, and claim snapshots. `shared-issue-claims.mjs` stores version 2 claim files
+on the queue branch. Its expected-tip updates preserve unrelated metadata and
+exact-owner release. `shared-issue-app-push.mjs` enforces the configured dedicated
+queue, metadata-only paths, regular files, and the expected parent.
+`detach-issue-reports.mjs` verifies authoritative copies before untracking source
+reports while preserving local files. `source-issue-separation.mjs`, invoked by
+the staged formatter, prevents shared metadata from returning to source commits.
+Direct checkpoints publish report updates and the exact owned claim's deletion
+in one queue commit. Publication retains a commit-bound acknowledgment and still
+confirms the resulting commit and its exact claim removal before clearing local claim metadata. Missing or
 interrupted acknowledgments use the existing remote release and recovery path.
 `issue-folder-drag-ui.js` handles issue drag events in the Issues sidebar.
 The sidebar uses the existing revision-checked `folder` action to save moves,

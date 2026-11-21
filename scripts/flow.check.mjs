@@ -2051,3 +2051,220 @@ test('issue merge status exposes conflicts and Abort merge rejects stale or busy
   assert.equal(work('rev-parse', 'HEAD'), saved);
   assert.equal(work('status', '--porcelain'), '');
 });
+
+function mergedIssueFixture(t, { observed = false } = {}) {
+  const f = fixture(t);
+  const calls = [];
+  const flows = createIssueFlows(f.service, {
+    executor: executor(async () => {
+      calls.push('execute');
+      return {};
+    }),
+    observer: {
+      observe: async () =>
+        observed
+          ? {
+              pr: {
+                number: 91,
+                url: 'https://github.com/test/fixture/pull/91',
+                branch: 'dev',
+                mergedAt: '2026-11-20T20:51:58Z',
+                head: 'merged-head',
+              },
+            }
+          : {},
+    },
+  });
+  f.service.flows = flows;
+  t.after(() => flows.close());
+  const flow = flows.read(flows.selected(f.id));
+  flow.destination = { branch: 'dev', pr: 91, url: 'https://github.com/test/fixture/pull/91' };
+  const merge = flow.blocks.find((block) => block.kind === 'merge');
+  if (!observed)
+    merge.attempts.push({
+      id: 'confirmed-merge',
+      status: 'completed',
+      startedAt: '2026-11-20T20:38:52Z',
+      endedAt: '2026-11-20T20:51:59Z',
+      summary: 'GitHub confirms the protected merge.',
+      result: { pr: 91, revision: 'merged-revision', head: 'merged-head', url: flow.destination.url },
+    });
+  const saved = flows.store.save(flow, flow.revision);
+  return { ...f, flows, flow: saved, calls };
+}
+
+test('merged issue stays read-only after its Merge definition changes without invalidating history', async (t) => {
+  const f = mergedIssueFixture(t);
+  const merge = f.flow.blocks.find((block) => block.kind === 'merge');
+  merge.definitionChecksum = 'earlier-definition';
+  f.flow = f.flows.store.save(f.flow, f.flow.revision);
+  const before = readFileSync(f.flows.store.path(f.id), 'utf8');
+  await f.flows.action({ issueId: f.id, blockId: merge.id, action: 'open-block', revision: f.flow.revision });
+  assert.equal(readFileSync(f.flows.store.path(f.id), 'utf8'), before);
+  const view = await f.flows.view(f.id);
+  assert.equal(view.issue.readOnly, true);
+  assert.equal(view.issue.status, 'merged');
+  assert.deepEqual(f.calls, []);
+});
+
+for (const [label, input] of [
+  ['rename', { action: 'rename-issue', title: 'Changed after merge', previousTitle: 'Preserve request wording' }],
+  ['request edit', { action: 'edit-request', wording: 'Different work' }],
+  ['graph edit', { action: 'add', kind: 'work' }],
+  ['flow definition refresh', { action: 'refresh-definition', blockId: 'merge' }],
+  ['Play', { action: 'play' }],
+  ['Work retry', { action: 'start', blockId: 'work' }],
+  ['Merge retry', { action: 'continue', blockId: 'merge' }],
+  ['verification settings', { action: 'full-regression-setting', enabled: true }],
+]) {
+  test(`merged issue rejects ${label} before changing the issue or flow`, async (t) => {
+    const f = mergedIssueFixture(t);
+    const report = readFileSync(join(f.root, '.issues', f.id + '.md'), 'utf8');
+    const flow = readFileSync(f.flows.store.path(f.id), 'utf8');
+    await assert.rejects(f.flows.action({ ...input, issueId: f.id, revision: f.flow.revision }), /merged.*read.only/i);
+    assert.equal(readFileSync(join(f.root, '.issues', f.id + '.md'), 'utf8'), report);
+    assert.equal(readFileSync(f.flows.store.path(f.id), 'utf8'), flow);
+    assert.deepEqual(f.calls, []);
+  });
+}
+
+test('an externally merged PR locks edits before the first merged issue view and remains locked after restart', async (t) => {
+  const f = mergedIssueFixture(t, { observed: true });
+  await assert.rejects(
+    f.flows.action({
+      issueId: f.id,
+      revision: f.flow.revision,
+      action: 'rename-issue',
+      title: 'Changed',
+      previousTitle: 'Preserve request wording',
+    }),
+    /merged.*read.only/i
+  );
+  const after = f.flows.read(f.flows.selected(f.id));
+  const restarted = createIssueFlows(f.service, {
+    observer: { observe: async () => ({ remoteError: 'GitHub unavailable' }) },
+  });
+  t.after(() => restarted.close());
+  await assert.rejects(
+    restarted.action({ issueId: f.id, revision: after.revision, action: 'play' }),
+    /merged.*read.only/i
+  );
+});
+
+test('discovering a definition change on another issue preserves merged history', async (t) => {
+  const f = mergedIssueFixture(t);
+  const merge = f.flow.blocks.find((block) => block.kind === 'merge');
+  merge.definitionChecksum = 'earlier-definition';
+  merge.attempts[0].invalidatedAt = '2026-11-20T22:36:01Z';
+  f.flows.store.save(f.flow, f.flow.revision);
+  const before = readFileSync(f.flows.store.path(f.id), 'utf8');
+  const otherId = '20261121-another-issue';
+  writeFileSync(
+    join(f.root, '.issues', otherId + '.md'),
+    `---\nid: ${otherId}\ntitle: Different issue\nstate: backlog\ncreated: 2026-11-21T00:00:00Z\n---\n\n## Original request\n\nUnmerged work.\n`
+  );
+  const other = f.flows.read(f.flows.selected(otherId));
+  other.blocks.find((block) => block.kind === 'merge').definitionChecksum = 'earlier-definition';
+  const saved = f.flows.store.save(other, other.revision);
+  await f.flows.action({ issueId: otherId, action: 'open-block', blockId: 'merge', revision: saved.revision });
+  assert.equal(readFileSync(f.flows.store.path(f.id), 'utf8'), before);
+  assert.equal((await f.flows.view(f.id)).issue.readOnly, true);
+});
+
+test('opening an externally merged issue records its delivery before checking definitions', async (t) => {
+  const f = mergedIssueFixture(t, { observed: true });
+  const merge = f.flow.blocks.find((block) => block.kind === 'merge');
+  merge.definitionChecksum = 'earlier-definition';
+  const saved = f.flows.store.save(f.flow, f.flow.revision);
+  await f.flows.action({ issueId: f.id, action: 'open-block', blockId: merge.id, revision: saved.revision });
+  const after = f.flows.read(f.flows.selected(f.id));
+  assert.deepEqual(after.blocks, saved.blocks);
+  assert.equal(after.merged.pr, 91);
+  assert.deepEqual(f.calls, []);
+});
+
+test('an unmerged PR can still be edited and local files need no remote observer', async (t) => {
+  const f = mergedIssueFixture(t, { observed: true });
+  f.flows.observer = { observe: async () => ({ pr: { number: 91, mergedAt: null } }) };
+  await f.flows.action({
+    issueId: f.id,
+    revision: f.flow.revision,
+    action: 'rename-issue',
+    previousTitle: 'Preserve request wording',
+    title: 'Still editable',
+  });
+  assert.equal(f.flows.selected(f.id).title, 'Still editable');
+  const saved = f.flows.read(f.flows.selected(f.id));
+  delete saved.destination.pr;
+  f.flows.store.save(saved, saved.revision);
+  f.flows.observer = {
+    observe: async () => {
+      throw Error('Local issue should not query GitHub');
+    },
+  };
+  await f.flows.requireEditableIssue(f.id);
+});
+
+test('editing a linked PR refreshes its cached open status before a newly observed merge', async (t) => {
+  const f = fixture(t);
+  const repository = 'test/fixture';
+  const config = { provider: 'github', repository, remote: 'origin', target: 'dev' };
+  writeFileSync(join(f.root, '.issues/issue-delivery-config.json'), JSON.stringify(config));
+  let merged = false;
+  let reads = 0;
+  const observer = createFlowObserver(f.service, {
+    provider: {
+      config,
+      async inspect() {
+        reads++;
+        return {
+          number: 91,
+          html_url: 'https://github.com/test/fixture/pull/91',
+          head: { sha: 'original-head', repo: { full_name: repository } },
+          base: { ref: 'dev', repo: { full_name: repository } },
+          merged_at: merged ? '2026-11-20T20:51:58Z' : null,
+          merge_commit_sha: merged ? 'confirmed-merge' : null,
+        };
+      },
+    },
+  });
+  const flows = createIssueFlows(f.service, { observer });
+  t.after(() => flows.close());
+  const flow = flows.read(flows.selected(f.id));
+  flow.destination = { branch: 'dev', pr: 91 };
+  const saved = flows.store.save(flow, flow.revision);
+  assert.equal((await observer.observe(saved, { refresh: true })).pr.mergedAt, null);
+  merged = true;
+  assert.equal((await observer.observe(saved)).pr.mergedAt, null);
+  assert.equal(reads, 1);
+  await assert.rejects(
+    flows.action({
+      issueId: f.id,
+      revision: saved.revision,
+      action: 'rename-issue',
+      title: 'Changed',
+      previousTitle: 'Preserve request wording',
+    }),
+    /merged.*read.only/i
+  );
+  assert.equal(reads, 2);
+  assert.equal(flows.read(flows.selected(f.id)).merged.revision, 'confirmed-merge');
+});
+
+test('an unavailable linked PR status refuses edits without changing the saved issue or flow', async (t) => {
+  const f = mergedIssueFixture(t, { observed: true });
+  f.flows.observer = { observe: async () => ({ remoteError: 'GitHub unavailable' }) };
+  const before = readFileSync(f.flows.store.path(f.id), 'utf8');
+  await assert.rejects(
+    f.flows.action({
+      issueId: f.id,
+      revision: f.flow.revision,
+      action: 'rename-issue',
+      title: 'Changed',
+      previousTitle: 'Preserve request wording',
+    }),
+    /Cannot confirm whether this PR merged/
+  );
+  assert.equal(readFileSync(f.flows.store.path(f.id), 'utf8'), before);
+  assert.equal(f.flows.selected(f.id).title, 'Preserve request wording');
+});

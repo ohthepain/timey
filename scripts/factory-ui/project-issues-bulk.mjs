@@ -41,8 +41,7 @@ export async function editProjectIssues(service, input, projectHome) {
     if (changes[field] !== undefined)
       requireThat(typeof changes[field] === 'boolean', `Choose whether ${field} is on or off.`);
 
-  const views = new Map();
-  for (const issueId of issueIds) views.set(issueId, await flows.view(issueId));
+  const views = await editableIssueViews(flows, issueIds);
   if (changes.targetBranch !== undefined)
     requireThat(
       [...views.values()].every((view) => !view.destination.locked),
@@ -133,4 +132,13 @@ export async function editProjectIssues(service, input, projectHome) {
     results.push({ ...result, success: result.errors.length === 0 });
   }
   return { results };
+}
+
+async function editableIssueViews(flows, issueIds) {
+  const views = new Map();
+  for (const issueId of issueIds) {
+    await flows.requireEditableIssue(issueId);
+    views.set(issueId, await flows.view(issueId));
+  }
+  return views;
 }

@@ -1,4 +1,5 @@
 import { issueTypes } from './flow-definitions.mjs';
+import { mergedDelivery } from './merged-issue.mjs';
 import {
   deliveryTarget,
   latestCurrentAttempt,
@@ -477,15 +478,30 @@ function deliveryWorkProof(ctx, candidate) {
   };
 }
 
+function closureCandidate(ctx, workspace, options) {
+  const merged = mergedDelivery(ctx.flow);
+  if (!merged?.verification) return verifiedFlowCandidate(ctx, workspace, options);
+  const checked = merged.verification;
+  const tree = git(workspace.checkout, 'rev-parse', `${merged.head}^{tree}`);
+  const base = checked.destinationBase || workspace.base;
+  requireThat(
+    checked.uncommitted || checked.head === merged.head,
+    'The retained verification does not match the merged issue candidate.'
+  );
+  git(workspace.checkout, 'merge-base', '--is-ancestor', base, merged.head);
+  return { head: merged.head, tree, base, evidence: verifyEvidence({ tree, base }, checked, options) };
+}
+
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
   const type = ctx.details?.type ?? requestData(ctx.flow).fields?.type ?? ctx.flow.routeType;
   requireThat(issueTypes.includes(type), 'Missing issue type. Set the issue type in Request before closing.');
   if (type === 'investigation') return investigationClosureArtifact(ctx, workspace);
-  const candidate = verifiedFlowCandidate(ctx, workspace, options);
+  const candidate = closureCandidate(ctx, workspace, options);
   const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block);
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
-  const pr = await provider.findByBranch(workspace.branch, provider.config.target);
+  const merged = mergedDelivery(ctx.flow);
+  const pr = merged ? { number: merged.pr } : await provider.findByBranch(workspace.branch, provider.config.target);
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
   requireThat(
@@ -495,12 +511,13 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
       delivered.target === deliveryTarget(ctx.flow).branch &&
       delivered.mergedAt &&
       delivered.mergeCommit &&
+      (!merged?.revision || delivered.mergeCommit === merged.revision) &&
       delivered.targetRevision,
     'The merged PR does not match the verified issue candidate and target. Reconcile its delivery before accepting.'
   );
   ctx.signal.throwIfAborted();
   requireThat(
-    verifiedFlowCandidate(ctx, workspace, options).head === candidate.head,
+    closureCandidate(ctx, workspace, options).head === candidate.head,
     'The issue candidate changed while checking its merged PR. Review the current result before accepting.'
   );
   const path = join(folder, 'merged-delivery.json');

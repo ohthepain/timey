@@ -1,3 +1,4 @@
+import { requireUnmergedIssue } from './merged-issue.mjs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
@@ -19,6 +20,7 @@ export function changePriority(service, input) {
 }
 
 export function setPriority(service, input) {
+  requireUnmergedIssue(service.root, input.issueId);
   service.ownServer();
   const queue = readQueue(service.root);
   const issue = queue.issues.find((entry) => entry.id === input.issueId);

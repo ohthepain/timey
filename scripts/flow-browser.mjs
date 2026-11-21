@@ -41,6 +41,7 @@ import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
+import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -128,6 +129,7 @@ const logs = {
 };
 const playbackIssueId = '20261116-playback-fixture';
 const playbackWork = Promise.withResolvers();
+const holdFirstWork = (number, block) => number === 1 && block.kind !== 'cleanup';
 let firstWorkProgress;
 const service = new FactoryUI(project);
 const deliveryConfig = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
@@ -147,7 +149,7 @@ const executor = {
     onStep('pnpm test');
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
     if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
-    if (number === 1) {
+    if (holdFirstWork(number, block)) {
       firstWorkProgress = { onProgress, onStep };
       await new Promise((_, reject) => {
         if (signal.aborted) return reject(Error('Stopped by the user.'));
@@ -250,6 +252,7 @@ function checkExcluded(name) {
   const selections = [
     ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
+    ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
     ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
     [
       '--connection-recovery',
@@ -2341,6 +2344,9 @@ try {
   );
   await check('Actions menu lists two running Flow blocks', () =>
     actionsMenuBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check('Merged issues preserve history and expose only closure controls', () =>
+    mergedIssueBrowserChecks({ page, project, service, screenshot, output, poll })
   );
   passed = true;
 } catch (error) {

@@ -133,6 +133,10 @@ rechecks an exact preview before writing to GitHub. New PR descriptions include
 Requested proof when present. Repeat publication updates the title and commit as
 needed and preserves the original PR description.
 
+Work commits its checked issue changes through normal Git hooks before completing.
+Factory rechecks formatting and Fallow, then requires a clean committed checkout.
+Uncommitted changes continue in the same Work conversation within the existing
+three-continuation limit; an exhausted limit blocks completion and preserves work.
 Work records candidate base, tree, commit and uncommitted state from the actual
 checkout snapshot. Publish requires a committed candidate. Verification for an
 uncommitted tree can be reused after that same tree is committed; a different tree
@@ -173,6 +177,10 @@ See [Close and Cleanup](../plans/flow-close-cleanup.md) and
 On closed issues, a red square replaces Play.
 Once the issue is closed, **Archive** replaces **Close**. The menu can archive the
 saved report, reveal it in Finder, or reopen the issue for investigation.
+For merged issues, [ADR 0020](0020-freeze-merged-issues.md) supersedes editing and
+reopening: the issue and work flow are read-only, while Close, its existing
+closure sequence, history and archival remain available. Reopening merged issues
+is deferred.
 
 Use **×** in the inspector’s top-right corner to remove a block after
 confirmation. You can also click a block in the center column and press

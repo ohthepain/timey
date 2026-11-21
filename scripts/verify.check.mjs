@@ -124,12 +124,19 @@ test('staged audit sees the index even when unstaged changes hide an unused file
   assert.equal(git('diff', '--binary', 'HEAD'), before, 'audit must not modify the original index or worktree');
 });
 
+function copySourceSeparation(root) {
+  mkdirSync(join(root, 'scripts/factory-ui'), { recursive: true });
+  for (const name of ['source-issue-separation.mjs', 'shared-issue-config.mjs', 'common.mjs'])
+    writeFileSync(join(root, 'scripts/factory-ui', name), readFileSync(join('scripts/factory-ui', name)));
+}
+
 test('staged formatter checks issue reports from an in-repository snapshot', (t) => {
   const { root, git } = gitFixture(t, 'format-staged-');
   mkdirSync(join(root, 'scripts'));
   mkdirSync(join(root, '.issues'));
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'format-staged-fixture', private: true }));
   writeFileSync(join(root, 'scripts/format-staged.mjs'), readFileSync(resolve('scripts/format-staged.mjs')));
+  copySourceSeparation(root);
   writeFileSync(join(root, '.prettierignore'), '');
   writeFileSync(join(root, '.issues/report.md'), '# A staged report  \n');
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
@@ -177,7 +184,7 @@ function auditFixture(t, extraFiles = {}) {
     })
   );
   writeFileSync(join(root, 'pnpm-lock.yaml'), readFileSync('pnpm-lock.yaml'));
-  writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/*.mjs"]}\n');
+  writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/**/*.mjs"]}\n');
   mkdirSync(join(root, 'scripts'));
   for (const name of [
     'format-staged.mjs',
@@ -190,6 +197,7 @@ function auditFixture(t, extraFiles = {}) {
     'audit-result.mjs',
   ])
     writeFileSync(join(root, 'scripts', name), readFileSync(join('scripts', name)));
+  copySourceSeparation(root);
   writeFileSync(join(root, 'index.js'), 'console.log("baseline");\n');
   for (const [name, content] of Object.entries(extraFiles)) writeFileSync(join(root, name), content);
   git('add', '.');

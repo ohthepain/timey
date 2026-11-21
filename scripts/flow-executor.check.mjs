@@ -331,25 +331,47 @@ test('Work repairs formatting and Fallow in its own chat and leaves full checks 
   assert.equal(checks.at(-1), 'full Verify');
 });
 
-test('Work retains the exact identity of its uncommitted checkout tree', async (t) => {
+test('Work continues in the same conversation until its checked changes are committed', async (t) => {
+  let checks = 0;
   const f = fixture(t, {
     async verifyWork(_ctx, workspace) {
-      writeFileSync(join(workspace.checkout, 'source.txt'), 'Uncommitted candidate.\n');
+      if (++checks === 1) writeFileSync(join(workspace.checkout, 'source.txt'), 'Checked candidate.\n');
       return { evidence: [] };
     },
   });
+  const turn = f.connection.turn.bind(f.connection);
+  let turns = 0;
+  f.connection.turn = async (...args) => {
+    if (++turns === 2) {
+      assert.match(args[2], /commit/i);
+      f.git('-C', args[1], 'commit', '-am', 'Commit checked changes');
+    }
+    return turn(...args);
+  };
   const worked = await f.run('work');
+  assert.equal(turns, 2);
+  assert.equal(checks, 2);
+  const conversations = f.calls.filter(({ method }) => method === 'turn').map(({ threadId }) => threadId);
+  assert.equal(new Set(conversations).size, 1);
   assert.equal(worked.result.base, worked.workspace.base);
   assert.equal(worked.result.commit, worked.result.head);
-  assert.notEqual(
-    worked.result.tree,
-    execFileSync('git', ['-C', worked.workspace.checkout, 'rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim()
-  );
-  assert.equal(worked.result.uncommitted, true);
-  assert.equal(worked.artifacts.values.candidateBase, worked.result.base);
+  assert.equal(worked.result.tree, f.git('-C', worked.workspace.checkout, 'rev-parse', 'HEAD^{tree}'));
+  assert.equal(worked.result.uncommitted, false);
   assert.equal(worked.artifacts.values.candidateTree, worked.result.tree);
   assert.equal(worked.artifacts.values.candidateCommit, worked.result.commit);
-  assert.equal(worked.artifacts.values.candidateUncommitted, true);
+  assert.equal(worked.artifacts.values.candidateUncommitted, false);
+});
+
+test('Work cannot complete while checked changes remain uncommitted', async (t) => {
+  const f = fixture(t, {
+    async verifyWork(_ctx, workspace) {
+      writeFileSync(join(workspace.checkout, 'new-source.txt'), 'Uncommitted candidate.\n');
+      return { evidence: [] };
+    },
+  });
+  await assert.rejects(f.run('work'), /unfinished steps after 3 continuations.*[Cc]ommit/);
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 4);
+  assert.equal(readFileSync(join(f.flow.workspace.checkout, 'new-source.txt'), 'utf8'), 'Uncommitted candidate.\n');
 });
 
 test('Work stays blocked when Fallow still fails after repairs', async (t) => {

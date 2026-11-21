@@ -1,3 +1,4 @@
+import { mergedDelivery, mergedIssueMessage, allowsMergedAction, mergedIssueState } from './merged-issue.mjs';
 import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
 import { BranchRepairs } from './branch-repair.mjs';
@@ -275,7 +276,7 @@ class IssueFlows {
     this.catalog = new BlockCatalog(service.root);
     this.deliveryOptions = options.deliveryOptions || {};
     this.trashDirectory = options.trashDirectory || trashDirectory;
-    this.observer = options.observer || createFlowObserver(service);
+    this.observer = options.observer || createFlowObserver(service, { provider: this.deliveryOptions.provider });
     this.executor = options.executor || createFlowExecutor(service, this.deliveryOptions);
     this.active = new Map();
     this.branchRepairs = new BranchRepairs(this, options.branchRepairs);
@@ -363,6 +364,7 @@ class IssueFlows {
   }
   read(issue, catalog = this.catalog.read().entries, folderSettings = readIssueFolderSettings(this.service.root)) {
     const flow = this.store.read(issue, flowTarget(this.service.root), catalog);
+    if (mergedDelivery(flow)) return flow;
     const fallback = folderSettings.find(({ id }) => id === this.inboxFolder.id)?.name || this.inboxFolder.name;
     if (Object.hasOwn(issue, 'folder_id'))
       flow.folder = folderSettings.find(({ id }) => id === issue.folder_id)?.name || flow.folder || fallback;
@@ -393,6 +395,7 @@ class IssueFlows {
     });
   }
   groupEligible(issue, flow) {
+    if (mergedDelivery(flow)) return false;
     try {
       const folder = resolveFolderSettings(this.service.root, flow.folder);
       return (
@@ -449,11 +452,12 @@ class IssueFlows {
       folder: flow.folder,
       flowRevision: flow.revision,
       folderLocked: Boolean(flow.folderLocked),
+      readOnly: Boolean(mergedDelivery(flow)),
       folderEligible: this.folderSelection.eligible(issue, flow),
       groupEligible: this.groupEligible(issue, flow),
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
-      humanInput: issue.closed ? null : flowHumanInput(flow),
+      humanInput: availableHumanInput(issue, flow),
       status: flowStatus(flow, issue, active),
     };
   }
@@ -507,7 +511,9 @@ class IssueFlows {
     }
     if (!id) return data;
     const issue = this.selected(id);
-    const savedFlow = this.read(issue, catalog);
+    const observedFlow = this.read(issue, catalog);
+    const environment = await this.observer.observe(observedFlow);
+    const savedFlow = this.observedDelivery(issue, observedFlow, environment, catalog);
     const flow = this.visibleFlow(savedFlow);
     const issueSettings = this.issueSettings(issue, savedFlow);
     for (const block of flow.blocks) {
@@ -537,17 +543,7 @@ class IssueFlows {
       ];
       flow.blocks.splice(1, 0, block);
     }
-    const environment = await this.observer.observe(flow);
-    if (environment.pr && !savedFlow.destination?.pr && !this.active.has(id)) {
-      const current = this.read(issue, catalog);
-      if (current.revision === savedFlow.revision) {
-        current.destination = this.lockedDestination(environment.pr);
-        const saved = this.store.save(current, current.revision);
-        flow.destination = saved.destination;
-        flow.revision = saved.revision;
-      }
-    }
-    suggestTargetUpdate(flow, environment, catalog);
+    this.suggestTargetUpdate(flow, environment, catalog);
     const issuesWithSelected = issues.some((entry) => entry.id === id) ? issues : [...issues, issue];
     const selectedRow = requestOnly
       ? this.indexIssue(issue, savedFlow, issuesWithSelected)
@@ -587,10 +583,11 @@ class IssueFlows {
         reusable: issue.reusable === true,
         location: issue.location,
         status: selectedRow.status,
+        ...mergedIssueState(flow),
         closure: issue.closure,
       },
       flow,
-      humanInput: issue.closed ? null : flowHumanInput(flow),
+      humanInput: availableHumanInput(issue, flow),
       issueSettings: {
         ...issueSettings,
         fields: folderSettingsFields(this.service.root).filter(({ key }) =>
@@ -622,6 +619,57 @@ class IssueFlows {
       artifacts: this.artifacts(flow),
       conversation: conversationMessages(this.service.root, id).slice(-100),
     };
+  }
+  suggestTargetUpdate(flow, environment, catalog) {
+    if (!mergedDelivery(flow)) suggestTargetUpdate(flow, environment, catalog);
+  }
+  observedDelivery(issue, flow, environment, catalog) {
+    if (this.retainMerge(issue, flow, environment.pr)) return this.read(issue, catalog);
+    if (mergedDelivery(flow)) return flow;
+    if (environment.pr && !flow.destination?.pr && !this.active.has(issue.id)) {
+      const current = this.read(issue, catalog);
+      if (current.revision === flow.revision) {
+        current.destination = this.lockedDestination(environment.pr);
+        return this.store.save(current, current.revision);
+      }
+    }
+    return flow;
+  }
+  retainMerge(issue, flow, pr) {
+    if (mergedDelivery(flow) || !pr?.mergedAt) return false;
+    const current = this.store.read(issue, flowTarget(this.service.root), this.catalog.read().entries);
+    current.merged = {
+      pr: pr.number,
+      url: pr.url,
+      head: pr.head,
+      branch: pr.branch,
+      mergedAt: pr.mergedAt,
+      revision: pr.revision,
+    };
+    this.store.save(current, current.revision);
+    this.pause(issue.id, 'This issue has merged. Close it when ready.');
+    return true;
+  }
+  async refreshMergeState(issue, flow) {
+    if (mergedDelivery(flow)) return flow;
+    const workspace = flowWorkspace(this.service, flow);
+    if (!flow.destination?.pr && !workspace?.branch && !workspace?.pr) return flow;
+    const observed = await this.observer.observe(flow, { refresh: true });
+    requireThat(
+      !observed.remoteError,
+      'Cannot confirm whether this PR merged. Refresh its GitHub status before editing.'
+    );
+    return this.retainMerge(issue, flow, observed.pr) ? this.read(issue) : flow;
+  }
+  async requireEditableIssue(id) {
+    const issue = this.selected(id);
+    const flow = await this.refreshMergeState(issue, this.read(issue));
+    requireThat(!mergedDelivery(flow), mergedIssueMessage);
+  }
+  async actionFlow(issue, input, catalog) {
+    if (input.action === 'open-block') return this.refreshMergeState(issue, this.read(issue, catalog));
+    if (!allowsMergedAction(input.action)) await this.requireEditableIssue(issue.id);
+    return this.read(issue, catalog);
   }
   visibleFlow(flow) {
     const view = structuredClone(flow);
@@ -743,6 +791,7 @@ class IssueFlows {
   reopened(id) {
     const issue = this.selected(id);
     const flow = this.read(issue);
+    requireThat(!mergedDelivery(flow), mergedIssueMessage);
     if (!flow.closing && !flow.autoClose) return;
     delete flow.closing;
     delete flow.autoClose;
@@ -905,6 +954,7 @@ class IssueFlows {
       const issue = this.selected(issueId);
       const { entries: catalog } = this.catalog.read();
       const flow = this.read(issue, catalog);
+      if (mergedDelivery(flow)) return this.pause(issueId, 'This issue has merged. Close it when ready.');
       const interrupted = flow.blocks.find((block) => block.attempts.some(unresolvedAttempt));
       if (interrupted) return this.pause(issueId, `Recover ${interrupted.label} before playing.`);
       requireThat(
@@ -1090,7 +1140,7 @@ class IssueFlows {
     if (folderActions.has(input.action)) return this.dispatchFolder(input);
     const issue = this.selected(input.issueId);
     const { entries: catalog } = this.catalog.read();
-    let flow = this.read(issue, catalog);
+    let flow = await this.actionFlow(issue, input, catalog);
     if (isInvestigation(issue, flow))
       requireThat(
         !closureActions.has(input.action) && !['retro-setting', 'full-regression-setting'].includes(input.action),
@@ -1323,9 +1373,8 @@ class IssueFlows {
     requireThat(!issue.closed && !issueHasActiveWork(this.service, issue.id), 'Choose an idle, open issue.');
     const folder = requireIssueFolder(this.service.root, name);
     if (flow.folder === name && issue.folder_id === folder.id) return;
-    const shared = this.service.sharedIssues?.acquireForApproval(issue);
-    updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder.id });
-    if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment changed', shared);
+    if (this.service.sharedIssues) this.service.sharedIssues.moveFolder(issue, folder.id);
+    else updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder.id });
     flow.folder = name;
     this.store.save(flow, flow.revision);
   }
@@ -1597,6 +1646,7 @@ class IssueFlows {
     }
   }
   checkDefinition(issue, flow, blockId, catalog) {
+    if (mergedDelivery(flow)) return false;
     const block = flow.blocks.find((item) => item.id === blockId);
     requireThat(block, 'Choose a saved block.');
     const id = blockDefinitionId(block);
@@ -1605,6 +1655,7 @@ class IssueFlows {
     if (block.definitionChecksum === checksum) return false;
     const changed = block.definitionChecksum !== undefined;
     const refresh = (current) => {
+      if (mergedDelivery(current)) return { dirty: new Set(), saved: current };
       const dirty = new Set();
       let initialized = false;
       for (const item of current.blocks.filter((item) => blockDefinitionId(item) === id)) {
@@ -1905,6 +1956,7 @@ class IssueFlows {
     return this.view(issue.id);
   }
   async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
+    if (!input.closureId) await this.requireEditableIssue(issue.id);
     if (isInvestigation(issue, flow) && !flow.closing) {
       requireThat(
         input.investigationOperation && this.investigations?.active.has(input.investigationOperation),
@@ -2521,8 +2573,13 @@ class IssueFlows {
     this.executor.close();
   }
 }
+function availableHumanInput(issue, flow) {
+  return issue.closed || mergedDelivery(flow) ? null : flowHumanInput(flow);
+}
+
 function flowStatus(flow, issue, active) {
   if (issue.closed) return 'closed';
+  if (mergedDelivery(flow)) return 'merged';
   if (issue.state === 'needs-approval') return 'needs-approval';
   if (active) return 'running';
   const attempts = flow.blocks.flatMap((block) => block.attempts);

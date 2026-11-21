@@ -41,6 +41,12 @@ Selecting the folder opens its existing issue actions. Drag issues between
 folder headings to change assignments. Every issue belongs to a folder. The Files tree
 continues to browse the folders' Markdown.
 
+An issue whose initial queue publication failed can still move between folders.
+The local move updates its pending report and preserves the publication error.
+An explicit publication retry shares the new assignment; the move does not retry
+publication or approve the issue. Already shared reports keep the normal claim
+and publication checks.
+
 Show real folders in one tree. A project folder with a `folder.md` settings file
 can show its Markdown, assigned issues, and issue actions in the same sidebar
 entry. Call it an **Issue folder**. Reports stay in the queue. For example,

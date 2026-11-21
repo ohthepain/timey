@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { assertSourceIssueSeparation } from './factory-ui/source-issue-separation.mjs';
 
 function ignoredForFormat(root, file) {
   const patterns = readFileSync(join(root, '.prettierignore'), 'utf8')
@@ -16,6 +17,7 @@ function ignoredForFormat(root, file) {
 }
 
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+assertSourceIssueSeparation(root);
 const files = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'], {
   cwd: root,
   encoding: 'buffer',

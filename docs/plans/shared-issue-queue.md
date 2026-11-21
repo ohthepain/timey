@@ -14,13 +14,32 @@ The Factory checkout reads the queue into its local `.issues/` cache and prepare
 
 ## Claim an issue
 
-Use one canonical remote branch per issue, proposed as `refs/heads/claims/<full-issue-id>`. Every runner uses the same name for that issue. Put a unique attempt ID and a runner label in the claim record so a runner can recognize its own claim after an interrupted request. Keep credentials and work in progress out of the claim record.
+Use one canonical record per issue at `.issues/claims/<full-issue-id>.json` on
+`issue-queue`. Reports already include lifecycle state in their YAML metadata.
+Reports, statuses, display numbers, and claims share one branch. Local report
+files remain an ignored cache, and local-only queues continue using files.
 
-The remote must create the branch only if it is absent. A local branch or a remote lookup followed by an ordinary push is insufficient. The runner starts only after confirming its own claim and rechecking that the latest shared report is still eligible. A conflicting claim, unavailable remote, or unresolved creation result leaves the runner idle. Display the remote claim alongside the report so the queue can show active ownership immediately.
+A version 2 claim contains a unique attempt ID, issue ID, runner label, remote,
+and queue branch. Its blob object ID identifies the exact ownership record.
+The runner saves its local intent before publishing. It reads the queue tip,
+checks claim absence, and commits the new record as a direct child of that tip.
+The push checks the exact expected remote tip. A competing update causes a fresh
+read and revalidation, with at most three attempts per operation. The runner
+starts only after confirming its current ownership and rereading the report to
+check that it is still eligible. A failed or unresolved request retains local
+recovery information and starts no work.
 
-Claim creation and release use Git leases to check the expected remote claim
-in the push itself. Factory reads the claim separately if the push result is
-uncertain.
+Release removes only the record whose blob ID matches the saved claim. A delayed
+release cannot remove a replacement owner. Claims have no automatic expiry.
+Direct report checkpoints remove their owned claim in the same commit as the
+report update. A landed commit and its parent prove that exact release even if
+the response was lost or a later run now holds another claim.
+
+Before upgrading writers, stop old runners and reconcile their outstanding claims
+and queue PRs with the previous version. New claim acquisition refuses any remaining
+`refs/heads/claims/*` branches, and old local claim receipts require explicit
+reconciliation. Block creation of legacy claim branches in the remote rules after
+cutover. Do not operate old and new claim writers concurrently.
 
 ## Publish and release
 
@@ -28,7 +47,7 @@ Publish report changes when an issue is created or closed, when Classic Progress
 
 A Classic Progress result and a code delivery are separate events. If a code PR remains open, record the run outcome and the PR link without implying merge or closure. Closure keeps its existing human acceptance rules. A handoff records where the next runner can find the retained work and what remains. It does not transfer a local workspace.
 
-For a normal release, stop the old runner and confirm that the required report checkpoint is on the queue branch. Delete only the exact remote claim held by that run, so a delayed release cannot remove a replacement claim. If publication fails, show the checkpoint as pending, retain it and the claim, and require a human to reconcile the failure before releasing the claim. For a crashed runner, require explicit recovery after confirming the old run has stopped. An elapsed timer alone does not establish that.
+For a normal release, stop the old runner and confirm that the required report checkpoint is on the queue branch. Remove only the exact queue claim held by that run, so a delayed release cannot remove a replacement claim. If publication fails, show the checkpoint as pending, retain it and the claim, and require a human to reconcile the failure before releasing the claim. For a crashed runner, require explicit recovery after confirming the old run has stopped. An elapsed timer alone does not establish that.
 
 ## Direct publication
 
@@ -39,8 +58,11 @@ repository contents write permission. Factory recalculates display numbers if
 another report lands first and stops if the same report changed. It stores the
 candidate before pushing and confirms that exact commit is in the queue history
 before releasing the claim. Code PRs still exclude shared reports and numbers.
-Each report check fetches the queue branch directly into a private ref without
-updating the checked-out branch or remote tracking branches.
+Each report or claim check fetches the queue branch directly into a private
+worktree ref without updating the checked-out branch, remote tracking branches,
+or `FETCH_HEAD`. Metadata writes use a private index and never change source HEAD,
+the source index, staged code, or unstaged source edits. The App push helper allows
+only report, number, and claim paths and requires the exact expected queue parent.
 
 In GitHub, add an active ruleset targeting exactly `issue-queue`. Enable
 **Restrict updates** and give Timey Software Factory an **Always allow** bypass
@@ -77,18 +99,23 @@ Verify that simultaneous publishes preserve both updates and allocate distinct i
    Compare the inventory and blob IDs with the source revision.
 3. Publish the seed as `issue-queue` and verify its remote commit. Configure the
    branch and GitHub App for [direct publication](#direct-publication).
-4. In a clean code checkout that contains the branch split, remove only the
-   tracked reports and registry. Preview the paths with
-   `git ls-files -- ':(glob).issues/[0-9]*.md' ':(glob).issues/closed/[0-9]*.md' .issues/issue-numbers.json`
-   and use the same paths with `git rm --`. Remove the corresponding exceptions
-   in `.gitignore`; keep `triage-labels.md` and `preferences.json`. Set
+4. In the owning checkout, fetch the verified queue into a private ref. Run
+   `node scripts/detach-issue-reports.mjs VERIFIED_QUEUE_REF` to compare every
+   tracked report with both its index entry and authoritative queue copy. Publish
+   or reconcile differences first. Then run the same command with `--apply` to
+   remove only source tracking while preserving local report files. It is safe
+   to rerun. Remove report-wide exceptions in `.gitignore`; keep only explicit
+   policy exceptions such as `triage-labels.md` and `preferences.json`. The
+   pre-commit guard rejects reintroduced reports, numbers, or claims in shared
+   source commits. Set
    `"sharedIssueQueue": true` and `"sharedIssueQueueBranch": "issue-queue"`
    in `factory.config.json`. Pass this cutover through the code destination's
    normal checks and merge policy. Do not turn the setting on in a checkout
    whose tracked report copies are still present.
-5. Update clean runner checkouts so Git removes the old tracked copies. A
-   staged-only removal leaves stale files that can conflict with the initial
-   queue sync. Restart Factory and refresh. Confirm the closed reports and
+5. Update existing runner source checkouts once for the migration. Verify and
+   preserve local edits before advancing an older checkout. Ignored local cache
+   copies that match the shared queue can remain in place. Subsequent issue
+   status changes refresh queue data without another source workspace update. Restart Factory and refresh. Confirm the closed reports and
    existing numbers in a fresh checkout and an upgraded checkout. Keep the
    source revision as the recovery copy. Historical Markdown links that name
    a moved file directly may point to its old path; issue ID references still
@@ -104,6 +131,6 @@ one runner for a flow while it has unpublished code. Close publishes its own
 checkpoint and releases the claim only after the queue commit lands. A
 report draft can also be published from the queue status controls.
 
-The queue periodically reads the queue branch and remote claims in the background. **Refresh shared queue** checks immediately without changing the checked-out branch or advancing its code. Use **Publish report update** to share a deliberate local report edit. Local edits that conflict with newer reports are preserved and reported. For a pending queue PR started before the switch, use **Refresh queue PR** in Flow or **Refresh report PR against target** in Classic to rebuild its proposed commit on the latest queue tip.
+The queue periodically reads reports and claims from the queue branch in the background. **Refresh shared queue** checks immediately without changing the checked-out branch or advancing its code. Use **Publish report update** to share a deliberate local report edit. Local edits that conflict with newer reports are preserved and reported. For a pending queue PR started before the switch, use **Refresh queue PR** in Flow or **Refresh report PR against target** in Classic to rebuild its proposed commit on the latest queue tip.
 
 If publication fails, use the issue's retry control after reviewing the failure. Use **Confirm report merge** to reconcile an existing queue PR after it lands. For an interrupted runner without a checkpoint, verify that its previous process and Git operation have stopped before using **Reconcile interrupted claim** on the owning checkout. A dead process can leave a per-issue lock in `.issues/shared-issue-claims/` or `.issues/shared-publication/`. Inspect the saved operation and remove only the confirmed dead lock before retrying. Local workspaces are preserved when proposing closure and can be cleaned up separately after review.
