@@ -507,6 +507,7 @@
   }
 
   function setBusy(busy) {
+    branchRepairUI.update(state.view);
     $('folder-workspace').inert = busy;
     const frozenIssue = Boolean(state.view?.issue?.readOnly);
     document.querySelectorAll('[data-open-palette]').forEach((button) => {
@@ -1302,7 +1303,11 @@
     );
   }
 
-  const branchRepairUI = window.createBranchRepairUI({ button: $('fix-branch'), action });
+  const branchRepairUI = window.createBranchRepairUI({
+    button: $('fix-branch'),
+    action,
+    isBusy: () => state.pending,
+  });
 
   function renderEnvironment() {
     branchRepairUI.update(state.view);
