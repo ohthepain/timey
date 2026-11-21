@@ -6,7 +6,7 @@ Language used to coordinate work and review changes.
 
 **Spoken send command**:
 The person's explicit choice to send a dictated prompt by saying “go” as its
-final word. The command word is excluded from the submitted prompt.
+final word. Every chat excludes the command word from the submitted prompt.
 
 **Local note**:
 A quick project-owned thought or todo saved outside version control. It can be
@@ -286,8 +286,14 @@ An investigation that remains available for additional runs after a completed
 inquiry, with each run retaining its own findings and resulting issues.
 
 **Investigation run**:
-One execution of an investigation against a chosen revision, retaining the
-instructions, settings, findings, evidence, and related issues for that execution.
+One full inquiry and its output-block attempts, retaining the instructions,
+settings, findings, evidence, related issues, and inspected code revisions.
+An output-only rerun remains part of that investigation run.
+
+**Investigation report**:
+A published presentation of one investigation run's findings, evidence, and
+recommendations. It retains its identity and content when the investigation runs
+again or is archived.
 
 **Retro item**:
 A follow-up issue proposed by a retro that retains its originating issue for

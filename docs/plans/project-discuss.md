@@ -138,6 +138,12 @@ sessions are deliberately limited to drafting reviewed skill changes.
 
 ## Implementation shape
 
+On 2026-11-21, the user requested the same chat UI and spoken send behavior
+throughout the app while reviewing report discussion. The planned
+[shared chat UI](investigation-reports.md#shared-chat-ui-and-behavior) reuses the
+message view, composer, and send behavior while preserving each conversation's
+history and ownership. This is a design requirement, not a completed refactor.
+
 ProjectDiscuss owns project conversation records, queued messages, attachment
 copies, and explicit turn controls. It shares the low-level Codex transport,
 model settings and skill composer with existing chats. It does not reuse the
