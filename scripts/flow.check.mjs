@@ -313,7 +313,7 @@ test('flow views wait for the first shared copy of a selected report', async (t)
   assert.equal(result.sharedQueueWarning, null);
 });
 
-test('issue Play runs Update Branch without confirmation and Pause lets the active block finish', async (t) => {
+test('issue route Start runs Update Branch without confirmation and Pause lets the active block finish', async (t) => {
   const { id, service } = fixture(t);
   const started = [];
   const work = Promise.withResolvers();
@@ -490,7 +490,7 @@ test('stopping Work All Night cancels the owned block and leaves queued issues u
   assert.ok(flows.read(flows.selected(queued)).blocks.every((block) => !block.attempts.length));
 });
 
-test('issue Play pauses on failure and Stop, retries once, and does not recover after restart', async (t) => {
+test('issue route Resume pauses on failure and Stop, retries once, and does not recover after restart', async (t) => {
   const { id, service } = fixture(t);
   const started = [];
   const fail = Promise.withResolvers();
@@ -1495,7 +1495,7 @@ test('Work waits for its Update Branch prerequisite even when Work uses a parall
   await start(work.id, flows.read(issue).revision);
   await flows.active.get(id)?.task;
 });
-test('a suggested target update precedes Work in the graph and in Play', { timeout: 5000 }, async (t) => {
+test('a suggested target update precedes Work in the graph and route execution', { timeout: 5000 }, async (t) => {
   const { root, id, service } = fixture(t);
   const updateStarted = Promise.withResolvers();
   const finishUpdate = Promise.withResolvers();
@@ -2115,7 +2115,7 @@ for (const [label, input] of [
   ['request edit', { action: 'edit-request', wording: 'Different work' }],
   ['graph edit', { action: 'add', kind: 'work' }],
   ['flow definition refresh', { action: 'refresh-definition', blockId: 'merge' }],
-  ['Play', { action: 'play' }],
+  ['route start/resume', { action: 'play' }],
   ['Work retry', { action: 'start', blockId: 'work' }],
   ['Merge retry', { action: 'continue', blockId: 'merge' }],
   ['verification settings', { action: 'full-regression-setting', enabled: true }],

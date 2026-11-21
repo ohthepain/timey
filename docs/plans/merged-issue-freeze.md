@@ -31,7 +31,7 @@ The initial regression tests failed on definition invalidation, permitted rename
 and an externally merged PR permitting edits. The closure regressions failed when
 the issue checkout advanced after merge. Both behaviors now have automated checks.
 
-`scripts/flow.check.mjs` covers request, graph, template, settings, rename, Play,
+`scripts/flow.check.mjs` covers request, graph, template, settings, rename, route start/resume,
 Work/Merge retries, another issue's template discovery, externally merged PRs and
 restart persistence. `scripts/flow-delivery.check.mjs` covers historical Fixed
 acceptance after checkout advancement and rejection of changed original evidence.

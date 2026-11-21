@@ -176,7 +176,7 @@ export function createProjectDiscussTools(service, options = {}) {
     },
     issue_control: {
       description:
-        'Invoke an existing issue control when explicitly requested. To start an issue’s planned route, query issues_list for its revision and use action play; Play starts the Request block and continues the saved route through its existing guards. Use action start only for a specifically selected runnable non-Request block, with its blockId from issues_list. Never start the Request block directly. Existing approval, verification and ownership guards apply. Returns a command receipt; use the issue page for later progress. Never duplicate issue execution in this chat.',
+        'Invoke an existing issue control when explicitly requested. To start or resume an issue’s planned route, query issues_list for its revision and use action play; the center-column control is labeled Start or Resume and runs the Request block before continuing the saved route through its existing guards. Use action start only for a specifically selected runnable non-Request block, with its blockId from issues_list. Never start the Request block directly. Existing approval, verification and ownership guards apply. Returns a command receipt; use the issue page for later progress. Never duplicate issue execution in this chat.',
       schema: z
         .object({
           action: z.enum(['play', 'pause', 'start', 'continue', 'stop', 'rename-issue', 'approve-issue']),

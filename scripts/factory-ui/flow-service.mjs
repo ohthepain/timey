@@ -960,13 +960,13 @@ class IssueFlows {
       const flow = this.read(issue, catalog);
       if (mergedDelivery(flow)) return this.pause(issueId, 'This issue has merged. Close it when ready.');
       const interrupted = flow.blocks.find((block) => block.attempts.some(unresolvedAttempt));
-      if (interrupted) return this.pause(issueId, `Recover ${interrupted.label} before playing.`);
+      if (interrupted) return this.pause(issueId, `Recover ${interrupted.label} before resuming the route.`);
       requireThat(
         !this.flowBuilds.has(issueId) &&
           !issueHasActiveWork(this.service, issueId) &&
           !this.service.lifecycleTasks?.has(issueId) &&
           !this.service.issueChats?.active?.has(issueId),
-        'Wait for the existing issue operation to finish before playing.'
+        'Wait for the existing issue operation to finish before starting or resuming the route.'
       );
       const next = await this.nextAutoplayBlock(flow, catalog);
       if (this.autoplay.get(issueId)?.mode !== 'playing') return;
@@ -1171,7 +1171,7 @@ class IssueFlows {
     if (input.action === 'preview-publish' || input.action === 'confirm-publish')
       return this.reviewPublication(issue, flow, input, catalog);
     if (input.action === 'play') {
-      requireThat(!issue.closed, 'Reopen this issue before playing.');
+      requireThat(!issue.closed, 'Reopen this issue before starting or resuming the route.');
       if (!['playing', 'waiting'].includes(this.autoplay.get(issue.id)?.mode)) {
         this.autoplay.set(issue.id, { mode: 'playing' });
         void this.advanceAutoplay(issue.id, true);
@@ -2010,7 +2010,7 @@ class IssueFlows {
       requireThat(input.action === 'continue', 'The previous attempt is uncertain. Inspect it before Continue.');
     requireThat(block.kind !== 'request', 'Edit Request in Details.');
     if (block.kind === 'publish') {
-      requireThat(publication, 'Review Publish or use Play to publish the branch.');
+      requireThat(publication, 'Review Publish or resume the route to publish the branch.');
       const request = requestBlock(flow);
       requireThat(
         request.data.fields || (!request.data.editId && !latestCurrentAttempt(request)),
@@ -2419,7 +2419,8 @@ class IssueFlows {
         stringify(metadata) +
         '---\n\n' +
         originalRequestSection(input.description) +
-        '\n\n## Issue flow\n\nThe selected flow definition builds the structure. Run blocks individually or press Play to run the route.\n'
+        '\n\n## Issue flow\n\nThe selected flow definition builds the structure. ' +
+        'Run blocks individually or use Start or Resume to run the route.\n'
     );
     const issue = { ...metadata, content };
     const flow = await this.initialFlow(issue, startingPoint);

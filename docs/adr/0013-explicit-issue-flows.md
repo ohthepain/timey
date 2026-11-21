@@ -1,7 +1,7 @@
 # Explicit issue flows
 
 The `number_2` design makes each operation a visible block. The graph is the
-planned route. A person can run one block or press Play to run the route.
+planned route. A person can run one block or use Start and Resume to run the route.
 This addresses the strategy runner's coupling of work, target synchronization,
 verification, publication, and readiness.
 
@@ -29,7 +29,7 @@ chosen Destination remains selected.
 Update Branch fetches the upstream of Starting point and
 keeps the checkout's original base. The **Starting branch ahead** menu can run **Update
 Branch** immediately with a progress indicator, or add an **Update Branch**
-block that must succeed before **Work** can run. With Play active, **Work**
+block that must succeed before **Work** can run. While the route is running, **Work**
 starts when the update succeeds. The immediate action leaves
 the flow graph intact. A suggested starting branch update also precedes Work and
 becomes its prerequisite when run. The route's
@@ -174,8 +174,12 @@ Worktree and Close with **Approve** and **Delete**.
 
 See [Close and Cleanup](../plans/flow-close-cleanup.md) and
 [Issue retros](../plans/issue-retros.md).
-On closed issues, a red square replaces Play.
-Once the issue is closed, **Archive** replaces **Close**. The menu can archive the
+The route is complete when every block before its first Close, Retro, or Cleanup
+block has completed. Then the center-column control says **Close** for an open issue
+and opens the existing close dialog. For a closed issue that is not archived,
+it says **Archive** and runs the existing archive operation. An archived issue has
+no route control. A closed issue with unfinished route work keeps its closed marker.
+The menu can archive the
 saved report, reveal it in Finder, or reopen the issue for investigation.
 For merged issues, [ADR 0020](0020-freeze-merged-issues.md) supersedes editing and
 reopening: the issue and work flow are read-only, while Close, its existing
@@ -200,7 +204,7 @@ the **Delete worktree** block use the same protected cleanup and retain its back
 ## Update Branch
 
 Choosing **Update Branch** from the **Branch** button, running the **Update
-Branch** block, or reaching the block through **Play** authorizes a local commit
+Branch** block, or reaching the block through **Start** or **Resume** authorizes a local commit
 when needed. Factory runs the branch update without a second prompt. The Branch
 button runs the action directly and shows a spinner. The action leaves the flow
 graph intact.
@@ -238,33 +242,35 @@ may edit and stage only the conflicted files. It must preserve both sides and st
 when resolution requires a decision. Factory commits the resolved merge through
 normal Git hooks. If the attempt cannot finish the merge, Factory keeps the local
 commit and the in-progress merge, lists the files that need attention, and pauses
-Play. Resolve or abort the merge in the issue worktree before another update.
+route. Resolve or abort the merge in the issue worktree before another update.
 
-## Issue Play and Pause
+## Issue Start, Resume, and Pause
 
-The server holds Play state for each issue. Issues start paused, including after a
-server restart. Tabs can switch issues, refresh, or close while Play is active.
-Play waits for any current block, then starts the next incomplete block in route
-order. Dotted blocks on the saved route are included. A dependency must be
-complete before its successor starts.
+Issues with no saved block attempts show **Start**. Any saved attempt, including a
+failed or stopped attempt, means the issue has started. The control shows **Resume**
+while paused, including after a server restart. It shows
+**Pause** while running or waiting for confirmation. Tabs can switch issues,
+refresh, or close while the route is running. Start or Resume waits for any current
+block, then starts the next incomplete block in route order. Dotted blocks on the
+saved route are included. A dependency must be complete before its successor starts.
 
 Pause lets the active block finish. Stop interrupts it and pauses the issue.
-Failure, blockers, invalidating edits, and route edits pause autoplay. Pressing
-Play again can retry an eligible failed or stopped block once. A disconnected
+Failure, blockers, invalidating edits, and route edits pause the route. Pressing
+Resume can retry an eligible failed or stopped block once. A disconnected
 attempt requires the block's explicit Recover action. Finishing the route
 returns the issue to Paused with a Flow complete message.
 
-No new actions disables Play. A running block can finish, and autoplay pauses
-if the switch is still on when it would start another block. Turn off No new
-actions and press Play to continue that route.
+No new actions disables Start and Resume. A running block can finish, and the
+route pauses if the switch is still on when it would start another block. Turn off No new
+actions and press Resume to continue that route.
 
-Play authorizes Publish PR to push the checked candidate and create or update its
-pull request. Factory checks the candidate and GitHub destination before writing.
+Using Start or Resume lets the route publish a checked candidate and create or
+update its pull request. Factory checks the candidate and GitHub destination before writing.
 Autoplay starts Merge preparation and waits for any human-first approval once
 the PR is ready. At other protected blocks, autoplay waits before the operation.
 While autoplay is waiting, the issue header links to the block's
 inspector. The link lets the person select the waiting block to open its existing
-confirmation. Successful completion of that confirmed block resumes Play.
+confirmation. Successful completion of that confirmed block resumes the route.
 Cancelling the confirmation or manually starting a different block pauses the
 issue. The inspector keeps Run, Retry, Recover, Approve merge, or Stop beside the block name
 across tabs. Retry can reuse the block's conversation when its inputs,

@@ -84,8 +84,8 @@ locks when the issue has a PR. If GitHub reports a changed base, accept that bas
 in Destination before running Publish or Merge.
 
 The issue number appears in smaller text to the left of the title in the center
-column. Use the pencil next to the title to rename the issue. Play publishes when the
-candidate and destination checks pass. When running Publish directly,
+column. Use the pencil next to the title to rename the issue. **Start** or **Resume**
+runs the route; Publish runs when the candidate and destination checks pass. When running Publish directly,
 review the title, source and destination branches, verified commit, and exact PR
 description. The description contains Goal, Requested proof, and Original wording
 from Request, with empty sections omitted. On later runs, Publish shows pending
@@ -101,9 +101,9 @@ Closed issues open with Destination aligned at the bottom. Other issues center
 their running or most recently attempted block within the content's scroll range.
 The graph has 16 pixels of edge room. Column scrolling stays local, with native
 bounce where supported and no pull-to-refresh. Selecting a block scrolls only enough to reveal it. The
-circular plus button adds a step. The issue header's Play/Pause button runs the
-route one eligible block at a time. A confirmation link appears in the header
-when Play reaches a protected block. The Run, Retry, Recover, or Stop button
+circular plus button adds a step. The center-column Start/Resume/Pause control runs
+the route one eligible block at a time. A confirmation link appears in the header
+when the route reaches a protected block. The Run, Retry, Recover, or Stop button
 beside the selected block's name controls that block individually.
 `/classic` retains the strategy and legacy queue
 controls documented below. Flow observation can show reports before lifecycle configuration
@@ -280,7 +280,7 @@ without changing issue records or selection.
 
 **Start all** and **Archive all** preview checked issues and report each outcome.
 Subset selections use **Start selected** or **Archive selected**. Starting uses each
-issue's Play flow and preserves its eligibility checks and confirmation stops.
+issue's saved route and preserves its eligibility checks and confirmation stops.
 Grouping requires each selected issue's PR target to match the folder's resolved
 default target. Copying a selection strategy creates an editable file beneath
 `user/selection-strategies/` and selects that copy without changing the built-in.
@@ -1327,7 +1327,7 @@ a spinner during actual activity. Hover or focus any square for its explanation.
 A yellow speech bubble above the current square marks a pending lifecycle question
 or connected worker approval, including the final acceptance decision. The bubble and square are one keyboard control that
 opens the existing issue question. Waiting for input shows idle play, while an
-actual error keeps its orange square. Play uses the issue screen's existing
+actual error keeps its orange square. The action uses the issue screen's existing
 Progress flow, including its plan consent and human guards; it grants no extra
 authority. Historical squares are informational. Every role block also links to
 that issue with the selected step expanded, focused and scrolled into view. This

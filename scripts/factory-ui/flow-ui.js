@@ -202,6 +202,28 @@
     return attempt?.status || (block?.suggested ? 'suggested' : 'ready');
   }
 
+  function routeComplete(blocks) {
+    if (!blocks.length) return false;
+    const closureStart = blocks.findIndex((block) => ['close', 'retro', 'cleanup'].includes(block.kind));
+    const routeBlocks = closureStart < 0 ? blocks : blocks.slice(0, closureStart);
+    return routeBlocks.every(
+      (block) =>
+        status(block) === 'completed' || (block.kind === 'request' && Boolean(block.data?.fields) && !latest(block))
+    );
+  }
+
+  function playbackAction(blocks) {
+    const issue = state.view?.issue;
+    const location = issue?.location;
+    const closed = location === 'closed' || issue?.status === 'closed';
+    const playing = ['playing', 'waiting'].includes(state.view?.autoplay?.mode);
+    if (playing) return 'pause';
+    if (!issue || location === 'archive' || state.view?.grouping?.master) return 'hidden';
+    if (routeComplete(blocks)) return closed ? 'archive' : 'close';
+    if (closed || issue.readOnly) return 'hidden';
+    return blocks.some((block) => block.attempts?.length) ? 'resume' : 'start';
+  }
+
   function isRunning(block) {
     return runningStatuses.has(status(block));
   }
@@ -559,7 +581,9 @@
       $(id).hidden = !pending;
       $(id).disabled = busy;
     }
-    $('close-with-reason').hidden = !issue || closed || pending || Boolean(state.view?.grouping?.master);
+    const routeAction = playbackAction(state.view?.flow?.blocks || []);
+    $('close-with-reason').hidden =
+      !issue || closed || pending || Boolean(state.view?.grouping?.master) || routeAction === 'close';
     $('close-with-reason').disabled = busy;
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
@@ -579,16 +603,24 @@
   function updatePlaybackAvailability(busy) {
     const button = $('issue-playback');
     const playback = state.view?.autoplay;
-    const paused = playback?.mode === 'paused';
-    const closed = state.view?.issue?.status === 'closed';
+    const mode = playbackAction(state.view?.flow?.blocks || []);
+    const issue = state.view?.issue;
+    const routeAction = ['start', 'resume', 'pause'].includes(mode);
+    const closed = issue?.location === 'closed' || issue?.status === 'closed';
+    const showArchive = mode === 'archive';
     const pending = state.view?.issue?.state === 'needs-approval';
-    button.hidden = closed || Boolean(state.view?.issue?.readOnly) || Boolean(state.view?.grouping?.master);
-    $('closed-issue-indicator').hidden = !closed;
-    button.disabled = busy || !playback || pending || (paused && (state.newActionsPaused || closed));
+    button.hidden = mode === 'hidden';
+    $('closed-issue-indicator').hidden = !closed || showArchive;
+    button.disabled =
+      busy ||
+      !playback ||
+      (routeAction && pending) ||
+      (['start', 'resume'].includes(mode) && (state.newActionsPaused || closed || issue?.readOnly));
+    const unavailableAction = mode === 'close' ? 'close' : mode === 'archive' ? 'archive' : 'start or resume';
     button.title = !playback
-      ? 'Restart the Timey server to use Play'
-      : paused && state.newActionsPaused
-        ? 'Turn off No new actions to play'
+      ? `Restart the Timey server to ${unavailableAction} this issue`
+      : ['start', 'resume'].includes(mode) && state.newActionsPaused
+        ? 'Turn off No new actions to start or resume this issue'
         : '';
   }
 
@@ -2212,9 +2244,11 @@
   function renderPlayback(blocks) {
     const playback = state.view?.autoplay;
     const playing = playback?.mode === 'playing' || playback?.mode === 'waiting';
+    const mode = playbackAction(blocks);
     const waiting = blocks.find((block) => playback?.mode === 'waiting' && playback.blockId === block.id);
-    $('issue-playback').textContent = playing ? 'Ⅱ Pause' : '▷ Play';
-    $('issue-playback').setAttribute('aria-label', playing ? 'Pause issue' : 'Play issue');
+    const labels = { start: 'Start', resume: 'Resume', pause: 'Pause', close: 'Close', archive: 'Archive' };
+    $('issue-playback').textContent = labels[mode] || 'Start';
+    $('issue-playback').setAttribute('aria-label', labels[mode] ? labels[mode] + ' issue' : 'Start issue');
     const waitingButton = $('waiting-block');
     waitingButton.hidden = !waiting;
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
@@ -2225,7 +2259,7 @@
       : waiting
         ? 'Waiting for confirmation'
         : playing
-          ? 'Playing'
+          ? 'Running'
           : 'Paused';
     const result = state.view?.flow?.closing?.error || input?.message || playback?.reason || '';
     $('issue-results').hidden = !state.view?.issue || !result;
@@ -3328,6 +3362,21 @@
     }
   }
 
+  async function archiveIssueWithUiState(issueId) {
+    if (!issueId || state.pending) return;
+    state.pending = true;
+    setBusy(true);
+    try {
+      await archiveIssue(issueId);
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      state.pending = false;
+      setBusy(false);
+      void load(true);
+    }
+  }
+
   async function reopenIssue(issueId) {
     if (!confirm('Reopen this issue and return it to investigation?')) return;
     const context = await json('/api/issue-closure?kind=reopen&issue=' + encodeURIComponent(issueId));
@@ -3353,10 +3402,10 @@
         ],
       }));
     }
+    if (operation === 'archive') return void archiveIssueWithUiState(issueId);
     state.pending = true;
     setBusy(true);
     try {
-      if (operation === 'archive') await archiveIssue(issueId);
       if (operation === 'reveal') await post('issue-report-reveal', { issueId });
       if (operation === 'reopen') await reopenIssue(issueId);
     } catch (error) {
@@ -3445,13 +3494,17 @@
     }
   });
   $('issue-playback').addEventListener('click', () => {
-    if (state.view?.autoplay?.mode !== 'paused') return void action('pause');
+    const mode = playbackAction(state.view?.flow?.blocks || []);
+    if (mode === 'pause') return void action('pause');
+    if (mode === 'close') return openClosure();
+    if (mode === 'archive') return void archiveIssueWithUiState(state.view.issue.id);
+    if (!['start', 'resume'].includes(mode)) return;
     const hasDraft = [...state.drafts].some(
       ([key, values]) =>
         key.startsWith(state.issueId + '/') &&
         Object.keys(values).some((field) => !['comment', 'newEdit'].includes(field))
     );
-    if (hasDraft) return showError('Save your block settings before playing. Your drafts are still here.');
+    if (hasDraft) return showError('Save your block settings before starting or resuming. Your drafts are still here.');
     void action('play');
   });
   document.addEventListener('factory-actions-paused', ({ detail }) => {

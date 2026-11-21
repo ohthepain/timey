@@ -5,7 +5,7 @@ read-only. A successful Merge receipt remains a delivery fact even when a later
 attempt failed or an older runner invalidated the receipt. An externally observed
 merge is retained locally so the lock survives server restarts and GitHub outages.
 
-The controller rejects work starts, retries, Play, graph and definition edits,
+The controller rejects work starts, retries, route Start/Resume, graph and definition edits,
 request changes, issue settings, metadata edits, grouping, and bulk updates for
 merged issues. HTTP routes enforce the same rule before mutation. For a linked
 PR, editable actions refresh its GitHub state first; an unavailable status blocks

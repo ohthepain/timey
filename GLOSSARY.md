@@ -303,8 +303,8 @@ can use it.
 
 **Issue flow**:
 An explicitly controlled graph of blocks for one issue. The graph records the
-planned route. Run starts the selected block. Play starts the route and waits
-for any confirmations along the way.
+planned route. Run starts the selected block. Start or Resume runs the route
+and waits for any confirmations along the way.
 
 **Flow block**:
 One visible request, advisory, work, verification, delivery, or cleanup operation.

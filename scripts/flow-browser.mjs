@@ -845,7 +845,7 @@ try {
     assert.equal(await grouping.getByText('The fixture requests share save behavior.').count(), 2);
     await grouping.getByRole('link', { name: /Understand why/ }).click();
     await grouping.getByText('Work belongs to').waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Play issue' }).isVisible(), false);
+    assert.equal(await page.locator('#issue-playback').isVisible(), false);
     await grouping.getByRole('link', { name: /Keep both save behaviors/ }).click();
     await clickAction(page.locator(`[data-detach-sub-issue="${second.issue.id}"]`));
     await page.goto('/?issue=' + master.issue.id);
@@ -1781,7 +1781,7 @@ try {
     saved.destination = destination;
     service.flows.store.save(saved, saved.revision);
   });
-  await check('Issue Play respects No new actions and runs Update Branch without confirmation', async () => {
+  await check('Issue Start and Resume respect No new actions and run Update Branch without confirmation', async () => {
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
@@ -1814,7 +1814,7 @@ try {
     saved = service.flows.read(issue);
     const sync = saved.blocks.find(({ kind }) => kind === 'update-branch');
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
-    await page.getByRole('button', { name: 'Play issue' }).click();
+    await page.getByRole('button', { name: 'Start issue' }).click();
     await poll(
       view,
       (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'running',
@@ -1826,8 +1826,8 @@ try {
     await page.locator(`[data-issue="${issueId}"]`).click();
     await page.getByRole('button', { name: 'Pause issue' }).click();
     await poll(view, (data) => data.autoplay.mode === 'paused', 'Pause was not applied.');
-    await page.getByRole('button', { name: 'Play issue' }).click();
-    await poll(view, (data) => data.autoplay.mode === 'playing', 'Play did not resume during Work.');
+    await page.getByRole('button', { name: 'Resume issue' }).click();
+    await poll(view, (data) => data.autoplay.mode === 'playing', 'Resume did not continue during Work.');
     const noNewActions = page.locator('#flow-actions-switch [data-server-toggle]');
     await noNewActions.check();
     await poll(
@@ -1847,8 +1847,12 @@ try {
     await page.waitForFunction(() => document.getElementById('issue-playback').disabled);
     await noNewActions.uncheck();
     await block('request');
-    await page.getByRole('button', { name: 'Play issue' }).click();
     await page.locator('#issue-results-message').filter({ hasText: 'Flow complete' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Close issue' }).textContent(), 'Close');
+    await page.getByRole('button', { name: 'Close issue' }).click();
+    const closeDialog = page.getByRole('dialog', { name: 'Close this issue' });
+    await closeDialog.waitFor();
+    await closeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(await page.locator('#issue-results').isVisible(), true);
     assert.equal(await page.locator('#issue-heading + #issue-results').count(), 1);
     assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
@@ -2054,13 +2058,13 @@ try {
     await archive.waitFor();
     const closedIndicator = page.getByRole('img', { name: 'Issue closed' });
     await closedIndicator.waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Play issue' }).isVisible(), false);
+    assert.equal(await page.locator('#issue-playback').isVisible(), false);
     assert.equal(await close.isVisible(), false);
     assert.equal(await archive.locator('option[value="reveal"]').textContent(), 'Reveal in Finder');
     page.once('dialog', (dialog) => void dialog.accept());
     await archive.selectOption('reopen');
     await close.waitFor();
-    await page.getByRole('button', { name: 'Play issue' }).waitFor();
+    await page.getByRole('button', { name: 'Start issue' }).waitFor();
     assert.equal(await closedIndicator.isVisible(), false);
     assert.equal(service.flows.selected(issueId).location, 'open');
     assert.equal(await archive.isVisible(), false);
