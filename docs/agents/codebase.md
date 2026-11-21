@@ -849,7 +849,8 @@ against current issue records. `flow-grouping.mjs` owns master issue grouping.
 and folder strategy selection. `folder-operations.mjs` runs scoped AI searches and
 preview-bound per-issue Start and Archive actions, retaining individual outcomes.
 `flow-overnight.mjs` runs the approved folder selection to the Merge confirmation
-and retains the run report. `flow-block-data.mjs` resolves block addresses, declared inputs and
+and retains the run report. After Request completes, its owning run can adopt
+the clarified route while manual route changes remain blocked. `flow-block-data.mjs` resolves block addresses, declared inputs and
 retained outputs. `flow-request.mjs` derives the Request fields through a
 temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
 Codex conversations and uses the protected operation adapters for delivery. `flow-observer.mjs` reads local Git state and separately cached PR facts.

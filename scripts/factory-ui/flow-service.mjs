@@ -1518,9 +1518,13 @@ class IssueFlows {
     const nodes = await this.buildStructure({ service: this.service, issue, type, definition, catalog, request });
     return validateFlowNodes(nodes, catalog);
   }
-  requireRouteIdle(issue, flow) {
+  requireRouteIdle(issue, flow, afterClarification = false) {
+    const service =
+      afterClarification && this.overnight.owns(issue.id)
+        ? Object.assign(Object.create(this.service), { flowOperationIssueId: issue.id })
+        : this.service;
     requireThat(
-      !this.active.has(issue.id) && !this.flowBuilds.has(issue.id) && !issueHasActiveWork(this.service, issue.id),
+      !this.active.has(issue.id) && !this.flowBuilds.has(issue.id) && !issueHasActiveWork(service, issue.id),
       'Wait for the current operation to finish.'
     );
     requireThat(
@@ -1541,7 +1545,7 @@ class IssueFlows {
       if (type === flow.routeType && id === flow.definition.id) return this.view(issue.id);
     }
     const definition = selectFlowDefinition(definitions, type, id);
-    this.requireRouteIdle(issue, flow);
+    this.requireRouteIdle(issue, flow, input.afterClarification);
     if (!input.afterClarification) this.pauseAutoplay(issue.id, 'The route changed.');
     this.flowBuilds.add(issue.id);
     try {

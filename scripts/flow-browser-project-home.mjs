@@ -65,10 +65,16 @@ async function browserIssues(service, ctx) {
     artifacts: { values: { issues: saved.items.map(({ key, result }) => ({ key, ...result })) }, files: {} },
   };
 }
+function isInvestigationOperation(ctx) {
+  return (
+    ctx.flow.routeType === 'investigation' &&
+    ['understand', 'investigate', 'generate-report', 'create-issues'].includes(ctx.block.kind)
+  );
+}
 function configureHome(service, calls) {
   const original = service.flows.executor.run.bind(service.flows.executor);
   service.flows.executor.run = async (ctx) => {
-    if (ctx.flow.routeType !== 'investigation') return original(ctx);
+    if (!isInvestigationOperation(ctx)) return original(ctx);
     if (ctx.block.kind === 'generate-report') return browserReport(service, ctx);
     if (ctx.block.kind === 'create-issues') return browserIssues(service, ctx);
     calls.investigations++;
