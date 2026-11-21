@@ -144,7 +144,11 @@ test('only successful report findings are forwarded and presentation edits do no
       ? {
           output: 'Report',
           artifacts: {
-            values: { additionalFindings: 'New observed boundary', inspectedRevisions: ['new-revision'] },
+            values: {
+              additionalFindings: 'New observed boundary',
+              inspectedRevisions: [ctx.flow.startingPoint.commit],
+              reportEvidence: [{ path: 'retained-report-proof', status: 'unavailable' }],
+            },
             files: {},
           },
           evidence: [],
@@ -156,6 +160,7 @@ test('only successful report findings are forwarded and presentation edits do no
   const issues = await f.run('create-issues');
   assert.equal(issues.supplementalFindings[0].attemptId, report.id);
   assert.equal(issues.supplementalFindings[0].findings, 'New observed boundary');
+  assert.ok(issues.supplementalFindings[0].evidence.some(({ path }) => path === 'retained-report-proof'));
   const flow = f.flow();
   await f.flows.action({
     action: 'update',
@@ -585,4 +590,55 @@ test('Run again preserves custom inquiry prompts across successive reusable runs
     f.calls.filter(({ block }) => block.kind === 'investigate').map(({ block }) => block.prompt),
     ['Inspect only the custom parser boundary.', 'Inspect only the custom parser boundary.']
   );
+});
+
+test('presentation-only report reruns preserve issue completion while changed supplemental findings invalidate it without starting work', async (t) => {
+  let findings = 'First observed boundary';
+  const f = await fixture(t, async (ctx) =>
+    ctx.block.kind === 'generate-report'
+      ? {
+          output: 'Published presentation',
+          artifacts: {
+            values: { additionalFindings: findings, inspectedRevisions: [ctx.flow.startingPoint.commit] },
+            files: {},
+          },
+          evidence: [],
+        }
+      : null
+  );
+  await f.run('investigate');
+  await f.run('generate-report');
+  await f.run('create-issues');
+  const flow = f.flow();
+  const report = flow.blocks.find(({ kind }) => kind === 'generate-report');
+  await f.flows.action({
+    action: 'update',
+    issueId: f.issueId,
+    blockId: report.id,
+    revision: flow.revision,
+    changes: { prompt: 'Present the same findings as a table.' },
+  });
+  await f.run('generate-report');
+  assert.equal(
+    f
+      .flow()
+      .blocks.find(({ kind }) => kind === 'create-issues')
+      .attempts.at(-1).invalidatedAt,
+    undefined
+  );
+  findings = 'A second uncovered boundary';
+  await f.run('generate-report');
+  assert.ok(
+    f
+      .flow()
+      .blocks.find(({ kind }) => kind === 'create-issues')
+      .attempts.at(-1).invalidatedAt
+  );
+  assert.equal(
+    f.calls.filter(({ block }) => block.kind === 'create-issues').length,
+    1,
+    'New findings start no issue creation automatically.'
+  );
+  const rerun = await f.run('create-issues');
+  assert.ok(rerun.supplementalFindings.some((entry) => entry.findings === findings));
 });

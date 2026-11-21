@@ -31,10 +31,12 @@ End with a flow-result JSON fence using files.report and values.reportTitle, add
 
 # Artifacts
 
-| Key                | Kind  | Label               | Type      |
-| ------------------ | ----- | ------------------- | --------- |
-| response           | file  | Block response      | file      |
-| inspectedRevisions | value | Inspected revisions | text      |
-| report             | file  | Saved report        | file      |
-| reportTitle        | value | Report title        | text      |
-| additionalFindings | value | Additional findings | long text |
+| Key                | Kind  | Label                        | Type      |
+| ------------------ | ----- | ---------------------------- | --------- |
+| response           | file  | Block response               | file      |
+| inspectedRevisions | value | Inspected revisions          | text      |
+| report             | file  | Saved report                 | file      |
+| reportTitle        | value | Report title                 | text      |
+| additionalFindings | value | Additional findings          | long text |
+| reportId           | value | Retained report ID           | text      |
+| reportEvidence     | value | Retained evidence references | long text |

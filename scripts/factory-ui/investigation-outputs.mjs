@@ -162,6 +162,10 @@ function findingDescription(item, source) {
   return item.captureDescription || issueDescription(item, source);
 }
 
+function savedReportReference({ id, publicationId, attemptId, title, publishedAt }) {
+  return { id, publicationId, attemptId, title, publishedAt };
+}
+
 function issueDescription(item, source) {
   return [
     item.title,
@@ -290,7 +294,8 @@ export class InvestigationOutputs {
             .list()
             .filter(
               ({ source }) => source.issueId === context.source.issueId && source.attemptId === context.source.attemptId
-            ),
+            )
+            .map(savedReportReference),
         }),
       },
     };

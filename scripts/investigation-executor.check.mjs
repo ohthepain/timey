@@ -141,6 +141,7 @@ test('real output execution attaches guarded tools and retains skill-saved repor
   const report = f.reports.read(result.artifacts.values.reportId);
   assert.equal(report.source.revision, f.revision);
   assert.equal(report.attemptId, 'report-attempt');
+  assert.deepEqual(result.artifacts.values.reportEvidence, report.evidence);
   assert.equal(report.evidence[0].status, 'verified');
   assert.match(readFileSync(report.evidence[0].path, 'utf8'), /three were expected/);
   assert.match(report.content, /final event is lost/);

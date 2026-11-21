@@ -5,6 +5,11 @@ independently optional Generate report and Create Issues blocks. The saved array
 controls execution order. Both outputs depend on completed inquiry findings;
 Create Issues also receives findings from successfully completed report attempts.
 Report failure pauses the route without preventing manual issue output.
+Saved-output discovery lists report references rather than forwarding report
+bodies. Only completed report attempts supply supplemental findings and retained
+evidence. Create Issues records the facts it consumed. A successful report with
+changed supplemental facts invalidates that completion without starting work;
+new presentation of the same facts leaves it current.
 
 Output attempts retain an immutable source snapshot with the investigation issue,
 producer block and attempt, timestamp, inspected commit, findings, and evidence.

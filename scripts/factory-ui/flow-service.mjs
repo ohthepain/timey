@@ -49,6 +49,7 @@ import {
   requireInvestigationBlock,
   prepareInvestigationBlock,
   attachInvestigationAttempt,
+  reconcileInvestigationFindings,
 } from './investigation-execution.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
 import { FolderOperations } from './folder-operations.mjs';
@@ -2097,7 +2098,7 @@ class IssueFlows {
     requireThat(attempt, 'The running block record is missing. Retain its original execution before reconciling.');
     change(attempt, flow);
     if (['running', 'stopping'].includes(attempt.status)) attempt.lastActiveAt = new Date().toISOString();
-    this.store.save(flow, flow.revision);
+    this.store.save(reconcileInvestigationFindings(flow, block), flow.revision);
   }
   async execute(issue, flow, blockId, attemptId, controller, input, definition) {
     const block = flow.blocks.find((item) => item.id === blockId);

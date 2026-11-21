@@ -91,13 +91,21 @@ function reportFindings({ attempt }) {
     startedAt: attempt.startedAt,
     findings: values.additionalFindings ?? '',
     inspectedRevisions: values.inspectedRevisions ?? [],
-    evidence,
+    evidence: evidence.concat(values.reportEvidence ?? []),
   };
 }
 export function successfulReportFindings(flow, source) {
   return investigationAttempts(flow, new Set(['generate-report']))
-    .filter(currentAttempt)
+    .filter(({ attempt }) => !attempt.cancelledByEdit)
     .filter(({ attempt }) => reportSourceMatches(attempt, source))
     .sort((a, b) => String(a.attempt.startedAt).localeCompare(String(b.attempt.startedAt)))
     .map(reportFindings);
+}
+
+function supplementalFactKey({ findings = '', inspectedRevisions = [] }) {
+  return JSON.stringify([String(findings).trim(), [...new Set(inspectedRevisions)].sort()]);
+}
+export function supplementalFindingsSignature(findings) {
+  const keys = findings.filter((entry) => String(entry.findings ?? '').trim()).map(supplementalFactKey);
+  return digest(JSON.stringify([...new Set(keys)].sort()));
 }

@@ -6,8 +6,9 @@ import {
   investigationOutputKinds,
   successfulInvestigationSource,
   successfulReportFindings,
+  supplementalFindingsSignature,
 } from './investigation-flow.mjs';
-import { invalidateBlocks, requestData } from './flow-block-data.mjs';
+import { invalidateBlocks, requestData, latestCurrentAttempt } from './flow-block-data.mjs';
 import { branchStartingPoint, flowBranches } from './flow-branches.mjs';
 
 function requireOwningSession(owner, input) {
@@ -100,6 +101,7 @@ function attachInquiryMetadata(flow, block, input, attempt) {
 }
 
 function attachOutputDetails(attempt) {
+  attempt.supplementalSignature = supplementalFindingsSignature(attempt.supplementalFindings);
   const values = { source: attempt.investigationSource, supplementalFindings: attempt.supplementalFindings };
   for (const detail of attempt.details) if (Object.hasOwn(values, detail.key)) detail.value = values[detail.key];
   attempt.details.push({
@@ -172,4 +174,29 @@ export function usesInvestigationOutputs(owner, session) {
 }
 export function retryOutputKinds(session) {
   return session.flowOutputs === true ? investigationOutputKinds : new Set(['create-issues']);
+}
+
+function completedReport(block) {
+  if (block.kind !== 'generate-report') return false;
+  return latestCurrentAttempt(block)?.status === 'completed';
+}
+function consumedFindings(attempt) {
+  return attempt.supplementalSignature ?? supplementalFindingsSignature(attempt.supplementalFindings ?? []);
+}
+function changedSupplementalFindings(flow, block) {
+  const attempt = latestCurrentAttempt(block);
+  if (!attempt) return false;
+  if (attempt.status !== 'completed') return false;
+  if (!attempt.investigationSource) return false;
+  return (
+    consumedFindings(attempt) !==
+    supplementalFindingsSignature(successfulReportFindings(flow, attempt.investigationSource))
+  );
+}
+export function reconcileInvestigationFindings(flow, producer) {
+  if (!completedReport(producer)) return flow;
+  for (const block of flow.blocks.filter(({ kind }) => kind === 'create-issues')) {
+    if (changedSupplementalFindings(flow, block)) invalidateBlocks(flow, new Set([block.id]), false);
+  }
+  return flow;
 }

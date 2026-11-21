@@ -2110,6 +2110,20 @@
       .join('');
   }
 
+  function historicalIssueLink(id) {
+    const issue = state.index.issues.find((entry) => entry.id === id);
+    return `<li><a href="/?issue=${encodeURIComponent(id)}">${escape(issue?.title || 'Open saved issue')}</a></li>`;
+  }
+  function historicalOutputProgress(block) {
+    const ids = block.historicalCompletion.issueIds || [];
+    return `<p class="detail-copy">Completed by an earlier investigation run.</p><ul>${ids.map(historicalIssueLink).join('')}</ul>`;
+  }
+  function blockProgress(block, last, attempts, published) {
+    if (last) return attemptCard(last, attempts.length - 1);
+    if (block.historicallyCompleted) return historicalOutputProgress(block);
+    return `<p class="inline-empty">${published ? `PR #${escape(published)} has been published. Run Merge to check it.` : 'This block has not run yet. Review its inputs before starting.'}</p>`;
+  }
+
   function blockDetails(block) {
     if (state.view.flow.request)
       return '<section class="detail-section"><p class="detail-copy">Restart the Factory server to edit this flow. Your saved issue is available.</p></section>';
@@ -2122,9 +2136,7 @@
     const last = latest(block);
     const previousAttempts = last ? attempts.slice(0, -1) : attempts;
     const published = attempts.at(-1)?.supersededByPR;
-    const progress = last
-      ? attemptCard(last, attempts.length - 1)
-      : `<p class="inline-empty">${published ? `PR #${escape(published)} has been published. Run Merge to check it.` : 'This block has not run yet. Review its inputs before starting.'}</p>`;
+    const progress = blockProgress(block, last, attempts, published);
     const running = isRunning(block);
     if (['retro', 'cleanup'].includes(block.kind))
       return `<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;

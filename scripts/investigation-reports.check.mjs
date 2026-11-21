@@ -337,3 +337,15 @@ test('default output skills use Factory discovery and carry their guarded saving
     assert.match(skillInputs([skill])[0].text, new RegExp(tool));
   }
 });
+
+test('saved-output discovery returns report references without automatically passing historical report findings', async (t) => {
+  const f = reportFixture(t);
+  const report = f.reports.publish(f.input);
+  const outputs = new InvestigationOutputs({ service: { root: f.root }, issues: () => [] });
+  const saved = await outputs.tools({ kind: 'create-issues', source: source() }).invoke('investigation_outputs', {});
+  assert.equal(saved.reports[0].id, report.id);
+  assert.equal(saved.reports[0].publicationId, report.publicationId);
+  assert.equal(Object.hasOwn(saved.reports[0], 'additionalFindings'), false);
+  assert.equal(Object.hasOwn(saved.reports[0], 'content'), false);
+  assert.equal(Object.hasOwn(saved.reports[0], 'evidence'), false);
+});

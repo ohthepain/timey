@@ -65,6 +65,7 @@ export function investigationOutputExecution(service, ctx, workspace) {
         reportId: report.id,
         additionalFindings: report.additionalFindings,
         inspectedRevisions: report.inspectedRevisions,
+        reportEvidence: report.evidence,
       };
     },
     'create-issues'(manifest) {
