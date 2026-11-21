@@ -15,8 +15,10 @@ starts no work. Retry a blocked flow step explicitly after setup. Read-only bloc
 remain available while the lifecycle file is missing.
 
 The default page opens **Project home**, with rolling seven-day issue statistics,
-saved investigation and Automate me sessions, and controls for both operations.
-The project menu keeps these operations accessible while viewing issues or folders.
+saved investigations, and investigation controls. The left project menu lists
+**Home**, **Issues**, and **Investigate** in that order. **Issues** opens Home's
+Issues tab. Home also has Discuss, Automate me, and Admin tabs. The **Automate me**
+tab contains the session history and the control to start a conversation.
 Investigations always cover the project and use a selected branch, defaulting to
 the branch in Project settings. Optional discussion retains goals and codebase
 questions in the Investigation issue; **Run** retains findings and automatically

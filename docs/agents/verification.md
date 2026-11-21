@@ -82,6 +82,13 @@ state. The fixture uses disposable conversations and issues and starts no model
 work. `node --test scripts/interface-state.check.mjs` reproduces the original
 Discuss collapse and checks selection through growing and replaced activity.
 
+`node scripts/flow-browser.mjs --project-navigation` checks the ordered Home,
+Issues, and Investigate sidebar links, Home tab reset, Issues navigation, and
+the Automate me tab, dialog, reload persistence, and narrow layout. It saves
+`project-navigation.png` and `project-navigation-automate.png` in its evidence directory.
+The navigation fixture temporarily initializes queue configuration, waits for a
+successful Issues queue response, and unloads the page before restoring configuration.
+
 `pnpm run test:project-home` checks project investigation capture, selected-branch
 execution, automatic follow-up approval and retry, historical closure statistics,
 project-scoped Automate me history, retained conversations, and reviewed skill
